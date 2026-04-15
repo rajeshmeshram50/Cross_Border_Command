@@ -26,7 +26,17 @@ export default function TopNav({ current, onNavigate }: Props) {
 
   if (!user) return null;
 
-  const navItems = MENU_ITEMS.filter(m => m.roles.includes(user.user_type) && !m.section && m.id);
+  const isSuperAdmin = user.user_type === 'super_admin';
+  const perms = user.permissions || {};
+  const defaultSlugs = ['dashboard', 'profile'];
+
+  const navItems = MENU_ITEMS.filter(m => {
+    if (m.section || !m.id) return false;
+    if (!m.roles.includes(user.user_type)) return false;
+    if (isSuperAdmin) return true;
+    if (defaultSlugs.includes(m.id)) return true;
+    return !!perms[m.id]?.can_view;
+  });
 
   // Close dropdowns on outside click
   useEffect(() => {

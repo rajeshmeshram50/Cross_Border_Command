@@ -20,7 +20,23 @@ export default function Sidebar({ current, onNavigate, collapsed }: Props) {
   const { user, logout } = useAuth();
   if (!user) return null;
 
-  const items = MENU_ITEMS.filter(m => m.roles.includes(user.user_type));
+  const isSuperAdmin = user.user_type === 'super_admin';
+  const perms = user.permissions || {};
+  const defaultSlugs = ['dashboard', 'profile'];
+
+  const items = MENU_ITEMS.filter(m => {
+    if (!m.roles.includes(user.user_type)) return false;
+    if (m.section) return true; // section headers filtered later
+    if (isSuperAdmin) return true;
+    if (defaultSlugs.includes(m.id)) return true;
+    // Check permission
+    return !!perms[m.id]?.can_view;
+  }).filter((m, i, arr) => {
+    // Remove section headers with no items after them
+    if (!m.section) return true;
+    const next = arr[i + 1];
+    return next && !next.section;
+  });
 
   return (
     <aside className={`${collapsed ? 'w-16' : 'w-[230px]'} bg-sidebar flex flex-col flex-shrink-0 transition-all duration-300 z-50 h-full overflow-hidden`}>

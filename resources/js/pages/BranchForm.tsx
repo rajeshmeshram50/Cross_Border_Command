@@ -3,9 +3,10 @@ import { Card, CardHeader, CardBody } from '../components/ui/Card';
 import Input, { Select, Textarea } from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import api from '../api';
+import { useToast } from '../contexts/ToastContext';
 import {
   ArrowLeft, Save, RotateCcw, GitBranch, MapPin, FileText,
-  Building, Users, Star, Loader2, CheckCircle, AlertCircle, Lock, User
+  Building, Users, Star, Loader2, AlertCircle, Lock, User
 } from 'lucide-react';
 
 interface Props {
@@ -28,10 +29,10 @@ const empty = {
 export default function BranchForm({ onBack, editId }: Props) {
   const isEdit = !!editId;
   const [form, setForm] = useState(empty);
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
-  const [success, setSuccess] = useState('');
 
   const set = (key: string, val: any) => setForm(f => ({ ...f, [key]: val }));
 
@@ -59,11 +60,9 @@ export default function BranchForm({ onBack, editId }: Props) {
 
   const handleSubmit = async () => {
     setErrors({});
-    setSuccess('');
     setSaving(true);
     try {
       const payload: Record<string, any> = { ...form };
-      // Remove confirmation field
       delete payload.user_password_confirmation;
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
       payload.name = form.name;
@@ -78,17 +77,19 @@ export default function BranchForm({ onBack, editId }: Props) {
 
       if (isEdit) {
         await api.put(`/branches/${editId}`, payload);
-        setSuccess('Branch updated successfully!');
+        toast.success('Branch Updated', 'Branch details have been updated successfully');
       } else {
         await api.post('/branches', payload);
-        setSuccess('Branch created successfully!');
+        toast.success('Branch Created', 'New branch has been created with login credentials');
         setTimeout(() => onBack(), 1500);
       }
     } catch (err: any) {
       if (err.response?.status === 422) {
         setErrors(err.response.data.errors || {});
+        toast.error('Validation Error', 'Please fix the highlighted fields');
       } else {
         setErrors({ general: [err.response?.data?.message || 'Something went wrong'] });
+        toast.error('Error', err.response?.data?.message || 'Something went wrong');
       }
     } finally {
       setSaving(false);
@@ -125,12 +126,6 @@ export default function BranchForm({ onBack, editId }: Props) {
         <Button variant="outline" size="sm" onClick={onBack}><ArrowLeft size={13} /> Back to Branches</Button>
       </div>
 
-      {/* Banners */}
-      {success && (
-        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[12px] text-emerald-700">
-          <CheckCircle size={14} /> {success}
-        </div>
-      )}
       {errors.general && (
         <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-[12px] text-red-600">
           <AlertCircle size={14} /> {errors.general[0]}

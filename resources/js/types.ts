@@ -1,5 +1,15 @@
 export type UserRole = 'super_admin' | 'client_admin' | 'branch_user';
 
+export interface ModulePermission {
+  can_view: boolean;
+  can_add: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+  can_export: boolean;
+  can_import: boolean;
+  can_approve: boolean;
+}
+
 export interface AuthUser {
   id: number;
   name: string;
@@ -14,6 +24,7 @@ export interface AuthUser {
   designation?: string;
   phone?: string;
   avatar?: string;
+  permissions: Record<string, ModulePermission>;
 }
 
 export interface MenuItem {

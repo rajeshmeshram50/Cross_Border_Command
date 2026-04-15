@@ -5,6 +5,7 @@ import Avatar from '../components/ui/Avatar';
 import { Td } from '../components/ui/Table';
 import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, GitBranch, Settings, IndianRupee, Building2, Eye, Loader2 } from 'lucide-react';
 import api from '../api';
+import { useToast } from '../contexts/ToastContext';
 import type { Client, PaginatedResponse } from '../types';
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function Clients({ onNavigate }: Props) {
+  const toast = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -50,9 +52,10 @@ export default function Clients({ onNavigate }: Props) {
     setDeleting(client.id);
     try {
       await api.delete(`/clients/${client.id}`);
+      toast.success('Client Deleted', `"${client.org_name}" has been deleted successfully`);
       fetchClients();
     } catch {
-      alert('Failed to delete client');
+      toast.error('Delete Failed', 'Failed to delete client');
     } finally {
       setDeleting(null);
     }

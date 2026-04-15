@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
+import { ToastProvider } from '../contexts/ToastContext';
 import { LayoutProvider } from '../contexts/LayoutContext';
 import AppLayout from '../layouts/AppLayout';
 import Login from '../pages/Login';
@@ -86,9 +87,11 @@ function Router() {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <Router />
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <Router />
+        </AuthProvider>
+      </ToastProvider>
     </ThemeProvider>
   );
 }

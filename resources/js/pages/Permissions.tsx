@@ -1,123 +1,209 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Button from '../components/ui/Button';
 import { Select } from '../components/ui/Input';
-import { ShieldCheck, Check, ChevronDown, ChevronRight, Eye, Plus, Pencil, Trash2, CheckSquare, XSquare } from 'lucide-react';
+import api from '../api';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import {
+  ShieldCheck, Check, Eye, Plus, Pencil, Trash2,
+  CheckSquare, XSquare, Loader2, AlertCircle, Download, Upload, Stamp
+} from 'lucide-react';
 
-/* ── Module Tree Data ── */
-interface Module {
-  id: string;
-  label: string;
-  children: Module[];
-}
+interface Module { id: number; name: string; slug: string; icon: string; is_default: boolean; }
+interface ManagedUser { id: number; name: string; email: string; user_type: string; client_id?: number; branch_id?: number; client?: { id: number; org_name: string }; branch?: { id: number; name: string }; status: string; }
+type PermKey = 'can_view' | 'can_add' | 'can_edit' | 'can_delete' | 'can_export' | 'can_import' | 'can_approve';
 
-const MODULES: Module[] = [
-  { id: 'dashboard', label: 'Dashboard / Analytics', children: [] },
-  { id: 'sales', label: 'Sales Matrix', children: [
-    { id: 'sales_cust', label: 'Customer Master', children: [] },
-    { id: 'sales_crm', label: 'Sales CRM', children: [] },
-    { id: 'sales_analytics', label: 'Sales Analytics', children: [] },
-    { id: 'sales_lead', label: 'Lead Worksheet', children: [] },
-  ]},
-  { id: 'p2p', label: 'Procure to Pay (P2P)', children: [
-    { id: 'p2p_product', label: 'Product Master', children: [] },
-    { id: 'p2p_vendor', label: 'Vendor Master', children: [] },
-    { id: 'p2p_po', label: 'Purchase Order (PO)', children: [] },
-    { id: 'p2p_vti', label: 'Vendor Tax Invoice (VTI)', children: [] },
-  ]},
-  { id: 'clm', label: 'Contract Lifecycle (CLM)', children: [] },
-  { id: 'gts', label: 'GTS (E-Docs)', children: [
-    { id: 'gts_remit', label: 'Remittance Vault', children: [] },
-    { id: 'gts_export', label: 'Export Paper', children: [] },
-    { id: 'gts_ocr', label: 'OCR', children: [] },
-  ]},
-  { id: 'ims', label: 'Inventory (IMS)', children: [
-    { id: 'ims_grn', label: 'GRN', children: [] },
-    { id: 'ims_qa', label: 'QA', children: [] },
-    { id: 'ims_out', label: 'Outward', children: [] },
-    { id: 'ims_psd', label: 'PSD', children: [] },
-    { id: 'ims_ebrc', label: 'e-BRC', children: [] },
-  ]},
-  { id: 'hrms', label: 'HRMS', children: [
-    { id: 'hrms_emp', label: 'Employees', children: [] },
-    { id: 'hrms_payroll', label: 'Payroll', children: [] },
-    { id: 'hrms_leave', label: 'Leave', children: [] },
-    { id: 'hrms_perf', label: 'Performance', children: [] },
-    { id: 'hrms_recruit', label: 'Recruitment', children: [] },
-  ]},
-  { id: 'pwd_mgr', label: 'Password Manager', children: [] },
-  { id: 'master', label: 'Master', children: [] },
-  { id: 'billing', label: 'Billing', children: [] },
-  { id: 'settings_mod', label: 'Settings', children: [] },
+const PERMS: { key: PermKey; label: string; icon: typeof Eye }[] = [
+  { key: 'can_view', label: 'View', icon: Eye },
+  { key: 'can_add', label: 'Add', icon: Plus },
+  { key: 'can_edit', label: 'Edit', icon: Pencil },
+  { key: 'can_delete', label: 'Delete', icon: Trash2 },
+  { key: 'can_export', label: 'Export', icon: Download },
+  { key: 'can_import', label: 'Import', icon: Upload },
+  { key: 'can_approve', label: 'Approve', icon: Stamp },
 ];
 
-const PERMS = ['View', 'Add', 'Edit', 'Delete'] as const;
-const PERM_ICONS = { View: Eye, Add: Plus, Edit: Pencil, Delete: Trash2 };
+const emptyPerms = (): Record<PermKey, boolean> => ({
+  can_view: false, can_add: false, can_edit: false, can_delete: false,
+  can_export: false, can_import: false, can_approve: false,
+});
 
 export default function Permissions() {
-  const [matrix, setMatrix] = useState<Record<string, Record<string, boolean>>>({});
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {};
-    MODULES.forEach(m => { if (m.children.length) init[m.id] = true; });
-    return init;
-  });
+  const { user: authUser } = useAuth();
+  const toast = useToast();
+  const [modules, setModules] = useState<Module[]>([]);
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [matrix, setMatrix] = useState<Record<number, Record<PermKey, boolean>>>({});
+  const [myPerms, setMyPerms] = useState<Record<string, Record<PermKey, boolean>> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadingPerms, setLoadingPerms] = useState(false);
 
-  const toggle = (modId: string, perm: string) => {
+  const isSuperAdmin = authUser?.user_type === 'super_admin';
+
+  // Load modules and users on mount
+  useEffect(() => {
+    Promise.all([
+      api.get('/modules'),
+      api.get('/permissions/users'),
+    ]).then(([modRes, usersRes]) => {
+      let mods: Module[] = modRes.data;
+      if (!isSuperAdmin) {
+        mods = mods.filter(m => !['clients', 'plans', 'payments', 'settings'].includes(m.slug));
+      }
+      setModules(mods);
+      setUsers(usersRes.data);
+    }).finally(() => setLoading(false));
+
+    // Client admin: load own permissions for enforcement
+    if (!isSuperAdmin && authUser) {
+      api.get(`/permissions/user/${authUser.id}`).then(res => {
+        const p: Record<string, Record<PermKey, boolean>> = {};
+        res.data.permissions.forEach((perm: any) => {
+          if (perm.module) {
+            p[perm.module.slug] = {
+              can_view: perm.can_view, can_add: perm.can_add, can_edit: perm.can_edit,
+              can_delete: perm.can_delete, can_export: perm.can_export,
+              can_import: perm.can_import, can_approve: perm.can_approve,
+            };
+          }
+        });
+        setMyPerms(p);
+      });
+    }
+  }, []);
+
+  // Load permissions when user selected — fetch fresh from API every time
+  const loadUserPermissions = (userId: string) => {
+    if (!userId || modules.length === 0) {
+      setMatrix({});
+      return;
+    }
+
+    setLoadingPerms(true);
+
+    // Initialize all modules to empty first
+    const freshMatrix: Record<number, Record<PermKey, boolean>> = {};
+    modules.forEach(mod => { freshMatrix[mod.id] = emptyPerms(); });
+
+    api.get(`/permissions/user/${userId}`).then(res => {
+      // Overlay saved permissions on top
+      (res.data.permissions || []).forEach((p: any) => {
+        if (freshMatrix[p.module_id]) {
+          freshMatrix[p.module_id] = {
+            can_view: !!p.can_view,
+            can_add: !!p.can_add,
+            can_edit: !!p.can_edit,
+            can_delete: !!p.can_delete,
+            can_export: !!p.can_export,
+            can_import: !!p.can_import,
+            can_approve: !!p.can_approve,
+          };
+        }
+      });
+      setMatrix({ ...freshMatrix });
+    }).catch(() => {
+      setMatrix({ ...freshMatrix });
+    }).finally(() => setLoadingPerms(false));
+  };
+
+  // When user or modules change, reload permissions
+  useEffect(() => {
+    if (selectedUserId && modules.length > 0) {
+      loadUserPermissions(selectedUserId);
+    }
+  }, [selectedUserId, modules.length]);
+
+  const toggle = (modId: number, key: PermKey) => {
+    if (!isSuperAdmin && myPerms) {
+      const mod = modules.find(m => m.id === modId);
+      if (mod && myPerms[mod.slug] && !myPerms[mod.slug][key]) {
+        toast.warning('Cannot Grant', `You don't have "${key.replace('can_', '')}" permission for this module`);
+        return;
+      }
+    }
     setMatrix(prev => ({
       ...prev,
-      [modId]: { ...(prev[modId] || {}), [perm]: !(prev[modId]?.[perm]) },
+      [modId]: { ...(prev[modId] || emptyPerms()), [key]: !(prev[modId]?.[key]) },
     }));
   };
 
-  const toggleExpand = (id: string) => {
-    setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  // Toggle entire column
-  const toggleColumn = (perm: string) => {
-    const allIds = getAllIds();
-    const allOn = allIds.every(id => matrix[id]?.[perm]);
+  const toggleColumn = (key: PermKey) => {
+    const allOn = modules.every(m => matrix[m.id]?.[key]);
     const next = { ...matrix };
-    allIds.forEach(id => { next[id] = { ...(next[id] || {}), [perm]: !allOn }; });
-    setMatrix(next);
-  };
-
-  // Toggle entire row (all 4 perms for a module + its children)
-  const toggleRow = (mod: Module, val: boolean) => {
-    const next = { ...matrix };
-    const setAll = (m: Module) => {
-      next[m.id] = {};
-      PERMS.forEach(p => { next[m.id][p] = val; });
-      m.children.forEach(setAll);
-    };
-    setAll(mod);
-    setMatrix(next);
-  };
-
-  // Select All / Deselect All
-  const selectAll = (val: boolean) => {
-    const next: Record<string, Record<string, boolean>> = {};
-    getAllIds().forEach(id => {
-      next[id] = {};
-      PERMS.forEach(p => { next[id][p] = val; });
+    modules.forEach(m => {
+      if (!isSuperAdmin && myPerms) {
+        const mod = modules.find(mm => mm.id === m.id);
+        if (mod && myPerms[mod.slug] && !myPerms[mod.slug][key]) return;
+      }
+      next[m.id] = { ...(next[m.id] || emptyPerms()), [key]: !allOn };
     });
     setMatrix(next);
   };
 
-  function getAllIds(): string[] {
-    const ids: string[] = [];
-    const collect = (m: Module) => { ids.push(m.id); m.children.forEach(collect); };
-    MODULES.forEach(collect);
-    return ids;
-  }
+  const selectAll = (val: boolean) => {
+    const next: Record<number, Record<PermKey, boolean>> = {};
+    modules.forEach(m => {
+      next[m.id] = {} as Record<PermKey, boolean>;
+      PERMS.forEach(p => {
+        if (!val) { next[m.id][p.key] = false; return; }
+        if (!isSuperAdmin && myPerms) {
+          const mod = modules.find(mm => mm.id === m.id);
+          next[m.id][p.key] = mod && myPerms[mod.slug] ? myPerms[mod.slug][p.key] : false;
+        } else {
+          next[m.id][p.key] = true;
+        }
+      });
+    });
+    setMatrix(next);
+  };
 
-  // Count checked
-  const allIds = getAllIds();
-  const totalChecks = allIds.reduce((s, id) => s + PERMS.filter(p => matrix[id]?.[p]).length, 0);
-  const maxChecks = allIds.length * PERMS.length;
+  const handleSave = async () => {
+    if (!selectedUserId) { toast.warning('Select User', 'Please select a user first'); return; }
+    setSaving(true);
+    try {
+      const permissions = modules.map(m => {
+        const p = matrix[m.id] || emptyPerms();
+        return {
+          module_id: m.id,
+          can_view: !!p.can_view,
+          can_add: !!p.can_add,
+          can_edit: !!p.can_edit,
+          can_delete: !!p.can_delete,
+          can_export: !!p.can_export,
+          can_import: !!p.can_import,
+          can_approve: !!p.can_approve,
+        };
+      });
+      console.log('Saving permissions:', JSON.stringify(permissions));
+      const res = await api.post(`/permissions/user/${selectedUserId}`, { permissions });
+      toast.success('Permissions Saved', `${res.data.saved_count} module permissions saved successfully`);
+      // Reload to confirm saved correctly
+      loadUserPermissions(selectedUserId);
+    } catch (err: any) {
+      toast.error('Save Failed', err.response?.data?.message || 'Failed to save permissions');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Count
+  const totalChecks = Object.values(matrix).reduce((s, m) => s + PERMS.filter(p => m[p.key]).length, 0);
+  const maxChecks = modules.length * PERMS.length;
+  const selectedUser = users.find(u => u.id === Number(selectedUserId));
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-muted text-[13px]">
+        <Loader2 size={20} className="animate-spin mr-2" /> Loading...
+      </div>
+    );
+  }
 
   return (
     <div>
-      {/* ═══ Header ═══ */}
+      {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-violet-400 flex items-center justify-center shadow-lg shadow-primary/20">
@@ -125,203 +211,174 @@ export default function Permissions() {
           </div>
           <div>
             <h1 className="text-[18px] font-extrabold text-text tracking-tight">Permission Management</h1>
-            <p className="text-[12px] text-muted mt-0.5">Configure module-level CRUD permissions per client</p>
+            <p className="text-[12px] text-muted mt-0.5">
+              {isSuperAdmin
+                ? 'Assign module permissions to client admins & branch users'
+                : 'Assign module permissions to branch users'}
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Select>
-            <option value="">Select Client...</option>
-            <option>Rajesh Meshram Enterprises</option>
-            <option>Hockey Maharashtra</option>
-            <option>Curious Learner</option>
-            <option>Inorbvict Agrotech</option>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
+            <option value="">
+              {isSuperAdmin ? 'Select User...' : 'Select Branch User...'}
+            </option>
+            {users.map(u => (
+              <option key={u.id} value={u.id}>
+                {u.name} — {u.email}
+                {u.client ? ` (${u.client.org_name})` : ''}
+                {u.branch ? ` · ${u.branch.name}` : ''}
+                {` [${u.user_type.replace('_', ' ')}]`}
+              </option>
+            ))}
           </Select>
-          <Select>
-            <option value="">Select Role...</option>
-            <option>Client Admin</option>
-            <option>Branch Manager</option>
-            <option>Staff</option>
-            <option>Viewer</option>
-          </Select>
-          <Button><Check size={13} /> Save</Button>
+          <Button onClick={handleSave} disabled={saving || !selectedUserId}>
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
         </div>
       </div>
 
-      {/* ═══ Quick Actions Bar ═══ */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap px-1">
-        <span className="text-[10.5px] font-bold text-muted uppercase tracking-wider">Quick:</span>
-        <Button variant="outline" size="sm" onClick={() => selectAll(true)}><CheckSquare size={12} /> Select All</Button>
-        <Button variant="outline" size="sm" onClick={() => selectAll(false)}><XSquare size={12} /> Deselect All</Button>
-        <div className="w-px h-5 bg-border mx-1" />
-        {PERMS.map(p => {
-          const Icon = PERM_ICONS[p];
-          return (
-            <button key={p} onClick={() => toggleColumn(p)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-border bg-surface text-secondary hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all cursor-pointer">
-              <Icon size={11} /> {p}
-            </button>
-          );
-        })}
-        <span className="text-[10.5px] text-muted ml-auto">{totalChecks} / {maxChecks} permissions enabled</span>
-      </div>
-
-      {/* ═══ Permission Matrix Table ═══ */}
-      <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: 640 }}>
-            {/* Header */}
-            <thead>
-              <tr className="bg-sidebar">
-                <th className="text-left px-4 py-3 text-[9.5px] font-bold tracking-wider uppercase text-white/55" style={{ width: '45%' }}>
-                  Module / Sub-module
-                </th>
-                {PERMS.map(p => {
-                  const Icon = PERM_ICONS[p];
-                  return (
-                    <th key={p} className="text-center px-2 py-3" style={{ width: '13.75%' }}>
-                      <div className="flex flex-col items-center gap-1">
-                        <Icon size={13} className="text-white/50" />
-                        <span className="text-[9.5px] font-bold tracking-wider uppercase text-white/55">{p}</span>
-                      </div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-
-            {/* Body */}
-            <tbody>
-              {MODULES.map(mod => (
-                <ModuleRow
-                  key={mod.id}
-                  mod={mod}
-                  depth={0}
-                  matrix={matrix}
-                  expanded={expanded}
-                  onTogglePerm={toggle}
-                  onToggleExpand={toggleExpand}
-                  onToggleRow={toggleRow}
-                />
-              ))}
-            </tbody>
-          </table>
+      {/* No users message */}
+      {users.length === 0 && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-[12px] text-amber-700 mb-4">
+          <AlertCircle size={14} />
+          {isSuperAdmin
+            ? 'No client admins found. Create a client first to assign permissions.'
+            : 'No branch users found. Create a branch first to assign permissions.'}
         </div>
+      )}
 
-        {/* Footer */}
-        <div className="px-4 py-3 border-t border-border/50 bg-surface-2 flex items-center justify-between">
-          <span className="text-[11.5px] text-muted">
-            {totalChecks > 0
-              ? <><span className="font-bold text-primary">{totalChecks}</span> permissions enabled across {allIds.length} modules</>
-              : 'No permissions configured yet — select a client and assign access'
-            }
-          </span>
-          <Button><Check size={13} /> Save Permissions</Button>
+      {/* Info banner for client admin */}
+      {!isSuperAdmin && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/5 border border-primary/20 text-[12px] text-primary mb-4">
+          <ShieldCheck size={14} />
+          You can only grant permissions that you have. Disabled checkboxes indicate permissions you don't have.
         </div>
-      </div>
-    </div>
-  );
-}
+      )}
 
-/* ── Module Row Component (recursive for children) ── */
-function ModuleRow({ mod, depth, matrix, expanded, onTogglePerm, onToggleExpand, onToggleRow }: {
-  mod: Module;
-  depth: number;
-  matrix: Record<string, Record<string, boolean>>;
-  expanded: Record<string, boolean>;
-  onTogglePerm: (id: string, perm: string) => void;
-  onToggleExpand: (id: string) => void;
-  onToggleRow: (mod: Module, val: boolean) => void;
-}) {
-  const hasChildren = mod.children.length > 0;
-  const isExpanded = expanded[mod.id] ?? false;
-  const isParent = depth === 0;
+      {/* Selected user info */}
+      {selectedUser && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sky-500/5 border border-sky-500/20 text-[12px] text-sky-700 mb-4">
+          <Eye size={14} />
+          Editing permissions for <strong className="mx-1">{selectedUser.name}</strong>
+          ({selectedUser.user_type.replace('_', ' ')})
+          {selectedUser.client && <> · {selectedUser.client.org_name}</>}
+          {selectedUser.branch && <> · {selectedUser.branch.name}</>}
+        </div>
+      )}
 
-  // Check if all perms are on for this row
-  const allOn = PERMS.every(p => matrix[mod.id]?.[p]);
+      {selectedUserId && (
+        <>
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 mb-4 flex-wrap px-1">
+            <span className="text-[10.5px] font-bold text-muted uppercase tracking-wider">Quick:</span>
+            <Button variant="outline" size="sm" onClick={() => selectAll(true)}><CheckSquare size={12} /> Select All</Button>
+            <Button variant="outline" size="sm" onClick={() => selectAll(false)}><XSquare size={12} /> Deselect All</Button>
+            <div className="w-px h-5 bg-border mx-1" />
+            {PERMS.map(p => (
+              <button key={p.key} onClick={() => toggleColumn(p.key)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-border bg-surface text-secondary hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all cursor-pointer">
+                <p.icon size={11} /> {p.label}
+              </button>
+            ))}
+            <span className="text-[10.5px] text-muted ml-auto">{totalChecks} / {maxChecks} enabled</span>
+          </div>
 
-  return (
-    <>
-      {/* This module's row */}
-      <tr className={`border-b border-border/30 transition-colors hover:bg-primary/[.03] ${isParent ? 'bg-surface-2/50' : ''}`}>
-        {/* Module Name Cell */}
-        <td className="px-4 py-0">
-          <div className="flex items-center h-11" style={{ paddingLeft: depth * 32 }}>
-            {/* Tree connector for children */}
-            {depth > 0 && (
-              <div className="flex items-center mr-2.5 flex-shrink-0">
-                <span className="w-4 h-px bg-border" />
+          {/* Matrix */}
+          <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
+            {loadingPerms ? (
+              <div className="flex items-center justify-center py-12 text-muted text-[12px]">
+                <Loader2 size={18} className="animate-spin mr-2" /> Loading permissions...
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full" style={{ minWidth: 800 }}>
+                  <thead>
+                    <tr className="bg-sidebar">
+                      <th className="text-left px-4 py-3 text-[9.5px] font-bold tracking-wider uppercase text-white/55" style={{ width: '30%' }}>
+                        Module
+                      </th>
+                      {PERMS.map(p => (
+                        <th key={p.key} className="text-center px-2 py-3" style={{ width: `${70 / PERMS.length}%` }}>
+                          <div className="flex flex-col items-center gap-1">
+                            <p.icon size={13} className="text-white/50" />
+                            <span className="text-[9.5px] font-bold tracking-wider uppercase text-white/55">{p.label}</span>
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modules.map(mod => {
+                      const rowPerms = matrix[mod.id] || emptyPerms();
+                      const allOn = PERMS.every(p => rowPerms[p.key]);
+                      return (
+                        <tr key={mod.id} className="border-b border-border/30 hover:bg-primary/[.03] transition-colors group">
+                          <td className="px-4 py-0">
+                            <div className="flex items-center h-11 gap-2.5">
+                              <span className="text-[13px] font-bold text-text">{mod.name}</span>
+                              {mod.is_default && (
+                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600 border border-emerald-200">DEFAULT</span>
+                              )}
+                              <button
+                                onClick={() => {
+                                  const next = { ...matrix };
+                                  next[mod.id] = {} as Record<PermKey, boolean>;
+                                  PERMS.forEach(p => {
+                                    if (!isSuperAdmin && myPerms && myPerms[mod.slug] && !myPerms[mod.slug][p.key]) {
+                                      next[mod.id][p.key] = false;
+                                    } else {
+                                      next[mod.id][p.key] = !allOn;
+                                    }
+                                  });
+                                  setMatrix(next);
+                                }}
+                                className="ml-auto text-[10px] font-semibold text-muted hover:text-primary transition-colors cursor-pointer opacity-0 group-hover:opacity-100">
+                                {allOn ? 'deselect' : 'select all'}
+                              </button>
+                            </div>
+                          </td>
+                          {PERMS.map(p => {
+                            const disabled = !isSuperAdmin && myPerms && myPerms[mod.slug] !== undefined && !myPerms[mod.slug][p.key];
+                            return (
+                              <td key={p.key} className="text-center px-2 py-0">
+                                <div className="flex items-center justify-center h-11">
+                                  <input
+                                    type="checkbox"
+                                    checked={!!rowPerms[p.key]}
+                                    onChange={() => toggle(mod.id, p.key)}
+                                    disabled={!!disabled}
+                                    className={`w-4 h-4 rounded border-[1.5px] border-border accent-primary cursor-pointer transition-all hover:border-primary/50 ${disabled ? 'opacity-30 cursor-not-allowed' : ''}`}
+                                  />
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
 
-            {/* Expand/Collapse button */}
-            {hasChildren ? (
-              <button
-                onClick={() => onToggleExpand(mod.id)}
-                className="w-6 h-6 rounded-md border border-border bg-surface flex items-center justify-center text-muted hover:text-primary hover:border-primary/40 transition-all mr-2.5 cursor-pointer flex-shrink-0"
-              >
-                {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-              </button>
-            ) : (
-              <span className={`${depth > 0 ? '' : 'w-6 mr-2.5'} flex-shrink-0`} />
-            )}
-
-            {/* Label */}
-            <span
-              className={`${isParent ? 'text-[13px] font-bold text-text' : 'text-[12.5px] text-secondary'} truncate`}
-              onClick={() => hasChildren && onToggleExpand(mod.id)}
-              style={{ cursor: hasChildren ? 'pointer' : 'default' }}
-            >
-              {mod.label}
-            </span>
-
-            {/* Child count badge */}
-            {hasChildren && (
-              <span className="ml-2 text-[10px] font-semibold text-muted bg-bg border border-border rounded-full px-1.5 py-px flex-shrink-0">
-                {mod.children.length}
+            {/* Footer */}
+            <div className="px-4 py-3 border-t border-border/50 bg-surface-2 flex items-center justify-between">
+              <span className="text-[11.5px] text-muted">
+                {selectedUser ? (
+                  <>Editing: <strong className="text-text">{selectedUser.name}</strong> ({selectedUser.user_type.replace('_', ' ')})</>
+                ) : 'Select a user to configure permissions'}
+                {totalChecks > 0 && <> · <span className="font-bold text-primary">{totalChecks}</span> permissions enabled</>}
               </span>
-            )}
-
-            {/* Row toggle (select all for this row) */}
-            {isParent && (
-              <button
-                onClick={() => onToggleRow(mod, !allOn)}
-                title={allOn ? 'Deselect row' : 'Select row'}
-                className="ml-auto text-[10px] font-semibold text-muted hover:text-primary transition-colors cursor-pointer flex-shrink-0 opacity-0 group-hover:opacity-100"
-              >
-                {allOn ? '✕' : '✓ all'}
-              </button>
-            )}
-          </div>
-        </td>
-
-        {/* Permission Checkboxes */}
-        {PERMS.map(p => (
-          <td key={p} className="text-center px-2 py-0">
-            <div className="flex items-center justify-center h-11">
-              <input
-                type="checkbox"
-                checked={!!matrix[mod.id]?.[p]}
-                onChange={() => onTogglePerm(mod.id, p)}
-                className="w-4 h-4 rounded border-[1.5px] border-border accent-primary cursor-pointer transition-all hover:border-primary/50"
-              />
+              <Button onClick={handleSave} disabled={saving || !selectedUserId}>
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                Save Permissions
+              </Button>
             </div>
-          </td>
-        ))}
-      </tr>
-
-      {/* Children rows */}
-      {hasChildren && isExpanded && mod.children.map(child => (
-        <ModuleRow
-          key={child.id}
-          mod={child}
-          depth={depth + 1}
-          matrix={matrix}
-          expanded={expanded}
-          onTogglePerm={onTogglePerm}
-          onToggleExpand={onToggleExpand}
-          onToggleRow={onToggleRow}
-        />
-      ))}
-    </>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

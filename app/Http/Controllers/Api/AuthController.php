@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Permission;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -31,7 +32,6 @@ class AuthController extends Controller
             ]);
         }
 
-        // Update login tracking
         $user->update([
             'last_login_at' => now(),
             'last_login_ip' => $request->ip(),
@@ -39,40 +39,57 @@ class AuthController extends Controller
             'login_source' => 'web',
         ]);
 
-        // Delete old tokens & create new
         $user->tokens()->delete();
         $token = $user->createToken('cbc-token')->plainTextToken;
 
-        $nameParts = explode(' ', trim($user->name));
-        $initials = strtoupper(substr($nameParts[0], 0, 1) . substr(end($nameParts), 0, 1));
-
         return response()->json([
             'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'user_type' => $user->user_type,
-                'initials' => $initials,
-                'client_id' => $user->client_id,
-                'branch_id' => $user->branch_id,
-                'client_name' => $user->client?->org_name,
-                'branch_name' => $user->branch?->name,
-                'status' => $user->status,
-                'designation' => $user->designation,
-                'phone' => $user->phone,
-                'avatar' => $user->avatar,
-            ],
+            'user' => $this->formatUser($user),
         ]);
     }
 
     public function me(Request $request)
     {
         $user = $request->user()->load(['client', 'branch']);
+
+        return response()->json($this->formatUser($user));
+    }
+
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json(['message' => 'Logged out']);
+    }
+
+    private function formatUser(User $user): array
+    {
         $nameParts = explode(' ', trim($user->name));
         $initials = strtoupper(substr($nameParts[0], 0, 1) . substr(end($nameParts), 0, 1));
 
-        return response()->json([
+        // Get permissions with module slugs
+        $permissions = [];
+        if (!$user->isSuperAdmin()) {
+            $perms = Permission::where('user_id', $user->id)
+                ->with('module:id,slug')
+                ->get();
+
+            foreach ($perms as $p) {
+                if ($p->module) {
+                    $permissions[$p->module->slug] = [
+                        'can_view' => $p->can_view,
+                        'can_add' => $p->can_add,
+                        'can_edit' => $p->can_edit,
+                        'can_delete' => $p->can_delete,
+                        'can_export' => $p->can_export,
+                        'can_import' => $p->can_import,
+                        'can_approve' => $p->can_approve,
+                    ];
+                }
+            }
+        }
+
+        return [
             'id' => $user->id,
             'name' => $user->name,
             'email' => $user->email,
@@ -86,13 +103,7 @@ class AuthController extends Controller
             'designation' => $user->designation,
             'phone' => $user->phone,
             'avatar' => $user->avatar,
-        ]);
-    }
-
-    public function logout(Request $request)
-    {
-        $request->user()->currentAccessToken()->delete();
-
-        return response()->json(['message' => 'Logged out']);
+            'permissions' => $permissions,
+        ];
     }
 }

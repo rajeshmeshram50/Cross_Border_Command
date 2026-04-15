@@ -6,7 +6,6 @@ export const MENU_ITEMS: MenuItem[] = [
 
   { id: '', section: 'MANAGEMENT', label: '', icon: '', roles: ['super_admin'] },
   { id: 'clients', icon: 'Building2', label: 'Clients', roles: ['super_admin'] },
-  { id: 'client-users', icon: 'Users', label: 'Client Users', roles: ['super_admin'] },
 
   { id: '', section: 'BILLING', label: '', icon: '', roles: ['super_admin'] },
   { id: 'plans', icon: 'CreditCard', label: 'Plans', roles: ['super_admin'] },

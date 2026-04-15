@@ -4,19 +4,26 @@ import AuthLayout from '../layouts/AuthLayout';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import { LogIn, AlertCircle, Loader2 } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
 
 export default function Login() {
   const { login, loading } = useAuth();
+  const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!email || !password) { setError('Please enter email and password'); return; }
+    if (!email || !password) { setError('Please enter email and password'); toast.warning('Missing fields', 'Please enter email and password'); return; }
     setError('');
     const result = await login(email, password);
-    if (!result.success) setError(result.error || 'Login failed');
+    if (!result.success) {
+      setError(result.error || 'Login failed');
+      toast.error('Login Failed', result.error || 'Invalid credentials');
+    } else {
+      toast.success('Welcome back!', 'You have been logged in successfully');
+    }
   };
 
   return (

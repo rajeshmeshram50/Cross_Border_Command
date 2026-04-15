@@ -3,9 +3,10 @@ import { Card, CardHeader, CardBody } from '../components/ui/Card';
 import Input, { Select, Textarea, FileUpload } from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import api from '../api';
+import { useToast } from '../contexts/ToastContext';
 import {
   ArrowLeft, Save, RotateCcw, Building2, MapPin,
-  FileText, CreditCard, Palette, User, Lock, Loader2, CheckCircle, AlertCircle
+  FileText, CreditCard, Palette, User, Lock, Loader2, AlertCircle
 } from 'lucide-react';
 
 interface Props {
@@ -29,10 +30,10 @@ export default function ClientForm({ onBack, editId }: Props) {
   const isEdit = !!editId;
   const [form, setForm] = useState(empty);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
-  const [success, setSuccess] = useState('');
 
   const set = (key: string, val: string) => setForm(f => ({ ...f, [key]: val }));
 
@@ -72,13 +73,10 @@ export default function ClientForm({ onBack, editId }: Props) {
 
   const handleSubmit = async () => {
     setErrors({});
-    setSuccess('');
     setSaving(true);
     try {
       const payload: Record<string, any> = { ...form };
-      // Clean empty strings to null for optional fields
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
-      // Required fields back to string
       payload.org_name = form.org_name;
       payload.org_type = form.org_type;
       payload.email = form.email;
@@ -91,17 +89,19 @@ export default function ClientForm({ onBack, editId }: Props) {
 
       if (isEdit) {
         await api.put(`/clients/${editId}`, payload);
-        setSuccess('Client updated successfully!');
+        toast.success('Client Updated', 'Organization details have been updated successfully');
       } else {
         await api.post('/clients', payload);
-        setSuccess('Client created successfully!');
+        toast.success('Client Created', 'New organization has been registered successfully');
         setTimeout(() => onBack(), 1500);
       }
     } catch (err: any) {
       if (err.response?.status === 422) {
         setErrors(err.response.data.errors || {});
+        toast.error('Validation Error', 'Please fix the highlighted fields');
       } else {
         setErrors({ general: [err.response?.data?.message || 'Something went wrong'] });
+        toast.error('Error', err.response?.data?.message || 'Something went wrong');
       }
     } finally {
       setSaving(false);
@@ -140,12 +140,6 @@ export default function ClientForm({ onBack, editId }: Props) {
         </div>
       </div>
 
-      {/* Success / Error banners */}
-      {success && (
-        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[12px] text-emerald-700">
-          <CheckCircle size={14} /> {success}
-        </div>
-      )}
       {errors.general && (
         <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-[12px] text-red-600">
           <AlertCircle size={14} /> {errors.general[0]}

@@ -13,6 +13,9 @@ class DatabaseSeeder extends Seeder
 
     public function run(): void
     {
+        // Seed modules first
+        $this->call(ModuleSeeder::class);
+
         // Super Admin
         User::updateOrCreate(
             ['email' => 'admin@saas.com'],

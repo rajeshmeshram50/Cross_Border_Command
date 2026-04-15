@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { AuthUser } from '../types';
 import api from '../api';
 
@@ -17,6 +17,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return saved ? JSON.parse(saved) : null;
   });
   const [loading, setLoading] = useState(false);
+
+  // Auto-refresh user data (permissions) on app load if already logged in
+  useEffect(() => {
+    const token = localStorage.getItem('cbc_token');
+    if (!token || !user) return;
+
+    api.get('/me').then(res => {
+      const freshUser = res.data;
+      localStorage.setItem('cbc_user', JSON.stringify(freshUser));
+      setUser(freshUser);
+    }).catch(() => {
+      // Token invalid — force logout
+      localStorage.removeItem('cbc_token');
+      localStorage.removeItem('cbc_user');
+      setUser(null);
+    });
+  }, []); // only on mount
 
   const login = async (email: string, password: string) => {
     setLoading(true);

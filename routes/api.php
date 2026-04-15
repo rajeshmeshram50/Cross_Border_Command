@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DummyItemController;
+use App\Http\Controllers\Api\PermissionController;
 use Illuminate\Support\Facades\Route;
 
 // Public
@@ -19,6 +20,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Branches (client_admin + super_admin)
     Route::apiResource('branches', BranchController::class);
+
+    // Permissions
+    Route::get('/modules', [PermissionController::class, 'modules']);
+    Route::get('/permissions/users', [PermissionController::class, 'manageableUsers']);
+    Route::get('/permissions/user/{user}', [PermissionController::class, 'getUserPermissions']);
+    Route::post('/permissions/user/{user}', [PermissionController::class, 'savePermissions']);
 });
 
 Route::apiResource('dummy-items', DummyItemController::class);

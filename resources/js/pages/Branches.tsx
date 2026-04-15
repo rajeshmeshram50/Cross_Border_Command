@@ -5,6 +5,7 @@ import Avatar from '../components/ui/Avatar';
 import { Td } from '../components/ui/Table';
 import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, Users, Star, GitBranch, Loader2, Building, Factory, Warehouse } from 'lucide-react';
 import api from '../api';
+import { useToast } from '../contexts/ToastContext';
 import type { Branch, PaginatedResponse } from '../types';
 
 interface Props {
@@ -19,6 +20,7 @@ const typeIcons: Record<string, typeof Building> = {
 };
 
 export default function Branches({ onNavigate }: Props) {
+  const toast = useToast();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchInput, setSearchInput] = useState('');
@@ -60,9 +62,10 @@ export default function Branches({ onNavigate }: Props) {
     setDeleting(branch.id);
     try {
       await api.delete(`/branches/${branch.id}`);
+      toast.success('Branch Deleted', `"${branch.name}" has been deleted successfully`);
       fetchBranches();
     } catch (err: any) {
-      alert(err.response?.data?.message || 'Failed to delete branch');
+      toast.error('Delete Failed', err.response?.data?.message || 'Failed to delete branch');
     } finally {
       setDeleting(null);
     }
