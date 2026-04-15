@@ -25,6 +25,13 @@ export interface AuthUser {
   phone?: string;
   avatar?: string;
   permissions: Record<string, ModulePermission>;
+  plan?: {
+    has_plan: boolean;
+    expired: boolean;
+    plan_name: string | null;
+    plan_type: string | null;
+    expires_at: string | null;
+  };
 }
 
 export interface MenuItem {

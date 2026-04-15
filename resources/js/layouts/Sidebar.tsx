@@ -24,13 +24,17 @@ export default function Sidebar({ current, onNavigate, collapsed }: Props) {
 
   const isSuperAdmin = user.user_type === 'super_admin';
   const perms = user.permissions || {};
-  const defaultSlugs = ['dashboard', 'profile'];
+  const defaultSlugs = ['dashboard', 'profile', 'my-plan'];
+  const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
+  const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
 
   const items = MENU_ITEMS.filter(m => {
     if (!m.roles.includes(user.user_type)) return false;
     if (m.section) return true;
     if (isSuperAdmin) return true;
     if (defaultSlugs.includes(m.id)) return true;
+    // If plan expired/missing, only show defaults
+    if (planExpiredOrMissing) return false;
     return !!perms[m.id]?.can_view;
   }).filter((m, i, arr) => {
     if (!m.section) return true;

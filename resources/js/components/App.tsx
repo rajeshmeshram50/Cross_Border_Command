@@ -21,18 +21,42 @@ import Settings from '../pages/Settings';
 import Profile from '../pages/Profile';
 import AddPlan from '../pages/AddPlan';
 import BranchForm from '../pages/BranchForm';
+import PlanSelection from '../pages/PlanSelection';
 
 function Router() {
   const { user } = useAuth();
-  const [page, setPage] = useState('dashboard');
-  const [pageData, setPageData] = useState<any>(null);
-
   if (!user) return <Login />;
 
+  const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
+  const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
+
+  // Client without plan starts on my-plan page
+  const initialPage = (planExpiredOrMissing && user.user_type === 'client_admin') ? 'my-plan' : 'dashboard';
+  const [page, setPage] = useState(initialPage);
+  const [pageData, setPageData] = useState<any>(null);
+  const defaultPages = ['dashboard', 'my-plan', 'profile'];
+
   const navigate = (p: string, data?: any) => {
+    // If plan expired/missing, only allow default pages
+    if (planExpiredOrMissing && !defaultPages.includes(p)) {
+      setPage('my-plan');
+      setPageData(null);
+      return;
+    }
     setPage(p);
     setPageData(data || null);
   };
+
+  // Determine effective page
+  let effectivePage = page;
+  if (planExpiredOrMissing) {
+    if (user.user_type === 'branch_user') {
+      // Branch user blocked completely - show message
+      effectivePage = 'plan-blocked';
+    } else if (!defaultPages.includes(page)) {
+      effectivePage = 'my-plan';
+    }
+  }
 
   const DashboardMap: Record<string, React.ComponentType> = {
     super_admin: AdminDashboard,
@@ -41,7 +65,7 @@ function Router() {
   };
 
   const renderPage = () => {
-    switch (page) {
+    switch (effectivePage) {
       case 'dashboard':
         const Dash = DashboardMap[user.user_type] || AdminDashboard;
         return <Dash />;
@@ -61,7 +85,27 @@ function Router() {
       case 'plans':
         return <Plans onNavigate={navigate} />;
       case 'add-plan':
-        return <AddPlan onBack={() => navigate('plans')} />;
+        return <AddPlan onBack={() => navigate('plans')} editId={pageData?.editId} />;
+      case 'my-plan':
+        return <PlanSelection onSuccess={() => window.location.reload()} />;
+      case 'plan-blocked':
+        return (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center max-w-md">
+              <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+              </div>
+              <h2 className="text-[18px] font-extrabold text-text mb-2">
+                {user.plan?.expired ? 'Plan Expired' : 'No Active Plan'}
+              </h2>
+              <p className="text-[13px] text-muted mb-4">
+                Your organization's subscription has {user.plan?.expired ? 'expired' : 'not been activated yet'}.
+                Please contact your client administrator to {user.plan?.expired ? 'renew' : 'purchase'} a plan.
+              </p>
+              <p className="text-[11px] text-secondary">Client: {user.client_name}</p>
+            </div>
+          </div>
+        );
       case 'payments':
         return <Payments />;
       case 'permissions':
@@ -79,7 +123,7 @@ function Router() {
   return (
     <LayoutProvider>
       <BranchSwitcherProvider>
-        <AppLayout page={page} onNavigate={navigate}>
+        <AppLayout page={effectivePage} onNavigate={navigate}>
           {renderPage()}
         </AppLayout>
       </BranchSwitcherProvider>

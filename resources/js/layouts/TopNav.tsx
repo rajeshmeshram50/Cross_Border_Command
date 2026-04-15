@@ -31,13 +31,16 @@ export default function TopNav({ current, onNavigate }: Props) {
 
   const isSuperAdmin = user.user_type === 'super_admin';
   const perms = user.permissions || {};
-  const defaultSlugs = ['dashboard', 'profile'];
+  const defaultSlugs = ['dashboard', 'profile', 'my-plan'];
+  const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
+  const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
 
   const navItems = MENU_ITEMS.filter(m => {
     if (m.section || !m.id) return false;
     if (!m.roles.includes(user.user_type)) return false;
     if (isSuperAdmin) return true;
     if (defaultSlugs.includes(m.id)) return true;
+    if (planExpiredOrMissing) return false;
     return !!perms[m.id]?.can_view;
   });
 

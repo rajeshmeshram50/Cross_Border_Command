@@ -15,6 +15,9 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: 'branches', icon: 'GitBranch', label: 'Branches', roles: ['client_admin'] },
   { id: 'employees', icon: 'UserCheck', label: 'Employees', roles: ['client_admin', 'branch_user'] },
 
+  { id: '', section: 'BILLING', label: '', icon: '', roles: ['client_admin'] },
+  { id: 'my-plan', icon: 'CreditCard', label: 'My Plan', roles: ['client_admin'] },
+
   { id: '', section: 'ACCESS CONTROL', label: '', icon: '', roles: ['super_admin', 'client_admin'] },
   { id: 'permissions', icon: 'ShieldCheck', label: 'Permissions', roles: ['super_admin', 'client_admin'] },
 

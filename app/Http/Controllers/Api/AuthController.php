@@ -89,6 +89,20 @@ class AuthController extends Controller
             }
         }
 
+        // Plan info for client users
+        $planInfo = null;
+        if ($user->client_id) {
+            $client = $user->client;
+            $expired = $client?->plan_expires_at && $client->plan_expires_at->isPast();
+            $planInfo = [
+                'has_plan' => $client?->plan_id !== null && $client?->plan_type === 'paid',
+                'expired' => $expired,
+                'plan_name' => $client?->plan?->name,
+                'plan_type' => $client?->plan_type,
+                'expires_at' => $client?->plan_expires_at?->format('Y-m-d'),
+            ];
+        }
+
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -104,6 +118,7 @@ class AuthController extends Controller
             'phone' => $user->phone,
             'avatar' => $user->avatar,
             'permissions' => $permissions,
+            'plan' => $planInfo,
         ];
     }
 }

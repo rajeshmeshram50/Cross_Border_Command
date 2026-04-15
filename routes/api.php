@@ -4,7 +4,9 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DummyItemController;
+use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PermissionController;
+use App\Http\Controllers\Api\SubscriptionController;
 use Illuminate\Support\Facades\Route;
 
 // Public
@@ -20,6 +22,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Branches
     Route::apiResource('branches', BranchController::class);
+
+    // Plans (admin CRUD)
+    Route::apiResource('plans', PlanController::class);
+
+    // Subscription (client buy plan)
+    Route::get('/subscription/plans', [SubscriptionController::class, 'plans']);
+    Route::get('/subscription/status', [SubscriptionController::class, 'status']);
+    Route::post('/subscription/subscribe', [SubscriptionController::class, 'subscribe']);
 
     // Permissions
     Route::get('/modules', [PermissionController::class, 'modules']);
