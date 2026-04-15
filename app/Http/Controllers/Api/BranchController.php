@@ -8,6 +8,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\WelcomeCredentialsMail;
 
 class BranchController extends Controller
 {
@@ -147,6 +149,20 @@ class BranchController extends Controller
             ]);
 
             $branch->loadCount(['users', 'departments']);
+
+            // Send welcome email
+            try {
+                $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
+                Mail::to($request->user_email)->send(new WelcomeCredentialsMail(
+                    $request->user_name,
+                    $request->user_email,
+                    $request->user_password,
+                    'branch_user',
+                    $clientName,
+                ));
+            } catch (\Exception $e) {
+                // Don't fail the request if email fails
+            }
 
             return response()->json([
                 'message' => 'Branch created successfully',

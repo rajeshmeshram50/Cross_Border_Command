@@ -9,6 +9,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\WelcomeCredentialsMail;
 
 class ClientController extends Controller
 {
@@ -141,6 +143,19 @@ class ClientController extends Controller
 
             $client->load(['plan', 'createdBy']);
             $client->loadCount(['branches', 'users']);
+
+            // Send welcome email
+            try {
+                Mail::to($request->admin_email)->send(new WelcomeCredentialsMail(
+                    $request->admin_name,
+                    $request->admin_email,
+                    $request->admin_password,
+                    'client_admin',
+                    $request->org_name,
+                ));
+            } catch (\Exception $e) {
+                // Don't fail the request if email fails
+            }
 
             return response()->json([
                 'message' => 'Client created successfully',
