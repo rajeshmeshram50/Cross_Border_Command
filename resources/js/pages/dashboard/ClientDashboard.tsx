@@ -1,20 +1,26 @@
+import { useState, useEffect } from 'react';
 import StatCard from '../../components/StatCard';
-import { Card, CardHeader, CardBody } from '../../components/ui/Card';
+import { Card, CardBody } from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
 import { Table, Td } from '../../components/ui/Table';
 import { useAuth } from '../../contexts/AuthContext';
-import { Users, UserCheck, UserX, Building2, CheckCircle, AlertTriangle } from 'lucide-react';
-
-const branches = [
-  { name: 'Inorbvict Agrotech Pvt. Ltd.', isMain: true, users: 8, active: 6, status: 'active' },
-  { name: 'RM Agro East Branch', isMain: false, users: 3, active: 2, status: 'active' },
-  { name: 'RM Trading West', isMain: false, users: 2, active: 2, status: 'active' },
-];
+import { Users, Building2, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
+import api from '../../api';
+import type { Branch } from '../../types';
 
 export default function ClientDashboard() {
   const { user } = useAuth();
-  const totalUsers = branches.reduce((s, b) => s + b.users, 0);
-  const activeUsers = branches.reduce((s, b) => s + b.active, 0);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/branches', { params: { per_page: 50 } }).then(res => {
+      setBranches(res.data.data || []);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const totalUsers = branches.reduce((s, b) => s + (b.users_count ?? 0), 0);
+  const activeBranches = branches.filter(b => b.status === 'active').length;
 
   return (
     <div>
@@ -23,32 +29,41 @@ export default function ClientDashboard() {
           <h1 className="text-[17px] font-bold text-text tracking-tight">Dashboard — {user?.client_name}</h1>
           <p className="text-[11.5px] text-muted mt-0.5">Organization overview</p>
         </div>
-        <Badge variant="success" dot>Pro Plan Active</Badge>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-5">
         <StatCard icon={Users} color="blue" label="Total Users" value={totalUsers} />
-        <StatCard icon={UserCheck} color="green" label="Active Users" value={activeUsers} change={`${Math.round(activeUsers / totalUsers * 100)}% active`} up />
-        <StatCard icon={UserX} color="red" label="Inactive Users" value={totalUsers - activeUsers} />
         <StatCard icon={Building2} color="sky" label="Branches" value={branches.length} />
-        <StatCard icon={CheckCircle} color="green" label="Active Branches" value={branches.filter(b => b.status === 'active').length} up />
+        <StatCard icon={CheckCircle} color="green" label="Active Branches" value={activeBranches} up />
         <StatCard icon={AlertTriangle} color="amber" label="Pending" value={0} />
       </div>
 
-      <Table headers={['Branch', 'Users', 'Active', 'Inactive', 'Status']}>
-        {branches.map(b => (
-          <tr key={b.name} className="hover:bg-primary/5 transition-colors">
-            <Td>
-              <span className="font-semibold text-text">{b.name}</span>
-              {b.isMain && <Badge variant="warning" className="ml-2">★ Main</Badge>}
-            </Td>
-            <Td>{b.users}</Td>
-            <Td><span className="text-emerald-500 font-bold">{b.active}</span></Td>
-            <Td><span className="text-red-500 font-bold">{b.users - b.active}</span></Td>
-            <Td><Badge variant="success" dot>{b.status}</Badge></Td>
-          </tr>
-        ))}
-      </Table>
+      {loading ? (
+        <div className="flex items-center justify-center py-12 text-muted text-[12px]">
+          <Loader2 size={18} className="animate-spin mr-2" /> Loading...
+        </div>
+      ) : branches.length === 0 ? (
+        <Card>
+          <CardBody>
+            <div className="text-center py-8 text-muted text-[13px]">
+              No branches yet. Go to <strong>Branches</strong> to add your first branch.
+            </div>
+          </CardBody>
+        </Card>
+      ) : (
+        <Table headers={['Branch', 'Users', 'Status']}>
+          {branches.map(b => (
+            <tr key={b.id} className="hover:bg-primary/5 transition-colors">
+              <Td>
+                <span className="font-semibold text-text">{b.name}</span>
+                {b.is_main && <Badge variant="warning">Main</Badge>}
+              </Td>
+              <Td>{b.users_count ?? 0}</Td>
+              <Td><Badge variant={b.status === 'active' ? 'success' : 'danger'} dot>{b.status}</Badge></Td>
+            </tr>
+          ))}
+        </Table>
+      )}
     </div>
   );
 }
