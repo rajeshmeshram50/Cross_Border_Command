@@ -1,11 +1,82 @@
 @import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 @source '../**/*.blade.php';
-@source '../**/*.js';
+@source '../**/*.tsx';
+@source '../**/*.ts';
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+  --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'DM Mono', 'JetBrains Mono', monospace;
+
+  --color-primary: #5A51E8;
+  --color-primary-hover: #4840D6;
+
+  --color-bg: #F0F2F8;
+  --color-surface: #FFFFFF;
+  --color-surface-2: #F7F8FC;
+  --color-border: #E2E6F0;
+  --color-text: #0D1526;
+  --color-secondary: #5C6882;
+  --color-muted: #98A5BC;
+
+  --color-sidebar: #0C1322;
+  --color-sidebar-text: #8896B2;
 }
+
+@custom-variant dark (&:where([data-theme="dark"] *));
+
+[data-theme="dark"] {
+  --color-bg: #090E1A;
+  --color-surface: #111827;
+  --color-surface-2: #161E30;
+  --color-border: #1C2640;
+  --color-text: #E4EAF6;
+  --color-secondary: #8896B2;
+  --color-muted: #4E5D7A;
+  --color-sidebar: #070C17;
+}
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.animate-in { animation: fadeUp .3s cubic-bezier(.22,1,.36,1) both; }
+.fade-in { animation-name: fadeIn; }
+.zoom-in-95 { animation-name: scaleIn; }
+.slide-in-from-bottom-2 { animation-name: fadeUp; }
