@@ -31,8 +31,6 @@ class Module extends Model
         ];
     }
 
-    // ── Relationships ──
-
     public function parent(): BelongsTo
     {
         return $this->belongsTo(Module::class, 'parent_id');
@@ -40,7 +38,7 @@ class Module extends Model
 
     public function children(): HasMany
     {
-        return $this->hasMany(Module::class, 'parent_id');
+        return $this->hasMany(Module::class, 'parent_id')->orderBy('sort_order');
     }
 
     public function plans(): BelongsToMany
@@ -54,8 +52,6 @@ class Module extends Model
     {
         return $this->hasMany(Permission::class);
     }
-
-    // ── Helpers ──
 
     public function isParent(): bool
     {

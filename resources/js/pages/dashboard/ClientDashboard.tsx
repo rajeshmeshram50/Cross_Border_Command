@@ -6,10 +6,12 @@ import { Table, Td } from '../../components/ui/Table';
 import { useAuth } from '../../contexts/AuthContext';
 import { Users, Building2, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import api from '../../api';
+import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import type { Branch } from '../../types';
 
 export default function ClientDashboard() {
   const { user } = useAuth();
+  const { selectedBranchId } = useBranchSwitcher();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -19,8 +21,10 @@ export default function ClientDashboard() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  const totalUsers = branches.reduce((s, b) => s + (b.users_count ?? 0), 0);
-  const activeBranches = branches.filter(b => b.status === 'active').length;
+  // Filter by selected branch
+  const filtered = selectedBranchId ? branches.filter(b => b.id === selectedBranchId) : branches;
+  const totalUsers = filtered.reduce((s, b) => s + (b.users_count ?? 0), 0);
+  const activeBranches = filtered.filter(b => b.status === 'active').length;
 
   return (
     <div>
@@ -33,7 +37,7 @@ export default function ClientDashboard() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-5">
         <StatCard icon={Users} color="blue" label="Total Users" value={totalUsers} />
-        <StatCard icon={Building2} color="sky" label="Branches" value={branches.length} />
+        <StatCard icon={Building2} color="sky" label="Branches" value={filtered.length} />
         <StatCard icon={CheckCircle} color="green" label="Active Branches" value={activeBranches} up />
         <StatCard icon={AlertTriangle} color="amber" label="Pending" value={0} />
       </div>
@@ -42,7 +46,7 @@ export default function ClientDashboard() {
         <div className="flex items-center justify-center py-12 text-muted text-[12px]">
           <Loader2 size={18} className="animate-spin mr-2" /> Loading...
         </div>
-      ) : branches.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <Card>
           <CardBody>
             <div className="text-center py-8 text-muted text-[13px]">
@@ -52,7 +56,7 @@ export default function ClientDashboard() {
         </Card>
       ) : (
         <Table headers={['Branch', 'Users', 'Status']}>
-          {branches.map(b => (
+          {filtered.map(b => (
             <tr key={b.id} className="hover:bg-primary/5 transition-colors">
               <Td>
                 <span className="font-semibold text-text">{b.name}</span>

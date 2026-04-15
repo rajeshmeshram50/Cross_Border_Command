@@ -55,7 +55,7 @@ export default function Branches({ onNavigate }: Props) {
 
   const handleDelete = async (branch: Branch) => {
     if (branch.is_main) {
-      alert('Cannot delete the main branch. Set another branch as main first.');
+      toast.warning('Cannot Delete', 'Main branch cannot be deleted. Set another branch as main first.');
       return;
     }
     if (!confirm(`Delete "${branch.name}"? Users in this branch will be unassigned.`)) return;

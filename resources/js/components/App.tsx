@@ -3,6 +3,7 @@ import { ThemeProvider } from '../contexts/ThemeContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { ToastProvider } from '../contexts/ToastContext';
 import { LayoutProvider } from '../contexts/LayoutContext';
+import { BranchSwitcherProvider } from '../contexts/BranchSwitcherContext';
 import AppLayout from '../layouts/AppLayout';
 import Login from '../pages/Login';
 import AdminDashboard from '../pages/dashboard/AdminDashboard';
@@ -77,9 +78,11 @@ function Router() {
 
   return (
     <LayoutProvider>
-      <AppLayout page={page} onNavigate={navigate}>
-        {renderPage()}
-      </AppLayout>
+      <BranchSwitcherProvider>
+        <AppLayout page={page} onNavigate={navigate}>
+          {renderPage()}
+        </AppLayout>
+      </BranchSwitcherProvider>
     </LayoutProvider>
   );
 }

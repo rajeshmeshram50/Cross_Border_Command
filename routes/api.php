@@ -15,17 +15,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    // Clients (super_admin)
+    // Clients
     Route::apiResource('clients', ClientController::class);
 
-    // Branches (client_admin + super_admin)
+    // Branches
     Route::apiResource('branches', BranchController::class);
 
     // Permissions
     Route::get('/modules', [PermissionController::class, 'modules']);
     Route::get('/permissions/users', [PermissionController::class, 'manageableUsers']);
-    Route::get('/permissions/user/{user}', [PermissionController::class, 'getUserPermissions']);
-    Route::post('/permissions/user/{user}', [PermissionController::class, 'savePermissions']);
+    Route::get('/permissions/user/{userId}', [PermissionController::class, 'getUserPermissions']);
+    Route::post('/permissions/user/{userId}', [PermissionController::class, 'savePermissions']);
 });
 
 Route::apiResource('dummy-items', DummyItemController::class);

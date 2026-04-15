@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { MENU_ITEMS } from '../constants';
 import Avatar from '../components/ui/Avatar';
 import Logo from '../components/Logo';
+import BranchSwitcher from '../components/BranchSwitcher';
 import * as Icons from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -18,6 +20,7 @@ interface Props {
 
 export default function TopNav({ current, onNavigate }: Props) {
   const { user, logout } = useAuth();
+  const toast = useToast();
   const { theme, toggle } = useTheme();
   const [moreOpen, setMoreOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -76,7 +79,6 @@ export default function TopNav({ current, onNavigate }: Props) {
             >
               <Icon size={13} className={`flex-shrink-0 ${active ? 'opacity-100' : 'opacity-60'}`} />
               <span className="hidden md:inline">{m.label}</span>
-              {m.badge && <span className="bg-red-500 text-white text-[9px] font-bold px-1 py-0.5 rounded-full leading-none">{m.badge}</span>}
             </button>
           );
         })}
@@ -84,14 +86,8 @@ export default function TopNav({ current, onNavigate }: Props) {
 
       {/* Right Actions */}
       <div className="flex items-center gap-1.5 flex-shrink-0 ml-2.5">
-        {/* Branch Switch (client only) */}
-        {user.user_type === 'client_admin' && (
-          <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/12 text-[12px] font-medium text-white/80 hover:bg-white/[.06] hover:border-white/25 transition-all cursor-pointer">
-            <Icons.Building2 size={13} className="text-violet-300" />
-            <span className="hidden sm:inline">All Branches</span>
-            <Icons.ChevronDown size={10} className="opacity-60" />
-          </button>
-        )}
+        {/* Branch Switcher */}
+        <BranchSwitcher />
 
         {/* Dark Mode */}
         <button
@@ -152,7 +148,7 @@ export default function TopNav({ current, onNavigate }: Props) {
 
         {/* Logout */}
         <button
-          onClick={logout}
+          onClick={() => { toast.info('Logged Out', 'You have been signed out'); logout(); }}
           className="w-8 h-8 rounded-md border border-red-500/20 bg-red-500/[.07] flex items-center justify-center text-red-400 hover:bg-red-500/20 hover:border-red-500/40 transition-all cursor-pointer"
           title="Logout"
         >

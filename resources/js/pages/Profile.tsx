@@ -1,4 +1,5 @@
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { Card, CardHeader, CardBody } from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
@@ -8,6 +9,7 @@ import { Camera, Save, LogOut, ShieldCheck } from 'lucide-react';
 
 export default function Profile() {
   const { user, logout } = useAuth();
+  const toast = useToast();
   if (!user) return null;
 
   return (
@@ -25,7 +27,7 @@ export default function Profile() {
             <div className="text-[13px] text-secondary mt-1">{user.user_type.replace(/_/g, ' ')}</div>
             <div className="mt-4"><Badge variant="success" dot>Active</Badge></div>
             <div className="mt-5 pt-5 border-t border-border">
-              <Button variant="danger" size="sm" className="w-full justify-center" onClick={logout}>
+              <Button variant="danger" size="sm" className="w-full justify-center" onClick={() => { toast.info('Logged Out', 'You have been signed out'); logout(); }}>
                 <LogOut size={13} /> Logout
               </Button>
             </div>

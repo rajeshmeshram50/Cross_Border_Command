@@ -1,4 +1,5 @@
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { MENU_ITEMS } from '../constants';
 import Avatar from '../components/ui/Avatar';
 import Logo from '../components/Logo';
@@ -18,6 +19,7 @@ interface Props {
 
 export default function Sidebar({ current, onNavigate, collapsed }: Props) {
   const { user, logout } = useAuth();
+  const toast = useToast();
   if (!user) return null;
 
   const isSuperAdmin = user.user_type === 'super_admin';
@@ -26,13 +28,11 @@ export default function Sidebar({ current, onNavigate, collapsed }: Props) {
 
   const items = MENU_ITEMS.filter(m => {
     if (!m.roles.includes(user.user_type)) return false;
-    if (m.section) return true; // section headers filtered later
+    if (m.section) return true;
     if (isSuperAdmin) return true;
     if (defaultSlugs.includes(m.id)) return true;
-    // Check permission
     return !!perms[m.id]?.can_view;
   }).filter((m, i, arr) => {
-    // Remove section headers with no items after them
     if (!m.section) return true;
     const next = arr[i + 1];
     return next && !next.section;
@@ -40,12 +40,10 @@ export default function Sidebar({ current, onNavigate, collapsed }: Props) {
 
   return (
     <aside className={`${collapsed ? 'w-16' : 'w-[230px]'} bg-sidebar flex flex-col flex-shrink-0 transition-all duration-300 z-50 h-full overflow-hidden`}>
-      {/* Logo — compact for sidebar */}
       <div className="px-4 py-3 border-b border-white/[.06]">
         <Logo variant={collapsed ? 'sidebarCollapsed' : 'sidebar'} />
       </div>
 
-      {/* Menu */}
       <nav className="flex-1 overflow-y-auto py-2 px-1.5 space-y-0.5">
         {items.map((m, i) => {
           if (m.section) {
@@ -76,9 +74,8 @@ export default function Sidebar({ current, onNavigate, collapsed }: Props) {
           );
         })}
 
-        {/* Logout */}
         <button
-          onClick={logout}
+          onClick={() => { toast.info('Logged Out', 'You have been signed out'); logout(); }}
           className="w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12.5px] font-medium text-red-400 hover:bg-red-500/10 transition-colors mt-4 cursor-pointer"
         >
           <LogOut size={14} className="opacity-70" />
@@ -86,7 +83,6 @@ export default function Sidebar({ current, onNavigate, collapsed }: Props) {
         </button>
       </nav>
 
-      {/* User Footer */}
       <div className="p-3 border-t border-white/[.05]">
         <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/[.06] cursor-pointer transition-colors" onClick={() => onNavigate('profile')}>
           <Avatar initials={user.initials} size="sm" />

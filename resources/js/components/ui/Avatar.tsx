@@ -4,13 +4,14 @@ const colors = [
   'from-sky-500 to-blue-400',
   'from-amber-500 to-yellow-400',
   'from-rose-500 to-pink-400',
+  'from-purple-500 to-fuchsia-400',
 ];
 
 export default function Avatar({ initials, size = 'md' }: { initials: string; size?: 'sm' | 'md' | 'lg' }) {
   const idx = initials.charCodeAt(0) % colors.length;
   const s = { sm: 'w-6 h-6 text-[9px]', md: 'w-8 h-8 text-[11px]', lg: 'w-10 h-10 text-sm' };
   return (
-    <div className={`${s[size]} rounded-lg bg-gradient-to-br ${colors[idx]} flex items-center justify-center font-bold text-white flex-shrink-0 shadow-sm`}>
+    <div className={`${s[size]} rounded-lg bg-gradient-to-br ${colors[idx]} flex items-center justify-center font-bold text-white flex-shrink-0 shadow-sm transition-all duration-200 hover:shadow-md hover:scale-105`}>
       {initials}
     </div>
   );

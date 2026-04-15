@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`bg-surface border border-border rounded-xl shadow-sm overflow-hidden transition-shadow hover:shadow-md ${className}`}>{children}</div>;
+  return <div className={`bg-surface border border-border rounded-xl shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md ${className}`}>{children}</div>;
 }
 
 export function CardHeader({ children, className = '' }: { children: ReactNode; className?: string }) {

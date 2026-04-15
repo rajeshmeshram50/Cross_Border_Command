@@ -6,6 +6,7 @@ import { useLayout } from '../contexts/LayoutContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/ui/Avatar';
+import BranchSwitcher from '../components/BranchSwitcher';
 import { Moon, Sun, Bell, Search, Menu } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -132,6 +133,9 @@ function SidebarTopStrip({ page, onToggleSidebar, onNavigate }: { page: string; 
       </div>
 
       <div className="flex-1" />
+
+      {/* Branch Switcher */}
+      <BranchSwitcher />
 
       {/* Search */}
       <div className="hidden sm:flex items-center relative">
