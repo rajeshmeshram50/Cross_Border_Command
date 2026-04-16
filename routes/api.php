@@ -34,8 +34,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Payments
     Route::get('/payments/stats', [PaymentController::class, 'stats']);
-    Route::get('/payments/{payment}/invoice/download', [PaymentController::class, 'downloadInvoice']);
-    Route::get('/payments/{payment}/invoice/view', [PaymentController::class, 'viewInvoice']);
     Route::apiResource('payments', PaymentController::class);
 
     // Permissions
@@ -44,5 +42,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/permissions/user/{userId}', [PermissionController::class, 'getUserPermissions']);
     Route::post('/permissions/user/{userId}', [PermissionController::class, 'savePermissions']);
 });
+
+// Invoice routes (auth via query token, outside sanctum middleware)
+Route::get('/payments/{payment}/invoice/download', [PaymentController::class, 'downloadInvoice']);
+Route::get('/payments/{payment}/invoice/view', [PaymentController::class, 'viewInvoice']);
 
 Route::apiResource('dummy-items', DummyItemController::class);
