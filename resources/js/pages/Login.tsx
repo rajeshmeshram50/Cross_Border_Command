@@ -6,7 +6,11 @@ import Button from '../components/ui/Button';
 import { LogIn, AlertCircle, Loader2 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 
-export default function Login() {
+interface LoginProps {
+  onForgotPassword?: () => void;
+}
+
+export default function Login({ onForgotPassword }: LoginProps) {
   const { login, loading } = useAuth();
   const toast = useToast();
   const [email, setEmail] = useState('');
@@ -45,7 +49,13 @@ export default function Login() {
           <label className="flex items-center gap-2 text-[13px] text-secondary cursor-pointer">
             <input type="checkbox" defaultChecked className="w-4 h-4 accent-primary rounded" /> Remember me
           </label>
-          <a href="#" className="text-[13px] font-semibold text-primary hover:underline">Forgot password?</a>
+          <button
+            type="button"
+            onClick={onForgotPassword}
+            className="text-[13px] font-semibold text-primary hover:underline transition-all duration-200"
+          >
+            Forgot password?
+          </button>
         </div>
 
         <Button size="lg" className="w-full justify-center" type="submit" disabled={loading}>

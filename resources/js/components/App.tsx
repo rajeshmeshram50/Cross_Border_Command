@@ -6,6 +6,9 @@ import { LayoutProvider } from '../contexts/LayoutContext';
 import { BranchSwitcherProvider } from '../contexts/BranchSwitcherContext';
 import AppLayout from '../layouts/AppLayout';
 import Login from '../pages/Login';
+import ForgotPassword from '../pages/ForgotPassword';
+import VerifyOTP from '../pages/VerifyOTP';
+import ResetPassword from '../pages/ResetPassword';
 import AdminDashboard from '../pages/dashboard/AdminDashboard';
 import ClientDashboard from '../pages/dashboard/ClientDashboard';
 import BranchDashboard from '../pages/dashboard/BranchDashboard';
@@ -25,7 +28,55 @@ import PlanSelection from '../pages/PlanSelection';
 
 function Router() {
   const { user } = useAuth();
-  if (!user) return <Login />;
+  const [authPage, setAuthPage] = useState<'login' | 'forgot-password' | 'verify-otp' | 'reset-password'>('login');
+  const [resetEmail, setResetEmail] = useState('');
+  
+  if (!user) {
+    const handleForgotPasswordClick = () => {
+      setAuthPage('forgot-password');
+    };
+
+    const handleEmailSubmitted = (email: string) => {
+      setResetEmail(email);
+      setAuthPage('verify-otp');
+    };
+
+    const handleOTPVerified = () => {
+      setAuthPage('reset-password');
+    };
+
+    const handlePasswordReset = () => {
+      setAuthPage('login');
+    };
+
+    return (
+      <>
+        {authPage === 'login' && (
+          <Login onForgotPassword={handleForgotPasswordClick} />
+        )}
+        {authPage === 'forgot-password' && (
+          <ForgotPassword 
+            onBackToLogin={() => setAuthPage('login')}
+            onEmailSubmitted={handleEmailSubmitted}
+          />
+        )}
+        {authPage === 'verify-otp' && (
+          <VerifyOTP 
+            email={resetEmail}
+            onBackToForgotPassword={() => setAuthPage('forgot-password')}
+            onOTPVerified={handleOTPVerified}
+          />
+        )}
+        {authPage === 'reset-password' && (
+          <ResetPassword 
+            email={resetEmail}
+            onBackToVerifyOTP={() => setAuthPage('verify-otp')}
+            onPasswordReset={handlePasswordReset}
+          />
+        )}
+      </>
+    );
+  }
 
   const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
   const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
