@@ -58,11 +58,10 @@ export default function Logo({ variant, className = '' }: Props) {
        ═══════════════════════════════════════════ */
     case 'sidebar':
       return (
-        <div className={`flex items-center gap-2.5 ${className}`}>
-          <div className="w-7 h-7 rounded-lg overflow-hidden flex-shrink-0 shadow-md shadow-black/30 ring-1 ring-white/10">
+        <div className={`flex items-left gap-2.5 ${className}`}>
+          <div className="w-36 h-8  overflow-hidden flex-shrink-0 shadow-md shadow-black/30 ">
             <img src="/images/igc-logo.png" alt="IGC" className="w-full h-full object-contain" />
           </div>
-          <span className="text-[13.5px] font-bold text-white tracking-tight">IGC Group</span>
         </div>
       );
 
@@ -84,10 +83,9 @@ export default function Logo({ variant, className = '' }: Props) {
     case 'topnav':
       return (
         <div className={`flex items-center gap-2 ${className}`}>
-          <div className="w-7 h-7 rounded-lg overflow-hidden flex-shrink-0 shadow-md shadow-black/30 ring-1 ring-white/10">
+          <div className="w-30 h-8  overflow-hidden flex-shrink-0 shadow-md shadow-black/30 ">
             <img src="/images/igc-logo.png" alt="IGC" className="w-full h-full object-contain" />
           </div>
-          <span className="text-[14px] font-extrabold text-white tracking-tight hidden sm:block">IGC Group</span>
         </div>
       );
 
