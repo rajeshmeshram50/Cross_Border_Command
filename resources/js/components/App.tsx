@@ -26,69 +26,51 @@ import AddPlan from '../pages/AddPlan';
 import BranchForm from '../pages/BranchForm';
 import PlanSelection from '../pages/PlanSelection';
 
-function Router() {
-  const { user } = useAuth();
+/* ── Auth Pages (Login / Forgot Password / OTP / Reset) ── */
+function AuthRouter() {
   const [authPage, setAuthPage] = useState<'login' | 'forgot-password' | 'verify-otp' | 'reset-password'>('login');
   const [resetEmail, setResetEmail] = useState('');
-  
-  if (!user) {
-    const handleForgotPasswordClick = () => {
-      setAuthPage('forgot-password');
-    };
 
-    const handleEmailSubmitted = (email: string) => {
-      setResetEmail(email);
-      setAuthPage('verify-otp');
-    };
+  return (
+    <>
+      {authPage === 'login' && (
+        <Login onForgotPassword={() => setAuthPage('forgot-password')} />
+      )}
+      {authPage === 'forgot-password' && (
+        <ForgotPassword
+          onBackToLogin={() => setAuthPage('login')}
+          onEmailSubmitted={(email: string) => { setResetEmail(email); setAuthPage('verify-otp'); }}
+        />
+      )}
+      {authPage === 'verify-otp' && (
+        <VerifyOTP
+          email={resetEmail}
+          onBackToForgotPassword={() => setAuthPage('forgot-password')}
+          onOTPVerified={() => setAuthPage('reset-password')}
+        />
+      )}
+      {authPage === 'reset-password' && (
+        <ResetPassword
+          email={resetEmail}
+          onBackToVerifyOTP={() => setAuthPage('verify-otp')}
+          onPasswordReset={() => setAuthPage('login')}
+        />
+      )}
+    </>
+  );
+}
 
-    const handleOTPVerified = () => {
-      setAuthPage('reset-password');
-    };
-
-    const handlePasswordReset = () => {
-      setAuthPage('login');
-    };
-
-    return (
-      <>
-        {authPage === 'login' && (
-          <Login onForgotPassword={handleForgotPasswordClick} />
-        )}
-        {authPage === 'forgot-password' && (
-          <ForgotPassword 
-            onBackToLogin={() => setAuthPage('login')}
-            onEmailSubmitted={handleEmailSubmitted}
-          />
-        )}
-        {authPage === 'verify-otp' && (
-          <VerifyOTP 
-            email={resetEmail}
-            onBackToForgotPassword={() => setAuthPage('forgot-password')}
-            onOTPVerified={handleOTPVerified}
-          />
-        )}
-        {authPage === 'reset-password' && (
-          <ResetPassword 
-            email={resetEmail}
-            onBackToVerifyOTP={() => setAuthPage('verify-otp')}
-            onPasswordReset={handlePasswordReset}
-          />
-        )}
-      </>
-    );
-  }
-
+/* ── Dashboard Pages (after login) ── */
+function DashboardRouter({ user }: { user: any }) {
   const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
   const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
 
-  // Client without plan starts on my-plan page
   const initialPage = (planExpiredOrMissing && user.user_type === 'client_admin') ? 'my-plan' : 'dashboard';
   const [page, setPage] = useState(initialPage);
   const [pageData, setPageData] = useState<any>(null);
   const defaultPages = ['dashboard', 'my-plan', 'profile'];
 
   const navigate = (p: string, data?: any) => {
-    // If plan expired/missing, only allow default pages
     if (planExpiredOrMissing && !defaultPages.includes(p)) {
       setPage('my-plan');
       setPageData(null);
@@ -98,11 +80,9 @@ function Router() {
     setPageData(data || null);
   };
 
-  // Determine effective page
   let effectivePage = page;
   if (planExpiredOrMissing) {
     if (user.user_type === 'branch_user') {
-      // Branch user blocked completely - show message
       effectivePage = 'plan-blocked';
     } else if (!defaultPages.includes(page)) {
       effectivePage = 'my-plan';
@@ -180,6 +160,18 @@ function Router() {
       </BranchSwitcherProvider>
     </LayoutProvider>
   );
+}
+
+/* ── Main Router — switches between Auth and Dashboard ── */
+function Router() {
+  const { user } = useAuth();
+
+  if (!user) {
+    return <AuthRouter />;
+  }
+
+  // key={user.id} forces full remount when user changes (login/switch user)
+  return <DashboardRouter key={user.id} user={user} />;
 }
 
 export default function App() {
