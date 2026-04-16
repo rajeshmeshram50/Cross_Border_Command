@@ -1,4 +1,5 @@
-import type { InputHTMLAttributes } from 'react';
+import { useState, type InputHTMLAttributes } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 
 interface Props extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -6,14 +7,31 @@ interface Props extends InputHTMLAttributes<HTMLInputElement> {
   required?: boolean;
 }
 
-export default function Input({ label, error, required, className = '', ...props }: Props) {
+export default function Input({ label, error, required, type, className = '', ...props }: Props) {
+  const [showPassword, setShowPassword] = useState(false);
+  const isPassword = type === 'password';
+  const inputType = isPassword ? (showPassword ? 'text' : 'password') : type;
+
   return (
     <div className="flex flex-col gap-1">
       {label && <label className="text-[11.5px] font-semibold text-text">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>}
-      <input
-        className={`px-3 py-2 rounded-lg border-[1.5px] border-border bg-surface text-[12.5px] text-text outline-none transition-all duration-200 focus:border-primary/50 focus:ring-2 focus:ring-primary/10 focus:shadow-sm placeholder:text-muted hover:border-border/80 ${error ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : ''} ${className}`}
-        {...props}
-      />
+      <div className="relative">
+        <input
+          type={inputType}
+          className={`w-full px-3 py-2 rounded-lg border-[1.5px] border-border bg-surface text-[12.5px] text-text outline-none transition-all duration-200 focus:border-primary/50 focus:ring-2 focus:ring-primary/10 focus:shadow-sm placeholder:text-muted hover:border-border/80 ${isPassword ? 'pr-10' : ''} ${error ? 'border-red-400 focus:border-red-400 focus:ring-red-100' : ''} ${className}`}
+          {...props}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors focus:outline-none"
+            aria-label={showPassword ? "Hide password" : "Show password"}
+          >
+            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        )}
+      </div>
       {error && <span className="text-[10.5px] text-red-500 flex items-center gap-1 animate-in">{error}</span>}
     </div>
   );

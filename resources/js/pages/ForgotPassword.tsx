@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import AuthLayout from '../layouts/AuthLayout';
+import AuthCardLayout from '../layouts/AuthCardLayout';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import { Mail, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
@@ -57,39 +57,58 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
   };
 
   return (
-    <AuthLayout>
-      <h1 className="text-[22px] font-bold text-text tracking-tight mb-1.5">Forgot your password?</h1>
-      <p className="text-sm text-secondary mb-7">Enter your email address and we'll send you a verification code to reset your password.</p>
-
-      {error && (
-        <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">
-          <AlertCircle size={14} /> {error}
+    <AuthCardLayout 
+      title="Need help?" 
+      subtitle="Enter your email to receive a password reset code."
+      icon={<Mail size={26} />}
+    >
+      <div className="text-center space-y-6">
+        {/* Info Note */}
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-primary/5 border border-primary/10 text-left">
+          <Mail size={16} className="text-primary mt-0.5 shrink-0" />
+          <p className="text-[12.5px] text-[#5e6b85] leading-relaxed">
+            We'll send a <span className="font-semibold text-primary">one-time verification code</span> to your registered email address.
+          </p>
         </div>
-      )}
 
-      <form onSubmit={handleSubmit} className="space-y-5 mb-6">
-        <Input
-          label="Email"
-          required
-          type="email"
-          placeholder="Enter your email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-        />
+        {error && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">
+            <AlertCircle size={14} /> {error}
+          </div>
+        )}
 
-        <Button size="lg" className="w-full justify-center" type="submit" disabled={loading}>
-          {loading ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
-          {loading ? 'Sending...' : 'Send Verification Code'}
-        </Button>
-      </form>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-1 text-left">
+            <label className="text-[13px] font-semibold text-[#1f2f5a] ml-1">Email Id</label>
+            <Input
+              required
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="h-[52px] text-[14px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[12px]"
+            />
+          </div>
 
-      <button
-        onClick={onBackToLogin}
-        className="flex items-center justify-center gap-2 w-full text-[13px] font-semibold text-primary hover:underline transition-all duration-200"
-      >
-        <ArrowLeft size={14} />
-        Back to login
-      </button>
-    </AuthLayout>
+          <div className="pt-2">
+            <button
+              disabled={loading}
+              className="w-full h-14 rounded-full bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+              type="submit"
+            >
+              {loading ? <Loader2 size={18} className="animate-spin" /> : <Mail size={18} />}
+              {loading ? 'Sending...' : 'Send Link'}
+            </button>
+          </div>
+        </form>
+
+        <button
+          onClick={onBackToLogin}
+          className="text-[13px] font-bold text-primary hover:underline transition-all duration-200"
+        >
+          Back to Login
+        </button>
+      </div>
+    </AuthCardLayout>
   );
 }

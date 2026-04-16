@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import AuthLayout from '../layouts/AuthLayout';
+import AuthCardLayout from '../layouts/AuthCardLayout';
 import Button from '../components/ui/Button';
-import { AlertCircle, Loader2, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { AlertCircle, Loader2, Mail } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
 
@@ -24,7 +24,7 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
   }, []);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     if (resendTimer > 0) {
       timer = setInterval(() => setResendTimer(prev => prev - 1), 1000);
     }
@@ -116,30 +116,27 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
   };
 
   return (
-    <AuthLayout>
-      <div className="text-center">
+    <AuthCardLayout 
+      title="Verify your email" 
+      subtitle={`We have sent code to your email ${email}`}
+    >
+      <div className="text-center space-y-6">
         {/* Icon */}
-        <div className="mb-5 flex justify-center">
-          <div className="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center">
-            <ShieldCheck size={32} className="text-primary" />
+        <div className="flex justify-center">
+          <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+            <Mail size={28} className="text-primary" />
           </div>
         </div>
 
-        <h1 className="text-[22px] font-bold text-text tracking-tight mb-2">Verify Code</h1>
-        <p className="text-sm text-secondary mb-7">
-          Enter the 6-digit code sent to <br />
-          <span className="font-semibold text-text">{email}</span>
-        </p>
-
         {error && (
-          <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">
             <AlertCircle size={14} /> {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6 pt-2">
           {/* OTP Input Boxes */}
-          <div className="flex gap-2.5 justify-center">
+          <div className="flex gap-2 justify-center">
             {otp.map((digit, index) => (
               <input
                 key={index}
@@ -151,45 +148,51 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
                 onChange={e => handleInputChange(index, e.target.value)}
                 onKeyDown={e => handleKeyDown(index, e)}
                 onPaste={handlePaste}
-                className={`w-12 h-14 text-center text-[20px] font-bold rounded-lg border-[1.5px] bg-surface text-text outline-none transition-all duration-200 ${
-                  error ? 'border-red-400' : 'border-border'
-                } focus:border-primary/50 focus:ring-2 focus:ring-primary/10 placeholder:text-muted hover:border-border/80`}
-                placeholder="•"
+                className={`w-[52px] h-14 text-center text-[20px] font-bold rounded-xl border-[1.5px] bg-white/70 text-[#1f2f5a] outline-none transition-all duration-200 ${
+                  error ? 'border-red-400' : 'border-[#2f4fa3]/15'
+                } focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-4 focus:ring-[#2f4fa3]/10 hover:border-[#2f4fa3]/30`}
+                placeholder="0"
               />
             ))}
           </div>
 
           {/* Resend Link */}
-          <div className="text-center text-[12px] text-muted">
+          <div className="text-center text-[13px] font-medium text-[#5e6b85] pt-2">
             {resendTimer > 0 ? (
-              <>Didn't receive code? <span className="font-semibold text-primary">Resend in {resendTimer}s</span></>
+              <p>Resend code in <span className="font-bold text-primary">{resendTimer}s</span></p>
             ) : (
-              <>
+              <p>
                 Didn't receive code?{' '}
                 <button
                   type="button"
                   onClick={handleResend}
-                  className="font-semibold text-primary hover:underline transition-all duration-200"
+                  className="font-bold text-primary hover:underline transition-all duration-200"
                 >
-                  Resend OTP
+                  Resend
                 </button>
-              </>
+              </p>
             )}
           </div>
 
-          <Button size="lg" className="w-full justify-center" type="submit" disabled={loading}>
-            {loading ? <Loader2 size={15} className="animate-spin" /> : 'Verify OTP'}
-          </Button>
+          <div className="pt-2">
+            <button
+              disabled={loading}
+              className="w-full h-14 rounded-full bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+              type="submit"
+            >
+              {loading ? <Loader2 size={18} className="animate-spin" /> : null}
+              {loading ? 'Verifying...' : 'Verify Account'}
+            </button>
+          </div>
         </form>
 
         <button
           onClick={onBackToForgotPassword}
-          className="flex items-center justify-center gap-2 w-full mt-6 text-[13px] font-semibold text-primary hover:underline transition-all duration-200"
+          className="text-[13px] font-bold text-primary hover:underline transition-all duration-200"
         >
-          <ArrowLeft size={14} />
-          Back to email
+          Back to Login
         </button>
       </div>
-    </AuthLayout>
+    </AuthCardLayout>
   );
 }

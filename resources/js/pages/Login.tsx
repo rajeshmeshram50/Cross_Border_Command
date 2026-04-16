@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import AuthLayout from '../layouts/AuthLayout';
+import AuthCardLayout from '../layouts/AuthCardLayout';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import { LogIn, AlertCircle, Loader2 } from 'lucide-react';
@@ -31,42 +31,79 @@ export default function Login({ onForgotPassword }: LoginProps) {
   };
 
   return (
-    <AuthLayout>
-      <h1 className="text-[22px] font-bold text-text tracking-tight mb-1.5">Welcome back</h1>
-      <p className="text-sm text-secondary mb-7">Sign in to your account to continue</p>
+    <AuthCardLayout 
+      title="Getting Started Now!" 
+      subtitle="Let's activate your account and set up your secure access."
+    >
+      <div className="space-y-8">
+        {error && (
+          <div className="flex items-center gap-3 px-5 py-4 rounded-[20px] bg-red-50 border border-red-100 text-[13px] text-red-600 animate-in fade-in zoom-in-95">
+            <AlertCircle size={18} className="shrink-0" />
+            <span className="font-semibold">{error}</span>
+          </div>
+        )}
 
-      {error && (
-        <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">
-          <AlertCircle size={14} /> {error}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-1">
+            <label className="text-[13px] font-semibold text-[#1f2f5a] ml-1">Email Id</label>
+            <Input
+              required
+              type="email"
+              placeholder="you@company.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="h-[52px] text-[14px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[12px]"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-[13px] font-semibold text-[#1f2f5a] ml-1">Password</label>
+            <Input
+              required
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="h-[52px] text-[14px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[12px]"
+            />
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <input
+                type="checkbox"
+                defaultChecked
+                className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary/20 transition-all cursor-pointer"
+              />
+              <span className="text-[13px] font-medium text-slate-500 group-hover:text-slate-700 transition-colors">Remember Me</span>
+            </label>
+            <button
+              type="button"
+              onClick={onForgotPassword}
+              className="text-[13px] font-bold text-primary hover:underline transition-colors"
+            >
+              Forgot password?
+            </button>
+          </div>
+
+          <div className="pt-2">
+            <button
+              disabled={loading}
+              className="w-full h-14 rounded-full bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+              type="submit"
+            >
+              {loading ? <Loader2 size={18} className="animate-spin" /> : null}
+              {loading ? 'Logging In...' : 'Log In'}
+            </button>
+          </div>
+        </form>
+
+        <div className="text-center">
+          <p className="text-[13px] text-slate-400 font-medium">
+            Don’t have an account? <a href="#" className="text-primary font-bold hover:underline">Contact Support</a>
+          </p>
         </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-4 mb-6">
-        <Input label="Email Address" required type="email" placeholder="you@company.com" value={email} onChange={e => setEmail(e.target.value)} />
-        <Input label="Password" required type="password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} />
-
-        <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 text-[13px] text-secondary cursor-pointer">
-            <input type="checkbox" defaultChecked className="w-4 h-4 accent-primary rounded" /> Remember me
-          </label>
-          <button
-            type="button"
-            onClick={onForgotPassword}
-            className="text-[13px] font-semibold text-primary hover:underline transition-all duration-200"
-          >
-            Forgot password?
-          </button>
-        </div>
-
-        <Button size="lg" className="w-full justify-center" type="submit" disabled={loading}>
-          {loading ? <Loader2 size={15} className="animate-spin" /> : <LogIn size={15} />}
-          {loading ? 'Signing in...' : 'Sign In'}
-        </Button>
-      </form>
-
-      <div className="text-center text-[11.5px] text-muted">
-        Contact your administrator if you don't have an account
       </div>
-    </AuthLayout>
+    </AuthCardLayout>
   );
 }
