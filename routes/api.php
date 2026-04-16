@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PermissionController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\SubscriptionController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,6 +31,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/subscription/plans', [SubscriptionController::class, 'plans']);
     Route::get('/subscription/status', [SubscriptionController::class, 'status']);
     Route::post('/subscription/subscribe', [SubscriptionController::class, 'subscribe']);
+
+    // Payments
+    Route::get('/payments/stats', [PaymentController::class, 'stats']);
+    Route::get('/payments/{payment}/invoice/download', [PaymentController::class, 'downloadInvoice']);
+    Route::get('/payments/{payment}/invoice/view', [PaymentController::class, 'viewInvoice']);
+    Route::apiResource('payments', PaymentController::class);
 
     // Permissions
     Route::get('/modules', [PermissionController::class, 'modules']);
