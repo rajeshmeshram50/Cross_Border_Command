@@ -5,6 +5,7 @@ import Button from '../components/ui/Button';
 import SuccessModal from '../components/ui/SuccessModal';
 import { AlertCircle, Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import api from '../api';
 
 interface ResetPasswordProps {
   email: string;
@@ -57,14 +58,22 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
     setLoading(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Frontend only - password reset successful - show modal instead of toast
+      await api.post('/forgot-password/reset', {
+        email,
+        password: newPassword,
+        password_confirmation: confirmPassword,
+      });
       setShowSuccessModal(true);
-    } catch (err) {
-      setError('Failed to reset password. Please try again.');
-      toast.error('Error', 'Failed to reset password');
+    } catch (err: any) {
+      const data = err.response?.data;
+      const msg = data?.message || 'Failed to reset password. Please try again.';
+      if (data?.expired) {
+        setError('Session expired. Please start over.');
+        toast.error('Expired', 'Your session has expired. Please request a new code.');
+      } else {
+        setError(msg);
+        toast.error('Error', msg);
+      }
     } finally {
       setLoading(false);
     }

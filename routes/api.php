@@ -6,12 +6,16 @@ use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PermissionController;
+use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\SubscriptionController;
 use Illuminate\Support\Facades\Route;
 
 // Public
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/forgot-password/send-otp', [ForgotPasswordController::class, 'sendOtp']);
+Route::post('/forgot-password/verify-otp', [ForgotPasswordController::class, 'verifyOtp']);
+Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPassword']);
 
 // Protected
 Route::middleware('auth:sanctum')->group(function () {

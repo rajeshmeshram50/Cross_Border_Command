@@ -4,6 +4,7 @@ import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import { Mail, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import api from '../api';
 
 interface ForgotPasswordProps {
   onBackToLogin: () => void;
@@ -37,15 +38,19 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
     setLoading(true);
 
     try {
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Frontend only - send verification code
+      await api.post('/forgot-password/send-otp', { email });
       toast.success('Code sent', 'Verification code sent to your email');
       onEmailSubmitted?.(email);
-    } catch (err) {
-      setError('An error occurred. Please try again.');
-      toast.error('Error', 'An error occurred. Please try again.');
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'An error occurred. Please try again.';
+      const retryAfter = err.response?.data?.retry_after;
+      if (retryAfter) {
+        setError(`Please wait ${retryAfter} seconds before requesting a new code.`);
+        toast.warning('Too soon', `Wait ${retryAfter}s before resending`);
+      } else {
+        setError(msg);
+        toast.error('Error', msg);
+      }
     } finally {
       setLoading(false);
     }

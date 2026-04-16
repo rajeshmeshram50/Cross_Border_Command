@@ -3,6 +3,7 @@ import AuthLayout from '../layouts/AuthLayout';
 import Button from '../components/ui/Button';
 import { AlertCircle, Loader2, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import api from '../api';
 
 interface VerifyOTPProps {
   email: string;
@@ -83,25 +84,35 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
     setLoading(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Frontend only - verify OTP (for demo: any 6 digits work)
+      await api.post('/forgot-password/verify-otp', { email, otp: otpCode });
       toast.success('Verified!', 'Verification code verified successfully');
       onOTPVerified?.(otpCode);
-    } catch (err) {
-      setError('Invalid verification code. Please try again.');
-      toast.error('Error', 'Invalid verification code');
+    } catch (err: any) {
+      const data = err.response?.data;
+      const msg = data?.message || 'Invalid verification code. Please try again.';
+      setError(msg);
+      if (data?.expired || data?.max_attempts) {
+        toast.error('Code Invalid', msg);
+      } else {
+        toast.warning('Wrong Code', msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleResend = async () => {
-    setResendTimer(60);
-    setOtp(['', '', '', '', '', '']);
-    inputRefs.current[0]?.focus();
-    toast.info('Code sent', 'New verification code sent to your email');
+    try {
+      await api.post('/forgot-password/send-otp', { email });
+      setResendTimer(60);
+      setOtp(['', '', '', '', '', '']);
+      setError('');
+      inputRefs.current[0]?.focus();
+      toast.success('Code sent', 'New verification code sent to your email');
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Failed to resend code';
+      toast.error('Error', msg);
+    }
   };
 
   return (
