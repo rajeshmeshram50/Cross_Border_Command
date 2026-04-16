@@ -29,8 +29,8 @@ export default function Login({ onForgotPassword }: LoginProps) {
 
   return (
     <AuthCardLayout
-      title="Getting Started Now!"
-      subtitle="Let's activate your account and set up your secure access."
+      title="Access Command Center"
+      subtitle="Enter your secure credentials to manage your global operations."
     >
       <div className="space-y-4">
         <form onSubmit={handleSubmit} className="space-y-3.5">
@@ -42,7 +42,7 @@ export default function Login({ onForgotPassword }: LoginProps) {
               placeholder="you@company.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              className="h-11 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px]"
+              className="h-11 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30"
             />
           </div>
 
@@ -54,7 +54,7 @@ export default function Login({ onForgotPassword }: LoginProps) {
               placeholder="••••••••"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              className="h-11 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px]"
+              className="h-11 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30"
             />
           </div>
 
@@ -62,15 +62,14 @@ export default function Login({ onForgotPassword }: LoginProps) {
             <label className="flex items-center gap-2 cursor-pointer group">
               <input
                 type="checkbox"
-
-                className="w-3.5 h-3.5 rounded border-slate-300 text-primary focus:ring-primary/20 transition-all cursor-pointer"
+                className="w-3.5 h-3.5 rounded border-slate-300 text-primary focus:ring-primary/20 transition-all cursor-pointer group-hover:scale-110"
               />
-              <span className="text-[12px] font-medium text-slate-500 group-hover:text-slate-700 transition-colors">Remember Me</span>
+              <span className="text-[12px] font-medium text-slate-500 group-hover:text-primary transition-colors">Remember Me</span>
             </label>
             <button
               type="button"
               onClick={onForgotPassword}
-              className="text-[12px] font-bold text-primary hover:underline transition-colors"
+              className="text-[12px] font-bold text-primary hover:underline hover-scale transition-all"
             >
               Forgot password?
             </button>
@@ -79,7 +78,7 @@ export default function Login({ onForgotPassword }: LoginProps) {
           <div className="pt-1">
             <button
               disabled={loading}
-              className="w-full h-11 rounded-full bg-primary text-white text-[14px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+              className="w-full h-11 rounded-full bg-primary text-white text-[14px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover-lift hover-scale transition-all disabled:opacity-70 flex items-center justify-center gap-2"
               type="submit"
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : null}
