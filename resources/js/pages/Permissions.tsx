@@ -293,29 +293,42 @@ export default function Permissions() {
   }
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-violet-400 flex items-center justify-center shadow-lg shadow-primary/20">
-            <ShieldCheck size={17} className="text-white" />
+    <div className="space-y-5">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 shadow-xl">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjA0KSIvPjwvc3ZnPg==')] opacity-60" />
+        <div className="absolute top-0 right-0 w-72 h-72 bg-red-500/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-60 h-60 bg-orange-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl" />
+        <div className="relative px-8 py-7 flex items-center gap-5">
+          <div className="relative">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shadow-2xl shadow-red-500/30">
+              <ShieldCheck size={24} className="text-white" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-emerald-500 border-[3px] border-slate-900 flex items-center justify-center">
+              <Check size={10} className="text-white" />
+            </div>
           </div>
           <div>
-            <h1 className="text-[18px] font-extrabold text-text tracking-tight">Permission Management</h1>
-            <p className="text-[12px] text-muted mt-0.5">
-              {isSuperAdmin
-                ? 'Assign module permissions to client admins & branch users'
-                : 'Assign module permissions to branch users'}
-            </p>
+            <h1 className="text-[24px] font-extrabold text-white tracking-tight">Permission Management</h1>
+            <div className="flex items-center gap-3 mt-1.5">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-red-500 to-orange-600 text-white text-[10px] font-bold uppercase tracking-wider shadow-lg">
+                <ShieldCheck size={11} /> Access Control
+              </span>
+              <p className="text-white/50 text-[13px]">
+                {isSuperAdmin ? 'Assign module permissions to client admins' : 'Manage branch user permissions'}
+              </p>
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <UserSearchSelect users={users} value={selectedUserId} onChange={setSelectedUserId} placeholder={isSuperAdmin ? 'Search client admin...' : 'Search branch user...'} />
-          <Button onClick={handleSave} disabled={saving || !selectedUserId}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-        </div>
+      </div>
+
+      {/* Search & Save */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <UserSearchSelect users={users} value={selectedUserId} onChange={setSelectedUserId} placeholder={isSuperAdmin ? 'Search client admin...' : 'Search branch user...'} />
+        <Button onClick={handleSave} disabled={saving || !selectedUserId} className="!bg-gradient-to-r !from-red-500 !to-orange-600 !text-white hover:!brightness-110 !shadow-lg !shadow-red-500/25 !border-0">
+          {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
       </div>
 
       {/* No users message */}

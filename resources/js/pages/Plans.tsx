@@ -3,7 +3,8 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
-import { Check, Pencil, Trash2, Plus, Loader2, CreditCard, Users, GitBranch, HardDrive, Headphones } from 'lucide-react';
+import { Check, Pencil, Trash2, Plus, Loader2, CreditCard, Users, GitBranch, HardDrive, Headphones, CheckCircle2, ShieldCheck } from 'lucide-react';
+import Swal from 'sweetalert2';
 
 interface Plan {
   id: number; name: string; slug: string; price: number; period: string;
@@ -32,11 +33,17 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
   useEffect(() => { fetchPlans(); }, []);
 
   const handleDelete = async (plan: Plan) => {
-    if (!confirm(`Delete "${plan.name}" plan?`)) return;
+    const result = await Swal.fire({
+      title: 'Delete Plan?',
+      html: `<div style="font-size:14px;color:#64748b">Delete <strong style="color:#1e293b">"${plan.name}"</strong> plan? This cannot be undone.</div>`,
+      icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#94a3b8',
+      confirmButtonText: 'Delete', customClass: { popup: 'rounded-2xl', confirmButton: 'rounded-lg', cancelButton: 'rounded-lg' },
+    });
+    if (!result.isConfirmed) return;
     setDeleting(plan.id);
     try {
       await api.delete(`/plans/${plan.id}`);
-      toast.success('Plan Deleted', `"${plan.name}" has been removed`);
+      Swal.fire({ title: 'Deleted!', text: `"${plan.name}" has been removed.`, icon: 'success', timer: 1800, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
       fetchPlans();
     } catch (err: any) {
       toast.error('Delete Failed', err.response?.data?.message || 'Cannot delete plan');
@@ -46,18 +53,36 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
   };
 
   return (
-    <div>
-      <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-            <CreditCard size={16} className="text-primary" />
+    <div className="space-y-5">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 shadow-xl">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjA0KSIvPjwvc3ZnPg==')] opacity-60" />
+        <div className="absolute top-0 right-0 w-72 h-72 bg-red-500/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-60 h-60 bg-orange-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl" />
+        <div className="relative px-8 py-7 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-5">
+            <div className="relative">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shadow-2xl shadow-red-500/30">
+                <CreditCard size={24} className="text-white" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-emerald-500 border-[3px] border-slate-900 flex items-center justify-center">
+                <CheckCircle2 size={10} className="text-white" />
+              </div>
+            </div>
+            <div>
+              <h1 className="text-[24px] font-extrabold text-white tracking-tight">Subscription Plans</h1>
+              <div className="flex items-center gap-3 mt-1.5">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-red-500 to-orange-600 text-white text-[10px] font-bold uppercase tracking-wider shadow-lg">
+                  <ShieldCheck size={11} /> Pricing
+                </span>
+                <p className="text-white/50 text-[13px]">Manage pricing, limits and features · {plans.length} plans</p>
+              </div>
+            </div>
           </div>
-          <div>
-            <h1 className="text-[17px] font-bold text-text tracking-tight">Subscription Plans</h1>
-            <p className="text-[11.5px] text-muted mt-0.5">Manage pricing, limits and features · {plans.length} plans</p>
-          </div>
+          <Button size="sm" onClick={() => onNavigate?.('add-plan')} className="!bg-gradient-to-r !from-red-500 !to-orange-600 !text-white hover:!brightness-110 !shadow-lg !shadow-red-500/25 !border-0">
+            <Plus size={13} /> Add Plan
+          </Button>
         </div>
-        <Button size="sm" onClick={() => onNavigate?.('add-plan')}><Plus size={13} /> Add Plan</Button>
       </div>
 
       {loading ? (

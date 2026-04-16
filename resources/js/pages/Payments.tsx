@@ -140,49 +140,62 @@ export default function Payments() {
   return (
     <div className="space-y-5">
       {/* Hero Header */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 p-6 text-white">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjA4KSIvPjwvc3ZnPg==')] opacity-60" />
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4 blur-2xl" />
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 shadow-xl">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjA0KSIvPjwvc3ZnPg==')] opacity-60" />
+        <div className="absolute top-0 right-0 w-72 h-72 bg-red-500/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-60 h-60 bg-orange-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl" />
 
-        <div className="relative flex items-start justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-sm flex items-center justify-center border border-white/20 shadow-lg">
-              <IndianRupee size={22} />
-            </div>
-            <div>
-              <h1 className="text-[22px] font-extrabold tracking-tight">Revenue & Payments</h1>
-              <p className="text-white/70 text-[13px] mt-0.5">Track all billing, subscriptions and payment history</p>
-            </div>
-          </div>
-          {isSuperAdmin && (
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="!bg-white/10 !border-white/20 !text-white hover:!bg-white/20">
-                <Download size={13} /> Export
-              </Button>
-              <Button size="sm" onClick={openAddModal} className="!bg-white !text-emerald-700 hover:!bg-white/90 !shadow-lg">
-                <Plus size={13} /> Record Payment
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* Stats */}
-        <div className="relative grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-          {[
-            { label: 'Total Revenue', value: `₹${(stats?.total_revenue || 0).toLocaleString()}`, icon: TrendingUp, sub: `${stats?.successful || 0} successful` },
-            { label: 'Transactions', value: stats?.total_transactions || 0, icon: Receipt, sub: `${stats?.pending || 0} pending` },
-            { label: 'Failed', value: stats?.failed || 0, icon: XCircle, sub: 'need attention' },
-            { label: 'Refunded', value: `₹${(stats?.refund_amount || 0).toLocaleString()}`, icon: RefreshCw, sub: `${stats?.refunded || 0} refunds` },
-          ].map(s => (
-            <div key={s.label} className="bg-white/10 backdrop-blur-sm rounded-xl px-4 py-3 border border-white/10">
-              <div className="flex items-center gap-2 mb-1">
-                <s.icon size={13} className="text-white/60" />
-                <span className="text-[10px] font-semibold text-white/60 uppercase tracking-wider">{s.label}</span>
+        <div className="relative px-8 py-7">
+          <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
+            <div className="flex items-center gap-5">
+              <div className="relative">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shadow-2xl shadow-red-500/30">
+                  <IndianRupee size={24} className="text-white" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-emerald-500 border-[3px] border-slate-900 flex items-center justify-center">
+                  <CheckCircle2 size={10} className="text-white" />
+                </div>
               </div>
-              <div className="text-[22px] font-extrabold">{s.value}</div>
-              <div className="text-[10px] text-white/50 mt-0.5">{s.sub}</div>
+              <div>
+                <h1 className="text-[24px] font-extrabold text-white tracking-tight">Revenue & Payments</h1>
+                <div className="flex items-center gap-3 mt-1.5">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-red-500 to-orange-600 text-white text-[10px] font-bold uppercase tracking-wider shadow-lg">
+                    <CreditCard size={11} /> Billing
+                  </span>
+                  <p className="text-white/50 text-[13px]">Track subscriptions and payment history</p>
+                </div>
+              </div>
             </div>
-          ))}
+            {isSuperAdmin && (
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="!bg-white/10 !border-white/20 !text-white hover:!bg-white/20">
+                  <Download size={13} /> Export
+                </Button>
+                <Button size="sm" onClick={openAddModal} className="!bg-gradient-to-r !from-red-500 !to-orange-600 !text-white hover:!brightness-110 !shadow-lg !shadow-red-500/25 !border-0">
+                  <Plus size={13} /> Record Payment
+                </Button>
+              </div>
+            )}
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Total Revenue', value: `₹${(stats?.total_revenue || 0).toLocaleString()}`, icon: TrendingUp, sub: `${stats?.successful || 0} successful`, gradient: 'from-emerald-500/20 to-emerald-500/5' },
+              { label: 'Transactions', value: stats?.total_transactions || 0, icon: Receipt, sub: `${stats?.pending || 0} pending`, gradient: 'from-indigo-500/20 to-indigo-500/5' },
+              { label: 'Failed', value: stats?.failed || 0, icon: XCircle, sub: 'need attention', gradient: 'from-red-500/20 to-red-500/5' },
+              { label: 'Refunded', value: `₹${(stats?.refund_amount || 0).toLocaleString()}`, icon: RefreshCw, sub: `${stats?.refunded || 0} refunds`, gradient: 'from-amber-500/20 to-amber-500/5' },
+            ].map(s => (
+              <div key={s.label} className={`bg-gradient-to-br ${s.gradient} backdrop-blur-sm rounded-xl px-4 py-3 border border-white/10`}>
+                <div className="flex items-center gap-2 mb-1">
+                  <s.icon size={13} className="text-white/60" />
+                  <span className="text-[10px] font-semibold text-white/60 uppercase tracking-wider">{s.label}</span>
+                </div>
+                <div className="text-[22px] font-extrabold text-white">{s.value}</div>
+                <div className="text-[10px] text-white/40 mt-0.5">{s.sub}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
