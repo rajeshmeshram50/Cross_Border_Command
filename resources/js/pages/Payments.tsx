@@ -12,6 +12,8 @@ import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import Swal from 'sweetalert2';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 interface Payment {
   id: number; client_id: number; plan_id: number | null;
@@ -132,6 +134,52 @@ export default function Payments() {
     } catch { toast.error('Failed', 'Could not delete payment'); }
   };
 
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await api.get('/payments', { params: { per_page: 9999 } });
+      const allPayments: Payment[] = res.data.data || [];
+
+      const rows = allPayments.map((p, i) => ({
+        '#': i + 1,
+        'Invoice': p.invoice_number || '',
+        'Client': p.client?.org_name || '',
+        'Plan': p.plan?.name || '',
+        'Amount (₹)': parseFloat(p.amount),
+        'GST (₹)': p.gst ? parseFloat(p.gst) : 0,
+        'Discount (₹)': p.discount ? parseFloat(p.discount) : 0,
+        'Total (₹)': parseFloat(p.total),
+        'Method': methodLabels[p.method] || p.method,
+        'Gateway': p.gateway || '',
+        'Status': p.status,
+        'Billing Cycle': p.billing_cycle || '',
+        'Transaction ID': p.txn_id || '',
+        'Order ID': p.order_id || '',
+        'Valid From': p.valid_from || '',
+        'Valid Until': p.valid_until || '',
+        'Date': new Date(p.created_at).toLocaleDateString('en-IN'),
+        'Notes': p.notes || '',
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws['!cols'] = Object.keys(rows[0] || {}).map(key => ({
+        wch: Math.max(key.length, ...rows.map(r => String((r as any)[key]).length)) + 2,
+      }));
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Payments');
+
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Payments_${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+      toast.success('Exported', `${allPayments.length} payments exported to Excel`);
+    } catch {
+      toast.error('Export Failed', 'Could not export payments');
+    } finally { setExporting(false); }
+  };
+
   const viewInvoice = (p: Payment) => {
     const token = localStorage.getItem('cbc_token');
     window.open(`/api/payments/${p.id}/invoice/view?token=${token}`, '_blank');
@@ -168,8 +216,9 @@ export default function Payments() {
             </div>
             {isSuperAdmin && (
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="!bg-white/10 !border-white/20 !text-white hover:!bg-white/20">
-                  <Download size={13} /> Export
+                <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting} className="!bg-white/10 !border-white/20 !text-white hover:!bg-white/20">
+                  {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  {exporting ? 'Exporting...' : 'Export Excel'}
                 </Button>
                 <Button size="sm" onClick={openAddModal} className="!bg-gradient-to-r !from-red-500 !to-orange-600 !text-white hover:!brightness-110 !shadow-lg !shadow-red-500/25 !border-0">
                   <Plus size={13} /> Record Payment

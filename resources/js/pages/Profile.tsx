@@ -7,7 +7,8 @@ import Badge from '../components/ui/Badge';
 import {
   Save, LogOut, ShieldCheck, Mail, Phone, Building2, GitBranch,
   Calendar, Globe, User, Lock, Eye, EyeOff, Briefcase,
-  CreditCard, Monitor, Loader2, CheckCircle2
+  CreditCard, Monitor, Loader2, CheckCircle2,
+  Plus, Pencil, Trash2, Download, Upload
 } from 'lucide-react';
 import api from '../api';
 
@@ -54,16 +55,33 @@ export default function Profile() {
     } finally { setChangingPw(false); }
   };
 
+  const isSuperAdmin = user.user_type === 'super_admin';
+  const isClientAdmin = user.user_type === 'client_admin';
+  const isBranchUser = user.user_type === 'branch_user';
+
   const infoItems = [
     { icon: Mail, label: 'Email', value: user.email },
     { icon: Phone, label: 'Phone', value: user.phone || 'Not set' },
-    { icon: Briefcase, label: 'Designation', value: user.designation || 'Not set' },
-    { icon: Building2, label: 'Organization', value: user.client_name || 'Platform Admin' },
-    { icon: GitBranch, label: 'Branch', value: user.branch_name || 'N/A' },
-    { icon: Globe, label: 'Timezone', value: 'Asia/Kolkata (IST)' },
+    { icon: Briefcase, label: 'Designation', value: user.designation || (isSuperAdmin ? 'Platform Administrator' : 'Not set') },
+    ...(isSuperAdmin ? [
+      { icon: ShieldCheck, label: 'Access Level', value: 'Full System Access' },
+      { icon: Globe, label: 'Timezone', value: 'Asia/Kolkata (IST)' },
+    ] : []),
+    ...(!isSuperAdmin ? [
+      { icon: Building2, label: 'Organization', value: user.client_name || 'N/A' },
+    ] : []),
+    ...(isBranchUser ? [
+      { icon: GitBranch, label: 'Branch', value: user.branch_name || 'N/A' },
+    ] : []),
+    ...(!isSuperAdmin ? [
+      { icon: Globe, label: 'Timezone', value: 'Asia/Kolkata (IST)' },
+    ] : []),
   ];
 
   const planInfo = user.plan;
+
+  const heroBlurColor = isSuperAdmin ? 'bg-red-500/10' : isClientAdmin ? 'bg-indigo-500/10' : 'bg-sky-500/10';
+  const heroBlurColor2 = isSuperAdmin ? 'bg-orange-500/10' : isClientAdmin ? 'bg-violet-500/10' : 'bg-blue-500/10';
 
   return (
     <div className="space-y-6">
@@ -71,8 +89,8 @@ export default function Profile() {
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 shadow-xl">
         {/* Decorative */}
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjA0KSIvPjwvc3ZnPg==')] opacity-60" />
-        <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-60 h-60 bg-violet-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl" />
+        <div className={`absolute top-0 right-0 w-80 h-80 ${heroBlurColor} rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl`} />
+        <div className={`absolute bottom-0 left-0 w-60 h-60 ${heroBlurColor2} rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl`} />
 
         <div className="relative px-8 py-8 flex items-center gap-6 flex-wrap">
           {/* Avatar */}
@@ -97,6 +115,11 @@ export default function Profile() {
               {user.client_name && (
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 text-white/70 text-[11px] font-medium">
                   <Building2 size={11} /> {user.client_name}
+                </span>
+              )}
+              {user.branch_name && (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 text-white/70 text-[11px] font-medium">
+                  <GitBranch size={11} /> {user.branch_name}
                 </span>
               )}
             </div>
@@ -140,8 +163,8 @@ export default function Profile() {
             </div>
           </div>
 
-          {/* Plan Card */}
-          {planInfo && (
+          {/* Plan Card — only for client/branch users */}
+          {planInfo && !isSuperAdmin && (
             <div className="bg-surface border border-border rounded-2xl overflow-hidden hover:shadow-lg transition-shadow duration-300">
               <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
@@ -311,7 +334,31 @@ export default function Profile() {
           </div>
 
           {/* Permissions Overview */}
-          {user.permissions && Object.keys(user.permissions).length > 0 && (
+          {isSuperAdmin && (
+            <div className="bg-surface border border-border rounded-2xl overflow-hidden hover:shadow-lg transition-shadow duration-300">
+              <div className="px-6 py-5 border-b border-border/50 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shadow-lg shadow-red-500/20">
+                  <ShieldCheck size={16} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="text-[14px] font-extrabold text-text">Your Permissions</h3>
+                  <p className="text-[11px] text-muted mt-0.5">System access level</p>
+                </div>
+              </div>
+              <div className="p-6">
+                <div className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-r from-red-50 to-orange-50 border border-red-200/50">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shadow-lg shadow-red-500/20">
+                    <ShieldCheck size={20} className="text-white" />
+                  </div>
+                  <div>
+                    <div className="text-[14px] font-extrabold text-red-800">Full System Access</div>
+                    <div className="text-[11.5px] text-red-600/70 mt-0.5">As Super Administrator, you have unrestricted access to all modules and features.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {!isSuperAdmin && user.permissions && Object.keys(user.permissions).length > 0 && (
             <div className="bg-surface border border-border rounded-2xl overflow-hidden hover:shadow-lg transition-shadow duration-300">
               <div className="px-6 py-5 border-b border-border/50 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-violet-500/20">
@@ -327,21 +374,47 @@ export default function Profile() {
                   {Object.entries(user.permissions).map(([slug, perms]) => {
                     const enabled = Object.values(perms).filter(Boolean).length;
                     const total = Object.values(perms).length;
+                    const permIcons: Record<string, { icon: typeof Eye; label: string; activeColor: string }> = {
+                      can_view: { icon: Eye, label: 'View', activeColor: 'bg-emerald-500 text-white shadow-emerald-500/30' },
+                      can_add: { icon: Plus, label: 'Add', activeColor: 'bg-blue-500 text-white shadow-blue-500/30' },
+                      can_edit: { icon: Pencil, label: 'Edit', activeColor: 'bg-amber-500 text-white shadow-amber-500/30' },
+                      can_delete: { icon: Trash2, label: 'Delete', activeColor: 'bg-red-500 text-white shadow-red-500/30' },
+                      can_export: { icon: Download, label: 'Export', activeColor: 'bg-purple-500 text-white shadow-purple-500/30' },
+                      can_import: { icon: Upload, label: 'Import', activeColor: 'bg-sky-500 text-white shadow-sky-500/30' },
+                      can_approve: { icon: CheckCircle2, label: 'Approve', activeColor: 'bg-indigo-500 text-white shadow-indigo-500/30' },
+                    };
                     return (
-                      <div key={slug} className="flex items-center gap-3 p-3 rounded-xl bg-surface-2 border border-border/40 hover:border-primary/20 transition-all duration-200">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-[10px] font-extrabold ${
-                          enabled === total ? 'bg-emerald-500' : enabled > 0 ? 'bg-indigo-500' : 'bg-slate-400'
-                        }`}>
-                          {slug.charAt(0).toUpperCase()}
+                      <div key={slug} className="p-3.5 rounded-xl bg-surface-2 border border-border/40 hover:border-primary/20 hover:shadow-md transition-all duration-200">
+                        <div className="flex items-center gap-2.5 mb-3">
+                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-white text-[11px] font-extrabold shadow-md ${
+                            enabled === total ? 'bg-emerald-500 shadow-emerald-500/25' : enabled > 0 ? 'bg-indigo-500 shadow-indigo-500/25' : 'bg-slate-400'
+                          }`}>
+                            {slug.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[12.5px] font-bold text-text capitalize">{slug.replace(/-/g, ' ')}</div>
+                            <div className="text-[10px] text-muted">{enabled} of {total} enabled</div>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[12px] font-bold text-text capitalize">{slug.replace(/-/g, ' ')}</div>
-                          <div className="text-[10px] text-muted">{enabled}/{total} permissions</div>
-                        </div>
-                        <div className="flex gap-0.5">
-                          {Object.entries(perms).map(([key, val]) => (
-                            <div key={key} className={`w-2 h-2 rounded-full ${val ? 'bg-emerald-500' : 'bg-border'}`} title={key.replace('can_', '')} />
-                          ))}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {Object.entries(perms).map(([key, val]) => {
+                            const pi = permIcons[key];
+                            if (!pi) return null;
+                            const Icon = pi.icon;
+                            return (
+                              <div key={key} className="relative group/tip">
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 ${
+                                  val ? `${pi.activeColor} shadow-sm` : 'bg-border/40 text-muted/40'
+                                }`}>
+                                  <Icon size={12} />
+                                </div>
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded-lg bg-[#1e293b] text-white text-[9px] font-semibold whitespace-nowrap opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity duration-200 z-10">
+                                  {pi.label}{val ? '' : ' (off)'}
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[4px] border-transparent border-t-[#1e293b]" />
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
