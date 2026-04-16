@@ -19,7 +19,7 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email) {
       setError('Please enter your email address');
       toast.warning('Missing field', 'Please enter your email address');
@@ -57,14 +57,14 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
   };
 
   return (
-    <AuthCardLayout 
-      title="Need help?" 
+    <AuthCardLayout
+      title="Need help?"
       subtitle="Enter your email to receive a password reset code."
       icon={<Mail size={26} />}
     >
       <div className="text-center space-y-6">
         {/* Info Note */}
-        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-primary/5 border border-primary/10 text-left">
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-primary/25 border border-primary/10 text-left">
           <Mail size={16} className="text-primary mt-0.5 shrink-0" />
           <p className="text-[12.5px] text-[#5e6b85] leading-relaxed">
             We'll send a <span className="font-semibold text-primary">one-time verification code</span> to your registered email address.
@@ -79,7 +79,7 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-1 text-left">
-            <label className="text-[13px] font-semibold text-[#1f2f5a] ml-1">Email Id</label>
+            <label className="text-[14px] font-semibold text-primary-hover ml-1">Email Id</label>
             <Input
               required
               type="email"

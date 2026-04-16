@@ -288,6 +288,7 @@ body {
   background: rgba(90, 81, 232, .2);
 }
 
+
 /* ═══ Focus Ring ═══ */
 .focus-ring:focus-visible {
   outline: 2px solid var(--color-primary);

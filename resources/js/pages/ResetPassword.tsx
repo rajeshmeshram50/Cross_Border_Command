@@ -120,7 +120,7 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
         <form onSubmit={handleSubmit} className="space-y-4 mb-6">
           {/* New Password */}
           <div className="flex flex-col gap-1">
-            <label className="text-[13px] font-semibold text-[#1f2f5a] ml-1">
+            <label className="text-[14px] font-semibold text-primary-hover ml-1">
               New Password <span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -175,7 +175,7 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
 
           {/* Confirm Password */}
           <div className="flex flex-col gap-1">
-            <label className="text-[13px] font-semibold text-[#1f2f5a] ml-1">
+            <label className="text-[14px] font-semibold text-primary-hover ml-1">
               Confirm Password <span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -220,7 +220,7 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
           className="flex items-center justify-center gap-2 w-full text-[13px] font-bold text-primary hover:underline transition-all duration-200"
         >
           <ArrowLeft size={16} />
-          Back to verification
+          Back to Login
         </button>
       </AuthCardLayout>
     </>
