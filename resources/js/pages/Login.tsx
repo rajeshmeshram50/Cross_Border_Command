@@ -15,15 +15,12 @@ export default function Login({ onForgotPassword }: LoginProps) {
   const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!email || !password) { setError('Please enter email and password'); toast.warning('Missing fields', 'Please enter email and password'); return; }
-    setError('');
+    if (!email || !password) { toast.warning('Missing fields', 'Please enter email and password'); return; }
     const result = await login(email, password);
     if (!result.success) {
-      setError(result.error || 'Login failed');
       toast.error('Login Failed', result.error || 'Invalid credentials');
     } else {
       toast.success('Welcome back!', 'You have been logged in successfully');
@@ -36,13 +33,6 @@ export default function Login({ onForgotPassword }: LoginProps) {
       subtitle="Let's activate your account and set up your secure access."
     >
       <div className="space-y-4">
-        {error && (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-[16px] bg-red-50 border border-red-100 text-[12px] text-red-600 animate-in fade-in zoom-in-95">
-            <AlertCircle size={16} className="shrink-0" />
-            <span className="font-semibold">{error}</span>
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <div className="space-y-1">
             <label className="text-[14px] font-semibold text-primary-hover ml-1">Email Id</label>
@@ -98,11 +88,7 @@ export default function Login({ onForgotPassword }: LoginProps) {
           </div>
         </form>
 
-        <div className="text-center">
-          <p className="text-[12px] text-slate-400 font-medium">
-            Don't have an account? <a href="mailto:[EMAIL_ADDRESS]" className="text-primary font-bold hover:underline">Contact Admin at admin@inhpl.com</a>
-          </p>
-        </div>
+        
       </div>
     </AuthCardLayout>
   );

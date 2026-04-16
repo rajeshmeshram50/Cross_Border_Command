@@ -14,28 +14,21 @@ interface ForgotPasswordProps {
 export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: ForgotPasswordProps) {
   const toast = useToast();
   const [email, setEmail] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!email) {
-      setError('Please enter your email address');
       toast.warning('Missing field', 'Please enter your email address');
       return;
     }
 
-    // Simple email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      setError('Please enter a valid email address');
       toast.warning('Invalid email', 'Please enter a valid email address');
       return;
     }
-
-    setError('');
-    setLoading(true);
 
     try {
       await api.post('/forgot-password/send-otp', { email });
@@ -45,10 +38,8 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
       const msg = err.response?.data?.message || 'An error occurred. Please try again.';
       const retryAfter = err.response?.data?.retry_after;
       if (retryAfter) {
-        setError(`Please wait ${retryAfter} seconds before requesting a new code.`);
         toast.warning('Too soon', `Wait ${retryAfter}s before resending`);
       } else {
-        setError(msg);
         toast.error('Error', msg);
       }
     } finally {
@@ -70,12 +61,6 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
             We'll send a <span className="font-semibold text-primary">one-time verification code</span> to your registered email address.
           </p>
         </div>
-
-        {error && (
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">
-            <AlertCircle size={14} /> {error}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-1 text-left">
