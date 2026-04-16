@@ -2,6 +2,7 @@ import { useState } from 'react';
 import AuthLayout from '../layouts/AuthLayout';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
+import SuccessModal from '../components/ui/SuccessModal';
 import { AlertCircle, Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 
@@ -19,6 +20,7 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const validatePassword = (password: string): string[] => {
     const errors: string[] = [];
@@ -58,15 +60,19 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Frontend only - password reset successful
-      toast.success('Password reset!', 'Your password has been reset successfully');
-      onPasswordReset?.();
+      // Frontend only - password reset successful - show modal instead of toast
+      setShowSuccessModal(true);
     } catch (err) {
       setError('Failed to reset password. Please try again.');
       toast.error('Error', 'Failed to reset password');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleContinueClick = () => {
+    setShowSuccessModal(false);
+    onPasswordReset?.();
   };
 
   const passwordStrength = () => {
@@ -81,8 +87,17 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
   const strength = passwordStrength();
 
   return (
-    <AuthLayout>
-      <h1 className="text-[22px] font-bold text-text tracking-tight mb-1.5">Reset your password</h1>
+    <>
+      {showSuccessModal && (
+        <SuccessModal
+          title="Successful"
+          message="Congratulations! Your password has been changed. Click continue to login"
+          buttonText="Continue"
+          onContinue={handleContinueClick}
+        />
+      )}
+      <AuthLayout>
+      <h1 className="text-[22px] font-bold text-text tracking-tight mb-1.5">Set a new password</h1>
       <p className="text-sm text-secondary mb-7">Your new password must be different from previous used passwords.</p>
 
       {error && (
@@ -190,5 +205,6 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
         Back to verification
       </button>
     </AuthLayout>
+    </>
   );
 }

@@ -53,8 +53,8 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
 
   return (
     <AuthLayout>
-      <h1 className="text-[22px] font-bold text-text tracking-tight mb-1.5">Reset your password</h1>
-      <p className="text-sm text-secondary mb-7">Your new password must be different from previous used passwords.</p>
+      <h1 className="text-[22px] font-bold text-text tracking-tight mb-1.5">Forgot your password?</h1>
+      <p className="text-sm text-secondary mb-7">Enter your email address and we'll send you a verification code to reset your password.</p>
 
       {error && (
         <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">

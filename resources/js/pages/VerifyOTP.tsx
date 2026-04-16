@@ -114,7 +114,7 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
           </div>
         </div>
 
-        <h1 className="text-[22px] font-bold text-text tracking-tight mb-2">Verify OTP</h1>
+        <h1 className="text-[22px] font-bold text-text tracking-tight mb-2">Verify Code</h1>
         <p className="text-sm text-secondary mb-7">
           Enter the 6-digit code sent to <br />
           <span className="font-semibold text-text">{email}</span>
