@@ -119,14 +119,11 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
     <AuthCardLayout 
       title="Verify your email" 
       subtitle={`We have sent code to your email ${email}`}
+      icon={<Mail size={26} />}
+
     >
       <div className="text-center space-y-6">
-        {/* Icon */}
-        <div className="flex justify-center">
-          <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-            <Mail size={28} className="text-primary" />
-          </div>
-        </div>
+        
 
         {error && (
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">

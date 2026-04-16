@@ -3,6 +3,7 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
+import { ShimmerPlanCards } from '../components/ui/Shimmer';
 import { Check, Pencil, Trash2, Plus, Loader2, CreditCard, Users, GitBranch, HardDrive, Headphones, CheckCircle2, ShieldCheck } from 'lucide-react';
 import Swal from 'sweetalert2';
 
@@ -86,9 +87,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted text-[12px]">
-          <Loader2 size={20} className="animate-spin mr-2" /> Loading plans...
-        </div>
+        <ShimmerPlanCards count={5} />
       ) : plans.length === 0 ? (
         <div className="text-center py-16 bg-surface border border-border rounded-2xl">
           <CreditCard size={32} className="text-muted mx-auto mb-3" />

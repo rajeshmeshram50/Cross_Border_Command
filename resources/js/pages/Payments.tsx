@@ -8,6 +8,7 @@ import {
   Trash2, Download, Filter, ChevronLeft, ChevronRight, X,
   CheckCircle2, RefreshCw, CreditCard, TrendingUp, Banknote, FileText
 } from 'lucide-react';
+import { ShimmerPaymentList } from '../components/ui/Shimmer';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -271,9 +272,7 @@ export default function Payments() {
 
       {/* Payment List */}
       {loading ? (
-        <div className="flex items-center justify-center py-20 text-muted text-[13px]">
-          <Loader2 size={24} className="animate-spin mr-3" /> Loading payments...
-        </div>
+        <ShimmerPaymentList count={5} />
       ) : payments.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-16 h-16 rounded-2xl bg-emerald-500/5 flex items-center justify-center mb-4">

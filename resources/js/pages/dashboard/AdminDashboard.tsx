@@ -11,6 +11,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import api from '../../api';
+import { ShimmerDashboard } from '../../components/ui/Shimmer';
 
 interface DashboardData {
   counts: {
@@ -96,19 +97,7 @@ export default function AdminDashboard() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <div className="relative">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-xl shadow-indigo-500/30 animate-pulse">
-            <Activity size={28} className="text-white" />
-          </div>
-          <div className="absolute -inset-2 rounded-3xl border-2 border-indigo-500/20 animate-ping" />
-        </div>
-        <span className="text-[14px] text-muted font-semibold">Loading dashboard...</span>
-      </div>
-    );
-  }
+  if (loading) return <ShimmerDashboard />;
 
   if (!data) return null;
   const { counts, revenue } = data;

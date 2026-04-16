@@ -18,7 +18,6 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
   const toast = useToast();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -37,25 +36,21 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
     e.preventDefault();
 
     if (!newPassword || !confirmPassword) {
-      setError('Please fill in all fields');
       toast.warning('Missing fields', 'Please fill in all fields');
       return;
     }
 
     const passwordErrors = validatePassword(newPassword);
     if (passwordErrors.length > 0) {
-      setError(`Password must contain: ${passwordErrors.join(', ')}`);
       toast.warning('Weak password', `Password must contain: ${passwordErrors.join(', ')}`);
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setError('Passwords do not match');
       toast.warning('Mismatch', 'New password and confirm password do not match');
       return;
     }
 
-    setError('');
     setLoading(true);
 
     try {
@@ -69,10 +64,8 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
       const data = err.response?.data;
       const msg = data?.message || 'Failed to reset password. Please try again.';
       if (data?.expired) {
-        setError('Session expired. Please start over.');
         toast.error('Expired', 'Your session has expired. Please request a new code.');
       } else {
-        setError(msg);
         toast.error('Error', msg);
       }
     } finally {
@@ -111,16 +104,10 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
         title="Set a new password"
         subtitle="Your new password must be different from previous ones."
       >
-        {error && (
-          <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">
-            <AlertCircle size={14} /> {error}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-4 mb-6">
           {/* New Password */}
           <div className="flex flex-col gap-1">
-            <label className="text-[13px] font-semibold text-[#1f2f5a] ml-1">
+            <label className="text-[14px] font-semibold text-primary-hover ml-1">
               New Password <span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -175,7 +162,7 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
 
           {/* Confirm Password */}
           <div className="flex flex-col gap-1">
-            <label className="text-[13px] font-semibold text-[#1f2f5a] ml-1">
+            <label className="text-[14px] font-semibold text-primary-hover ml-1">
               Confirm Password <span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -220,7 +207,7 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
           className="flex items-center justify-center gap-2 w-full text-[13px] font-bold text-primary hover:underline transition-all duration-200"
         >
           <ArrowLeft size={16} />
-          Back to verification
+          Back to Login
         </button>
       </AuthCardLayout>
     </>

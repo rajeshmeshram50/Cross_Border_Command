@@ -3,6 +3,7 @@ import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Input from '../components/ui/Input';
 import api from '../api';
+import { ShimmerPlanCards, ShimmerHero } from '../components/ui/Shimmer';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import {
@@ -90,12 +91,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   const gst = Math.round(total * 0.18);
   const grandTotal = Math.round(total + gst);
 
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center py-24 gap-3">
-      <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center"><Loader2 size={22} className="animate-spin text-primary" /></div>
-      <span className="text-[13px] text-muted font-medium">Loading plans...</span>
-    </div>
-  );
+  if (loading) return <div className="space-y-6"><ShimmerHero /><ShimmerPlanCards count={5} /></div>;
 
   const hasPlan = user?.plan?.has_plan && !user?.plan?.expired;
 
