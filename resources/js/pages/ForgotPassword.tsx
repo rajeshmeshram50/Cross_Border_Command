@@ -2,7 +2,7 @@ import { useState } from 'react';
 import AuthCardLayout from '../layouts/AuthCardLayout';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
-import { Mail, AlertCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { Mail, AlertCircle, Loader2, ArrowLeft, ArrowBigRight } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
 
@@ -55,9 +55,9 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
     >
       <div className="text-center space-y-6">
         {/* Info Note */}
-        <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-primary/25 border border-primary/10 text-left">
-          <Mail size={16} className="text-primary mt-0.5 shrink-0" />
-          <p className="text-[12.5px] text-[#5e6b85] leading-relaxed">
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl  border border-primary/10 text-left">
+          <ArrowBigRight size={16} className="text-primary mt-0.5 shrink-0" />
+          <p className="text-[14px] text-[#5e6b85] leading-relaxed">
             We'll send a <span className="font-semibold text-primary">one-time verification code</span> to your registered email address.
           </p>
         </div>
