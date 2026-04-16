@@ -6,6 +6,7 @@ import { Td } from '../components/ui/Table';
 import Modal from '../components/ui/Modal';
 import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, GitBranch, Settings, IndianRupee, Building2, Eye, Loader2, Star, MapPin, Users, Phone, Mail } from 'lucide-react';
 import api from '../api';
+import { ShimmerCards } from '../components/ui/Shimmer';
 import { useToast } from '../contexts/ToastContext';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -183,7 +184,7 @@ export default function Clients({ onNavigate }: Props) {
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading ? (
-                <tr><td colSpan={9} className="text-center py-12 text-muted text-[12px]"><Loader2 size={20} className="animate-spin inline-block mr-2" />Loading clients...</td></tr>
+                <tr><td colSpan={9} className="py-4"><ShimmerCards count={6} /></td></tr>
               ) : clients.length === 0 ? (
                 <tr><td colSpan={9} className="text-center py-12 text-muted text-[12px]">No clients found</td></tr>
               ) : clients.map((c, i) => (

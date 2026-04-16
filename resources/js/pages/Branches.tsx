@@ -5,6 +5,7 @@ import Avatar from '../components/ui/Avatar';
 import { Td } from '../components/ui/Table';
 import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, Users, Star, GitBranch, Loader2, Building, Factory, Warehouse } from 'lucide-react';
 import api from '../api';
+import { ShimmerCards } from '../components/ui/Shimmer';
 import { useToast } from '../contexts/ToastContext';
 import type { Branch, PaginatedResponse } from '../types';
 
@@ -127,7 +128,7 @@ export default function Branches({ onNavigate }: Props) {
             </thead>
             <tbody className="divide-y divide-border/50">
               {loading ? (
-                <tr><td colSpan={9} className="text-center py-12 text-muted text-[12px]"><Loader2 size={20} className="animate-spin inline-block mr-2" />Loading branches...</td></tr>
+                <tr><td colSpan={9} className="py-4"><ShimmerCards count={6} /></td></tr>
               ) : branches.length === 0 ? (
                 <tr><td colSpan={9} className="text-center py-12 text-muted text-[12px]">No branches found. Click "Add Branch" to create one.</td></tr>
               ) : branches.map((b, i) => {

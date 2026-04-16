@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Button from '../components/ui/Button';
 import api from '../api';
+import { ShimmerPermissions } from '../components/ui/Shimmer';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import {
@@ -284,13 +285,7 @@ export default function Permissions() {
   const maxChecks = modules.length * PERMS.length;
   const selectedUser = users.find(u => u.id === Number(selectedUserId));
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-muted text-[13px]">
-        <Loader2 size={20} className="animate-spin mr-2" /> Loading...
-      </div>
-    );
-  }
+  if (loading) return <ShimmerPermissions />;
 
   return (
     <div className="space-y-5">
