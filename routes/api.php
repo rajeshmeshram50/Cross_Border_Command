@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PermissionController;
@@ -21,6 +22,9 @@ Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPa
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    // Dashboard
+    Route::get('/dashboard/admin-stats', [DashboardController::class, 'adminStats']);
 
     // Clients
     Route::apiResource('clients', ClientController::class);

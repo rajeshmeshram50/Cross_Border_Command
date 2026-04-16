@@ -7,6 +7,8 @@ import Modal from '../components/ui/Modal';
 import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, GitBranch, Settings, IndianRupee, Building2, Eye, Loader2, Star, MapPin, Users, Phone, Mail } from 'lucide-react';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import type { Client, Branch, PaginatedResponse } from '../types';
 
 interface Props {
@@ -59,6 +61,64 @@ export default function Clients({ onNavigate }: Props) {
     return () => clearTimeout(t);
   }, [searchInput]);
 
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      // Fetch ALL clients (not just current page)
+      const res = await api.get<PaginatedResponse<Client>>('/clients', { params: { per_page: 9999 } });
+      const allClients = res.data.data;
+
+      const rows = allClients.map((c, i) => ({
+        '#': i + 1,
+        'Organization Name': c.org_name,
+        'Unique ID': c.unique_number,
+        'Email': c.email,
+        'Phone': c.phone || '',
+        'Website': c.website || '',
+        'Type': c.org_type,
+        'Industry': c.industry || '',
+        'City': c.city || '',
+        'District': c.district || '',
+        'Taluka': c.taluka || '',
+        'State': c.state || '',
+        'Pincode': c.pincode || '',
+        'Country': c.country || '',
+        'GST Number': c.gst_number || '',
+        'PAN Number': c.pan_number || '',
+        'Plan': c.plan?.name || 'Free',
+        'Plan Type': c.plan_type,
+        'Status': c.status,
+        'Branches': c.branches_count ?? 0,
+        'Users': c.users_count ?? 0,
+        'Plan Expires': c.plan_expires_at || '',
+        'Created At': new Date(c.created_at).toLocaleDateString('en-IN'),
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+
+      // Auto-size columns
+      const colWidths = Object.keys(rows[0] || {}).map(key => ({
+        wch: Math.max(key.length, ...rows.map(r => String((r as any)[key]).length)) + 2,
+      }));
+      ws['!cols'] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Clients');
+
+      const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      saveAs(blob, `Clients_${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+      toast.success('Exported', `${allClients.length} clients exported to Excel`);
+    } catch {
+      toast.error('Export Failed', 'Could not export clients');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleDelete = async (client: Client) => {
     if (!confirm(`Delete "${client.org_name}"? This will also delete all related users and branches.`)) return;
     setDeleting(client.id);
@@ -86,7 +146,10 @@ export default function Clients({ onNavigate }: Props) {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Download size={13} /> CSV</Button>
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
+            {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+            {exporting ? 'Exporting...' : 'Export Excel'}
+          </Button>
           <Button size="sm" onClick={() => onNavigate('client-form')}><Plus size={13} /> Add Client</Button>
         </div>
       </div>

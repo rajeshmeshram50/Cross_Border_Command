@@ -44,8 +44,8 @@ class PermissionController extends Controller
         $authUser = $request->user();
 
         if ($authUser->isSuperAdmin()) {
-            $users = User::whereIn('user_type', ['client_admin', 'branch_user'])
-                ->with(['client:id,org_name', 'branch:id,name'])
+            $users = User::where('user_type', 'client_admin')
+                ->with(['client:id,org_name'])
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } elseif ($authUser->isClientAdmin()) {
             $users = User::where('client_id', $authUser->client_id)
