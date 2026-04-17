@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
+import SplashLoader from './ui/SplashLoader';
 import { ToastProvider } from '../contexts/ToastContext';
 import { LayoutProvider } from '../contexts/LayoutContext';
 import { BranchSwitcherProvider } from '../contexts/BranchSwitcherContext';
@@ -67,6 +68,7 @@ function AuthRouter() {
 
 /* ── Dashboard Pages (after login) ── */
 function DashboardRouter({ user }: { user: any }) {
+  const [splashDone, setSplashDone] = useState(false);
   const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
   const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
 
@@ -74,6 +76,11 @@ function DashboardRouter({ user }: { user: any }) {
   const [page, setPage] = useState(initialPage);
   const [pageData, setPageData] = useState<any>(null);
   const defaultPages = ['dashboard', 'my-plan', 'profile'];
+
+  // Show splash on first login
+  if (!splashDone) {
+    return <SplashLoader onComplete={() => setSplashDone(true)} />;
+  }
 
   const navigate = (p: string, data?: any) => {
     if (planExpiredOrMissing && !defaultPages.includes(p)) {
