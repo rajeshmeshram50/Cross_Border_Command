@@ -51,13 +51,13 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
     <AuthCardLayout
       title="Need help?"
       subtitle="Enter your email to receive a password reset code."
-      icon={<Mail size={26} />}
+      icon={<Mail size={18} />}
     >
       <div className="text-center space-y-6">
         {/* Info Note */}
-        <div className="flex items-start gap-3 px-4 py-3 rounded-xl  border border-primary/10 text-left">
-          <ArrowBigRight size={16} className="text-primary mt-0.5 shrink-0" />
-          <p className="text-[14px] text-[#5e6b85] leading-relaxed">
+        <div className="flex items-start gap-1 px-4 py-3 rounded-xl   text-left">
+          <AlertCircle size={16} className="text-primary mt-1.5 shrink-0" />
+          <p className="text-[14px] text-[#5e6b85] font-medium leading-relaxed">
             We'll send a <span className="font-semibold text-primary">one-time verification code</span> to your registered email address.
           </p>
         </div>

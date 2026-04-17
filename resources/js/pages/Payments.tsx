@@ -267,7 +267,7 @@ export default function Payments() {
               { label: 'Failed', value: stats?.failed || 0, icon: XCircle, sub: 'need attention', gradient: 'from-red-500/20 to-red-500/5' },
               { label: 'Refunded', value: `₹${(stats?.refund_amount || 0).toLocaleString()}`, icon: RefreshCw, sub: `${stats?.refunded || 0} refunds`, gradient: 'from-amber-500/20 to-amber-500/5' },
             ].map(s => (
-              <div key={s.label} className={`bg-gradient-to-br ${s.gradient} backdrop-blur-sm rounded-xl px-4 py-3 border border-white/10`}>
+              <div key={s.label} className={`bg-gradient-to-br ${s.gradient} backdrop-blur-sm rounded-xl px-4 py-3 border border-white/10 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-white/15`}>
                 <div className="flex items-center gap-2 mb-1">
                   <s.icon size={13} className="text-white/60" />
                   <span className="text-[10px] font-semibold text-white/60 uppercase tracking-wider">{s.label}</span>
