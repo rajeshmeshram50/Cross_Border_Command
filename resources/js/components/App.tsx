@@ -25,6 +25,11 @@ import Profile from '../pages/Profile';
 import AddPlan from '../pages/AddPlan';
 import BranchForm from '../pages/BranchForm';
 import PlanSelection from '../pages/PlanSelection';
+import ClientView from '../pages/ClientView';
+import ClientBranches from '../pages/ClientBranches';
+import ClientPermissions from '../pages/ClientPermissions';
+import ClientPayments from '../pages/ClientPayments';
+import ClientSettings from '../pages/ClientSettings';
 
 /* ── Auth Pages (Login / Forgot Password / OTP / Reset) ── */
 function AuthRouter() {
@@ -104,6 +109,16 @@ function DashboardRouter({ user }: { user: any }) {
         return <Clients onNavigate={navigate} />;
       case 'client-form':
         return <ClientForm onBack={() => navigate('clients')} editId={pageData?.editId} />;
+      case 'client-view':
+        return <ClientView clientId={pageData?.clientId} onBack={() => navigate('clients')} onNavigate={navigate} />;
+      case 'client-branches':
+        return <ClientBranches clientId={pageData?.clientId} clientName={pageData?.clientName} onBack={() => navigate('clients')} />;
+      case 'client-permissions':
+        return <ClientPermissions clientId={pageData?.clientId} clientName={pageData?.clientName} onBack={() => navigate('clients')} />;
+      case 'client-payments':
+        return <ClientPayments clientId={pageData?.clientId} clientName={pageData?.clientName} onBack={() => navigate('clients')} />;
+      case 'client-settings':
+        return <ClientSettings clientId={pageData?.clientId} clientName={pageData?.clientName} onBack={() => navigate('clients')} />;
       case 'branches':
         return <Branches onNavigate={navigate} />;
       case 'branch-form':
