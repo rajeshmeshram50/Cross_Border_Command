@@ -159,7 +159,7 @@ export default function Clients({ onNavigate }: Props) {
           <div className="relative flex-1 min-w-[160px] max-w-[260px]">
             <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
             <input
-              value={searchInput} 
+              value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
               placeholder="Search by name or ID..."
               className="w-full pl-7 pr-3 py-1.5 rounded-md border border-border bg-bg text-[11.5px] text-text outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 placeholder:text-muted"

@@ -81,34 +81,38 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
       </div>
 
       {/* Hero Card */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 shadow-xl">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjA0KSIvPjwvc3ZnPg==')] opacity-60" />
-        <div className="absolute top-0 right-0 w-72 h-72 bg-primary/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl" />
-        <div className="relative px-8 py-7 flex items-center gap-5">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-violet-500 flex items-center justify-center text-white text-xl font-extrabold shadow-2xl shadow-primary/30">
-            {client.org_name.charAt(0)}{client.org_name.split(' ')[1]?.charAt(0) || ''}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-[22px] font-extrabold text-white tracking-tight">{client.org_name}</h2>
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <span className="font-mono text-[11px] text-white/70 bg-white/10 px-2.5 py-1 rounded-lg">{client.unique_number}</span>
-              <Badge variant={client.status === 'active' ? 'success' : 'danger'} dot>{client.status}</Badge>
-              <Badge variant="info">{client.org_type}</Badge>
-            </div>
-          </div>
-          <div className="flex items-center gap-6 flex-shrink-0">
-            <div className="text-center">
-              <div className="text-[28px] font-extrabold text-white">{client.branches_count ?? 0}</div>
-              <div className="text-[9px] font-bold text-white/40 uppercase tracking-wider">Branches</div>
-            </div>
-            <div className="w-px h-12 bg-white/10" />
-            <div className="text-center">
-              <div className="text-[28px] font-extrabold text-white">{client.users_count ?? 0}</div>
-              <div className="text-[9px] font-bold text-white/40 uppercase tracking-wider">Users</div>
-            </div>
-          </div>
-        </div>
+{/* Hero Card - Smaller Version */}
+<div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 shadow-xl">
+  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,...')] opacity-60" />
+  <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl" />
+  
+  <div className="relative px-6 py-5 flex items-center gap-4">   {/* Reduced padding & gap */}
+    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-violet-500 flex items-center justify-center text-white text-lg font-extrabold shadow-2xl shadow-primary/30">   {/* Smaller avatar */}
+      {client.org_name.charAt(0)}{client.org_name.split(' ')[1]?.charAt(0) || ''}
+    </div>
+    
+    <div className="flex-1 min-w-0">
+      <h2 className="text-[19px] font-extrabold text-white tracking-tight">{client.org_name}</h2>
+      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+        <span className="font-mono text-[10px] text-white/70 bg-white/10 px-2 py-0.5 rounded-lg">{client.unique_number}</span>
+        <Badge variant={client.status === 'active' ? 'success' : 'danger'} dot>{client.status}</Badge>
+        <Badge variant="info">{client.org_type}</Badge>
       </div>
+    </div>
+
+    <div className="flex items-center gap-5 flex-shrink-0">   {/* Slightly smaller gap */}
+      <div className="text-center">
+        <div className="text-2xl font-extrabold text-white">{client.branches_count ?? 0}</div>
+        <div className="text-[9px] font-bold text-white/40 uppercase tracking-wider">BRANCHES</div>
+      </div>
+      <div className="w-px h-9 bg-white/10" />   {/* Shorter divider */}
+      <div className="text-center">
+        <div className="text-2xl font-extrabold text-white">{client.users_count ?? 0}</div>
+        <div className="text-[9px] font-bold text-white/40 uppercase tracking-wider">USERS</div>
+      </div>
+    </div>
+  </div>
+</div>
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
