@@ -5,7 +5,7 @@ import Avatar from '../components/ui/Avatar';
 import { Td } from '../components/ui/Table';
 import Modal from '../components/ui/Modal';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
-import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, GitBranch, Settings, IndianRupee, Building2, Eye, Loader2, Star, MapPin, Users, Phone, Mail } from 'lucide-react';
+import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, GitBranch, Settings, IndianRupee, Building2, Eye, Loader2, Star, MapPin, Users, Phone, Mail, Building, Calendar, Clock as ClockIcon, CheckCircle, XCircle, TrendingUp, Layers } from 'lucide-react';
 import api from '../api';
 import { ShimmerCards } from '../components/ui/Shimmer';
 import { useToast } from '../contexts/ToastContext';
@@ -28,11 +28,11 @@ export default function Clients({ onNavigate }: Props) {
   const [deleting, setDeleting] = useState<number | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [branchModal, setBranchModal] = useState<{ open: boolean; client: Client | null; branches: any[]; loading: boolean }>({ 
-    open: false, 
-    client: null, 
-    branches: [], 
-    loading: false 
+  const [branchModal, setBranchModal] = useState<{ open: boolean; client: Client | null; branches: any[]; loading: boolean }>({
+    open: false,
+    client: null,
+    branches: [],
+    loading: false
   });
 
   const openBranches = async (client: Client) => {
@@ -176,7 +176,7 @@ export default function Clients({ onNavigate }: Props) {
           <div className="relative flex-1 min-w-[160px] max-w-[260px]">
             <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
             <input
-              value={searchInput} 
+              value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
               placeholder="Search by name or ID..."
               className="w-full pl-7 pr-3 py-1.5 rounded-md border border-border bg-bg text-[11.5px] text-text outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 placeholder:text-muted"
@@ -232,13 +232,13 @@ export default function Clients({ onNavigate }: Props) {
                   <Td>
                     <div className="flex items-center gap-1">
                       {[
-                        { icon: Eye, cls: 'hover:bg-emerald-50 hover:text-emerald-500 hover:border-emerald-300', title: 'View', onClick: () => {} },
+                        { icon: Eye, cls: 'hover:bg-emerald-50 hover:text-emerald-500 hover:border-emerald-300', title: 'View', onClick: () => { } },
                         { icon: Pencil, cls: 'hover:bg-blue-50 hover:text-blue-500 hover:border-blue-300', title: 'Edit', onClick: () => onNavigate('client-form', { editId: c.id }) },
                         { icon: Trash2, cls: 'hover:bg-red-50 hover:text-red-500 hover:border-red-300', title: 'Delete', onClick: () => handleDeleteClick(c) },
-                        { icon: ShieldCheck, cls: 'hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-300', title: 'Permissions', onClick: () => {} },
-                        { icon: IndianRupee, cls: 'hover:bg-emerald-50 hover:text-emerald-500 hover:border-emerald-300', title: 'Billing', onClick: () => {} },
+                        { icon: ShieldCheck, cls: 'hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-300', title: 'Permissions', onClick: () => { } },
+                        { icon: IndianRupee, cls: 'hover:bg-emerald-50 hover:text-emerald-500 hover:border-emerald-300', title: 'Billing', onClick: () => { } },
                         { icon: GitBranch, cls: 'hover:bg-sky-50 hover:text-sky-500 hover:border-sky-300', title: 'Branches', onClick: () => openBranches(c) },
-                        { icon: Settings, cls: 'hover:bg-purple-50 hover:text-purple-500 hover:border-purple-300', title: 'Settings', onClick: () => {} },
+                        { icon: Settings, cls: 'hover:bg-purple-50 hover:text-purple-500 hover:border-purple-300', title: 'Settings', onClick: () => { } },
                       ].map(({ icon: I, cls, title, onClick }, j) => (
                         <button key={j} title={title} onClick={onClick} disabled={deleting === c.id}
                           className={`w-6 h-6 rounded-md border border-border bg-surface text-muted flex items-center justify-center transition-all hover:-translate-y-px cursor-pointer ${cls} ${deleting === c.id ? 'opacity-50' : ''}`}>
@@ -277,7 +277,8 @@ export default function Clients({ onNavigate }: Props) {
         loading={deleting !== null}
       />
 
-      {/* Branches Modal */}
+
+      {/* Enhanced Branches Modal */}
       <Modal open={branchModal.open} onClose={() => setBranchModal(p => ({ ...p, open: false }))} title={`Branches — ${branchModal.client?.org_name || ''}`} size="lg">
         {branchModal.loading ? (
           <div className="flex items-center justify-center py-8 text-muted text-[12px]">
@@ -287,86 +288,145 @@ export default function Clients({ onNavigate }: Props) {
           <div className="text-center py-8 text-muted text-[13px]">No branches found for this client.</div>
         ) : (
           <div className="space-y-3">
-            {branchModal.branches.map((b: any) => (
-              <div key={b.id} className={`rounded-xl border p-3.5 transition-all ${b.is_main ? 'border-amber-300 bg-amber-50/50' : 'border-border bg-surface-2/50'}`}>
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-white text-[11px] font-extrabold ${b.is_main ? 'bg-gradient-to-br from-amber-500 to-yellow-400' : 'bg-gradient-to-br from-sky-500 to-cyan-400'}`}>
-                      {b.code?.substring(0, 2) || b.name.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[13px] font-bold text-text">{b.name}</span>
-                        {b.is_main && (
-                          <span className="inline-flex items-center gap-0.5 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 border border-amber-200">
-                            <Star size={7} /> MAIN
-                          </span>
-                        )}
-                      </div>
-                      {b.description && <div className="text-[10.5px] text-muted mt-0.5">{b.description}</div>}
-                    </div>
-                  </div>
-                  <Badge variant={b.status === 'active' ? 'success' : 'danger'} dot>{b.status}</Badge>
-                </div>
+            {branchModal.branches.map((b: any, idx: number) => (
+              <div
+                key={b.id}
+                className={`group relative overflow-hidden rounded-xl border-2 transition-all duration-300 hover:shadow-xl ${b.is_main
+                    ? 'border-amber-300 bg-gradient-to-br from-amber-50/50 to-amber-100/30 dark:from-amber-950/30 dark:to-amber-900/20'
+                    : 'border-border hover:border-primary/30 bg-gradient-to-br from-surface to-surface-2/50'
+                  }`}
+              >
+                {/* Shine Effect */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1.5 mt-2.5 text-[11px]">
-                  {b.code && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted">Code:</span>
-                      <span className="font-mono text-primary bg-primary/10 px-1.5 py-0.5 rounded text-[10px]">{b.code}</span>
+                <div className="p-4">
+                  {/* Header */}
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`relative w-10 h-10 rounded-lg flex items-center justify-center text-white text-[11px] font-extrabold shadow-md ${b.is_main ? 'bg-gradient-to-br from-amber-500 to-yellow-400' : 'bg-gradient-to-br from-sky-500 to-cyan-400'
+                        }`}>
+                        {b.code?.substring(0, 2) || b.name.charAt(0)}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[14px] font-bold text-text">{b.name}</span>
+                          {b.is_main && (
+                            <span className="inline-flex items-center gap-0.5 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-sm">
+                              <Star size={8} className="fill-white" /> MAIN
+                            </span>
+                          )}
+                        </div>
+                        {b.description && <div className="text-[10.5px] text-muted mt-0.5">{b.description}</div>}
+                      </div>
                     </div>
-                  )}
-                  {b.branch_type && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted">Type:</span>
-                      <span className="text-text capitalize">{b.branch_type}</span>
-                    </div>
-                  )}
-                  {b.industry && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted">Industry:</span>
-                      <span className="text-text">{b.industry}</span>
-                    </div>
-                  )}
-                  {(b.city || b.state) && (
-                    <div className="flex items-center gap-1.5">
-                      <MapPin size={10} className="text-muted" />
-                      <span className="text-text">{[b.city, b.state].filter(Boolean).join(', ')}</span>
-                    </div>
-                  )}
-                  {b.contact_person && (
-                    <div className="flex items-center gap-1.5">
-                      <Users size={10} className="text-muted" />
-                      <span className="text-text">{b.contact_person}</span>
-                    </div>
-                  )}
-                  {b.email && (
-                    <div className="flex items-center gap-1.5">
-                      <Mail size={10} className="text-muted" />
-                      <span className="text-text">{b.email}</span>
-                    </div>
-                  )}
-                  {b.phone && (
-                    <div className="flex items-center gap-1.5">
-                      <Phone size={10} className="text-muted" />
-                      <span className="text-text">{b.phone}</span>
-                    </div>
-                  )}
-                  {b.users_count !== undefined && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted">Users:</span>
-                      <span className="font-bold text-text">{b.users_count}</span>
-                    </div>
-                  )}
-                  {b.gst_number && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-muted">GST:</span>
-                      <span className="text-text font-mono text-[10px]">{b.gst_number}</span>
-                    </div>
-                  )}
+                    <Badge variant={b.status === 'active' ? 'success' : 'danger'} dot>{b.status}</Badge>
+                  </div>
+
+                  {/* Details Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3 pt-3 border-t border-border/30">
+                    {b.code && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center">
+                          <GitBranch size={10} className="text-primary" />
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-muted">Code</div>
+                          <div className="text-[11px] font-bold text-primary font-mono">{b.code}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {b.branch_type && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-purple-500/10 flex items-center justify-center">
+                          <Building size={10} className="text-purple-500" />
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-muted">Type</div>
+                          <div className="text-[11px] font-semibold text-text capitalize">{b.branch_type}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {(b.city || b.state) && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-emerald-500/10 flex items-center justify-center">
+                          <MapPin size={10} className="text-emerald-500" />
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-muted">Location</div>
+                          <div className="text-[11px] font-semibold text-text truncate">
+                            {[b.city, b.state].filter(Boolean).join(', ')}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {b.contact_person && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-indigo-500/10 flex items-center justify-center">
+                          <Users size={10} className="text-indigo-500" />
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-muted">Contact</div>
+                          <div className="text-[11px] font-semibold text-text">{b.contact_person}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {b.email && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-sky-500/10 flex items-center justify-center">
+                          <Mail size={10} className="text-sky-500" />
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-muted">Email</div>
+                          <div className="text-[11px] font-semibold text-text truncate">{b.email}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {b.phone && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-teal-500/10 flex items-center justify-center">
+                          <Phone size={10} className="text-teal-500" />
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-muted">Phone</div>
+                          <div className="text-[11px] font-semibold text-text">{b.phone}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {b.users_count !== undefined && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-amber-500/10 flex items-center justify-center">
+                          <Users size={10} className="text-amber-500" />
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-muted">Users</div>
+                          <div className="text-[11px] font-bold text-text">{b.users_count}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {b.gst_number && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-md bg-red-500/10 flex items-center justify-center">
+                          <Building2 size={10} className="text-red-500" />
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-muted">GST</div>
+                          <div className="text-[10px] font-mono font-semibold text-text">{b.gst_number}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
+
+            {/* Footer Note */}
             <div className="text-center text-[10.5px] text-muted pt-2">
               {branchModal.branches.length} branch{branchModal.branches.length !== 1 ? 'es' : ''} total
               {branchModal.branches.some((b: any) => b.is_main) && ' · Main branch users can view all branches data'}
