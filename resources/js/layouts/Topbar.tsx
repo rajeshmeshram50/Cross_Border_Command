@@ -22,7 +22,7 @@ export default function Topbar({ page, onToggleSidebar, onNavigate }: Props) {
   const { user } = useAuth();
 
   return (
-    <header className="h-[50px] bg-surface border-b border-border/50 flex items-center px-4 gap-2 flex-shrink-0 z-40">
+    <header className="h-[50px] bg-surface border-b border-border flex items-center px-4 gap-2 flex-shrink-0 z-40">
       {/* Mobile hamburger */}
       <button onClick={onToggleSidebar} className="lg:hidden w-8 h-8 rounded-md border border-border flex items-center justify-center text-secondary hover:text-primary transition-colors cursor-pointer">
         <Menu size={16} />

@@ -141,7 +141,7 @@ export default function Clients({ onNavigate }: Props) {
           <div className="relative flex-1 min-w-[180px] max-w-[280px]">
             <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
             <input value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search by name or ID..."
-              className="w-full pl-8 pr-3 py-2 rounded-lg border border-border bg-bg text-[12px] text-text outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 placeholder:text-muted" />
+              className="w-full pl-8 pr-3 py-2 rounded-2xl border border-border bg-surface text-[12px] text-text outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 placeholder:text-muted" />
           </div>
           <span className="text-[11px] text-muted ml-auto">{loading ? 'Loading...' : `${clients.length} of ${total} results`}</span>
         </div>
@@ -150,9 +150,9 @@ export default function Clients({ onNavigate }: Props) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[950px]">
             <thead>
-              <tr className="bg-sidebar">
+              <tr className="bg-border border-b border-border">
                 {['#', 'Organization', 'Unique ID', 'Contact', 'Type', 'Branches', 'Plan', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left text-[9.5px] font-bold tracking-wider uppercase text-white/50 whitespace-nowrap">{h}</th>
+                  <th key={h} className="px-4 py-3 text-left text-[9.5px] font-bold tracking-wider uppercase text-secondary whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>

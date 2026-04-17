@@ -66,7 +66,7 @@ export default function TopNav({ current, onNavigate }: Props) {
       <div className="w-px h-7 bg-white/10 mx-2.5 flex-shrink-0" />
 
       {/* Nav Items */}
-      <nav ref={menuRef} className="flex items-center gap-0.5 flex-1 min-w-0 overflow-hidden">
+      <nav ref={menuRef} className="flex items-center gap-1 flex-1 min-w-0 overflow-hidden">
         {navItems.map(m => {
           const Icon = getIcon(m.icon);
           const active = current === m.id;
@@ -74,13 +74,13 @@ export default function TopNav({ current, onNavigate }: Props) {
             <button
               key={m.id}
               onClick={() => onNavigate(m.id)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium whitespace-nowrap flex-shrink-0 transition-all duration-150 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium whitespace-nowrap flex-shrink-0 transition-all duration-150 cursor-pointer ${
                 active
                   ? 'bg-primary text-white font-semibold shadow-md shadow-primary/35'
                   : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300'
               }`}
             >
-              <Icon size={13} className={`flex-shrink-0 ${active ? 'opacity-100' : 'opacity-60'}`} />
+              <Icon size={13} className={`flex-shrink-0 ${active ? 'text-white' : 'text-sidebar-text/60'}`} />
               <span className="hidden md:inline">{m.label}</span>
             </button>
           );
