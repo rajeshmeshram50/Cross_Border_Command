@@ -17,7 +17,8 @@ class PaymentController extends Controller
     {
         $user = $request->user();
 
-        $query = Payment::with(['client:id,org_name', 'plan:id,name,price', 'processedBy:id,name']);
+        $query = Payment::with(['client:id,org_name', 'plan:id,name,price', 'processedBy:id,name'])
+            ->whereHas('client');
 
         if ($user->isClientAdmin()) {
             $query->where('client_id', $user->client_id);
