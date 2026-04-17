@@ -198,13 +198,13 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
             <div className="overflow-x-auto">
               <table className="w-full" style={{ minWidth: 800 }}>
                 <thead>
-                  <tr className="bg-sidebar">
-                    <th className="text-left px-5 py-3 text-[9.5px] font-bold tracking-wider uppercase text-white/55" style={{ width: '28%' }}>Module</th>
+                  <tr className="bg-border border-b border-border">
+                    <th className="text-left px-5 py-3 text-[9.5px] font-bold tracking-wider uppercase text-secondary" style={{ width: '28%' }}>Module</th>
                     {PERMS.map(p => (
                       <th key={p.key} className="text-center px-3 py-3">
                         <div className="flex flex-col items-center gap-1">
-                          <p.icon size={13} className="text-white/50" />
-                          <span className="text-[9.5px] font-bold tracking-wider uppercase text-white/55">{p.label}</span>
+                          <p.icon size={13} className="text-secondary/70" />
+                          <span className="text-[9.5px] font-bold tracking-wider uppercase text-secondary">{p.label}</span>
                         </div>
                       </th>
                     ))}

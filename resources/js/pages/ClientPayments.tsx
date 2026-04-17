@@ -114,9 +114,9 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px]">
               <thead>
-                <tr className="bg-sidebar">
+                <tr className="bg-border border-b border-border">
                   {['#', 'Date', 'Plan', 'Amount', 'GST', 'Total', 'Method', 'Transaction ID', 'Status'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-[9.5px] font-bold tracking-wider uppercase text-white/50">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left text-[9.5px] font-bold tracking-wider uppercase text-secondary">{h}</th>
                   ))}
                 </tr>
               </thead>
