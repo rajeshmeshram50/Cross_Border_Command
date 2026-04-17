@@ -55,8 +55,8 @@ export default function TopNav({ current, onNavigate }: Props) {
   }, []);
 
   return (
-    <header className="h-14 bg-sidebar flex items-center px-4 gap-0 flex-shrink-0 z-50 border-b border-white/[.04]"
-      style={{ background: 'linear-gradient(90deg, #0C1322 0%, #111827 100%)' }}>
+    <header className="h-14  bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 flex items-center px-4 gap-0 flex-shrink-0 z-50 border-b border-white/[.04]"
+     >
       {/* Logo — compact for topnav */}
       <div className="mr-4 flex-shrink-0">
         <Logo variant="topnav" />
