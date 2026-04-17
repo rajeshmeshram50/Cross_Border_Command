@@ -364,7 +364,7 @@ export default function BranchForm({ onBack, editId }: Props) {
             </span>
           </div>
 
-          <div className="p-5 space-y-4">
+          <div className="p-5 space-y-2">
             {/* 01. Branch Details */}
             <section>
               <SectionHeader num="01" title="Branch / Company Details" />

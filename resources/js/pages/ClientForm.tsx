@@ -420,7 +420,7 @@ export default function ClientForm({ onBack, editId }: Props) {
             </span>
           </div>
 
-          <div className="p-5 space-y-4">
+          <div className="p-6 space-y-2">
             {/* 01. Organization Details */}
             <section>
               <SectionHeader  title="Organization Details" />
