@@ -95,11 +95,11 @@ export default function Profile() {
         <div className="relative px-8 py-8 flex items-center gap-6 flex-wrap">
           {/* Avatar */}
           <div className="relative group">
-            <div className={`w-24 h-24 rounded-2xl bg-gradient-to-br ${roleColors[user.user_type] || 'from-indigo-500 to-violet-600'} flex items-center justify-center text-white text-[28px] font-extrabold shadow-2xl shadow-indigo-500/30 group-hover:scale-105 transition-transform duration-300`}>
+            <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${roleColors[user.user_type] || 'from-indigo-500 to-violet-600'} flex items-center justify-center text-white text-[20px] font-extrabold shadow-2xl shadow-indigo-500/30 group-hover:scale-105 transition-transform duration-300`}>
               {user.initials}
             </div>
-            <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-lg bg-emerald-500 border-[3px] border-slate-900 flex items-center justify-center">
-              <CheckCircle2 size={12} className="text-white" />
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-emerald-500 border-[3px] border-slate-900 flex items-center justify-center">
+              <CheckCircle2 size={10} className="text-white" />
             </div>
           </div>
 
@@ -122,11 +122,12 @@ export default function Profile() {
                   <GitBranch size={11} /> {user.branch_name}
                 </span>
               )}
-            </div>
-            <div className="flex items-center gap-4 mt-3 text-[12px] text-white/50">
+              <div className="flex items-center gap-4 mt-0 text-[12px] text-white/50">
               <span className="flex items-center gap-1.5"><Mail size={11} /> {user.email}</span>
               {user.phone && <span className="flex items-center gap-1.5"><Phone size={11} /> {user.phone}</span>}
             </div>
+            </div>
+            
           </div>
 
           {/* Logout */}
