@@ -119,6 +119,7 @@ class DashboardController extends Controller
             ->toArray();
 
         return response()->json([
+            'plan_distribution' => $planDistribution,
             'counts' => [
                 'total_clients' => $totalClients,
                 'active_clients' => $activeClients,
@@ -143,6 +144,105 @@ class DashboardController extends Controller
             'recent_clients' => $recentClients,
             'recent_payments' => $recentPayments,
             'top_clients' => $topClients,
+        ]);
+    }
+
+    public function clientStats(Request $request)
+    {
+        $user = $request->user();
+        $clientId = $user->client_id;
+
+        if (!$clientId) {
+            return response()->json(['message' => 'No client associated'], 422);
+        }
+
+        $client = Client::with('plan')->find($clientId);
+
+        // Branches
+        $totalBranches = Branch::where('client_id', $clientId)->count();
+        $activeBranches = Branch::where('client_id', $clientId)->where('status', 'active')->count();
+
+        // Users
+        $totalUsers = User::where('client_id', $clientId)->count();
+        $activeUsers = User::where('client_id', $clientId)->where('status', 'active')->count();
+
+        // Payments
+        $totalPayments = Payment::where('client_id', $clientId)->count();
+        $successPayments = Payment::where('client_id', $clientId)->where('status', 'success')->count();
+        $pendingPayments = Payment::where('client_id', $clientId)->where('status', 'pending')->count();
+        $totalPaid = (float) Payment::where('client_id', $clientId)->where('status', 'success')->sum('total');
+
+        // Plan info
+        $planName = $client?->plan?->name ?? 'Free';
+        $planExpiry = $client?->plan_expires_at;
+        $daysRemaining = $planExpiry ? max(0, (int) now()->diffInDays($planExpiry, false)) : null;
+        $planStatus = $planExpiry ? ($planExpiry->isPast() ? 'expired' : 'active') : 'no_plan';
+
+        // Recent payments
+        $recentPayments = Payment::with('plan:id,name')
+            ->where('client_id', $clientId)
+            ->orderByDesc('created_at')
+            ->limit(5)
+            ->get(['id', 'plan_id', 'total', 'status', 'method', 'invoice_number', 'valid_from', 'valid_until', 'created_at']);
+
+        // Branches list
+        $branches = Branch::where('client_id', $clientId)
+            ->withCount('users')
+            ->orderByDesc('is_main')
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'status', 'is_main', 'city', 'state', 'email', 'phone']);
+
+        // Payment trend (last 6 months)
+        $paymentTrend = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $amount = (float) Payment::where('client_id', $clientId)
+                ->where('status', 'success')
+                ->whereYear('created_at', $month->year)
+                ->whereMonth('created_at', $month->month)
+                ->sum('total');
+            $paymentTrend[] = [
+                'month' => $month->format('M'),
+                'amount' => $amount,
+            ];
+        }
+
+        // User role breakdown
+        $userRoles = User::where('client_id', $clientId)
+            ->select('user_type', DB::raw('count(*) as count'))
+            ->groupBy('user_type')
+            ->get()
+            ->mapWithKeys(fn($item) => [$item->user_type => $item->count])
+            ->toArray();
+
+        return response()->json([
+            'client' => [
+                'org_name' => $client?->org_name,
+                'logo' => $client?->logo,
+                'primary_color' => $client?->primary_color,
+                'status' => $client?->status,
+            ],
+            'plan' => [
+                'name' => $planName,
+                'status' => $planStatus,
+                'expires_at' => $planExpiry?->format('Y-m-d'),
+                'days_remaining' => $daysRemaining,
+                'price' => $client?->plan?->price ?? 0,
+            ],
+            'counts' => [
+                'total_branches' => $totalBranches,
+                'active_branches' => $activeBranches,
+                'total_users' => $totalUsers,
+                'active_users' => $activeUsers,
+                'total_payments' => $totalPayments,
+                'success_payments' => $successPayments,
+                'pending_payments' => $pendingPayments,
+                'total_paid' => $totalPaid,
+            ],
+            'branches' => $branches,
+            'recent_payments' => $recentPayments,
+            'payment_trend' => $paymentTrend,
+            'user_roles' => $userRoles,
         ]);
     }
 }
