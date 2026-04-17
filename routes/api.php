@@ -22,6 +22,7 @@ Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPa
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
 
     // Dashboard
     Route::get('/dashboard/admin-stats', [DashboardController::class, 'adminStats']);
@@ -42,6 +43,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Payments
     Route::get('/payments/stats', [PaymentController::class, 'stats']);
+    Route::post('/payments/{payment}/send-reminder', [PaymentController::class, 'sendReminder']);
     Route::apiResource('payments', PaymentController::class);
 
     // Permissions
