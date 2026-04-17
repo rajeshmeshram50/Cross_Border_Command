@@ -125,11 +125,7 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
       <div className="text-center space-y-6">
         
 
-        {error && (
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-600">
-            <AlertCircle size={14} /> {error}
-          </div>
-        )}
+       
 
         <form onSubmit={handleSubmit} className="space-y-6 pt-2">
           {/* OTP Input Boxes */}
