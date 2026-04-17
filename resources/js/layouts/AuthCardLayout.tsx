@@ -37,9 +37,32 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
             </div>
 
             <h1 className="text-4xl xl:text-5xl font-black tracking-tight leading-tight mb-4">
-              Welcome to <br />
-              <span className="gradient-text italic drop-shadow-[0_0_10px_rgba(109,99,244,0.3)]">Cross Border Command</span>
+              {(() => {
+                const line1 = 'Welcome to';
+                const line2 = 'Cross Border Command';
+                let idx = 0;
+                return (
+                  <>
+                    {line1.split('').map((ch, i) => {
+                      const d = idx++;
+                      return <span key={`l1-${i}`} className="inline-block opacity-0" style={{ animation: `auth-letter-drop 0.5s cubic-bezier(0.22,1,0.36,1) ${0.5 + d * 0.06}s forwards`, display: ch === ' ' ? 'inline' : undefined, width: ch === ' ' ? '0.3em' : undefined }}>{ch}</span>;
+                    })}
+                    <br />
+                    {line2.split('').map((ch, i) => {
+                      const d = idx++;
+                      return <span key={`l2-${i}`} className="inline-block opacity-0 gradient-text italic drop-shadow-[0_0_10px_rgba(109,99,244,0.3)]" style={{ animation: `auth-letter-drop 0.5s cubic-bezier(0.22,1,0.36,1) ${0.5 + d * 0.06}s forwards`, display: ch === ' ' ? 'inline' : undefined, width: ch === ' ' ? '0.3em' : undefined }}>{ch}</span>;
+                    })}
+                  </>
+                );
+              })()}
             </h1>
+            <style>{`
+              @keyframes auth-letter-drop {
+                0% { opacity: 0; transform: translateY(-24px); filter: blur(3px); }
+                70% { opacity: 1; transform: translateY(2px); filter: blur(0); }
+                100% { opacity: 1; transform: translateY(0); }
+              }
+            `}</style>
 
             <p className="text-base text-white/70 font-medium leading-relaxed max-w-md">
               An intelligent platform connecting Operations, Procurement, Logistics, Finance, and Compliance in one unified ecosystem.
