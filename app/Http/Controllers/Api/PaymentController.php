@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\PaymentInvoiceMail;
+use App\Mail\PlanReminderMail;
 use App\Models\Payment;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -148,6 +149,45 @@ class PaymentController extends Controller
     }
 
     /**
+     * Send plan reminder email to client
+     */
+    public function sendReminder(Request $request, Payment $payment)
+    {
+        if (!$request->user()->isSuperAdmin()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $payment->load(['client', 'plan']);
+
+        if (!$payment->client || !$payment->client->email) {
+            return response()->json(['message' => 'Client email not found'], 422);
+        }
+
+        try {
+            // Send to organization email
+            $orgEmail = $payment->client->email;
+
+            // Also find client admin user email
+            $adminUser = \App\Models\User::where('client_id', $payment->client->id)
+                ->where('user_type', 'client_admin')
+                ->first();
+
+            $recipients = collect([$orgEmail]);
+            if ($adminUser && $adminUser->email !== $orgEmail) {
+                $recipients->push($adminUser->email);
+            }
+
+            Mail::to($recipients->toArray())->send(new PlanReminderMail($payment));
+
+            return response()->json([
+                'message' => 'Reminder sent to ' . $recipients->join(', '),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Failed to send reminder: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Download invoice PDF
      */
     public function downloadInvoice(Request $request, Payment $payment)
@@ -242,13 +282,18 @@ class PaymentController extends Controller
         try {
             $this->generateInvoicePdf($payment);
 
-            // Send to client email
-            $clientEmail = $payment->client->email;
+            // Send to organization email + client admin email
+            $orgEmail = $payment->client->email;
+            $adminUser = \App\Models\User::where('client_id', $payment->client->id)
+                ->where('user_type', 'client_admin')
+                ->first();
 
-            // For testing, also send to php@inhpl.com
-            Mail::to($clientEmail)
-                ->cc('php@inhpl.com')
-                ->send(new PaymentInvoiceMail($payment));
+            $recipients = collect([$orgEmail]);
+            if ($adminUser && $adminUser->email !== $orgEmail) {
+                $recipients->push($adminUser->email);
+            }
+
+            Mail::to($recipients->toArray())->send(new PaymentInvoiceMail($payment));
 
         } catch (\Exception $e) {
             // Log error but don't fail the payment

@@ -6,7 +6,8 @@ import Input, { Select, Textarea } from '../components/ui/Input';
 import {
   IndianRupee, Receipt, Clock, XCircle, Loader2, Search, Plus, Eye,
   Trash2, Download, Filter, ChevronLeft, ChevronRight, X,
-  CheckCircle2, RefreshCw, CreditCard, TrendingUp, Banknote, FileText
+  CheckCircle2, RefreshCw, CreditCard, TrendingUp, Banknote, FileText,
+  ChevronDown, Send, CalendarDays, AlertTriangle
 } from 'lucide-react';
 import { ShimmerPaymentList } from '../components/ui/Shimmer';
 import api from '../api';
@@ -48,6 +49,39 @@ const statusConfig: Record<string, { color: string; icon: typeof CheckCircle2; v
   refunded: { color: 'sky', icon: RefreshCw, variant: 'info' },
 };
 
+function getRemainingDays(validUntil: string | null): number | null {
+  if (!validUntil) return null;
+  const expiry = new Date(validUntil);
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  expiry.setHours(0, 0, 0, 0);
+  return Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function RemainingDaysBadge({ days }: { days: number | null }) {
+  if (days === null) return null;
+  if (days <= 0) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-600 border border-red-200">
+      <AlertTriangle size={9} /> Expired
+    </span>
+  );
+  if (days <= 7) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 animate-pulse">
+      <Clock size={9} /> {days}d left
+    </span>
+  );
+  if (days <= 30) return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-sky-100 text-sky-700 border border-sky-200">
+      <CalendarDays size={9} /> {days}d left
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+      <CheckCircle2 size={9} /> {days}d left
+    </span>
+  );
+}
+
 export default function Payments() {
   const { user } = useAuth();
   const toast = useToast();
@@ -67,6 +101,8 @@ export default function Payments() {
   const [saving, setSaving] = useState(false);
   const [clients, setClients] = useState<{ id: number; org_name: string }[]>([]);
   const [plans, setPlans] = useState<{ id: number; name: string; price: number }[]>([]);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [sendingReminder, setSendingReminder] = useState<number | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 400);
@@ -122,17 +158,29 @@ export default function Payments() {
 
   const handleDelete = async (p: Payment) => {
     const result = await Swal.fire({
-      title: 'Delete Payment?',
-      html: `<div style="font-size:14px;color:#64748b">Delete payment <strong style="color:#1e293b">${p.invoice_number || '#' + p.id}</strong>?</div>`,
+      title: 'Are you sure?',
+      text: `Delete payment ${p.invoice_number || '#' + p.id}?`,
       icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#94a3b8',
-      confirmButtonText: 'Delete', customClass: { popup: 'rounded-2xl' },
+      confirmButtonText: 'Delete', reverseButtons: true,
     });
     if (!result.isConfirmed) return;
     try {
       await api.delete(`/payments/${p.id}`);
-      Swal.fire({ title: 'Deleted!', icon: 'success', timer: 1500, showConfirmButton: false, customClass: { popup: 'rounded-2xl' } });
+      Swal.fire({ title: 'Deleted!', icon: 'success', timer: 1500, showConfirmButton: false });
       fetchPayments(); fetchStats();
     } catch { toast.error('Failed', 'Could not delete payment'); }
+  };
+
+  const handleSendReminder = async (p: Payment) => {
+    setSendingReminder(p.id);
+    try {
+      const res = await api.post(`/payments/${p.id}/send-reminder`);
+      toast.success('Reminder Sent', res.data.message || 'Reminder email sent successfully');
+    } catch (err: any) {
+      toast.error('Failed', err.response?.data?.message || 'Could not send reminder');
+    } finally {
+      setSendingReminder(null);
+    }
   };
 
   const [exporting, setExporting] = useState(false);
@@ -142,43 +190,26 @@ export default function Payments() {
     try {
       const res = await api.get('/payments', { params: { per_page: 9999 } });
       const allPayments: Payment[] = res.data.data || [];
-
       const rows = allPayments.map((p, i) => ({
-        '#': i + 1,
-        'Invoice': p.invoice_number || '',
-        'Client': p.client?.org_name || '',
-        'Plan': p.plan?.name || '',
-        'Amount (₹)': parseFloat(p.amount),
-        'GST (₹)': p.gst ? parseFloat(p.gst) : 0,
-        'Discount (₹)': p.discount ? parseFloat(p.discount) : 0,
-        'Total (₹)': parseFloat(p.total),
-        'Method': methodLabels[p.method] || p.method,
-        'Gateway': p.gateway || '',
-        'Status': p.status,
-        'Billing Cycle': p.billing_cycle || '',
-        'Transaction ID': p.txn_id || '',
-        'Order ID': p.order_id || '',
-        'Valid From': p.valid_from || '',
-        'Valid Until': p.valid_until || '',
-        'Date': new Date(p.created_at).toLocaleDateString('en-IN'),
-        'Notes': p.notes || '',
+        '#': i + 1, 'Invoice': p.invoice_number || '', 'Client': p.client?.org_name || '',
+        'Plan': p.plan?.name || '', 'Amount (₹)': parseFloat(p.amount),
+        'GST (₹)': p.gst ? parseFloat(p.gst) : 0, 'Discount (₹)': p.discount ? parseFloat(p.discount) : 0,
+        'Total (₹)': parseFloat(p.total), 'Method': methodLabels[p.method] || p.method,
+        'Gateway': p.gateway || '', 'Status': p.status, 'Billing Cycle': p.billing_cycle || '',
+        'Transaction ID': p.txn_id || '', 'Valid From': p.valid_from || '',
+        'Valid Until': p.valid_until || '', 'Date': new Date(p.created_at).toLocaleDateString('en-IN'),
       }));
-
       const ws = XLSX.utils.json_to_sheet(rows);
       ws['!cols'] = Object.keys(rows[0] || {}).map(key => ({
         wch: Math.max(key.length, ...rows.map(r => String((r as any)[key]).length)) + 2,
       }));
-
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Payments');
-
       const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Payments_${new Date().toISOString().slice(0, 10)}.xlsx`);
-
-      toast.success('Exported', `${allPayments.length} payments exported to Excel`);
-    } catch {
-      toast.error('Export Failed', 'Could not export payments');
-    } finally { setExporting(false); }
+      toast.success('Exported', `${allPayments.length} payments exported`);
+    } catch { toast.error('Export Failed', 'Could not export payments'); }
+    finally { setExporting(false); }
   };
 
   const viewInvoice = (p: Payment) => {
@@ -287,20 +318,24 @@ export default function Payments() {
           {payments.map(p => {
             const sc = statusConfig[p.status] || statusConfig.pending;
             const StatusIcon = sc.icon;
+            const remainingDays = getRemainingDays(p.valid_until);
+            const isExpanded = expandedId === p.id;
+
             return (
-              <div key={p.id}
-                className="group bg-surface border border-border rounded-2xl p-4 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5 hover:border-primary/15 transition-all duration-300">
-                <div className="flex items-center gap-4 flex-wrap">
+              <div key={p.id} className="bg-surface border border-border rounded-2xl overflow-hidden hover:shadow-lg hover:shadow-primary/5 transition-all duration-300">
+                {/* Main Row */}
+                <div className="p-4 flex items-center gap-4 flex-wrap">
                   {/* Status Icon */}
-                  <div className={`w-11 h-11 rounded-xl bg-${sc.color}-500/10 flex items-center justify-center flex-shrink-0 transition-transform duration-300 group-hover:scale-110`}>
+                  <div className={`w-11 h-11 rounded-xl bg-${sc.color}-500/10 flex items-center justify-center flex-shrink-0`}>
                     <StatusIcon size={18} className={`text-${sc.color}-500`} />
                   </div>
 
                   {/* Info */}
                   <div className="flex-1 min-w-[200px]">
-                    <div className="flex items-center gap-2 mb-0.5">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <span className="text-[14px] font-extrabold text-text">{p.client?.org_name || 'Unknown'}</span>
                       <Badge variant={sc.variant} dot>{p.status}</Badge>
+                      {p.status === 'success' && <RemainingDaysBadge days={remainingDays} />}
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-muted flex-wrap">
                       {p.invoice_number && <span className="font-mono bg-surface-2 px-1.5 py-0.5 rounded">{p.invoice_number}</span>}
@@ -322,6 +357,13 @@ export default function Payments() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {/* Expand/Collapse for remaining days */}
+                    {p.status === 'success' && p.valid_until && (
+                      <button onClick={() => setExpandedId(isExpanded ? null : p.id)} title="Plan Details"
+                        className={`w-8 h-8 rounded-lg border border-border bg-surface text-muted flex items-center justify-center hover:bg-primary/5 hover:text-primary hover:border-primary/30 transition-all duration-200 cursor-pointer ${isExpanded ? 'bg-primary/5 text-primary border-primary/30' : ''}`}>
+                        <ChevronDown size={13} className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+                    )}
                     <button onClick={() => setViewPayment(p)} title="View Details"
                       className="w-8 h-8 rounded-lg border border-border bg-surface text-muted flex items-center justify-center hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 cursor-pointer">
                       <Eye size={13} />
@@ -338,6 +380,99 @@ export default function Payments() {
                         <Trash2 size={13} />
                       </button>
                     )}
+                  </div>
+                </div>
+
+                {/* Expandable Plan Details Section */}
+                <div className={`overflow-hidden transition-all duration-400 ease-in-out ${isExpanded ? 'max-h-[300px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                  <div className="px-4 pb-4 pt-0">
+                    <div className="border-t border-border/50 pt-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {/* Remaining Days */}
+                        <div className={`rounded-xl p-3.5 text-center border ${
+                          remainingDays !== null && remainingDays <= 0 ? 'bg-red-50 border-red-200' :
+                          remainingDays !== null && remainingDays <= 7 ? 'bg-amber-50 border-amber-200' :
+                          remainingDays !== null && remainingDays <= 30 ? 'bg-sky-50 border-sky-200' :
+                          'bg-emerald-50 border-emerald-200'
+                        }`}>
+                          <div className={`text-[28px] font-extrabold ${
+                            remainingDays !== null && remainingDays <= 0 ? 'text-red-600' :
+                            remainingDays !== null && remainingDays <= 7 ? 'text-amber-600' :
+                            remainingDays !== null && remainingDays <= 30 ? 'text-sky-600' :
+                            'text-emerald-600'
+                          }`}>
+                            {remainingDays !== null && remainingDays <= 0 ? '0' : remainingDays}
+                          </div>
+                          <div className="text-[9px] font-bold text-muted uppercase tracking-wider mt-0.5">
+                            {remainingDays !== null && remainingDays <= 0 ? 'Expired' : 'Days Left'}
+                          </div>
+                        </div>
+
+                        {/* Plan Info */}
+                        <div className="rounded-xl p-3.5 bg-surface-2 border border-border/50">
+                          <div className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1">Plan</div>
+                          <div className="text-[14px] font-bold text-text">{p.plan?.name || 'N/A'}</div>
+                          <div className="text-[10px] text-muted capitalize mt-0.5">{p.billing_cycle || 'One-time'}</div>
+                        </div>
+
+                        {/* Valid From */}
+                        <div className="rounded-xl p-3.5 bg-surface-2 border border-border/50">
+                          <div className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1">Valid From</div>
+                          <div className="text-[13px] font-bold text-text">
+                            {p.valid_from ? new Date(p.valid_from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
+                          </div>
+                        </div>
+
+                        {/* Expires On */}
+                        <div className="rounded-xl p-3.5 bg-surface-2 border border-border/50">
+                          <div className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1">Expires On</div>
+                          <div className={`text-[13px] font-bold ${remainingDays !== null && remainingDays <= 7 ? 'text-red-600' : 'text-text'}`}>
+                            {p.valid_until ? new Date(p.valid_until).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      {p.valid_from && p.valid_until && (() => {
+                        const start = new Date(p.valid_from).getTime();
+                        const end = new Date(p.valid_until).getTime();
+                        const now = Date.now();
+                        const totalDuration = end - start;
+                        const elapsed = Math.min(now - start, totalDuration);
+                        const pct = totalDuration > 0 ? Math.max(0, Math.min(100, (elapsed / totalDuration) * 100)) : 0;
+                        return (
+                          <div className="mt-3">
+                            <div className="flex items-center justify-between text-[10px] text-muted mb-1.5">
+                              <span>Plan Usage</span>
+                              <span className="font-bold">{Math.round(pct)}% elapsed</span>
+                            </div>
+                            <div className="h-2 bg-surface-2 rounded-full overflow-hidden border border-border/30">
+                              <div className={`h-full rounded-full transition-all duration-500 ${
+                                pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500'
+                              }`} style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Send Reminder Button */}
+                      {isSuperAdmin && (
+                        <div className="mt-3 flex items-center justify-between">
+                          <div className="text-[11px] text-muted">
+                            {remainingDays !== null && remainingDays <= 0 && (
+                              <span className="text-red-500 font-semibold flex items-center gap-1"><AlertTriangle size={11} /> Plan expired. Branch users are blocked.</span>
+                            )}
+                            {remainingDays !== null && remainingDays > 0 && remainingDays <= 7 && (
+                              <span className="text-amber-600 font-semibold flex items-center gap-1"><Clock size={11} /> Expiring soon. Consider sending a reminder.</span>
+                            )}
+                          </div>
+                          <Button variant="outline" size="sm" onClick={() => handleSendReminder(p)} disabled={sendingReminder === p.id}>
+                            {sendingReminder === p.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                            {sendingReminder === p.id ? 'Sending...' : 'Send Reminder'}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -371,6 +506,7 @@ export default function Payments() {
         {viewPayment && (() => {
           const sc = statusConfig[viewPayment.status] || statusConfig.pending;
           const StatusIcon = sc.icon;
+          const days = getRemainingDays(viewPayment.valid_until);
           return (
             <div className="space-y-4">
               {/* Header */}
@@ -386,8 +522,13 @@ export default function Payments() {
                     <div className="text-white/60 text-[12px] mt-1">{viewPayment.client?.org_name}</div>
                   </div>
                   <div className="text-right">
-                    {viewPayment.invoice_number && <div className="font-mono text-[11px] bg-white/15 px-2 py-1 rounded-lg mb-1">{viewPayment.invoice_number}</div>}
-                    <div className="text-[11px] text-white/60">{new Date(viewPayment.created_at).toLocaleString('en-IN')}</div>
+                    {days !== null && (
+                      <div className={`text-[28px] font-extrabold mb-1 ${days <= 0 ? 'text-red-200' : 'text-white'}`}>
+                        {days <= 0 ? 'EXP' : days}
+                      </div>
+                    )}
+                    {days !== null && <div className="text-[10px] text-white/50 uppercase tracking-wider">{days <= 0 ? 'Expired' : 'Days Left'}</div>}
+                    {viewPayment.invoice_number && <div className="font-mono text-[11px] bg-white/15 px-2 py-1 rounded-lg mt-2">{viewPayment.invoice_number}</div>}
                   </div>
                 </div>
               </div>
@@ -422,14 +563,20 @@ export default function Payments() {
                 </div>
               )}
 
-              {/* Invoice Button */}
-              {viewPayment.status === 'success' && (
-                <div className="flex gap-2 pt-2">
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2 flex-wrap">
+                {viewPayment.status === 'success' && (
                   <Button size="sm" onClick={() => viewInvoice(viewPayment)}>
                     <FileText size={12} /> View Invoice PDF
                   </Button>
-                </div>
-              )}
+                )}
+                {isSuperAdmin && viewPayment.status === 'success' && (
+                  <Button variant="outline" size="sm" onClick={() => handleSendReminder(viewPayment)} disabled={sendingReminder === viewPayment.id}>
+                    {sendingReminder === viewPayment.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                    Send Reminder
+                  </Button>
+                )}
+              </div>
             </div>
           );
         })()}
