@@ -78,7 +78,7 @@ export default function Login({ onForgotPassword }: LoginProps) {
           <div className="pt-1">
             <button
               disabled={loading}
-              className="w-full h-11 rounded-full bg-primary text-white text-[14px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover-lift hover-scale transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+              className="w-full btn-gradient-primary h-11 rounded-full  text-white text-[14px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover-lift hover-scale transition-all disabled:opacity-70 flex items-center justify-center gap-2"
               type="submit"
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : null}
