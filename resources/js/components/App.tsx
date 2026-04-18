@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, createContext, useContext } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import SplashLoader from './ui/SplashLoader';
@@ -32,73 +33,170 @@ import ClientPermissions from '../pages/ClientPermissions';
 import ClientPayments from '../pages/ClientPayments';
 import ClientSettings from '../pages/ClientSettings';
 
+// Create NavigateContext for consistent navigation across the app
+const NavigateContext = createContext<{
+  navigate: (path: string, data?: any) => void;
+  getPath: (page: string, data?: any) => string;
+}>({
+  navigate: () => {},
+  getPath: () => '',
+});
+
+export const useNavigateContext = () => useContext(NavigateContext);
+
+// Page to path mapping
+const getPagePath = (page: string, data?: any): string => {
+  switch (page) {
+    case 'dashboard': return '/dashboard';
+    case 'clients': return '/clients';
+    case 'client-form': return data?.editId ? `/clients/${data.editId}/edit` : '/clients/new';
+    case 'client-view': return `/clients/${data?.clientId}`;
+    case 'client-branches': return `/clients/${data?.clientId}/branches`;
+    case 'client-permissions': return `/clients/${data?.clientId}/permissions`;
+    case 'client-payments': return `/clients/${data?.clientId}/payments`;
+    case 'client-settings': return `/clients/${data?.clientId}/settings`;
+    case 'branches': return '/branches';
+    case 'branch-form': return data?.editId ? `/branches/${data.editId}/edit` : '/branches/new';
+    case 'branch-users': return '/branches/users';
+    case 'client-users': return '/clients/users';
+    case 'employees': return '/employees';
+    case 'plans': return '/plans';
+    case 'add-plan': return data?.editId ? `/plans/${data.editId}/edit` : '/plans/new';
+    case 'my-plan': return '/my-plan';
+    case 'plan-blocked': return '/plan-blocked';
+    case 'payments': return '/payments';
+    case 'permissions': return '/permissions';
+    case 'settings': return '/settings';
+    case 'profile': return '/profile';
+    default: return '/dashboard';
+  }
+};
+
+// Wrapper components to extract URL params
+function ClientViewWrapper() {
+  const { id } = useParams();
+  const navigateFn = useNavigateContext().navigate;
+  return <ClientView clientId={Number(id)} onBack={() => navigateFn('clients')} onNavigate={navigateFn} />;
+}
+
+function ClientBranchesWrapper() {
+  const { id } = useParams();
+  const navigateFn = useNavigateContext().navigate;
+  return <ClientBranches clientId={Number(id)} clientName="" onBack={() => navigateFn('clients')} />;
+}
+
+function ClientPermissionsWrapper() {
+  const { id } = useParams();
+  const navigateFn = useNavigateContext().navigate;
+  return <ClientPermissions clientId={Number(id)} clientName="" onBack={() => navigateFn('clients')} />;
+}
+
+function ClientPaymentsWrapper() {
+  const { id } = useParams();
+  const navigateFn = useNavigateContext().navigate;
+  return <ClientPayments clientId={Number(id)} clientName="" onBack={() => navigateFn('clients')} />;
+}
+
+function ClientSettingsWrapper() {
+  const { id } = useParams();
+  const navigateFn = useNavigateContext().navigate;
+  return <ClientSettings clientId={Number(id)} clientName="" onBack={() => navigateFn('clients')} />;
+}
+
+function ClientFormWrapper() {
+  const { id } = useParams();
+  const navigateFn = useNavigateContext().navigate;
+  return <ClientForm onBack={() => navigateFn('clients')} editId={id ? Number(id) : undefined} />;
+}
+
+function BranchFormWrapper() {
+  const { id } = useParams();
+  const navigateFn = useNavigateContext().navigate;
+  return <BranchForm onBack={() => navigateFn('branches')} editId={id ? Number(id) : undefined} />;
+}
+
+function AddPlanWrapper() {
+  const { id } = useParams();
+  const navigateFn = useNavigateContext().navigate;
+  return <AddPlan onBack={() => navigateFn('plans')} editId={id ? Number(id) : undefined} />;
+}
+
 /* ── Auth Pages (Login / Forgot Password / OTP / Reset) ── */
-function AuthRouter() {
-  const [authPage, setAuthPage] = useState<'login' | 'forgot-password' | 'verify-otp' | 'reset-password'>('login');
-  const [resetEmail, setResetEmail] = useState('');
+function AuthRoutes() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Get state from location for email (passed via navigation state)
+  const state = location.state as { email?: string } | null;
+  const [resetEmail, setResetEmail] = useState(state?.email || '');
 
   return (
-    <>
-      {authPage === 'login' && (
-        <Login onForgotPassword={() => setAuthPage('forgot-password')} />
-      )}
-      {authPage === 'forgot-password' && (
+    <Routes>
+      <Route path="/login" element={
+        <Login onForgotPassword={() => navigate('/forgot-password')} />
+      } />
+      <Route path="/forgot-password" element={
         <ForgotPassword
-          onBackToLogin={() => setAuthPage('login')}
-          onEmailSubmitted={(email: string) => { setResetEmail(email); setAuthPage('verify-otp'); }}
+          onBackToLogin={() => navigate('/login')}
+          onEmailSubmitted={(email: string) => { setResetEmail(email); navigate('/verify-otp', { state: { email } }); }}
         />
-      )}
-      {authPage === 'verify-otp' && (
+      } />
+      <Route path="/verify-otp" element={
         <VerifyOTP
           email={resetEmail}
-          onBackToForgotPassword={() => setAuthPage('forgot-password')}
-          onOTPVerified={() => setAuthPage('reset-password')}
+          onBackToForgotPassword={() => navigate('/forgot-password')}
+          onOTPVerified={() => navigate('/reset-password', { state: { email: resetEmail } })}
         />
-      )}
-      {authPage === 'reset-password' && (
+      } />
+      <Route path="/reset-password" element={
         <ResetPassword
           email={resetEmail}
-          onBackToVerifyOTP={() => setAuthPage('verify-otp')}
-          onPasswordReset={() => setAuthPage('login')}
+          onBackToVerifyOTP={() => navigate('/verify-otp', { state: { email: resetEmail } })}
+          onPasswordReset={() => navigate('/login')}
         />
-      )}
-    </>
+      } />
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
   );
 }
 
-/* ── Dashboard Pages (after login) ── */
-function DashboardRouter({ user }: { user: any }) {
+/* ── Dashboard Pages (after login) with URL Routing ── */
+function DashboardRoutes({ user }: { user: any }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [splashDone, setSplashDone] = useState(false);
+  
   const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
   const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
-
-  const initialPage = (planExpiredOrMissing && user.user_type === 'client_admin') ? 'my-plan' : 'dashboard';
-  const [page, setPage] = useState(initialPage);
-  const [pageData, setPageData] = useState<any>(null);
-  const defaultPages = ['dashboard', 'my-plan', 'profile'];
+  const defaultPages = ['/my-plan', '/profile', '/plan-blocked'];
 
   // Show splash on first login
   if (!splashDone) {
     return <SplashLoader onComplete={() => setSplashDone(true)} />;
   }
 
-  const navigate = (p: string, data?: any) => {
-    if (planExpiredOrMissing && !defaultPages.includes(p)) {
-      setPage('my-plan');
-      setPageData(null);
+  // Navigate function compatible with existing components
+  const navigateFn = (p: string, data?: any) => {
+    const path = getPagePath(p, data);
+    if (planExpiredOrMissing && !defaultPages.includes(path)) {
+      navigate('/my-plan', { replace: true });
       return;
     }
-    setPage(p);
-    setPageData(data || null);
+    navigate(path);
   };
 
-  let effectivePage = page;
-  if (planExpiredOrMissing) {
+  // Provide navigate context to all child components
+  const navigateContextValue = {
+    navigate: navigateFn,
+    getPath: getPagePath,
+  };
+
+  // Redirect to my-plan if plan expired and trying to access other pages
+  if (planExpiredOrMissing && !defaultPages.includes(location.pathname)) {
     if (user.user_type === 'branch_user') {
-      effectivePage = 'plan-blocked';
-    } else if (!defaultPages.includes(page)) {
-      effectivePage = 'my-plan';
+      return <Navigate to="/plan-blocked" replace />;
     }
+    return <Navigate to="/my-plan" replace />;
   }
 
   const DashboardMap: Record<string, React.ComponentType> = {
@@ -107,93 +205,75 @@ function DashboardRouter({ user }: { user: any }) {
     branch_user: BranchDashboard,
   };
 
-  const renderPage = () => {
-    switch (effectivePage) {
-      case 'dashboard':
-        const Dash = DashboardMap[user.user_type] || AdminDashboard;
-        return <Dash />;
-      case 'clients':
-        return <Clients onNavigate={navigate} />;
-      case 'client-form':
-        return <ClientForm onBack={() => navigate('clients')} editId={pageData?.editId} />;
-      case 'client-view':
-        return <ClientView clientId={pageData?.clientId} onBack={() => navigate('clients')} onNavigate={navigate} />;
-      case 'client-branches':
-        return <ClientBranches clientId={pageData?.clientId} clientName={pageData?.clientName} onBack={() => navigate('clients')} />;
-      case 'client-permissions':
-        return <ClientPermissions clientId={pageData?.clientId} clientName={pageData?.clientName} onBack={() => navigate('clients')} />;
-      case 'client-payments':
-        return <ClientPayments clientId={pageData?.clientId} clientName={pageData?.clientName} onBack={() => navigate('clients')} />;
-      case 'client-settings':
-        return <ClientSettings clientId={pageData?.clientId} clientName={pageData?.clientName} onBack={() => navigate('clients')} />;
-      case 'branches':
-        return <Branches onNavigate={navigate} />;
-      case 'branch-form':
-        return <BranchForm onBack={() => navigate('branches')} editId={pageData?.editId} />;
-      case 'branch-users':
-      case 'client-users':
-        return <UsersPage />;
-      case 'employees':
-        return <Employees />;
-      case 'plans':
-        return <Plans onNavigate={navigate} />;
-      case 'add-plan':
-        return <AddPlan onBack={() => navigate('plans')} editId={pageData?.editId} />;
-      case 'my-plan':
-        return <PlanSelection onSuccess={() => window.location.reload()} />;
-      case 'plan-blocked':
-        return (
-          <div className="flex items-center justify-center py-20">
-            <div className="text-center max-w-md">
-              <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
-              </div>
-              <h2 className="text-[18px] font-extrabold text-text mb-2">
-                {user.plan?.expired ? 'Plan Expired' : 'No Active Plan'}
-              </h2>
-              <p className="text-[13px] text-muted mb-4">
-                Your organization's subscription has {user.plan?.expired ? 'expired' : 'not been activated yet'}.
-                Please contact your client administrator to {user.plan?.expired ? 'renew' : 'purchase'} a plan.
-              </p>
-              <p className="text-[11px] text-secondary">Client: {user.client_name}</p>
-            </div>
-          </div>
-        );
-      case 'payments':
-        return <Payments />;
-      case 'permissions':
-        return <Permissions />;
-      case 'settings':
-        return <Settings />;
-      case 'profile':
-        return <Profile />;
-      default:
-        const Default = DashboardMap[user.user_type] || AdminDashboard;
-        return <Default />;
-    }
-  };
+  const DefaultDashboard = DashboardMap[user.user_type] || AdminDashboard;
 
   return (
-    <LayoutProvider>
-      <BranchSwitcherProvider>
-        <AppLayout page={effectivePage} onNavigate={navigate}>
-          {renderPage()}
-        </AppLayout>
-      </BranchSwitcherProvider>
-    </LayoutProvider>
+    <NavigateContext.Provider value={navigateContextValue}>
+      <LayoutProvider>
+        <BranchSwitcherProvider>
+          <AppLayout onNavigate={navigateFn}>
+            <Routes>
+              <Route path="/dashboard" element={<DefaultDashboard />} />
+              <Route path="/clients" element={<Clients onNavigate={navigateFn} />} />
+              <Route path="/clients/new" element={<ClientFormWrapper />} />
+              <Route path="/clients/:id/edit" element={<ClientFormWrapper />} />
+              <Route path="/clients/:id" element={<ClientViewWrapper />} />
+              <Route path="/clients/:id/branches" element={<ClientBranchesWrapper />} />
+              <Route path="/clients/:id/permissions" element={<ClientPermissionsWrapper />} />
+              <Route path="/clients/:id/payments" element={<ClientPaymentsWrapper />} />
+              <Route path="/clients/:id/settings" element={<ClientSettingsWrapper />} />
+              <Route path="/branches" element={<Branches onNavigate={navigateFn} />} />
+              <Route path="/branches/new" element={<BranchFormWrapper />} />
+              <Route path="/branches/:id/edit" element={<BranchFormWrapper />} />
+              <Route path="/branches/users" element={<UsersPage />} />
+              <Route path="/clients/users" element={<UsersPage />} />
+              <Route path="/employees" element={<Employees />} />
+              <Route path="/plans" element={<Plans onNavigate={navigateFn} />} />
+              <Route path="/plans/new" element={<AddPlanWrapper />} />
+              <Route path="/plans/:id/edit" element={<AddPlanWrapper />} />
+              <Route path="/my-plan" element={<PlanSelection onSuccess={() => window.location.reload()} />} />
+              <Route path="/plan-blocked" element={
+                <div className="flex items-center justify-center py-20">
+                  <div className="text-center max-w-md">
+                    <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-4">
+                      <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                    </div>
+                    <h2 className="text-[18px] font-extrabold text-text mb-2">
+                      {user.plan?.expired ? 'Plan Expired' : 'No Active Plan'}
+                    </h2>
+                    <p className="text-[13px] text-muted mb-4">
+                      Your organization's subscription has {user.plan?.expired ? 'expired' : 'not been activated yet'}.
+                      Please contact your client administrator to {user.plan?.expired ? 'renew' : 'purchase'} a plan.
+                    </p>
+                    <p className="text-[11px] text-secondary">Client: {user.client_name}</p>
+                  </div>
+                </div>
+              } />
+              <Route path="/payments" element={<Payments />} />
+              <Route path="/permissions" element={<Permissions />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </AppLayout>
+        </BranchSwitcherProvider>
+      </LayoutProvider>
+    </NavigateContext.Provider>
   );
 }
 
 /* ── Main Router — switches between Auth and Dashboard ── */
 function Router() {
   const { user } = useAuth();
+  const location = useLocation();
 
   if (!user) {
-    return <AuthRouter />;
+    // Allow auth routes even when not logged in
+    return <AuthRoutes />;
   }
 
   // key={user.id} forces full remount when user changes (login/switch user)
-  return <DashboardRouter key={user.id} user={user} />;
+  return <DashboardRoutes key={user.id} user={user} />;
 }
 
 export default function App() {
@@ -201,7 +281,9 @@ export default function App() {
     <ThemeProvider>
       <ToastProvider>
         <AuthProvider>
-          <Router />
+          <BrowserRouter>
+            <Router />
+          </BrowserRouter>
         </AuthProvider>
       </ToastProvider>
     </ThemeProvider>

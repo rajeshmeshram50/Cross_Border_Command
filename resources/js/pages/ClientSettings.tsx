@@ -27,7 +27,20 @@ export default function ClientSettings({ clientId, clientName, onBack }: Props) 
 
   useEffect(() => {
     api.get('/client-settings', { params: { client_id: clientId } })
-      .then(res => setSettings(res.data.data || res.data || []))
+      .then(res => {
+        // Handle different response formats
+        const data = res.data;
+        if (Array.isArray(data)) {
+          setSettings(data);
+        } else if (data && Array.isArray(data.data)) {
+          setSettings(data.data);
+        } else if (data && typeof data === 'object') {
+          // If it's an object with settings, convert to array
+          setSettings(Object.values(data));
+        } else {
+          setSettings([]);
+        }
+      })
       .catch(() => setSettings([]))
       .finally(() => setLoading(false));
   }, [clientId]);

@@ -10,14 +10,40 @@ import BranchSwitcher from '../components/BranchSwitcher';
 import GlobalSearch from '../components/GlobalSearch';
 import { Moon, Sun, Bell, Menu, Maximize2, Minimize2 } from 'lucide-react';
 import { useState, useCallback, useEffect, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
+
+// Helper to get page name from path
+const getPageFromPath = (pathname: string): string => {
+  const segments = pathname.split('/').filter(Boolean);
+  if (segments.length === 0) return 'dashboard';
+  
+  const page = segments[0];
+  // Map URL paths to page names
+  const pathToPage: Record<string, string> = {
+    'dashboard': 'dashboard',
+    'clients': 'clients',
+    'branches': 'branches',
+    'employees': 'employees',
+    'plans': 'plans',
+    'payments': 'payments',
+    'permissions': 'permissions',
+    'settings': 'settings',
+    'profile': 'profile',
+    'my-plan': 'my-plan',
+    'plan-blocked': 'plan-blocked',
+  };
+  
+  return pathToPage[page] || 'dashboard';
+};
 
 interface Props {
-  page: string;
   onNavigate: (id: string) => void;
   children: ReactNode;
 }
 
-export default function AppLayout({ page, onNavigate, children }: Props) {
+export default function AppLayout({ onNavigate, children }: Props) {
+  const location = useLocation();
+  const page = getPageFromPath(location.pathname);
   const { mode, sidebarCollapsed, toggleSidebar, mobileOpen, setMobileOpen } = useLayout();
 
   const showSidebar = mode === 'both' || mode === 'sidebar';
