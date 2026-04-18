@@ -7,8 +7,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/ui/Avatar';
 import BranchSwitcher from '../components/BranchSwitcher';
-import { Moon, Sun, Bell, Search, Menu } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Moon, Sun, Bell, Search, Menu, Maximize2, Minimize2 } from 'lucide-react';
+import { useState, useCallback, useEffect, type ReactNode } from 'react';
 
 interface Props {
   page: string;
@@ -48,7 +48,7 @@ export default function AppLayout({ page, onNavigate, children }: Props) {
           <>
             {/* Desktop */}
             <div className="hidden lg:flex transition-all duration-300">
-              <Sidebar current={page} onNavigate={handleNav} collapsed={sidebarCollapsed} />
+              <Sidebar current={page} onNavigate={handleNav} collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
             </div>
             {/* Mobile slide-in */}
             <div className={`fixed inset-y-0 left-0 z-[100] lg:hidden transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -108,9 +108,24 @@ export default function AppLayout({ page, onNavigate, children }: Props) {
    Sidebar-Only Mode: compact top strip
    Shows mobile hamburger + breadcrumb + controls
    ──────────────────────────────────────────── */
+function useFullscreen() {
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
+  const toggle = useCallback(() => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  }, []);
+  return { isFullscreen, toggle };
+}
+
 function SidebarTopStrip({ page, onToggleSidebar, onNavigate }: { page: string; onToggleSidebar: () => void; onNavigate: (id: string) => void }) {
   const { theme, toggle } = useTheme();
   const { user } = useAuth();
+  const fullscreen = useFullscreen();
   const labels: Record<string, string> = {
     dashboard: 'Dashboard', clients: 'Clients', 'client-users': 'Client Users',
     plans: 'Plans', payments: 'Payments', permissions: 'Permissions',
@@ -142,6 +157,12 @@ function SidebarTopStrip({ page, onToggleSidebar, onNavigate }: { page: string; 
         <Search size={11} className="absolute left-2.5 text-muted" />
         <input placeholder="Search..." className="pl-7 pr-3 py-1 w-40 rounded-md border border-border bg-bg text-[11px] text-text outline-none focus:border-primary/40 transition-all placeholder:text-muted" />
       </div>
+
+      {/* Fullscreen */}
+      <button onClick={fullscreen.toggle} title={fullscreen.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+        className="w-7 h-7 rounded-md border border-border flex items-center justify-center text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">
+        {fullscreen.isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+      </button>
 
       {/* Dark/Light */}
       <button onClick={toggle} className="w-7 h-7 rounded-md border border-border flex items-center justify-center text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">

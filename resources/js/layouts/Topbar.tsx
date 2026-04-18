@@ -1,4 +1,5 @@
-import { Menu, Moon, Sun, Bell, Search } from 'lucide-react';
+import { Menu, Moon, Sun, Bell, Search, Maximize2, Minimize2 } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/ui/Avatar';
@@ -17,9 +18,24 @@ const labels: Record<string, string> = {
   employees: 'Employees', settings: 'Settings', profile: 'Profile',
 };
 
+function useFullscreen() {
+  const [isFs, setIsFs] = useState(!!document.fullscreenElement);
+  useEffect(() => {
+    const h = () => setIsFs(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', h);
+    return () => document.removeEventListener('fullscreenchange', h);
+  }, []);
+  const toggle = useCallback(() => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  }, []);
+  return { isFs, toggle };
+}
+
 export default function Topbar({ page, onToggleSidebar, onNavigate }: Props) {
   const { theme, toggle } = useTheme();
   const { user } = useAuth();
+  const fs = useFullscreen();
 
   return (
     <header className="h-[50px] bg-surface border-b border-border flex items-center px-4 gap-2 flex-shrink-0 z-40">
@@ -48,6 +64,12 @@ export default function Topbar({ page, onToggleSidebar, onNavigate }: Props) {
           className="pl-7 pr-3 py-1.5 w-44 rounded-md border border-border bg-bg text-[11.5px] text-text outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-muted"
         />
       </div>
+
+      {/* Fullscreen */}
+      <button onClick={fs.toggle} title={fs.isFs ? 'Exit Fullscreen' : 'Fullscreen'}
+        className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">
+        {fs.isFs ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+      </button>
 
       {/* Theme Toggle */}
       <button onClick={toggle} className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">
