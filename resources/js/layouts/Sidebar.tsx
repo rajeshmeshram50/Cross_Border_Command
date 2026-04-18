@@ -43,7 +43,7 @@ export default function Sidebar({ current, onNavigate, collapsed }: Props) {
   });
 
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-[230px]'} bg-sidebar flex flex-col flex-shrink-0 transition-all duration-300 z-50 h-full overflow-hidden`}>
+    <aside className={`${collapsed ? 'w-16' : 'w-[230px]'} bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 flex flex-col flex-shrink-0 transition-all duration-300 z-50 h-full overflow-hidden`}>
       <div className="px-4 py-3 border-b border-white/[.06]">
         <Logo variant={collapsed ? 'sidebarCollapsed' : 'sidebar'} />
       </div>
