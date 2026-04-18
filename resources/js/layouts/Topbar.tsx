@@ -1,7 +1,8 @@
-import { Menu, Moon, Sun, Bell, Search, Maximize2, Minimize2 } from 'lucide-react';
+import { Menu, Moon, Sun, Bell, Maximize2, Minimize2 } from 'lucide-react';
 import { useState, useCallback, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import GlobalSearch from '../components/GlobalSearch';
 import Avatar from '../components/ui/Avatar';
 import BranchSwitcher from '../components/BranchSwitcher';
 
@@ -57,13 +58,7 @@ export default function Topbar({ page, onToggleSidebar, onNavigate }: Props) {
       <BranchSwitcher />
 
       {/* Search */}
-      <div className="hidden sm:flex items-center relative">
-        <Search size={11} className="absolute left-2.5 text-muted" />
-        <input
-          placeholder="Search..."
-          className="pl-7 pr-3 py-1.5 w-44 rounded-md border border-border bg-bg text-[11.5px] text-text outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-muted"
-        />
-      </div>
+      <GlobalSearch onNavigate={onNavigate} />
 
       {/* Fullscreen */}
       <button onClick={fs.toggle} title={fs.isFs ? 'Exit Fullscreen' : 'Fullscreen'}

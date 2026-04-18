@@ -7,7 +7,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/ui/Avatar';
 import BranchSwitcher from '../components/BranchSwitcher';
-import { Moon, Sun, Bell, Search, Menu, Maximize2, Minimize2 } from 'lucide-react';
+import GlobalSearch from '../components/GlobalSearch';
+import { Moon, Sun, Bell, Menu, Maximize2, Minimize2 } from 'lucide-react';
 import { useState, useCallback, useEffect, type ReactNode } from 'react';
 
 interface Props {
@@ -153,10 +154,7 @@ function SidebarTopStrip({ page, onToggleSidebar, onNavigate }: { page: string; 
       <BranchSwitcher />
 
       {/* Search */}
-      <div className="hidden sm:flex items-center relative">
-        <Search size={11} className="absolute left-2.5 text-muted" />
-        <input placeholder="Search..." className="pl-7 pr-3 py-1 w-40 rounded-md border border-border bg-bg text-[11px] text-text outline-none focus:border-primary/40 transition-all placeholder:text-muted" />
-      </div>
+      <GlobalSearch onNavigate={onNavigate} compact />
 
       {/* Fullscreen */}
       <button onClick={fullscreen.toggle} title={fullscreen.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
