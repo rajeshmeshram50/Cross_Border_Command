@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2, X } from 'lucide-react';
 
 interface Props {
@@ -20,15 +21,14 @@ export default function DeleteConfirmModal({ open, clientName, onClose, onConfir
 
   const itemName = clientName ? `"${clientName}"` : 'this item';
 
-  return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center p-5"
-      onClick={(e) => e.target === e.currentTarget && !loading && onClose()}>
-
-      {/* Overlay */}
-      <div className="absolute inset-0 bg-black/30" />
-
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      onClick={(e) => e.target === e.currentTarget && !loading && onClose()}
+    >
       {/* Dialog */}
-      <div className="relative bg-surface w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
+      <div
+        className="relative bg-surface w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden"
         style={{ animation: 'scaleIn .25s cubic-bezier(.22,1,.36,1) both' }}
         onClick={e => e.stopPropagation()}>
 
@@ -71,6 +71,7 @@ export default function DeleteConfirmModal({ open, clientName, onClose, onConfir
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
