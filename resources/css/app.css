@@ -60,8 +60,8 @@ body {
 
 /* ═══ Scrollbar ═══ */
 ::-webkit-scrollbar {
-  width: 4px; /* Increased width */
-  height: 4px; /* Increased height */
+  width: 3px; /* Increased width */
+  height: 3px; /* Increased height */
 }
 
 ::-webkit-scrollbar-track {
