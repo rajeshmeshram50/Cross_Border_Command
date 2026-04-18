@@ -3,7 +3,8 @@ import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Avatar from '../components/ui/Avatar';
 import { Td } from '../components/ui/Table';
-import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, Users, Star, GitBranch, Loader2, Building, Factory, Warehouse } from 'lucide-react';
+import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
+import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, Users, Star, GitBranch, Building, Factory, Warehouse } from 'lucide-react';
 import api from '../api';
 import { ShimmerCards } from '../components/ui/Shimmer';
 import { useToast } from '../contexts/ToastContext';
@@ -30,6 +31,7 @@ export default function Branches({ onNavigate }: Props) {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; branch: Branch | null }>({ open: false, branch: null });
 
   const fetchBranches = useCallback(async () => {
     setLoading(true);
@@ -54,16 +56,22 @@ export default function Branches({ onNavigate }: Props) {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const handleDelete = async (branch: Branch) => {
+  const openDeleteModal = (branch: Branch) => {
     if (branch.is_main) {
       toast.warning('Cannot Delete', 'Main branch cannot be deleted. Set another branch as main first.');
       return;
     }
-    if (!confirm(`Delete "${branch.name}"? Users in this branch will be unassigned.`)) return;
+    setDeleteModal({ open: true, branch });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteModal.branch) return;
+    const branch = deleteModal.branch;
     setDeleting(branch.id);
     try {
       await api.delete(`/branches/${branch.id}`);
       toast.success('Branch Deleted', `"${branch.name}" has been deleted successfully`);
+      setDeleteModal({ open: false, branch: null });
       fetchBranches();
     } catch (err: any) {
       toast.error('Delete Failed', err.response?.data?.message || 'Failed to delete branch');
@@ -197,9 +205,9 @@ export default function Branches({ onNavigate }: Props) {
                       <div className="flex items-center gap-1">
                         {[
                           { icon: Pencil, cls: 'hover:bg-blue-50 hover:text-blue-500 hover:border-blue-300', title: 'Edit', onClick: () => onNavigate('branch-form', { editId: b.id }) },
-                          { icon: Trash2, cls: 'hover:bg-red-50 hover:text-red-500 hover:border-red-300', title: 'Delete', onClick: () => handleDelete(b) },
-                          { icon: Users, cls: 'hover:bg-sky-50 hover:text-sky-500 hover:border-sky-300', title: 'Users', onClick: () => {} },
-                          { icon: ShieldCheck, cls: 'hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-300', title: 'Permissions', onClick: () => {} },
+                          { icon: Trash2, cls: 'hover:bg-red-50 hover:text-red-500 hover:border-red-300', title: 'Delete', onClick: () => openDeleteModal(b) },
+                          { icon: Users, cls: 'hover:bg-sky-50 hover:text-sky-500 hover:border-sky-300', title: 'Users', onClick: () => onNavigate('branch-users', { branchId: b.id, branchName: b.name }) },
+                          { icon: ShieldCheck, cls: 'hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-300', title: 'Permissions', onClick: () => onNavigate('permissions', { branchId: b.id, branchName: b.name }) },
                         ].map(({ icon: I, cls, title, onClick }, j) => (
                           <button key={j} title={title} onClick={onClick} disabled={deleting === b.id}
                             className={`w-6 h-6 rounded-md border border-border bg-surface text-muted flex items-center justify-center transition-all hover:-translate-y-px cursor-pointer ${cls} ${deleting === b.id ? 'opacity-50' : ''}`}>
@@ -226,6 +234,15 @@ export default function Branches({ onNavigate }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        open={deleteModal.open}
+        clientName={deleteModal.branch?.name}
+        onClose={() => setDeleteModal({ open: false, branch: null })}
+        onConfirm={confirmDelete}
+        loading={deleting !== null}
+      />
     </div>
   );
 }
