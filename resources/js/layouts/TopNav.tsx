@@ -92,6 +92,15 @@ export default function TopNav({ current, onNavigate }: Props) {
         {/* Branch Switcher */}
         <BranchSwitcher />
 
+        {/* Fullscreen */}
+        <button
+          onClick={() => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); }}
+          title="Fullscreen"
+          className="w-8 h-8 rounded-md border border-white/12 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/[.06] hover:border-white/25 transition-all cursor-pointer"
+        >
+          {document.fullscreenElement ? <Icons.Minimize2 size={14} /> : <Icons.Maximize2 size={14} />}
+        </button>
+
         {/* Dark Mode */}
         <button
           onClick={toggle}

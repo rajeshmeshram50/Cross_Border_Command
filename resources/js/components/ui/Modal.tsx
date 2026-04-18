@@ -16,8 +16,8 @@ export default function Modal({ open, onClose, title, children, footer, size = '
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-5" onClick={onClose}>
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm fade-in" style={{ animation: 'fadeIn .2s ease both' }} />
+      {/* Blurred Backdrop */}
+      <div className="absolute inset-0 bg-black/30" style={{ animation: 'fadeIn .2s ease both' }} />
       {/* Dialog */}
       <div
         className={`relative bg-surface rounded-2xl w-full ${widths[size]} max-h-[90vh] flex flex-col shadow-2xl border border-border`}

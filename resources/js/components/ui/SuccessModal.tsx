@@ -14,8 +14,9 @@ export default function SuccessModal({
   onContinue 
 }: SuccessModalProps) {
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9998] flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in">
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30" />
+      <div className="relative bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden animate-in">
         {/* Content */}
         <div className="px-8 py-12 text-center space-y-6">
           {/* Icon */}
