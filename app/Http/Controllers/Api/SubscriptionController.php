@@ -100,9 +100,9 @@ class SubscriptionController extends Controller
         $txnId = 'TXN-' . now()->format('Ymd') . '-' . strtoupper(Str::random(6));
         $orderId = 'ORD-' . now()->format('Ymd') . '-' . strtoupper(Str::random(6));
 
-        return DB::transaction(function () use ($request, $plan, $client, $user, $amount, $gst, $total, $validFrom, $validUntil, $txnId, $orderId) {
+        DB::transaction(function () use ($request, $plan, $client, $user, $amount, $gst, $total, $validFrom, $validUntil, $txnId, $orderId) {
             // Create payment record
-            $payment = Payment::create([
+            Payment::create([
                 'client_id' => $client->id,
                 'plan_id' => $plan->id,
                 'txn_id' => $txnId,
@@ -162,32 +162,17 @@ class SubscriptionController extends Controller
                     ]);
                 }
             }
-
-            // Generate invoice PDF and send email
-            try {
-                $payment->load(['client', 'plan']);
-                $invoicesDir = storage_path('app/invoices');
-                if (!is_dir($invoicesDir)) mkdir($invoicesDir, 0755, true);
-
-                $pdf = Pdf::loadView('invoices.payment-invoice', ['payment' => $payment]);
-                $pdf->setPaper('A4');
-                $pdf->save($invoicesDir . "/{$payment->invoice_number}.pdf");
-                $payment->update(['invoice_path' => "invoices/{$payment->invoice_number}.pdf"]);
-
-                // Send invoice email to client org email + user email
-                $recipients = array_unique(array_filter([$client->email, $user->email]));
-                Mail::to($recipients)->send(new PaymentInvoiceMail($payment));
-            } catch (\Exception $e) {
-                \Log::error('Subscription invoice email failed: ' . $e->getMessage());
-            }
-
-            return response()->json([
-                'message' => 'Plan activated successfully',
-                'txn_id' => $txnId,
-                'plan' => $plan->name,
-                'total' => $total,
-                'valid_until' => $validUntil->format('Y-m-d'),
-            ]);
         });
+
+        // PDF & email skipped here (takes 50+ seconds due to slow SMTP)
+        // Invoice PDF is generated on-demand when downloading from Payments page
+
+        return response()->json([
+            'message' => 'Plan activated successfully',
+            'txn_id' => $txnId,
+            'plan' => $plan->name,
+            'total' => $total,
+            'valid_until' => $validUntil->format('Y-m-d'),
+        ]);
     }
 }

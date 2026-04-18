@@ -14,7 +14,7 @@ class ForgotPasswordController extends Controller
 {
     private const OTP_EXPIRY_MINUTES = 10;
     private const MAX_OTP_ATTEMPTS = 5;
-    private const RESEND_COOLDOWN_SECONDS = 60;
+    private const RESEND_COOLDOWN_SECONDS = 120;
 
     /**
      * Step 1: Send OTP to email
@@ -48,8 +48,9 @@ class ForgotPasswordController extends Controller
             ->orderBy('created_at', 'desc')
             ->first();
 
-        if ($lastOtp && now()->diffInSeconds($lastOtp->created_at) < self::RESEND_COOLDOWN_SECONDS) {
-            $remaining = self::RESEND_COOLDOWN_SECONDS - now()->diffInSeconds($lastOtp->created_at);
+        $secondsSinceLastOtp = $lastOtp ? (int) now()->diffInSeconds($lastOtp->created_at, true) : 9999;
+        if ($lastOtp && $secondsSinceLastOtp < self::RESEND_COOLDOWN_SECONDS) {
+            $remaining = self::RESEND_COOLDOWN_SECONDS - $secondsSinceLastOtp;
             return response()->json([
                 'message' => "Please wait {$remaining} seconds before requesting a new code.",
                 'retry_after' => $remaining,

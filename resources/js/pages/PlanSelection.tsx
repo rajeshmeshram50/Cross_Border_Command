@@ -75,9 +75,9 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
     if (!selectedPlan) return;
     setPaymentStep('processing');
     setProcessing(true);
-    await new Promise(r => setTimeout(r, 2500));
+    await new Promise(r => setTimeout(r, 1000));
     try {
-      const res = await api.post('/subscription/subscribe', { plan_id: selectedPlan.id, payment_method: paymentMethod, billing_cycle: billingCycle });
+      const res = await api.post('/subscription/subscribe', { plan_id: selectedPlan.id, payment_method: paymentMethod, billing_cycle: billingCycle }, { timeout: 60000 });
       setTxnResult(res.data);
       setPaymentStep('success');
       toast.success('Payment Successful', `${selectedPlan.name} plan activated!`);

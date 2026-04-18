@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import AuthCardLayout from '../layouts/AuthCardLayout';
 import Input from '../components/ui/Input';
-import Button from '../components/ui/Button';
-import { Mail, AlertCircle, Loader2, ArrowLeft, ArrowBigRight } from 'lucide-react';
+import { Mail, AlertCircle, Loader2 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
 
@@ -11,10 +10,27 @@ interface ForgotPasswordProps {
   onEmailSubmitted?: (email: string) => void;
 }
 
+const COOLDOWN = 120; // 2 minutes
+
 export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: ForgotPasswordProps) {
   const toast = useToast();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  const startCooldown = useCallback((seconds: number) => {
+    setCountdown(seconds);
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) { clearInterval(timerRef.current); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => () => clearInterval(timerRef.current), []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,15 +46,21 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
       return;
     }
 
+    setLoading(true);
     try {
       await api.post('/forgot-password/send-otp', { email });
       toast.success('Code sent', 'Verification code sent to your email');
+      startCooldown(COOLDOWN);
       onEmailSubmitted?.(email);
     } catch (err: any) {
       const msg = err.response?.data?.message || 'An error occurred. Please try again.';
       const retryAfter = err.response?.data?.retry_after;
       if (retryAfter) {
-        toast.warning('Too soon', `Wait ${retryAfter}s before resending`);
+        startCooldown(retryAfter);
+        const mins = Math.floor(retryAfter / 60);
+        const secs = retryAfter % 60;
+        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        toast.warning('Too soon', `Please wait ${timeStr} before resending`);
       } else {
         toast.error('Error', msg);
       }
@@ -46,6 +68,11 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
       setLoading(false);
     }
   };
+
+  const isDisabled = loading || countdown > 0;
+  const countdownLabel = countdown > 0
+    ? `Resend in ${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')}`
+    : null;
 
   return (
     <AuthCardLayout
@@ -77,12 +104,12 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
 
           <div className="pt-2">
             <button
-              disabled={loading}
-              className="w-full h-14 rounded-full bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+              disabled={isDisabled}
+              className="w-full h-14 rounded-full bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               type="submit"
             >
               {loading ? <Loader2 size={18} className="animate-spin" /> : <Mail size={18} />}
-              {loading ? 'Sending...' : 'Send Link'}
+              {loading ? 'Sending...' : countdownLabel || 'Send Link'}
             </button>
           </div>
         </form>
