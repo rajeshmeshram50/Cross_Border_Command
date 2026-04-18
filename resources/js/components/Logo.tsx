@@ -59,7 +59,7 @@ export default function Logo({ variant, className = '' }: Props) {
     case 'sidebar':
       return (
         <div className={`flex items-left gap-2.5 ${className}`}>
-          <div className="w-36 h-8  overflow-hidden flex-shrink-0 shadow-md shadow-black/30 ">
+          <div className="w-36 h-8  overflow-hidden flex-shrink-0  ">
             <img src="/images/igc-logo.png" alt="IGC" className="w-full h-full object-contain" />
           </div>
         </div>
@@ -83,7 +83,7 @@ export default function Logo({ variant, className = '' }: Props) {
     case 'topnav':
       return (
         <div className={`flex items-center gap-2 ${className}`}>
-          <div className="w-30 h-8  overflow-hidden flex-shrink-0 shadow-md shadow-black/30 ">
+          <div className="w-30 h-8  overflow-hidden flex-shrink-0  ">
             <img src="/images/igc-logo.png" alt="IGC" className="w-full h-full object-contain" />
           </div>
         </div>

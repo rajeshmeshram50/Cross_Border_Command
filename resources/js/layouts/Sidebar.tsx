@@ -53,7 +53,7 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
   });
 
   return (
-    <aside className={`${collapsed ? 'w-16' : 'w-[230px]'} bg-sidebar flex flex-col flex-shrink-0 transition-all duration-300 z-50 h-full overflow-hidden`}>
+    <aside className={`${collapsed ? 'w-16' : 'w-[230px]'} bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 flex flex-col flex-shrink-0 transition-all duration-300 z-50 h-full overflow-hidden`}>
       <div className="px-4 py-3 border-b border-white/[.06] flex items-center justify-between">
         <Logo variant={collapsed ? 'sidebarCollapsed' : 'sidebar'} />
         {onToggle && (
@@ -81,7 +81,7 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
               onClick={() => onNavigate(m.id)}
               className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12.5px] font-medium cursor-pointer transition-all duration-150 whitespace-nowrap ${
                 active
-                  ? 'bg-gradient-to-r from-primary/85 to-primary/50 text-white font-semibold shadow-md shadow-primary/30 border-l-2 border-white/50 pl-2'
+                  ? 'bg-gradient-to-r from-primary/100 to-primary/80 text-white font-semibold shadow-md shadow-primary/30 border-l-2 border-white/50 pl-2'
                   : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300 hover:translate-x-0.5'
               }`}
             >
