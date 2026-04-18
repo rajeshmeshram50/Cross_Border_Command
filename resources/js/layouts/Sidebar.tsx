@@ -65,7 +65,7 @@ export default function Sidebar({ current, onNavigate, collapsed }: Props) {
               onClick={() => onNavigate(m.id)}
               className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12.5px] font-medium cursor-pointer transition-all duration-150 whitespace-nowrap ${
                 active
-                  ? 'bg-gradient-to-r from-primary/85 to-primary/50 text-white font-semibold shadow-md shadow-primary/30 border-l-2 border-white/50 pl-2'
+                  ? 'bg-gradient-to-r from-primary/100 to-primary/80 text-white font-semibold shadow-md shadow-primary/30 border-l-2 border-white/50 pl-2'
                   : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300 hover:translate-x-0.5'
               }`}
             >

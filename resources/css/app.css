@@ -60,21 +60,20 @@ body {
 
 /* ═══ Scrollbar ═══ */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 4px; /* Increased width */
+  height: 4px; /* Increased height */
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 99px;
+  background: #5A51E8; /* Darker gray for thumb */
+  border-radius: 10px; /* Rounded corners */
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-muted);
+  background: #716ad2 ; /* Even darker gray on hover */
 }
 
 /* ═══ Keyframes ═══ */
