@@ -100,9 +100,9 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px]">
             <thead>
-              <tr className="bg-sidebar">
+              <tr className="bg-border border-b border-border">
                 {['#', 'Branch / Company', 'Code', 'Type & Industry', 'Contact', 'Location', 'Users', 'Status'].map(h => (
-                  <th key={h} className="px-3 py-2.5 text-left text-[9px] font-bold tracking-wider uppercase text-white/50 whitespace-nowrap">{h}</th>
+                  <th key={h} className="px-3 py-2.5 text-left text-[9px] font-bold tracking-wider uppercase text-secondary tracking-wider uppercase  whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
