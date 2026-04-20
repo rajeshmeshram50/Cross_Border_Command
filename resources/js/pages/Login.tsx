@@ -114,3 +114,4 @@ export default function Login({ onForgotPassword }: LoginProps) {
     </AuthCardLayout>
   );
 }
+      
