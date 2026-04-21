@@ -65,35 +65,41 @@ export default function Profile() {
         </Col>
       </Row>
 
-      {/* Profile banner */}
-      <div className="profile-foreground position-relative mx-n4 mt-n4" style={{ background: 'linear-gradient(135deg, var(--vz-primary), var(--vz-secondary))', height: 200 }}>
-      </div>
-
-      <div className="pt-4 mb-4 mb-lg-3 pb-lg-4 profile-wrapper">
-        <Row className="g-4">
-          <div className="col-auto">
-            <div className="avatar-lg">
-              <div className="avatar-title rounded-circle bg-primary text-white fs-2 fw-bold" style={{ width: 110, height: 110, fontSize: 36 }}>
-                {user.initials}
+      {/* Profile banner (contained inside the page-content, no negative margins) */}
+      <Card className="overflow-hidden mb-4 border-0">
+        <div
+          style={{
+            background: 'linear-gradient(135deg, var(--vz-primary), var(--vz-secondary))',
+            padding: '2.5rem 2rem 2rem',
+          }}
+        >
+          <Row className="align-items-center g-4">
+            <Col xs="auto">
+              <div className="avatar-lg">
+                <div
+                  className="avatar-title rounded-circle bg-white bg-opacity-25 text-white fw-bold"
+                  style={{ width: 96, height: 96, fontSize: 32 }}
+                >
+                  {user.initials}
+                </div>
               </div>
-            </div>
-          </div>
-          <Col>
-            <div className="p-2">
+            </Col>
+            <Col>
               <h3 className="text-white mb-1">{user.name}</h3>
-              <p className="text-white-75 mb-0">
-                <i className="ri-shield-keyhole-line me-1"></i>{roleLabels[user.user_type] || user.user_type}
+              <p className="text-white-50 mb-0">
+                <i className="ri-shield-keyhole-line me-1"></i>
+                {roleLabels[user.user_type] || user.user_type}
               </p>
               {user.client_name && (
-                <p className="text-white-75 mb-0 fs-14">
+                <p className="text-white-50 mb-0 fs-14">
                   <i className="ri-building-line me-1"></i>{user.client_name}
                   {user.branch_name && <> · {user.branch_name}</>}
                 </p>
               )}
-            </div>
-          </Col>
-        </Row>
-      </div>
+            </Col>
+          </Row>
+        </div>
+      </Card>
 
       <Row>
         <Col xl={4}>
@@ -129,15 +135,15 @@ export default function Profile() {
                     </span>
                   </div>
                   <div>
-                    <h6 className="mb-1">{plan.name || 'Active Plan'}</h6>
+                    <h6 className="mb-1">{plan.plan_name || 'Active Plan'}</h6>
                     <Badge color={plan.expired ? 'danger' : 'success'} pill className="text-uppercase">
                       {plan.expired ? 'Expired' : 'Active'}
                     </Badge>
                   </div>
                 </div>
-                {plan.days_remaining !== null && plan.days_remaining !== undefined && (
+                {plan.expires_at && (
                   <p className="text-muted mb-0 fs-13">
-                    {plan.days_remaining > 0 ? `${plan.days_remaining} days remaining` : 'Plan expired'}
+                    {plan.expired ? 'Plan expired' : `Expires on ${plan.expires_at}`}
                   </p>
                 )}
               </CardBody>
