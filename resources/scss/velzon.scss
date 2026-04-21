@@ -1,0 +1,117 @@
+/*
+  Velzon Saas — streamlined entry for Cross_Border_Command
+
+  CRITICAL ordering:
+    1. Bootstrap functions + Velzon variables + Bootstrap mixins
+    2. Bootstrap's FULL component SCSS (includes base `.dropdown-menu{display:none}`, .modal, .offcanvas, etc.)
+    3. Velzon's structure/component overrides on top
+    4. Velzon's page-specific SCSS
+*/
+
+// Fonts
+@import "velzon/fonts/fonts";
+
+// Icon fonts (Remix, MDI, Boxicons, Line Awesome)
+@import "velzon/icons";
+
+// Bootstrap core
+@import "bootstrap/scss/functions";
+@import "bootstrap/scss/variables";
+
+// Velzon variable overrides (must come BEFORE bootstrap body import so Velzon's colors win)
+@import "velzon/config/saas/variables";
+@import "velzon/config/saas/variables-custom";
+@import "velzon/config/saas/variables-dark";
+
+@import "bootstrap/scss/mixins";
+@import "bootstrap/scss/maps";
+@import "bootstrap/scss/utilities";
+
+// Full Bootstrap (base reset + all component CSS: dropdown/modal/offcanvas/buttons/forms/etc.)
+@import "bootstrap/scss/root";
+@import "bootstrap/scss/reboot";
+@import "bootstrap/scss/type";
+@import "bootstrap/scss/images";
+@import "bootstrap/scss/containers";
+@import "bootstrap/scss/grid";
+@import "bootstrap/scss/tables";
+@import "bootstrap/scss/forms";
+@import "bootstrap/scss/buttons";
+@import "bootstrap/scss/transitions";
+@import "bootstrap/scss/dropdown";
+@import "bootstrap/scss/button-group";
+@import "bootstrap/scss/nav";
+@import "bootstrap/scss/navbar";
+@import "bootstrap/scss/card";
+@import "bootstrap/scss/accordion";
+@import "bootstrap/scss/breadcrumb";
+@import "bootstrap/scss/pagination";
+@import "bootstrap/scss/badge";
+@import "bootstrap/scss/alert";
+@import "bootstrap/scss/progress";
+@import "bootstrap/scss/list-group";
+@import "bootstrap/scss/close";
+@import "bootstrap/scss/toasts";
+@import "bootstrap/scss/modal";
+@import "bootstrap/scss/tooltip";
+@import "bootstrap/scss/popover";
+@import "bootstrap/scss/carousel";
+@import "bootstrap/scss/spinners";
+@import "bootstrap/scss/offcanvas";
+@import "bootstrap/scss/placeholders";
+@import "bootstrap/scss/helpers";
+@import "bootstrap/scss/utilities/api";
+
+// Velzon — Structure
+@import "velzon/structure/topbar";
+@import "velzon/structure/page-head";
+@import "velzon/structure/footer";
+@import "velzon/structure/vertical";
+@import "velzon/structure/horizontal";
+@import "velzon/structure/two-column";
+@import "velzon/structure/layouts";
+
+// Velzon — Components (override / extend Bootstrap)
+@import "velzon/components/waves";
+@import "velzon/components/avatar";
+@import "velzon/components/accordion";
+@import "velzon/components/helper";
+@import "velzon/components/preloader";
+@import "velzon/components/forms";
+@import "velzon/components/widgets";
+@import "velzon/components/demos";
+@import "velzon/components/print";
+@import "velzon/components/ribbons";
+@import "velzon/components/toast";
+@import "velzon/components/scrollspy";
+@import "velzon/components/root";
+@import "velzon/components/reboot";
+@import "velzon/components/alerts";
+@import "velzon/components/badge";
+@import "velzon/components/buttons";
+@import "velzon/components/breadcrumb";
+@import "velzon/components/card";
+@import "velzon/components/dropdown";
+@import "velzon/components/nav";
+@import "velzon/components/table";
+@import "velzon/components/modal";
+@import "velzon/components/pagination";
+@import "velzon/components/progress";
+@import "velzon/components/popover";
+@import "velzon/components/type";
+@import "velzon/components/form-check";
+@import "velzon/components/form-control";
+@import "velzon/components/list-group";
+
+// Plugins (lean set — only ones we actually use)
+@import "velzon/plugins/custom-scrollbar";
+@import "velzon/plugins/sweetalert2";
+@import "velzon/plugins/apexcharts";
+@import "velzon/plugins/toastify";
+
+// Pages (lean set)
+@import "velzon/pages/authentication";
+@import "velzon/pages/dashboard";
+@import "velzon/pages/profile";
+@import "velzon/pages/errors";
+@import "velzon/pages/invoice";

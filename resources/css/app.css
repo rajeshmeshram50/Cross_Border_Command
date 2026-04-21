@@ -39,6 +39,51 @@
   --color-sidebar: #070C17;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   Velzon-inspired variants (Phase 1: primary accent switching)
+   Switched via data-variant on <html>. No variant = current CBC look.
+   ═══════════════════════════════════════════════════════════════ */
+[data-variant="velzon-default"] {
+  --color-primary: #405189;
+  --color-primary-hover: #334070;
+}
+[data-variant="velzon-corporate"] {
+  --color-primary: #687cfe;
+  --color-primary-hover: #4f64f0;
+}
+[data-variant="velzon-creative"] {
+  --color-primary: #3d78e3;
+  --color-primary-hover: #2d63c8;
+}
+[data-variant="velzon-galaxy"] {
+  --color-primary: #ad64f1;
+  --color-primary-hover: #9248d8;
+}
+[data-variant="velzon-interactive"] {
+  --color-primary: #4f46bb;
+  --color-primary-hover: #3d34a3;
+}
+[data-variant="velzon-master"] {
+  --color-primary: #4b38b3;
+  --color-primary-hover: #3b2a98;
+}
+[data-variant="velzon-material"] {
+  --color-primary: #3577f1;
+  --color-primary-hover: #1e5fd9;
+}
+[data-variant="velzon-minimal"] {
+  --color-primary: #25a0e2;
+  --color-primary-hover: #1985c4;
+}
+[data-variant="velzon-modern"] {
+  --color-primary: #5ea3cb;
+  --color-primary-hover: #4589b3;
+}
+[data-variant="velzon-saas"] {
+  --color-primary: #6691e7;
+  --color-primary-hover: #4a78d0;
+}
+
 html,
 body,
 #app {

@@ -1,9 +1,5 @@
 import { useState, useEffect } from 'react';
-import Badge from '../components/ui/Badge';
-import {
-  IndianRupee, ArrowLeft, Loader2, CheckCircle2, Clock, XCircle,
-  RefreshCw, CreditCard, Search, FileText, Calendar, TrendingUp
-} from 'lucide-react';
+import { Card, CardBody, CardHeader, Col, Row, Badge, Spinner } from 'reactstrap';
 import api from '../api';
 
 interface Props {
@@ -12,11 +8,11 @@ interface Props {
   onBack: () => void;
 }
 
-const statusConfig: Record<string, { icon: typeof CheckCircle2; variant: 'success' | 'warning' | 'danger' | 'info' }> = {
-  success: { icon: CheckCircle2, variant: 'success' },
-  pending: { icon: Clock, variant: 'warning' },
-  failed: { icon: XCircle, variant: 'danger' },
-  refunded: { icon: RefreshCw, variant: 'info' },
+const statusCfg: Record<string, { color: string; icon: string }> = {
+  success:  { color: 'success', icon: 'ri-checkbox-circle-line' },
+  pending:  { color: 'warning', icon: 'ri-time-line' },
+  failed:   { color: 'danger',  icon: 'ri-close-circle-line' },
+  refunded: { color: 'info',    icon: 'ri-refresh-line' },
 };
 
 const methodLabels: Record<string, string> = {
@@ -39,111 +35,117 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
   const lastPayment = payments.find(p => p.status === 'success');
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <button onClick={onBack} className="w-9 h-9 rounded-xl border border-border bg-surface flex items-center justify-center text-muted hover:text-primary hover:border-primary/40 transition-all cursor-pointer">
-          <ArrowLeft size={16} />
-        </button>
-        <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-          <IndianRupee size={18} className="text-emerald-500" />
-        </div>
-        <div>
-          <h1 className="text-[18px] font-bold text-text tracking-tight">Payment History</h1>
-          <p className="text-[12px] text-muted mt-0.5">{clientName} · {payments.length} transactions</p>
-        </div>
-      </div>
+    <>
+      <Row>
+        <Col xs={12}>
+          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
+            <h4 className="mb-sm-0">
+              <button className="btn btn-sm btn-soft-primary me-2" onClick={onBack}>
+                <i className="ri-arrow-left-line"></i>
+              </button>
+              Payment History
+            </h4>
+            <div className="page-title-right">
+              <ol className="breadcrumb m-0">
+                <li className="breadcrumb-item"><a href="#">Clients</a></li>
+                <li className="breadcrumb-item"><a href="#">{clientName}</a></li>
+                <li className="breadcrumb-item active">Payments</li>
+              </ol>
+            </div>
+          </div>
+        </Col>
+      </Row>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-surface rounded-xl border border-border p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
-              <TrendingUp size={14} className="text-emerald-500" />
-            </div>
-            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Total Paid</span>
-          </div>
-          <div className="text-[22px] font-extrabold text-emerald-600">₹{totalPaid.toLocaleString()}</div>
-        </div>
-        <div className="bg-surface rounded-xl border border-border p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-              <Clock size={14} className="text-amber-500" />
-            </div>
-            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Pending</span>
-          </div>
-          <div className="text-[22px] font-extrabold text-amber-600">{pending.length}</div>
-        </div>
-        <div className="bg-surface rounded-xl border border-border p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-sky-500/10 flex items-center justify-center">
-              <CreditCard size={14} className="text-sky-500" />
-            </div>
-            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Transactions</span>
-          </div>
-          <div className="text-[22px] font-extrabold text-sky-600">{payments.length}</div>
-        </div>
-        <div className="bg-surface rounded-xl border border-border p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center">
-              <Calendar size={14} className="text-violet-500" />
-            </div>
-            <span className="text-[10px] font-bold text-muted uppercase tracking-wider">Last Payment</span>
-          </div>
-          <div className="text-[14px] font-bold text-text">
-            {lastPayment ? new Date(lastPayment.payment_date || lastPayment.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-          </div>
-        </div>
-      </div>
+      <Row>
+        <Col md={3} sm={6}>
+          <Card className="card-animate">
+            <CardBody>
+              <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Total Paid</p>
+              <div className="d-flex align-items-end justify-content-between mt-3">
+                <h4 className="fs-22 fw-semibold mb-0">₹{totalPaid.toLocaleString()}</h4>
+                <div className="avatar-sm"><span className="avatar-title rounded bg-success-subtle text-success fs-3"><i className="ri-line-chart-line"></i></span></div>
+              </div>
+            </CardBody>
+          </Card>
+        </Col>
+        <Col md={3} sm={6}>
+          <Card className="card-animate">
+            <CardBody>
+              <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Pending</p>
+              <div className="d-flex align-items-end justify-content-between mt-3">
+                <h4 className="fs-22 fw-semibold mb-0">{pending.length}</h4>
+                <div className="avatar-sm"><span className="avatar-title rounded bg-warning-subtle text-warning fs-3"><i className="ri-time-line"></i></span></div>
+              </div>
+            </CardBody>
+          </Card>
+        </Col>
+        <Col md={3} sm={6}>
+          <Card className="card-animate">
+            <CardBody>
+              <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Transactions</p>
+              <div className="d-flex align-items-end justify-content-between mt-3">
+                <h4 className="fs-22 fw-semibold mb-0">{payments.length}</h4>
+                <div className="avatar-sm"><span className="avatar-title rounded bg-info-subtle text-info fs-3"><i className="ri-bank-card-line"></i></span></div>
+              </div>
+            </CardBody>
+          </Card>
+        </Col>
+        <Col md={3} sm={6}>
+          <Card className="card-animate">
+            <CardBody>
+              <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Last Payment</p>
+              <div className="d-flex align-items-end justify-content-between mt-3">
+                <h6 className="mb-0">
+                  {lastPayment ? new Date(lastPayment.payment_date || lastPayment.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                </h6>
+                <div className="avatar-sm"><span className="avatar-title rounded bg-primary-subtle text-primary fs-3"><i className="ri-calendar-line"></i></span></div>
+              </div>
+            </CardBody>
+          </Card>
+        </Col>
+      </Row>
 
-      {/* Payment Table */}
-      <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-muted text-[13px]">
-            <Loader2 size={20} className="animate-spin mr-3" /> Loading payments...
-          </div>
-        ) : payments.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-50 flex items-center justify-center mb-4">
-              <IndianRupee size={24} className="text-emerald-300" />
-            </div>
-            <p className="text-[14px] font-semibold text-text">No Payments Found</p>
-            <p className="text-[12px] text-muted mt-1">No payment records for this client yet.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead>
-                <tr className="bg-border border-b border-border">
-                  {['#', 'Date', 'Plan', 'Amount', 'GST', 'Total', 'Method', 'Transaction ID', 'Status'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-[9.5px] font-bold tracking-wider uppercase text-secondary">{h}</th>
-                  ))}
+      <Card>
+        <CardHeader><h5 className="card-title mb-0">All Payments</h5></CardHeader>
+        <CardBody>
+          <div className="table-responsive table-card">
+            <table className="table align-middle table-nowrap mb-0">
+              <thead className="table-light">
+                <tr>
+                  <th>#</th><th>Date</th><th>Plan</th><th>Amount</th><th>GST</th>
+                  <th>Total</th><th>Method</th><th>Transaction ID</th><th>Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/30">
-                {payments.map((p: any, i: number) => {
-                  const sc = statusConfig[p.status] || statusConfig.pending;
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={9} className="text-center py-5"><Spinner color="primary" /></td></tr>
+                ) : payments.length === 0 ? (
+                  <tr><td colSpan={9} className="text-center text-muted py-5">
+                    <i className="ri-bill-line display-4 d-block mb-2"></i>No payment records for this client yet.
+                  </td></tr>
+                ) : payments.map((p, i) => {
+                  const cfg = statusCfg[p.status] || statusCfg.pending;
                   return (
-                    <tr key={p.id} className="hover:bg-primary/[.03] transition-colors">
-                      <td className="px-4 py-3.5 text-[12px] text-muted">{i + 1}</td>
-                      <td className="px-4 py-3.5 text-[12px] text-text font-medium">
-                        {new Date(p.payment_date || p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    <tr key={p.id}>
+                      <td className="text-muted">{i + 1}</td>
+                      <td>{new Date(p.payment_date || p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                      <td>
+                        <span className="fw-semibold">{p.plan?.name || '—'}</span>
+                        {p.billing_cycle && <div className="text-muted fs-12 text-capitalize">{p.billing_cycle}</div>}
                       </td>
-                      <td className="px-4 py-3.5">
-                        <span className="text-[12px] font-semibold text-text">{p.plan?.name || '—'}</span>
-                        {p.billing_cycle && <div className="text-[10px] text-muted capitalize">{p.billing_cycle}</div>}
-                      </td>
-                      <td className="px-4 py-3.5 text-[13px] font-bold text-text">₹{Number(p.amount || 0).toLocaleString()}</td>
-                      <td className="px-4 py-3.5 text-[12px] text-muted">{p.gst ? `₹${Number(p.gst).toLocaleString()}` : '—'}</td>
-                      <td className="px-4 py-3.5 text-[13px] font-extrabold text-emerald-600">₹{Number(p.total || p.amount || 0).toLocaleString()}</td>
-                      <td className="px-4 py-3.5 text-[11px] text-text capitalize">{methodLabels[p.method] || p.method || '—'}</td>
-                      <td className="px-4 py-3.5">
+                      <td className="fw-bold">₹{Number(p.amount || 0).toLocaleString()}</td>
+                      <td className="text-muted">{p.gst ? `₹${Number(p.gst).toLocaleString()}` : '—'}</td>
+                      <td className="text-success fw-bold">₹{Number(p.total || p.amount || 0).toLocaleString()}</td>
+                      <td className="text-capitalize">{methodLabels[p.method] || p.method || '—'}</td>
+                      <td>
                         {p.txn_id ? (
-                          <span className="font-mono text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded-md">{p.txn_id}</span>
-                        ) : <span className="text-[11px] text-muted">—</span>}
+                          <span className="badge bg-primary-subtle text-primary font-monospace">{p.txn_id}</span>
+                        ) : <span className="text-muted">—</span>}
                       </td>
-                      <td className="px-4 py-3.5">
-                        <Badge variant={sc.variant} dot>{p.status}</Badge>
+                      <td>
+                        <Badge color={cfg.color} pill className="text-uppercase">
+                          <i className={`${cfg.icon} me-1`}></i>{p.status}
+                        </Badge>
                       </td>
                     </tr>
                   );
@@ -151,8 +153,8 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
               </tbody>
             </table>
           </div>
-        )}
-      </div>
-    </div>
+        </CardBody>
+      </Card>
+    </>
   );
 }

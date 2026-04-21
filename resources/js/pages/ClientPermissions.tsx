@@ -1,10 +1,5 @@
 import { useState, useEffect } from 'react';
-import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
-import {
-  ShieldCheck, ArrowLeft, Loader2, CheckCircle2, XCircle, Eye, Plus,
-  Pencil, Trash2, Download, Upload, Stamp, Check, AlertCircle, Users
-} from 'lucide-react';
+import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Spinner, Alert } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 
@@ -16,29 +11,28 @@ interface Props {
 
 type PermKey = 'can_view' | 'can_add' | 'can_edit' | 'can_delete' | 'can_export' | 'can_import' | 'can_approve';
 
-const PERMS: { key: PermKey; label: string; icon: typeof Eye }[] = [
-  { key: 'can_view', label: 'View', icon: Eye },
-  { key: 'can_add', label: 'Add', icon: Plus },
-  { key: 'can_edit', label: 'Edit', icon: Pencil },
-  { key: 'can_delete', label: 'Delete', icon: Trash2 },
-  { key: 'can_export', label: 'Export', icon: Download },
-  { key: 'can_import', label: 'Import', icon: Upload },
-  { key: 'can_approve', label: 'Approve', icon: Stamp },
+const PERMS: { key: PermKey; label: string; icon: string }[] = [
+  { key: 'can_view',    label: 'View',    icon: 'ri-eye-line' },
+  { key: 'can_add',     label: 'Add',     icon: 'ri-add-line' },
+  { key: 'can_edit',    label: 'Edit',    icon: 'ri-pencil-line' },
+  { key: 'can_delete',  label: 'Delete',  icon: 'ri-delete-bin-line' },
+  { key: 'can_export',  label: 'Export',  icon: 'ri-download-2-line' },
+  { key: 'can_import',  label: 'Import',  icon: 'ri-upload-2-line' },
+  { key: 'can_approve', label: 'Approve', icon: 'ri-check-double-line' },
 ];
+
+const emptyPerms = (): Record<PermKey, boolean> => ({
+  can_view: false, can_add: false, can_edit: false, can_delete: false,
+  can_export: false, can_import: false, can_approve: false,
+});
 
 export default function ClientPermissions({ clientId, clientName, onBack }: Props) {
   const toast = useToast();
   const [adminUser, setAdminUser] = useState<any>(null);
-  const [permissions, setPermissions] = useState<any[]>([]);
   const [modules, setModules] = useState<any[]>([]);
   const [matrix, setMatrix] = useState<Record<number, Record<PermKey, boolean>>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
-  const emptyPerms = (): Record<PermKey, boolean> => ({
-    can_view: false, can_add: false, can_edit: false, can_delete: false,
-    can_export: false, can_import: false, can_approve: false,
-  });
 
   useEffect(() => {
     Promise.all([
@@ -50,7 +44,6 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
       const mods = modRes.data;
       setModules(mods);
 
-      // Initialize matrix
       const m: Record<number, Record<PermKey, boolean>> = {};
       mods.forEach((mod: any) => { m[mod.id] = emptyPerms(); });
 
@@ -58,7 +51,6 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
         try {
           const permRes = await api.get(`/permissions/user/${admin.id}`);
           const perms = permRes.data.permissions || [];
-          setPermissions(perms);
           perms.forEach((p: any) => {
             if (m[p.module_id]) {
               m[p.module_id] = {
@@ -74,18 +66,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
   }, [clientId]);
 
   const toggle = (modId: number, key: PermKey) => {
-    setMatrix(prev => ({
-      ...prev,
-      [modId]: { ...(prev[modId] || emptyPerms()), [key]: !(prev[modId]?.[key]) },
-    }));
-  };
-
-  const toggleRow = (modId: number) => {
-    const allOn = PERMS.every(p => matrix[modId]?.[p.key]);
-    const next = { ...matrix };
-    next[modId] = {} as Record<PermKey, boolean>;
-    PERMS.forEach(p => { next[modId][p.key] = !allOn; });
-    setMatrix(next);
+    setMatrix(prev => ({ ...prev, [modId]: { ...(prev[modId] || emptyPerms()), [key]: !(prev[modId]?.[key]) } }));
   };
 
   const toggleColumn = (key: PermKey) => {
@@ -124,137 +105,140 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
   const totalChecks = Object.values(matrix).reduce((s, m) => s + PERMS.filter(p => m[p.key]).length, 0);
   const maxChecks = modules.length * PERMS.length;
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 size={24} className="animate-spin text-primary mr-3" />
-        <span className="text-muted text-[13px]">Loading permissions...</span>
-      </div>
-    );
-  }
+  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="w-9 h-9 rounded-xl border border-border bg-surface flex items-center justify-center text-muted hover:text-primary hover:border-primary/40 transition-all cursor-pointer">
-            <ArrowLeft size={16} />
-          </button>
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
-            <ShieldCheck size={18} className="text-indigo-500" />
+    <>
+      <Row>
+        <Col xs={12}>
+          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
+            <h4 className="mb-sm-0">
+              <button className="btn btn-sm btn-soft-primary me-2" onClick={onBack}>
+                <i className="ri-arrow-left-line"></i>
+              </button>
+              Permissions
+            </h4>
+            <div className="page-title-right">
+              <ol className="breadcrumb m-0">
+                <li className="breadcrumb-item"><a href="#">Clients</a></li>
+                <li className="breadcrumb-item"><a href="#">{clientName}</a></li>
+                <li className="breadcrumb-item active">Permissions</li>
+              </ol>
+            </div>
           </div>
-          <div>
-            <h1 className="text-[18px] font-bold text-text tracking-tight">Permissions</h1>
-            <p className="text-[12px] text-muted mt-0.5">{clientName} · Client Admin Access Control</p>
-          </div>
-        </div>
-        <Button onClick={handleSave} disabled={saving || !adminUser}>
-          {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-          {saving ? 'Saving...' : 'Save Permissions'}
-        </Button>
-      </div>
-
-      {/* Admin info */}
-      {adminUser && (
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-50/50 border border-indigo-200/40">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white font-bold text-xs">
-            {adminUser.name?.charAt(0)?.toUpperCase()}
-          </div>
-          <div className="flex-1">
-            <span className="text-[13px] font-semibold text-text">{adminUser.name}</span>
-            <span className="text-[11px] text-muted ml-2">{adminUser.email}</span>
-          </div>
-          <Badge variant={adminUser.status === 'active' ? 'success' : 'danger'} dot>{adminUser.status}</Badge>
-        </div>
-      )}
+        </Col>
+      </Row>
 
       {!adminUser && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-[12px] text-amber-700">
-          <AlertCircle size={14} />
+        <Alert color="warning">
+          <i className="ri-alert-line me-1"></i>
           No client admin found for this organization.
-        </div>
+        </Alert>
       )}
 
       {adminUser && (
-        <>
-          {/* Quick Actions */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10.5px] font-bold text-muted uppercase tracking-wider">Quick:</span>
-            <Button variant="outline" size="sm" onClick={() => selectAll(true)}>Select All</Button>
-            <Button variant="outline" size="sm" onClick={() => selectAll(false)}>Deselect All</Button>
-            <div className="w-px h-5 bg-border mx-1" />
-            {PERMS.map(p => (
-              <button key={p.key} onClick={() => toggleColumn(p.key)}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border border-border bg-surface text-secondary hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-all cursor-pointer">
-                <p.icon size={11} /> {p.label}
-              </button>
-            ))}
-            <span className="text-[10.5px] text-muted ml-auto">{totalChecks} / {maxChecks}</span>
-          </div>
+        <Card>
+          <CardHeader>
+            <Row className="align-items-center g-3">
+              <Col sm="auto">
+                <div className="d-flex align-items-center gap-3">
+                  <div className="avatar-sm">
+                    <div className="avatar-title rounded bg-primary text-white fw-bold">
+                      {adminUser.name?.charAt(0)?.toUpperCase()}
+                    </div>
+                  </div>
+                  <div>
+                    <h6 className="mb-0 fs-14">{adminUser.name}</h6>
+                    <p className="text-muted mb-0 fs-12">{adminUser.email}</p>
+                  </div>
+                  <Badge color={adminUser.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">
+                    {adminUser.status}
+                  </Badge>
+                </div>
+              </Col>
+              <Col className="text-end">
+                <Button color="success" onClick={handleSave} disabled={saving}>
+                  {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-check-line me-1"></i>}
+                  {saving ? 'Saving...' : 'Save Permissions'}
+                </Button>
+              </Col>
+            </Row>
+          </CardHeader>
 
-          {/* Matrix */}
-          <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full" style={{ minWidth: 800 }}>
-                <thead>
-                  <tr className="bg-border border-b border-border">
-                    <th className="text-left px-5 py-3 text-[9.5px] font-bold tracking-wider uppercase text-secondary" style={{ width: '28%' }}>Module</th>
-                    {PERMS.map(p => (
-                      <th key={p.key} className="text-center px-3 py-3">
-                        <div className="flex flex-col items-center gap-1">
-                          <p.icon size={13} className="text-secondary/70" />
-                          <span className="text-[9.5px] font-bold tracking-wider uppercase text-secondary">{p.label}</span>
+          <CardBody className="border-top">
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              <span className="text-muted fs-11 fw-bold text-uppercase">Quick:</span>
+              <Button color="light" size="sm" onClick={() => selectAll(true)}>
+                <i className="ri-checkbox-multiple-line me-1"></i>Select All
+              </Button>
+              <Button color="light" size="sm" onClick={() => selectAll(false)}>
+                <i className="ri-checkbox-multiple-blank-line me-1"></i>Deselect All
+              </Button>
+              <span className="vr mx-1"></span>
+              {PERMS.map(p => (
+                <Button key={p.key} color="light" size="sm" onClick={() => toggleColumn(p.key)}>
+                  <i className={`${p.icon} me-1`}></i>{p.label}
+                </Button>
+              ))}
+              <span className="ms-auto text-muted fs-12">
+                <strong className="text-primary">{totalChecks}</strong> / {maxChecks}
+              </span>
+            </div>
+          </CardBody>
+
+          <div className="table-responsive table-card">
+            <table className="table align-middle table-nowrap mb-0">
+              <thead className="table-light">
+                <tr>
+                  <th style={{ width: '28%' }}>Module</th>
+                  {PERMS.map(p => (
+                    <th key={p.key} className="text-center">
+                      <div className="d-flex flex-column align-items-center gap-1">
+                        <i className={`${p.icon} fs-14 text-muted`}></i>
+                        <span className="fs-11">{p.label}</span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {modules.map(mod => {
+                  const rowPerms = matrix[mod.id] || emptyPerms();
+                  return (
+                    <tr key={mod.id}>
+                      <td>
+                        <div className="d-flex align-items-center gap-2">
+                          <span className="fw-semibold">{mod.name}</span>
+                          {mod.is_default && <Badge color="success-subtle" className="text-success fs-10">DEFAULT</Badge>}
                         </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {modules.map(mod => {
-                    const rowPerms = matrix[mod.id] || emptyPerms();
-                    const allOn = PERMS.every(p => rowPerms[p.key]);
-                    return (
-                      <tr key={mod.id} className="border-b border-border/30 hover:bg-primary/[.03] transition-colors group">
-                        <td className="px-5 py-0">
-                          <div className="flex items-center h-12 gap-2.5">
-                            <span className="text-[13px] font-bold text-text">{mod.name}</span>
-                            {mod.is_default && (
-                              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-600 border border-emerald-200">DEFAULT</span>
-                            )}
-                            <button onClick={() => toggleRow(mod.id)}
-                              className="ml-auto text-[10px] font-semibold text-muted hover:text-primary transition-colors cursor-pointer opacity-0 group-hover:opacity-100">
-                              {allOn ? 'deselect' : 'select all'}
-                            </button>
+                      </td>
+                      {PERMS.map(p => (
+                        <td key={p.key} className="text-center">
+                          <div className="form-check d-flex justify-content-center m-0">
+                            <Input type="checkbox" className="form-check-input"
+                              checked={!!rowPerms[p.key]}
+                              onChange={() => toggle(mod.id, p.key)} />
                           </div>
                         </td>
-                        {PERMS.map(p => (
-                          <td key={p.key} className="text-center px-3 py-0">
-                            <div className="flex items-center justify-center h-12">
-                              <input type="checkbox" checked={!!rowPerms[p.key]} onChange={() => toggle(mod.id, p.key)}
-                                className="w-4 h-4 rounded border-[1.5px] border-border accent-primary cursor-pointer transition-all hover:border-primary/50" />
-                            </div>
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="px-5 py-3 border-t border-border/50 bg-surface-2 flex items-center justify-between">
-              <span className="text-[11.5px] text-muted">
-                <strong className="text-text">{adminUser.name}</strong> · <span className="font-bold text-primary">{totalChecks}</span> permissions enabled
-              </span>
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                Save Permissions
-              </Button>
-            </div>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </>
+
+          <CardBody className="border-top d-flex justify-content-between align-items-center">
+            <span className="text-muted fs-13">
+              <strong>{adminUser.name}</strong> · <span className="fw-bold text-primary">{totalChecks}</span> permissions enabled
+            </span>
+            <Button color="success" onClick={handleSave} disabled={saving}>
+              {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-check-line me-1"></i>}
+              Save Permissions
+            </Button>
+          </CardBody>
+        </Card>
       )}
-    </div>
+    </>
   );
 }

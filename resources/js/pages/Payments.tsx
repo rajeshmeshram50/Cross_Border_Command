@@ -1,15 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
-import Modal from '../components/ui/Modal';
-import Input, { Select, Textarea } from '../components/ui/Input';
 import {
-  IndianRupee, Receipt, Clock, XCircle, Loader2, Search, Plus, Eye,
-  Trash2, Download, Filter, ChevronLeft, ChevronRight, X,
-  CheckCircle2, RefreshCw, CreditCard, TrendingUp, Banknote, FileText,
-  ChevronDown, Send, CalendarDays, AlertTriangle
-} from 'lucide-react';
-import { ShimmerPaymentList } from '../components/ui/Shimmer';
+  Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Spinner,
+  Modal, ModalHeader, ModalBody, ModalFooter, Form, Label,
+} from 'reactstrap';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -42,45 +35,12 @@ const methodLabels: Record<string, string> = {
   net_banking: 'Net Banking', wallet: 'Wallet', cash: 'Cash', cheque: 'Cheque',
 };
 
-const statusConfig: Record<string, { color: string; icon: typeof CheckCircle2; variant: 'success' | 'warning' | 'danger' | 'info' }> = {
-  success: { color: 'emerald', icon: CheckCircle2, variant: 'success' },
-  pending: { color: 'amber', icon: Clock, variant: 'warning' },
-  failed: { color: 'red', icon: XCircle, variant: 'danger' },
-  refunded: { color: 'sky', icon: RefreshCw, variant: 'info' },
+const statusCfg: Record<string, { color: string; icon: string; bsColor: string }> = {
+  success:  { color: '#0ab39c', icon: 'ri-checkbox-circle-line', bsColor: 'success' },
+  pending:  { color: '#f7b84b', icon: 'ri-time-line',           bsColor: 'warning' },
+  failed:   { color: '#f06548', icon: 'ri-close-circle-line',   bsColor: 'danger' },
+  refunded: { color: '#299cdb', icon: 'ri-refresh-line',        bsColor: 'info' },
 };
-
-function getRemainingDays(validUntil: string | null): number | null {
-  if (!validUntil) return null;
-  const expiry = new Date(validUntil);
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  expiry.setHours(0, 0, 0, 0);
-  return Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function RemainingDaysBadge({ days }: { days: number | null }) {
-  if (days === null) return null;
-  if (days <= 0) return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-600 border border-red-200">
-      <AlertTriangle size={9} /> Expired
-    </span>
-  );
-  if (days <= 7) return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 animate-pulse">
-      <Clock size={9} /> {days}d left
-    </span>
-  );
-  if (days <= 30) return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-sky-100 text-sky-700 border border-sky-200">
-      <CalendarDays size={9} /> {days}d left
-    </span>
-  );
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
-      <CheckCircle2 size={9} /> {days}d left
-    </span>
-  );
-}
 
 export default function Payments() {
   const { user } = useAuth();
@@ -101,8 +61,8 @@ export default function Payments() {
   const [saving, setSaving] = useState(false);
   const [clients, setClients] = useState<{ id: number; org_name: string }[]>([]);
   const [plans, setPlans] = useState<{ id: number; name: string; price: number }[]>([]);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [sendingReminder, setSendingReminder] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 400);
@@ -160,8 +120,8 @@ export default function Payments() {
     const result = await Swal.fire({
       title: 'Are you sure?',
       text: `Delete payment ${p.invoice_number || '#' + p.id}?`,
-      icon: 'warning', showCancelButton: true, confirmButtonColor: '#ef4444', cancelButtonColor: '#94a3b8',
-      confirmButtonText: 'Delete', reverseButtons: true,
+      icon: 'warning', showCancelButton: true,
+      confirmButtonText: 'Delete', confirmButtonColor: '#f06548', cancelButtonColor: '#878a99',
     });
     if (!result.isConfirmed) return;
     try {
@@ -183,8 +143,6 @@ export default function Payments() {
     }
   };
 
-  const [exporting, setExporting] = useState(false);
-
   const handleExport = async () => {
     setExporting(true);
     try {
@@ -195,18 +153,14 @@ export default function Payments() {
         'Plan': p.plan?.name || '', 'Amount (₹)': parseFloat(p.amount),
         'GST (₹)': p.gst ? parseFloat(p.gst) : 0, 'Discount (₹)': p.discount ? parseFloat(p.discount) : 0,
         'Total (₹)': parseFloat(p.total), 'Method': methodLabels[p.method] || p.method,
-        'Gateway': p.gateway || '', 'Status': p.status, 'Billing Cycle': p.billing_cycle || '',
-        'Transaction ID': p.txn_id || '', 'Valid From': p.valid_from || '',
-        'Valid Until': p.valid_until || '', 'Date': new Date(p.created_at).toLocaleDateString('en-IN'),
+        'Gateway': p.gateway || '', 'Status': p.status,
+        'Transaction ID': p.txn_id || '', 'Date': new Date(p.created_at).toLocaleDateString('en-IN'),
       }));
       const ws = XLSX.utils.json_to_sheet(rows);
-      ws['!cols'] = Object.keys(rows[0] || {}).map(key => ({
-        wch: Math.max(key.length, ...rows.map(r => String((r as any)[key]).length)) + 2,
-      }));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Payments');
       const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      saveAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `Payments_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      saveAs(new Blob([buf]), `Payments_${new Date().toISOString().slice(0, 10)}.xlsx`);
       toast.success('Exported', `${allPayments.length} payments exported`);
     } catch { toast.error('Export Failed', 'Could not export payments'); }
     finally { setExporting(false); }
@@ -218,426 +172,392 @@ export default function Payments() {
   };
 
   return (
-    <div className="space-y-5">
-      {/* Hero Header */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 shadow-xl">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMSIgZmlsbD0icmdiYSgyNTUsMjU1LDI1NSwwLjA0KSIvPjwvc3ZnPg==')] opacity-60" />
-        <div className="absolute top-0 right-0 w-72 h-72 bg-red-500/10 rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl" />
-        <div className="absolute bottom-0 left-0 w-60 h-60 bg-orange-500/10 rounded-full translate-y-1/2 -translate-x-1/4 blur-3xl" />
-
-        <div className="relative px-8 py-7">
-          <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
-            <div className="flex items-center gap-5">
-              <div className="relative">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shadow-2xl shadow-red-500/30">
-                  <IndianRupee size={24} className="text-white" />
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-emerald-500 border-[3px] border-slate-900 flex items-center justify-center">
-                  <CheckCircle2 size={10} className="text-white" />
-                </div>
-              </div>
-              <div>
-                <h1 className="text-[24px] font-extrabold text-white tracking-tight">Revenue & Payments</h1>
-                <div className="flex items-center gap-3 mt-1.5">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-red-500 to-orange-600 text-white text-[10px] font-bold uppercase tracking-wider shadow-lg">
-                    <CreditCard size={11} /> Billing
-                  </span>
-                  <p className="text-white/50 text-[13px]">Track subscriptions and payment history</p>
-                </div>
-              </div>
+    <>
+      <Row>
+        <Col xs={12}>
+          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
+            <h4 className="mb-sm-0">Revenue & Payments</h4>
+            <div className="page-title-right">
+              <ol className="breadcrumb m-0">
+                <li className="breadcrumb-item"><a href="#">Velzon</a></li>
+                <li className="breadcrumb-item active">Payments</li>
+              </ol>
             </div>
-            {isSuperAdmin && (
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting} className="!bg-white/10 !border-white/20 !text-white hover:!bg-white/20">
-                  {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                  {exporting ? 'Exporting...' : 'Export Excel'}
-                </Button>
-                <Button size="sm" onClick={openAddModal} className="!bg-gradient-to-r !from-red-500 !to-orange-600 !text-white hover:!brightness-110 !shadow-lg !shadow-red-500/25 !border-0">
-                  <Plus size={13} /> Record Payment
-                </Button>
+          </div>
+        </Col>
+      </Row>
+
+      {/* Stat cards */}
+      <Row>
+        <Col md={3} sm={6}>
+          <Card className="card-animate">
+            <CardBody>
+              <div className="d-flex align-items-center">
+                <div className="flex-grow-1"><p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Total Revenue</p></div>
               </div>
-            )}
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label: 'Total Revenue', value: `₹${(stats?.total_revenue || 0).toLocaleString()}`, icon: TrendingUp, sub: `${stats?.successful || 0} successful`, gradient: 'from-emerald-500/20 to-emerald-500/5' },
-              { label: 'Transactions', value: stats?.total_transactions || 0, icon: Receipt, sub: `${stats?.pending || 0} pending`, gradient: 'from-indigo-500/20 to-indigo-500/5' },
-              { label: 'Failed', value: stats?.failed || 0, icon: XCircle, sub: 'need attention', gradient: 'from-red-500/20 to-red-500/5' },
-              { label: 'Refunded', value: `₹${(stats?.refund_amount || 0).toLocaleString()}`, icon: RefreshCw, sub: `${stats?.refunded || 0} refunds`, gradient: 'from-amber-500/20 to-amber-500/5' },
-            ].map(s => (
-              <div key={s.label} className={`bg-gradient-to-br ${s.gradient} backdrop-blur-sm rounded-xl px-4 py-3 border border-white/10 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-white/15`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <s.icon size={13} className="text-white/60" />
-                  <span className="text-[10px] font-semibold text-white/60 uppercase tracking-wider">{s.label}</span>
+              <div className="d-flex align-items-end justify-content-between mt-4">
+                <div>
+                  <h4 className="fs-22 fw-semibold mb-0">₹{(stats?.total_revenue || 0).toLocaleString()}</h4>
+                  <p className="mb-0 text-muted mt-2 fs-12">{stats?.successful || 0} successful</p>
                 </div>
-                <div className="text-[22px] font-extrabold text-white">{s.value}</div>
-                <div className="text-[10px] text-white/40 mt-0.5">{s.sub}</div>
+                <div className="avatar-sm"><span className="avatar-title rounded bg-success-subtle text-success fs-3"><i className="ri-money-rupee-circle-line"></i></span></div>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-[340px]">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input value={searchInput} onChange={e => setSearchInput(e.target.value)}
-            placeholder="Search by transaction ID, invoice, client..."
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl border-[1.5px] border-border bg-surface text-[12.5px] text-text outline-none focus:border-primary/50 focus:ring-3 focus:ring-primary/10 placeholder:text-muted/60 transition-all duration-300" />
-          {searchInput && <button onClick={() => setSearchInput('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-text cursor-pointer"><X size={12} /></button>}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Filter size={12} className="text-muted" />
-          {['', 'success', 'pending', 'failed', 'refunded'].map(s => (
-            <button key={s} onClick={() => { setStatusFilter(s); setPage(1); }}
-              className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all duration-200 cursor-pointer ${
-                statusFilter === s ? 'bg-primary text-white border-primary shadow-md shadow-primary/25' : 'border-border bg-surface text-secondary hover:border-primary/40 hover:text-primary'
-              }`}>{s || 'All'}</button>
-          ))}
-        </div>
-        <span className="text-[11px] text-muted ml-auto">{loading ? 'Loading...' : `${payments.length} of ${total}`}</span>
-      </div>
-
-      {/* Payment List */}
-      {loading ? (
-        <ShimmerPaymentList count={5} />
-      ) : payments.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-500/5 flex items-center justify-center mb-4">
-            <Banknote size={28} className="text-emerald-400/40" />
-          </div>
-          <h3 className="text-[15px] font-bold text-text mb-1">No payments found</h3>
-          <p className="text-[12px] text-muted mb-4">Payments will appear here when recorded</p>
-          {isSuperAdmin && <Button size="sm" onClick={openAddModal}><Plus size={13} /> Record Payment</Button>}
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {payments.map(p => {
-            const sc = statusConfig[p.status] || statusConfig.pending;
-            const StatusIcon = sc.icon;
-            const remainingDays = getRemainingDays(p.valid_until);
-            const isExpanded = expandedId === p.id;
-
-            return (
-              <div key={p.id} className="bg-surface border border-border rounded-2xl overflow-hidden hover:shadow-lg hover:shadow-primary/5 transition-all duration-300">
-                {/* Main Row */}
-                <div className="p-4 flex items-center gap-4 flex-wrap">
-                  {/* Status Icon */}
-                  <div className={`w-11 h-11 rounded-xl bg-${sc.color}-500/10 flex items-center justify-center flex-shrink-0`}>
-                    <StatusIcon size={18} className={`text-${sc.color}-500`} />
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-[200px]">
-                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                      <span className="text-[14px] font-extrabold text-text">{p.client?.org_name || 'Unknown'}</span>
-                      <Badge variant={sc.variant} dot>{p.status}</Badge>
-                      {p.status === 'success' && <RemainingDaysBadge days={remainingDays} />}
-                    </div>
-                    <div className="flex items-center gap-3 text-[11px] text-muted flex-wrap">
-                      {p.invoice_number && <span className="font-mono bg-surface-2 px-1.5 py-0.5 rounded">{p.invoice_number}</span>}
-                      {p.txn_id && <span>TXN: {p.txn_id}</span>}
-                      <span className="flex items-center gap-1"><CreditCard size={10} /> {methodLabels[p.method] || p.method}</span>
-                      {p.plan && <span>{p.plan.name}</span>}
-                    </div>
-                  </div>
-
-                  {/* Amount */}
-                  <div className="text-right flex-shrink-0">
-                    <div className={`text-[18px] font-extrabold ${p.status === 'success' ? 'text-emerald-600' : p.status === 'failed' ? 'text-red-500' : 'text-text'}`}>
-                      ₹{parseFloat(p.total).toLocaleString()}
-                    </div>
-                    <div className="text-[10px] text-muted">
-                      {new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {/* Expand/Collapse for remaining days */}
-                    {p.status === 'success' && p.valid_until && (
-                      <button onClick={() => setExpandedId(isExpanded ? null : p.id)} title="Plan Details"
-                        className={`w-8 h-8 rounded-lg border border-border bg-surface text-muted flex items-center justify-center hover:bg-primary/5 hover:text-primary hover:border-primary/30 transition-all duration-200 cursor-pointer ${isExpanded ? 'bg-primary/5 text-primary border-primary/30' : ''}`}>
-                        <ChevronDown size={13} className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
-                      </button>
-                    )}
-                    <button onClick={() => setViewPayment(p)} title="View Details"
-                      className="w-8 h-8 rounded-lg border border-border bg-surface text-muted flex items-center justify-center hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 cursor-pointer">
-                      <Eye size={13} />
-                    </button>
-                    {p.status === 'success' && (
-                      <button onClick={() => viewInvoice(p)} title="View Invoice"
-                        className="w-8 h-8 rounded-lg border border-border bg-surface text-muted flex items-center justify-center hover:bg-violet-50 hover:text-violet-600 hover:border-violet-200 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 cursor-pointer">
-                        <FileText size={13} />
-                      </button>
-                    )}
-                    {isSuperAdmin && (
-                      <button onClick={() => handleDelete(p)} title="Delete"
-                        className="w-8 h-8 rounded-lg border border-border bg-surface text-muted flex items-center justify-center hover:bg-red-50 hover:text-red-600 hover:border-red-200 hover:-translate-y-0.5 hover:shadow-md transition-all duration-200 cursor-pointer">
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
+            </CardBody>
+          </Card>
+        </Col>
+        <Col md={3} sm={6}>
+          <Card className="card-animate">
+            <CardBody>
+              <div className="d-flex align-items-center">
+                <div className="flex-grow-1"><p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Transactions</p></div>
+              </div>
+              <div className="d-flex align-items-end justify-content-between mt-4">
+                <div>
+                  <h4 className="fs-22 fw-semibold mb-0">{stats?.total_transactions || 0}</h4>
+                  <p className="mb-0 text-muted mt-2 fs-12">{stats?.pending || 0} pending</p>
                 </div>
+                <div className="avatar-sm"><span className="avatar-title rounded bg-primary-subtle text-primary fs-3"><i className="ri-bank-card-line"></i></span></div>
+              </div>
+            </CardBody>
+          </Card>
+        </Col>
+        <Col md={3} sm={6}>
+          <Card className="card-animate">
+            <CardBody>
+              <div className="d-flex align-items-center">
+                <div className="flex-grow-1"><p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Failed</p></div>
+              </div>
+              <div className="d-flex align-items-end justify-content-between mt-4">
+                <div>
+                  <h4 className="fs-22 fw-semibold mb-0">{stats?.failed || 0}</h4>
+                  <p className="mb-0 text-muted mt-2 fs-12">need attention</p>
+                </div>
+                <div className="avatar-sm"><span className="avatar-title rounded bg-danger-subtle text-danger fs-3"><i className="ri-close-circle-line"></i></span></div>
+              </div>
+            </CardBody>
+          </Card>
+        </Col>
+        <Col md={3} sm={6}>
+          <Card className="card-animate">
+            <CardBody>
+              <div className="d-flex align-items-center">
+                <div className="flex-grow-1"><p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Refunded</p></div>
+              </div>
+              <div className="d-flex align-items-end justify-content-between mt-4">
+                <div>
+                  <h4 className="fs-22 fw-semibold mb-0">₹{(stats?.refund_amount || 0).toLocaleString()}</h4>
+                  <p className="mb-0 text-muted mt-2 fs-12">{stats?.refunded || 0} refunds</p>
+                </div>
+                <div className="avatar-sm"><span className="avatar-title rounded bg-warning-subtle text-warning fs-3"><i className="ri-refresh-line"></i></span></div>
+              </div>
+            </CardBody>
+          </Card>
+        </Col>
+      </Row>
 
-                {/* Expandable Plan Details Section */}
-                <div className={`overflow-hidden transition-all duration-400 ease-in-out ${isExpanded ? 'max-h-[300px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                  <div className="px-4 pb-4 pt-0">
-                    <div className="border-t border-border/50 pt-4">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {/* Remaining Days */}
-                        <div className={`rounded-xl p-3.5 text-center border ${
-                          remainingDays !== null && remainingDays <= 0 ? 'bg-red-50 border-red-200' :
-                          remainingDays !== null && remainingDays <= 7 ? 'bg-amber-50 border-amber-200' :
-                          remainingDays !== null && remainingDays <= 30 ? 'bg-sky-50 border-sky-200' :
-                          'bg-emerald-50 border-emerald-200'
-                        }`}>
-                          <div className={`text-[28px] font-extrabold ${
-                            remainingDays !== null && remainingDays <= 0 ? 'text-red-600' :
-                            remainingDays !== null && remainingDays <= 7 ? 'text-amber-600' :
-                            remainingDays !== null && remainingDays <= 30 ? 'text-sky-600' :
-                            'text-emerald-600'
-                          }`}>
-                            {remainingDays !== null && remainingDays <= 0 ? '0' : remainingDays}
-                          </div>
-                          <div className="text-[9px] font-bold text-muted uppercase tracking-wider mt-0.5">
-                            {remainingDays !== null && remainingDays <= 0 ? 'Expired' : 'Days Left'}
-                          </div>
-                        </div>
+      {/* Main table */}
+      <Row>
+        <Col xs={12}>
+          <Card>
+            <CardHeader className="border-0">
+              <Row className="align-items-center gy-3">
+                <div className="col-sm">
+                  <h5 className="card-title mb-0">Payment List <span className="badge bg-primary-subtle text-primary ms-1">{total}</span></h5>
+                </div>
+                {isSuperAdmin && (
+                  <div className="col-sm-auto">
+                    <div className="d-flex gap-2 flex-wrap">
+                      <Button color="light" onClick={handleExport} disabled={exporting}>
+                        {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
+                        Export
+                      </Button>
+                      <Button color="success" onClick={openAddModal}>
+                        <i className="ri-add-line align-bottom me-1"></i> Record Payment
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </Row>
+            </CardHeader>
 
-                        {/* Plan Info */}
-                        <div className="rounded-xl p-3.5 bg-surface-2 border border-border/50">
-                          <div className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1">Plan</div>
-                          <div className="text-[14px] font-bold text-text">{p.plan?.name || 'N/A'}</div>
-                          <div className="text-[10px] text-muted capitalize mt-0.5">{p.billing_cycle || 'One-time'}</div>
-                        </div>
+            <CardBody className="border border-dashed border-end-0 border-start-0 py-3">
+              <Row className="g-2">
+                <Col md={4}>
+                  <div className="search-box">
+                    <Input type="text" className="form-control search" placeholder="Search by txn ID, invoice, client..."
+                      value={searchInput} onChange={e => setSearchInput(e.target.value)} />
+                    <i className="ri-search-line search-icon"></i>
+                  </div>
+                </Col>
+                <Col md={8}>
+                  <div className="d-flex gap-1 flex-wrap">
+                    {['', 'success', 'pending', 'failed', 'refunded'].map(s => (
+                      <Button key={s} color={statusFilter === s ? 'primary' : 'light'} size="sm"
+                        onClick={() => { setStatusFilter(s); setPage(1); }}>
+                        {s || 'All'}
+                      </Button>
+                    ))}
+                  </div>
+                </Col>
+              </Row>
+            </CardBody>
 
-                        {/* Valid From */}
-                        <div className="rounded-xl p-3.5 bg-surface-2 border border-border/50">
-                          <div className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1">Valid From</div>
-                          <div className="text-[13px] font-bold text-text">
-                            {p.valid_from ? new Date(p.valid_from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
-                          </div>
-                        </div>
-
-                        {/* Expires On */}
-                        <div className="rounded-xl p-3.5 bg-surface-2 border border-border/50">
-                          <div className="text-[9px] font-bold text-muted uppercase tracking-wider mb-1">Expires On</div>
-                          <div className={`text-[13px] font-bold ${remainingDays !== null && remainingDays <= 7 ? 'text-red-600' : 'text-text'}`}>
-                            {p.valid_until ? new Date(p.valid_until).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Progress Bar */}
-                      {p.valid_from && p.valid_until && (() => {
-                        const start = new Date(p.valid_from).getTime();
-                        const end = new Date(p.valid_until).getTime();
-                        const now = Date.now();
-                        const totalDuration = end - start;
-                        const elapsed = Math.min(now - start, totalDuration);
-                        const pct = totalDuration > 0 ? Math.max(0, Math.min(100, (elapsed / totalDuration) * 100)) : 0;
-                        return (
-                          <div className="mt-3">
-                            <div className="flex items-center justify-between text-[10px] text-muted mb-1.5">
-                              <span>Plan Usage</span>
-                              <span className="font-bold">{Math.round(pct)}% elapsed</span>
+            <CardBody>
+              <div className="table-responsive table-card">
+                <table className="table align-middle table-nowrap mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th>Invoice</th>
+                      <th>Client</th>
+                      <th>Plan</th>
+                      <th>Method</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th>Date</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr><td colSpan={8} className="text-center py-5"><Spinner color="primary" /></td></tr>
+                    ) : payments.length === 0 ? (
+                      <tr><td colSpan={8} className="text-center text-muted py-5">
+                        <i className="ri-bill-line display-4 d-block text-muted mb-2"></i>
+                        No payments found
+                      </td></tr>
+                    ) : payments.map(p => {
+                      const cfg = statusCfg[p.status] || statusCfg.pending;
+                      return (
+                        <tr key={p.id}>
+                          <td><span className="fw-medium font-monospace text-primary">{p.invoice_number || `#${p.id}`}</span></td>
+                          <td>{p.client?.org_name || <span className="text-muted">—</span>}</td>
+                          <td>{p.plan?.name || <span className="text-muted">—</span>}</td>
+                          <td>
+                            <Badge color="light" className="text-dark">{methodLabels[p.method] || p.method}</Badge>
+                          </td>
+                          <td className="fw-bold">₹{parseFloat(p.total).toLocaleString()}</td>
+                          <td>
+                            <Badge color={cfg.bsColor} pill className="text-uppercase">
+                              <i className={`${cfg.icon} me-1`}></i>{p.status}
+                            </Badge>
+                          </td>
+                          <td className="text-muted">{new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                          <td>
+                            <div className="d-flex gap-1">
+                              <button className="btn btn-sm btn-soft-info" title="View" onClick={() => setViewPayment(p)}>
+                                <i className="ri-eye-fill"></i>
+                              </button>
+                              {p.status === 'success' && (
+                                <button className="btn btn-sm btn-soft-primary" title="Invoice PDF" onClick={() => viewInvoice(p)}>
+                                  <i className="ri-file-pdf-2-line"></i>
+                                </button>
+                              )}
+                              {isSuperAdmin && p.status === 'success' && (
+                                <button className="btn btn-sm btn-soft-success" title="Send Reminder" disabled={sendingReminder === p.id} onClick={() => handleSendReminder(p)}>
+                                  {sendingReminder === p.id ? <Spinner size="sm" /> : <i className="ri-send-plane-fill"></i>}
+                                </button>
+                              )}
+                              {isSuperAdmin && (
+                                <button className="btn btn-sm btn-soft-danger" title="Delete" onClick={() => handleDelete(p)}>
+                                  <i className="ri-delete-bin-5-fill"></i>
+                                </button>
+                              )}
                             </div>
-                            <div className="h-2 bg-surface-2 rounded-full overflow-hidden border border-border/30">
-                              <div className={`h-full rounded-full transition-all duration-500 ${
-                                pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500'
-                              }`} style={{ width: `${pct}%` }} />
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Send Reminder Button */}
-                      {isSuperAdmin && (
-                        <div className="mt-3 flex items-center justify-between">
-                          <div className="text-[11px] text-muted">
-                            {remainingDays !== null && remainingDays <= 0 && (
-                              <span className="text-red-500 font-semibold flex items-center gap-1"><AlertTriangle size={11} /> Plan expired. Branch users are blocked.</span>
-                            )}
-                            {remainingDays !== null && remainingDays > 0 && remainingDays <= 7 && (
-                              <span className="text-amber-600 font-semibold flex items-center gap-1"><Clock size={11} /> Expiring soon. Consider sending a reminder.</span>
-                            )}
-                          </div>
-                          <Button variant="outline" size="sm" onClick={() => handleSendReminder(p)} disabled={sendingReminder === p.id}>
-                            {sendingReminder === p.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                            {sendingReminder === p.id ? 'Sending...' : 'Send Reminder'}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1.5 pt-2">
-          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-            className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted hover:text-primary hover:border-primary/40 disabled:opacity-30 cursor-pointer transition-all">
-            <ChevronLeft size={14} />
-          </button>
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-            <button key={n} onClick={() => setPage(n)}
-              className={`w-8 h-8 rounded-lg text-[11px] font-bold flex items-center justify-center border transition-all duration-200 cursor-pointer ${
-                n === page ? 'bg-primary text-white border-primary shadow-md shadow-primary/25' : 'border-border text-muted hover:text-primary hover:border-primary/40'
-              }`}>{n}</button>
-          ))}
-          <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-            className="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted hover:text-primary hover:border-primary/40 disabled:opacity-30 cursor-pointer transition-all">
-            <ChevronRight size={14} />
-          </button>
-        </div>
-      )}
-
-      {/* View Payment Modal */}
-      <Modal open={!!viewPayment} onClose={() => setViewPayment(null)} title="Payment Details" size="lg">
-        {viewPayment && (() => {
-          const sc = statusConfig[viewPayment.status] || statusConfig.pending;
-          const StatusIcon = sc.icon;
-          const days = getRemainingDays(viewPayment.valid_until);
-          return (
-            <div className="space-y-4">
-              {/* Header */}
-              <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 p-5 text-white">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4 blur-xl" />
-                <div className="relative flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <StatusIcon size={16} />
-                      <span className="text-[12px] font-bold uppercase tracking-wider text-white/80">{viewPayment.status}</span>
-                    </div>
-                    <div className="text-[28px] font-extrabold">₹{parseFloat(viewPayment.total).toLocaleString()}</div>
-                    <div className="text-white/60 text-[12px] mt-1">{viewPayment.client?.org_name}</div>
-                  </div>
-                  <div className="text-right">
-                    {days !== null && (
-                      <div className={`text-[28px] font-extrabold mb-1 ${days <= 0 ? 'text-red-200' : 'text-white'}`}>
-                        {days <= 0 ? 'EXP' : days}
-                      </div>
-                    )}
-                    {days !== null && <div className="text-[10px] text-white/50 uppercase tracking-wider">{days <= 0 ? 'Expired' : 'Days Left'}</div>}
-                    {viewPayment.invoice_number && <div className="font-mono text-[11px] bg-white/15 px-2 py-1 rounded-lg mt-2">{viewPayment.invoice_number}</div>}
-                  </div>
-                </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
-              {/* Details Grid */}
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: 'Amount', value: `₹${parseFloat(viewPayment.amount).toLocaleString()}` },
-                  { label: 'GST', value: viewPayment.gst ? `₹${parseFloat(viewPayment.gst).toLocaleString()}` : '—' },
-                  { label: 'Discount', value: viewPayment.discount ? `₹${parseFloat(viewPayment.discount).toLocaleString()}` : '—' },
-                  { label: 'Total', value: `₹${parseFloat(viewPayment.total).toLocaleString()}` },
-                  { label: 'Method', value: methodLabels[viewPayment.method] || viewPayment.method },
-                  { label: 'Gateway', value: viewPayment.gateway || '—' },
-                  { label: 'Plan', value: viewPayment.plan?.name || '—' },
-                  { label: 'Billing Cycle', value: viewPayment.billing_cycle || '—' },
-                  { label: 'Valid From', value: viewPayment.valid_from ? new Date(viewPayment.valid_from).toLocaleDateString('en-IN') : '—' },
-                  { label: 'Valid Until', value: viewPayment.valid_until ? new Date(viewPayment.valid_until).toLocaleDateString('en-IN') : '—' },
-                  { label: 'Transaction ID', value: viewPayment.txn_id || '—' },
-                  { label: 'Order ID', value: viewPayment.order_id || '—' },
-                ].map(d => (
-                  <div key={d.label} className="p-3 rounded-xl bg-surface-2 border border-border/50">
-                    <div className="text-[10px] font-semibold text-muted uppercase tracking-wider">{d.label}</div>
-                    <div className="text-[13px] font-semibold text-text mt-0.5">{d.value}</div>
-                  </div>
-                ))}
-              </div>
-
-              {viewPayment.notes && (
-                <div className="p-3 rounded-xl bg-amber-50/50 border border-amber-200/50">
-                  <div className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-1">Notes</div>
-                  <p className="text-[12px] text-amber-800">{viewPayment.notes}</p>
+              {totalPages > 1 && (
+                <div className="d-flex justify-content-between align-items-center mt-3">
+                  <span className="text-muted fs-13">Showing {payments.length} of {total} entries</span>
+                  <nav>
+                    <ul className="pagination pagination-sm mb-0">
+                      <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
+                        <button className="page-link" onClick={() => setPage(p => Math.max(1, p - 1))}><i className="ri-arrow-left-s-line"></i></button>
+                      </li>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
+                        <li key={n} className={`page-item ${n === page ? 'active' : ''}`}>
+                          <button className="page-link" onClick={() => setPage(n)}>{n}</button>
+                        </li>
+                      ))}
+                      <li className={`page-item ${page === totalPages ? 'disabled' : ''}`}>
+                        <button className="page-link" onClick={() => setPage(p => Math.min(totalPages, p + 1))}><i className="ri-arrow-right-s-line"></i></button>
+                      </li>
+                    </ul>
+                  </nav>
                 </div>
               )}
+            </CardBody>
+          </Card>
+        </Col>
+      </Row>
 
-              {/* Action Buttons */}
-              <div className="flex gap-2 pt-2 flex-wrap">
+      {/* View Modal */}
+      <Modal isOpen={!!viewPayment} toggle={() => setViewPayment(null)} size="lg" centered>
+        {viewPayment && (() => {
+          const cfg = statusCfg[viewPayment.status] || statusCfg.pending;
+          return (
+            <>
+              <ModalHeader toggle={() => setViewPayment(null)}>
+                Payment Details
+                <Badge color={cfg.bsColor} pill className="ms-2 text-uppercase"><i className={`${cfg.icon} me-1`}></i>{viewPayment.status}</Badge>
+              </ModalHeader>
+              <ModalBody>
+                <div className="text-center mb-4">
+                  <h2 className="mb-0">₹{parseFloat(viewPayment.total).toLocaleString()}</h2>
+                  <p className="text-muted">{viewPayment.client?.org_name}</p>
+                  {viewPayment.invoice_number && <span className="badge bg-primary-subtle text-primary font-monospace">{viewPayment.invoice_number}</span>}
+                </div>
+                <Row className="g-3">
+                  {[
+                    { label: 'Amount', value: `₹${parseFloat(viewPayment.amount).toLocaleString()}` },
+                    { label: 'GST', value: viewPayment.gst ? `₹${parseFloat(viewPayment.gst).toLocaleString()}` : '—' },
+                    { label: 'Discount', value: viewPayment.discount ? `₹${parseFloat(viewPayment.discount).toLocaleString()}` : '—' },
+                    { label: 'Method', value: methodLabels[viewPayment.method] || viewPayment.method },
+                    { label: 'Gateway', value: viewPayment.gateway || '—' },
+                    { label: 'Plan', value: viewPayment.plan?.name || '—' },
+                    { label: 'Billing Cycle', value: viewPayment.billing_cycle || '—' },
+                    { label: 'Transaction ID', value: viewPayment.txn_id || '—' },
+                    { label: 'Order ID', value: viewPayment.order_id || '—' },
+                    { label: 'Valid From', value: viewPayment.valid_from ? new Date(viewPayment.valid_from).toLocaleDateString('en-IN') : '—' },
+                    { label: 'Valid Until', value: viewPayment.valid_until ? new Date(viewPayment.valid_until).toLocaleDateString('en-IN') : '—' },
+                  ].map(d => (
+                    <Col md={6} key={d.label}>
+                      <div className="p-2 rounded bg-light">
+                        <div className="text-uppercase fs-11 text-muted fw-semibold">{d.label}</div>
+                        <div className="fw-semibold fs-14 mt-1">{d.value}</div>
+                      </div>
+                    </Col>
+                  ))}
+                </Row>
+                {viewPayment.notes && (
+                  <div className="alert alert-warning mt-3 mb-0">
+                    <strong>Notes:</strong> {viewPayment.notes}
+                  </div>
+                )}
+              </ModalBody>
+              <ModalFooter>
                 {viewPayment.status === 'success' && (
-                  <Button size="sm" onClick={() => viewInvoice(viewPayment)}>
-                    <FileText size={12} /> View Invoice PDF
+                  <Button color="primary" onClick={() => viewInvoice(viewPayment)}>
+                    <i className="ri-file-pdf-2-line me-1"></i> View Invoice PDF
                   </Button>
                 )}
-                {isSuperAdmin && viewPayment.status === 'success' && (
-                  <Button variant="outline" size="sm" onClick={() => handleSendReminder(viewPayment)} disabled={sendingReminder === viewPayment.id}>
-                    {sendingReminder === viewPayment.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                    Send Reminder
-                  </Button>
-                )}
-              </div>
-            </div>
+                <Button color="light" onClick={() => setViewPayment(null)}>Close</Button>
+              </ModalFooter>
+            </>
           );
         })()}
       </Modal>
 
       {/* Add Payment Modal */}
-      <Modal open={addModal} onClose={() => setAddModal(false)} title="Record New Payment" size="lg">
-        <form onSubmit={handleAdd} className="space-y-4">
-          <div className="p-3 rounded-xl bg-sky-50 border border-sky-200/50 text-[11.5px] text-sky-700 mb-2">
-            <strong>Note:</strong> If status is "Success", an invoice PDF will be generated and emailed to the client automatically.
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Select name="client_id" label="Client" required>
-              <option value="">Select client...</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.org_name}</option>)}
-            </Select>
-            <Select name="plan_id" label="Plan">
-              <option value="">Select plan...</option>
-              {plans.map(p => <option key={p.id} value={p.id}>{p.name} — ₹{p.price}</option>)}
-            </Select>
-            <Input name="amount" label="Amount (₹)" type="number" step="0.01" required placeholder="0.00" />
-            <Input name="gst" label="GST (₹)" type="number" step="0.01" placeholder="0.00" />
-            <Input name="discount" label="Discount (₹)" type="number" step="0.01" placeholder="0.00" />
-            <Input name="total" label="Total (₹)" type="number" step="0.01" required placeholder="0.00" />
-            <Select name="method" label="Payment Method" required>
-              <option value="">Select method...</option>
-              {Object.entries(methodLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </Select>
-            <Select name="gateway" label="Gateway">
-              <option value="">Select gateway...</option>
-              <option value="razorpay">Razorpay</option>
-              <option value="stripe">Stripe</option>
-              <option value="paytm">Paytm</option>
-              <option value="manual">Manual</option>
-            </Select>
-            <Select name="status" label="Status" required>
-              <option value="success">Success</option>
-              <option value="pending">Pending</option>
-              <option value="failed">Failed</option>
-            </Select>
-            <Select name="billing_cycle" label="Billing Cycle">
-              <option value="">Select...</option>
-              <option value="monthly">Monthly</option>
-              <option value="quarterly">Quarterly</option>
-              <option value="yearly">Yearly</option>
-            </Select>
-            <Input name="valid_from" label="Valid From" type="date" />
-            <Input name="valid_until" label="Valid Until" type="date" />
-            <Input name="txn_id" label="Transaction ID" placeholder="TXN-XXXXXX" />
-            <Input name="order_id" label="Order ID" placeholder="ORD-XXXXXX" />
-          </div>
-          <Textarea name="notes" label="Notes" placeholder="Any additional notes..." />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" type="button" onClick={() => setAddModal(false)}>Cancel</Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+      <Modal isOpen={addModal} toggle={() => setAddModal(false)} size="lg" centered>
+        <ModalHeader toggle={() => setAddModal(false)}>Record New Payment</ModalHeader>
+        <Form onSubmit={handleAdd}>
+          <ModalBody>
+            <div className="alert alert-info mb-3">
+              <i className="ri-information-line me-1"></i>
+              If status is <strong>"Success"</strong>, an invoice PDF will be generated and emailed to the client automatically.
+            </div>
+            <Row className="g-3">
+              <Col md={6}>
+                <Label>Client <span className="text-danger">*</span></Label>
+                <Input type="select" name="client_id" required>
+                  <option value="">Select client...</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.org_name}</option>)}
+                </Input>
+              </Col>
+              <Col md={6}>
+                <Label>Plan</Label>
+                <Input type="select" name="plan_id">
+                  <option value="">Select plan...</option>
+                  {plans.map(p => <option key={p.id} value={p.id}>{p.name} — ₹{p.price}</option>)}
+                </Input>
+              </Col>
+              <Col md={3}>
+                <Label>Amount (₹) <span className="text-danger">*</span></Label>
+                <Input type="number" name="amount" step="0.01" required placeholder="0.00" />
+              </Col>
+              <Col md={3}>
+                <Label>GST (₹)</Label>
+                <Input type="number" name="gst" step="0.01" placeholder="0.00" />
+              </Col>
+              <Col md={3}>
+                <Label>Discount (₹)</Label>
+                <Input type="number" name="discount" step="0.01" placeholder="0.00" />
+              </Col>
+              <Col md={3}>
+                <Label>Total (₹) <span className="text-danger">*</span></Label>
+                <Input type="number" name="total" step="0.01" required placeholder="0.00" />
+              </Col>
+              <Col md={4}>
+                <Label>Method <span className="text-danger">*</span></Label>
+                <Input type="select" name="method" required>
+                  <option value="">Select method...</option>
+                  {Object.entries(methodLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </Input>
+              </Col>
+              <Col md={4}>
+                <Label>Gateway</Label>
+                <Input type="select" name="gateway">
+                  <option value="">Select gateway...</option>
+                  <option value="razorpay">Razorpay</option>
+                  <option value="stripe">Stripe</option>
+                  <option value="paytm">Paytm</option>
+                  <option value="manual">Manual</option>
+                </Input>
+              </Col>
+              <Col md={4}>
+                <Label>Status <span className="text-danger">*</span></Label>
+                <Input type="select" name="status" required>
+                  <option value="success">Success</option>
+                  <option value="pending">Pending</option>
+                  <option value="failed">Failed</option>
+                </Input>
+              </Col>
+              <Col md={4}>
+                <Label>Billing Cycle</Label>
+                <Input type="select" name="billing_cycle">
+                  <option value="">Select...</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="yearly">Yearly</option>
+                </Input>
+              </Col>
+              <Col md={4}>
+                <Label>Valid From</Label>
+                <Input type="date" name="valid_from" />
+              </Col>
+              <Col md={4}>
+                <Label>Valid Until</Label>
+                <Input type="date" name="valid_until" />
+              </Col>
+              <Col md={6}>
+                <Label>Transaction ID</Label>
+                <Input type="text" name="txn_id" placeholder="TXN-XXXXXX" />
+              </Col>
+              <Col md={6}>
+                <Label>Order ID</Label>
+                <Input type="text" name="order_id" placeholder="ORD-XXXXXX" />
+              </Col>
+              <Col xs={12}>
+                <Label>Notes</Label>
+                <Input type="textarea" name="notes" placeholder="Any additional notes..." rows={3} />
+              </Col>
+            </Row>
+          </ModalBody>
+          <ModalFooter>
+            <Button color="light" type="button" onClick={() => setAddModal(false)}>Cancel</Button>
+            <Button color="success" type="submit" disabled={saving}>
+              {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-add-line me-1"></i>}
               {saving ? 'Saving...' : 'Record Payment'}
             </Button>
-          </div>
-        </form>
+          </ModalFooter>
+        </Form>
       </Modal>
-    </div>
+    </>
   );
 }

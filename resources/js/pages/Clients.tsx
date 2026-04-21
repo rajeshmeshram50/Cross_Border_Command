@@ -1,12 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import Button from '../components/ui/Button';
-import Badge from '../components/ui/Badge';
-import Avatar from '../components/ui/Avatar';
-import { Td } from '../components/ui/Table';
+import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Spinner } from 'reactstrap';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
-import { Plus, Download, Search, Pencil, Trash2, ShieldCheck, GitBranch, Settings, IndianRupee, Building2, Eye, Loader2 } from 'lucide-react';
 import api from '../api';
-import { ShimmerCards } from '../components/ui/Shimmer';
 import { useToast } from '../contexts/ToastContext';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -16,9 +11,12 @@ interface Props {
   onNavigate: (page: string, data?: any) => void;
 }
 
+const AVATAR_COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
+
 export default function Clients({ onNavigate }: Props) {
   const toast = useToast();
   const [clients, setClients] = useState<Client[]>([]);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -27,6 +25,7 @@ export default function Clients({ onNavigate }: Props) {
   const [deleting, setDeleting] = useState<number | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const fetchClients = useCallback(async () => {
     setLoading(true);
@@ -46,60 +45,29 @@ export default function Clients({ onNavigate }: Props) {
 
   useEffect(() => { fetchClients(); }, [fetchClients]);
 
-  // Debounce search
-  const [searchInput, setSearchInput] = useState('');
   useEffect(() => {
     const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 400);
     return () => clearTimeout(t);
   }, [searchInput]);
-
-  const [exporting, setExporting] = useState(false);
 
   const handleExport = async () => {
     setExporting(true);
     try {
       const res = await api.get<PaginatedResponse<Client>>('/clients', { params: { per_page: 9999 } });
       const allClients = res.data.data;
-
       const rows = allClients.map((c, i) => ({
-        '#': i + 1,
-        'Organization Name': c.org_name,
-        'Unique ID': c.unique_number,
-        'Email': c.email,
-        'Phone': c.phone || '',
-        'Website': c.website || '',
-        'Type': c.org_type,
-        'Industry': c.industry || '',
-        'City': c.city || '',
-        'District': c.district || '',
-        'Taluka': c.taluka || '',
-        'State': c.state || '',
-        'Pincode': c.pincode || '',
-        'Country': c.country || '',
-        'GST Number': c.gst_number || '',
-        'PAN Number': c.pan_number || '',
-        'Plan': c.plan?.name || 'Free',
-        'Plan Type': c.plan_type,
-        'Status': c.status,
-        'Branches': c.branches_count ?? 0,
-        'Users': c.users_count ?? 0,
-        'Plan Expires': c.plan_expires_at || '',
+        '#': i + 1, 'Organization Name': c.org_name, 'Unique ID': c.unique_number,
+        'Email': c.email, 'Phone': c.phone || '', 'Type': c.org_type,
+        'City': c.city || '', 'State': c.state || '',
+        'Plan': c.plan?.name || 'Free', 'Status': c.status,
+        'Branches': c.branches_count ?? 0, 'Users': c.users_count ?? 0,
         'Created At': new Date(c.created_at).toLocaleDateString('en-IN'),
       }));
-
       const ws = XLSX.utils.json_to_sheet(rows);
-      const colWidths = Object.keys(rows[0] || {}).map(key => ({
-        wch: Math.max(key.length, ...rows.map(r => String((r as any)[key]).length)) + 2,
-      }));
-      ws['!cols'] = colWidths;
-
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Clients');
-
       const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      saveAs(blob, `Clients_${new Date().toISOString().slice(0, 10)}.xlsx`);
-
+      saveAs(new Blob([buf]), `Clients_${new Date().toISOString().slice(0, 10)}.xlsx`);
       toast.success('Exported', `${allClients.length} clients exported to Excel`);
     } catch {
       toast.error('Export Failed', 'Could not export clients');
@@ -108,16 +76,11 @@ export default function Clients({ onNavigate }: Props) {
     }
   };
 
-  const handleDeleteClick = (client: Client) => {
-    setSelectedClient(client);
-    setDeleteOpen(true);
-  };
+  const handleDeleteClick = (c: Client) => { setSelectedClient(c); setDeleteOpen(true); };
 
   const confirmDelete = async () => {
     if (!selectedClient) return;
-
     setDeleting(selectedClient.id);
-
     try {
       await api.delete(`/clients/${selectedClient.id}`);
       toast.success('Deleted', `${selectedClient.org_name} deleted successfully`);
@@ -132,135 +95,172 @@ export default function Clients({ onNavigate }: Props) {
   };
 
   return (
-    <div>
-      <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-            <Building2 size={16} className="text-primary" />
+    <>
+      {/* Page title */}
+      <Row>
+        <Col xs={12}>
+          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
+            <h4 className="mb-sm-0">Clients</h4>
+            <div className="page-title-right">
+              <ol className="breadcrumb m-0">
+                <li className="breadcrumb-item"><a href="#">Velzon</a></li>
+                <li className="breadcrumb-item active">Clients</li>
+              </ol>
+            </div>
           </div>
-          <div>
-            <h1 className="text-[17px] font-bold text-text tracking-tight">Clients</h1>
-            <p className="text-[11.5px] text-muted mt-0.5">Manage all registered organizations · {total} total</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
-            {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-            {exporting ? 'Exporting...' : 'Export Excel'}
-          </Button>
-          <Button size="sm" onClick={() => onNavigate('client-form')}><Plus size={13} /> Add Client</Button>
-        </div>
-      </div>
+        </Col>
+      </Row>
 
-      {/* Table */}
-      <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50 flex-wrap">
-          <div className="relative flex-1 min-w-[160px] max-w-[260px]">
-            <Search size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
-            <input
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-              placeholder="Search by name or ID..."
-              className="w-full pl-7 pr-3 py-1.5 rounded-md border border-border bg-bg text-[11.5px] text-text outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 placeholder:text-muted"
-            />
-          </div>
-          <span className="text-[10.5px] text-muted ml-auto">
-            {loading ? 'Loading...' : `${clients.length} of ${total} results`}
-          </span>
-        </div>
+      <Row>
+        <Col xs={12}>
+          <Card>
+            <CardHeader className="border-0">
+              <Row className="align-items-center gy-3">
+                <div className="col-sm">
+                  <h5 className="card-title mb-0">All Clients <span className="badge bg-primary-subtle text-primary ms-1">{total}</span></h5>
+                </div>
+                <div className="col-sm-auto">
+                  <div className="d-flex gap-2 flex-wrap">
+                    <Button color="light" onClick={handleExport} disabled={exporting}>
+                      {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
+                      {exporting ? 'Exporting...' : 'Export'}
+                    </Button>
+                    <Button color="success" onClick={() => onNavigate('client-form')}>
+                      <i className="ri-add-line align-bottom me-1"></i> Add Client
+                    </Button>
+                  </div>
+                </div>
+              </Row>
+            </CardHeader>
 
-        {/* Data */}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px]">
-            <thead>
-              <tr className="bg-border border-b border-border">
-                {['#', 'Organization', 'Unique ID', 'Contact', 'Type', 'Branches', 'Plan', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="px-3 py-2.5 text-left text-[9px] text-[9.5px] font-bold tracking-wider uppercase text-secondary tracking-wider uppercase  whitespace-nowrap">{h}</th>
-                ))}
-                
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {loading ? (
-                <tr><td colSpan={9} className="py-4"><ShimmerCards count={6} /></td></tr>
-              ) : clients.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-12 text-muted text-[12px]">No clients found</td></tr>
-              ) : clients.map((c, i) => (
-                <tr key={c.id} className="hover:bg-primary/5 transition-colors">
-                  <Td>{(page - 1) * 15 + i + 1}</Td>
-                  <Td>
-                    <div className="flex items-center gap-2.5">
-                      <Avatar initials={c.org_name.charAt(0) + (c.org_name.split(' ')[1]?.charAt(0) || '')} size="sm" />
-                      <div>
-                        <strong className="text-text block">{c.org_name}</strong>
-                      </div>
-                    </div>
-                  </Td>
-                  <Td><span className="font-mono text-[10.5px] text-primary bg-primary/10 px-1.5 py-0.5 rounded">{c.unique_number}</span></Td>
-                  <Td>
-                    <div className="text-[11px]">
-                      <div className="text-text">{c.email}</div>
-                      {c.phone && <div className="text-muted">{c.phone}</div>}
-                    </div>
-                  </Td>
-                  <Td><Badge variant="info">{c.org_type}</Badge></Td>
-                  <Td>
-                    <span className="inline-flex items-center justify-center min-w-[28px] h-7 bg-amber-500 text-white rounded-lg font-bold text-xs px-1.5">{c.branches_count ?? 0}</span>
-                  </Td>
-                  <Td>
-                    <Badge variant="primary">{c.plan?.name || 'Free'}</Badge>
-                    {c.plan && c.plan.price > 0 && <span className="text-[10.5px] text-emerald-500 font-semibold ml-1.5">₹{c.plan.price.toLocaleString()}/yr</span>}
-                  </Td>
-                  <Td><Badge variant={c.status === 'active' ? 'success' : 'danger'} dot>{c.status}</Badge></Td>
-                  <Td>
-                    <div className="flex items-center gap-1">
-                      {[
-                        { icon: Eye, cls: 'hover:bg-emerald-50 hover:text-emerald-500 hover:border-emerald-300', title: 'View', onClick: () => onNavigate('client-view', { clientId: c.id }) },
-                        { icon: Pencil, cls: 'hover:bg-blue-50 hover:text-blue-500 hover:border-blue-300', title: 'Edit', onClick: () => onNavigate('client-form', { editId: c.id }) },
-                        { icon: Trash2, cls: 'hover:bg-red-50 hover:text-red-500 hover:border-red-300', title: 'Delete', onClick: () => handleDeleteClick(c) },
-                        { icon: ShieldCheck, cls: 'hover:bg-indigo-50 hover:text-indigo-500 hover:border-indigo-300', title: 'Permissions', onClick: () => onNavigate('client-permissions', { clientId: c.id, clientName: c.org_name }) },
-                        { icon: IndianRupee, cls: 'hover:bg-emerald-50 hover:text-emerald-500 hover:border-emerald-300', title: 'Payments', onClick: () => onNavigate('client-payments', { clientId: c.id, clientName: c.org_name }) },
-                        { icon: GitBranch, cls: 'hover:bg-sky-50 hover:text-sky-500 hover:border-sky-300', title: 'Branches', onClick: () => onNavigate('client-branches', { clientId: c.id, clientName: c.org_name }) },
-                        { icon: Settings, cls: 'hover:bg-purple-50 hover:text-purple-500 hover:border-purple-300', title: 'Settings', onClick: () => onNavigate('client-settings', { clientId: c.id, clientName: c.org_name }) },
-                      ].map(({ icon: I, cls, title, onClick }, j) => (
-                        <button key={j} title={title} onClick={onClick} disabled={deleting === c.id}
-                          className={`w-6 h-6 rounded-md border border-border bg-surface text-muted flex items-center justify-center transition-all hover:-translate-y-px cursor-pointer ${cls} ${deleting === c.id ? 'opacity-50' : ''}`}>
-                          <I size={11} />
+            <CardBody className="border border-dashed border-end-0 border-start-0 py-3">
+              <Row>
+                <Col md={4}>
+                  <div className="search-box me-2 mb-0 d-inline-block w-100">
+                    <Input type="text" className="form-control search" placeholder="Search by name or ID..."
+                      value={searchInput} onChange={e => setSearchInput(e.target.value)} />
+                    <i className="ri-search-line search-icon"></i>
+                  </div>
+                </Col>
+                <Col md={8} className="text-md-end text-muted fs-13">
+                  {loading ? 'Loading...' : `${clients.length} of ${total} results`}
+                </Col>
+              </Row>
+            </CardBody>
+
+            <CardBody>
+              <div className="table-responsive table-card">
+                <table className="table align-middle table-nowrap mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th>#</th>
+                      <th>Organization</th>
+                      <th>Unique ID</th>
+                      <th>Contact</th>
+                      <th>Type</th>
+                      <th>Branches</th>
+                      <th>Plan</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr><td colSpan={9} className="text-center py-5"><Spinner color="primary" /></td></tr>
+                    ) : clients.length === 0 ? (
+                      <tr><td colSpan={9} className="text-center text-muted py-5">No clients found</td></tr>
+                    ) : clients.map((c, i) => (
+                      <tr key={c.id}>
+                        <td>{(page - 1) * 15 + i + 1}</td>
+                        <td>
+                          <div className="d-flex align-items-center gap-2">
+                            <div className="avatar-xs rounded-circle d-flex align-items-center justify-content-center text-white fw-bold" style={{ backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length], fontSize: 11 }}>
+                              {c.org_name.charAt(0)}{c.org_name.split(' ')[1]?.charAt(0) || ''}
+                            </div>
+                            <div className="fw-semibold">{c.org_name}</div>
+                          </div>
+                        </td>
+                        <td><span className="fw-medium text-primary font-monospace">{c.unique_number}</span></td>
+                        <td>
+                          <div>{c.email}</div>
+                          {c.phone && <div className="text-muted fs-12">{c.phone}</div>}
+                        </td>
+                        <td><Badge color="info-subtle" className="text-info text-uppercase">{c.org_type}</Badge></td>
+                        <td>
+                          <Badge color="warning" pill>{c.branches_count ?? 0}</Badge>
+                        </td>
+                        <td>
+                          <Badge color="primary-subtle" className="text-primary">{c.plan?.name || 'Free'}</Badge>
+                          {c.plan && c.plan.price > 0 && <span className="text-success fw-semibold ms-2 fs-12">₹{c.plan.price.toLocaleString()}/yr</span>}
+                        </td>
+                        <td><Badge color={c.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">{c.status}</Badge></td>
+                        <td>
+                          <div className="d-flex gap-1">
+                            <button className="btn btn-sm btn-soft-success" title="View" onClick={() => onNavigate('client-view', { clientId: c.id })}>
+                              <i className="ri-eye-fill"></i>
+                            </button>
+                            <button className="btn btn-sm btn-soft-primary" title="Edit" onClick={() => onNavigate('client-form', { editId: c.id })}>
+                              <i className="ri-pencil-fill"></i>
+                            </button>
+                            <button className="btn btn-sm btn-soft-danger" title="Delete" disabled={deleting === c.id} onClick={() => handleDeleteClick(c)}>
+                              <i className="ri-delete-bin-5-fill"></i>
+                            </button>
+                            <button className="btn btn-sm btn-soft-info" title="Branches" onClick={() => onNavigate('client-branches', { clientId: c.id, clientName: c.org_name })}>
+                              <i className="ri-git-branch-line"></i>
+                            </button>
+                            <button className="btn btn-sm btn-soft-warning" title="Permissions" onClick={() => onNavigate('client-permissions', { clientId: c.id, clientName: c.org_name })}>
+                              <i className="ri-shield-check-line"></i>
+                            </button>
+                            <button className="btn btn-sm btn-soft-success" title="Payments" onClick={() => onNavigate('client-payments', { clientId: c.id, clientName: c.org_name })}>
+                              <i className="ri-money-rupee-circle-line"></i>
+                            </button>
+                            <button className="btn btn-sm btn-soft-secondary" title="Settings" onClick={() => onNavigate('client-settings', { clientId: c.id, clientName: c.org_name })}>
+                              <i className="ri-settings-3-line"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {totalPages > 1 && (
+                <div className="d-flex justify-content-between align-items-center mt-3">
+                  <span className="text-muted fs-13">Showing {clients.length} of {total} entries</span>
+                  <nav>
+                    <ul className="pagination pagination-sm mb-0">
+                      <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
+                        <button className="page-link" onClick={() => setPage(p => Math.max(1, p - 1))}>
+                          <i className="ri-arrow-left-s-line"></i>
                         </button>
+                      </li>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
+                        <li key={n} className={`page-item ${n === page ? 'active' : ''}`}>
+                          <button className="page-link" onClick={() => setPage(n)}>{n}</button>
+                        </li>
                       ))}
-                    </div>
-                  </Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                      <li className={`page-item ${page === totalPages ? 'disabled' : ''}`}>
+                        <button className="page-link" onClick={() => setPage(p => Math.min(totalPages, p + 1))}>
+                          <i className="ri-arrow-right-s-line"></i>
+                        </button>
+                      </li>
+                    </ul>
+                  </nav>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </Col>
+      </Row>
 
-        {/* Footer */}
-        <div className="px-3 py-2 border-t border-border/50 flex justify-between items-center text-[10.5px] text-muted">
-          <span>Showing {clients.length} of {total} entries</span>
-          <div className="flex gap-0.5">
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-              <button key={n} onClick={() => setPage(n)}
-                className={`w-6 h-6 rounded text-[10.5px] font-semibold flex items-center justify-center border cursor-pointer ${n === page ? 'bg-primary text-white border-primary' : 'border-border text-muted hover:text-primary hover:border-primary/40'}`}>{n}</button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Delete Confirmation Modal - Single instance */}
       <DeleteConfirmModal
         open={deleteOpen}
         clientName={selectedClient?.org_name}
-        onClose={() => {
-          setDeleteOpen(false);
-          setSelectedClient(null);
-        }}
+        onClose={() => { setDeleteOpen(false); setSelectedClient(null); }}
         onConfirm={confirmDelete}
         loading={deleting !== null}
       />
-
-    </div>
+    </>
   );
 }

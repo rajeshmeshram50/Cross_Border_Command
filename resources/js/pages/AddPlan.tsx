@@ -1,23 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Card, CardHeader, CardBody } from '../components/ui/Card';
-import Input, { Select, Textarea } from '../components/ui/Input';
-import Button from '../components/ui/Button';
+import { Card, CardBody, CardHeader, Col, Row, Button, Input, Label, Spinner, Alert, Form, Badge, InputGroup, InputGroupText } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
-import {
-  ArrowLeft, Save, RotateCcw, CreditCard, Shield, Layers,
-  Loader2, AlertCircle, Sparkles, Check, X
-} from 'lucide-react';
 
 interface Props { onBack: () => void; editId?: number; }
 interface ModuleOption { id: number; name: string; slug: string; icon: string; }
 type AccessLevel = 'full' | 'limited' | 'addon' | 'not_included';
 
-const ACCESS_STYLES: Record<AccessLevel, { label: string; bg: string; text: string }> = {
-  full: { label: 'Full', bg: 'bg-emerald-500', text: 'text-white' },
-  limited: { label: 'Limited', bg: 'bg-sky-500', text: 'text-white' },
-  addon: { label: 'Add-on', bg: 'bg-amber-500', text: 'text-white' },
-  not_included: { label: 'Not Included', bg: 'bg-gray-300', text: 'text-gray-700' },
+const ACCESS_CFG: Record<AccessLevel, { label: string; color: string }> = {
+  full:         { label: 'Full',         color: 'success' },
+  limited:      { label: 'Limited',      color: 'info' },
+  addon:        { label: 'Add-on',       color: 'warning' },
+  not_included: { label: 'Not Included', color: 'light' },
 };
 
 const empty = {
@@ -27,6 +21,8 @@ const empty = {
   description: '', best_for: '', status: 'active',
   trial_days: '', yearly_discount: '', is_custom: false,
 };
+
+const periodLabel: Record<string, string> = { month: '/mo', quarter: '/qtr', year: '/yr' };
 
 export default function AddPlan({ onBack, editId }: Props) {
   const isEdit = !!editId;
@@ -40,19 +36,16 @@ export default function AddPlan({ onBack, editId }: Props) {
 
   const set = (key: string, val: any) => setForm(f => ({ ...f, [key]: val }));
 
-  // Load modules list
   useEffect(() => {
     api.get('/modules').then(res => {
       const mods = (res.data || []).filter((m: ModuleOption) => !['dashboard', 'profile'].includes(m.slug));
       setModules(mods);
-      // Default all to not_included
       const acc: Record<number, AccessLevel> = {};
       mods.forEach((m: ModuleOption) => { acc[m.id] = 'not_included'; });
       setModuleAccess(acc);
     });
   }, []);
 
-  // Load plan for edit
   useEffect(() => {
     if (!editId) return;
     setLoadingData(true);
@@ -69,7 +62,6 @@ export default function AddPlan({ onBack, editId }: Props) {
         yearly_discount: p.yearly_discount != null ? String(p.yearly_discount) : '',
         is_custom: p.is_custom || false,
       });
-      // Load plan modules
       if (p.plan_modules) {
         setModuleAccess(prev => {
           const acc = { ...prev };
@@ -80,15 +72,14 @@ export default function AddPlan({ onBack, editId }: Props) {
     }).catch(() => {}).finally(() => setLoadingData(false));
   }, [editId]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setErrors({});
     setSaving(true);
     try {
       const modulesPayload = Object.entries(moduleAccess).map(([modId, level]) => ({
-        module_id: Number(modId),
-        access_level: level,
+        module_id: Number(modId), access_level: level,
       }));
-
       const payload: Record<string, any> = {
         name: form.name, price: parseFloat(form.price) || 0, period: form.period,
         max_branches: form.max_branches ? parseInt(form.max_branches) : null,
@@ -100,7 +91,6 @@ export default function AddPlan({ onBack, editId }: Props) {
         yearly_discount: form.yearly_discount ? parseFloat(form.yearly_discount) : null,
         is_custom: form.is_custom, modules: modulesPayload,
       };
-
       if (isEdit) {
         await api.put(`/plans/${editId}`, payload);
         toast.success('Plan Updated', `"${form.name}" updated successfully`);
@@ -123,261 +113,306 @@ export default function AddPlan({ onBack, editId }: Props) {
 
   const fieldError = (key: string) => errors[key]?.[0];
   const includedCount = Object.values(moduleAccess).filter(a => a !== 'not_included').length;
-  const periodLabel: Record<string, string> = { month: '/mo', quarter: '/qtr', year: '/yr' };
 
   if (loadingData) {
-    return <div className="flex items-center justify-center py-20 text-muted text-[13px]"><Loader2 size={20} className="animate-spin mr-2" /> Loading plan...</div>;
+    return <div className="text-center py-5"><Spinner color="primary" /> <span className="ms-2 text-muted">Loading plan...</span></div>;
   }
 
   return (
-    <div className="flex flex-col min-h-full">
-      {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-3 mb-5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-violet-400 flex items-center justify-center shadow-lg shadow-primary/20">
-            <CreditCard size={18} className="text-white" />
+    <>
+      <Row>
+        <Col xs={12}>
+          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
+            <h4 className="mb-sm-0">
+              <button className="btn btn-sm btn-soft-primary me-2" onClick={onBack}>
+                <i className="ri-arrow-left-line"></i>
+              </button>
+              {isEdit ? 'Edit Plan' : 'Add New Plan'}
+            </h4>
+            <div className="page-title-right">
+              <ol className="breadcrumb m-0">
+                <li className="breadcrumb-item"><a href="#" onClick={e => { e.preventDefault(); onBack(); }}>Plans</a></li>
+                <li className="breadcrumb-item active">{isEdit ? 'Edit' : 'New'}</li>
+              </ol>
+            </div>
           </div>
-          <div>
-            <h1 className="text-[18px] font-extrabold text-text tracking-tight">{isEdit ? 'Edit Plan' : 'Add New Plan'}</h1>
-            <p className="text-[12px] text-muted mt-0.5">{isEdit ? 'Update plan details and modules' : 'Create a subscription plan with pricing, limits and modules'}</p>
-          </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={onBack}><ArrowLeft size={13} /> Back to Plans</Button>
-      </div>
+        </Col>
+      </Row>
 
       {errors.general && (
-        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-[12px] text-red-600">
-          <AlertCircle size={14} /> {errors.general[0]}
-        </div>
+        <Alert color="danger"><i className="ri-error-warning-line me-1"></i>{errors.general[0]}</Alert>
       )}
 
-      <div className="flex gap-6 items-start">
-        <div className="flex-1 min-w-0 space-y-5">
-
-          {/* Section A: Plan Details */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center"><Sparkles size={14} className="text-primary" /></div>
-                <div>
-                  <span className="text-[13px] font-bold text-text">Plan Details</span>
-                  <span className="text-[10px] text-muted ml-2 bg-bg px-2 py-0.5 rounded-full border border-border">Section A</span>
-                </div>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                <Input label="Plan Name" required placeholder="e.g. Pro, Business" value={form.name} onChange={e => set('name', e.target.value)} error={fieldError('name')} />
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11.5px] font-semibold text-text">Price<span className="text-red-500 ml-0.5">*</span></label>
-                  <div className="flex">
-                    <span className="inline-flex items-center px-3 rounded-l-lg border-[1.5px] border-r-0 border-border bg-bg text-[12px] font-semibold text-secondary">₹</span>
-                    <input type="number" className={`flex-1 px-3 py-2 rounded-r-lg border-[1.5px] border-border bg-surface text-[12.5px] text-text outline-none transition-all focus:border-primary/50 focus:ring-2 focus:ring-primary/10 placeholder:text-muted ${fieldError('price') ? 'border-red-400' : ''}`}
-                      placeholder="0" value={form.price} onChange={e => set('price', e.target.value)} />
-                  </div>
-                </div>
-                <Select label="Billing Period" required value={form.period} onChange={e => set('period', e.target.value)}>
-                  <option value="month">Monthly</option><option value="quarter">Quarterly</option><option value="year">Yearly</option>
-                </Select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                <Input label="Best For" placeholder="e.g. Small teams" value={form.best_for} onChange={e => set('best_for', e.target.value)} />
-                <Select label="Status" required value={form.status} onChange={e => set('status', e.target.value)}>
-                  <option value="active">Active</option><option value="inactive">Inactive</option>
-                </Select>
-                <Input label="Badge" placeholder="e.g. Most Popular" value={form.badge} onChange={e => set('badge', e.target.value)} />
-              </div>
-              <Textarea label="Description" placeholder="What this plan offers..." rows={2} value={form.description} onChange={e => set('description', e.target.value)} />
-              <div className="flex gap-6 flex-wrap mt-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={form.is_featured} onChange={e => set('is_featured', e.target.checked)} className="w-4 h-4 accent-primary rounded" />
-                  <span className="text-[12px] font-medium text-text">Featured / Popular</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={form.is_custom} onChange={e => set('is_custom', e.target.checked)} className="w-4 h-4 accent-primary rounded" />
-                  <span className="text-[12px] font-medium text-text">Custom Plan</span>
-                </label>
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* Section B: Limits */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center"><Shield size={14} className="text-emerald-500" /></div>
-                <div>
-                  <span className="text-[13px] font-bold text-text">Usage Limits</span>
-                  <span className="text-[10px] text-muted ml-2 bg-bg px-2 py-0.5 rounded-full border border-border">Section B</span>
-                </div>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <Input label="Max Branches" type="number" placeholder="0 = unlimited" value={form.max_branches} onChange={e => set('max_branches', e.target.value)} />
-                <Input label="Max Users" type="number" placeholder="0 = unlimited" value={form.max_users} onChange={e => set('max_users', e.target.value)} />
-                <Input label="Storage Limit" placeholder="e.g. 25GB" value={form.storage_limit} onChange={e => set('storage_limit', e.target.value)} />
-                <Select label="Support Level" value={form.support_level} onChange={e => set('support_level', e.target.value)}>
-                  <option value="Email">Email</option><option value="Chat">Email + Chat</option>
-                  <option value="Priority">Priority</option><option value="Dedicated">Dedicated</option>
-                  <option value="Enterprise SLA">Enterprise SLA</option>
-                </Select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Input label="Trial Days" type="number" placeholder="e.g. 14" value={form.trial_days} onChange={e => set('trial_days', e.target.value)} />
-                <Input label="Yearly Discount (%)" type="number" placeholder="e.g. 20" value={form.yearly_discount} onChange={e => set('yearly_discount', e.target.value)} />
-                <div className="flex flex-col gap-1">
-                  <label className="text-[11.5px] font-semibold text-text">Color</label>
-                  <div className="flex gap-2 items-center">
-                    <input type="color" value={form.color} onChange={e => set('color', e.target.value)} className="w-10 h-10 rounded-lg border border-border cursor-pointer p-0.5" />
-                    <Input value={form.color} onChange={e => set('color', e.target.value)} className="flex-1" />
-                  </div>
-                </div>
-              </div>
-            </CardBody>
-          </Card>
-
-          {/* Section C: Module Access */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center"><Layers size={14} className="text-violet-500" /></div>
-                <div>
-                  <span className="text-[13px] font-bold text-text">Module Access</span>
-                  <span className="text-[10px] text-muted ml-2 bg-bg px-2 py-0.5 rounded-full border border-border">Section C</span>
-                  <span className="text-[10px] text-primary font-bold ml-2">{includedCount} / {modules.length} included</span>
-                </div>
-              </div>
-            </CardHeader>
-            <CardBody>
-              <div className="bg-violet-500/5 border border-violet-500/20 rounded-xl px-4 py-3 mb-4 flex items-center gap-2 text-[12px] text-violet-700">
-                <Layers size={14} />
-                Select which modules are included in this plan. Clients with this plan will get access to these modules.
-              </div>
-
-              {/* Legend */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                {(Object.entries(ACCESS_STYLES) as [AccessLevel, typeof ACCESS_STYLES.full][]).map(([key, s]) => (
-                  <span key={key} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold ${s.bg} ${s.text}`}>
-                    {key === 'not_included' ? <X size={9} /> : <Check size={9} />} {s.label}
-                  </span>
-                ))}
-              </div>
-
-              {/* Quick actions */}
-              <div className="flex gap-2 mb-4">
-                <Button variant="outline" size="sm" onClick={() => {
-                  const acc: Record<number, AccessLevel> = {};
-                  modules.forEach(m => { acc[m.id] = 'full'; });
-                  setModuleAccess(acc);
-                }}>All Full</Button>
-                <Button variant="outline" size="sm" onClick={() => {
-                  const acc: Record<number, AccessLevel> = {};
-                  modules.forEach(m => { acc[m.id] = 'not_included'; });
-                  setModuleAccess(acc);
-                }}>Clear All</Button>
-              </div>
-
-              {/* Module grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {modules.map(mod => {
-                  const level = moduleAccess[mod.id] || 'not_included';
-                  const included = level !== 'not_included';
-                  return (
-                    <div key={mod.id} className={`border rounded-xl p-3.5 transition-all duration-200 ${included ? 'border-primary/30 bg-primary/[.02] shadow-sm' : 'border-border'}`}>
-                      <div className="flex items-center gap-2.5 mb-2.5">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold ${included ? 'bg-primary/10 text-primary' : 'bg-bg text-muted'}`}>
-                          {mod.name.charAt(0)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[13px] font-bold text-text">{mod.name}</span>
-                        </div>
-                        {included && <Check size={14} className="text-emerald-500" />}
+      <Form onSubmit={handleSubmit}>
+        <Row>
+          {/* ── LEFT: Form ── */}
+          <Col xl={8}>
+            {/* Section A */}
+            <Card>
+              <CardHeader className="d-flex align-items-center gap-2">
+                <div className="avatar-xs"><span className="avatar-title rounded bg-primary-subtle text-primary fs-4"><i className="ri-sparkling-line"></i></span></div>
+                <h5 className="card-title mb-0 flex-grow-1">Plan Details</h5>
+                <span className="badge bg-primary-subtle text-primary">Section A</span>
+              </CardHeader>
+              <CardBody>
+                <Row className="g-3">
+                  <Col md={4}>
+                    <Label>Plan Name <span className="text-danger">*</span></Label>
+                    <Input value={form.name} onChange={e => set('name', e.target.value)} invalid={!!fieldError('name')} placeholder="e.g. Pro, Business" />
+                    {fieldError('name') && <div className="invalid-feedback d-block">{fieldError('name')}</div>}
+                  </Col>
+                  <Col md={4}>
+                    <Label>Price <span className="text-danger">*</span></Label>
+                    <InputGroup>
+                      <InputGroupText>₹</InputGroupText>
+                      <Input type="number" value={form.price} onChange={e => set('price', e.target.value)} invalid={!!fieldError('price')} placeholder="0" />
+                    </InputGroup>
+                  </Col>
+                  <Col md={4}>
+                    <Label>Billing Period <span className="text-danger">*</span></Label>
+                    <Input type="select" value={form.period} onChange={e => set('period', e.target.value)}>
+                      <option value="month">Monthly</option>
+                      <option value="quarter">Quarterly</option>
+                      <option value="year">Yearly</option>
+                    </Input>
+                  </Col>
+                  <Col md={4}>
+                    <Label>Best For</Label>
+                    <Input value={form.best_for} onChange={e => set('best_for', e.target.value)} placeholder="e.g. Small teams" />
+                  </Col>
+                  <Col md={4}>
+                    <Label>Status</Label>
+                    <Input type="select" value={form.status} onChange={e => set('status', e.target.value)}>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </Input>
+                  </Col>
+                  <Col md={4}>
+                    <Label>Badge</Label>
+                    <Input value={form.badge} onChange={e => set('badge', e.target.value)} placeholder="e.g. Most Popular" />
+                  </Col>
+                  <Col xs={12}>
+                    <Label>Description</Label>
+                    <Input type="textarea" rows={2} value={form.description} onChange={e => set('description', e.target.value)} placeholder="What this plan offers..." />
+                  </Col>
+                  <Col xs={12}>
+                    <div className="d-flex gap-4 flex-wrap">
+                      <div className="form-check form-switch">
+                        <Input type="switch" id="is_featured" checked={form.is_featured} onChange={e => set('is_featured', e.target.checked)} />
+                        <Label for="is_featured">Featured / Popular</Label>
                       </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {(Object.keys(ACCESS_STYLES) as AccessLevel[]).map(key => (
-                          <button key={key} type="button"
-                            onClick={() => setModuleAccess(prev => ({ ...prev, [mod.id]: key }))}
-                            className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all duration-150 cursor-pointer ${
-                              level === key
-                                ? `${ACCESS_STYLES[key].bg} ${ACCESS_STYLES[key].text} ring-2 ring-offset-1 ring-current/20 shadow-sm`
-                                : 'bg-bg text-secondary hover:bg-bg/80'
-                            }`}>
-                            {ACCESS_STYLES[key].label}
-                          </button>
-                        ))}
+                      <div className="form-check form-switch">
+                        <Input type="switch" id="is_custom" checked={form.is_custom} onChange={e => set('is_custom', e.target.checked)} />
+                        <Label for="is_custom">Custom Plan</Label>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </CardBody>
-          </Card>
+                  </Col>
+                </Row>
+              </CardBody>
+            </Card>
 
-          {/* Footer */}
-          <div className="sticky bottom-0 left-0 right-0 bg-surface border-t border-border px-5 py-3.5 rounded-xl shadow-lg flex items-center justify-between z-[50]">
-            <div className="text-[12px] text-muted">{includedCount} modules included · Click <strong>{isEdit ? 'Update' : 'Create'} Plan</strong> to save</div>
-            <div className="flex gap-2.5">
-              <Button variant="ghost" size="sm" onClick={onBack}>Cancel</Button>
-              <Button variant="outline" size="sm" onClick={() => { setForm(empty); setModuleAccess(prev => { const a: Record<number, AccessLevel> = {}; Object.keys(prev).forEach(k => a[Number(k)] = 'not_included'); return a; }); }}><RotateCcw size={12} /> Reset</Button>
-              <Button size="md" onClick={handleSubmit} disabled={saving}>
-                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                {saving ? 'Saving...' : isEdit ? 'Update Plan' : 'Create Plan'}
-              </Button>
-            </div>
-          </div>
-        </div>
+            {/* Section B: Limits */}
+            <Card>
+              <CardHeader className="d-flex align-items-center gap-2">
+                <div className="avatar-xs"><span className="avatar-title rounded bg-success-subtle text-success fs-4"><i className="ri-shield-line"></i></span></div>
+                <h5 className="card-title mb-0 flex-grow-1">Usage Limits</h5>
+                <span className="badge bg-success-subtle text-success">Section B</span>
+              </CardHeader>
+              <CardBody>
+                <Row className="g-3">
+                  <Col md={3}>
+                    <Label>Max Branches</Label>
+                    <Input type="number" value={form.max_branches} onChange={e => set('max_branches', e.target.value)} placeholder="Leave blank = ∞" />
+                  </Col>
+                  <Col md={3}>
+                    <Label>Max Users</Label>
+                    <Input type="number" value={form.max_users} onChange={e => set('max_users', e.target.value)} placeholder="Leave blank = ∞" />
+                  </Col>
+                  <Col md={3}>
+                    <Label>Storage Limit</Label>
+                    <Input value={form.storage_limit} onChange={e => set('storage_limit', e.target.value)} placeholder="e.g. 25GB" />
+                  </Col>
+                  <Col md={3}>
+                    <Label>Support Level</Label>
+                    <Input type="select" value={form.support_level} onChange={e => set('support_level', e.target.value)}>
+                      <option value="Email">Email</option>
+                      <option value="Chat">Email + Chat</option>
+                      <option value="Priority">Priority</option>
+                      <option value="Dedicated">Dedicated</option>
+                      <option value="Enterprise SLA">Enterprise SLA</option>
+                    </Input>
+                  </Col>
+                  <Col md={4}>
+                    <Label>Trial Days</Label>
+                    <Input type="number" value={form.trial_days} onChange={e => set('trial_days', e.target.value)} placeholder="e.g. 14" />
+                  </Col>
+                  <Col md={4}>
+                    <Label>Yearly Discount (%)</Label>
+                    <Input type="number" value={form.yearly_discount} onChange={e => set('yearly_discount', e.target.value)} placeholder="e.g. 20" />
+                  </Col>
+                  <Col md={4}>
+                    <Label>Accent Color</Label>
+                    <div className="d-flex gap-2">
+                      <Input type="color" value={form.color} onChange={e => set('color', e.target.value)} style={{ width: 48, height: 38 }} />
+                      <Input value={form.color} onChange={e => set('color', e.target.value)} className="font-monospace" />
+                    </div>
+                  </Col>
+                </Row>
+              </CardBody>
+            </Card>
 
-        {/* Live Preview */}
-        <div className="hidden lg:block w-72 flex-shrink-0">
-          <div className="sticky top-6">
-            <div className={`bg-surface border-2 ${form.is_featured ? 'border-primary shadow-lg shadow-primary/10' : 'border-border'} rounded-2xl p-5 transition-all`}>
-              {form.is_featured && form.badge && (
-                <div className="text-center mb-2">
-                  <span className="text-[8px] font-bold bg-primary text-white px-3 py-1 rounded-full tracking-wider uppercase">{form.badge}</span>
+            {/* Section C: Modules */}
+            <Card>
+              <CardHeader className="d-flex align-items-center gap-2">
+                <div className="avatar-xs"><span className="avatar-title rounded bg-info-subtle text-info fs-4"><i className="ri-stack-line"></i></span></div>
+                <h5 className="card-title mb-0 flex-grow-1">Module Access</h5>
+                <span className="badge bg-info-subtle text-info">Section C · {includedCount}/{modules.length}</span>
+              </CardHeader>
+              <CardBody>
+                <Alert color="info" className="d-flex align-items-center py-2">
+                  <i className="ri-stack-line me-2"></i>
+                  Select which modules are included in this plan.
+                </Alert>
+
+                <div className="d-flex gap-2 flex-wrap mb-3">
+                  {(Object.entries(ACCESS_CFG) as [AccessLevel, typeof ACCESS_CFG.full][]).map(([key, s]) => (
+                    <Badge key={key} color={s.color === 'light' ? 'light' : `${s.color}-subtle`} className={`text-${s.color === 'light' ? 'dark' : s.color}`}>
+                      <i className={`${key === 'not_included' ? 'ri-close-line' : 'ri-check-line'} me-1`}></i>{s.label}
+                    </Badge>
+                  ))}
                 </div>
-              )}
-              <div className="text-center mb-4">
-                <h3 className="text-[17px] font-extrabold text-text">{form.name || 'Plan Name'}</h3>
-                <div className="mt-2">
-                  {parseFloat(form.price) <= 0
-                    ? <span className="text-2xl font-extrabold text-primary">Free</span>
-                    : <><span className="text-sm text-primary font-semibold">₹</span><span className="text-2xl font-extrabold text-primary">{parseFloat(form.price || '0').toLocaleString()}</span><span className="text-sm text-secondary">{periodLabel[form.period]}</span></>
-                  }
-                </div>
-                {form.best_for && <p className="text-[10px] text-muted mt-1">{form.best_for}</p>}
-              </div>
-              <div className="grid grid-cols-2 gap-2 mb-4 text-center">
-                {[['Branches', form.max_branches || '∞'], ['Users', form.max_users || '∞'], ['Storage', form.storage_limit || '—'], ['Support', form.support_level || '—']].map(([l, v]) => (
-                  <div key={l} className="bg-bg rounded-lg px-2 py-1.5">
-                    <div className="text-[8px] font-semibold text-muted uppercase">{l}</div>
-                    <div className="text-[12px] font-bold text-text">{v}</div>
-                  </div>
-                ))}
-              </div>
 
-              {/* Included modules preview */}
-              <div className="border-t border-border/40 pt-3">
-                <p className="text-[9px] font-bold text-muted uppercase tracking-widest mb-2">Modules ({includedCount})</p>
-                {includedCount > 0 ? (
-                  <div className="space-y-1">
-                    {modules.filter(m => moduleAccess[m.id] !== 'not_included').map(m => (
-                      <div key={m.id} className="flex items-center justify-between">
-                        <span className="text-[11px] text-text">{m.name}</span>
-                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${ACCESS_STYLES[moduleAccess[m.id]].bg} ${ACCESS_STYLES[moduleAccess[m.id]].text}`}>
-                          {ACCESS_STYLES[moduleAccess[m.id]].label}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-muted italic">No modules selected</p>
+                <div className="d-flex gap-2 mb-3">
+                  <Button type="button" color="light" size="sm"
+                    onClick={() => {
+                      const acc: Record<number, AccessLevel> = {};
+                      modules.forEach(m => { acc[m.id] = 'full'; });
+                      setModuleAccess(acc);
+                    }}>All Full</Button>
+                  <Button type="button" color="light" size="sm"
+                    onClick={() => {
+                      const acc: Record<number, AccessLevel> = {};
+                      modules.forEach(m => { acc[m.id] = 'not_included'; });
+                      setModuleAccess(acc);
+                    }}>Clear All</Button>
+                </div>
+
+                <Row className="g-3">
+                  {modules.map(mod => {
+                    const level = moduleAccess[mod.id] || 'not_included';
+                    const included = level !== 'not_included';
+                    return (
+                      <Col md={6} key={mod.id}>
+                        <div className={`p-3 rounded border ${included ? 'border-primary bg-primary bg-opacity-10' : 'border-light'}`}>
+                          <div className="d-flex align-items-center gap-2 mb-2">
+                            <div className={`avatar-xs rounded d-flex align-items-center justify-content-center fw-bold ${included ? 'bg-primary text-white' : 'bg-light text-muted'}`}>
+                              {mod.name.charAt(0)}
+                            </div>
+                            <h6 className="mb-0 flex-grow-1">{mod.name}</h6>
+                            {included && <i className="ri-checkbox-circle-fill text-success"></i>}
+                          </div>
+                          <div className="d-flex flex-wrap gap-1">
+                            {(Object.keys(ACCESS_CFG) as AccessLevel[]).map(key => (
+                              <Button key={key} type="button" size="sm"
+                                color={level === key ? ACCESS_CFG[key].color : 'light'}
+                                onClick={() => setModuleAccess(prev => ({ ...prev, [mod.id]: key }))}>
+                                {ACCESS_CFG[key].label}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </Col>
+                    );
+                  })}
+                </Row>
+              </CardBody>
+            </Card>
+
+            {/* Footer */}
+            <Card>
+              <CardBody className="d-flex justify-content-between align-items-center">
+                <span className="text-muted fs-13">
+                  {includedCount} modules included · Click <strong>{isEdit ? 'Update' : 'Create'} Plan</strong> to save
+                </span>
+                <div className="d-flex gap-2">
+                  <Button type="button" color="light" onClick={onBack}>Cancel</Button>
+                  <Button type="button" color="light"
+                    onClick={() => {
+                      setForm(empty);
+                      const a: Record<number, AccessLevel> = {};
+                      Object.keys(moduleAccess).forEach(k => a[Number(k)] = 'not_included');
+                      setModuleAccess(a);
+                    }}>
+                    <i className="ri-restart-line me-1"></i> Reset
+                  </Button>
+                  <Button type="submit" color="success" disabled={saving}>
+                    {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-save-line me-1"></i>}
+                    {saving ? 'Saving...' : isEdit ? 'Update Plan' : 'Create Plan'}
+                  </Button>
+                </div>
+              </CardBody>
+            </Card>
+          </Col>
+
+          {/* ── RIGHT: Live Preview ── */}
+          <Col xl={4}>
+            <div style={{ position: 'sticky', top: 80 }}>
+              <Card className={`pricing-box ${form.is_featured ? 'ribbon-box right' : ''}`} style={form.is_featured ? { border: '2px solid var(--vz-primary)' } : {}}>
+                {form.is_featured && form.badge && (
+                  <div className="ribbon-two ribbon-two-primary"><span>{form.badge}</span></div>
                 )}
-              </div>
+                <CardBody>
+                  <div className="text-center mb-4">
+                    <h4 className="fw-semibold">{form.name || 'Plan Name'}</h4>
+                    <div className="mt-3">
+                      {parseFloat(form.price) <= 0 ? (
+                        <h2 className="text-primary mb-0">Free</h2>
+                      ) : (
+                        <h2 className="mb-0">
+                          <small className="fs-5 text-muted">₹</small>
+                          {parseFloat(form.price || '0').toLocaleString()}
+                          <small className="fs-13 text-muted fw-normal">{periodLabel[form.period]}</small>
+                        </h2>
+                      )}
+                    </div>
+                    {form.best_for && <p className="text-muted fs-13 mt-2">{form.best_for}</p>}
+                  </div>
+
+                  <Row className="gx-2 gy-2 mb-3">
+                    {[['Branches', form.max_branches || '∞', 'ri-git-branch-line'], ['Users', form.max_users || '∞', 'ri-user-3-line'], ['Storage', form.storage_limit || '—', 'ri-hard-drive-2-line'], ['Support', form.support_level || '—', 'ri-customer-service-2-line']].map(([l, v, i]) => (
+                      <Col xs={6} key={l}>
+                        <div className="bg-light rounded p-2 text-center">
+                          <i className={`${i} text-muted`}></i>
+                          <div className="fs-11 text-muted text-uppercase">{l}</div>
+                          <div className="fw-bold">{v}</div>
+                        </div>
+                      </Col>
+                    ))}
+                  </Row>
+
+                  <div className="border-top pt-3">
+                    <p className="text-muted text-uppercase fs-11 fw-bold mb-2">Modules ({includedCount})</p>
+                    {includedCount > 0 ? (
+                      <div className="vstack gap-1">
+                        {modules.filter(m => moduleAccess[m.id] !== 'not_included').map(m => (
+                          <div key={m.id} className="d-flex justify-content-between fs-13">
+                            <span>{m.name}</span>
+                            <Badge color={`${ACCESS_CFG[moduleAccess[m.id]].color}-subtle`} className={`text-${ACCESS_CFG[moduleAccess[m.id]].color}`}>
+                              {ACCESS_CFG[moduleAccess[m.id]].label}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-muted fst-italic fs-13 mb-0">No modules selected</p>
+                    )}
+                  </div>
+                </CardBody>
+              </Card>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
+          </Col>
+        </Row>
+      </Form>
+    </>
   );
 }

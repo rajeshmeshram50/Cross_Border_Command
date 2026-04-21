@@ -79,6 +79,7 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
             <button
               key={m.id}
               onClick={() => onNavigate(m.id)}
+              title={collapsed ? m.label : undefined}
               className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12.5px] font-medium cursor-pointer transition-all duration-150 whitespace-nowrap ${
                 active
                   ? 'bg-gradient-to-r from-primary/100 to-primary/80 text-white font-semibold shadow-md shadow-primary/30 border-l-2 border-white/50 pl-2'

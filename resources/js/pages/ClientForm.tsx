@@ -1,12 +1,7 @@
-import { useState, useEffect, useCallback, useMemo, memo, useRef } from 'react';
-import Button from '../components/ui/Button';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Card, CardBody, CardHeader, Col, Row, Button, Input, Label, Spinner, Alert, Form, FormFeedback } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
-import {
-  ArrowLeft, Save, RotateCcw, Building2, MapPin, FileText,
-  Palette, User, Lock, Loader2, AlertCircle, CheckCircle2,
-  Phone, Mail, Calendar, Briefcase, Shield, Info, Upload, X,
-} from 'lucide-react';
 
 interface Props {
   onBack: () => void;
@@ -28,7 +23,6 @@ type FormState = typeof empty;
 
 function validateClientForm(form: FormState, isEdit: boolean): Record<string, string> {
   const e: Record<string, string> = {};
-  // Organization
   if (!form.org_name?.trim()) e.org_name = 'Organization name is required';
   else if (form.org_name.length < 3) e.org_name = 'Minimum 3 characters';
   if (!form.org_type) e.org_type = 'Organization type is required';
@@ -37,21 +31,17 @@ function validateClientForm(form: FormState, isEdit: boolean): Record<string, st
   if (!form.phone?.trim()) e.phone = 'Phone is required';
   else if (!/^[+\d\s\-()]{7,15}$/.test(form.phone)) e.phone = 'Invalid phone number';
   if (!form.status) e.status = 'Status is required';
-  // Address
   if (!form.address?.trim()) e.address = 'Address is required';
   if (!form.city?.trim()) e.city = 'City is required';
   if (!form.state?.trim()) e.state = 'State is required';
   if (!form.country?.trim()) e.country = 'Country is required';
   if (form.pincode && !/^\d{6}$/.test(form.pincode)) e.pincode = 'Must be 6 digits';
-  // Legal
   if (form.country === 'India') {
     if (form.gst_number && !/^[0-9A-Z]{15}$/.test(form.gst_number)) e.gst_number = '15 alphanumeric characters';
     if (form.pan_number && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan_number)) e.pan_number = 'Invalid PAN format';
   }
-  // Plan
   if (!form.plan_id) e.plan_id = 'Plan is required';
   if (!form.plan_type) e.plan_type = 'Plan type is required';
-  // Admin
   if (!isEdit) {
     if (!form.admin_name?.trim()) e.admin_name = 'Admin name is required';
     if (!form.admin_email?.trim()) e.admin_email = 'Email is required';
@@ -68,111 +58,6 @@ function validateClientForm(form: FormState, isEdit: boolean): Record<string, st
   return e;
 }
 
-const inputCls = 'w-full bg-bg text-[12.5px] text-text placeholder:text-muted/40 rounded-lg border border-border px-3 py-2.5 outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all hover:border-border/80';
-
-const LabelRightInput = memo(({ label, required, icon: Icon, placeholder, value, onChange, onBlur, error, type = 'text', maxLength, helperText }: {
-  label: string; required?: boolean; icon?: React.ElementType; placeholder?: string;
-  value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onBlur?: () => void; error?: string; type?: string; maxLength?: number; helperText?: string;
-}) => (
-  <div>
-    <label className="text-[11px] font-semibold text-text mb-1 block">
-      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-    <div className="relative">
-      {Icon && <Icon size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />}
-      <input type={type} placeholder={placeholder} value={value} onChange={onChange} onBlur={onBlur} maxLength={maxLength}
-        className={`${inputCls} ${Icon ? 'pl-8' : ''} ${error ? '!border-red-400 !ring-red-100 focus:!border-red-400' : ''}`} />
-    </div>
-    {error && <p className="text-[10px] text-red-500 mt-1">{error}</p>}
-    {helperText && !error && <p className="text-[10px] text-muted mt-1">{helperText}</p>}
-  </div>
-));
-
-const LabelRightSelect = memo(({ label, required, icon: Icon, value, onChange, error, children }: {
-  label: string; required?: boolean; icon?: React.ElementType;
-  value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
-  error?: string; children: React.ReactNode;
-}) => (
-  <div>
-    <label className="text-[11px] font-semibold text-text mb-1 block">
-      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-    <div className="relative">
-      {Icon && <Icon size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />}
-      <select value={value} onChange={onChange}
-        className={`${inputCls} ${Icon ? 'pl-8' : ''} cursor-pointer appearance-none ${error ? '!border-red-400 !ring-red-100' : ''}`}>
-        {children}
-      </select>
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted">
-        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-      </div>
-    </div>
-    {error && <p className="text-[10px] text-red-500 mt-1">{error}</p>}
-  </div>
-));
-
-const LabelRightTextarea = memo(({ label, placeholder, value, onChange, rows = 2, required, error, onBlur }: {
-  label: string; placeholder?: string; value: string;
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void; rows?: number;
-  required?: boolean; error?: string; onBlur?: () => void;
-}) => (
-  <div>
-    <label className="text-[11px] font-semibold text-text mb-1 block">
-      {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-    </label>
-    <textarea placeholder={placeholder} value={value} onChange={onChange} onBlur={onBlur} rows={rows}
-      className={`${inputCls} resize-none leading-relaxed ${error ? '!border-red-400 !ring-red-100' : ''}`} />
-    {error && <p className="text-[10px] text-red-500 mt-1">{error}</p>}
-  </div>
-));
-
-const SectionHeader = ({ icon: Icon, title, badge }: { icon?: React.ElementType; title: string; badge?: string }) => (
-  <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-border/50">
-    {Icon && <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center"><Icon size={15} className="text-primary" /></div>}
-    <h3 className="text-[13px] font-bold text-text">{title}</h3>
-    {badge && <span className="text-[9px] font-bold text-muted bg-surface-2 px-2 py-0.5 rounded-md border border-border/50">{badge}</span>}
-  </div>
-);
-
-const FileUploadField = memo(({ label, accept = 'image/*', hint = 'PNG, JPG — Max 2MB', preview, onFileChange }: {
-  label: string; accept?: string; hint?: string; preview: string | null; onFileChange: (file: File | null) => void;
-}) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-  return (
-    <div>
-      <p className="text-[10.5px] font-medium text-muted mb-1.5">{label}</p>
-      <div className="flex items-center gap-2.5">
-        <div className="w-16 h-14 flex items-center justify-center rounded-lg border border-border bg-surface-2/50 relative overflow-hidden shrink-0">
-          {preview ? (
-            <>
-              <img src={preview} alt="preview" className="max-w-[90%] max-h-[44px] object-contain" />
-              <button type="button" onClick={e => { e.stopPropagation(); onFileChange(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
-                className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-red-100 text-red-500 hover:bg-red-200">
-                <X size={8} />
-              </button>
-            </>
-          ) : (
-            <p className="text-[9px] text-muted text-center px-1">No file</p>
-          )}
-        </div>
-        <div onClick={() => fileInputRef.current?.click()}
-          onDragOver={e => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) onFileChange(f); }}
-          className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-3 rounded-lg border border-dashed cursor-pointer transition-colors ${
-            dragging ? 'border-primary bg-primary/5' : 'border-border bg-surface-2/30 hover:border-primary/40 hover:bg-primary/5'}`}>
-          <Upload size={13} className={dragging ? 'text-primary' : 'text-muted'} />
-          <p className="text-[9.5px] font-medium text-text">Click or drop</p>
-          <p className="text-[8.5px] text-muted">{hint}</p>
-          <input ref={fileInputRef} type="file" accept={accept} onChange={e => onFileChange(e.target.files?.[0] || null)} className="hidden" />
-        </div>
-      </div>
-    </div>
-  );
-});
-
 export default function ClientForm({ onBack, editId }: Props) {
   const isEdit = !!editId;
   const [form, setForm] = useState<FormState>(empty);
@@ -186,7 +71,6 @@ export default function ClientForm({ onBack, editId }: Props) {
   const [serverErrors, setServerErrors] = useState<Record<string, string[]>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const touchedRef = useRef<Record<string, boolean>>({});
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   const set = useCallback((key: keyof FormState, val: string) => {
     setForm(f => (f[key] === val ? f : { ...f, [key]: val }));
@@ -195,41 +79,30 @@ export default function ClientForm({ onBack, editId }: Props) {
 
   const touch = useCallback((key: string) => {
     touchedRef.current[key] = true;
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setForm(current => {
-        const liveErrors = validateClientForm(current, isEdit);
-        setValidationErrors(prev => {
-          const next = { ...prev };
-          Object.keys(touchedRef.current).forEach(k => { if (liveErrors[k]) next[k] = liveErrors[k]; else delete next[k]; });
-          return next;
-        });
-        return current;
+    setForm(current => {
+      const liveErrors = validateClientForm(current, isEdit);
+      setValidationErrors(prev => {
+        const next = { ...prev };
+        Object.keys(touchedRef.current).forEach(k => { if (liveErrors[k]) next[k] = liveErrors[k]; else delete next[k]; });
+        return next;
       });
-    }, 300);
+      return current;
+    });
   }, [isEdit]);
 
-  const handlers = useMemo(() => {
-    const inputChange = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => set(key, e.target.value);
-    const selectChange = (key: keyof FormState) => (e: React.ChangeEvent<HTMLSelectElement>) => set(key, e.target.value);
-    const textareaChange = (key: keyof FormState) => (e: React.ChangeEvent<HTMLTextAreaElement>) => set(key, e.target.value);
-    const blurKey = (key: string) => () => touch(key);
-    return { inputChange, selectChange, textareaChange, blurKey };
-  }, [set, touch]);
-
-  const setUpper = useCallback((key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => set(key, e.target.value.toUpperCase()), [set]);
   const fieldError = useCallback((key: string) => serverErrors[key]?.[0] || validationErrors[key], [serverErrors, validationErrors]);
+  const fieldInvalid = (key: string) => !!fieldError(key);
 
-  const handleLogoChange = useCallback((file: File | null) => {
+  const handleLogoChange = (file: File | null) => {
     setLogoFile(file);
     if (file) { const r = new FileReader(); r.onload = ev => setLogoPreview(ev.target?.result as string); r.readAsDataURL(file); }
     else setLogoPreview(null);
-  }, []);
-  const handleFaviconChange = useCallback((file: File | null) => {
+  };
+  const handleFaviconChange = (file: File | null) => {
     setFaviconFile(file);
     if (file) { const r = new FileReader(); r.onload = ev => setFaviconPreview(ev.target?.result as string); r.readAsDataURL(file); }
     else setFaviconPreview(null);
-  }, []);
+  };
 
   useEffect(() => {
     if (!editId) return;
@@ -256,7 +129,8 @@ export default function ClientForm({ onBack, editId }: Props) {
     }).catch(() => {}).finally(() => setLoadingData(false));
   }, [editId]);
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     const allKeys = Object.keys(empty) as (keyof FormState)[];
     allKeys.forEach(k => { touchedRef.current[k] = true; });
     const errs = validateClientForm(form, isEdit);
@@ -293,202 +167,359 @@ export default function ClientForm({ onBack, editId }: Props) {
         toast.error('Error', err.response?.data?.message || 'Something went wrong');
       }
     } finally { setSaving(false); }
-  }, [form, isEdit, editId, onBack, toast, logoFile, faviconFile]);
+  };
 
-  const handleReset = useCallback(() => {
+  const handleReset = () => {
     setForm(empty); setValidationErrors({}); touchedRef.current = {};
     setLogoFile(null); setLogoPreview(null); setFaviconFile(null); setFaviconPreview(null);
-  }, []);
+  };
 
   if (loadingData) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <Loader2 size={24} className="animate-spin text-primary" />
-        <p className="mt-3 text-[12px] text-muted">Loading client data...</p>
+      <div className="text-center py-5">
+        <Spinner color="primary" />
+        <p className="text-muted mt-3">Loading client data...</p>
       </div>
     );
   }
 
-  const { inputChange, selectChange, textareaChange, blurKey } = handlers;
-  const grid3 = 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4';
-  const grid2 = 'grid grid-cols-1 sm:grid-cols-2 gap-4';
+  const SectionHeader = ({ icon, title, badge }: { icon: string; title: string; badge: string }) => (
+    <div className="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom">
+      <div className="avatar-xs">
+        <span className="avatar-title rounded bg-primary-subtle text-primary fs-4">
+          <i className={icon}></i>
+        </span>
+      </div>
+      <h5 className="fs-15 mb-0 flex-grow-1">{title}</h5>
+      <span className="badge bg-primary-subtle text-primary">{badge}</span>
+    </div>
+  );
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="w-9 h-9 rounded-xl border border-border bg-surface flex items-center justify-center text-muted hover:text-primary hover:border-primary/40 transition-all cursor-pointer">
-            <ArrowLeft size={16} />
-          </button>
-          <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-            <Building2 size={16} className="text-primary" />
+    <>
+      <Row>
+        <Col xs={12}>
+          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
+            <h4 className="mb-sm-0">
+              <button className="btn btn-sm btn-soft-primary me-2" onClick={onBack}>
+                <i className="ri-arrow-left-line"></i>
+              </button>
+              {isEdit ? 'Edit Client' : 'Register New Client'}
+            </h4>
+            <div className="page-title-right">
+              <ol className="breadcrumb m-0">
+                <li className="breadcrumb-item"><a href="#" onClick={e => { e.preventDefault(); onBack(); }}>Clients</a></li>
+                <li className="breadcrumb-item active">{isEdit ? 'Edit' : 'New'}</li>
+              </ol>
+            </div>
           </div>
-          <div>
-            <h1 className="text-[17px] font-bold text-text tracking-tight">{isEdit ? 'Edit Client' : 'Register New Client'}</h1>
-            <p className="text-[11px] text-muted mt-0.5">{isEdit ? 'Update organization details' : 'Add a new organization'}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {!isEdit && <Button variant="outline" size="sm" onClick={handleReset}><RotateCcw size={12} /> Reset</Button>}
-          <Button size="sm" onClick={handleSubmit} disabled={saving}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-            {saving ? 'Saving...' : isEdit ? 'Update Client' : 'Create Client'}
-          </Button>
-        </div>
-      </div>
+        </Col>
+      </Row>
 
-      {/* Server Error */}
       {serverErrors.general && (
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-[11px] text-red-600">
-          <AlertCircle size={13} className="shrink-0" /><span>{serverErrors.general[0]}</span>
-        </div>
+        <Alert color="danger">
+          <i className="ri-error-warning-line me-1"></i>{serverErrors.general[0]}
+        </Alert>
       )}
 
-      {/* Form Card */}
-      <div className="bg-surface border border-border rounded-xl shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-border/50 flex items-center justify-between bg-surface-2/30">
-          <div>
-            <p className="text-[12px] font-bold text-text">Client Registration Form</p>
-            <p className="text-[10px] text-muted">Fields marked <span className="text-red-500">*</span> are required</p>
-          </div>
-          <span className="text-[9px] font-bold text-primary bg-primary/10 border border-primary/20 rounded-md px-2 py-0.5">
-            {isEdit ? 'Edit Mode' : 'New Client'}
-          </span>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Organization Details */}
-          <section>
-            <SectionHeader icon={Building2} title="Organization Details" badge="Section A" />
-            <div className={grid3}>
-              <LabelRightInput label="Org. Name" required placeholder="e.g., Inorbvict Technologies" value={form.org_name} onChange={inputChange('org_name')} onBlur={blurKey('org_name')} error={fieldError('org_name')} />
-              <LabelRightSelect label="Org. Type" required value={form.org_type} onChange={selectChange('org_type')} error={fieldError('org_type')}>
-                <option value="">Select type</option>
-                {['Business','Sports','Education','Healthcare','Government','NGO','Other'].map(t => <option key={t} value={t}>{t}</option>)}
-              </LabelRightSelect>
-              {form.org_type === 'Sports'
-                ? <LabelRightInput label="Sport Name" placeholder="e.g., Hockey, Boxing" value={form.sports} onChange={inputChange('sports')} />
-                : <LabelRightInput label="Industry" placeholder="e.g., Agriculture, IT" value={form.industry} onChange={inputChange('industry')} />
-              }
-              <LabelRightSelect label="Status" required value={form.status} onChange={selectChange('status')}>
-                <option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option>
-              </LabelRightSelect>
-              <LabelRightInput label="Email" required type="email" icon={Mail} placeholder="contact@company.com" value={form.email} onChange={inputChange('email')} onBlur={blurKey('email')} error={fieldError('email')} />
-              <LabelRightInput label="Phone" required type="tel" icon={Phone} placeholder="+91 9876543210" value={form.phone} onChange={inputChange('phone')} onBlur={blurKey('phone')} error={fieldError('phone')} />
-              <LabelRightInput label="Website" type="url" placeholder="www.company.com" value={form.website} onChange={inputChange('website')} />
+      <Form onSubmit={handleSubmit}>
+        <Card>
+          <CardHeader className="d-flex align-items-center justify-content-between">
+            <div>
+              <h5 className="card-title mb-0">Client Registration Form</h5>
+              <p className="text-muted mb-0 fs-13">Fields marked <span className="text-danger">*</span> are required</p>
             </div>
-          </section>
+            <span className="badge bg-primary-subtle text-primary">{isEdit ? 'Edit Mode' : 'New Client'}</span>
+          </CardHeader>
 
-          {/* Address */}
-          <section>
-            <SectionHeader icon={MapPin} title="Address Details" badge="Section B" />
-            <div className="mb-4"><LabelRightTextarea label="Street Address" required placeholder="Plot No, Street, Landmark..." value={form.address} onChange={textareaChange('address')} onBlur={blurKey('address')} error={fieldError('address')} rows={1} /></div>
-            <div className={grid3}>
-              <LabelRightInput label="City" required placeholder="e.g., Nagpur" value={form.city} onChange={inputChange('city')} onBlur={blurKey('city')} error={fieldError('city')} />
-              <LabelRightInput label="District" placeholder="e.g., Nagpur" value={form.district} onChange={inputChange('district')} />
-              <LabelRightInput label="Taluka" placeholder="e.g., Nagpur" value={form.taluka} onChange={inputChange('taluka')} />
-              <LabelRightInput label="Pincode" placeholder="440001" maxLength={6} value={form.pincode} onChange={inputChange('pincode')} onBlur={blurKey('pincode')} error={fieldError('pincode')} />
-              <LabelRightSelect label="State" required value={form.state} onChange={selectChange('state')} error={fieldError('state')}>
-                <option value="">Select state</option>
-                {['Maharashtra','Delhi','Karnataka','Tamil Nadu','Gujarat','Telangana','West Bengal'].map(s => <option key={s} value={s}>{s}</option>)}
-              </LabelRightSelect>
-              <LabelRightSelect label="Country" required value={form.country} onChange={selectChange('country')} error={fieldError('country')}>
-                <option value="India">India</option><option value="USA">USA</option><option value="UK">UK</option>
-              </LabelRightSelect>
-            </div>
-          </section>
+          <CardBody>
+            {/* ═ Section A: Organization ═ */}
+            <SectionHeader icon="ri-building-line" title="Organization Details" badge="Section A" />
+            <Row className="g-3 mb-4">
+              <Col md={4}>
+                <Label>Org. Name <span className="text-danger">*</span></Label>
+                <Input value={form.org_name} invalid={fieldInvalid('org_name')}
+                  onChange={e => set('org_name', e.target.value)} onBlur={() => touch('org_name')}
+                  placeholder="e.g., Inorbvict Technologies" />
+                <FormFeedback>{fieldError('org_name')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Org. Type <span className="text-danger">*</span></Label>
+                <Input type="select" value={form.org_type} invalid={fieldInvalid('org_type')}
+                  onChange={e => set('org_type', e.target.value)} onBlur={() => touch('org_type')}>
+                  <option value="">Select type</option>
+                  {['Business','Sports','Education','Healthcare','Government','NGO','Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                </Input>
+                <FormFeedback>{fieldError('org_type')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                {form.org_type === 'Sports' ? (
+                  <>
+                    <Label>Sport Name</Label>
+                    <Input value={form.sports} onChange={e => set('sports', e.target.value)} placeholder="e.g., Hockey, Boxing" />
+                  </>
+                ) : (
+                  <>
+                    <Label>Industry</Label>
+                    <Input value={form.industry} onChange={e => set('industry', e.target.value)} placeholder="e.g., Agriculture, IT" />
+                  </>
+                )}
+              </Col>
+              <Col md={4}>
+                <Label>Status <span className="text-danger">*</span></Label>
+                <Input type="select" value={form.status} onChange={e => set('status', e.target.value)}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="suspended">Suspended</option>
+                </Input>
+              </Col>
+              <Col md={4}>
+                <Label>Email <span className="text-danger">*</span></Label>
+                <Input type="email" value={form.email} invalid={fieldInvalid('email')}
+                  onChange={e => set('email', e.target.value)} onBlur={() => touch('email')}
+                  placeholder="contact@company.com" />
+                <FormFeedback>{fieldError('email')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Phone <span className="text-danger">*</span></Label>
+                <Input type="tel" value={form.phone} invalid={fieldInvalid('phone')}
+                  onChange={e => set('phone', e.target.value)} onBlur={() => touch('phone')}
+                  placeholder="+91 9876543210" />
+                <FormFeedback>{fieldError('phone')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Website</Label>
+                <Input type="url" value={form.website} onChange={e => set('website', e.target.value)} placeholder="www.company.com" />
+              </Col>
+            </Row>
 
-          {/* Legal & Tax */}
-          <section>
-            <SectionHeader icon={FileText} title="Legal & Tax Information" badge="Section C" />
+            {/* ═ Section B: Address ═ */}
+            <SectionHeader icon="ri-map-pin-line" title="Address Details" badge="Section B" />
+            <Row className="g-3 mb-4">
+              <Col xs={12}>
+                <Label>Street Address <span className="text-danger">*</span></Label>
+                <Input type="textarea" rows={1} value={form.address} invalid={fieldInvalid('address')}
+                  onChange={e => set('address', e.target.value)} onBlur={() => touch('address')}
+                  placeholder="Plot No, Street, Landmark..." />
+                <FormFeedback>{fieldError('address')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>City <span className="text-danger">*</span></Label>
+                <Input value={form.city} invalid={fieldInvalid('city')}
+                  onChange={e => set('city', e.target.value)} onBlur={() => touch('city')} placeholder="e.g., Nagpur" />
+                <FormFeedback>{fieldError('city')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>District</Label>
+                <Input value={form.district} onChange={e => set('district', e.target.value)} placeholder="e.g., Nagpur" />
+              </Col>
+              <Col md={4}>
+                <Label>Taluka</Label>
+                <Input value={form.taluka} onChange={e => set('taluka', e.target.value)} placeholder="e.g., Nagpur" />
+              </Col>
+              <Col md={4}>
+                <Label>Pincode</Label>
+                <Input value={form.pincode} invalid={fieldInvalid('pincode')} maxLength={6}
+                  onChange={e => set('pincode', e.target.value)} onBlur={() => touch('pincode')} placeholder="440001" />
+                <FormFeedback>{fieldError('pincode')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>State <span className="text-danger">*</span></Label>
+                <Input type="select" value={form.state} invalid={fieldInvalid('state')}
+                  onChange={e => set('state', e.target.value)}>
+                  <option value="">Select state</option>
+                  {['Maharashtra','Delhi','Karnataka','Tamil Nadu','Gujarat','Telangana','West Bengal'].map(s => <option key={s} value={s}>{s}</option>)}
+                </Input>
+                <FormFeedback>{fieldError('state')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Country <span className="text-danger">*</span></Label>
+                <Input type="select" value={form.country} onChange={e => set('country', e.target.value)}>
+                  <option value="India">India</option>
+                  <option value="USA">USA</option>
+                  <option value="UK">UK</option>
+                </Input>
+              </Col>
+            </Row>
+
+            {/* ═ Section C: Legal & Tax ═ */}
+            <SectionHeader icon="ri-file-text-line" title="Legal & Tax Information" badge="Section C" />
             {form.country === 'India' && (
-              <div className="mb-4 flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-amber-50 border border-amber-200/60 text-[11px] text-amber-700">
-                <Info size={11} className="shrink-0" /> GST and PAN are recommended for Indian organizations.
-              </div>
+              <Alert color="warning" className="d-flex align-items-center py-2">
+                <i className="ri-information-line me-2"></i>
+                GST and PAN are recommended for Indian organizations.
+              </Alert>
             )}
-            <div className={grid2}>
-              <LabelRightInput label="GST Number" placeholder="27AABCU9603R1ZM" maxLength={15} value={form.gst_number} onChange={setUpper('gst_number')} onBlur={blurKey('gst_number')} error={fieldError('gst_number')} />
-              <LabelRightInput label="PAN Number" placeholder="AABCU9603R" maxLength={10} value={form.pan_number} onChange={setUpper('pan_number')} onBlur={blurKey('pan_number')} error={fieldError('pan_number')} />
-            </div>
-          </section>
+            <Row className="g-3 mb-4">
+              <Col md={6}>
+                <Label>GST Number</Label>
+                <Input value={form.gst_number} invalid={fieldInvalid('gst_number')} maxLength={15}
+                  onChange={e => set('gst_number', e.target.value.toUpperCase())} onBlur={() => touch('gst_number')}
+                  placeholder="27AABCU9603R1ZM" />
+                <FormFeedback>{fieldError('gst_number')}</FormFeedback>
+              </Col>
+              <Col md={6}>
+                <Label>PAN Number</Label>
+                <Input value={form.pan_number} invalid={fieldInvalid('pan_number')} maxLength={10}
+                  onChange={e => set('pan_number', e.target.value.toUpperCase())} onBlur={() => touch('pan_number')}
+                  placeholder="AABCU9603R" />
+                <FormFeedback>{fieldError('pan_number')}</FormFeedback>
+              </Col>
+            </Row>
 
-          {/* Plan & Billing */}
-          <section>
-            <SectionHeader icon={Shield} title="Plan & Billing" badge="Section D" />
-            <div className="mb-4 flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-emerald-50 border border-emerald-200/60 text-[11px] text-emerald-700">
-              <CheckCircle2 size={11} className="shrink-0" /> Client must complete payment after creation to activate.
-            </div>
-            <div className={grid3}>
-              <LabelRightSelect label="Assign Plan" required value={form.plan_id} onChange={selectChange('plan_id')} error={fieldError('plan_id')}>
-                <option value="">Select plan</option>
-                <option value="1">Starter — ₹0/mo</option><option value="2">Basic — ₹1,999/mo</option>
-                <option value="3">Pro — ₹4,999/mo</option><option value="4">Business — ₹9,999/mo</option>
-              </LabelRightSelect>
-              <LabelRightSelect label="Plan Type" required value={form.plan_type} onChange={selectChange('plan_type')} error={fieldError('plan_type')}>
-                <option value="free">Free</option><option value="paid">Paid</option>
-              </LabelRightSelect>
-              <LabelRightInput label="Expires At" type="date" icon={Calendar} value={form.plan_expires_at} onChange={inputChange('plan_expires_at')} />
-            </div>
-          </section>
+            {/* ═ Section D: Plan ═ */}
+            <SectionHeader icon="ri-shield-check-line" title="Plan & Billing" badge="Section D" />
+            <Alert color="success" className="d-flex align-items-center py-2">
+              <i className="ri-checkbox-circle-line me-2"></i>
+              Client must complete payment after creation to activate.
+            </Alert>
+            <Row className="g-3 mb-4">
+              <Col md={4}>
+                <Label>Assign Plan <span className="text-danger">*</span></Label>
+                <Input type="select" value={form.plan_id} invalid={fieldInvalid('plan_id')}
+                  onChange={e => set('plan_id', e.target.value)}>
+                  <option value="">Select plan</option>
+                  <option value="1">Starter — ₹0/mo</option>
+                  <option value="2">Basic — ₹1,999/mo</option>
+                  <option value="3">Pro — ₹4,999/mo</option>
+                  <option value="4">Business — ₹9,999/mo</option>
+                </Input>
+                <FormFeedback>{fieldError('plan_id')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Plan Type <span className="text-danger">*</span></Label>
+                <Input type="select" value={form.plan_type} onChange={e => set('plan_type', e.target.value)}>
+                  <option value="free">Free</option>
+                  <option value="paid">Paid</option>
+                </Input>
+              </Col>
+              <Col md={4}>
+                <Label>Expires At</Label>
+                <Input type="date" value={form.plan_expires_at} onChange={e => set('plan_expires_at', e.target.value)} />
+              </Col>
+            </Row>
 
-          {/* Admin Credentials */}
-          <section>
-            <SectionHeader icon={User} title="Admin Credentials" badge="Section E" />
-            <div className="mb-4 flex items-center gap-2 px-3.5 py-2.5 rounded-lg bg-surface-2 border border-border text-[11px] text-secondary">
-              <Lock size={11} className="shrink-0" /> Creates the first login user (Client Admin) for this organization.
-            </div>
-            <div className={grid3}>
-              <LabelRightInput label="Full Name" required icon={User} placeholder="Rajesh Meshram" value={form.admin_name} onChange={inputChange('admin_name')} onBlur={blurKey('admin_name')} error={fieldError('admin_name')} />
-              <LabelRightInput label="Email" required type="email" icon={Mail} placeholder="admin@company.com" value={form.admin_email} onChange={inputChange('admin_email')} onBlur={blurKey('admin_email')} error={fieldError('admin_email')} />
-              <LabelRightInput label="Phone" required={!isEdit} type="tel" icon={Phone} placeholder="+91 9876543210" value={form.admin_phone} onChange={inputChange('admin_phone')} onBlur={blurKey('admin_phone')} error={fieldError('admin_phone')} />
-              <LabelRightInput label="Designation" icon={Briefcase} placeholder="CEO / Director" value={form.admin_designation} onChange={inputChange('admin_designation')} />
-              <LabelRightInput label={isEdit ? 'New Pwd' : 'Password'} type="password" required={!isEdit} icon={Lock} placeholder={isEdit ? 'Leave blank to keep' : 'Min. 6 characters'} value={form.admin_password} onChange={inputChange('admin_password')} onBlur={blurKey('admin_password')} error={fieldError('admin_password')} helperText={isEdit ? 'Leave blank to keep current' : undefined} />
-              <LabelRightInput label="Confirm Pwd" type="password" required={!isEdit} icon={Lock} placeholder="Re-enter password" value={form.admin_password_confirmation} onChange={inputChange('admin_password_confirmation')} onBlur={blurKey('admin_password_confirmation')} error={fieldError('admin_password_confirmation')} />
-              <LabelRightSelect label="Admin Status" required value={form.admin_status} onChange={selectChange('admin_status')} error={fieldError('admin_status')}>
-                <option value="active">Active</option><option value="inactive">Inactive</option><option value="pending">Pending</option>
-              </LabelRightSelect>
-            </div>
-          </section>
+            {/* ═ Section E: Admin ═ */}
+            <SectionHeader icon="ri-user-line" title="Admin Credentials" badge="Section E" />
+            <Alert color="info" className="d-flex align-items-center py-2">
+              <i className="ri-lock-line me-2"></i>
+              Creates the first login user (Client Admin) for this organization.
+            </Alert>
+            <Row className="g-3 mb-4">
+              <Col md={4}>
+                <Label>Full Name <span className="text-danger">*</span></Label>
+                <Input value={form.admin_name} invalid={fieldInvalid('admin_name')}
+                  onChange={e => set('admin_name', e.target.value)} onBlur={() => touch('admin_name')}
+                  placeholder="Rajesh Meshram" />
+                <FormFeedback>{fieldError('admin_name')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Email <span className="text-danger">*</span></Label>
+                <Input type="email" value={form.admin_email} invalid={fieldInvalid('admin_email')}
+                  onChange={e => set('admin_email', e.target.value)} onBlur={() => touch('admin_email')}
+                  placeholder="admin@company.com" />
+                <FormFeedback>{fieldError('admin_email')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Phone {!isEdit && <span className="text-danger">*</span>}</Label>
+                <Input type="tel" value={form.admin_phone} invalid={fieldInvalid('admin_phone')}
+                  onChange={e => set('admin_phone', e.target.value)} onBlur={() => touch('admin_phone')}
+                  placeholder="+91 9876543210" />
+                <FormFeedback>{fieldError('admin_phone')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Designation</Label>
+                <Input value={form.admin_designation} onChange={e => set('admin_designation', e.target.value)}
+                  placeholder="CEO / Director" />
+              </Col>
+              <Col md={4}>
+                <Label>{isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Label>
+                <Input type="password" value={form.admin_password} invalid={fieldInvalid('admin_password')}
+                  onChange={e => set('admin_password', e.target.value)} onBlur={() => touch('admin_password')}
+                  placeholder={isEdit ? 'Leave blank to keep' : 'Min. 6 characters'} />
+                <FormFeedback>{fieldError('admin_password')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Confirm Password {!isEdit && <span className="text-danger">*</span>}</Label>
+                <Input type="password" value={form.admin_password_confirmation}
+                  invalid={fieldInvalid('admin_password_confirmation')}
+                  onChange={e => set('admin_password_confirmation', e.target.value)}
+                  onBlur={() => touch('admin_password_confirmation')} placeholder="Re-enter password" />
+                <FormFeedback>{fieldError('admin_password_confirmation')}</FormFeedback>
+              </Col>
+              <Col md={4}>
+                <Label>Admin Status <span className="text-danger">*</span></Label>
+                <Input type="select" value={form.admin_status} onChange={e => set('admin_status', e.target.value)}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="pending">Pending</option>
+                </Input>
+              </Col>
+            </Row>
 
-          {/* Branding */}
-          <section>
-            <SectionHeader icon={Palette} title="Branding" badge="Section F" />
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {(['primary_color', 'secondary_color'] as const).map(key => (
-                <div key={key}>
-                  <label className="text-[11px] font-semibold text-text mb-1 block">{key === 'primary_color' ? 'Primary Color' : 'Secondary Color'}</label>
-                  <div className="flex items-center gap-2">
-                    <input type="color" value={form[key]} onChange={inputChange(key)} className="w-10 h-10 rounded-lg border border-border cursor-pointer bg-transparent p-0.5" />
-                    <input type="text" value={form[key]} onChange={inputChange(key)}
-                      className="flex-1 bg-bg font-mono text-[12.5px] text-text rounded-lg border border-border px-3 py-2.5 outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" />
-                    <div className="w-8 h-8 rounded-lg border border-border shadow-sm" style={{ backgroundColor: form[key] }} />
-                  </div>
+            {/* ═ Section F: Branding ═ */}
+            <SectionHeader icon="ri-palette-line" title="Branding" badge="Section F" />
+            <Row className="g-3 mb-4">
+              <Col md={6}>
+                <Label>Primary Color</Label>
+                <div className="d-flex gap-2">
+                  <Input type="color" value={form.primary_color} onChange={e => set('primary_color', e.target.value)} style={{ width: 48, height: 38 }} />
+                  <Input value={form.primary_color} onChange={e => set('primary_color', e.target.value)} className="font-monospace" />
                 </div>
-              ))}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-              <FileUploadField label="Organization Logo" accept="image/jpeg,image/png,image/webp" hint="PNG, JPG — Max 2MB" preview={logoPreview} onFileChange={handleLogoChange} />
-              <FileUploadField label="Favicon" accept="image/x-icon,image/png" hint="PNG, ICO — Max 512KB" preview={faviconPreview} onFileChange={handleFaviconChange} />
-            </div>
-          </section>
+              </Col>
+              <Col md={6}>
+                <Label>Secondary Color</Label>
+                <div className="d-flex gap-2">
+                  <Input type="color" value={form.secondary_color} onChange={e => set('secondary_color', e.target.value)} style={{ width: 48, height: 38 }} />
+                  <Input value={form.secondary_color} onChange={e => set('secondary_color', e.target.value)} className="font-monospace" />
+                </div>
+              </Col>
+              <Col md={6}>
+                <Label>Organization Logo</Label>
+                <div className="d-flex gap-3 align-items-center">
+                  {logoPreview && <img src={logoPreview} alt="logo" className="rounded border" style={{ width: 56, height: 56, objectFit: 'cover' }} />}
+                  <Input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleLogoChange(e.target.files?.[0] || null)} />
+                </div>
+                <small className="text-muted">PNG, JPG — Max 2MB</small>
+              </Col>
+              <Col md={6}>
+                <Label>Favicon</Label>
+                <div className="d-flex gap-3 align-items-center">
+                  {faviconPreview && <img src={faviconPreview} alt="favicon" className="rounded border" style={{ width: 56, height: 56, objectFit: 'cover' }} />}
+                  <Input type="file" accept="image/x-icon,image/png" onChange={e => handleFaviconChange(e.target.files?.[0] || null)} />
+                </div>
+                <small className="text-muted">PNG, ICO — Max 512KB</small>
+              </Col>
+            </Row>
 
-          {/* Notes */}
-          <section>
-            <SectionHeader title="Additional Notes" badge="Section G" />
-            <LabelRightTextarea label="Internal Notes" placeholder="Any internal notes about this client..." value={form.notes} onChange={textareaChange('notes')} rows={2} />
-          </section>
+            {/* ═ Section G: Notes ═ */}
+            <SectionHeader icon="ri-sticky-note-line" title="Additional Notes" badge="Section G" />
+            <Row className="g-3 mb-3">
+              <Col xs={12}>
+                <Label>Internal Notes</Label>
+                <Input type="textarea" rows={2} value={form.notes} onChange={e => set('notes', e.target.value)}
+                  placeholder="Any internal notes about this client..." />
+              </Col>
+            </Row>
 
-          {/* Bottom Actions */}
-          <div className="flex items-center justify-between pt-3 border-t border-border">
-            <Button variant="outline" size="sm" onClick={onBack}>Cancel</Button>
-            <Button size="sm" onClick={handleSubmit} disabled={saving}>
-              {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-              {saving ? 'Saving...' : isEdit ? 'Update Client' : 'Create Client'}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
+            {/* Actions */}
+            <div className="d-flex justify-content-between pt-3 border-top">
+              <Button color="light" type="button" onClick={onBack}>Cancel</Button>
+              <div className="d-flex gap-2">
+                {!isEdit && (
+                  <Button color="light" type="button" onClick={handleReset}>
+                    <i className="ri-restart-line me-1"></i> Reset
+                  </Button>
+                )}
+                <Button color="success" type="submit" disabled={saving}>
+                  {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-save-line me-1"></i>}
+                  {saving ? 'Saving...' : isEdit ? 'Update Client' : 'Create Client'}
+                </Button>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      </Form>
+    </>
   );
 }

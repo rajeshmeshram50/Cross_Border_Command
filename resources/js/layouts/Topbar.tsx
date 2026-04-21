@@ -1,10 +1,12 @@
-import { Menu, Moon, Sun, Bell, Maximize2, Minimize2 } from 'lucide-react';
-import { useState, useCallback, useEffect } from 'react';
+import { Menu, Moon, Sun, Bell, Maximize2, Minimize2, Settings, User as UserIcon, LogOut, ChevronDown, Check, Inbox } from 'lucide-react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import GlobalSearch from '../components/GlobalSearch';
 import Avatar from '../components/ui/Avatar';
 import BranchSwitcher from '../components/BranchSwitcher';
+import ThemeCustomizer from '../components/ThemeCustomizer';
 
 interface Props {
   page: string;
@@ -37,6 +39,9 @@ export default function Topbar({ page, onToggleSidebar, onNavigate }: Props) {
   const { theme, toggle } = useTheme();
   const { user } = useAuth();
   const fs = useFullscreen();
+  const [customizerOpen, setCustomizerOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [userOpen, setUserOpen] = useState(false);
 
   return (
     <header className="h-[50px] bg-surface border-b border-border flex items-center px-4 gap-2 flex-shrink-0 z-40">
@@ -67,22 +72,172 @@ export default function Topbar({ page, onToggleSidebar, onNavigate }: Props) {
       </button>
 
       {/* Theme Toggle */}
-      <button onClick={toggle} className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">
+      <button onClick={toggle} title={theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+        className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">
         {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
       </button>
 
-      {/* Notifications */}
-      <button className="relative w-8 h-8 rounded-md border border-border flex items-center justify-center text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">
+      {/* Theme Customizer */}
+      <button onClick={() => setCustomizerOpen(true)} title="Theme Customizer"
+        className="w-8 h-8 rounded-md border border-border flex items-center justify-center text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all cursor-pointer">
+        <Settings size={14} />
+      </button>
+
+      {/* Notifications (Velzon-style dropdown) */}
+      <NotificationsDropdown open={notifOpen} setOpen={setNotifOpen} />
+
+      {/* User dropdown (Velzon-style with name, role, menu) */}
+      {user && (
+        <UserDropdown
+          open={userOpen}
+          setOpen={setUserOpen}
+          onNavigate={onNavigate}
+        />
+      )}
+
+      <ThemeCustomizer open={customizerOpen} onClose={() => setCustomizerOpen(false)} />
+    </header>
+  );
+}
+
+/* ───────────────────────────────────────────
+   Notifications Dropdown (Velzon pattern)
+   ─────────────────────────────────────────── */
+function NotificationsDropdown({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [tab, setTab] = useState<'all' | 'unread'>('all');
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, setOpen]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        title="Notifications"
+        className={`relative w-8 h-8 rounded-md border flex items-center justify-center transition-all cursor-pointer ${open ? 'border-primary/40 bg-primary/5 text-primary' : 'border-border text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5'}`}
+      >
         <Bell size={14} />
         <span className="absolute top-[7px] right-[7px] w-1.5 h-1.5 rounded-full bg-red-500 border-[1.5px] border-surface" />
       </button>
 
-      {/* Profile */}
-      {user && (
-        <button onClick={() => onNavigate('profile')} className="p-[3px] rounded-md border border-border hover:border-primary/40 transition-colors cursor-pointer">
-          <Avatar initials={user.initials} size="sm" />
-        </button>
+      {open && (
+        <div className="absolute right-0 mt-2 w-[340px] rounded-xl bg-surface border border-border shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-50">
+          {/* Header */}
+          <div className="bg-primary text-white px-4 py-3 flex items-center justify-between">
+            <div>
+              <h5 className="text-[13px] font-bold leading-tight">Notifications</h5>
+              <p className="text-[10.5px] opacity-80 mt-0.5">You have 0 unread messages</p>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex border-b border-border bg-surface-2">
+            <button
+              onClick={() => setTab('all')}
+              className={`flex-1 py-2.5 text-[11.5px] font-semibold uppercase tracking-wide transition-colors cursor-pointer ${tab === 'all' ? 'text-primary border-b-2 border-primary' : 'text-muted hover:text-text'}`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setTab('unread')}
+              className={`flex-1 py-2.5 text-[11.5px] font-semibold uppercase tracking-wide transition-colors cursor-pointer ${tab === 'unread' ? 'text-primary border-b-2 border-primary' : 'text-muted hover:text-text'}`}
+            >
+              Unread
+            </button>
+          </div>
+
+          {/* Empty state */}
+          <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+              <Inbox size={22} className="text-primary" />
+            </div>
+            <h6 className="text-[13px] font-semibold text-text">No new notifications</h6>
+            <p className="text-[11px] text-muted mt-1">You're all caught up.</p>
+          </div>
+        </div>
       )}
-    </header>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────
+   User Dropdown (Velzon pattern)
+   ─────────────────────────────────────────── */
+function UserDropdown({ open, setOpen, onNavigate }: { open: boolean; setOpen: (v: boolean) => void; onNavigate: (id: string) => void }) {
+  const { user, logout } = useAuth();
+  const toast = useToast();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, setOpen]);
+
+  if (!user) return null;
+
+  const roleLabel = user.user_type.replace('_', ' ');
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-2 px-1.5 py-[3px] rounded-md border transition-colors cursor-pointer ${open ? 'border-primary/40 bg-primary/5' : 'border-border hover:border-primary/40'}`}
+      >
+        <Avatar initials={user.initials} size="sm" />
+        <div className="hidden md:flex flex-col items-start leading-tight">
+          <span className="text-[11.5px] font-semibold text-text truncate max-w-[110px]">{user.name}</span>
+          <span className="text-[9.5px] text-muted uppercase tracking-wide">{roleLabel}</span>
+        </div>
+        <ChevronDown size={12} className={`text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-[220px] rounded-xl bg-surface border border-border shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-50">
+          {/* Header */}
+          <div className="px-4 py-3 border-b border-border bg-surface-2">
+            <p className="text-[10px] text-muted uppercase tracking-wide">Welcome!</p>
+            <p className="text-[13px] font-bold text-text truncate mt-0.5">{user.name}</p>
+            <p className="text-[10.5px] text-primary font-semibold uppercase tracking-wide mt-0.5">{roleLabel}</p>
+          </div>
+
+          {/* Menu */}
+          <div className="py-1">
+            <DropdownItem icon={<UserIcon size={14} />} label="Profile" onClick={() => { setOpen(false); onNavigate('profile'); }} />
+            <DropdownItem icon={<Check size={14} />} label="My Plan" onClick={() => { setOpen(false); onNavigate('my-plan'); }} />
+            <DropdownItem icon={<Settings size={14} />} label="Settings" onClick={() => { setOpen(false); onNavigate('settings'); }} />
+            <div className="h-px bg-border my-1" />
+            <DropdownItem
+              icon={<LogOut size={14} />}
+              label="Logout"
+              danger
+              onClick={() => { setOpen(false); toast.info('Logged Out', 'You have been signed out'); logout(); }}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DropdownItem({ icon, label, onClick, danger }: { icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2.5 px-4 py-2 text-[12px] font-medium transition-colors cursor-pointer ${danger ? 'text-red-500 hover:bg-red-500/10' : 'text-text hover:bg-primary/5 hover:text-primary'}`}
+    >
+      <span className="opacity-70">{icon}</span>
+      <span>{label}</span>
+    </button>
   );
 }

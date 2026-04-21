@@ -1,12 +1,15 @@
 import { useState, createContext, useContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { Provider as ReduxProvider } from 'react-redux';
+import velzonStore from '../velzon/store';
 import { ThemeProvider } from '../contexts/ThemeContext';
+import { VariantProvider } from '../contexts/VariantContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import SplashLoader from './ui/SplashLoader';
 import { ToastProvider } from '../contexts/ToastContext';
 import { LayoutProvider } from '../contexts/LayoutContext';
 import { BranchSwitcherProvider } from '../contexts/BranchSwitcherContext';
-import AppLayout from '../layouts/AppLayout';
+import VelzonShell from '../velzon/VelzonShell';
 import Login from '../pages/Login';
 import ForgotPassword from '../pages/ForgotPassword';
 import VerifyOTP from '../pages/VerifyOTP';
@@ -211,7 +214,7 @@ function DashboardRoutes({ user }: { user: any }) {
     <NavigateContext.Provider value={navigateContextValue}>
       <LayoutProvider>
         <BranchSwitcherProvider>
-          <AppLayout onNavigate={navigateFn}>
+          <VelzonShell>
             <Routes>
               <Route path="/dashboard" element={<DefaultDashboard />} />
               <Route path="/clients" element={<Clients onNavigate={navigateFn} />} />
@@ -255,7 +258,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/profile" element={<Profile />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
-          </AppLayout>
+          </VelzonShell>
         </BranchSwitcherProvider>
       </LayoutProvider>
     </NavigateContext.Provider>
@@ -278,14 +281,18 @@ function Router() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <AuthProvider>
-          <BrowserRouter>
-            <Router />
-          </BrowserRouter>
-        </AuthProvider>
-      </ToastProvider>
-    </ThemeProvider>
+    <ReduxProvider store={velzonStore}>
+      <ThemeProvider>
+        <VariantProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <BrowserRouter>
+                <Router />
+              </BrowserRouter>
+            </AuthProvider>
+          </ToastProvider>
+        </VariantProvider>
+      </ThemeProvider>
+    </ReduxProvider>
   );
 }
