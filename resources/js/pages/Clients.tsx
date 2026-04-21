@@ -161,7 +161,7 @@ export default function Clients({ onNavigate }: Props) {
     <div className="d-flex gap-2">
       {/* View - Primary (Blue) */}
       <button
-        className="btn btn-outline-primary btn-icon btn-sm border-0"
+        className="btn  btn-icon btn-md border-0"
         title="View"
         onClick={() => onNavigate('client-view', { clientId: info.row.original.id })}
       >
@@ -170,7 +170,7 @@ export default function Clients({ onNavigate }: Props) {
 
       {/* Edit - Warning (Orange/Yellow) */}
       <button
-        className="btn btn-outline-warning btn-icon btn-sm border-0"
+        className="btn btn-icon btn-md border-0"
         title="Edit"
         onClick={() => onNavigate('client-form', { editId: info.row.original.id })}
       >
@@ -179,7 +179,7 @@ export default function Clients({ onNavigate }: Props) {
 
       {/* Delete - Danger (Red) */}
       <button
-        className="btn btn-outline-danger btn-icon btn-sm border-0"
+        className="btn  btn-icon btn-md border-0"
         title="Delete"
         disabled={deleting === info.row.original.id}
         onClick={() => handleDeleteClick(info.row.original)}
@@ -189,7 +189,7 @@ export default function Clients({ onNavigate }: Props) {
 
       {/* Branches - Info (Cyan) */}
       <button
-        className="btn btn-outline-info btn-icon btn-sm border-0"
+        className="btn  btn-icon btn-md border-0"
         title="Branches"
         onClick={() => onNavigate('client-branches', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
       >
@@ -198,16 +198,16 @@ export default function Clients({ onNavigate }: Props) {
 
       {/* Permissions - Secondary (Gray) with custom purple tint? Use purple variant if available */}
       <button
-        className="btn btn-outline-secondary btn-icon btn-sm border-0"
+        className="btn btn-icon btn-md border-0"
         title="Permissions"
         onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
       >
-        <i className="ri-shield-check-line" style={{ color: '#9b72cf' }}></i>
+        <i className="ri-shield-check-line" ></i>
       </button>
 
       {/* Payments - Success (Green) */}
       <button
-        className="btn btn-outline-success btn-icon btn-sm border-0"
+        className="btn  btn-icon btn-md border-0"
         title="Payments"
         onClick={() => onNavigate('client-payments', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
       >
@@ -216,7 +216,7 @@ export default function Clients({ onNavigate }: Props) {
 
       {/* Settings - Dark (Black/Dark Gray) */}
       <button
-        className="btn btn-outline-dark btn-icon btn-sm border-0"
+        className="btn btn-icon btn-md border-0"
         title="Settings"
         onClick={() => onNavigate('client-settings', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
       >
@@ -256,7 +256,7 @@ export default function Clients({ onNavigate }: Props) {
                       {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
                       {exporting ? 'Exporting...' : 'Export'}
                     </Button>
-                    <Button color="success" onClick={() => onNavigate('client-form')}>
+                    <Button style={{ backgroundColor: '#5c6882', borderColor: '#5c6882' }} onClick={() => onNavigate('client-form')}>
                       <i className="ri-add-line align-bottom me-1"></i> Add Client
                     </Button>
                   </div>
