@@ -211,7 +211,7 @@ export default function Clients({ onNavigate }: Props) {
         title="Payments"
         onClick={() => onNavigate('client-payments', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
       >
-        <i className="ri-money-rupee-circle-line"></i>
+        <i className="ri-bank-card-line"></i>
       </button>
 
       {/* Settings - Dark (Black/Dark Gray) */}
