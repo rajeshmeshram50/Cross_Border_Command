@@ -2,9 +2,9 @@ import React, { useEffect } from "react";
 import { Link } from "react-router-dom";
 import SimpleBar from "simplebar-react";
 //import logo
-import logoSm from "../assets/images/logo-sm.png";
+import logoSm from "../assets/images/chotu-logo.png";
 import logoDark from "../assets/images/logo-dark.png";
-import logoLight from "../assets/images/logo-light.png";
+import logoLight from "../assets/images/igc-logo.png";
 
 //Import Components
 import VerticalLayout from "./VerticalLayouts";
@@ -39,20 +39,20 @@ const Sidebar = ({ layoutType } : any) => {
       <div className="app-menu navbar-menu">
         <div className="navbar-brand-box">
           <Link to="/" className="logo logo-dark">
-            <span className="logo-sm">
-              <img src={logoSm} alt="" height="22" />
+            <span className="logo-sm mb-2">
+              <img src={logoSm} alt="" style={{ height: '35px', width: 'auto' }} />
             </span>
             <span className="logo-lg">
-              <img src={logoDark} alt="" height="17" />
+              <img src={logoDark} alt="" style={{ height: '30px', width: 'auto' }} />
             </span>
           </Link>
 
           <Link to="/" className="logo logo-light">
-            <span className="logo-sm">
-              <img src={logoSm} alt="" height="22" />
+            <span className="logo-sm ">
+              <img src={logoSm} alt="" style={{ height: '53px', width: 'auto' }} />
             </span>
             <span className="logo-lg">
-              <img src={logoLight} alt="" height="17" />
+              <img src={logoLight} alt="" style={{ height: '55px', width: 'auto' }} />
             </span>
           </Link>
           <button

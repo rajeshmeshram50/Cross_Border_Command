@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import { Dropdown, DropdownMenu, DropdownToggle, Form } from 'reactstrap';
 
 //import images
-import logoSm from "../assets/images/logo-sm.png";
-import logoDark from "../assets/images/logo-dark.png";
-import logoLight from "../assets/images/logo-light.png";
+import logoSm from "../assets/images/chotu-logo.png";
+import logoDark from "../assets/images/igc-logo.png";
+import logoLight from "../assets/images/igc-logo.png";
 
 //import Components
 import SearchOption from '../Components/Common/SearchOption';
@@ -78,24 +78,24 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                     <div className="navbar-header">
                         <div className="d-flex">
 
-                            <div className="navbar-brand-box horizontal-logo">
+                            <div className="navbar-brand-box horizontal-logo align-self-center">
                                 <Link to="/" className="logo logo-dark">
                                     <span className="logo-sm">
-                                        <img src={logoSm} alt="" height="22" />
+                                        <img src={logoSm} alt="" style={{ height: '50px', width: 'auto' }} />
                                     </span>
                                     <span className="logo-lg">
-                                        <img src={logoDark} alt="" height="17" />
+                                        <img src={logoDark} alt="" style={{ height: '50px', width: 'auto' }} />
                                     </span>
                                 </Link>
 
                                 <Link to="/" className="logo logo-light">
                                     <span className="logo-sm">
-                                        <img src={logoSm} alt="" height="22" />
+                                        <img src={logoSm} alt="" style={{ height: '50px', width: 'auto' }} />
                                     </span>
                                     <span className="logo-lg">
-                                        <img src={logoLight} alt="" height="17" />
+                                        <img src={logoLight} alt="" style={{ height: '50px', width: 'auto' }} />
                                     </span>
-                                </Link>
+                                </Link> 
                             </div>
 
                             <button
