@@ -158,7 +158,7 @@ const TableContainer = ({
           <form>
             <Row>
               <Col sm={5}>
-                <div className="search-box me-2 mb-2 d-inline-block col-12">
+                <div className="search-box me-2 mb-2 d-inline-block col-12 border border-dashed border-end-2 border-start-3 rounded border-radius-2 ">
                   <DebouncedInput
                     value={globalFilter ?? ''}
                     onChange={value => setGlobalFilter(String(value))}
@@ -193,11 +193,6 @@ const TableContainer = ({
                           desc: ' ',
                         }
                         [header.column.getIsSorted() as string] ?? null}
-                        {header.column.getCanFilter() ? (
-                          <div>
-                            <Filter column={header.column} table={table} />
-                          </div>
-                        ) : null}
                       </React.Fragment>
                     )}
                   </th>

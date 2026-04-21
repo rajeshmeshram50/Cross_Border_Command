@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Spinner } from 'reactstrap';
+import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Spinner } from 'reactstrap';
+import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
@@ -94,9 +95,140 @@ export default function Clients({ onNavigate }: Props) {
     }
   };
 
+  // Table columns for TableContainer
+  const columns = [
+    {
+      header: '#',
+      accessorKey: 'index',
+      cell: (info: any) => (page - 1) * 15 + info.row.index + 1,
+    },
+    {
+      header: 'Organization',
+      accessorKey: 'org_name',
+      cell: (info: any) => (
+        <div className="d-flex align-items-center gap-2">
+          <div className="avatar-xs rounded-circle d-flex align-items-center justify-content-center text-white fw-bold" style={{ backgroundColor: AVATAR_COLORS[info.row.index % AVATAR_COLORS.length], fontSize: 11 }}>
+            {info.row.original.org_name.charAt(0)}{info.row.original.org_name.split(' ')[1]?.charAt(0) || ''}
+          </div>
+          <span className="fw-semibold text-dark">{info.row.original.org_name}</span>
+        </div>
+      ),
+    },
+    {
+      header: 'Unique ID',
+      accessorKey: 'unique_number',
+      cell: (info: any) => <span className="fw-medium text-primary font-monospace">{info.row.original.unique_number}</span>,
+    },
+    {
+      header: 'Contact',
+      accessorKey: 'email',
+      cell: (info: any) => (
+        <>
+          <div>{info.row.original.email}</div>
+          {info.row.original.phone && <div className="text-muted fs-12">{info.row.original.phone}</div>}
+        </>
+      ),
+    },
+    {
+      header: 'Type',
+      accessorKey: 'org_type',
+      cell: (info: any) => <span className="text-uppercase text-muted small">{info.row.original.org_type}</span>,
+    },
+    {
+      header: 'Branches',
+      accessorKey: 'branches_count',
+      cell: (info: any) => <span className="text-dark">{info.row.original.branches_count ?? 0}</span>,
+    },
+    {
+      header: 'Plan',
+      accessorKey: 'plan',
+      cell: (info: any) => (
+        <>
+          <span className="text-dark fw-semibold">{info.row.original.plan?.name || 'Free'}</span>
+          {info.row.original.plan && info.row.original.plan.price > 0 && <span className="text-success fw-semibold ms-2 fs-12">₹{info.row.original.plan.price.toLocaleString()}/yr</span>}
+        </>
+      ),
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      cell: (info: any) => <Badge color={info.row.original.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">{info.row.original.status}</Badge>,
+    },
+ {
+  header: 'Actions',
+  id: 'actions',
+  cell: (info: any) => (
+    <div className="d-flex gap-2">
+      {/* View - Primary (Blue) */}
+      <button
+        className="btn btn-outline-primary btn-icon btn-sm border-0"
+        title="View"
+        onClick={() => onNavigate('client-view', { clientId: info.row.original.id })}
+      >
+        <i className="ri-eye-line"></i>
+      </button>
+
+      {/* Edit - Warning (Orange/Yellow) */}
+      <button
+        className="btn btn-outline-warning btn-icon btn-sm border-0"
+        title="Edit"
+        onClick={() => onNavigate('client-form', { editId: info.row.original.id })}
+      >
+        <i className="ri-pencil-line"></i>
+      </button>
+
+      {/* Delete - Danger (Red) */}
+      <button
+        className="btn btn-outline-danger btn-icon btn-sm border-0"
+        title="Delete"
+        disabled={deleting === info.row.original.id}
+        onClick={() => handleDeleteClick(info.row.original)}
+      >
+        <i className="ri-delete-bin-line"></i>
+      </button>
+
+      {/* Branches - Info (Cyan) */}
+      <button
+        className="btn btn-outline-info btn-icon btn-sm border-0"
+        title="Branches"
+        onClick={() => onNavigate('client-branches', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
+      >
+        <i className="ri-git-branch-line"></i>
+      </button>
+
+      {/* Permissions - Secondary (Gray) with custom purple tint? Use purple variant if available */}
+      <button
+        className="btn btn-outline-secondary btn-icon btn-sm border-0"
+        title="Permissions"
+        onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
+      >
+        <i className="ri-shield-check-line" style={{ color: '#9b72cf' }}></i>
+      </button>
+
+      {/* Payments - Success (Green) */}
+      <button
+        className="btn btn-outline-success btn-icon btn-sm border-0"
+        title="Payments"
+        onClick={() => onNavigate('client-payments', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
+      >
+        <i className="ri-money-rupee-circle-line"></i>
+      </button>
+
+      {/* Settings - Dark (Black/Dark Gray) */}
+      <button
+        className="btn btn-outline-dark btn-icon btn-sm border-0"
+        title="Settings"
+        onClick={() => onNavigate('client-settings', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
+      >
+        <i className="ri-settings-3-line"></i>
+      </button>
+    </div>
+  ),
+}
+  ];
+
   return (
     <>
-      {/* Page title */}
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -110,7 +242,6 @@ export default function Clients({ onNavigate }: Props) {
           </div>
         </Col>
       </Row>
-
       <Row>
         <Col xs={12}>
           <Card>
@@ -132,128 +263,23 @@ export default function Clients({ onNavigate }: Props) {
                 </div>
               </Row>
             </CardHeader>
-
-            <CardBody className="border border-dashed border-end-0 border-start-0 py-3">
-              <Row>
-                <Col md={4}>
-                  <div className="search-box me-2 mb-0 d-inline-block w-100">
-                    <Input type="text" className="form-control search" placeholder="Search by name or ID..."
-                      value={searchInput} onChange={e => setSearchInput(e.target.value)} />
-                    <i className="ri-search-line search-icon"></i>
-                  </div>
-                </Col>
-                <Col md={8} className="text-md-end text-muted fs-13">
-                  {loading ? 'Loading...' : `${clients.length} of ${total} results`}
-                </Col>
-              </Row>
-            </CardBody>
-
             <CardBody>
-              <div className="table-responsive table-card">
-                <table className="table align-middle table-nowrap mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th>#</th>
-                      <th>Organization</th>
-                      <th>Unique ID</th>
-                      <th>Contact</th>
-                      <th>Type</th>
-                      <th>Branches</th>
-                      <th>Plan</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr><td colSpan={9} className="text-center py-5"><Spinner color="primary" /></td></tr>
-                    ) : clients.length === 0 ? (
-                      <tr><td colSpan={9} className="text-center text-muted py-5">No clients found</td></tr>
-                    ) : clients.map((c, i) => (
-                      <tr key={c.id}>
-                        <td>{(page - 1) * 15 + i + 1}</td>
-                        <td>
-                          <div className="d-flex align-items-center gap-2">
-                            <div className="avatar-xs rounded-circle d-flex align-items-center justify-content-center text-white fw-bold" style={{ backgroundColor: AVATAR_COLORS[i % AVATAR_COLORS.length], fontSize: 11 }}>
-                              {c.org_name.charAt(0)}{c.org_name.split(' ')[1]?.charAt(0) || ''}
-                            </div>
-                            <div className="fw-semibold">{c.org_name}</div>
-                          </div>
-                        </td>
-                        <td><span className="fw-medium text-primary font-monospace">{c.unique_number}</span></td>
-                        <td>
-                          <div>{c.email}</div>
-                          {c.phone && <div className="text-muted fs-12">{c.phone}</div>}
-                        </td>
-                        <td><Badge color="info-subtle" className="text-info text-uppercase">{c.org_type}</Badge></td>
-                        <td>
-                          <Badge color="warning" pill>{c.branches_count ?? 0}</Badge>
-                        </td>
-                        <td>
-                          <Badge color="primary-subtle" className="text-primary">{c.plan?.name || 'Free'}</Badge>
-                          {c.plan && c.plan.price > 0 && <span className="text-success fw-semibold ms-2 fs-12">₹{c.plan.price.toLocaleString()}/yr</span>}
-                        </td>
-                        <td><Badge color={c.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">{c.status}</Badge></td>
-                        <td>
-                          <div className="d-flex gap-1">
-                            <button className="btn btn-sm btn-soft-success" title="View" onClick={() => onNavigate('client-view', { clientId: c.id })}>
-                              <i className="ri-eye-fill"></i>
-                            </button>
-                            <button className="btn btn-sm btn-soft-primary" title="Edit" onClick={() => onNavigate('client-form', { editId: c.id })}>
-                              <i className="ri-pencil-fill"></i>
-                            </button>
-                            <button className="btn btn-sm btn-soft-danger" title="Delete" disabled={deleting === c.id} onClick={() => handleDeleteClick(c)}>
-                              <i className="ri-delete-bin-5-fill"></i>
-                            </button>
-                            <button className="btn btn-sm btn-soft-info" title="Branches" onClick={() => onNavigate('client-branches', { clientId: c.id, clientName: c.org_name })}>
-                              <i className="ri-git-branch-line"></i>
-                            </button>
-                            <button className="btn btn-sm btn-soft-warning" title="Permissions" onClick={() => onNavigate('client-permissions', { clientId: c.id, clientName: c.org_name })}>
-                              <i className="ri-shield-check-line"></i>
-                            </button>
-                            <button className="btn btn-sm btn-soft-success" title="Payments" onClick={() => onNavigate('client-payments', { clientId: c.id, clientName: c.org_name })}>
-                              <i className="ri-money-rupee-circle-line"></i>
-                            </button>
-                            <button className="btn btn-sm btn-soft-secondary" title="Settings" onClick={() => onNavigate('client-settings', { clientId: c.id, clientName: c.org_name })}>
-                              <i className="ri-settings-3-line"></i>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {totalPages > 1 && (
-                <div className="d-flex justify-content-between align-items-center mt-3">
-                  <span className="text-muted fs-13">Showing {clients.length} of {total} entries</span>
-                  <nav>
-                    <ul className="pagination pagination-sm mb-0">
-                      <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
-                        <button className="page-link" onClick={() => setPage(p => Math.max(1, p - 1))}>
-                          <i className="ri-arrow-left-s-line"></i>
-                        </button>
-                      </li>
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                        <li key={n} className={`page-item ${n === page ? 'active' : ''}`}>
-                          <button className="page-link" onClick={() => setPage(n)}>{n}</button>
-                        </li>
-                      ))}
-                      <li className={`page-item ${page === totalPages ? 'disabled' : ''}`}>
-                        <button className="page-link" onClick={() => setPage(p => Math.min(totalPages, p + 1))}>
-                          <i className="ri-arrow-right-s-line"></i>
-                        </button>
-                      </li>
-                    </ul>
-                  </nav>
-                </div>
-              )}
+              <TableContainer
+                columns={columns}
+                data={clients}
+                isGlobalFilter={true}
+                customPageSize={15}
+                tableClass="align-middle table-nowrap mb-0"
+                theadClass="table-light"
+                divClass="table-responsive table-card border rounded"
+                SearchPlaceholder="Search by name or ID..."
+              />
+              {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
+              {!loading && clients.length === 0 && <div className="text-center text-muted py-5">No clients found</div>}
             </CardBody>
           </Card>
         </Col>
       </Row>
-
       <DeleteConfirmModal
         open={deleteOpen}
         clientName={selectedClient?.org_name}
