@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Card, CardBody, Col, Row, Badge, Button, Spinner } from 'reactstrap';
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { Navigation, Pagination } from 'swiper/modules';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
 import Swal from 'sweetalert2';
+import 'swiper/css';
+import 'swiper/css/navigation';
+import 'swiper/css/pagination';
 
 interface Plan {
   id: number; name: string; slug: string; price: number; period: string;
@@ -85,10 +90,23 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
           </CardBody>
         </Card>
       ) : (
-        <Row>
+        <Swiper
+          modules={[Navigation, Pagination]}
+          slidesPerView={4}
+          spaceBetween={24}
+          navigation
+          pagination={{ clickable: true }}
+          breakpoints={{
+            0:    { slidesPerView: 1, spaceBetween: 16 },
+            576:  { slidesPerView: 2, spaceBetween: 16 },
+            992:  { slidesPerView: 3, spaceBetween: 20 },
+            1200: { slidesPerView: 4, spaceBetween: 24 },
+          }}
+          className="pb-5"
+        >
           {plans.map(p => (
-            <Col xl={3} lg={4} md={6} key={p.id}>
-              <Card className={`pricing-box ${p.is_featured ? 'ribbon-box right' : ''}`} style={p.is_featured ? { border: '2px solid var(--vz-primary)' } : {}}>
+            <SwiperSlide key={p.id}>
+              <Card className={`pricing-box h-100 ${p.is_featured ? 'ribbon-box right' : ''}`} style={p.is_featured ? { border: '2px solid var(--vz-primary)' } : {}}>
                 {p.is_featured && (
                   <div className="ribbon-two ribbon-two-primary">
                     <span>{p.badge || 'Popular'}</span>
@@ -111,13 +129,11 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                     {p.price <= 0 ? (
                       <h1 className="month fw-bold text-primary mb-0">Free</h1>
                     ) : (
-                      <>
-                        <h1 className="month fw-bold mb-0">
-                          <small className="fs-5 text-muted">₹</small>
-                          {p.price.toLocaleString()}
-                          <small className="fs-13 text-muted fw-normal">{periodLabel[p.period] || '/' + p.period}</small>
-                        </h1>
-                      </>
+                      <h1 className="month fw-bold mb-0">
+                        <small className="fs-5 text-muted">₹</small>
+                        {p.price.toLocaleString()}
+                        <small className="fs-13 text-muted fw-normal">{periodLabel[p.period] || '/' + p.period}</small>
+                      </h1>
                     )}
                     {p.best_for && <p className="text-muted fs-13 mt-2 mb-0">{p.best_for}</p>}
                   </div>
@@ -193,9 +209,9 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                   </div>
                 </CardBody>
               </Card>
-            </Col>
+            </SwiperSlide>
           ))}
-        </Row>
+        </Swiper>
       )}
     </>
   );

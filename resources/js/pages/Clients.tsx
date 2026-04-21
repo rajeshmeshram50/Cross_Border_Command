@@ -251,15 +251,20 @@ export default function Clients({ onNavigate }: Props) {
                   <h5 className="card-title mb-0">All Clients <span className="badge bg-primary-subtle text-primary ms-1">{total}</span></h5>
                 </div>
                 <div className="col-sm-auto">
-                  <div className="d-flex gap-2 flex-wrap">
-                    <Button color="light" onClick={handleExport} disabled={exporting}>
-                      {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
-                      {exporting ? 'Exporting...' : 'Export'}
-                    </Button>
-                    <Button style={{ backgroundColor: '#5c6882', borderColor: '#5c6882' }} onClick={() => onNavigate('client-form')}>
-                      <i className="ri-add-line align-bottom me-1"></i> Add Client
-                    </Button>
-                  </div>
+                 <div className="d-flex gap-2 flex-wrap">
+  <Button color="light" onClick={handleExport} disabled={exporting}>
+    {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
+    {exporting ? 'Exporting...' : 'Export'}
+  </Button>
+  <Button
+    color="primary"
+    className="btn-label waves-effect waves-light rounded-pill"
+    onClick={() => onNavigate('client-form')}
+  >
+    <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+    Add Client
+  </Button>
+</div>
                 </div>
               </Row>
             </CardHeader>
