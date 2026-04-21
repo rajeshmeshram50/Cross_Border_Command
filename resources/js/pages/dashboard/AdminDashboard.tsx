@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, CardBody, CardHeader, Col, Row, Badge } from 'reactstrap';
+import { Card, CardBody, Col, Row, Badge } from 'reactstrap';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -52,10 +52,10 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
 const ChartTooltip = ({ active, payload, label, prefix = '' }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border rounded px-3 py-2 shadow-sm" style={{ fontSize: 11 }}>
-      <div className="fw-bold text-dark mb-1">{label}</div>
+    <div style={{ background: '#1e2a3a', borderRadius: 10, padding: '8px 14px', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: 'none', fontSize: 12 }}>
+      <div style={{ color: '#a8b8c8', fontWeight: 600, marginBottom: 4, fontSize: 11 }}>{label}</div>
       {payload.map((p: any, i: number) => (
-        <div key={i} className="text-muted fw-semibold">
+        <div key={i} style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>
           {prefix}{typeof p.value === 'number' ? p.value.toLocaleString() : p.value}
         </div>
       ))}
@@ -67,43 +67,71 @@ interface KpiProps {
   label: string;
   value: React.ReactNode;
   iconClass: string;
-  iconBg: string;
+  color: string;
+  gradient: string;
   changeText?: string;
   trend?: 'up' | 'down' | 'neutral';
   change?: string;
 }
 
-function KpiCard({ label, value, iconClass, iconBg, changeText, trend = 'neutral', change }: KpiProps) {
-  const trendColor = trend === 'up' ? 'text-success' : trend === 'down' ? 'text-danger' : 'text-muted';
-  const arrow = trend === 'up' ? 'ri-arrow-right-up-line' : trend === 'down' ? 'ri-arrow-right-down-line' : 'ri-arrow-right-line';
+function KpiCard({ label, value, iconClass, color, gradient, changeText, trend = 'neutral', change }: KpiProps) {
+  const trendColor = trend === 'up' ? '#0ab39c' : trend === 'down' ? '#f06548' : '#878a99';
+  const arrow = trend === 'up' ? 'ri-arrow-up-line' : trend === 'down' ? 'ri-arrow-down-line' : 'ri-subtract-line';
   return (
-    <Card className="card-animate">
-      <CardBody>
-        <div className="d-flex align-items-center">
-          <div className="flex-grow-1">
-            <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">{label}</p>
-          </div>
+    <div style={{
+      background: '#fff',
+      borderRadius: 16,
+      padding: '20px 20px 16px',
+      boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+      border: '1px solid #f0f3f8',
+      position: 'relative',
+      overflow: 'hidden',
+      height: '100%',
+    }}>
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+        background: gradient,
+      }} />
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: '#878a99', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
+          <h3 style={{ fontSize: 28, fontWeight: 800, color: '#1e2a3a', margin: 0, lineHeight: 1 }}>{value}</h3>
+          {(change || changeText) && (
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: trendColor + '18', color: trendColor, borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
+                <i className={arrow} style={{ fontSize: 11 }}></i> {change}
+              </span>
+              {changeText && <span style={{ fontSize: 11, color: '#a0aec0' }}>{changeText}</span>}
+            </div>
+          )}
         </div>
-        <div className="d-flex align-items-end justify-content-between mt-4">
-          <div>
-            <h4 className="fs-22 fw-semibold ff-secondary mb-0"><span className="counter-value">{value}</span></h4>
-            {(change || changeText) && (
-              <p className="mb-0 text-muted mt-2">
-                {change && <span className={`badge bg-light ${trendColor} mb-0 me-1`}><i className={`${arrow} align-middle`}></i> {change}</span>}
-                {changeText && <span className="fs-12">{changeText}</span>}
-              </p>
-            )}
-          </div>
-          <div className="avatar-sm flex-shrink-0">
-            <span className="avatar-title rounded fs-3" style={{ backgroundColor: iconBg + '29', color: iconBg }}>
-              <i className={iconClass}></i>
-            </span>
-          </div>
+        <div style={{
+          width: 46, height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: gradient, flexShrink: 0,
+        }}>
+          <i className={iconClass} style={{ fontSize: 20, color: '#fff' }}></i>
         </div>
-      </CardBody>
-    </Card>
+      </div>
+    </div>
   );
 }
+
+const cardStyle: React.CSSProperties = {
+  borderRadius: 16,
+  border: '1px solid #f0f3f8',
+  boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+  overflow: 'hidden',
+  marginBottom: 0,
+};
+
+const cardHeaderStyle: React.CSSProperties = {
+  background: '#fff',
+  borderBottom: '1px solid #f0f3f8',
+  padding: '16px 20px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+};
 
 export default function AdminDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -125,113 +153,164 @@ export default function AdminDashboard() {
 
   return (
     <>
-      {/* Page title */}
-      <Row>
+      {/* Page Title */}
+      <Row className="mb-2">
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Dashboard</h4>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Velzon</a></li>
-                <li className="breadcrumb-item active">Dashboard</li>
-              </ol>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px' }}>
+            <div>
+              <h4 style={{ fontWeight: 800, fontSize: 20, color: '#1e2a3a', margin: 0 }}>Dashboard</h4>
+              <p style={{ margin: 0, fontSize: 12, color: '#a0aec0', marginTop: 2 }}>Welcome back! Here's what's happening today.</p>
             </div>
+            <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
+              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>Velzon</a></li>
+              <li className="breadcrumb-item active">Dashboard</li>
+            </ol>
           </div>
         </Col>
       </Row>
 
-      {/* KPI row */}
-      <Row>
-        <Col xl={2} md={4}>
+      {/* KPI Cards */}
+      <Row className="g-3 mb-3">
+        <Col xl={2} md={4} xs={6}>
           <KpiCard label="Total Clients" value={<AnimatedNumber value={counts.total_clients} />}
-            iconClass="ri-building-line" iconBg="#405189" trend="up" change="+12%" changeText="vs last month" />
+            iconClass="ri-building-line" color="#405189" gradient="linear-gradient(135deg,#405189,#6691e7)"
+            trend="up" change="+12%" changeText="vs last month" />
         </Col>
-        <Col xl={2} md={4}>
+        <Col xl={2} md={4} xs={6}>
           <KpiCard label="Active Clients" value={<AnimatedNumber value={counts.active_clients} />}
-            iconClass="ri-checkbox-circle-line" iconBg="#0ab39c" trend="up" change={`${activeRate}%`} changeText="active rate" />
+            iconClass="ri-checkbox-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
+            trend="up" change={`${activeRate}%`} changeText="active rate" />
         </Col>
-        <Col xl={2} md={4}>
+        <Col xl={2} md={4} xs={6}>
           <KpiCard label="Total Users" value={<AnimatedNumber value={counts.total_users} />}
-            iconClass="ri-user-3-line" iconBg="#299cdb" trend="up" change="+8%" changeText="vs last month" />
+            iconClass="ri-user-3-line" color="#299cdb" gradient="linear-gradient(135deg,#299cdb,#50c3e6)"
+            trend="up" change="+8%" changeText="vs last month" />
         </Col>
-        <Col xl={2} md={4}>
+        <Col xl={2} md={4} xs={6}>
           <KpiCard label="Branches" value={<AnimatedNumber value={counts.total_branches} />}
-            iconClass="ri-git-branch-line" iconBg="#f7b84b" trend="up" change="+5%" changeText="vs last month" />
+            iconClass="ri-git-branch-line" color="#f7b84b" gradient="linear-gradient(135deg,#f7b84b,#f1963b)"
+            trend="up" change="+5%" changeText="vs last month" />
         </Col>
-        <Col xl={2} md={4}>
+        <Col xl={2} md={4} xs={6}>
           <KpiCard label="Revenue" value={<>₹<AnimatedNumber value={Math.round(revenue.total / 1000)} suffix="K" /></>}
-            iconClass="ri-money-rupee-circle-line" iconBg="#0ab39c" trend="up" change="+24%" changeText="vs last period" />
+            iconClass="ri-money-rupee-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0ab39c,#405189)"
+            trend="up" change="+24%" changeText="vs last period" />
         </Col>
-        <Col xl={2} md={4}>
+        <Col xl={2} md={4} xs={6}>
           <KpiCard label="Payments" value={<AnimatedNumber value={counts.total_payments} />}
-            iconClass="ri-bank-card-line" iconBg="#9b72cf" trend={successRate > 80 ? 'up' : 'down'}
-            change={`${successRate}%`} changeText="success rate" />
+            iconClass="ri-bank-card-line" color="#9b72cf" gradient="linear-gradient(135deg,#9b72cf,#865ce2)"
+            trend={successRate > 80 ? 'up' : 'down'} change={`${successRate}%`} changeText="success rate" />
         </Col>
       </Row>
 
-      {/* Revenue Analytics + Plan Distribution */}
-      <Row>
+      {/* Revenue + Plan Distribution */}
+      <Row className="g-3 mb-3">
         <Col xl={8}>
-          <Card>
-            <CardHeader className="align-items-center d-flex">
-              <h4 className="card-title mb-0 flex-grow-1">Revenue Analytics</h4>
-              <div className="flex-shrink-0">
-                <span className="text-success fw-semibold me-2">₹{revenue.total.toLocaleString()}</span>
-                <button type="button" className="btn btn-soft-primary btn-sm"><i className="ri-file-list-3-line align-middle me-1"></i> Report</button>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Revenue Analytics</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Monthly revenue performance</p>
               </div>
-            </CardHeader>
-            <CardBody>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={data.revenue_trend} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }}>₹{revenue.total.toLocaleString()}</div>
+                  <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 600 }}>TOTAL REVENUE</div>
+                </div>
+                <button type="button" style={{
+                  background: 'linear-gradient(135deg,#405189,#6691e7)', color: '#fff', border: 'none',
+                  borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}>
+                  <i className="ri-file-list-3-line me-1"></i>Report
+                </button>
+              </div>
+            </div>
+            <CardBody style={{ padding: '12px 16px 8px' }}>
+              {/* Mini stats strip */}
+              <div style={{ display: 'flex', gap: 24, marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #f0f3f8' }}>
+                <div>
+                  <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Monthly</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#1e2a3a' }}>₹{revenue.monthly.toLocaleString()}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transactions</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#1e2a3a' }}>{counts.total_payments}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Success Rate</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#0ab39c' }}>{successRate}%</div>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <AreaChart data={data.revenue_trend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="adminRevGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#405189" stopOpacity={0.3} />
+                      <stop offset="0%" stopColor="#405189" stopOpacity={0.25} />
                       <stop offset="100%" stopColor="#405189" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e9ebec" vertical={false} />
-                  <XAxis dataKey="short" tick={{ fontSize: 11, fill: '#878a99' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#878a99' }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
+                  <XAxis dataKey="short" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
                   <Tooltip content={<ChartTooltip prefix="₹" />} />
-                  <Area type="monotone" dataKey="revenue" stroke="#405189" strokeWidth={2} fill="url(#adminRevGrad)" dot={{ r: 3, fill: '#405189' }} />
+                  <Area type="monotone" dataKey="revenue" stroke="#405189" strokeWidth={2.5} fill="url(#adminRevGrad)" dot={{ r: 4, fill: '#405189', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, fill: '#405189' }} />
                 </AreaChart>
               </ResponsiveContainer>
             </CardBody>
           </Card>
         </Col>
+
         <Col xl={4}>
-          <Card>
-            <CardHeader>
-              <h4 className="card-title mb-0">Plan Distribution</h4>
-            </CardHeader>
-            <CardBody>
-              <ResponsiveContainer width="100%" height={300}>
+          <Card style={{ ...cardStyle, height: '100%' }}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Plan Distribution</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Clients by plan type</p>
+              </div>
+            </div>
+            <CardBody style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={data.plan_breakdown} dataKey="count" nameKey="plan_name" cx="50%" cy="45%" innerRadius={55} outerRadius={90} paddingAngle={3}>
+                  <Pie data={data.plan_breakdown} dataKey="count" nameKey="plan_name" cx="50%" cy="45%" innerRadius={52} outerRadius={82} paddingAngle={4}>
                     {data.plan_breakdown.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />
-                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', fontWeight: 500 }} />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px', fontWeight: 600, paddingTop: 8 }} />
                 </PieChart>
               </ResponsiveContainer>
+              <div style={{ textAlign: 'center', marginTop: 4 }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#1e2a3a' }}>{counts.total_clients}</div>
+                <div style={{ fontSize: 11, color: '#a0aec0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Clients</div>
+              </div>
             </CardBody>
           </Card>
         </Col>
       </Row>
 
-      {/* Growth / Org Types / User Roles */}
-      <Row>
+      {/* Growth / Org Types / Payment Health */}
+      <Row className="g-3 mb-3">
         <Col xl={4} md={6}>
-          <Card>
-            <CardHeader><h4 className="card-title mb-0">Client Growth</h4></CardHeader>
-            <CardBody>
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={data.client_growth}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e9ebec" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#878a99' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#878a99' }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Client Growth</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>New clients per month</p>
+              </div>
+            </div>
+            <CardBody style={{ padding: '12px 16px' }}>
+              <ResponsiveContainer width="100%" height={210}>
+                <BarChart data={data.client_growth} barCategoryGap="30%">
+                  <defs>
+                    <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#405189" stopOpacity={1} />
+                      <stop offset="100%" stopColor="#6691e7" stopOpacity={0.8} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} allowDecimals={false} width={24} />
                   <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="clients" fill="#405189" radius={[4, 4, 0, 0]} barSize={26} />
+                  <Bar dataKey="clients" fill="url(#barGrad)" radius={[6, 6, 0, 0]} barSize={22} />
                 </BarChart>
               </ResponsiveContainer>
             </CardBody>
@@ -239,24 +318,40 @@ export default function AdminDashboard() {
         </Col>
 
         <Col xl={4} md={6}>
-          <Card>
-            <CardHeader><h4 className="card-title mb-0">Organization Types</h4></CardHeader>
-            <CardBody>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Organization Types</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Client breakdown by type</p>
+              </div>
+            </div>
+            <CardBody style={{ padding: '16px 20px' }}>
               {data.org_types.map((o, i) => {
                 const pct = counts.total_clients > 0 ? (o.count / counts.total_clients) * 100 : 0;
                 return (
-                  <div key={o.org_type} className="mb-3">
-                    <div className="d-flex justify-content-between align-items-center mb-1">
-                      <div className="d-flex align-items-center gap-2">
-                        <span className="avatar-xs rounded d-flex align-items-center justify-content-center text-white fw-bold" style={{ backgroundColor: COLORS[i % COLORS.length], fontSize: 10, width: 24, height: 24 }}>
+                  <div key={o.org_type} style={{ marginBottom: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{
+                          width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: `linear-gradient(135deg,${COLORS[i % COLORS.length]},${COLORS[(i + 1) % COLORS.length]})`,
+                          color: '#fff', fontWeight: 800, fontSize: 12,
+                        }}>
                           {o.org_type.charAt(0)}
-                        </span>
-                        <span className="fs-13 fw-semibold">{o.org_type}</span>
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#1e2a3a' }}>{o.org_type}</span>
                       </div>
-                      <span className="fs-13 fw-bold">{o.count}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: '#a0aec0', fontWeight: 600 }}>{pct.toFixed(0)}%</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: '#1e2a3a' }}>{o.count}</span>
+                      </div>
                     </div>
-                    <div className="progress" style={{ height: 5 }}>
-                      <div className="progress-bar" role="progressbar" style={{ width: `${Math.max(pct, 6)}%`, backgroundColor: COLORS[i % COLORS.length] }} />
+                    <div style={{ height: 6, borderRadius: 999, background: '#f0f3f8', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%', borderRadius: 999, width: `${Math.max(pct, 6)}%`,
+                        background: `linear-gradient(90deg,${COLORS[i % COLORS.length]},${COLORS[(i + 1) % COLORS.length]})`,
+                        transition: 'width 0.8s ease',
+                      }} />
                     </div>
                   </div>
                 );
@@ -266,19 +361,32 @@ export default function AdminDashboard() {
         </Col>
 
         <Col xl={4} md={12}>
-          <Card>
-            <CardHeader><h4 className="card-title mb-0">Payment Health</h4></CardHeader>
-            <CardBody>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Payment Health</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Transaction status overview</p>
+              </div>
+            </div>
+            <CardBody style={{ padding: '16px 20px' }}>
               <HealthRow label="Success" value={counts.success_payments} total={counts.total_payments} color="#0ab39c" iconClass="ri-checkbox-circle-line" />
               <HealthRow label="Pending" value={counts.pending_payments} total={counts.total_payments} color="#f7b84b" iconClass="ri-time-line" />
-              <HealthRow label="Failed"  value={counts.failed_payments}  total={counts.total_payments} color="#f06548" iconClass="ri-close-circle-line" />
-              <hr className="my-3" />
-              <p className="text-muted text-uppercase fs-12 fw-bold mb-2">User Roles</p>
-              <div className="d-flex flex-wrap gap-2">
+              <HealthRow label="Failed" value={counts.failed_payments} total={counts.total_payments} color="#f06548" iconClass="ri-close-circle-line" />
+
+              <div style={{ height: 1, background: '#f0f3f8', margin: '16px 0' }} />
+
+              <p style={{ fontSize: 11, fontWeight: 700, color: '#a0aec0', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>User Roles</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {Object.entries(data.user_types).map(([type, count], i) => (
-                  <div key={type} className="px-2 py-1 rounded d-flex align-items-center gap-2 border-start border-3" style={{ backgroundColor: '#f3f6f9', borderLeftColor: COLORS[i % COLORS.length] + ' !important' }}>
-                    <span className="text-muted text-capitalize fs-11">{type.replace(/_/g, ' ')}</span>
-                    <span className="fw-bold fs-12">{count as number}</span>
+                  <div key={type} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, background: COLORS[i % COLORS.length] + '12',
+                    borderRadius: 10, padding: '6px 12px', border: `1px solid ${COLORS[i % COLORS.length]}30`,
+                  }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS[i % COLORS.length], flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, color: '#495057', textTransform: 'capitalize', fontWeight: 600 }}>
+                      {type.replace(/_/g, ' ')}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: COLORS[i % COLORS.length] }}>{count as number}</span>
                   </div>
                 ))}
               </div>
@@ -288,79 +396,111 @@ export default function AdminDashboard() {
       </Row>
 
       {/* Recent Clients + Payments */}
-      <Row>
+      <Row className="g-3">
         <Col xl={6}>
-          <Card>
-            <CardHeader className="align-items-center d-flex">
-              <h4 className="card-title mb-0 flex-grow-1">Recent Clients</h4>
-              <button className="btn btn-sm btn-soft-primary">View All</button>
-            </CardHeader>
-            <div className="table-responsive table-card">
-              <table className="table align-middle table-borderless mb-0">
-                <tbody>
-                  {data.recent_clients.map((c: any, i: number) => (
-                    <tr key={c.id}>
-                      <td>
-                        <div className="d-flex align-items-center gap-2">
-                          <div className="flex-shrink-0">
-                            <div className="avatar-xs rounded-circle d-flex align-items-center justify-content-center text-white fw-bold" style={{ backgroundColor: COLORS[i % COLORS.length], fontSize: 11 }}>
-                              {c.org_name.charAt(0)}{c.org_name.split(' ')[1]?.charAt(0) || ''}
-                            </div>
-                          </div>
-                          <div className="flex-grow-1">
-                            <h6 className="mb-0 fs-14">{c.org_name}</h6>
-                            <p className="mb-0 text-muted fs-12">{c.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <Badge color={c.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">{c.status}</Badge>
-                      </td>
-                      <td><Badge color="primary-subtle" className="text-primary">{c.plan?.name || 'Free'}</Badge></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Recent Clients</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Latest registered clients</p>
+              </div>
+              <button style={{
+                background: 'transparent', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 14px',
+                fontSize: 12, fontWeight: 600, color: '#405189', cursor: 'pointer',
+              }}>View All</button>
             </div>
+            <CardBody style={{ padding: 0 }}>
+              {data.recent_clients.map((c: any, i: number) => (
+                <div key={c.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 20px', borderBottom: i < data.recent_clients.length - 1 ? '1px solid #f8f9fa' : 'none',
+                  transition: 'background 0.15s',
+                }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: `linear-gradient(135deg,${COLORS[i % COLORS.length]},${COLORS[(i + 2) % COLORS.length]})`,
+                      color: '#fff', fontWeight: 800, fontSize: 13, flexShrink: 0,
+                    }}>
+                      {c.org_name.charAt(0)}{c.org_name.split(' ')[1]?.charAt(0) || ''}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e2a3a' }}>{c.org_name}</div>
+                      <div style={{ fontSize: 11, color: '#a0aec0', marginTop: 1 }}>{c.email}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.04em',
+                      background: c.status === 'active' ? '#0ab39c18' : '#f0654818',
+                      color: c.status === 'active' ? '#0ab39c' : '#f06548',
+                    }}>{c.status}</span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                      background: '#40518912', color: '#405189',
+                    }}>{c.plan?.name || 'Free'}</span>
+                  </div>
+                </div>
+              ))}
+            </CardBody>
           </Card>
         </Col>
 
         <Col xl={6}>
-          <Card>
-            <CardHeader className="align-items-center d-flex">
-              <h4 className="card-title mb-0 flex-grow-1">Recent Payments</h4>
-              <button className="btn btn-sm btn-soft-primary">View All</button>
-            </CardHeader>
-            <div className="table-responsive table-card">
-              <table className="table align-middle table-borderless mb-0">
-                <tbody>
-                  {data.recent_payments.map((p: any) => {
-                    const cfg = p.status === 'success' ? { color: '#0ab39c', icon: 'ri-checkbox-circle-line' }
-                      : p.status === 'failed' ? { color: '#f06548', icon: 'ri-close-circle-line' }
-                      : { color: '#f7b84b', icon: 'ri-time-line' };
-                    return (
-                      <tr key={p.id}>
-                        <td>
-                          <div className="d-flex align-items-center gap-2">
-                            <div className="avatar-xs rounded-circle d-flex align-items-center justify-content-center" style={{ backgroundColor: cfg.color + '20', color: cfg.color }}>
-                              <i className={cfg.icon}></i>
-                            </div>
-                            <div>
-                              <h6 className="mb-0 fs-14">{p.client?.org_name || 'Unknown'}</h6>
-                              <p className="mb-0 text-muted fs-12">{p.invoice_number} · {methodLabels[p.method] || p.method}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="text-end">
-                          <h6 className="mb-0 fs-14" style={{ color: cfg.color }}>₹{parseFloat(p.total).toLocaleString()}</h6>
-                          <small className="text-muted">{new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</small>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Recent Payments</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Latest transactions</p>
+              </div>
+              <button style={{
+                background: 'transparent', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 14px',
+                fontSize: 12, fontWeight: 600, color: '#405189', cursor: 'pointer',
+              }}>View All</button>
             </div>
+            <CardBody style={{ padding: 0 }}>
+              {data.recent_payments.map((p: any, i: number) => {
+                const cfg = p.status === 'success'
+                  ? { color: '#0ab39c', icon: 'ri-checkbox-circle-fill', bg: '#0ab39c18' }
+                  : p.status === 'failed'
+                  ? { color: '#f06548', icon: 'ri-close-circle-fill', bg: '#f0654818' }
+                  : { color: '#f7b84b', icon: 'ri-time-fill', bg: '#f7b84b18' };
+                return (
+                  <div key={p.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '12px 20px', borderBottom: i < data.recent_payments.length - 1 ? '1px solid #f8f9fa' : 'none',
+                    transition: 'background 0.15s',
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: cfg.bg, color: cfg.color, flexShrink: 0, fontSize: 16,
+                      }}>
+                        <i className={cfg.icon}></i>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1e2a3a' }}>{p.client?.org_name || 'Unknown'}</div>
+                        <div style={{ fontSize: 11, color: '#a0aec0', marginTop: 1 }}>
+                          {p.invoice_number} · {methodLabels[p.method] || p.method}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: cfg.color }}>₹{parseFloat(p.total).toLocaleString()}</div>
+                      <div style={{ fontSize: 10, color: '#a0aec0', marginTop: 2 }}>
+                        {new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardBody>
           </Card>
         </Col>
       </Row>
@@ -371,18 +511,27 @@ export default function AdminDashboard() {
 function HealthRow({ label, value, total, color, iconClass }: { label: string; value: number; total: number; color: string; iconClass: string }) {
   const pct = total > 0 ? (value / total) * 100 : 0;
   return (
-    <div className="mb-3">
-      <div className="d-flex justify-content-between align-items-center mb-1">
-        <div className="d-flex align-items-center gap-2">
-          <span className="avatar-xs rounded d-flex align-items-center justify-content-center" style={{ backgroundColor: color + '20', color, width: 24, height: 24 }}>
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: color + '18', color, fontSize: 14,
+          }}>
             <i className={iconClass}></i>
-          </span>
-          <span className="fs-13 fw-semibold">{label}</span>
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1e2a3a' }}>{label}</span>
         </div>
-        <span className="fs-13 fw-bold">{value}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, color: '#a0aec0', fontWeight: 600 }}>{pct.toFixed(0)}%</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: '#1e2a3a' }}>{value}</span>
+        </div>
       </div>
-      <div className="progress" style={{ height: 5 }}>
-        <div className="progress-bar" role="progressbar" style={{ width: `${pct}%`, backgroundColor: color }} />
+      <div style={{ height: 6, borderRadius: 999, background: '#f0f3f8', overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', borderRadius: 999, width: `${pct}%`, background: color,
+          transition: 'width 0.8s ease',
+        }} />
       </div>
     </div>
   );
