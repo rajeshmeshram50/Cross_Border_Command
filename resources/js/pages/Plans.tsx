@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardBody, Col, Row, Badge, Button, Spinner, Modal, ModalHeader, ModalBody } from 'reactstrap';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination, Autoplay } from 'swiper/modules';
@@ -28,12 +28,60 @@ const accessColors: Record<string, string> = {
   full: 'success',
 };
 
+const SWIPER_STYLES = `
+  .plans-swiper-outer {
+    position: relative;
+    padding: 0 56px;
+  }
+  .plans-nav-btn {
+    position: absolute;
+    top: calc(50% - 24px);
+    transform: translateY(-50%);
+    z-index: 10;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 2px solid var(--vz-border-color);
+    background: var(--vz-card-bg, #fff);
+    color: var(--vz-primary);
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.10);
+    transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.2s;
+    outline: none;
+  }
+  .plans-nav-btn:hover:not(:disabled) {
+    background: var(--vz-primary);
+    color: #fff;
+    border-color: var(--vz-primary);
+    box-shadow: 0 6px 24px rgba(64,81,137,0.35);
+    transform: translateY(-50%) scale(1.1);
+  }
+  .plans-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+  .plans-nav-prev { left: 0; }
+  .plans-nav-next { right: 0; }
+  [data-layout-mode="dark"] .plans-nav-btn,
+  [data-bs-theme="dark"] .plans-nav-btn {
+    background: var(--vz-card-bg);
+    border-color: var(--vz-border-color);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+  }
+`;
+
 export default function Plans({ onNavigate }: { onNavigate?: (page: string, data?: any) => void }) {
   const toast = useToast();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [modalPlan, setModalPlan] = useState<Plan | null>(null);
+  const prevRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
 
   const fetchPlans = () => {
     setLoading(true);
@@ -65,6 +113,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
 
   return (
     <>
+      <style>{SWIPER_STYLES}</style>
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -103,22 +152,31 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
           </CardBody>
         </Card>
       ) : (
-        <Swiper
-          modules={[Navigation, Pagination, Autoplay]}
-          slidesPerView={4}
-          spaceBetween={24}
-          navigation
-          pagination={{ clickable: true }}
-          loop={plans.length > 1}
-          autoplay={{ delay: 2000, disableOnInteraction: false, pauseOnMouseEnter: true }}
-          breakpoints={{
-            0:    { slidesPerView: 1, spaceBetween: 16 },
-            576:  { slidesPerView: 2, spaceBetween: 16 },
-            992:  { slidesPerView: 3, spaceBetween: 20 },
-            1200: { slidesPerView: 4, spaceBetween: 24 },
-          }}
-          className="plans-swiper pb-5"
-        >
+        <div className="plans-swiper-outer">
+          <button ref={prevRef} className="plans-nav-btn plans-nav-prev" aria-label="Previous">
+            <i className="ri-arrow-left-s-line"></i>
+          </button>
+
+          <Swiper
+            modules={[Navigation, Pagination, Autoplay]}
+            onBeforeInit={(swiper) => {
+              if (typeof swiper.params.navigation === 'object' && swiper.params.navigation) {
+                (swiper.params.navigation as any).prevEl = prevRef.current;
+                (swiper.params.navigation as any).nextEl = nextRef.current;
+              }
+            }}
+            navigation={{ prevEl: prevRef.current, nextEl: nextRef.current }}
+            pagination={{ clickable: true, dynamicBullets: true }}
+            loop={plans.length > 1}
+            autoplay={{ delay: 2000, disableOnInteraction: false, pauseOnMouseEnter: true }}
+            breakpoints={{
+              0:    { slidesPerView: 1, spaceBetween: 16 },
+              576:  { slidesPerView: 2, spaceBetween: 16 },
+              992:  { slidesPerView: 3, spaceBetween: 20 },
+              1200: { slidesPerView: 4, spaceBetween: 24 },
+            }}
+            className="plans-swiper pb-5"
+          >
           {plans.map(p => (
             <SwiperSlide key={p.id} style={{ height: 'auto' }}>
               <Card
@@ -271,7 +329,12 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
               </Card>
             </SwiperSlide>
           ))}
-        </Swiper>
+          </Swiper>
+
+          <button ref={nextRef} className="plans-nav-btn plans-nav-next" aria-label="Next">
+            <i className="ri-arrow-right-s-line"></i>
+          </button>
+        </div>
       )}
 
       {/* Modules detail modal */}
