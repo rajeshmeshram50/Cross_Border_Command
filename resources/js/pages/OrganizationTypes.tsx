@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Card, CardBody, CardHeader, Col, Row, Button, Input, Label, Spinner,
   Table, Badge, Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, FormFeedback,
@@ -33,6 +34,7 @@ const emptyForm: FormState = {
 
 export default function OrganizationTypes() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [items, setItems] = useState<OrgType[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -148,10 +150,22 @@ export default function OrganizationTypes() {
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Organization Types</h4>
+            <div className="d-flex align-items-center gap-2">
+              <button
+                className="btn btn-soft-primary btn-icon rounded-circle"
+                style={{ width: 36, height: 36 }}
+                onClick={() => navigate('/master')}
+                title="Back to master"
+              >
+                <i className="ri-arrow-left-line fs-16"></i>
+              </button>
+              <h4 className="mb-sm-0">Organization Types</h4>
+            </div>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Master</a></li>
+                <li className="breadcrumb-item">
+                  <a href="#" onClick={(e) => { e.preventDefault(); navigate('/master'); }}>Master</a>
+                </li>
                 <li className="breadcrumb-item active">Organization Types</li>
               </ol>
             </div>

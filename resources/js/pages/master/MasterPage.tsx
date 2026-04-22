@@ -2,12 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card, CardBody, CardHeader, Row, Col,
-  Button, Badge, Input, Label, Form,
+  Button, Badge, Input, Label, Form, Table,
   Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
-  Collapse,
 } from 'reactstrap';
-import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
-import DeleteModal from '../../velzon/Components/Common/DeleteModal';
+import Swal from 'sweetalert2';
 import MasterPlaceholder from '../MasterPlaceholder';
 import {
   getMasterConfig,
@@ -34,36 +32,32 @@ function MasterPageInner({
   navigate: ReturnType<typeof useNavigate>;
 }) {
   const [records, setRecords] = useState<any[]>(cfg.data);
-  const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  const [showGuide, setShowGuide] = useState(true);
+  const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-
-  // Reset when cfg changes (navigating between masters)
   useEffect(() => {
     setRecords(cfg.data);
-    setFilter('all');
+    setSearch('');
     setEditingId(null);
     setViewOnly(false);
     setModalOpen(false);
-    setDeleteId(null);
   }, [cfg.slug]);
 
-  const hasStatus = cfg.fields.some(f => f.n === 'status');
-  const activeCount = hasStatus
-    ? records.filter(r => String(r.status).toLowerCase() === 'active').length
-    : records.length;
-  const inactiveCount = hasStatus ? records.length - activeCount : 0;
-
   const filtered = useMemo(() => {
-    if (!hasStatus || filter === 'all') return records;
-    return records.filter(r => String(r.status).toLowerCase() === filter);
-  }, [records, filter, hasStatus]);
+    const s = search.trim().toLowerCase();
+    if (!s) return records;
+    return records.filter(r =>
+      cfg.cols.some(c => {
+        const f = cfg.fields.find(ff => ff.n === c);
+        const val = f?.ref ? resolveRef(f.ref, f.refL, r[c]) : r[c];
+        return String(val ?? '').toLowerCase().includes(s);
+      }),
+    );
+  }, [records, search, cfg]);
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
 
@@ -78,8 +72,7 @@ function MasterPageInner({
       if (f.sec || !f.n) continue;
       const raw = fd.get(f.n);
       if (f.t === 'number') {
-        const v = raw == null || raw === '' ? '' : Number(raw);
-        next[f.n] = v;
+        next[f.n] = raw == null || raw === '' ? '' : Number(raw);
       } else {
         next[f.n] = String(raw ?? '').trim();
       }
@@ -97,10 +90,21 @@ function MasterPageInner({
     }, 200);
   };
 
-  const confirmDelete = () => {
-    if (deleteId == null) return;
-    setRecords(prev => prev.filter(r => r.id !== deleteId));
-    setDeleteId(null);
+  const handleDelete = async (row: any) => {
+    const firstCol = cfg.cols[0];
+    const label = row[firstCol] || `Record #${row.id}`;
+    const result = await Swal.fire({
+      title: `Delete ${cfg.titleSingular || cfg.title}?`,
+      html: `Remove <strong>"${label}"</strong>?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Delete',
+      confirmButtonColor: '#f06548',
+      cancelButtonColor: '#878a99',
+    });
+    if (!result.isConfirmed) return;
+    setRecords(prev => prev.filter(r => r.id !== row.id));
+    Swal.fire({ title: 'Deleted!', text: `"${label}" removed.`, icon: 'success', timer: 1500, showConfirmButton: false });
   };
 
   const formatCell = (fieldName: string, row: any): React.ReactNode => {
@@ -110,14 +114,7 @@ function MasterPageInner({
     if (fieldName === 'status') {
       const active = String(raw).toLowerCase() === 'active';
       return (
-        <Badge
-          color={active ? 'success-subtle' : 'danger-subtle'}
-          className={`${active ? 'text-success' : 'text-danger'} rounded-pill px-2`}
-        >
-          <span
-            className={`d-inline-block rounded-circle ${active ? 'bg-success' : 'bg-danger'} me-1`}
-            style={{ width: 6, height: 6, verticalAlign: 'middle' }}
-          />
+        <Badge color={active ? 'success' : 'secondary'} pill className="text-uppercase">
           {active ? 'Active' : 'Inactive'}
         </Badge>
       );
@@ -127,291 +124,147 @@ function MasterPageInner({
       return <span className="text-dark">{resolveRef(f.ref, f.refL, raw) || '—'}</span>;
     }
 
-    if (raw === undefined || raw === null || raw === '') return <span className="text-muted">—</span>;
+    if (raw === undefined || raw === null || raw === '') {
+      return <span className="text-muted">—</span>;
+    }
 
-    // Heuristic monospace-style values
     if (typeof raw === 'string' && /^[A-Z0-9]{6,}$/.test(raw.replace(/\s|-/g, ''))) {
-      return <code className="text-primary bg-primary-subtle px-2 py-1 rounded">{raw}</code>;
+      return <code className="text-muted">{raw}</code>;
     }
 
     return <span className="text-dark">{String(raw)}</span>;
   };
 
-  const exportCsv = () => {
-    const header = ['#', ...cfg.colL];
-    const rows = filtered.map((r, i) => [
-      i + 1,
-      ...cfg.cols.map(c => {
-        const f = cfg.fields.find(ff => ff.n === c);
-        if (f?.ref) return resolveRef(f.ref, f.refL, r[c]);
-        return r[c] ?? '';
-      }),
-    ]);
-    const csv = [header, ...rows]
-      .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${cfg.slug}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const columns = useMemo(() => {
-    const base: any[] = [
-      {
-        header: '#',
-        accessorKey: '_idx',
-        enableSorting: false,
-        cell: (info: any) => <span className="fw-semibold text-muted">{info.row.index + 1}</span>,
-      },
-    ];
-
-    cfg.cols.forEach((colName, idx) => {
-      const label = cfg.colL[idx] || colName;
-      base.push({
-        header: label,
-        accessorKey: colName,
-        cell: (info: any) => {
-          const row = info.row.original;
-          // First data column gets an icon chip
-          if (idx === 0 && colName !== 'status') {
-            return (
-              <div className="d-flex align-items-center gap-2">
-                <span
-                  className={`d-inline-flex align-items-center justify-content-center rounded bg-${cfg.iconBg}-subtle text-${cfg.iconColor} flex-shrink-0`}
-                  style={{ width: 32, height: 32 }}
-                >
-                  <i className={`${cfg.icon} fs-15`}></i>
-                </span>
-                <span className="fw-semibold text-dark">{row[colName] ?? '—'}</span>
-              </div>
-            );
-          }
-          return formatCell(colName, row);
-        },
-      });
-    });
-
-    base.push({
-      header: 'Actions',
-      id: 'actions',
-      enableSorting: false,
-      cell: (info: any) => {
-        const row = info.row.original;
-        return (
-          <div className="d-inline-flex gap-1">
-            <button className="btn btn-sm border" title="View" onClick={() => openEdit(row, true)}>
-              <i className="ri-eye-line text-muted"></i>
-            </button>
-            <button className="btn btn-sm border" title="Edit" onClick={() => openEdit(row)}>
-              <i className="ri-pencil-line text-primary"></i>
-            </button>
-            <button className="btn btn-sm border" title="Delete" onClick={() => setDeleteId(row.id)}>
-              <i className="ri-delete-bin-line text-danger"></i>
-            </button>
-          </div>
-        );
-      },
-    });
-
-    return base;
-  }, [cfg]);
-
   const singular = cfg.titleSingular || cfg.title;
 
   return (
     <>
-      {/* Page header */}
-      <Row className="align-items-center mb-3">
-        <Col>
-          <div className="d-flex align-items-center gap-2">
-            <button
-              className={`btn btn-soft-${cfg.iconColor} btn-icon rounded-circle`}
-              style={{ width: 36, height: 36 }}
-              onClick={() => navigate('/master')}
-              title="Back to master"
-            >
-              <i className="ri-arrow-left-line fs-16"></i>
-            </button>
-            <div>
-              <h4 className="mb-0 fw-bold d-flex align-items-center gap-2">
-                <span
-                  className={`d-inline-flex align-items-center justify-content-center rounded-3 bg-${cfg.iconBg}-subtle text-${cfg.iconColor}`}
-                  style={{ width: 36, height: 36 }}
-                >
-                  <i className={`${cfg.icon} fs-18`}></i>
-                </span>
-                {cfg.title}
-              </h4>
-              <p className="text-muted mb-0 fs-13 ms-5 ps-2">{cfg.desc}</p>
+      {/* Page title box — back button + title + breadcrumb */}
+      <Row>
+        <Col xs={12}>
+          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
+            <div className="d-flex align-items-center gap-2">
+              <button
+                className={`btn btn-soft-${cfg.iconColor} btn-icon rounded-circle`}
+                style={{ width: 36, height: 36 }}
+                onClick={() => navigate('/master')}
+                title="Back to master"
+              >
+                <i className="ri-arrow-left-line fs-16"></i>
+              </button>
+              <h4 className="mb-sm-0">{cfg.title}</h4>
+            </div>
+            <div className="page-title-right">
+              <ol className="breadcrumb m-0">
+                <li className="breadcrumb-item">
+                  <a href="#" onClick={(e) => { e.preventDefault(); navigate('/master'); }}>Master</a>
+                </li>
+                <li className="breadcrumb-item active">{cfg.title}</li>
+              </ol>
             </div>
           </div>
-        </Col>
-        <Col xs="auto">
-          <Button
-            color={cfg.iconColor}
-            className="btn-label waves-effect waves-light rounded-pill"
-            onClick={openAdd}
-          >
-            <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-            Add {singular}
-          </Button>
         </Col>
       </Row>
 
-      {/* What you do here — collapsible stepper */}
-      <Card className="shadow-sm border-0 mb-3 overflow-hidden">
-        <CardHeader
-          className="bg-light-subtle d-flex align-items-center justify-content-between border-0"
-          onClick={() => setShowGuide(!showGuide)}
-          style={{ cursor: 'pointer' }}
-        >
-          <div className="d-flex align-items-center gap-2">
-            <span
-              className="d-inline-flex align-items-center justify-content-center rounded bg-warning-subtle text-warning"
-              style={{ width: 30, height: 30 }}
-            >
-              <i className="ri-lightbulb-flash-line fs-15"></i>
-            </span>
-            <div>
-              <div className="fw-bold text-primary fs-12 text-uppercase" style={{ letterSpacing: '0.6px' }}>
-                What You Do Here
-              </div>
-              <small className="text-muted">
-                Follow these {cfg.wtd.length} steps to set up a {singular} record
-              </small>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost-secondary"
-            onClick={(e) => { e.stopPropagation(); setShowGuide(!showGuide); }}
-          >
-            <i className={`ri-arrow-${showGuide ? 'up' : 'down'}-s-line fs-18`}></i>
-          </button>
-        </CardHeader>
-        <Collapse isOpen={showGuide}>
-          <CardBody className="pt-4 pb-4">
-            <div className="position-relative">
-              <div
-                className="d-none d-md-block position-absolute"
-                style={{
-                  top: 22,
-                  left: '6%',
-                  right: '6%',
-                  borderTop: '2px dashed var(--vz-border-color)',
-                  zIndex: 0,
-                }}
-              />
-              <Row className="g-3 position-relative" style={{ zIndex: 1 }}>
-                {cfg.wtd.map((s, i) => (
-                  <Col md={6} lg={Math.max(3, Math.floor(12 / Math.max(cfg.wtd.length, 1)))} key={i}>
-                    <div className="text-center px-2">
-                      <span
-                        className={`d-inline-flex align-items-center justify-content-center rounded-circle bg-white border border-${cfg.iconColor} text-${cfg.iconColor} fw-bold shadow-sm mb-2`}
-                        style={{ width: 44, height: 44, fontSize: 16 }}
-                      >
-                        {i + 1}
-                      </span>
-                      <div
-                        className="fw-bold text-dark mb-1 d-flex align-items-center justify-content-center gap-1"
-                        style={{ fontSize: 13 }}
-                      >
-                        <i className={`${s.icon} text-${cfg.iconColor}`}></i>
-                        {s.title}
-                      </div>
-                      <div className="text-muted" style={{ fontSize: 12, lineHeight: 1.4 }}>
-                        {s.desc}
-                      </div>
+      {/* "What you are doing here" — gradient card with colored step chips */}
+      <WhatYouDoHere cfg={cfg} />
+
+      {/* Main card */}
+      <Row>
+        <Col xs={12}>
+          <Card className="shadow-sm">
+            <CardHeader className="bg-light-subtle border-bottom">
+              <Row className="g-2 align-items-center">
+                <Col md={5}>
+                  <div className="d-flex align-items-center gap-2">
+                    <i className={`${cfg.icon} fs-4 text-${cfg.iconColor}`}></i>
+                    <div>
+                      <h5 className="mb-0">Manage {cfg.title}</h5>
+                      <small className="text-muted">{cfg.desc}</small>
                     </div>
-                  </Col>
-                ))}
+                  </div>
+                </Col>
+                <Col md={4}>
+                  <div className="search-box">
+                    <Input
+                      type="text"
+                      placeholder={`Search ${cfg.title.toLowerCase()}…`}
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                    />
+                  </div>
+                </Col>
+                <Col md={3} className="text-md-end">
+                  <Button color={cfg.iconColor} className="btn-label waves-effect waves-light rounded-pill" onClick={openAdd}>
+                    <i className="ri-add-line label-icon align-middle fs-16 me-2"></i>
+                    Add New
+                  </Button>
+                </Col>
               </Row>
-            </div>
-          </CardBody>
-        </Collapse>
-      </Card>
+            </CardHeader>
 
-      {/* Analytics */}
-      <Row className="g-3 mb-3">
-        <Col md={4}>
-          <RadialStatCard
-            label="TOTAL RECORDS"
-            value={records.length}
-            percentage={100}
-            color="#09b39b"
-          />
-        </Col>
-        <Col md={4}>
-          <RadialStatCard
-            label={hasStatus ? 'ACTIVE' : 'AVAILABLE'}
-            value={activeCount}
-            percentage={records.length ? Math.round((activeCount / records.length) * 100) : 0}
-            color="#09b39b"
-          />
-        </Col>
-        <Col md={4}>
-          <RadialStatCard
-            label={hasStatus ? 'INACTIVE' : 'ARCHIVED'}
-            value={inactiveCount}
-            percentage={records.length ? Math.round((inactiveCount / records.length) * 100) : 0}
-            color="#f06548"
-          />
+            <CardBody>
+              {filtered.length === 0 ? (
+                <div className="text-center py-5">
+                  <i className="ri-inbox-line display-5 text-muted"></i>
+                  <p className="text-muted mt-2">No records found</p>
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <Table className="align-middle table-nowrap mb-0">
+                    <thead className="table-light">
+                      <tr>
+                        <th style={{ width: 60 }}>#</th>
+                        <th style={{ width: 70 }}>Icon</th>
+                        {cfg.cols.map((colName, idx) => (
+                          <th key={colName} style={colName === 'status' ? { width: 100 } : undefined}>
+                            {cfg.colL[idx] || colName}
+                          </th>
+                        ))}
+                        <th style={{ width: 150 }} className="text-end">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((row, i) => (
+                        <tr key={row.id}>
+                          <td className="text-muted">{i + 1}</td>
+                          <td>
+                            <div className="avatar-xs">
+                              <span className={`avatar-title rounded bg-${cfg.iconBg}-subtle text-${cfg.iconColor} fs-4`}>
+                                <i className={cfg.icon}></i>
+                              </span>
+                            </div>
+                          </td>
+                          {cfg.cols.map((colName, idx) => (
+                            <td key={colName} className={idx === 0 ? '' : 'text-muted'}>
+                              {idx === 0 && colName !== 'status' ? (
+                                <strong>{row[colName] ?? '—'}</strong>
+                              ) : (
+                                formatCell(colName, row)
+                              )}
+                            </td>
+                          ))}
+                          <td className="text-end">
+                            <Button size="sm" color="soft-secondary" className="me-1" onClick={() => openEdit(row, true)} title="View">
+                              <i className="ri-eye-line"></i>
+                            </Button>
+                            <Button size="sm" color="soft-primary" className="me-1" onClick={() => openEdit(row)} title="Edit">
+                              <i className="ri-pencil-line"></i>
+                            </Button>
+                            <Button size="sm" color="soft-danger" onClick={() => handleDelete(row)} title="Delete">
+                              <i className="ri-delete-bin-line"></i>
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
+              )}
+            </CardBody>
+          </Card>
         </Col>
       </Row>
-
-      {/* Table card */}
-      <Card className="shadow-sm border-0">
-        <CardHeader className="bg-white border-0 pt-3 pb-0">
-          <div className="d-flex align-items-center flex-wrap gap-2">
-            <h5 className="mb-0 fw-bold me-2">
-              All {cfg.title}{' '}
-              <Badge color={`${cfg.iconColor}-subtle`} className={`text-${cfg.iconColor} ms-1`}>
-                {filtered.length}
-              </Badge>
-            </h5>
-            {hasStatus && (
-              <div className="d-inline-flex align-items-center gap-1 ms-3">
-                {(['all', 'active', 'inactive'] as const).map(f => (
-                  <button
-                    key={f}
-                    className={`btn btn-sm rounded-pill px-3 ${filter === f ? 'border-primary text-primary bg-primary-subtle' : 'border text-muted'}`}
-                    onClick={() => setFilter(f)}
-                  >
-                    <span className="text-capitalize">{f}</span>
-                    <span className={`badge ms-2 rounded-pill ${filter === f ? 'bg-primary' : 'bg-light text-muted'}`}>
-                      {f === 'all' ? records.length : f === 'active' ? activeCount : inactiveCount}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="ms-auto">
-              <Button color="light" className="rounded-pill px-3" onClick={exportCsv}>
-                <i className="ri-download-2-line me-1"></i> CSV
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardBody>
-          <TableContainer
-            columns={columns}
-            data={filtered}
-            isGlobalFilter={true}
-            customPageSize={10}
-            tableClass="align-middle table-nowrap mb-0"
-            theadClass="table-light"
-            divClass="table-responsive table-card border rounded"
-            SearchPlaceholder="Search records..."
-          />
-          {filtered.length === 0 && (
-            <div className="text-center text-muted py-4">No records found</div>
-          )}
-        </CardBody>
-      </Card>
 
       {/* Add / Edit modal */}
       <Modal isOpen={modalOpen} toggle={() => setModalOpen(false)} size="xl" centered>
@@ -441,13 +294,128 @@ function MasterPageInner({
           </ModalFooter>
         </Form>
       </Modal>
-
-      <DeleteModal
-        show={deleteId != null}
-        onDeleteClick={confirmDelete}
-        onCloseClick={() => setDeleteId(null)}
-      />
     </>
+  );
+}
+
+/* ── "What you are doing here" gradient card with colored step chips ── */
+const STEP_PALETTES = [
+  { top: '#7248f0', num: '#7248f0', numBg: '#ede7ff', title: '#6232e8' }, // purple
+  { top: '#3577f1', num: '#3577f1', numBg: '#e0ecff', title: '#1f60dd' }, // blue
+  { top: '#8168e4', num: '#8168e4', numBg: '#ece5fb', title: '#6b4fdb' }, // violet
+  { top: '#10b981', num: '#10b981', numBg: '#d1fae5', title: '#059669' }, // green
+  { top: '#f59f0a', num: '#f59f0a', numBg: '#fff0cc', title: '#d97a08' }, // amber
+  { top: '#f06548', num: '#f06548', numBg: '#ffe3dc', title: '#d9421f' }, // red/orange
+];
+
+function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
+  const steps = cfg.wtd || [];
+  const singular = cfg.titleSingular || cfg.title;
+
+  return (
+    <Card
+      className="border-0 shadow-sm mb-3 overflow-hidden"
+      style={{
+        background: 'linear-gradient(135deg, #f2f5ff 0%, #f7fff5 100%)',
+      }}
+    >
+      <CardBody>
+        <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+          <div className="d-flex align-items-center gap-2">
+            <span
+              className="d-inline-flex align-items-center justify-content-center rounded-3"
+              style={{ width: 34, height: 34, background: '#e0ecff', color: '#3577f1' }}
+            >
+              <i className="ri-checkbox-circle-line fs-18"></i>
+            </span>
+            <div className="fw-bold" style={{ color: '#2d3a56', fontSize: 15 }}>
+              {cfg.title} — What you are doing here:
+            </div>
+          </div>
+          <span
+            className="d-inline-flex align-items-center gap-1 px-3 py-1 rounded-pill fw-semibold"
+            style={{
+              background: '#e8edf7',
+              color: '#3577f1',
+              fontSize: 12,
+              border: '1px solid #d0dcf2',
+            }}
+          >
+            <i className="ri-information-line"></i>
+            {cfg.title} Screen Intelligence Note
+          </span>
+        </div>
+
+        <Row className="g-3 align-items-stretch">
+          {steps.map((s, i) => {
+            const p = STEP_PALETTES[i % STEP_PALETTES.length];
+            const isLast = i === steps.length - 1;
+            const colSize = steps.length <= 3 ? 4 : steps.length === 4 ? 3 : steps.length === 5 ? { md: 6, lg: 'auto' as const } : { md: 6, lg: 4 };
+            return (
+              <Col
+                key={i}
+                md={typeof colSize === 'object' ? colSize.md : 6}
+                lg={typeof colSize === 'object' ? colSize.lg : (colSize as number)}
+                className="position-relative"
+              >
+                <div
+                  className="bg-white rounded-3 h-100 p-3 position-relative"
+                  style={{
+                    borderTop: `3px solid ${p.top}`,
+                    boxShadow: '0 1px 2px rgba(18,38,63,0.04)',
+                  }}
+                >
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <span
+                      className="d-inline-flex align-items-center justify-content-center rounded-circle fw-bold flex-shrink-0"
+                      style={{
+                        width: 26,
+                        height: 26,
+                        background: p.numBg,
+                        color: p.num,
+                        fontSize: 13,
+                      }}
+                    >
+                      {i + 1}
+                    </span>
+                    <div className="fw-bold d-flex align-items-center gap-1" style={{ color: p.title, fontSize: 14 }}>
+                      <i className={s.icon}></i>
+                      {s.title}
+                    </div>
+                  </div>
+                  <div className="text-muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                    {s.desc}
+                  </div>
+                </div>
+                {!isLast && (
+                  <div
+                    className="d-none d-lg-flex align-items-center justify-content-center position-absolute"
+                    style={{
+                      right: -10,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: 20,
+                      height: 20,
+                      zIndex: 2,
+                      color: '#a3adc2',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <i className="ri-arrow-right-s-line fs-20"></i>
+                  </div>
+                )}
+              </Col>
+            );
+          })}
+        </Row>
+
+        {steps.length === 0 && (
+          <div className="text-muted text-center py-3">
+            Define the workflow for {singular} records in the master config.
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 }
 
@@ -478,18 +446,10 @@ function renderField(
     const refMaster = getMasterConfig(f.ref);
     const labelField = f.refL || 'name';
     input = (
-      <Input
-        type="select"
-        name={f.n}
-        required={f.r}
-        defaultValue={defaultVal}
-        disabled={viewOnly}
-      >
+      <Input type="select" name={f.n} required={f.r} defaultValue={defaultVal} disabled={viewOnly}>
         <option value="">Select {f.l}…</option>
         {refMaster?.data.map((r: any) => (
-          <option key={r.id} value={r.id}>
-            {r[labelField] ?? r.id}
-          </option>
+          <option key={r.id} value={r.id}>{r[labelField] ?? r.id}</option>
         ))}
       </Input>
     );
@@ -503,9 +463,7 @@ function renderField(
         disabled={viewOnly}
       >
         {!f.r && <option value="">Select…</option>}
-        {(f.opts || []).map(o => (
-          <option key={o} value={o}>{o}</option>
-        ))}
+        {(f.opts || []).map(o => <option key={o} value={o}>{o}</option>)}
       </Input>
     );
   } else if (f.t === 'textarea') {
@@ -540,89 +498,5 @@ function renderField(
       </Label>
       {input}
     </Col>
-  );
-}
-
-function RadialStatCard({
-  label, value, percentage, color,
-}: {
-  label: string;
-  value: number;
-  percentage: number;
-  color: string;
-}) {
-  const size = 82;
-  const strokeWidth = 7;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const pct = Math.max(0, Math.min(100, percentage));
-  const dashOffset = circumference * (1 - pct / 100);
-
-  return (
-    <Card
-      className="border-0 shadow-sm h-100 overflow-hidden position-relative"
-      style={{ transition: 'transform .25s ease, box-shadow .25s ease' }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-4px)';
-        e.currentTarget.style.boxShadow = '0 14px 30px rgba(64,81,137,0.15)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '';
-      }}
-    >
-      <svg
-        className="position-absolute"
-        style={{ top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', opacity: 0.35 }}
-        viewBox="0 0 400 180"
-        preserveAspectRatio="none"
-      >
-        <path
-          d="M0,130 C80,90 180,170 280,110 C340,75 380,120 400,100 L400,180 L0,180 Z"
-          fill="var(--vz-light)"
-        />
-      </svg>
-
-      <CardBody className="d-flex align-items-center justify-content-between position-relative" style={{ zIndex: 1 }}>
-        <div>
-          <p className="text-muted fw-bold mb-2" style={{ fontSize: 12, letterSpacing: '0.6px' }}>{label}</p>
-          <h2 className="fw-bold mb-0 text-dark" style={{ fontSize: 30, letterSpacing: '-0.5px' }}>
-            {value.toLocaleString()}
-          </h2>
-        </div>
-
-        <div className="position-relative" style={{ width: size, height: size }}>
-          <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-            <circle
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              fill="none"
-              stroke="var(--vz-border-color)"
-              strokeWidth={strokeWidth}
-              opacity={0.5}
-            />
-            <circle
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              fill="none"
-              stroke={color}
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={dashOffset}
-              style={{ transition: 'stroke-dashoffset 600ms ease' }}
-            />
-          </svg>
-          <div
-            className="position-absolute top-50 start-50 translate-middle fw-bold"
-            style={{ color, fontSize: 15, letterSpacing: '-0.3px' }}
-          >
-            {pct}%
-          </div>
-        </div>
-      </CardBody>
-    </Card>
   );
 }
