@@ -24,26 +24,27 @@ export const PERMS: { key: PermKey; label: string; icon: string; color: string }
   { key: 'can_approve', label: 'Approve', icon: 'ri-check-double-line', color: 'primary' },
 ];
 
-// Per-leaf accent — each top-level leaf row (Dashboard, Branches, etc.) gets a
-// distinct icon + color chip so the table isn't visually flat.
-const LEAF_STYLE: Record<string, { color: string; icon: string }> = {
-  'dashboard':   { color: '#405189', icon: 'ri-dashboard-2-line' },
-  'clients':     { color: '#299cdb', icon: 'ri-building-line' },
-  'branches':    { color: '#0ab39c', icon: 'ri-git-branch-line' },
-  'employees':   { color: '#f7b84b', icon: 'ri-user-settings-line' },
-  'plans':       { color: '#7c5cfc', icon: 'ri-bank-card-line' },
-  'payments':    { color: '#10b981', icon: 'ri-money-rupee-circle-line' },
-  'permissions': { color: '#e83e8c', icon: 'ri-shield-check-line' },
-  'profile':     { color: '#6b7280', icon: 'ri-account-circle-line' },
-  'settings':    { color: '#495057', icon: 'ri-settings-3-line' },
-  'my-plan':     { color: '#7c5cfc', icon: 'ri-calendar-schedule-line' },
+// Unified navy accent for every leaf — icons still vary per module for identity,
+// but colors are single-hue so the table isn't visually noisy.
+const ACCENT = '#405189';
+
+const LEAF_ICON: Record<string, string> = {
+  'dashboard':   'ri-dashboard-2-line',
+  'clients':     'ri-building-line',
+  'branches':    'ri-git-branch-line',
+  'employees':   'ri-user-settings-line',
+  'plans':       'ri-bank-card-line',
+  'payments':    'ri-money-rupee-circle-line',
+  'permissions': 'ri-shield-check-line',
+  'profile':     'ri-account-circle-line',
+  'settings':    'ri-settings-3-line',
+  'my-plan':     'ri-calendar-schedule-line',
 };
 
 const getLeafStyle = (slug: string): { color: string; icon: string } => {
-  if (LEAF_STYLE[slug]) return LEAF_STYLE[slug];
-  // Master sub-items share a navy family so they tie back to the parent row.
-  if (slug.startsWith('master.')) return { color: '#6691e7', icon: 'ri-folder-user-line' };
-  return { color: '#6b7280', icon: 'ri-file-list-3-line' };
+  if (LEAF_ICON[slug]) return { color: ACCENT, icon: LEAF_ICON[slug] };
+  if (slug.startsWith('master.')) return { color: ACCENT, icon: 'ri-folder-user-line' };
+  return { color: ACCENT, icon: 'ri-file-list-3-line' };
 };
 
 export const emptyPerms = (): Record<PermKey, boolean> => ({
@@ -263,15 +264,8 @@ export default function PermissionMatrix({
       const { on: branchOn, total: branchTotal } = branchAllSummary(mod.id);
       const branchAllOn = branchTotal > 0 && branchOn === branchTotal;
       rows.push(
-        <tr
-          key={mod.id}
-          style={{
-            background: 'rgba(64,81,137,0.06)',
-            borderLeft: '3px solid #405189',
-            lineHeight: 1.2,
-          }}
-        >
-          <td className="py-2" style={{ paddingLeft: `0.75rem` }}>
+        <tr key={mod.id}>
+          <td className="py-2" style={{ paddingLeft: `${0.75 + depth * 1.75}rem` }}>
             <div className="d-flex align-items-center gap-2">
 
 
@@ -287,32 +281,20 @@ export default function PermissionMatrix({
                 onClick={() => toggleExpand(mod.id)}
                 style={{ width: 20, height: 20 }}
               >
-                <i className={`ri-arrow-${isOpen ? 'down' : 'right'}-s-line fs-16`} style={{ color: '#405189' }}></i>
+                <i className={`ri-arrow-${isOpen ? 'down' : 'right'}-s-line fs-16 text-muted`}></i>
               </button>
-              <span
-                className="d-inline-flex align-items-center justify-content-center rounded"
-                style={{
-                  width: 26, height: 26,
-                  background: 'linear-gradient(135deg,#405189,#6691e7)',
-                  color: '#fff',
-                  boxShadow: '0 2px 6px rgba(64,81,137,0.3)',
-                }}
-              >
-                <i className={`ri-folder${isOpen ? '-open' : ''}-line fs-13`}></i>
-              </span>
+              <div className="avatar-xs">
+                <span className="avatar-title rounded bg-primary-subtle text-primary fs-4">
+                  <i className={`ri-folder${isOpen ? '-open' : ''}-line`}></i>
+                </span>
+              </div>
               <div>
-                <span className="fw-bold fs-14" style={{ color: '#405189' }}>{mod.name}</span>
+                <strong>{mod.name}</strong>
                 {mod.description && <div className="text-muted fs-11">{mod.description}</div>}
               </div>
-              <span
-                className="ms-2 fs-10 fw-bold rounded-pill px-2 py-1"
-                style={{
-                  background: 'linear-gradient(135deg,#405189,#6691e7)',
-                  color: '#fff',
-                }}
-              >
+              <Badge color="primary" pill className="ms-2">
                 {(tree.children.get(mod.id) || []).length}
-              </span>
+              </Badge>
             </div>
           </td>
           <td className="text-center py-2">
@@ -357,24 +339,12 @@ export default function PermissionMatrix({
       const rowAllOn = rowOn === rowTotal;
       const rowAllowedCount = PERMS.filter(p => isPermAllowed(mod.slug, p.key)).length;
       const leafStyle = getLeafStyle(mod.slug);
-      // Top-level leaves (Dashboard, Branches, Employees, Profile) get the colored
-      // Master-style treatment with their own color. Leaves nested under Master stay plain.
-      const isTopLevel = depth === 0;
       rows.push(
         <tr
           key={mod.id}
           className="perm-leaf-row"
-          style={
-            {
-              lineHeight: 1.2,
-              background: isTopLevel ? `${leafStyle.color}0d` : undefined,
-              borderLeft: isTopLevel ? `3px solid ${leafStyle.color}` : undefined,
-              ['--leaf-color' as any]: leafStyle.color,
-              ['--leaf-color-soft' as any]: `${leafStyle.color}1a`,
-            } as React.CSSProperties
-          }
         >
-          <td className="py-2" style={{ paddingLeft: `0.75rem` }}>
+          <td className="py-2" style={{ paddingLeft: `${0.75 + depth * 2.75}rem` }}>
             <div className="d-flex align-items-center gap-2">
 
 
@@ -383,39 +353,15 @@ export default function PermissionMatrix({
 
 
 
-              <span
-                className="d-inline-flex align-items-center justify-content-center rounded"
-                style={{
-                  width: 26, height: 26,
-                  background: isTopLevel
-                    ? `linear-gradient(135deg, ${leafStyle.color}, ${leafStyle.color}cc)`
-                    : 'rgba(64,81,137,0.08)',
-                  color: isTopLevel ? '#fff' : '#405189',
-                  flexShrink: 0,
-                  boxShadow: isTopLevel ? `0 2px 6px ${leafStyle.color}40` : undefined,
-                }}
-              >
-                <i className={`${leafStyle.icon} fs-13`}></i>
-              </span>
-              <span
-                className={isTopLevel ? 'fw-bold fs-14' : 'fw-semibold fs-13'}
-                style={{ color: isTopLevel ? leafStyle.color : '#1f2937' }}
-              >
-                {mod.name}
-              </span>
+              <div className="avatar-xs">
+                <span className="avatar-title rounded bg-primary-subtle text-primary fs-4">
+                  <i className={leafStyle.icon}></i>
+                </span>
+              </div>
+              <strong>{mod.name}</strong>
               {mod.is_default && (
-                <Badge
-                  pill
-                  className="fs-10 ms-1"
-                  style={{
-                    background: '#fff',
-                    color: leafStyle.color,
-                    border: `1px solid ${leafStyle.color}`,
-                    fontWeight: 700,
-                    letterSpacing: '0.04em',
-                  }}
-                >
-                  DEFAULT
+                <Badge color="primary" pill className="text-uppercase ms-1">
+                  Default
                 </Badge>
               )}
             </div>
@@ -520,23 +466,23 @@ export default function PermissionMatrix({
             <table className="table align-middle table-nowrap table-hover mb-0">
               <thead>
                 <tr style={{
-                  background: 'linear-gradient(180deg, #5a626e, #8b939f)',
-                  boxShadow: '0 2px 4px rgba(64,81,137,0.15)',
+                  background: '#f4f6fb',
+                  borderBottom: '2px solid #405189',
                 }}>
-                  <th className="ps-3 py-3 fw-bold text-uppercase fs-11" style={{ width: '34%', color: '#fff', letterSpacing: '0.04em' }}>
+                  <th className="ps-3 py-3 fw-bold text-uppercase fs-11" style={{ width: '34%', color: '#405189', letterSpacing: '0.04em' }}>
                     Module
                   </th>
                   <th className="text-center py-3" style={{ width: '8%' }}>
                     <div className="d-flex flex-column align-items-center gap-1">
-                      <i className="ri-checkbox-multiple-line fs-14" style={{ color: 'rgba(255,255,255,0.9)' }}></i>
-                      <span className="fs-10 fw-bold text-uppercase" style={{ color: '#fff', letterSpacing: '0.05em' }}>All</span>
+                      <i className="ri-checkbox-multiple-line fs-14" style={{ color: '#405189' }}></i>
+                      <span className="fs-10 fw-bold text-uppercase" style={{ color: '#405189', letterSpacing: '0.05em' }}>All</span>
                     </div>
                   </th>
                   {PERMS.map(p => (
                     <th key={p.key} className="text-center py-3" style={{ width: `${58 / PERMS.length}%` }}>
                       <div className="d-flex flex-column align-items-center gap-1">
-                        <i className={`${p.icon} fs-14`} style={{ color: 'rgba(255,255,255,0.9)' }}></i>
-                        <span className="fs-10 fw-bold text-uppercase" style={{ color: '#fff', letterSpacing: '0.05em' }}>{p.label}</span>
+                        <i className={`${p.icon} fs-14`} style={{ color: '#405189' }}></i>
+                        <span className="fs-10 fw-bold text-uppercase" style={{ color: '#405189', letterSpacing: '0.05em' }}>{p.label}</span>
                       </div>
                     </th>
                   ))}
