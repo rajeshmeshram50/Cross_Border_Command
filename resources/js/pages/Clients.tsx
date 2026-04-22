@@ -141,106 +141,116 @@ export default function Clients({ onNavigate }: Props) {
     },
     {
       header: 'Plan',
-      accessorKey: 'plan',
+      accessorKey: 'plan_name',
       cell: (info: any) => (
-        <>
-          <span className="text-dark fw-semibold">{info.row.original.plan?.name || 'Free'}</span>
-          {info.row.original.plan && info.row.original.plan.price > 0 && <span className="text-success fw-semibold ms-2 fs-12">₹{info.row.original.plan.price.toLocaleString()}/yr</span>}
-        </>
+        <span className="fw-semibold text-dark">{info.row.original.plan?.name || 'Free'}</span>
       ),
+    },
+    {
+      header: 'Price',
+      accessorKey: 'plan_price',
+      cell: (info: any) => {
+        const plan = info.row.original.plan;
+        if (!plan || plan.price <= 0) return <span className="text-muted">—</span>;
+        const suffix = plan.period === 'month' ? '/mo' : plan.period === 'quarter' ? '/qtr' : '/yr';
+        return (
+          <span className="text-success fw-semibold">
+            ₹{plan.price.toLocaleString()}
+            <small className="text-muted fw-normal fs-11 ms-1">{suffix}</small>
+          </span>
+        );
+      },
     },
     {
       header: 'Status',
       accessorKey: 'status',
       cell: (info: any) => <Badge color={info.row.original.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">{info.row.original.status}</Badge>,
     },
- {
-  header: () => <div style={{ textAlign: 'center' }}>Actions</div>,
-  id: 'actions',
-  
-  
-  cell: (info: any) => (
-    <div className="d-flex gap-1">
-      {/* View */}
-      <button
-        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-        title="View"
-        onClick={() => onNavigate('client-view', { clientId: info.row.original.id })}
-      >
-        <span className="avatar-title bg-transparent text-reset">
-          <i className="ri-eye-line"></i>
-        </span>
-      </button>
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: 'actions',
+      cell: (info: any) => (
+        <div className="d-flex gap-1 justify-content-center">
+          {/* View */}
+          <button
+            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
+            title="View"
+            onClick={() => onNavigate('client-view', { clientId: info.row.original.id })}
+          >
+            <span className="avatar-title bg-transparent text-reset">
+              <i className="ri-eye-line"></i>
+            </span>
+          </button>
 
-      {/* Edit */}
-      <button
-        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-        title="Edit"
-        onClick={() => onNavigate('client-form', { editId: info.row.original.id })}
-      >
-        <span className="avatar-title bg-transparent text-reset">
-          <i className="ri-pencil-line"></i>
-        </span>
-      </button>
+          {/* Edit */}
+          <button
+            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
+            title="Edit"
+            onClick={() => onNavigate('client-form', { editId: info.row.original.id })}
+          >
+            <span className="avatar-title bg-transparent text-reset">
+              <i className="ri-pencil-line"></i>
+            </span>
+          </button>
 
-      {/* Delete */}
-      <button
-        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-        title="Delete"
-        disabled={deleting === info.row.original.id}
-        onClick={() => handleDeleteClick(info.row.original)}
-      >
-        <span className="avatar-title bg-transparent text-reset">
-          <i className="ri-delete-bin-line"></i>
-        </span>
-      </button>
+          {/* Delete */}
+          <button
+            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
+            title="Delete"
+            disabled={deleting === info.row.original.id}
+            onClick={() => handleDeleteClick(info.row.original)}
+          >
+            <span className="avatar-title bg-transparent text-reset">
+              <i className="ri-delete-bin-line"></i>
+            </span>
+          </button>
 
-      {/* Branches */}
-      <button
-        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-        title="Branches"
-        onClick={() => onNavigate('client-branches', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
-      >
-        <span className="avatar-title bg-transparent text-reset">
-          <i className="ri-git-branch-line"></i>
-        </span>
-      </button>
+          {/* Branches */}
+          <button
+            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
+            title="Branches"
+            onClick={() => onNavigate('client-branches', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
+          >
+            <span className="avatar-title bg-transparent text-reset">
+              <i className="ri-git-branch-line"></i>
+            </span>
+          </button>
 
-      {/* Permissions */}
-      <button
-        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-        title="Permissions"
-        onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
-      >
-        <span className="avatar-title bg-transparent text-reset">
-          <i className="ri-shield-check-line"></i>
-        </span>
-      </button>
+          {/* Permissions */}
+          <button
+            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
+            title="Permissions"
+            onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
+          >
+            <span className="avatar-title bg-transparent text-reset">
+              <i className="ri-shield-check-line"></i>
+            </span>
+          </button>
 
-      {/* Payments */}
-      <button
-        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-        title="Payments"
-        onClick={() => onNavigate('client-payments', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
-      >
-        <span className="avatar-title bg-transparent text-reset">
-          <i className="ri-bank-card-line"></i>
-        </span>
-      </button>
+          {/* Payments */}
+          <button
+            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
+            title="Payments"
+            onClick={() => onNavigate('client-payments', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
+          >
+            <span className="avatar-title bg-transparent text-reset">
+              <i className="ri-bank-card-line"></i>
+            </span>
+          </button>
 
-      {/* Settings */}
-      <button
-        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-        title="Settings"
-        onClick={() => onNavigate('client-settings', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
-      >
-        <span className="avatar-title bg-transparent text-reset">
-          <i className="ri-settings-3-line"></i>
-        </span>
-      </button>
-    </div>
-  ),
-}
+          {/* Settings */}
+          <button
+            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
+            title="Settings"
+            onClick={() => onNavigate('client-settings', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
+          >
+            <span className="avatar-title bg-transparent text-reset">
+              <i className="ri-settings-3-line"></i>
+            </span>
+          </button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -267,20 +277,20 @@ export default function Clients({ onNavigate }: Props) {
                   <h5 className="card-title mb-0">All Clients <span className="badge bg-primary-subtle text-primary ms-1">{total}</span></h5>
                 </div>
                 <div className="col-sm-auto">
-                 <div className="d-flex gap-2 flex-wrap">
-  <Button color="light" onClick={handleExport} disabled={exporting}>
-    {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
-    {exporting ? 'Exporting...' : 'Export'}
-  </Button>
-  <Button
-    color="primary"
-    className="btn-label waves-effect waves-light rounded-pill"
-    onClick={() => onNavigate('client-form')}
-  >
-    <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-    Add Client
-  </Button>
-</div>
+                  <div className="d-flex gap-2 flex-wrap">
+                    <Button color="light" onClick={handleExport} disabled={exporting}>
+                      {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
+                      {exporting ? 'Exporting...' : 'Export'}
+                    </Button>
+                    <Button
+                      color="primary"
+                      className="btn-label waves-effect waves-light rounded-pill btn btn-primary"
+                      onClick={() => onNavigate('client-form')}
+                    >
+                      <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                      Add Client
+                    </Button>
+                  </div>
                 </div>
               </Row>
             </CardHeader>
