@@ -271,9 +271,14 @@ export default function Payments() {
                         {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
                         Export
                       </Button>
-                      <Button color="success" onClick={openAddModal}>
-                        <i className="ri-add-line align-bottom me-1"></i> Record Payment
-                      </Button>
+                      <Button
+                          color="primary"
+                          className="btn-label waves-effect waves-light rounded-pill"
+                          onClick={openAddModal}
+                        >
+                          <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                          Record Payment
+                        </Button>
                     </div>
                   </div>
                 )}
