@@ -63,7 +63,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
             <h4 className="mb-sm-0">Subscription Plans</h4>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Velzon</a></li>
+                <li className="breadcrumb-item"><a href="#">IGC</a></li>
                 <li className="breadcrumb-item active">Plans</li>
               </ol>
             </div>
