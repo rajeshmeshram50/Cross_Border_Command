@@ -26,25 +26,25 @@ export const PERMS: { key: PermKey; label: string; icon: string; color: string }
 
 // Unified navy accent for every leaf — icons still vary per module for identity,
 // but colors are single-hue so the table isn't visually noisy.
-const ACCENT = '#405189';
+const ACCENT = 'rgb(64, 81, 137)';
 
 const LEAF_ICON: Record<string, string> = {
-  'dashboard':   'ri-dashboard-2-line',
-  'clients':     'ri-building-line',
-  'branches':    'ri-git-branch-line',
-  'employees':   'ri-user-settings-line',
-  'plans':       'ri-bank-card-line',
-  'payments':    'ri-money-rupee-circle-line',
-  'permissions': 'ri-shield-check-line',
-  'profile':     'ri-account-circle-line',
-  'settings':    'ri-settings-3-line',
-  'my-plan':     'ri-calendar-schedule-line',
+  'dashboard':   'ri-dashboard-2-fill',
+  'clients':     'ri-building-fill',
+  'branches':    'ri-git-branch-fill',
+  'employees':   'ri-user-settings-fill',
+  'plans':       'ri-bank-card-fill',
+  'payments':    'ri-money-rupee-circle-fill',
+  'permissions': 'ri-shield-check-fill',
+  'profile':     'ri-account-circle-fill',
+  'settings':    'ri-settings-3-fill',
+  'my-plan':     'ri-calendar-schedule-fill',
 };
 
 const getLeafStyle = (slug: string): { color: string; icon: string } => {
   if (LEAF_ICON[slug]) return { color: ACCENT, icon: LEAF_ICON[slug] };
-  if (slug.startsWith('master.')) return { color: ACCENT, icon: 'ri-folder-user-line' };
-  return { color: ACCENT, icon: 'ri-file-list-3-line' };
+  if (slug.startsWith('master.')) return { color: ACCENT, icon: 'ri-folder-user-fill' };
+  return { color: ACCENT, icon: 'ri-file-list-3-fill' };
 };
 
 export const emptyPerms = (): Record<PermKey, boolean> => ({
@@ -284,15 +284,22 @@ export default function PermissionMatrix({
                 <i className={`ri-arrow-${isOpen ? 'down' : 'right'}-s-line fs-16 text-muted`}></i>
               </button>
               <div className="avatar-xs">
-                <span className="avatar-title rounded bg-primary-subtle text-primary fs-4">
-                  <i className={`ri-folder${isOpen ? '-open' : ''}-line`}></i>
+                <span
+                  className="avatar-title rounded fs-4"
+                  style={{ background: 'rgba(64,81,137,0.12)', color: ACCENT }}
+                >
+                  <i className={`ri-folder${isOpen ? '-open' : ''}-fill`}></i>
                 </span>
               </div>
               <div>
                 <strong>{mod.name}</strong>
                 {mod.description && <div className="text-muted fs-11">{mod.description}</div>}
               </div>
-              <Badge color="primary" pill className="ms-2">
+              <Badge
+                pill
+                className="ms-2"
+                style={{ background: ACCENT, color: '#fff' }}
+              >
                 {(tree.children.get(mod.id) || []).length}
               </Badge>
             </div>
@@ -354,13 +361,20 @@ export default function PermissionMatrix({
 
 
               <div className="avatar-xs">
-                <span className="avatar-title rounded bg-primary-subtle text-primary fs-4">
+                <span
+                  className="avatar-title rounded fs-4"
+                  style={{ background: 'rgba(64,81,137,0.12)', color: ACCENT }}
+                >
                   <i className={leafStyle.icon}></i>
                 </span>
               </div>
               <strong>{mod.name}</strong>
               {mod.is_default && (
-                <Badge color="primary" pill className="text-uppercase ms-1">
+                <Badge
+                  pill
+                  className="text-uppercase ms-1"
+                  style={{ background: ACCENT, color: '#fff' }}
+                >
                   Default
                 </Badge>
               )}
@@ -453,8 +467,18 @@ export default function PermissionMatrix({
       </CardBody>
 
       <div className="px-3 pt-3 pb-2">
+        <style>{`
+          .perm-matrix-table .form-check-input:checked {
+            background-color: ${ACCENT};
+            border-color: ${ACCENT};
+          }
+          .perm-matrix-table .form-check-input:indeterminate {
+            background-color: ${ACCENT};
+            border-color: ${ACCENT};
+          }
+        `}</style>
         <div
-          className="table-responsive rounded-3"
+          className="table-responsive perm-matrix-table rounded-3"
           style={{ border: '1px solid var(--vz-border-color)', overflow: 'hidden' }}
         >
           {loading ? (
@@ -469,18 +493,18 @@ export default function PermissionMatrix({
                   background: '#f4f6fb',
                   borderBottom: '2px solid #405189',
                 }}>
-                  <th className="ps-3 py-3 fw-bold text-uppercase fs-11" style={{ width: '34%', color: '#405189', letterSpacing: '0.04em' }}>
+                  <th className="ps-3 py-3 fw-bold text-uppercase align-items-center fs-11" style={{ width: '34%', color: '#405189', letterSpacing: '0.04em' }}>
                     Module
                   </th>
                   <th className="text-center py-3" style={{ width: '8%' }}>
-                    <div className="d-flex flex-column align-items-center gap-1">
+                    <div className="d-flex flex-row align-items-center gap-1">
                       <i className="ri-checkbox-multiple-line fs-14" style={{ color: '#405189' }}></i>
                       <span className="fs-10 fw-bold text-uppercase" style={{ color: '#405189', letterSpacing: '0.05em' }}>All</span>
                     </div>
                   </th>
                   {PERMS.map(p => (
                     <th key={p.key} className="text-center py-3" style={{ width: `${58 / PERMS.length}%` }}>
-                      <div className="d-flex flex-column align-items-center gap-1">
+                      <div className="d-flex flex-row align-items-center gap-1">
                         <i className={`${p.icon} fs-14`} style={{ color: '#405189' }}></i>
                         <span className="fs-10 fw-bold text-uppercase" style={{ color: '#405189', letterSpacing: '0.05em' }}>{p.label}</span>
                       </div>
