@@ -100,19 +100,70 @@
         background-color: $secondary !important;
     }
     .dynamic-pagination{
-        .swiper-pagination-bullet { 
+        .swiper-pagination-bullet {
             background-color: $secondary !important;
         }
     }
     &.pagination-custom{
-        .swiper-pagination-bullet { 
+        .swiper-pagination-bullet {
             color: $white;
             &.swiper-pagination-bullet-active{
                 opacity: 1;
             }
         }
     }
-    &.swiper-scrollbar { 
-        background-color: rgba($dark, 0.35); 
+    &.swiper-scrollbar {
+        background-color: rgba($dark, 0.35);
     }
+}
+
+// Plans page - small glass-style circular arrows
+.plans-swiper {
+    padding-top: 6px;
+
+    .swiper-button-next,
+    .swiper-button-prev {
+        height: 26px !important;
+        width: 26px !important;
+        background: linear-gradient(135deg, rgba(#fff, 0.95), rgba($primary, 0.12)) !important;
+        background-image: linear-gradient(135deg, rgba(#fff, 0.95), rgba($primary, 0.12)) !important;
+        backdrop-filter: blur(6px);
+        border-radius: 50% !important;
+        box-shadow: 0 4px 12px rgba($primary, 0.28), 0 0 0 1px rgba($primary, 0.1);
+        transition: all 0.25s ease;
+        top: 45% !important;
+        margin-top: 0 !important;
+
+        // Hide any child SVG / inner icon element Swiper may inject
+        svg, img {
+            display: none !important;
+        }
+
+        &::before {
+            content: none !important;
+        }
+
+        &::after {
+            font-family: remixicon !important;
+            font-size: 13px !important;
+            font-weight: 700;
+            color: rgba($primary, 0.85);
+            line-height: 1 !important;
+            background: none !important;
+        }
+
+        &:hover {
+            transform: scale(1.12);
+            background: $primary !important;
+            background-image: none !important;
+            box-shadow: 0 6px 18px rgba($primary, 0.45);
+
+            &::after {
+                color: #fff;
+            }
+        }
+    }
+
+    .swiper-button-prev::after { content: "\ea64" !important; }
+    .swiper-button-next::after { content: "\ea6e" !important; }
 }

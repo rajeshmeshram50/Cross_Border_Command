@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardBody, Col, Row, Badge, Button, Spinner } from 'reactstrap';
 import { Swiper, SwiperSlide } from 'swiper/react';
-import { Navigation, Pagination } from 'swiper/modules';
+import { Navigation, Pagination, Autoplay } from 'swiper/modules';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
 import Swal from 'sweetalert2';
@@ -96,18 +96,24 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
         </Card>
       ) : (
         <Swiper
-          modules={[Navigation, Pagination]}
+          modules={[Navigation, Pagination, Autoplay]}
           slidesPerView={4}
           spaceBetween={24}
           navigation
           pagination={{ clickable: true }}
+          loop={plans.length > 1}   
+          autoplay={{
+            delay: 2000,
+            disableOnInteraction: false,
+            pauseOnMouseEnter: true,
+          }}
           breakpoints={{
             0:    { slidesPerView: 1, spaceBetween: 16 },
             576:  { slidesPerView: 2, spaceBetween: 16 },
             992:  { slidesPerView: 3, spaceBetween: 20 },
             1200: { slidesPerView: 4, spaceBetween: 24 },
           }}
-          className="pb-5"
+          className="plans-swiper pb-5"
         >
           {plans.map(p => (
             <SwiperSlide key={p.id}>
