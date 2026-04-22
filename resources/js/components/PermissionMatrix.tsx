@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, useRef, type ReactElement } from 'react';
 import { Badge, Button, CardBody, Input, Spinner } from 'reactstrap';
 
 export interface PermModule {
@@ -28,6 +28,33 @@ export const emptyPerms = (): Record<PermKey, boolean> => ({
   can_view: false, can_add: false, can_edit: false, can_delete: false,
   can_export: false, can_import: false, can_approve: false,
 });
+
+/** Tri-state checkbox — shows indeterminate when 0 < on < total. */
+function TriStateCheckbox({
+  on, total, disabled, onToggle, title,
+}: {
+  on: number; total: number; disabled: boolean;
+  onToggle: () => void; title: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = on > 0 && on < total;
+  }, [on, total]);
+  return (
+    <div className="form-check d-flex justify-content-center m-0">
+      <input
+        ref={ref}
+        type="checkbox"
+        className="form-check-input"
+        style={{ width: '0.95rem', height: '0.95rem', cursor: disabled ? 'not-allowed' : 'pointer' }}
+        checked={total > 0 && on === total}
+        onChange={onToggle}
+        disabled={disabled}
+        title={title}
+      />
+    </div>
+  );
+}
 
 interface Props {
   modules: PermModule[];
@@ -112,6 +139,26 @@ export default function PermissionMatrix({
     });
   };
 
+  /** Toggle all 7 permissions on/off for a single leaf row. */
+  const toggleRow = (modId: number) => {
+    const mod = tree.byId.get(modId);
+    if (!mod) return;
+    const current = matrix[modId] || emptyPerms();
+    const allowedKeys = PERMS.filter(p => isPermAllowed(mod.slug, p.key)).map(p => p.key);
+    if (allowedKeys.length === 0) return;
+    const allOn = allowedKeys.every(k => current[k]);
+    const nextRow: Record<PermKey, boolean> = { ...current };
+    allowedKeys.forEach(k => { nextRow[k] = !allOn; });
+    onChange({ ...matrix, [modId]: nextRow });
+  };
+
+  /** Row state — how many of 7 perms are granted for this leaf. */
+  const rowSummary = (modId: number) => {
+    const row = matrix[modId] || emptyPerms();
+    const on = PERMS.filter(p => row[p.key]).length;
+    return { on, total: PERMS.length };
+  };
+
   const toggleBranch = (parentId: number, key: PermKey) => {
     const desc = getDescendantLeaves(parentId);
     if (desc.length === 0) return;
@@ -122,6 +169,34 @@ export default function PermissionMatrix({
       next[m.id] = { ...(next[m.id] || emptyPerms()), [key]: !allOn };
     });
     onChange(next);
+  };
+
+  /** Toggle ALL perms × ALL descendant leaves under a parent. */
+  const toggleBranchAll = (parentId: number) => {
+    const desc = getDescendantLeaves(parentId);
+    if (desc.length === 0) return;
+    const totalSlots: [PermModule, PermKey][] = [];
+    desc.forEach(m => PERMS.forEach(p => {
+      if (isPermAllowed(m.slug, p.key)) totalSlots.push([m, p.key]);
+    }));
+    if (totalSlots.length === 0) return;
+    const allOn = totalSlots.every(([m, k]) => matrix[m.id]?.[k]);
+    const next = { ...matrix };
+    totalSlots.forEach(([m, k]) => {
+      next[m.id] = { ...(next[m.id] || emptyPerms()), [k]: !allOn };
+    });
+    onChange(next);
+  };
+
+  const branchAllSummary = (parentId: number) => {
+    const desc = getDescendantLeaves(parentId);
+    let on = 0, total = 0;
+    desc.forEach(m => PERMS.forEach(p => {
+      if (!isPermAllowed(m.slug, p.key)) return;
+      total++;
+      if (matrix[m.id]?.[p.key]) on++;
+    }));
+    return { on, total };
   };
 
   const toggleColumn = (key: PermKey) => {
@@ -163,6 +238,8 @@ export default function PermissionMatrix({
     const isOpen = !!expanded[mod.id];
 
     if (hasChildren) {
+      const { on: branchOn, total: branchTotal } = branchAllSummary(mod.id);
+      const branchAllOn = branchTotal > 0 && branchOn === branchTotal;
       rows.push(
         <tr key={mod.id} style={{ background: depth === 0 ? '#eef2ff' : '#f8fafc', lineHeight: 1.2 }}>
           <td className="py-2" style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}>
@@ -186,6 +263,15 @@ export default function PermissionMatrix({
                 {(tree.children.get(mod.id) || []).length}
               </Badge>
             </div>
+          </td>
+          <td className="text-center py-2">
+            <TriStateCheckbox
+              on={branchOn}
+              total={branchTotal}
+              disabled={branchTotal === 0}
+              onToggle={() => toggleBranchAll(mod.id)}
+              title={branchAllOn ? `Clear all perms for ${mod.name}` : `Grant all perms for ${mod.name}`}
+            />
           </td>
           {PERMS.map(p => {
             const { on, total } = branchSummary(mod.id, p.key);
@@ -213,6 +299,9 @@ export default function PermissionMatrix({
         });
       }
     } else {
+      const { on: rowOn, total: rowTotal } = rowSummary(mod.id);
+      const rowAllOn = rowOn === rowTotal;
+      const rowAllowedCount = PERMS.filter(p => isPermAllowed(mod.slug, p.key)).length;
       rows.push(
         <tr key={mod.id} style={{ lineHeight: 1.2 }}>
           <td className="py-2" style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}>
@@ -224,6 +313,15 @@ export default function PermissionMatrix({
               <span className="fw-medium text-dark fs-13">{mod.name}</span>
               {mod.is_default && <Badge color="success-subtle" className="text-success fs-10 rounded-pill ms-1">DEFAULT</Badge>}
             </div>
+          </td>
+          <td className="text-center py-2">
+            <TriStateCheckbox
+              on={rowOn}
+              total={rowTotal}
+              disabled={rowAllowedCount === 0}
+              onToggle={() => toggleRow(mod.id)}
+              title={rowAllOn ? 'Clear all permissions for this row' : 'Grant all permissions for this row'}
+            />
           </td>
           {PERMS.map(p => {
             const disabled = !isPermAllowed(mod.slug, p.key);
@@ -303,9 +401,17 @@ export default function PermissionMatrix({
           <table className="table align-middle table-nowrap table-hover table-sm mb-0">
             <thead className="table-light">
               <tr>
-                <th className="ps-3 py-2" style={{ width: '38%' }}>Module</th>
+                <th className="ps-3 py-2" style={{ width: '34%' }}>Module</th>
+                <th className="text-center py-2" style={{ width: '8%' }}>
+                  <div className="d-flex flex-column align-items-center gap-1">
+                    <span className="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary-subtle text-primary" style={{ width: '22px', height: '22px' }}>
+                      <i className="ri-checkbox-multiple-line fs-12"></i>
+                    </span>
+                    <span className="fs-11 fw-semibold text-uppercase">All</span>
+                  </div>
+                </th>
                 {PERMS.map(p => (
-                  <th key={p.key} className="text-center py-2" style={{ width: `${62 / PERMS.length}%` }}>
+                  <th key={p.key} className="text-center py-2" style={{ width: `${58 / PERMS.length}%` }}>
                     <div className="d-flex flex-column align-items-center gap-1">
                       <span className={`d-inline-flex align-items-center justify-content-center rounded-circle bg-${p.color}-subtle text-${p.color}`} style={{ width: '22px', height: '22px' }}>
                         <i className={`${p.icon} fs-12`}></i>
