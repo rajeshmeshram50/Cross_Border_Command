@@ -141,14 +141,14 @@ export default function Permissions() {
                     <option value="">— {isSuperAdmin ? 'Select client admin...' : 'Select branch user...'} —</option>
                     {users.map(u => (
                       <option key={u.id} value={u.id}>
-                        {u.name} ({u.email}){u.client ? ` · ${u.client.org_name}` : ''}
+                        {u.name} ({u.email}){u.client ? `  ${u.client.org_name}` : ''}
                       </option>
                     ))}
                   </Input>
                 </Col>
                 <Col md={5} className="text-md-end">
                   <Button
-                    color="success"
+                    color="primary"
                     className="btn-label waves-effect waves-light rounded-pill"
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
@@ -180,6 +180,116 @@ export default function Permissions() {
               </CardBody>
             )}
 
+            {/* ── Animated empty state when no user is selected ── */}
+            {!selectedUserId && users.length > 0 && (
+              <CardBody className="py-5 text-center position-relative" style={{ overflow: 'hidden' }}>
+                <style>{`
+                  @keyframes perm-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+                  @keyframes perm-ring-1 { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(2.1); opacity: 0; } }
+                  @keyframes perm-ring-2 { 0% { transform: scale(1); opacity: .4; } 100% { transform: scale(2.6); opacity: 0; } }
+                  @keyframes perm-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+                `}</style>
+
+                {/* Decorative background glow */}
+                <div style={{
+                  position: 'absolute', top: '-30%', left: '50%', transform: 'translateX(-50%)',
+                  width: 380, height: 380, borderRadius: '50%',
+                  background: 'radial-gradient(circle, rgba(64,81,137,0.08) 0%, transparent 70%)',
+                  pointerEvents: 'none',
+                }} />
+
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  {/* Pulsing rings */}
+                  <span style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg,#405189,#6691e7)',
+                    animation: 'perm-ring-1 2.4s ease-out infinite',
+                    pointerEvents: 'none',
+                  }} />
+                  <span style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg,#405189,#6691e7)',
+                    animation: 'perm-ring-2 2.4s ease-out infinite',
+                    animationDelay: '.8s',
+                    pointerEvents: 'none',
+                  }} />
+                  {/* Floating gradient shield */}
+                  <div style={{
+                    position: 'relative',
+                    width: 60, height: 60,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg,#405189,#6691e7)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 18px 40px rgba(64,81,137,0.35)',
+                    animation: 'perm-float 3s ease-in-out infinite',
+                    zIndex: 1,
+                  }}>
+                    <i className="ri-shield-user-line" style={{ fontSize: 30, color: '#fff' }} />
+                  </div>
+                </div>
+
+                <div style={{ animation: 'perm-fade .5s ease-out .1s both' }}>
+                  <h4 style={{
+                    marginTop: 22, marginBottom: 6,
+                    fontWeight: 700, color: '#1f2937',
+                    background: 'linear-gradient(135deg,#405189,#6691e7)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                    display: 'inline-block',
+                  }}>
+                    Select a {isSuperAdmin ? 'Client Admin' : 'Branch User'} to Begin
+                  </h4>
+                  <p style={{ color: '#6b7280', fontSize: 13.5, maxWidth: 480, margin: '0 auto 24px', lineHeight: 1.6 }}>
+                    Choose a user from the dropdown above to view and configure which modules they can access — from viewing records to approving workflows.
+                  </p>
+                </div>
+
+                {/* Feature highlights */}
+                <div
+                  className="d-flex flex-wrap justify-content-center gap-3"
+                  style={{ animation: 'perm-fade .5s ease-out .25s both' }}
+                >
+                  {[
+                    { icon: 'ri-eye-line',        title: 'View Access',     desc: 'Read-only access to modules' },
+                    { icon: 'ri-edit-box-line',   title: 'Modify Records',  desc: 'Add, edit, and delete entries' },
+                    { icon: 'ri-check-double-line', title: 'Approve & Save', desc: 'Apply permissions instantly' },
+                  ].map(f => (
+                    <div key={f.title} style={{
+                      background: '#fff',
+                      border: '1px solid #eef0f3',
+                      borderRadius: 12,
+                      padding: '12px 16px',
+                      minWidth: 180, maxWidth: 220,
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+                    }}>
+                      <span style={{
+                        width: 36, height: 36, borderRadius: 10,
+                        background: 'linear-gradient(135deg,#405189,#6691e7)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        <i className={f.icon} style={{ color: '#fff', fontSize: 16 }} />
+                      </span>
+                      <div className="text-start">
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1f2937' }}>{f.title}</div>
+                        <div style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.4 }}>{f.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Hint arrow */}
+                <div style={{ marginTop: 28, color: '#9ca3af', fontSize: 11.5, fontWeight: 600, animation: 'perm-fade .5s ease-out .4s both' }}>
+                  <i className="ri-arrow-up-line me-1" style={{ fontSize: 13 }} />
+                  Pick a user above to load their permissions
+                </div>
+              </CardBody>
+            )}
+
             {selectedUserId && (
               <>
                 <PermissionMatrix
@@ -203,7 +313,7 @@ export default function Permissions() {
                     ) : 'Select a user to configure permissions'}
                   </span>
                   <Button
-                    color="success"
+                    color="primary"
                     className="btn-label waves-effect waves-light rounded-pill"
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
