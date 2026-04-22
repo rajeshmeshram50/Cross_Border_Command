@@ -200,21 +200,8 @@ export default function Permissions() {
 
                 <div style={{ position: 'relative', display: 'inline-block' }}>
                   {/* Pulsing rings */}
-                  <span style={{
-                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg,#405189,#6691e7)',
-                    animation: 'perm-ring-1 2.4s ease-out infinite',
-                    pointerEvents: 'none',
-                  }} />
-                  <span style={{
-                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg,#405189,#6691e7)',
-                    animation: 'perm-ring-2 2.4s ease-out infinite',
-                    animationDelay: '.8s',
-                    pointerEvents: 'none',
-                  }} />
+                 
+                 
                   {/* Floating gradient shield */}
                   <div style={{
                     position: 'relative',
@@ -223,7 +210,6 @@ export default function Permissions() {
                     background: 'linear-gradient(135deg,#405189,#6691e7)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     boxShadow: '0 18px 40px rgba(64,81,137,0.35)',
-                    animation: 'perm-float 3s ease-in-out infinite',
                     zIndex: 1,
                   }}>
                     <i className="ri-shield-user-line" style={{ fontSize: 30, color: '#fff' }} />
