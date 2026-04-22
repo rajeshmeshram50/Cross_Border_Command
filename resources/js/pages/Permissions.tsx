@@ -8,14 +8,14 @@ interface Module { id: number; name: string; slug: string; icon: string; is_defa
 interface ManagedUser { id: number; name: string; email: string; user_type: string; client_id?: number; branch_id?: number; client?: { id: number; org_name: string }; branch?: { id: number; name: string }; status: string; }
 type PermKey = 'can_view' | 'can_add' | 'can_edit' | 'can_delete' | 'can_export' | 'can_import' | 'can_approve';
 
-const PERMS: { key: PermKey; label: string; icon: string }[] = [
-  { key: 'can_view',    label: 'View',    icon: 'ri-eye-line' },
-  { key: 'can_add',     label: 'Add',     icon: 'ri-add-line' },
-  { key: 'can_edit',    label: 'Edit',    icon: 'ri-pencil-line' },
-  { key: 'can_delete',  label: 'Delete',  icon: 'ri-delete-bin-line' },
-  { key: 'can_export',  label: 'Export',  icon: 'ri-download-2-line' },
-  { key: 'can_import',  label: 'Import',  icon: 'ri-upload-2-line' },
-  { key: 'can_approve', label: 'Approve', icon: 'ri-check-double-line' },
+const PERMS: { key: PermKey; label: string; icon: string; color: string }[] = [
+  { key: 'can_view',    label: 'View',    icon: 'ri-eye-line',           color: 'info' },
+  { key: 'can_add',     label: 'Add',     icon: 'ri-add-line',           color: 'success' },
+  { key: 'can_edit',    label: 'Edit',    icon: 'ri-pencil-line',        color: 'warning' },
+  { key: 'can_delete',  label: 'Delete',  icon: 'ri-delete-bin-line',    color: 'danger' },
+  { key: 'can_export',  label: 'Export',  icon: 'ri-download-2-line',    color: 'primary' },
+  { key: 'can_import',  label: 'Import',  icon: 'ri-upload-2-line',      color: 'secondary' },
+  { key: 'can_approve', label: 'Approve', icon: 'ri-check-double-line',  color: 'primary' },
 ];
 
 const emptyPerms = (): Record<PermKey, boolean> => ({
@@ -176,11 +176,20 @@ export default function Permissions() {
 
       <Row>
         <Col xs={12}>
-          <Card>
-            <CardHeader>
+          <Card className="shadow-sm">
+            <CardHeader className="bg-light-subtle border-bottom">
               <Row className="align-items-center gy-3">
-                <Col md={6}>
-                  <Input type="select" value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}>
+                <Col md={7}>
+                  <label className="form-label text-muted fs-11 fw-bold text-uppercase mb-1">
+                    <i className="ri-user-settings-line me-1"></i>
+                    {isSuperAdmin ? 'Client Admin' : 'Branch User'}
+                  </label>
+                  <Input
+                    type="select"
+                    className="form-select-lg rounded-pill"
+                    value={selectedUserId}
+                    onChange={e => setSelectedUserId(e.target.value)}
+                  >
                     <option value="">— {isSuperAdmin ? 'Select client admin...' : 'Select branch user...'} —</option>
                     {users.map(u => (
                       <option key={u.id} value={u.id}>
@@ -189,9 +198,16 @@ export default function Permissions() {
                     ))}
                   </Input>
                 </Col>
-                <Col md={6} className="text-md-end">
-                  <Button color="success" disabled={saving || !selectedUserId} onClick={handleSave}>
-                    {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-check-line me-1"></i>}
+                <Col md={5} className="text-md-end">
+                  <Button
+                    color="success"
+                    className="btn-label waves-effect waves-light rounded-pill"
+                    disabled={saving || !selectedUserId}
+                    onClick={handleSave}
+                  >
+                    {saving
+                      ? <Spinner size="sm" className="label-icon align-middle me-2" />
+                      : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
                     {saving ? 'Saving...' : 'Save Permissions'}
                   </Button>
                 </Col>
@@ -218,40 +234,51 @@ export default function Permissions() {
 
             {selectedUserId && (
               <>
-                <CardBody className="border-top">
+                <CardBody className="border-top bg-light-subtle">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <span className="text-muted fs-11 fw-bold text-uppercase">Quick:</span>
-                    <Button color="light" size="sm" onClick={() => selectAll(true)}>
-                      <i className="ri-checkbox-multiple-line me-1"></i> Select All
+                    <span className="badge bg-dark-subtle text-dark fs-11 fw-bold text-uppercase rounded-pill px-3 py-2">
+                      <i className="ri-flashlight-line me-1"></i> Quick
+                    </span>
+                    <Button color="soft-primary" size="sm" className="rounded-pill px-3" onClick={() => selectAll(true)}>
+                      <i className="ri-checkbox-multiple-line me-1 align-bottom"></i> Select All
                     </Button>
-                    <Button color="light" size="sm" onClick={() => selectAll(false)}>
-                      <i className="ri-checkbox-multiple-blank-line me-1"></i> Deselect All
+                    <Button color="soft-dark" size="sm" className="rounded-pill px-3" onClick={() => selectAll(false)}>
+                      <i className="ri-checkbox-multiple-blank-line me-1 align-bottom"></i> Deselect All
                     </Button>
                     <span className="vr mx-1"></span>
                     {PERMS.map(p => (
-                      <Button key={p.key} color="light" size="sm" onClick={() => toggleColumn(p.key)}>
-                        <i className={`${p.icon} me-1`}></i> {p.label}
+                      <Button
+                        key={p.key}
+                        color={`soft-${p.color}`}
+                        size="sm"
+                        className="rounded-pill px-3"
+                        onClick={() => toggleColumn(p.key)}
+                      >
+                        <i className={`${p.icon} me-1 align-bottom`}></i> {p.label}
                       </Button>
                     ))}
                     <span className="ms-auto text-muted fs-12">
-                      <strong className="text-primary">{totalChecks}</strong> / {maxChecks} enabled
+                      <strong className="text-primary fs-14">{totalChecks}</strong>
+                      <span className="text-muted"> / {maxChecks} enabled</span>
                     </span>
                   </div>
                 </CardBody>
 
-                <div className="table-responsive table-card">
+                <div className="table-responsive table-card px-3">
                   {loadingPerms ? (
                     <div className="text-center py-5"><Spinner color="primary" /> <span className="ms-2 text-muted">Loading permissions...</span></div>
                   ) : (
-                    <table className="table align-middle table-nowrap mb-0">
+                    <table className="table align-middle table-nowrap table-hover table-sm mb-0">
                       <thead className="table-light">
                         <tr>
-                          <th style={{ width: '30%' }}>Module</th>
+                          <th className="ps-3 py-2" style={{ width: '30%' }}>Module</th>
                           {PERMS.map(p => (
-                            <th key={p.key} className="text-center" style={{ width: `${70 / PERMS.length}%` }}>
+                            <th key={p.key} className="text-center py-2" style={{ width: `${70 / PERMS.length}%` }}>
                               <div className="d-flex flex-column align-items-center gap-1">
-                                <i className={`${p.icon} fs-14 text-muted`}></i>
-                                <span className="fs-11">{p.label}</span>
+                                <span className={`d-inline-flex align-items-center justify-content-center rounded-circle bg-${p.color}-subtle text-${p.color}`} style={{ width: '22px', height: '22px' }}>
+                                  <i className={`${p.icon} fs-12`}></i>
+                                </span>
+                                <span className="fs-11 fw-semibold text-uppercase">{p.label}</span>
                               </div>
                             </th>
                           ))}
@@ -261,21 +288,27 @@ export default function Permissions() {
                         {modules.map(mod => {
                           const rowPerms = matrix[mod.id] || emptyPerms();
                           return (
-                            <tr key={mod.id}>
-                              <td>
+                            <tr key={mod.id} style={{ lineHeight: 1.2 }}>
+                              <td className="ps-3 py-2">
                                 <div className="d-flex align-items-center gap-2">
-                                  <span className="fw-semibold">{mod.name}</span>
-                                  {mod.is_default && <Badge color="success-subtle" className="text-success fs-10">DEFAULT</Badge>}
+                                  {mod.icon && (
+                                    <span className="d-inline-flex align-items-center justify-content-center rounded bg-primary-subtle text-primary" style={{ width: '26px', height: '26px' }}>
+                                      <i className={`${mod.icon} fs-13`}></i>
+                                    </span>
+                                  )}
+                                  <span className="fw-semibold text-dark">{mod.name}</span>
+                                  {mod.is_default && <Badge color="success-subtle" className="text-success fs-10 rounded-pill">DEFAULT</Badge>}
                                 </div>
                               </td>
                               {PERMS.map(p => {
                                 const disabled = !isSuperAdmin && myPerms && myPerms[mod.slug] !== undefined && !myPerms[mod.slug][p.key];
                                 return (
-                                  <td key={p.key} className="text-center">
+                                  <td key={p.key} className="text-center py-2">
                                     <div className="form-check d-flex justify-content-center m-0">
                                       <Input
                                         type="checkbox"
                                         className="form-check-input"
+                                        style={{ width: '0.95rem', height: '0.95rem', cursor: disabled ? 'not-allowed' : 'pointer' }}
                                         checked={!!rowPerms[p.key]}
                                         onChange={() => toggle(mod.id, p.key)}
                                         disabled={!!disabled}
@@ -292,15 +325,28 @@ export default function Permissions() {
                   )}
                 </div>
 
-                <CardBody className="border-top d-flex justify-content-between align-items-center">
+                <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <span className="text-muted fs-13">
                     {selectedUser ? (
-                      <>Editing: <strong>{selectedUser.name}</strong> ({selectedUser.user_type.replace('_', ' ')})</>
+                      <>
+                        <i className="ri-edit-box-line me-1 text-primary"></i>
+                        Editing: <strong className="text-dark">{selectedUser.name}</strong>
+                        <Badge color="info-subtle" className="text-info ms-2 text-uppercase fs-10 rounded-pill">
+                          {selectedUser.user_type.replace('_', ' ')}
+                        </Badge>
+                      </>
                     ) : 'Select a user to configure permissions'}
                     {totalChecks > 0 && <> · <span className="fw-bold text-primary">{totalChecks}</span> enabled</>}
                   </span>
-                  <Button color="success" disabled={saving || !selectedUserId} onClick={handleSave}>
-                    {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-check-line me-1"></i>}
+                  <Button
+                    color="success"
+                    className="btn-label waves-effect waves-light rounded-pill"
+                    disabled={saving || !selectedUserId}
+                    onClick={handleSave}
+                  >
+                    {saving
+                      ? <Spinner size="sm" className="label-icon align-middle me-2" />
+                      : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
                     {saving ? 'Saving...' : 'Save Permissions'}
                   </Button>
                 </CardBody>
