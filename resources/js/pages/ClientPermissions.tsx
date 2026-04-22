@@ -16,7 +16,7 @@ interface Props {
 }
 
 // Slugs hidden from the permission matrix (admin-only features)
-const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions']);
+const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions', 'master.organization_types']);
 
 export default function ClientPermissions({ clientId, clientName, onBack }: Props) {
   const toast = useToast();

@@ -6,6 +6,7 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'Identity & Entity',
     icon: 'IdCard',
     children: [
+      { id: 'master.organization_types', icon: 'Building',    label: 'Organization Types' },
       { id: 'master.company',        icon: 'Building',    label: 'Company Details' },
       { id: 'master.bank_accounts',  icon: 'Landmark',    label: 'Bank Accounts' },
       { id: 'master.departments',    icon: 'Building2',   label: 'Departments' },

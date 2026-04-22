@@ -5,6 +5,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { MASTER_GROUPS } from '../constants';
 import type { MenuChild, MenuGroup } from '../types';
 
+// Master slugs that only super admin is allowed to see/manage.
+// These feed super-admin-only workflows (e.g. client registration).
+const SUPER_ADMIN_ONLY_MASTERS = new Set<string>(['master.organization_types']);
+
 interface CategoryStyle {
   color: string;
   softBg: string;
@@ -119,10 +123,16 @@ export default function MasterDashboard() {
   const perms = user?.permissions || {};
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
+  // Filter groups/children by permission, and hide super-admin-only masters from everyone else.
   const groups = useMemo<MenuGroup[]>(() => {
     if (isSuperAdmin) return MASTER_GROUPS;
     return MASTER_GROUPS
-      .map(g => ({ ...g, children: g.children.filter(c => !!perms[c.id]?.can_view) }))
+      .map(g => ({
+        ...g,
+        children: g.children.filter(
+          c => !SUPER_ADMIN_ONLY_MASTERS.has(c.id) && !!perms[c.id]?.can_view
+        ),
+      }))
       .filter(g => g.children.length > 0);
   }, [isSuperAdmin, perms]);
 

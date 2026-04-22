@@ -12,6 +12,30 @@ interface Props {
   editId?: number;
 }
 
+interface OrgType {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string | null;
+  status: string;
+}
+
+interface PlanOption {
+  id: number;
+  name: string;
+  price: number | string;
+  period: string;
+  status: string;
+}
+
+const formatPlanLabel = (p: PlanOption): string => {
+  const price = Number(p.price);
+  const periodShort: Record<string, string> = { month: 'mo', quarter: 'qtr', year: 'yr' };
+  const per = periodShort[p.period] || p.period;
+  const priceText = price > 0 ? `₹${price.toLocaleString('en-IN')}/${per}` : 'Free';
+  return `${p.name} — ${priceText}`;
+};
+
 const empty = {
   org_name: '', org_type: '', email: '', phone: '', website: '',
   status: 'inactive', sports: '', industry: '', address: '', city: '',
@@ -141,6 +165,29 @@ export default function ClientForm({ onBack, editId }: Props) {
   const [serverErrors, setServerErrors]         = useState<Record<string, string[]>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const touchedRef = useRef<Record<string, boolean>>({});
+  const [orgTypes, setOrgTypes] = useState<OrgType[]>([]);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
+  const [loadingLookups, setLoadingLookups] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/organization-types', { params: { active_only: 1 } }).catch(() => ({ data: [] })),
+      api.get('/plans').catch(() => ({ data: [] })),
+    ]).then(([otRes, planRes]) => {
+      setOrgTypes(Array.isArray(otRes.data) ? otRes.data : []);
+      const allPlans: PlanOption[] = Array.isArray(planRes.data) ? planRes.data : [];
+      setPlans(allPlans.filter(p => p.status === 'active'));
+    }).finally(() => setLoadingLookups(false));
+  }, []);
+
+  // Auto-sync plan_type (free/paid) when user picks a plan
+  useEffect(() => {
+    if (!form.plan_id || plans.length === 0) return;
+    const picked = plans.find(p => String(p.id) === form.plan_id);
+    if (!picked) return;
+    const expected = Number(picked.price) > 0 ? 'paid' : 'free';
+    setForm(f => f.plan_type === expected ? f : { ...f, plan_type: expected });
+  }, [form.plan_id, plans]);
 
   // ── one state per dropdown ──────────────────────────────────────────────────
   const [ddOrgType,     setDdOrgType]     = useState(false);
@@ -385,9 +432,10 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>Org. Type <span className="text-danger">*</span></Lbl>
                 <SelectDD
                   isOpen={ddOrgType} toggle={() => setDdOrgType(o => !o)}
-                  value={form.org_type} placeholder="Select type" fieldKey="org_type"
-                  options={['Business','Sports','Education','Healthcare','Government','NGO','Other']
-                    .map(t => ({ label: t, value: t }))}
+                  value={form.org_type}
+                  placeholder={loadingLookups ? 'Loading…' : 'Select type'}
+                  fieldKey="org_type"
+                  options={orgTypes.map(t => ({ label: t.name, value: t.name }))}
                 />
               </Col>
               <Col md={4}>
@@ -520,13 +568,10 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>Assign Plan <span className="text-danger">*</span></Lbl>
                 <SelectDD
                   isOpen={ddPlan} toggle={() => setDdPlan(o => !o)}
-                  value={form.plan_id} placeholder="Select plan" fieldKey="plan_id"
-                  options={[
-                    { label: 'Starter — ₹0/mo',     value: '1' },
-                    { label: 'Basic — ₹1,999/mo',    value: '2' },
-                    { label: 'Pro — ₹4,999/mo',      value: '3' },
-                    { label: 'Business — ₹9,999/mo', value: '4' },
-                  ]}
+                  value={form.plan_id}
+                  placeholder={loadingLookups ? 'Loading…' : 'Select plan'}
+                  fieldKey="plan_id"
+                  options={plans.map(p => ({ label: formatPlanLabel(p), value: String(p.id) }))}
                 />
               </Col>
               <Col md={4}>

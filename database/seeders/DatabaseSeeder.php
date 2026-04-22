@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(ModuleSeeder::class);
         $this->call(PlanSeeder::class);
+        $this->call(OrganizationTypeSeeder::class);
 
         // Super Admin
         User::updateOrCreate(
