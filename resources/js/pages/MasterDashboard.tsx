@@ -48,6 +48,71 @@ const LEAF_ICONS: Record<string, string> = {
 
 const leafIcon = (name?: string) => (name && LEAF_ICONS[name]) || 'ri-file-list-3-line';
 
+// Per-master short descriptions (shown on the dashboard card)
+const LEAF_DESCRIPTIONS: Record<string, string> = {
+  // Identity & Entity
+  'master.company':                 'Legal identity, GSTIN, PAN, IEC — used on every export document',
+  'master.bank_accounts':           'Bank registry — Swift Code + AD Code mandatory for export',
+  'master.departments':             'Organizational units — assign staff & route approvals',
+  'master.roles':                   'User roles controlling module access permissions',
+  'master.designations':            'Job titles shown on letters, profiles & HR records',
+  // Geography & Location
+  'master.countries':               'Country master — referenced on all trade documents',
+  'master.states':                  'State list for addresses & GST place-of-supply',
+  'master.state_codes':             '2-digit GST state codes for tax filings',
+  'master.address_types':           'Tag addresses: Billing, Shipping, Registered, etc.',
+  'master.port_of_loading':         'Origin ports on shipping bills & export invoices',
+  'master.port_of_discharge':       'Destination ports on packing lists & shipping docs',
+  // Trade & Commercial
+  'master.segments':                'Business lines classifying orders & products',
+  'master.hsn_codes':               '8-digit commodity codes for GST & customs filings',
+  'master.gst_percentage':          'GST tax slabs applied on product invoices',
+  'master.currencies':              'Active currencies with exchange rates for export invoicing',
+  'master.uom':                     'Units (Kg, Box, Pcs) on product & shipment records',
+  'master.packaging_material':      'Box, carton & wrapping types linked to packaging module',
+  'master.conditions':              'Storage & handling states (Organic, Fresh, Frozen)',
+  'master.incoterms':               'Trade terms (FOB, CIF) defining delivery & risk',
+  // Party & Classification
+  'master.customer_types':          'Classify buyers as Domestic / Export for pricing rules',
+  'master.customer_classifications':'Tier labels (A/B/C, Key Account) for credit & discount',
+  'master.vendor_types':            'Supplier categories for procurement rules',
+  'master.vendor_behaviour':        'Performance tags used in purchase order workflows',
+  'master.applicable_types':        'Who appears on documents — Buyer, Consignee, Notify Party',
+  // Legal & Compliance
+  'master.license_name':            'Import/export license categories per product or market',
+  'master.risk_levels':             'Risk severity tags for vendor & shipment screening',
+  'master.document_type':           'Document categories for upload & linking (Invoice, COA, SDS)',
+  'master.haz_class':               'GHS/UN hazard classes for products requiring special handling',
+  'master.compliance_behaviours':   'Rules for regulated, cold-chain & controlled substance handling',
+  // Operations & Support
+  'master.assets':                  'Company equipment & assets for ops & depreciation tracking',
+  'master.asset_categories':        'Group assets by type (Machinery, IT, Furniture)',
+  'master.numbering_series':        'System auto-numbering — locks after first transaction',
+  // P2P Masters
+  'master.payment_terms':           'Credit days, advance % & milestone structure for PO terms',
+  'master.approval_authority':      'Value threshold + role matrix for PO, VPI & Payment approvals',
+  'master.procurement_category':    'Goods / Services / AMC / Job Work — drives 3-way vs 2-way match',
+  'master.sourcing_type':           'Direct / Open Market / Spot / Rate Contract classifications',
+  'master.deviation_reason':        'Locked picklist for all manual override actions',
+  'master.match_exception':         'Exception types + resolver role for 3-way match engine',
+  'master.advance_payment_rules':   'Max advance % per vendor type / category + approval matrix',
+  'master.exchange_rate_log':       'Date-wise exchange rate history vs INR for multi-currency',
+  'master.goods_service_flag':      'Switches GRN logic between physical receipt and service proof',
+  'master.vendor_directory':        'Vendor information, addresses & document verification',
+  // Warehouse Masters
+  'master.warehouse_master':        'Define all warehouse locations — Own & Third Party',
+  'master.zone_master':             'Storage zones inside warehouses — Storage, Cold Chain, Hazmat',
+  'master.rack_type_master':        'Rack types used across warehouses — Pallet, Cold, Hazardous',
+  'master.temp_class_master':       'Temperature classifications for controlled storage',
+  'master.racks':                   'Warehouse structure — Warehouse → Zone → Rack → Shelf',
+  'master.shelf_master':            'Add and manage shelves (levels) inside each rack',
+  'master.digital_twin':            'Visual warehouse location view — Warehouse → Zone → Rack',
+  'master.freezers':                'Cold storage units — direct placement, no bins required',
+};
+
+const leafDescription = (leaf: MenuChild) =>
+  LEAF_DESCRIPTIONS[leaf.id] || `Manage ${leaf.label.toLowerCase()} records`;
+
 export default function MasterDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -301,16 +366,24 @@ function MasterCard({
       </div>
 
       {/* Title */}
-      <h6 className="fw-bold mb-1 text-dark" style={{ fontSize: 13, lineHeight: 1.3 }}>
+      <h6 className="fw-bold mb-1 text-dark" style={{ fontSize: 13.5, lineHeight: 1.3, letterSpacing: '-0.1px' }}>
         {leaf.label}
       </h6>
 
-      {/* Description placeholder */}
+      {/* Description */}
       <p
         className="text-muted mb-3"
-        style={{ fontSize: 11, lineHeight: 1.5, flexGrow: 1 }}
+        style={{
+          fontSize: 11.5,
+          lineHeight: 1.5,
+          flexGrow: 1,
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}
       >
-        Click to manage {leaf.label.toLowerCase()}. Full CRUD interface coming in next phase.
+        {leafDescription(leaf)}
       </p>
 
       {/* CTA */}
