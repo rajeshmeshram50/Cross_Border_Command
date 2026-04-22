@@ -189,11 +189,11 @@ export default function MasterDashboard() {
 
       {/* Stats Row */}
       <Row className="g-3 mb-4">
-        <StatCard label="MASTERS"           value={totals.total}    iconBg="#F1F5F9" iconColor="#4F46E5" icon="ri-stack-line" emoji="📦" />
-        <StatCard label="ACTIVE"            value={totals.active}   iconBg="#D1FAE5" iconColor="#059669" icon="ri-checkbox-circle-line" emoji="✅" />
-        <StatCard label="INACTIVE"          value={totals.inactive} iconBg="#FEE2E2" iconColor="#DC2626" icon="ri-pause-circle-line" emoji="⏸" />
-        <StatCard label="TOTAL RECORDS"     value={totals.records}  iconBg="#FFEDD5" iconColor="#EA580C" icon="ri-file-list-3-line" emoji="📋" />
-        <StatCard label="HSN PENDING REVIEW" value={totals.pending} iconBg="#FEF9C3" iconColor="#CA8A04" icon="ri-time-line" emoji="⏳" />
+        <StatCard label="MASTERS"           value={totals.total}    iconColor="#4F46E5" icon="ri-stack-line" emoji="📦" />
+        <StatCard label="ACTIVE"            value={totals.active}   iconColor="#059669" icon="ri-checkbox-circle-line" emoji="✅" />
+        <StatCard label="INACTIVE"          value={totals.inactive} iconColor="#DC2626" icon="ri-pause-circle-line" emoji="⏸" />
+        <StatCard label="TOTAL RECORDS"     value={totals.records}  iconColor="#EA580C" icon="ri-file-list-3-line" emoji="📋" />
+        <StatCard label="HSN PENDING REVIEW" value={totals.pending} iconColor="#CA8A04" icon="ri-time-line" emoji="⏳" />
       </Row>
 
       {/* Category Sections */}
@@ -202,11 +202,11 @@ export default function MasterDashboard() {
         const isCollapsed = !!collapsed[group.id];
         return (
           <div key={group.id} className="mb-4">
-            {/* Category Header */}
+            {/* Category Header — transparent tint so it adapts to light/dark page bg */}
             <div
               className="d-flex align-items-center gap-3 px-3 py-2 rounded-3 mb-3"
               style={{
-                background: style.bg,
+                background: `${style.color}1F`,
                 borderLeft: `4px solid ${style.color}`,
               }}
             >
@@ -222,7 +222,7 @@ export default function MasterDashboard() {
               <span
                 className="px-2 py-1 rounded-pill fw-bold"
                 style={{
-                  background: '#fff',
+                  background: 'var(--color-surface)',
                   color: style.color,
                   border: `1px solid ${style.border}`,
                   fontSize: 11,
@@ -234,7 +234,7 @@ export default function MasterDashboard() {
                 type="button"
                 className="ms-auto btn btn-sm px-3 d-flex align-items-center gap-1"
                 style={{
-                  background: '#fff',
+                  background: 'var(--color-surface)',
                   border: `1px solid ${style.border}`,
                   color: style.color,
                   fontSize: 12,
@@ -275,14 +275,12 @@ export default function MasterDashboard() {
 function StatCard({
   label,
   value,
-  iconBg,
   iconColor,
   icon,
   emoji,
 }: {
   label: string;
   value: number;
-  iconBg: string;
   iconColor: string;
   icon: string;
   emoji: string;
@@ -290,12 +288,12 @@ function StatCard({
   return (
     <Col>
       <div
-        className="bg-white rounded-3 shadow-sm p-3 d-flex align-items-center gap-3 h-100"
-        style={{ border: '1px solid #E2E8F0' }}
+        className="rounded-3 shadow-sm p-3 d-flex align-items-center gap-3 h-100"
+        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
       >
         <div
           className="d-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-          style={{ background: iconBg, width: 44, height: 44, fontSize: 20 }}
+          style={{ background: `${iconColor}1F`, width: 44, height: 44, fontSize: 20 }}
         >
           <span style={{ color: iconColor }}>{emoji}</span>
         </div>
@@ -331,9 +329,10 @@ function MasterCard({
 }) {
   return (
     <div
-      className="bg-white rounded-3 shadow-sm h-100 p-3 d-flex flex-column position-relative master-card"
+      className="rounded-3 shadow-sm h-100 p-3 d-flex flex-column position-relative master-card"
       style={{
-        border: '1px solid #E2E8F0',
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
         borderTop: `3px solid ${style.color}`,
         cursor: 'pointer',
         transition: 'all 0.2s ease',
@@ -341,18 +340,18 @@ function MasterCard({
       onClick={onClick}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = 'translateY(-3px)';
-        e.currentTarget.style.boxShadow = `0 10px 25px rgba(0,0,0,0.08), 0 0 0 1px ${style.border}`;
+        e.currentTarget.style.boxShadow = `0 10px 25px rgba(0,0,0,0.25), 0 0 0 1px ${style.border}`;
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 1px 3px rgba(15,23,42,0.06)';
+        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.15)';
       }}
     >
       {/* Top: icon + counts */}
       <div className="d-flex align-items-start justify-content-between mb-2">
         <div
           className="d-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-          style={{ background: style.bg, width: 40, height: 40 }}
+          style={{ background: `${style.color}1F`, width: 40, height: 40 }}
         >
           <i className={leafIcon(leaf.icon)} style={{ color: style.color, fontSize: 18 }}></i>
         </div>
@@ -375,7 +374,7 @@ function MasterCard({
       </div>
 
       {/* Title */}
-      <h6 className="fw-bold mb-1 text-dark" style={{ fontSize: 13.5, lineHeight: 1.3, letterSpacing: '-0.1px' }}>
+      <h6 className="fw-bold mb-1" style={{ fontSize: 13.5, lineHeight: 1.3, letterSpacing: '-0.1px', color: 'var(--color-text)' }}>
         {leaf.label}
       </h6>
 
@@ -399,7 +398,7 @@ function MasterCard({
       <div
         className="text-center rounded-2 fw-semibold py-2"
         style={{
-          background: style.bg,
+          background: `${style.color}1F`,
           color: style.color,
           fontSize: 11,
         }}
