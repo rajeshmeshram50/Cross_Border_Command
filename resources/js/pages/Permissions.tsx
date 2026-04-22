@@ -114,7 +114,7 @@ export default function Permissions() {
             <h4 className="mb-sm-0">Permission Management</h4>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Velzon</a></li>
+                <li className="breadcrumb-item"><a href="#">Admin</a></li>
                 <li className="breadcrumb-item active">Permissions</li>
               </ol>
             </div>
@@ -190,7 +190,7 @@ export default function Permissions() {
                   loading={loadingPerms}
                 />
 
-                <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
                   <span className="text-muted fs-13">
                     {selectedUser ? (
                       <>

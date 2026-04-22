@@ -105,7 +105,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
 
       {adminUser && (
         <Card className="shadow-sm">
-          <CardHeader>
+          <CardHeader className="bg-light-subtle border-bottom">
             <Row className="align-items-center g-3">
               <Col sm="auto">
                 <div className="d-flex align-items-center gap-3">
@@ -124,8 +124,15 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
                 </div>
               </Col>
               <Col className="text-end">
-                <Button color="success" onClick={handleSave} disabled={saving}>
-                  {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-check-line me-1"></i>}
+                <Button
+                  color="success"
+                  className="btn-label waves-effect waves-light rounded-pill"
+                  onClick={handleSave}
+                  disabled={saving}
+                >
+                  {saving
+                    ? <Spinner size="sm" className="label-icon align-middle me-2" />
+                    : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
                   {saving ? 'Saving...' : 'Save Permissions'}
                 </Button>
               </Col>
@@ -139,13 +146,21 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
             grantableBy={null}
           />
 
-          <CardBody className="border-top d-flex justify-content-between align-items-center">
+          <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
             <span className="text-muted fs-13">
-              <strong>{adminUser.name}</strong>
+              <i className="ri-edit-box-line me-1 text-primary"></i>
+              Editing: <strong className="text-dark">{adminUser.name}</strong>
             </span>
-            <Button color="success" onClick={handleSave} disabled={saving}>
-              {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-check-line me-1"></i>}
-              Save Permissions
+            <Button
+              color="success"
+              className="btn-label waves-effect waves-light rounded-pill"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving
+                ? <Spinner size="sm" className="label-icon align-middle me-2" />
+                : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
+              {saving ? 'Saving...' : 'Save Permissions'}
             </Button>
           </CardBody>
         </Card>

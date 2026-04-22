@@ -113,11 +113,26 @@ $value in $theme-colors {
     }
 }
 
-// Search 
+// Search
 .search-box{
     position: relative;
     .form-control{
         padding-left: 40px;
+        border-radius: 10px;
+        background-color: var(--#{$prefix}light);
+        border-color: transparent;
+        transition: all 0.2s ease;
+
+        &::placeholder {
+            color: var(--#{$prefix}secondary-color);
+            opacity: 0.75;
+        }
+
+        &:focus {
+            background-color: var(--#{$prefix}body-bg);
+            border-color: rgba($primary, 0.35);
+            box-shadow: 0 0 0 3px rgba($primary, 0.08);
+        }
     }
     .search-icon{
         font-size: 14px;
