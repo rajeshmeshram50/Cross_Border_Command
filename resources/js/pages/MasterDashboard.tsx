@@ -17,24 +17,23 @@ interface CategoryStyle {
   gradient: string;
 }
 
-// Unified color palette — every category uses the Operations & Support blue.
-// Only the icon changes per category so sections remain visually distinguishable.
-const UNIFIED = {
+// Shared base (color, softBg, border) — the navy accent stays unified across
+// headers, pills, badges, buttons. Only the `gradient` is varied per category.
+const BASE = {
   color:   'rgb(64, 81, 137)',
   softBg:  '#e8f5fd',
   border:  'rgb(102, 145, 231)',
-  gradient: 'linear-gradient(135deg, rgb(64, 81, 137), rgb(102, 145, 231))',
 };
 
 const CATEGORY_STYLES: Record<string, CategoryStyle> = {
-  'master.identity':   { ...UNIFIED, icon: 'ri-profile-line' },
-  'master.geography':  { ...UNIFIED, icon: 'ri-global-line' },
-  'master.trade':      { ...UNIFIED, icon: 'ri-line-chart-line' },
-  'master.party':      { ...UNIFIED, icon: 'ri-team-line' },
-  'master.legal':      { ...UNIFIED, icon: 'ri-scales-3-line' },
-  'master.operations': { ...UNIFIED, icon: 'ri-tools-line' },
-  'master.p2p':        { ...UNIFIED, icon: 'ri-handshake-line' },
-  'master.warehouse':  { ...UNIFIED, icon: 'ri-building-2-line' },
+  'master.identity':   { ...BASE, icon: 'ri-profile-line',    gradient: 'linear-gradient(135deg,#405189,#6691e7)' }, // navy
+  'master.geography':  { ...BASE, icon: 'ri-global-line',     gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)' }, // teal
+  'master.trade':      { ...BASE, icon: 'ri-line-chart-line', gradient: 'linear-gradient(135deg,#f7b84b,#fad07e)' }, // amber
+  'master.party':      { ...BASE, icon: 'ri-team-line',       gradient: 'linear-gradient(135deg,#f06548,#f4907b)' }, // coral
+  'master.legal':      { ...BASE, icon: 'ri-scales-3-line',   gradient: 'linear-gradient(135deg,#e83e8c,#ef79b0)' }, // pink
+  'master.operations': { ...BASE, icon: 'ri-tools-line',      gradient: 'linear-gradient(135deg,#299cdb,#63bcec)' }, // sky blue
+  'master.p2p':        { ...BASE, icon: 'ri-handshake-line',  gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)' }, // violet
+  'master.warehouse':  { ...BASE, icon: 'ri-building-2-line', gradient: 'linear-gradient(135deg,#10b981,#34d399)' }, // emerald
 };
 
 const LEAF_ICONS: Record<string, string> = {
@@ -129,7 +128,13 @@ export default function MasterDashboard() {
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perms = user?.permissions || {};
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  // Accordion state — only one category is open at a time.
+  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
+
+  // Global master search.
+  const [search, setSearch] = useState('');
 
   // Filter groups/children by permission, and hide super-admin-only masters from everyone else.
   const groups = useMemo<MenuGroup[]>(() => {
@@ -144,6 +149,26 @@ export default function MasterDashboard() {
       .filter(g => g.children.length > 0);
   }, [isSuperAdmin, perms]);
 
+  // Initialize: first group open by default.
+  if (!initialized && groups.length > 0) {
+    setOpenGroupId(groups[0].id);
+    setInitialized(true);
+  }
+
+  const q = search.trim().toLowerCase();
+  const hasSearch = q.length > 0;
+
+  // Apply search filter — when active, show only matching leaves per group.
+  const filteredGroups = useMemo<MenuGroup[]>(() => {
+    if (!hasSearch) return groups;
+    return groups
+      .map(g => ({
+        ...g,
+        children: g.children.filter(c => c.label.toLowerCase().includes(q)),
+      }))
+      .filter(g => g.children.length > 0);
+  }, [groups, q, hasSearch]);
+
   const totals = useMemo(() => {
     const total = groups.reduce((s, g) => s + g.children.length, 0);
     return { total, active: total, inactive: 0, records: 0 };
@@ -151,7 +176,9 @@ export default function MasterDashboard() {
 
   const statValues = [totals.total, totals.active, totals.inactive, totals.records];
 
-  const toggle = (id: string) => setCollapsed(p => ({ ...p, [id]: !p[id] }));
+  // Accordion toggle — click an open group closes it, click a closed one opens it
+  // (and the previously open one closes automatically because only one id is tracked).
+  const toggle = (id: string) => setOpenGroupId(prev => (prev === id ? null : id));
   const goTo   = (leaf: MenuChild) => navigate(`/master/${leaf.id.replace('master.', '')}`);
 
   if (groups.length === 0) {
@@ -241,12 +268,76 @@ export default function MasterDashboard() {
         ))}
       </Row>
 
-      {/* ── Category Sections — unified blue accent, heading folded into white card ── */}
-      {groups.map(group => {
+      {/* ── Global search bar ── */}
+      <div style={{
+        background: '#fff',
+        border: '1px solid #eef0f3',
+        borderRadius: 12,
+        padding: '10px 14px',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+        marginBottom: 14,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}>
+        <i className="ri-search-line" style={{ color: '#9ca3af', fontSize: 18 }} />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search masters — e.g. Company, GST, Bank, Warehouse…"
+          style={{
+            flexGrow: 1,
+            border: 'none',
+            outline: 'none',
+            fontSize: 13.5,
+            color: '#1f2937',
+            background: 'transparent',
+          }}
+        />
+        {hasSearch && (
+          <>
+            <span style={{
+              fontSize: 11, color: '#6b7280', fontWeight: 600,
+              background: '#f3f4f6', borderRadius: 20, padding: '2px 10px',
+            }}>
+              {filteredGroups.reduce((s, g) => s + g.children.length, 0)} results
+            </span>
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              style={{
+                border: 'none', background: 'transparent', cursor: 'pointer',
+                color: '#9ca3af', padding: 2,
+              }}
+              title="Clear search"
+            >
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* No search results */}
+      {hasSearch && filteredGroups.length === 0 && (
+        <div style={{
+          background: '#fff', border: '1px dashed #e5e7eb', borderRadius: 12,
+          padding: '28px 20px', textAlign: 'center', color: '#6b7280', fontSize: 13,
+        }}>
+          <i className="ri-search-eye-line" style={{ fontSize: 28, color: '#9ca3af', display: 'block', marginBottom: 6 }} />
+          No masters match "<strong>{search}</strong>"
+        </div>
+      )}
+
+      {/* ── Category Sections — accordion; when searching, all matching sections stay open ── */}
+      {filteredGroups.map(group => {
         const s = CATEGORY_STYLES[group.id] || {
-          ...UNIFIED, icon: 'ri-folder-line',
+          ...BASE, icon: 'ri-folder-line',
+          gradient: 'linear-gradient(135deg,#405189,#6691e7)',
         };
-        const isCollapsed = !!collapsed[group.id];
+        // In search mode, always expand sections that have matches.
+        // Otherwise accordion — only the openGroupId is expanded.
+        const isCollapsed = hasSearch ? false : openGroupId !== group.id;
 
         return (
           <div key={group.id} style={{ marginBottom: 14 }}>
