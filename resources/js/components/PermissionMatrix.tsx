@@ -241,7 +241,7 @@ export default function PermissionMatrix({
       const { on: branchOn, total: branchTotal } = branchAllSummary(mod.id);
       const branchAllOn = branchTotal > 0 && branchOn === branchTotal;
       rows.push(
-        <tr key={mod.id} style={{ background: depth === 0 ? '#eef2ff' : '#f8fafc', lineHeight: 1.2 }}>
+        <tr key={mod.id} style={{ background: depth === 0 ? 'var(--vz-primary-bg-subtle)' : 'var(--vz-secondary-bg)', lineHeight: 1.2 }}>
           <td className="py-2" style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}>
             <div className="d-flex align-items-center gap-2">
               <button
@@ -283,8 +283,12 @@ export default function PermissionMatrix({
                   type="button"
                   onClick={() => toggleBranch(mod.id, p.key)}
                   title={`${on} / ${total} on`}
-                  className={`btn btn-sm rounded-pill px-2 py-0 ${allOn ? `btn-${p.color}` : partial ? `btn-soft-${p.color}` : 'btn-light text-muted'}`}
-                  style={{ fontSize: 10, fontWeight: 700, minWidth: 42 }}
+                  className={`btn btn-sm rounded-pill px-2 py-0 fw-semibold ${
+                    allOn   ? 'btn-soft-success'
+                    : partial ? 'btn-soft-warning'
+                    : 'btn-light text-muted'
+                  }`}
+                  style={{ fontSize: 10, minWidth: 40 }}
                 >
                   {on}/{total}
                 </button>
@@ -348,75 +352,86 @@ export default function PermissionMatrix({
 
   return (
     <>
-      <CardBody className="border-top bg-light-subtle">
+      <CardBody className="border-top border-bottom" style={{ background: 'var(--vz-secondary-bg)', padding: '12px 20px' }}>
         <div className="d-flex align-items-center gap-2 flex-wrap">
-          <span className="badge bg-dark-subtle text-dark fs-11 fw-bold text-uppercase rounded-pill px-3 py-2">
+          {/* Label */}
+          <span className="badge bg-dark-subtle text-dark fs-11 fw-semibold text-uppercase rounded-pill px-3 py-2">
             <i className="ri-flashlight-line me-1"></i> Quick
           </span>
-          <Button color="soft-primary" size="sm" className="rounded-pill px-3" onClick={() => selectAll(true)}>
-            <i className="ri-checkbox-multiple-line me-1 align-bottom"></i> Select All
+
+          {/* Utility buttons — all uniform light */}
+          <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(true)}>
+            <i className="ri-checkbox-multiple-line me-1 align-bottom text-primary"></i> Select All
           </Button>
-          <Button color="soft-dark" size="sm" className="rounded-pill px-3" onClick={() => selectAll(false)}>
-            <i className="ri-checkbox-multiple-blank-line me-1 align-bottom"></i> Deselect All
+          <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => selectAll(false)}>
+            <i className="ri-checkbox-multiple-blank-line me-1 align-bottom text-secondary"></i> Deselect All
           </Button>
           <Button
-            color="soft-info" size="sm" className="rounded-pill px-3"
+            color="light" size="sm" className="rounded-pill px-3 border"
             onClick={() => {
               const next: Record<number, boolean> = {};
               modules.forEach(m => { if (tree.children.has(m.id)) next[m.id] = true; });
               setExpanded(next);
             }}
           >
-            <i className="ri-expand-up-down-line me-1 align-bottom"></i> Expand All
+            <i className="ri-expand-up-down-line me-1 align-bottom text-info"></i> Expand All
           </Button>
-          <Button
-            color="soft-secondary" size="sm" className="rounded-pill px-3"
-            onClick={() => setExpanded({})}
-          >
-            <i className="ri-contract-up-down-line me-1 align-bottom"></i> Collapse All
+          <Button color="light" size="sm" className="rounded-pill px-3 border" onClick={() => setExpanded({})}>
+            <i className="ri-contract-up-down-line me-1 align-bottom text-muted"></i> Collapse All
           </Button>
-          <span className="vr mx-1"></span>
+
+          <span className="vr mx-1 opacity-50"></span>
+
+          {/* Per-permission column toggles — all light, icon carries the colour */}
           {PERMS.map(p => (
             <Button
               key={p.key}
-              color={`soft-${p.color}`}
+              color="light"
               size="sm"
-              className="rounded-pill px-3"
+              className="rounded-pill px-3 border"
               onClick={() => toggleColumn(p.key)}
             >
-              <i className={`${p.icon} me-1 align-bottom`}></i> {p.label}
+              <i className={`${p.icon} me-1 align-bottom text-${p.color}`}></i>
+              <span className="text-muted">{p.label}</span>
             </Button>
           ))}
-          <span className="ms-auto text-muted fs-12">
-            <strong className="text-primary fs-14">{totalChecks}</strong>
-            <span className="text-muted"> / {maxChecks} enabled</span>
+
+          {/* Counter */}
+          <span className="ms-auto text-muted fs-12 fw-medium">
+            <strong className="text-dark fs-13">{totalChecks}</strong>
+            {' / '}{maxChecks} enabled
           </span>
         </div>
       </CardBody>
 
-      <div className="table-responsive table-card px-3">
+      <div className="px-3 pt-3 pb-2">
+        <div
+          className="table-responsive rounded-3"
+          style={{ border: '1px solid var(--vz-border-color)', overflow: 'hidden' }}
+        >
         {loading ? (
-          <div className="text-center py-5"><Spinner color="primary" /> <span className="ms-2 text-muted">Loading permissions...</span></div>
+          <div className="text-center py-5">
+            <Spinner color="primary" />
+            <span className="ms-2 text-muted">Loading permissions...</span>
+          </div>
         ) : (
-          <table className="table align-middle table-nowrap table-hover table-sm mb-0">
-            <thead className="table-light">
-              <tr>
-                <th className="ps-3 py-2" style={{ width: '34%' }}>Module</th>
-                <th className="text-center py-2" style={{ width: '8%' }}>
+          <table className="table align-middle table-nowrap table-hover mb-0">
+            <thead>
+              <tr style={{ background: 'var(--vz-secondary-bg)', borderBottom: '2px solid var(--vz-border-color)' }}>
+                <th className="ps-3 py-3 fw-semibold text-muted text-uppercase fs-11" style={{ width: '34%' }}>
+                  Module
+                </th>
+                <th className="text-center py-3" style={{ width: '8%' }}>
                   <div className="d-flex flex-column align-items-center gap-1">
-                    <span className="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary-subtle text-primary" style={{ width: '22px', height: '22px' }}>
-                      <i className="ri-checkbox-multiple-line fs-12"></i>
-                    </span>
-                    <span className="fs-11 fw-semibold text-uppercase">All</span>
+                    <i className="ri-checkbox-multiple-line fs-14 text-muted"></i>
+                    <span className="fs-10 fw-semibold text-uppercase text-muted">All</span>
                   </div>
                 </th>
                 {PERMS.map(p => (
-                  <th key={p.key} className="text-center py-2" style={{ width: `${58 / PERMS.length}%` }}>
+                  <th key={p.key} className="text-center py-3" style={{ width: `${58 / PERMS.length}%` }}>
                     <div className="d-flex flex-column align-items-center gap-1">
-                      <span className={`d-inline-flex align-items-center justify-content-center rounded-circle bg-${p.color}-subtle text-${p.color}`} style={{ width: '22px', height: '22px' }}>
-                        <i className={`${p.icon} fs-12`}></i>
-                      </span>
-                      <span className="fs-11 fw-semibold text-uppercase">{p.label}</span>
+                      <i className={`${p.icon} fs-14 text-muted`}></i>
+                      <span className="fs-10 fw-semibold text-uppercase text-muted">{p.label}</span>
                     </div>
                   </th>
                 ))}
@@ -427,6 +442,7 @@ export default function PermissionMatrix({
             </tbody>
           </table>
         )}
+        </div>
       </div>
     </>
   );
