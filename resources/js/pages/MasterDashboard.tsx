@@ -17,15 +17,24 @@ interface CategoryStyle {
   gradient: string;
 }
 
+// Unified color palette — every category uses the Operations & Support blue.
+// Only the icon changes per category so sections remain visually distinguishable.
+const UNIFIED = {
+  color:   'rgb(64, 81, 137)',
+  softBg:  '#e8f5fd',
+  border:  'rgb(102, 145, 231)',
+  gradient: 'linear-gradient(135deg, rgb(64, 81, 137), rgb(102, 145, 231))',
+};
+
 const CATEGORY_STYLES: Record<string, CategoryStyle> = {
-  'master.identity':   { color: '#405189', softBg: '#eef0fb', border: '#c5caf0', icon: 'ri-profile-line',    gradient: 'linear-gradient(135deg,#405189,#6775c0)' },
-  'master.geography':  { color: '#0ab39c', softBg: '#e0f8f5', border: '#7de0d5', icon: 'ri-global-line',     gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)' },
-  'master.trade':      { color: '#f7b84b', softBg: '#fef8ec', border: '#fce3a1', icon: 'ri-line-chart-line', gradient: 'linear-gradient(135deg,#f7b84b,#fad07e)' },
-  'master.party':      { color: '#f06548', softBg: '#fef0ed', border: '#f9c4b9', icon: 'ri-team-line',       gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
-  'master.legal':      { color: '#e83e8c', softBg: '#fceef6', border: '#f4b8d8', icon: 'ri-scales-3-line',   gradient: 'linear-gradient(135deg,#e83e8c,#ef79b0)' },
-  'master.operations': { color: '#299cdb', softBg: '#e8f5fd', border: '#97d4f5', icon: 'ri-tools-line',      gradient: 'linear-gradient(135deg,#299cdb,#63bcec)' },
-  'master.p2p':        { color: '#7c5cfc', softBg: '#f0ecff', border: '#c8b9fd', icon: 'ri-handshake-line',  gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)' },
-  'master.warehouse':  { color: '#0ab39c', softBg: '#e0f8f5', border: '#7de0d5', icon: 'ri-building-2-line', gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)' },
+  'master.identity':   { ...UNIFIED, icon: 'ri-profile-line' },
+  'master.geography':  { ...UNIFIED, icon: 'ri-global-line' },
+  'master.trade':      { ...UNIFIED, icon: 'ri-line-chart-line' },
+  'master.party':      { ...UNIFIED, icon: 'ri-team-line' },
+  'master.legal':      { ...UNIFIED, icon: 'ri-scales-3-line' },
+  'master.operations': { ...UNIFIED, icon: 'ri-tools-line' },
+  'master.p2p':        { ...UNIFIED, icon: 'ri-handshake-line' },
+  'master.warehouse':  { ...UNIFIED, icon: 'ri-building-2-line' },
 };
 
 const LEAF_ICONS: Record<string, string> = {
@@ -109,11 +118,10 @@ const leafDescription = (leaf: MenuChild) =>
   LEAF_DESCRIPTIONS[leaf.id] || `Manage ${leaf.label.toLowerCase()} records`;
 
 const STAT_CARDS = [
-  { label: 'Total Masters',      icon: 'ri-stack-line',             gradient: 'linear-gradient(135deg,#405189,#6775c0)' },
-  { label: 'Active',             icon: 'ri-checkbox-circle-line',   gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)' },
-  { label: 'Inactive',           icon: 'ri-close-circle-line',      gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
-  { label: 'Total Records',      icon: 'ri-file-list-3-line',       gradient: 'linear-gradient(135deg,#f7b84b,#fad07e)' },
-  { label: 'HSN Pending Review', icon: 'ri-time-line',              gradient: 'linear-gradient(135deg,#299cdb,#63bcec)' },
+  { label: 'Total Masters',  icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
+  { label: 'Active',         icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+  { label: 'Inactive',       icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
+  { label: 'Total Records',  icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg,#f7b84b,#f1963b)' },
 ];
 
 export default function MasterDashboard() {
@@ -138,10 +146,10 @@ export default function MasterDashboard() {
 
   const totals = useMemo(() => {
     const total = groups.reduce((s, g) => s + g.children.length, 0);
-    return { total, active: total, inactive: 0, records: 0, pending: 0 };
+    return { total, active: total, inactive: 0, records: 0 };
   }, [groups]);
 
-  const statValues = [totals.total, totals.active, totals.inactive, totals.records, totals.pending];
+  const statValues = [totals.total, totals.active, totals.inactive, totals.records];
 
   const toggle = (id: string) => setCollapsed(p => ({ ...p, [id]: !p[id] }));
   const goTo   = (leaf: MenuChild) => navigate(`/master/${leaf.id.replace('master.', '')}`);
@@ -190,33 +198,42 @@ export default function MasterDashboard() {
         </nav>
       </div>
 
-      {/* ── Stat Cards Row ── */}
+      {/* ── KPI Stat Cards Row (AdminDashboard KpiCard style) ── */}
       <Row className="g-3 mb-4">
         {STAT_CARDS.map((sc, i) => (
-          <Col key={sc.label}>
+          <Col key={sc.label} xl={3} md={6} xs={12}>
             <div style={{
-              background: 'var(--color-surface)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 8,
-              boxShadow: '0 1px 2px rgba(56,65,74,.10)',
-              padding: '16px 18px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 14,
+              background: '#fff',
+              borderRadius: 16,
+              padding: '20px 20px 16px',
+              boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+              border: '1px solid #f0f3f8',
+              position: 'relative',
+              overflow: 'hidden',
+              height: '100%',
             }}>
               <div style={{
-                width: 50, height: 50, borderRadius: 8,
-                background: sc.gradient, flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <i className={sc.icon} style={{ color: '#fff', fontSize: 22 }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text)', lineHeight: 1, letterSpacing: '-0.5px' }}>
-                  {statValues[i]}
+                position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+                background: sc.gradient,
+              }} />
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{
+                    fontSize: 11, fontWeight: 700, color: '#878a99',
+                    letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10,
+                  }}>
+                    {sc.label}
+                  </p>
+                  <h3 style={{ fontSize: 28, fontWeight: 800, color: '#1e2a3a', margin: 0, lineHeight: 1 }}>
+                    {statValues[i].toLocaleString()}
+                  </h3>
                 </div>
-                <div style={{ fontSize: 11.5, color: 'var(--color-secondary)', marginTop: 4, fontWeight: 500 }}>
-                  {sc.label}
+                <div style={{
+                  width: 46, height: 46, borderRadius: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: sc.gradient, flexShrink: 0,
+                }}>
+                  <i className={sc.icon} style={{ fontSize: 20, color: '#fff' }} />
                 </div>
               </div>
             </div>
@@ -224,73 +241,115 @@ export default function MasterDashboard() {
         ))}
       </Row>
 
-      {/* ── Category Sections ── */}
+      {/* ── Category Sections — unified blue accent, heading folded into white card ── */}
       {groups.map(group => {
         const s = CATEGORY_STYLES[group.id] || {
-          color: '#405189', softBg: '#eef0fb', border: '#c5caf0',
-          icon: 'ri-folder-line', gradient: 'linear-gradient(135deg,#405189,#6775c0)',
+          ...UNIFIED, icon: 'ri-folder-line',
         };
         const isCollapsed = !!collapsed[group.id];
 
         return (
-          <div key={group.id} style={{ marginBottom: 32 }}>
+          <div key={group.id} style={{ marginBottom: 14 }}>
 
-            {/* ── Section Header ── */}
+            {/* ── White container holds header row + pills (when collapsed) ── */}
             <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              marginBottom: 16,
-              paddingBottom: 14,
-              borderBottom: '1px solid var(--color-border)',
+              background: '#fff',
+              border: `1px solid ${isCollapsed ? s.border : '#eef0f3'}`,
+              borderRadius: 12,
+              padding: '14px 16px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+              transition: 'border-color .15s, box-shadow .15s',
             }}>
-              {/* Colored strip */}
-              <div style={{ width: 4, height: 22, borderRadius: 4, background: s.gradient, flexShrink: 0 }} />
-              {/* Icon box */}
-              <div style={{
-                width: 32, height: 32, borderRadius: 6, background: `${s.color}1F`, flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <i className={s.icon} style={{ color: s.color, fontSize: 16 }} />
-              </div>
-              {/* Title */}
-              <h6 style={{ margin: 0, fontWeight: 600, color: '#212529', fontSize: 14, flexGrow: 1 }}>
-                {group.label}
-              </h6>
-              {/* Count */}
-              <span style={{
-                background: `${s.color}1F`, color: s.color, border: `1px solid ${s.border}`,
-                borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600,
-              }}>
-                {group.children.length} masters
-              </span>
 
-              {/* ── Hide / Show button ── */}
-              <button
-                type="button"
-                onClick={() => toggle(group.id)}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  background: isCollapsed ? s.color : 'var(--color-surface)',
-                  color: isCollapsed ? '#fff' : s.color,
+              {/* Single-row header: title (left) — click-to-expand link (middle) — count + Hide/Show (right) */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                flexWrap: 'wrap',
+              }}>
+                {/* Colored vertical strip */}
+                <div style={{
+                  width: 4, height: 24, borderRadius: 4,
+                  background: s.gradient, flexShrink: 0,
+                }} />
+                {/* Icon chip */}
+                <div style={{
+                  width: 32, height: 32, borderRadius: 8,
+                  background: s.softBg, flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <i className={s.icon} style={{ color: s.color, fontSize: 16 }} />
+                </div>
+                {/* Title */}
+                <h6 style={{
+                  margin: 0, fontWeight: 600, color: '#1f2937',
+                  fontSize: 14, flexShrink: 0,
+                }}>
+                  {group.label}
+                </h6>
+
+                {/* Middle: "N masters · Click here to expand" — only when collapsed */}
+                {isCollapsed ? (
+                  <button
+                    type="button"
+                    onClick={() => toggle(group.id)}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      flexGrow: 1,
+                      justifyContent: 'center',
+                      background: 'transparent',
+                      border: 'none',
+                      color: s.color,
+                      fontSize: 12.5, fontWeight: 600,
+                      cursor: 'pointer', outline: 'none',
+                      padding: 0,
+                    }}
+                  >
+                    {group.children.length} masters · Click here to expand
+                    <i className="ri-arrow-down-s-line" style={{ fontSize: 14 }} />
+                  </button>
+                ) : (
+                  <div style={{ flexGrow: 1 }} />
+                )}
+
+                {/* Count badge */}
+                <span style={{
+                  background: s.softBg, color: s.color,
                   border: `1px solid ${s.border}`,
-                  borderRadius: 6,
-                  padding: '5px 13px',
-                  fontSize: 12, fontWeight: 600,
-                  cursor: 'pointer', outline: 'none', lineHeight: 1.5,
-                  transition: 'background .15s, color .15s',
-                  minWidth: 76,
-                  justifyContent: 'center',
-                }}
-              >
-                <i className={isCollapsed ? 'ri-eye-line' : 'ri-eye-off-line'} style={{ fontSize: 13 }} />
-                {isCollapsed ? 'Show' : 'Hide'}
-              </button>
+                  borderRadius: 20, padding: '2px 10px',
+                  fontSize: 11, fontWeight: 600,
+                  flexShrink: 0,
+                }}>
+                  {group.children.length} masters
+                </span>
+                {/* Show / Hide */}
+                <button
+                  type="button"
+                  onClick={() => toggle(group.id)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    background: isCollapsed ? s.color : '#fff',
+                    color: isCollapsed ? '#fff' : s.color,
+                    border: `1px solid ${s.border}`,
+                    borderRadius: 6,
+                    padding: '5px 13px',
+                    fontSize: 12, fontWeight: 600,
+                    cursor: 'pointer', outline: 'none', lineHeight: 1.5,
+                    transition: 'background .15s, color .15s',
+                    minWidth: 16,
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <i className={isCollapsed ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} style={{ fontSize: 13 }} />
+                </button>
+              </div>
             </div>
 
-            {/* ── Cards ── */}
+            {/* Expanded: cards grid below the white header container */}
             {!isCollapsed && (
-              <Row className="g-3">
+              <Row className="g-3" style={{ marginTop: 14 }}>
                 {group.children.map(leaf => (
                   <Col key={leaf.id} xl={3} lg={4} md={6}>
                     <MasterCard leaf={leaf} style={s} onClick={() => goTo(leaf)} />
@@ -299,17 +358,6 @@ export default function MasterDashboard() {
               </Row>
             )}
 
-            {/* Collapsed hint */}
-            {isCollapsed && (
-              <div style={{
-                textAlign: 'center', padding: '10px 0',
-                color: '#adb5bd', fontSize: 12,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-              }}>
-                <i className="ri-arrow-down-s-line" style={{ fontSize: 15 }} />
-                {group.children.length} masters hidden — click <strong style={{ color: s.color }}>Show</strong> to expand
-              </div>
-            )}
           </div>
         );
       })}
@@ -334,61 +382,92 @@ function MasterCard({
     <div
       onClick={onClick}
       style={{
-        background: 'var(--color-surface)',
-        borderRadius: 8,
-        border: '1px solid var(--color-border)',
-        borderLeft: `3px solid ${s.color}`,
-        boxShadow: '0 1px 2px rgba(0,0,0,.08)',
+        background: '#fff',
+        borderRadius: 12,
+        border: '1px solid #eef0f3',
+        boxShadow: '0 1px 2px rgba(0,0,0,.04)',
         cursor: 'pointer',
-        transition: 'box-shadow .18s ease, transform .18s ease',
+        transition: 'box-shadow .2s ease, transform .2s ease, border-color .2s ease',
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        padding: '15px 16px',
+        padding: '16px 16px 14px',
+        position: 'relative',
+        overflow: 'hidden',
       }}
       onMouseEnter={e => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 6px 20px rgba(0,0,0,.2)';
-        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
+        const el = e.currentTarget as HTMLDivElement;
+        el.style.boxShadow = `0 10px 24px ${s.color}22`;
+        el.style.transform = 'translateY(-3px)';
+        el.style.borderColor = s.border;
       }}
       onMouseLeave={e => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 2px rgba(0,0,0,.08)';
-        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
+        const el = e.currentTarget as HTMLDivElement;
+        el.style.boxShadow = '0 1px 2px rgba(0,0,0,.04)';
+        el.style.transform = 'translateY(0)';
+        el.style.borderColor = '#eef0f3';
       }}
     >
-      {/* ── Row 1: Title + Status pill ── */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-          {/* Icon */}
+      {/* ── Left gradient strip ── */}
+      <div style={{
+        position: 'absolute',
+        top: 0, bottom: 0, left: 0,
+        width: 4,
+        background: s.gradient,
+      }} />
+
+      {/* ── Soft watermark glow (top-right) ── */}
+      <div style={{
+        position: 'absolute',
+        top: -40, right: -40,
+        width: 120, height: 120,
+        borderRadius: '50%',
+        background: `radial-gradient(circle, ${s.color}14 0%, transparent 70%)`,
+        pointerEvents: 'none',
+      }} />
+
+      {/* ── Row 1: Gradient icon chip + title + Active pill ── */}
+      <div style={{
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+        gap: 8, marginBottom: 10, position: 'relative',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
+          {/* Gradient icon chip */}
           <div style={{
-            width: 34, height: 34, borderRadius: 6, background: `${s.color}1F`, flexShrink: 0,
+            width: 38, height: 38, borderRadius: 10,
+            background: s.gradient,
+            boxShadow: `0 4px 12px ${s.color}33`,
+            flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <i className={leafIcon(leaf.icon)} style={{ color: s.color, fontSize: 16 }} />
+            <i className={leafIcon(leaf.icon)} style={{ color: '#fff', fontSize: 17 }} />
           </div>
           <h6 style={{
-            margin: 0, fontWeight: 600, fontSize: 13, color: '#212529',
+            margin: 0, fontWeight: 700, fontSize: 13.5, color: '#1f2937',
             lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
             {leaf.label}
           </h6>
         </div>
-        {/* Status badge — like Velzon's "Completed / Inprogress" */}
+        {/* Active pill */}
         <span style={{
-          background: s.softBg, color: s.color,
-          border: `1px solid ${s.border}`,
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          background: '#ecfdf5', color: '#059669',
+          border: '1px solid #bbf7d0',
           borderRadius: 20, padding: '2px 9px',
           fontSize: 10.5, fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap',
         }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
           Active
         </span>
       </div>
 
-      {/* ── Row 2: Description — like "Last Update" ── */}
+      {/* ── Row 2: Description ── */}
       <p style={{
         margin: '0 0 14px 0',
-        paddingLeft: 43,
+        paddingLeft: 49,
         fontSize: 12,
-        color: 'var(--color-secondary)',
+        color: '#6b7280',
         lineHeight: 1.55,
         flexGrow: 1,
         display: '-webkit-box',
@@ -399,33 +478,37 @@ function MasterCard({
         {leafDescription(leaf)}
       </p>
 
-      {/* ── Row 3: Counts + Manage — like "Members" row ── */}
+      {/* ── Row 3: Counts + Manage ── */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        paddingTop: 10, borderTop: '1px solid var(--color-border)',
+        paddingTop: 10, borderTop: '1px solid #f0f3f8',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
-            <span style={{ color: 'var(--color-secondary)', fontSize: 11 }}>Active :</span>
+            <span style={{ color: '#6b7280', fontSize: 11 }}>Active :</span>
             <span style={{
-              background: 'rgba(5,150,105,0.15)', color: '#059669',
+              background: '#ecfdf5', color: '#059669',
               borderRadius: 20, padding: '1px 7px', fontSize: 11, fontWeight: 700,
             }}>0</span>
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
-            <span style={{ color: 'var(--color-secondary)', fontSize: 11 }}>Inactive :</span>
+            <span style={{ color: '#6b7280', fontSize: 11 }}>Inactive :</span>
             <span style={{
-              background: 'rgba(220,38,38,0.15)', color: '#dc2626',
+              background: '#fef2f2', color: '#dc2626',
               borderRadius: 20, padding: '1px 7px', fontSize: 11, fontWeight: 700,
             }}>0</span>
           </span>
         </div>
-        {/* Manage link */}
+        {/* Manage pill — gradient on hover background tint */}
         <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 3,
-          color: s.color, fontSize: 12, fontWeight: 600,
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          background: s.softBg,
+          color: s.color,
+          border: `1px solid ${s.border}`,
+          borderRadius: 20, padding: '3px 10px',
+          fontSize: 11.5, fontWeight: 700,
         }}>
-          Manage <i className="ri-arrow-right-line" style={{ fontSize: 13 }} />
+          Manage <i className="ri-arrow-right-line" style={{ fontSize: 12 }} />
         </span>
       </div>
     </div>
