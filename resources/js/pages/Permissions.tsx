@@ -166,7 +166,7 @@ export default function Permissions() {
             <h4 className="mb-sm-0">Permission Management</h4>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Velzon</a></li>
+                <li className="breadcrumb-item"><a href="#">Admin</a></li>
                 <li className="breadcrumb-item active">Permissions</li>
               </ol>
             </div>
@@ -288,14 +288,10 @@ export default function Permissions() {
                         {modules.map(mod => {
                           const rowPerms = matrix[mod.id] || emptyPerms();
                           return (
-                            <tr key={mod.id} style={{ lineHeight: 1.2 }}>
+                            <tr key={mod.id} style={{ lineHeight: 1.1 }}>
                               <td className="ps-3 py-2">
                                 <div className="d-flex align-items-center gap-2">
-                                  {mod.icon && (
-                                    <span className="d-inline-flex align-items-center justify-content-center rounded bg-primary-subtle text-primary" style={{ width: '26px', height: '26px' }}>
-                                      <i className={`${mod.icon} fs-13`}></i>
-                                    </span>
-                                  )}
+                               
                                   <span className="fw-semibold text-dark">{mod.name}</span>
                                   {mod.is_default && <Badge color="success-subtle" className="text-success fs-10 rounded-pill">DEFAULT</Badge>}
                                 </div>
@@ -325,7 +321,7 @@ export default function Permissions() {
                   )}
                 </div>
 
-                <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
                   <span className="text-muted fs-13">
                     {selectedUser ? (
                       <>
