@@ -15,13 +15,13 @@ export interface PermModule {
 export type PermKey = 'can_view' | 'can_add' | 'can_edit' | 'can_delete' | 'can_export' | 'can_import' | 'can_approve';
 
 export const PERMS: { key: PermKey; label: string; icon: string; color: string }[] = [
-  { key: 'can_view',    label: 'View',    icon: 'ri-eye-line',           color: 'info' },
-  { key: 'can_add',     label: 'Add',     icon: 'ri-add-line',           color: 'success' },
-  { key: 'can_edit',    label: 'Edit',    icon: 'ri-pencil-line',        color: 'warning' },
-  { key: 'can_delete',  label: 'Delete',  icon: 'ri-delete-bin-line',    color: 'danger' },
-  { key: 'can_export',  label: 'Export',  icon: 'ri-download-2-line',    color: 'primary' },
-  { key: 'can_import',  label: 'Import',  icon: 'ri-upload-2-line',      color: 'secondary' },
-  { key: 'can_approve', label: 'Approve', icon: 'ri-check-double-line',  color: 'primary' },
+  { key: 'can_view', label: 'View', icon: 'ri-eye-line', color: 'info' },
+  { key: 'can_add', label: 'Add', icon: 'ri-add-line', color: 'success' },
+  { key: 'can_edit', label: 'Edit', icon: 'ri-pencil-line', color: 'warning' },
+  { key: 'can_delete', label: 'Delete', icon: 'ri-delete-bin-line', color: 'danger' },
+  { key: 'can_export', label: 'Export', icon: 'ri-download-2-line', color: 'primary' },
+  { key: 'can_import', label: 'Import', icon: 'ri-upload-2-line', color: 'secondary' },
+  { key: 'can_approve', label: 'Approve', icon: 'ri-check-double-line', color: 'primary' },
 ];
 
 export const emptyPerms = (): Record<PermKey, boolean> => ({
@@ -242,8 +242,16 @@ export default function PermissionMatrix({
       const branchAllOn = branchTotal > 0 && branchOn === branchTotal;
       rows.push(
         <tr key={mod.id} style={{ background: depth === 0 ? 'var(--vz-primary-bg-subtle)' : 'var(--vz-secondary-bg)', lineHeight: 1.2 }}>
-          <td className="py-2" style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}>
+          <td className="py-2" style={{ paddingLeft: `0.75rem` }}>
             <div className="d-flex align-items-center gap-2">
+
+
+
+
+
+
+
+
               <button
                 type="button"
                 className="btn btn-sm p-0 border-0 bg-transparent"
@@ -256,7 +264,7 @@ export default function PermissionMatrix({
                 <i className={`ri-folder${isOpen ? '-open' : ''}-line fs-13`}></i>
               </span>
               <div>
-                <span className={`fw-bold ${depth === 0 ? 'text-primary fs-14' : 'text-dark fs-13'}`}>{mod.name}</span>
+                <span className={`fw-bold ${depth === 0 ? 'text-primary fs-14' : 'text-body fs-13'}`}>{mod.name}</span>
                 {mod.description && <div className="text-muted fs-11">{mod.description}</div>}
               </div>
               <Badge color={depth === 0 ? 'primary' : 'secondary-subtle'} className={depth === 0 ? 'ms-2' : 'ms-2 text-secondary'}>
@@ -283,11 +291,10 @@ export default function PermissionMatrix({
                   type="button"
                   onClick={() => toggleBranch(mod.id, p.key)}
                   title={`${on} / ${total} on`}
-                  className={`btn btn-sm rounded-pill px-2 py-0 fw-semibold ${
-                    allOn   ? 'btn-soft-success'
-                    : partial ? 'btn-soft-warning'
-                    : 'btn-light text-muted'
-                  }`}
+                  className={`btn btn-sm rounded-pill px-2 py-0 fw-semibold ${allOn ? 'btn-soft-success'
+                      : partial ? 'btn-soft-warning'
+                        : 'btn-soft-secondary'
+                    }`}
                   style={{ fontSize: 10, minWidth: 40 }}
                 >
                   {on}/{total}
@@ -308,13 +315,20 @@ export default function PermissionMatrix({
       const rowAllowedCount = PERMS.filter(p => isPermAllowed(mod.slug, p.key)).length;
       rows.push(
         <tr key={mod.id} style={{ lineHeight: 1.2 }}>
-          <td className="py-2" style={{ paddingLeft: `${0.75 + depth * 1.25}rem` }}>
+          <td className="py-2" style={{ paddingLeft: `0.75rem` }}>
             <div className="d-flex align-items-center gap-2">
+
+
+
+
+
+
+
               <span className="text-muted" style={{ width: 20, display: 'inline-block' }}>·</span>
-              <span className="d-inline-flex align-items-center justify-content-center rounded bg-light text-muted" style={{ width: 22, height: 22 }}>
+              <span className="d-inline-flex align-items-center justify-content-center rounded bg-secondary-subtle text-body-secondary" style={{ width: 22, height: 22 }}>
                 <i className="ri-file-list-3-line fs-12"></i>
               </span>
-              <span className="fw-medium text-dark fs-13">{mod.name}</span>
+              <span className="fw-medium text-body fs-13">{mod.name}</span>
               {mod.is_default && <Badge color="success-subtle" className="text-success fs-10 rounded-pill ms-1">DEFAULT</Badge>}
             </div>
           </td>
@@ -409,39 +423,39 @@ export default function PermissionMatrix({
           className="table-responsive rounded-3"
           style={{ border: '1px solid var(--vz-border-color)', overflow: 'hidden' }}
         >
-        {loading ? (
-          <div className="text-center py-5">
-            <Spinner color="primary" />
-            <span className="ms-2 text-muted">Loading permissions...</span>
-          </div>
-        ) : (
-          <table className="table align-middle table-nowrap table-hover mb-0">
-            <thead>
-              <tr style={{ background: 'var(--vz-secondary-bg)', borderBottom: '2px solid var(--vz-border-color)' }}>
-                <th className="ps-3 py-3 fw-semibold text-muted text-uppercase fs-11" style={{ width: '34%' }}>
-                  Module
-                </th>
-                <th className="text-center py-3" style={{ width: '8%' }}>
-                  <div className="d-flex flex-column align-items-center gap-1">
-                    <i className="ri-checkbox-multiple-line fs-14 text-muted"></i>
-                    <span className="fs-10 fw-semibold text-uppercase text-muted">All</span>
-                  </div>
-                </th>
-                {PERMS.map(p => (
-                  <th key={p.key} className="text-center py-3" style={{ width: `${58 / PERMS.length}%` }}>
+          {loading ? (
+            <div className="text-center py-5">
+              <Spinner color="primary" />
+              <span className="ms-2 text-muted">Loading permissions...</span>
+            </div>
+          ) : (
+            <table className="table align-middle table-nowrap table-hover mb-0">
+              <thead>
+                <tr style={{ background: 'var(--vz-secondary-bg)', borderBottom: '2px solid var(--vz-border-color)' }}>
+                  <th className="ps-3 py-3 fw-semibold text-muted text-uppercase fs-11" style={{ width: '34%' }}>
+                    Module
+                  </th>
+                  <th className="text-center py-3" style={{ width: '8%' }}>
                     <div className="d-flex flex-column align-items-center gap-1">
-                      <i className={`${p.icon} fs-14 text-muted`}></i>
-                      <span className="fs-10 fw-semibold text-uppercase text-muted">{p.label}</span>
+                      <i className="ri-checkbox-multiple-line fs-14 text-muted"></i>
+                      <span className="fs-10 fw-semibold text-uppercase text-muted">All</span>
                     </div>
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {tree.roots.flatMap(root => renderRow(root, 0))}
-            </tbody>
-          </table>
-        )}
+                  {PERMS.map(p => (
+                    <th key={p.key} className="text-center py-3" style={{ width: `${58 / PERMS.length}%` }}>
+                      <div className="d-flex flex-column align-items-center gap-1">
+                        <i className={`${p.icon} fs-14 text-muted`}></i>
+                        <span className="fs-10 fw-semibold text-uppercase text-muted">{p.label}</span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tree.roots.flatMap(root => renderRow(root, 0))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </>
