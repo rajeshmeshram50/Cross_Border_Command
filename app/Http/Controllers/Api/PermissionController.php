@@ -14,8 +14,9 @@ class PermissionController extends Controller
     public function modules()
     {
         $modules = Module::where('is_active', true)
+            ->orderBy('parent_id')
             ->orderBy('sort_order')
-            ->get(['id', 'name', 'slug', 'icon', 'is_default', 'sort_order']);
+            ->get(['id', 'parent_id', 'name', 'slug', 'icon', 'is_default', 'sort_order', 'description']);
 
         return response()->json($modules);
     }
@@ -119,11 +120,26 @@ class PermissionController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        // Only allow permissions on LEAF modules (parents exist only for grouping).
+        // A leaf = module with no children.
+        $parentIdsWithKids = DB::table('modules')
+            ->whereNotNull('parent_id')
+            ->distinct()
+            ->pluck('parent_id')
+            ->toArray();
+
         // Delete old and insert new — using raw IDs, not model objects
         DB::table('permissions')->where('user_id', $targetId)->delete();
 
         $count = 0;
+        $skippedParents = 0;
         foreach ($request->permissions as $perm) {
+            // Skip any payload pointing at a parent/group module
+            if (in_array((int) $perm['module_id'], $parentIdsWithKids, true)) {
+                $skippedParents++;
+                continue;
+            }
+
             $canView = filter_var($perm['can_view'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $canAdd = filter_var($perm['can_add'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $canEdit = filter_var($perm['can_edit'] ?? false, FILTER_VALIDATE_BOOLEAN);
@@ -162,6 +178,7 @@ class PermissionController extends Controller
             'message' => 'Permissions saved successfully',
             'saved_count' => $count,
             'db_count' => $dbCount,
+            'skipped_parent_modules' => $skippedParents,
             'target_user_id' => $targetId,
         ]);
     }

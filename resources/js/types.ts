@@ -34,6 +34,19 @@ export interface AuthUser {
   };
 }
 
+export interface MenuChild {
+  id: string;
+  icon?: string;
+  label: string;
+}
+
+export interface MenuGroup {
+  id: string;
+  label: string;
+  icon?: string;
+  children: MenuChild[];
+}
+
 export interface MenuItem {
   id: string;
   icon: string;
@@ -41,6 +54,11 @@ export interface MenuItem {
   badge?: string;
   section?: string;
   roles: UserRole[];
+  /**
+   * When present, this item is a parent with a dropdown submenu.
+   * Each group represents a category; each child has its own permission slug.
+   */
+  groups?: MenuGroup[];
 }
 
 export interface Client {
