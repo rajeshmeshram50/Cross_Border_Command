@@ -11,23 +11,23 @@ const SUPER_ADMIN_ONLY_MASTERS = new Set<string>(['master.organization_types']);
 
 interface CategoryStyle {
   color: string;
-  bg: string;
+  softBg: string;
   border: string;
   icon: string;
+  gradient: string;
 }
 
 const CATEGORY_STYLES: Record<string, CategoryStyle> = {
-  'master.identity':    { color: '#4F46E5', bg: '#EEF2FF', border: '#C7D2FE', icon: 'ri-profile-line' },
-  'master.geography':   { color: '#0891B2', bg: '#ECFEFF', border: '#A5F3FC', icon: 'ri-global-line' },
-  'master.trade':       { color: '#059669', bg: '#ECFDF5', border: '#6EE7B7', icon: 'ri-line-chart-line' },
-  'master.party':       { color: '#EC4899', bg: '#FDF2F8', border: '#FBCFE8', icon: 'ri-team-line' },
-  'master.legal':       { color: '#DC2626', bg: '#FEF2F2', border: '#FECACA', icon: 'ri-scales-3-line' },
-  'master.operations':  { color: '#D97706', bg: '#FFFBEB', border: '#FDE68A', icon: 'ri-tools-line' },
-  'master.p2p':         { color: '#7C3AED', bg: '#F5F3FF', border: '#DDD6FE', icon: 'ri-handshake-line' },
-  'master.warehouse':   { color: '#0F766E', bg: '#F0FDFA', border: '#99F6E4', icon: 'ri-building-2-line' },
+  'master.identity':   { color: '#405189', softBg: '#eef0fb', border: '#c5caf0', icon: 'ri-profile-line',    gradient: 'linear-gradient(135deg,#405189,#6775c0)' },
+  'master.geography':  { color: '#0ab39c', softBg: '#e0f8f5', border: '#7de0d5', icon: 'ri-global-line',     gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)' },
+  'master.trade':      { color: '#f7b84b', softBg: '#fef8ec', border: '#fce3a1', icon: 'ri-line-chart-line', gradient: 'linear-gradient(135deg,#f7b84b,#fad07e)' },
+  'master.party':      { color: '#f06548', softBg: '#fef0ed', border: '#f9c4b9', icon: 'ri-team-line',       gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
+  'master.legal':      { color: '#e83e8c', softBg: '#fceef6', border: '#f4b8d8', icon: 'ri-scales-3-line',   gradient: 'linear-gradient(135deg,#e83e8c,#ef79b0)' },
+  'master.operations': { color: '#299cdb', softBg: '#e8f5fd', border: '#97d4f5', icon: 'ri-tools-line',      gradient: 'linear-gradient(135deg,#299cdb,#63bcec)' },
+  'master.p2p':        { color: '#7c5cfc', softBg: '#f0ecff', border: '#c8b9fd', icon: 'ri-handshake-line',  gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)' },
+  'master.warehouse':  { color: '#0ab39c', softBg: '#e0f8f5', border: '#7de0d5', icon: 'ri-building-2-line', gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)' },
 };
 
-// Lucide icon names → Remix icons
 const LEAF_ICONS: Record<string, string> = {
   Building: 'ri-building-4-line', Landmark: 'ri-bank-line', Building2: 'ri-building-line',
   UserCog: 'ri-user-settings-line', BadgeCheck: 'ri-verified-badge-line',
@@ -52,22 +52,18 @@ const LEAF_ICONS: Record<string, string> = {
 
 const leafIcon = (name?: string) => (name && LEAF_ICONS[name]) || 'ri-file-list-3-line';
 
-// Per-master short descriptions (shown on the dashboard card)
 const LEAF_DESCRIPTIONS: Record<string, string> = {
-  // Identity & Entity
   'master.company':                 'Legal identity, GSTIN, PAN, IEC — used on every export document',
   'master.bank_accounts':           'Bank registry — Swift Code + AD Code mandatory for export',
   'master.departments':             'Organizational units — assign staff & route approvals',
   'master.roles':                   'User roles controlling module access permissions',
   'master.designations':            'Job titles shown on letters, profiles & HR records',
-  // Geography & Location
   'master.countries':               'Country master — referenced on all trade documents',
   'master.states':                  'State list for addresses & GST place-of-supply',
   'master.state_codes':             '2-digit GST state codes for tax filings',
   'master.address_types':           'Tag addresses: Billing, Shipping, Registered, etc.',
   'master.port_of_loading':         'Origin ports on shipping bills & export invoices',
   'master.port_of_discharge':       'Destination ports on packing lists & shipping docs',
-  // Trade & Commercial
   'master.segments':                'Business lines classifying orders & products',
   'master.hsn_codes':               '8-digit commodity codes for GST & customs filings',
   'master.gst_percentage':          'GST tax slabs applied on product invoices',
@@ -76,23 +72,19 @@ const LEAF_DESCRIPTIONS: Record<string, string> = {
   'master.packaging_material':      'Box, carton & wrapping types linked to packaging module',
   'master.conditions':              'Storage & handling states (Organic, Fresh, Frozen)',
   'master.incoterms':               'Trade terms (FOB, CIF) defining delivery & risk',
-  // Party & Classification
   'master.customer_types':          'Classify buyers as Domestic / Export for pricing rules',
   'master.customer_classifications':'Tier labels (A/B/C, Key Account) for credit & discount',
   'master.vendor_types':            'Supplier categories for procurement rules',
   'master.vendor_behaviour':        'Performance tags used in purchase order workflows',
   'master.applicable_types':        'Who appears on documents — Buyer, Consignee, Notify Party',
-  // Legal & Compliance
   'master.license_name':            'Import/export license categories per product or market',
   'master.risk_levels':             'Risk severity tags for vendor & shipment screening',
   'master.document_type':           'Document categories for upload & linking (Invoice, COA, SDS)',
   'master.haz_class':               'GHS/UN hazard classes for products requiring special handling',
   'master.compliance_behaviours':   'Rules for regulated, cold-chain & controlled substance handling',
-  // Operations & Support
   'master.assets':                  'Company equipment & assets for ops & depreciation tracking',
   'master.asset_categories':        'Group assets by type (Machinery, IT, Furniture)',
   'master.numbering_series':        'System auto-numbering — locks after first transaction',
-  // P2P Masters
   'master.payment_terms':           'Credit days, advance % & milestone structure for PO terms',
   'master.approval_authority':      'Value threshold + role matrix for PO, VPI & Payment approvals',
   'master.procurement_category':    'Goods / Services / AMC / Job Work — drives 3-way vs 2-way match',
@@ -103,7 +95,6 @@ const LEAF_DESCRIPTIONS: Record<string, string> = {
   'master.exchange_rate_log':       'Date-wise exchange rate history vs INR for multi-currency',
   'master.goods_service_flag':      'Switches GRN logic between physical receipt and service proof',
   'master.vendor_directory':        'Vendor information, addresses & document verification',
-  // Warehouse Masters
   'master.warehouse_master':        'Define all warehouse locations — Own & Third Party',
   'master.zone_master':             'Storage zones inside warehouses — Storage, Cold Chain, Hazmat',
   'master.rack_type_master':        'Rack types used across warehouses — Pallet, Cold, Hazardous',
@@ -116,6 +107,14 @@ const LEAF_DESCRIPTIONS: Record<string, string> = {
 
 const leafDescription = (leaf: MenuChild) =>
   LEAF_DESCRIPTIONS[leaf.id] || `Manage ${leaf.label.toLowerCase()} records`;
+
+const STAT_CARDS = [
+  { label: 'Total Masters',      icon: 'ri-stack-line',             gradient: 'linear-gradient(135deg,#405189,#6775c0)' },
+  { label: 'Active',             icon: 'ri-checkbox-circle-line',   gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)' },
+  { label: 'Inactive',           icon: 'ri-close-circle-line',      gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
+  { label: 'Total Records',      icon: 'ri-file-list-3-line',       gradient: 'linear-gradient(135deg,#f7b84b,#fad07e)' },
+  { label: 'HSN Pending Review', icon: 'ri-time-line',              gradient: 'linear-gradient(135deg,#299cdb,#63bcec)' },
+];
 
 export default function MasterDashboard() {
   const navigate = useNavigate();
@@ -139,271 +138,295 @@ export default function MasterDashboard() {
 
   const totals = useMemo(() => {
     const total = groups.reduce((s, g) => s + g.children.length, 0);
-    return {
-      total,
-      active: total, // all seeded as Active
-      inactive: 0,
-      records: 0,
-      pending: 0,
-    };
+    return { total, active: total, inactive: 0, records: 0, pending: 0 };
   }, [groups]);
 
+  const statValues = [totals.total, totals.active, totals.inactive, totals.records, totals.pending];
+
   const toggle = (id: string) => setCollapsed(p => ({ ...p, [id]: !p[id] }));
-  const goTo = (leaf: MenuChild) => navigate(`/master/${leaf.id.replace('master.', '')}`);
+  const goTo   = (leaf: MenuChild) => navigate(`/master/${leaf.id.replace('master.', '')}`);
 
   if (groups.length === 0) {
     return (
-      <Row>
-        <Col xs={12}>
-          <div className="card shadow-sm">
-            <div className="card-body text-center py-5">
-              <div className="mx-auto mb-3 d-flex align-items-center justify-content-center rounded-circle bg-warning-subtle text-warning"
-                   style={{ width: 84, height: 84 }}>
-                <i className="ri-lock-2-line fs-36" />
-              </div>
-              <h4 className="fw-bold mb-2">No Master Access</h4>
-              <p className="text-muted mb-0" style={{ maxWidth: 460, margin: '0 auto' }}>
-                Your account does not have permission for any master. Ask your administrator
-                to grant access in the Permission Management page.
-              </p>
-            </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 340 }}>
+        <div style={{
+          background: '#fff', border: '1px solid #e9ebec', borderRadius: 8,
+          padding: '48px 40px', textAlign: 'center', maxWidth: 460,
+          boxShadow: '0 1px 2px rgba(56,65,74,.12)',
+        }}>
+          <div style={{
+            width: 72, height: 72, borderRadius: '50%', background: '#fef8ec',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px',
+          }}>
+            <i className="ri-lock-2-line" style={{ fontSize: 30, color: '#f7b84b' }} />
           </div>
-        </Col>
-      </Row>
+          <h5 style={{ fontWeight: 600, color: '#212529', marginBottom: 8 }}>No Master Access</h5>
+          <p style={{ color: '#878a99', fontSize: 13, margin: 0 }}>
+            Your account does not have permission for any master. Ask your administrator to grant access.
+          </p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <>
-      {/* Header */}
-      <Row className="mb-4">
-        <Col xs={12}>
-          <div>
-            <h3 className="fw-bold mb-1" style={{ letterSpacing: '-0.3px' }}>Master Control Center</h3>
-            <p className="text-muted mb-0 fs-13">
-              {totals.total} masters across {groups.length} categories — click any card to manage records
-            </p>
-          </div>
-        </Col>
-      </Row>
+    <div>
+      {/* ── Page Header ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div>
+          <h4 style={{ fontWeight: 600, color: '#212529', marginBottom: 4, letterSpacing: '-0.2px' }}>
+            Master Control Center
+          </h4>
+          <p style={{ color: '#878a99', fontSize: 13, margin: 0 }}>
+            {totals.total} masters across {groups.length} categories
+          </p>
+        </div>
+        <nav>
+          <ol style={{ display: 'flex', gap: 6, alignItems: 'center', margin: 0, padding: 0, listStyle: 'none', fontSize: 12 }}>
+            <li><span style={{ color: '#878a99' }}>Master Data</span></li>
+            <li style={{ color: '#adb5bd' }}>/</li>
+            <li><span style={{ color: '#495057', fontWeight: 500 }}>Overview</span></li>
+          </ol>
+        </nav>
+      </div>
 
-      {/* Stats Row */}
+      {/* ── Stat Cards Row ── */}
       <Row className="g-3 mb-4">
-        <StatCard label="MASTERS"           value={totals.total}    iconColor="#4F46E5" icon="ri-stack-line" emoji="📦" />
-        <StatCard label="ACTIVE"            value={totals.active}   iconColor="#059669" icon="ri-checkbox-circle-line" emoji="✅" />
-        <StatCard label="INACTIVE"          value={totals.inactive} iconColor="#DC2626" icon="ri-pause-circle-line" emoji="⏸" />
-        <StatCard label="TOTAL RECORDS"     value={totals.records}  iconColor="#EA580C" icon="ri-file-list-3-line" emoji="📋" />
-        <StatCard label="HSN PENDING REVIEW" value={totals.pending} iconColor="#CA8A04" icon="ri-time-line" emoji="⏳" />
+        {STAT_CARDS.map((sc, i) => (
+          <Col key={sc.label}>
+            <div style={{
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 8,
+              boxShadow: '0 1px 2px rgba(56,65,74,.10)',
+              padding: '16px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+            }}>
+              <div style={{
+                width: 50, height: 50, borderRadius: 8,
+                background: sc.gradient, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <i className={sc.icon} style={{ color: '#fff', fontSize: 22 }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--color-text)', lineHeight: 1, letterSpacing: '-0.5px' }}>
+                  {statValues[i]}
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--color-secondary)', marginTop: 4, fontWeight: 500 }}>
+                  {sc.label}
+                </div>
+              </div>
+            </div>
+          </Col>
+        ))}
       </Row>
 
-      {/* Category Sections */}
+      {/* ── Category Sections ── */}
       {groups.map(group => {
-        const style = CATEGORY_STYLES[group.id] || { color: '#64748B', bg: '#F1F5F9', border: '#CBD5E1', icon: 'ri-folder-line' };
+        const s = CATEGORY_STYLES[group.id] || {
+          color: '#405189', softBg: '#eef0fb', border: '#c5caf0',
+          icon: 'ri-folder-line', gradient: 'linear-gradient(135deg,#405189,#6775c0)',
+        };
         const isCollapsed = !!collapsed[group.id];
+
         return (
-          <div key={group.id} className="mb-4">
-            {/* Category Header — transparent tint so it adapts to light/dark page bg */}
-            <div
-              className="d-flex align-items-center gap-3 px-3 py-2 rounded-3 mb-3"
-              style={{
-                background: `${style.color}1F`,
-                borderLeft: `4px solid ${style.color}`,
-              }}
-            >
-              <div
-                className="d-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                style={{ background: `${style.color}22`, width: 38, height: 38 }}
-              >
-                <i className={style.icon} style={{ color: style.color, fontSize: 18 }}></i>
+          <div key={group.id} style={{ marginBottom: 32 }}>
+
+            {/* ── Section Header ── */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              marginBottom: 16,
+              paddingBottom: 14,
+              borderBottom: '1px solid var(--color-border)',
+            }}>
+              {/* Colored strip */}
+              <div style={{ width: 4, height: 22, borderRadius: 4, background: s.gradient, flexShrink: 0 }} />
+              {/* Icon box */}
+              <div style={{
+                width: 32, height: 32, borderRadius: 6, background: `${s.color}1F`, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <i className={s.icon} style={{ color: s.color, fontSize: 16 }} />
               </div>
-              <h5 className="mb-0 fw-bold" style={{ color: style.color, fontSize: 15 }}>
+              {/* Title */}
+              <h6 style={{ margin: 0, fontWeight: 600, color: '#212529', fontSize: 14, flexGrow: 1 }}>
                 {group.label}
-              </h5>
-              <span
-                className="px-2 py-1 rounded-pill fw-bold"
-                style={{
-                  background: 'var(--color-surface)',
-                  color: style.color,
-                  border: `1px solid ${style.border}`,
-                  fontSize: 11,
-                }}
-              >
+              </h6>
+              {/* Count */}
+              <span style={{
+                background: `${s.color}1F`, color: s.color, border: `1px solid ${s.border}`,
+                borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600,
+              }}>
                 {group.children.length} masters
               </span>
+
+              {/* ── Hide / Show button ── */}
               <button
                 type="button"
-                className="ms-auto btn btn-sm px-3 d-flex align-items-center gap-1"
-                style={{
-                  background: 'var(--color-surface)',
-                  border: `1px solid ${style.border}`,
-                  color: style.color,
-                  fontSize: 12,
-                  fontWeight: 600,
-                }}
                 onClick={() => toggle(group.id)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  background: isCollapsed ? s.color : 'var(--color-surface)',
+                  color: isCollapsed ? '#fff' : s.color,
+                  border: `1px solid ${s.border}`,
+                  borderRadius: 6,
+                  padding: '5px 13px',
+                  fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer', outline: 'none', lineHeight: 1.5,
+                  transition: 'background .15s, color .15s',
+                  minWidth: 76,
+                  justifyContent: 'center',
+                }}
               >
-                <i className={`ri-arrow-${isCollapsed ? 'down' : 'up'}-s-line fs-14`}></i>
+                <i className={isCollapsed ? 'ri-eye-line' : 'ri-eye-off-line'} style={{ fontSize: 13 }} />
                 {isCollapsed ? 'Show' : 'Hide'}
               </button>
             </div>
 
-            {/* Cards Grid */}
+            {/* ── Cards ── */}
             {!isCollapsed && (
               <Row className="g-3">
                 {group.children.map(leaf => (
                   <Col key={leaf.id} xl={3} lg={4} md={6}>
-                    <MasterCard
-                      leaf={leaf}
-                      style={style}
-                      activeCount={0}
-                      inactiveCount={0}
-                      onClick={() => goTo(leaf)}
-                    />
+                    <MasterCard leaf={leaf} style={s} onClick={() => goTo(leaf)} />
                   </Col>
                 ))}
               </Row>
             )}
+
+            {/* Collapsed hint */}
+            {isCollapsed && (
+              <div style={{
+                textAlign: 'center', padding: '10px 0',
+                color: '#adb5bd', fontSize: 12,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}>
+                <i className="ri-arrow-down-s-line" style={{ fontSize: 15 }} />
+                {group.children.length} masters hidden — click <strong style={{ color: s.color }}>Show</strong> to expand
+              </div>
+            )}
           </div>
         );
       })}
-    </>
+    </div>
   );
 }
 
-/* ─────────────── Sub Components ─────────────── */
-
-function StatCard({
-  label,
-  value,
-  iconColor,
-  icon,
-  emoji,
-}: {
-  label: string;
-  value: number;
-  iconColor: string;
-  icon: string;
-  emoji: string;
-}) {
-  return (
-    <Col>
-      <div
-        className="rounded-3 shadow-sm p-3 d-flex align-items-center gap-3 h-100"
-        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-      >
-        <div
-          className="d-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-          style={{ background: `${iconColor}1F`, width: 44, height: 44, fontSize: 20 }}
-        >
-          <span style={{ color: iconColor }}>{emoji}</span>
-        </div>
-        <div className="flex-grow-1">
-          <div className="fs-22 fw-bold" style={{ color: iconColor, lineHeight: 1, letterSpacing: '-0.5px' }}>
-            {value}
-          </div>
-          <div
-            className="text-muted fw-bold mt-1"
-            style={{ fontSize: 10, letterSpacing: '0.6px' }}
-          >
-            {label}
-          </div>
-        </div>
-        <i className={icon} style={{ color: iconColor, opacity: 0.3, fontSize: 20 }}></i>
-      </div>
-    </Col>
-  );
-}
-
+/* ─────────────────────────────────────────────────────────
+   MasterCard — Velzon project-card style
+   Left colored border + title + status badge + description + footer row
+───────────────────────────────────────────────────────── */
 function MasterCard({
   leaf,
-  style,
-  activeCount,
-  inactiveCount,
+  style: s,
   onClick,
 }: {
   leaf: MenuChild;
   style: CategoryStyle;
-  activeCount: number;
-  inactiveCount: number;
   onClick: () => void;
 }) {
   return (
     <div
-      className="rounded-3 shadow-sm h-100 p-3 d-flex flex-column position-relative master-card"
+      onClick={onClick}
       style={{
         background: 'var(--color-surface)',
+        borderRadius: 8,
         border: '1px solid var(--color-border)',
-        borderTop: `3px solid ${style.color}`,
+        borderLeft: `3px solid ${s.color}`,
+        boxShadow: '0 1px 2px rgba(0,0,0,.08)',
         cursor: 'pointer',
-        transition: 'all 0.2s ease',
+        transition: 'box-shadow .18s ease, transform .18s ease',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        padding: '15px 16px',
       }}
-      onClick={onClick}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-3px)';
-        e.currentTarget.style.boxShadow = `0 10px 25px rgba(0,0,0,0.25), 0 0 0 1px ${style.border}`;
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 6px 20px rgba(0,0,0,.2)';
+        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
       }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.15)';
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 1px 2px rgba(0,0,0,.08)';
+        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
       }}
     >
-      {/* Top: icon + counts */}
-      <div className="d-flex align-items-start justify-content-between mb-2">
-        <div
-          className="d-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-          style={{ background: `${style.color}1F`, width: 40, height: 40 }}
-        >
-          <i className={leafIcon(leaf.icon)} style={{ color: style.color, fontSize: 18 }}></i>
-        </div>
-        <div className="d-flex flex-column align-items-end gap-1">
-          <div
-            className="d-flex align-items-center gap-1 fw-bold"
-            style={{ fontSize: 11 }}
-          >
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#059669' }}></span>
-            <span style={{ color: '#059669' }}>{activeCount}</span>
+      {/* ── Row 1: Title + Status pill ── */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+          {/* Icon */}
+          <div style={{
+            width: 34, height: 34, borderRadius: 6, background: `${s.color}1F`, flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <i className={leafIcon(leaf.icon)} style={{ color: s.color, fontSize: 16 }} />
           </div>
-          <div
-            className="d-flex align-items-center gap-1 fw-bold"
-            style={{ fontSize: 11 }}
-          >
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#DC2626' }}></span>
-            <span style={{ color: '#DC2626' }}>{inactiveCount}</span>
-          </div>
+          <h6 style={{
+            margin: 0, fontWeight: 600, fontSize: 13, color: '#212529',
+            lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {leaf.label}
+          </h6>
         </div>
+        {/* Status badge — like Velzon's "Completed / Inprogress" */}
+        <span style={{
+          background: s.softBg, color: s.color,
+          border: `1px solid ${s.border}`,
+          borderRadius: 20, padding: '2px 9px',
+          fontSize: 10.5, fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap',
+        }}>
+          Active
+        </span>
       </div>
 
-      {/* Title */}
-      <h6 className="fw-bold mb-1" style={{ fontSize: 13.5, lineHeight: 1.3, letterSpacing: '-0.1px', color: 'var(--color-text)' }}>
-        {leaf.label}
-      </h6>
-
-      {/* Description */}
-      <p
-        className="text-muted mb-3"
-        style={{
-          fontSize: 11.5,
-          lineHeight: 1.5,
-          flexGrow: 1,
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-        }}
-      >
+      {/* ── Row 2: Description — like "Last Update" ── */}
+      <p style={{
+        margin: '0 0 14px 0',
+        paddingLeft: 43,
+        fontSize: 12,
+        color: 'var(--color-secondary)',
+        lineHeight: 1.55,
+        flexGrow: 1,
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+      }}>
         {leafDescription(leaf)}
       </p>
 
-      {/* CTA */}
-      <div
-        className="text-center rounded-2 fw-semibold py-2"
-        style={{
-          background: `${style.color}1F`,
-          color: style.color,
-          fontSize: 11,
-        }}
-      >
-        Manage {leaf.label} <i className="ri-arrow-right-line ms-1"></i>
+      {/* ── Row 3: Counts + Manage — like "Members" row ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        paddingTop: 10, borderTop: '1px solid var(--color-border)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+            <span style={{ color: 'var(--color-secondary)', fontSize: 11 }}>Active :</span>
+            <span style={{
+              background: 'rgba(5,150,105,0.15)', color: '#059669',
+              borderRadius: 20, padding: '1px 7px', fontSize: 11, fontWeight: 700,
+            }}>0</span>
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+            <span style={{ color: 'var(--color-secondary)', fontSize: 11 }}>Inactive :</span>
+            <span style={{
+              background: 'rgba(220,38,38,0.15)', color: '#dc2626',
+              borderRadius: 20, padding: '1px 7px', fontSize: 11, fontWeight: 700,
+            }}>0</span>
+          </span>
+        </div>
+        {/* Manage link */}
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', gap: 3,
+          color: s.color, fontSize: 12, fontWeight: 600,
+        }}>
+          Manage <i className="ri-arrow-right-line" style={{ fontSize: 13 }} />
+        </span>
       </div>
     </div>
   );
