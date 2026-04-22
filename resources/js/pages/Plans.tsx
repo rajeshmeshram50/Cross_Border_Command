@@ -74,9 +74,14 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
       <Row className="mb-3">
         <Col xs={12} className="d-flex justify-content-between align-items-center">
           <p className="text-muted mb-0">Manage pricing, limits and features · {plans.length} plans</p>
-          <Button color="success" onClick={() => onNavigate?.('add-plan')}>
-            <i className="ri-add-line align-bottom me-1"></i> Add Plan
-          </Button>
+          <Button
+  color="primary"
+  className="btn-label waves-effect waves-light rounded-pill"
+  onClick={() => onNavigate?.('add-plan')}
+>
+  <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+  Add Plan
+</Button>
         </Col>
       </Row>
 
