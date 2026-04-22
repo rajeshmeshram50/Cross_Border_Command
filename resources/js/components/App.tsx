@@ -38,6 +38,7 @@ import ClientSettings from '../pages/ClientSettings';
 import MasterPlaceholder from '../pages/MasterPlaceholder';
 import MasterDashboard from '../pages/MasterDashboard';
 import OrganizationTypes from '../pages/OrganizationTypes';
+import CompanyDetailsMaster from '../pages/master/CompanyDetails';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -265,6 +266,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/profile" element={<Profile />} />
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/organization_types" element={<OrganizationTypes />} />
+              <Route path="/master/company" element={<CompanyDetailsMaster />} />
               <Route path="/master/:slug" element={<MasterPlaceholder />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

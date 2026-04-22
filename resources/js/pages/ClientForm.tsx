@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, CardBody, CardHeader, Col, Row, Button, Input, Label, Spinner, Alert, Form, FormFeedback } from 'reactstrap';
+import {
+  Card, CardBody, CardHeader, Col, Row, Button, Input, Label,
+  Spinner, Form, FormFeedback,
+  Dropdown, DropdownToggle, DropdownMenu, DropdownItem,
+} from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 
@@ -82,17 +86,83 @@ function validateClientForm(form: FormState, isEdit: boolean): Record<string, st
   return e;
 }
 
+// ── Inline styles ─────────────────────────────────────────────────────────────
+const css = {
+  label: {
+    fontSize: '11.5px', fontWeight: 600, letterSpacing: '0.02em',
+    marginBottom: '3px', display: 'block', opacity: 0.8,
+  } as React.CSSProperties,
+  input: {
+    fontSize: '12.5px', padding: '5px 10px', height: '32px',
+  } as React.CSSProperties,
+  textarea: {
+    fontSize: '12.5px', padding: '5px 10px',
+  } as React.CSSProperties,
+  ddToggle: {
+    fontSize: '12.5px', height: '32px', padding: '0 10px',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    width: '100%', textAlign: 'left' as const, background: 'transparent',
+  } as React.CSSProperties,
+  ddMenu: {
+    fontSize: '12.5px', minWidth: '100%', padding: '4px 0',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.12)', borderRadius: '6px',
+    border: '1px solid rgba(128,128,128,0.2)',
+  } as React.CSSProperties,
+  ddItem: {
+    fontSize: '12px', padding: '5px 12px', cursor: 'pointer',
+  } as React.CSSProperties,
+  sectionWrap: {
+    display: 'flex', alignItems: 'center', gap: '8px',
+    marginBottom: '10px', paddingBottom: '7px',
+    borderBottom: '1px solid rgba(128,128,128,0.18)',
+  } as React.CSSProperties,
+  sectionIconWrap: {
+    width: '26px', height: '26px', borderRadius: '6px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(79,70,229,0.12)', flexShrink: 0,
+  } as React.CSSProperties,
+  sectionIcon: { fontSize: '13px', color: '#4F46E5' } as React.CSSProperties,
+  sectionTitle: {
+    fontSize: '12.5px', fontWeight: 700, letterSpacing: '0.03em',
+    margin: 0, flexGrow: 1, opacity: 0.85,
+  } as React.CSSProperties,
+  badge: {
+    fontSize: '10px', fontWeight: 600, padding: '2px 7px',
+    borderRadius: '20px', background: 'rgba(79,70,229,0.12)',
+    color: '#4F46E5', letterSpacing: '0.04em',
+  } as React.CSSProperties,
+  alert: {
+    fontSize: '11.5px', padding: '5px 10px', marginBottom: '10px',
+    display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '6px',
+  } as React.CSSProperties,
+  cardHeader: {
+    padding: '10px 16px', display: 'flex', alignItems: 'center',
+    justifyContent: 'space-between', borderBottom: '1px solid rgba(128,128,128,0.15)',
+  } as React.CSSProperties,
+  cardBody: { padding: '14px 16px' } as React.CSSProperties,
+  formFeedback: { fontSize: '10.5px' } as React.CSSProperties,
+  small: {
+    fontSize: '10.5px', opacity: 0.6, marginTop: '2px', display: 'block',
+  } as React.CSSProperties,
+};
+
+// dot colors for status-type fields
+const statusColor: Record<string, string> = {
+  active: '#10B981', inactive: '#6B7280', suspended: '#EF4444',
+  free: '#6B7280',   paid: '#4F46E5',    pending: '#F59E0B',
+};
+
 export default function ClientForm({ onBack, editId }: Props) {
   const isEdit = !!editId;
   const [form, setForm] = useState<FormState>(empty);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoFile, setLogoFile]       = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [faviconFile, setFaviconFile] = useState<File | null>(null);
-  const [faviconPreview, setFaviconPreview] = useState<string | null>(null);
+  const [faviconFile, setFaviconFile]         = useState<File | null>(null);
+  const [faviconPreview, setFaviconPreview]   = useState<string | null>(null);
   const toast = useToast();
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]           = useState(false);
   const [loadingData, setLoadingData] = useState(false);
-  const [serverErrors, setServerErrors] = useState<Record<string, string[]>>({});
+  const [serverErrors, setServerErrors]         = useState<Record<string, string[]>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const touchedRef = useRef<Record<string, boolean>>({});
   const [orgTypes, setOrgTypes] = useState<OrgType[]>([]);
@@ -110,6 +180,24 @@ export default function ClientForm({ onBack, editId }: Props) {
     }).finally(() => setLoadingLookups(false));
   }, []);
 
+  // Auto-sync plan_type (free/paid) when user picks a plan
+  useEffect(() => {
+    if (!form.plan_id || plans.length === 0) return;
+    const picked = plans.find(p => String(p.id) === form.plan_id);
+    if (!picked) return;
+    const expected = Number(picked.price) > 0 ? 'paid' : 'free';
+    setForm(f => f.plan_type === expected ? f : { ...f, plan_type: expected });
+  }, [form.plan_id, plans]);
+
+  // ── one state per dropdown ──────────────────────────────────────────────────
+  const [ddOrgType,     setDdOrgType]     = useState(false);
+  const [ddStatus,      setDdStatus]      = useState(false);
+  const [ddState,       setDdState]       = useState(false);
+  const [ddCountry,     setDdCountry]     = useState(false);
+  const [ddPlan,        setDdPlan]        = useState(false);
+  const [ddPlanType,    setDdPlanType]    = useState(false);
+  const [ddAdminStatus, setDdAdminStatus] = useState(false);
+
   const set = useCallback((key: keyof FormState, val: string) => {
     setForm(f => (f[key] === val ? f : { ...f, [key]: val }));
     setValidationErrors(e => { if (!e[key]) return e; const n = { ...e }; delete n[key]; return n; });
@@ -121,14 +209,16 @@ export default function ClientForm({ onBack, editId }: Props) {
       const liveErrors = validateClientForm(current, isEdit);
       setValidationErrors(prev => {
         const next = { ...prev };
-        Object.keys(touchedRef.current).forEach(k => { if (liveErrors[k]) next[k] = liveErrors[k]; else delete next[k]; });
+        Object.keys(touchedRef.current).forEach(k => {
+          if (liveErrors[k]) next[k] = liveErrors[k]; else delete next[k];
+        });
         return next;
       });
       return current;
     });
   }, [isEdit]);
 
-  const fieldError = useCallback((key: string) => serverErrors[key]?.[0] || validationErrors[key], [serverErrors, validationErrors]);
+  const fieldError   = useCallback((key: string) => serverErrors[key]?.[0] || validationErrors[key], [serverErrors, validationErrors]);
   const fieldInvalid = (key: string) => !!fieldError(key);
 
   const handleLogoChange = (file: File | null) => {
@@ -146,25 +236,24 @@ export default function ClientForm({ onBack, editId }: Props) {
     if (!editId) return;
     setLoadingData(true);
     api.get(`/clients/${editId}`).then(res => {
-      const c = res.data.client;
-      const admin = res.data.admin_user;
+      const c = res.data.client; const admin = res.data.admin_user;
       setForm({
-        org_name: c.org_name || '', org_type: c.org_type || '', email: c.email || '',
-        phone: c.phone || '', website: c.website || '', status: c.status || 'inactive',
-        sports: c.sports || '', industry: c.industry || '', address: c.address || '',
-        city: c.city || '', district: c.district || '', taluka: c.taluka || '',
-        pincode: c.pincode || '', state: c.state || '', country: c.country || 'India',
-        gst_number: c.gst_number || '', pan_number: c.pan_number || '',
-        plan_id: c.plan_id?.toString() || '', plan_type: c.plan_type || 'free',
-        plan_expires_at: c.plan_expires_at || '', primary_color: c.primary_color || '#4F46E5',
-        secondary_color: c.secondary_color || '#10B981', notes: c.notes || '',
-        admin_name: admin?.name || '', admin_email: admin?.email || '',
-        admin_phone: admin?.phone || '', admin_designation: admin?.designation || '',
-        admin_password: '', admin_password_confirmation: '', admin_status: admin?.status || 'active',
+        org_name: c.org_name||'', org_type: c.org_type||'', email: c.email||'',
+        phone: c.phone||'', website: c.website||'', status: c.status||'inactive',
+        sports: c.sports||'', industry: c.industry||'', address: c.address||'',
+        city: c.city||'', district: c.district||'', taluka: c.taluka||'',
+        pincode: c.pincode||'', state: c.state||'', country: c.country||'India',
+        gst_number: c.gst_number||'', pan_number: c.pan_number||'',
+        plan_id: c.plan_id?.toString()||'', plan_type: c.plan_type||'free',
+        plan_expires_at: c.plan_expires_at||'', primary_color: c.primary_color||'#4F46E5',
+        secondary_color: c.secondary_color||'#10B981', notes: c.notes||'',
+        admin_name: admin?.name||'', admin_email: admin?.email||'',
+        admin_phone: admin?.phone||'', admin_designation: admin?.designation||'',
+        admin_password: '', admin_password_confirmation: '', admin_status: admin?.status||'active',
       });
-      if (c.logo) setLogoPreview(c.logo);
+      if (c.logo)    setLogoPreview(c.logo);
       if (c.favicon) setFaviconPreview(c.favicon);
-    }).catch(() => {}).finally(() => setLoadingData(false));
+    }).catch(()=>{}).finally(()=>setLoadingData(false));
   }, [editId]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -181,17 +270,15 @@ export default function ClientForm({ onBack, editId }: Props) {
         if (logoFile || faviconFile) {
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, payload[k]); });
-          if (logoFile) fd.append('logo', logoFile);
+          if (logoFile)    fd.append('logo', logoFile);
           if (faviconFile) fd.append('favicon', faviconFile);
           await api.post(`/clients/${editId}?_method=PUT`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-        } else {
-          await api.put(`/clients/${editId}`, payload);
-        }
+        } else { await api.put(`/clients/${editId}`, payload); }
         toast.success('Updated', 'Client updated successfully');
       } else {
         const fd = new FormData();
         Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, payload[k]); });
-        if (logoFile) fd.append('logo', logoFile);
+        if (logoFile)    fd.append('logo', logoFile);
         if (faviconFile) fd.append('favicon', faviconFile);
         await api.post('/clients', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         toast.success('Created', 'Client registered successfully');
@@ -201,9 +288,7 @@ export default function ClientForm({ onBack, editId }: Props) {
       if (err.response?.status === 422) {
         setServerErrors(err.response.data.errors || {});
         toast.error('Validation Error', 'Please fix the highlighted fields');
-      } else {
-        toast.error('Error', err.response?.data?.message || 'Something went wrong');
-      }
+      } else { toast.error('Error', err.response?.data?.message || 'Something went wrong'); }
     } finally { setSaving(false); }
   };
 
@@ -212,355 +297,435 @@ export default function ClientForm({ onBack, editId }: Props) {
     setLogoFile(null); setLogoPreview(null); setFaviconFile(null); setFaviconPreview(null);
   };
 
-  if (loadingData) {
+  if (loadingData) return (
+    <div className="text-center py-5">
+      <Spinner color="primary" />
+      <p className="text-muted mt-2" style={{ fontSize: '12px' }}>Loading client data...</p>
+    </div>
+  );
+
+  // ── Reusable SelectDD component ────────────────────────────────────────────
+  const SelectDD = ({
+    isOpen, toggle, value, placeholder = 'Select', options, fieldKey, dotColor = false,
+  }: {
+    isOpen: boolean; toggle: () => void; value: string; placeholder?: string;
+    options: { label: string; value: string }[]; fieldKey: string; dotColor?: boolean;
+  }) => {
+    const invalid = fieldInvalid(fieldKey);
+    const selectedLabel = options.find(o => o.value === value)?.label || placeholder;
     return (
-      <div className="text-center py-5">
-        <Spinner color="primary" />
-        <p className="text-muted mt-3">Loading client data...</p>
-      </div>
+      <>
+        <Dropdown isOpen={isOpen} toggle={toggle} className="w-100">
+          <DropdownToggle
+            color="light"
+            caret
+            style={{
+              ...css.ddToggle,
+              border: `1px solid ${invalid ? '#f06548' : 'rgba(128,128,128,0.3)'}`,
+              borderRadius: '4px',
+              color: value ? 'inherit' : 'rgba(128,128,128,0.65)',
+              boxShadow: invalid ? '0 0 0 2px rgba(240,101,72,0.15)' : 'none',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {dotColor && value && (
+                <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                  background: statusColor[value] || '#6B7280', display: 'inline-block' }} />
+              )}
+              {selectedLabel}
+            </span>
+          </DropdownToggle>
+          <DropdownMenu style={css.ddMenu}>
+            {options.map(o => (
+              <DropdownItem
+                key={o.value}
+                active={value === o.value}
+                style={css.ddItem}
+                onClick={() => { set(fieldKey as keyof FormState, o.value); touch(fieldKey); }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {dotColor && (
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                      background: statusColor[o.value] || '#6B7280', display: 'inline-block' }} />
+                  )}
+                  {o.label}
+                </span>
+              </DropdownItem>
+            ))}
+          </DropdownMenu>
+        </Dropdown>
+        {invalid && (
+          <div style={{ fontSize: '10.5px', color: '#f06548', marginTop: '2px' }}>
+            {fieldError(fieldKey)}
+          </div>
+        )}
+      </>
     );
-  }
+  };
 
   const SectionHeader = ({ icon, title, badge }: { icon: string; title: string; badge: string }) => (
-    <div className="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom">
-      <div className="avatar-xs">
-        <span className="avatar-title rounded bg-primary-subtle text-primary fs-4">
-          <i className={icon}></i>
-        </span>
-      </div>
-      <h5 className="fs-15 mb-0 flex-grow-1">{title}</h5>
-      <span className="badge bg-primary-subtle text-primary">{badge}</span>
+    <div style={css.sectionWrap}>
+      <div style={css.sectionIconWrap}><i className={icon} style={css.sectionIcon} /></div>
+      <h5 style={css.sectionTitle}>{title}</h5>
+      <span style={css.badge}>{badge}</span>
     </div>
+  );
+
+  const Lbl = ({ children }: { children: React.ReactNode }) => (
+    <Label style={css.label}>{children}</Label>
   );
 
   return (
     <>
-      <Row>
+      {/* Page Title */}
+      <Row className="mb-2">
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">
-              <button className="btn btn-sm btn-soft-primary me-2" onClick={onBack}>
-                <i className="ri-arrow-left-line"></i>
+          <div className="d-sm-flex align-items-center justify-content-between">
+            <h5 className="mb-sm-0" style={{ fontSize: '13.5px', fontWeight: 700 }}>
+              <button className="btn btn-sm btn-soft-primary me-2" onClick={onBack} style={{ fontSize: '11px', padding: '2px 8px' }}>
+                <i className="ri-arrow-left-line" />
               </button>
               {isEdit ? 'Edit Client' : 'Register New Client'}
-            </h4>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#" onClick={e => { e.preventDefault(); onBack(); }}>Clients</a></li>
-                <li className="breadcrumb-item active">{isEdit ? 'Edit' : 'New'}</li>
-              </ol>
-            </div>
+            </h5>
+            <ol className="breadcrumb m-0" style={{ fontSize: '11px' }}>
+              <li className="breadcrumb-item"><a href="#" onClick={e => { e.preventDefault(); onBack(); }}>Clients</a></li>
+              <li className="breadcrumb-item active">{isEdit ? 'Edit' : 'New'}</li>
+            </ol>
           </div>
         </Col>
       </Row>
 
       {serverErrors.general && (
-        <Alert color="danger">
-          <i className="ri-error-warning-line me-1"></i>{serverErrors.general[0]}
-        </Alert>
+        <div style={{ ...css.alert, background: 'rgba(240,101,72,0.08)', border: '1px solid rgba(240,101,72,0.2)', color: '#f06548' }}>
+          <i className="ri-error-warning-line" style={{ fontSize: '13px' }} />
+          <span>{serverErrors.general[0]}</span>
+        </div>
       )}
 
       <Form onSubmit={handleSubmit}>
-        <Card>
-          <CardHeader className="d-flex align-items-center justify-content-between">
+        <Card className="shadow-sm">
+          <CardHeader style={css.cardHeader}>
             <div>
-              <h5 className="card-title mb-0">Client Registration Form</h5>
-              <p className="text-muted mb-0 fs-13">Fields marked <span className="text-danger">*</span> are required</p>
+              <h6 className="mb-0" style={{ fontSize: '12.5px', fontWeight: 700 }}>Client Registration Form</h6>
+              <p className="mb-0" style={{ fontSize: '11px', opacity: 0.55, marginTop: '1px' }}>
+                Fields marked <span className="text-danger">*</span> are required
+              </p>
             </div>
-            <span className="badge bg-primary-subtle text-primary">{isEdit ? 'Edit Mode' : 'New Client'}</span>
+            <span style={{ ...css.badge, background: isEdit ? 'rgba(16,185,129,0.12)' : 'rgba(79,70,229,0.12)', color: isEdit ? '#10B981' : '#4F46E5' }}>
+              {isEdit ? '✏ Edit Mode' : '＋ New Client'}
+            </span>
           </CardHeader>
 
-          <CardBody>
-            {/* ═ Section A: Organization ═ */}
-            <SectionHeader icon="ri-building-line" title="Organization Details" badge="Section A" />
-            <Row className="g-3 mb-4">
+          <CardBody style={css.cardBody}>
+
+            {/* ══ A: Organization ══ */}
+            <SectionHeader icon="ri-building-line" title="Organization Details" badge="A" />
+            <Row className="g-2 mb-3">
               <Col md={4}>
-                <Label>Org. Name <span className="text-danger">*</span></Label>
-                <Input value={form.org_name} invalid={fieldInvalid('org_name')}
+                <Lbl>Org. Name <span className="text-danger">*</span></Lbl>
+                <Input style={css.input} value={form.org_name} invalid={fieldInvalid('org_name')}
                   onChange={e => set('org_name', e.target.value)} onBlur={() => touch('org_name')}
                   placeholder="e.g., Inorbvict Technologies" />
-                <FormFeedback>{fieldError('org_name')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('org_name')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>Org. Type <span className="text-danger">*</span></Label>
-                <Input type="select" value={form.org_type} invalid={fieldInvalid('org_type')}
-                  onChange={e => set('org_type', e.target.value)} onBlur={() => touch('org_type')}
-                  disabled={loadingLookups}>
-                  <option value="">{loadingLookups ? 'Loading…' : 'Select type'}</option>
-                  {orgTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                </Input>
-                <FormFeedback>{fieldError('org_type')}</FormFeedback>
+                <Lbl>Org. Type <span className="text-danger">*</span></Lbl>
+                <SelectDD
+                  isOpen={ddOrgType} toggle={() => setDdOrgType(o => !o)}
+                  value={form.org_type}
+                  placeholder={loadingLookups ? 'Loading…' : 'Select type'}
+                  fieldKey="org_type"
+                  options={orgTypes.map(t => ({ label: t.name, value: t.name }))}
+                />
               </Col>
               <Col md={4}>
                 {form.org_type === 'Sports' ? (
-                  <>
-                    <Label>Sport Name</Label>
-                    <Input value={form.sports} onChange={e => set('sports', e.target.value)} placeholder="e.g., Hockey, Boxing" />
-                  </>
+                  <><Lbl>Sport Name</Lbl>
+                    <Input style={css.input} value={form.sports} onChange={e => set('sports', e.target.value)} placeholder="e.g., Hockey, Boxing" /></>
                 ) : (
-                  <>
-                    <Label>Industry</Label>
-                    <Input value={form.industry} onChange={e => set('industry', e.target.value)} placeholder="e.g., Agriculture, IT" />
-                  </>
+                  <><Lbl>Industry</Lbl>
+                    <Input style={css.input} value={form.industry} onChange={e => set('industry', e.target.value)} placeholder="e.g., Agriculture, IT" /></>
                 )}
               </Col>
               <Col md={4}>
-                <Label>Status <span className="text-danger">*</span></Label>
-                <Input type="select" value={form.status} onChange={e => set('status', e.target.value)}>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  <option value="suspended">Suspended</option>
-                </Input>
+                <Lbl>Status <span className="text-danger">*</span></Lbl>
+                <SelectDD
+                  isOpen={ddStatus} toggle={() => setDdStatus(o => !o)}
+                  value={form.status} fieldKey="status" dotColor
+                  options={[
+                    { label: 'Active',    value: 'active' },
+                    { label: 'Inactive',  value: 'inactive' },
+                    { label: 'Suspended', value: 'suspended' },
+                  ]}
+                />
               </Col>
               <Col md={4}>
-                <Label>Email <span className="text-danger">*</span></Label>
-                <Input type="email" value={form.email} invalid={fieldInvalid('email')}
+                <Lbl>Email <span className="text-danger">*</span></Lbl>
+                <Input style={css.input} type="email" value={form.email} invalid={fieldInvalid('email')}
                   onChange={e => set('email', e.target.value)} onBlur={() => touch('email')}
                   placeholder="contact@company.com" />
-                <FormFeedback>{fieldError('email')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('email')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>Phone <span className="text-danger">*</span></Label>
-                <Input type="tel" value={form.phone} invalid={fieldInvalid('phone')}
+                <Lbl>Phone <span className="text-danger">*</span></Lbl>
+                <Input style={css.input} type="tel" value={form.phone} invalid={fieldInvalid('phone')}
                   onChange={e => set('phone', e.target.value)} onBlur={() => touch('phone')}
                   placeholder="+91 9876543210" />
-                <FormFeedback>{fieldError('phone')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('phone')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>Website</Label>
-                <Input type="url" value={form.website} onChange={e => set('website', e.target.value)} placeholder="www.company.com" />
+                <Lbl>Website</Lbl>
+                <Input style={css.input} type="url" value={form.website} onChange={e => set('website', e.target.value)} placeholder="www.company.com" />
               </Col>
             </Row>
 
-            {/* ═ Section B: Address ═ */}
-            <SectionHeader icon="ri-map-pin-line" title="Address Details" badge="Section B" />
-            <Row className="g-3 mb-4">
+            {/* ══ B: Address ══ */}
+            <SectionHeader icon="ri-map-pin-line" title="Address Details" badge="B" />
+            <Row className="g-2 mb-3">
               <Col xs={12}>
-                <Label>Street Address <span className="text-danger">*</span></Label>
-                <Input type="textarea" rows={1} value={form.address} invalid={fieldInvalid('address')}
+                <Lbl>Street Address <span className="text-danger">*</span></Lbl>
+                <Input style={css.textarea} type="textarea" rows={1} value={form.address} invalid={fieldInvalid('address')}
                   onChange={e => set('address', e.target.value)} onBlur={() => touch('address')}
                   placeholder="Plot No, Street, Landmark..." />
-                <FormFeedback>{fieldError('address')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('address')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>City <span className="text-danger">*</span></Label>
-                <Input value={form.city} invalid={fieldInvalid('city')}
+                <Lbl>City <span className="text-danger">*</span></Lbl>
+                <Input style={css.input} value={form.city} invalid={fieldInvalid('city')}
                   onChange={e => set('city', e.target.value)} onBlur={() => touch('city')} placeholder="e.g., Nagpur" />
-                <FormFeedback>{fieldError('city')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('city')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>District</Label>
-                <Input value={form.district} onChange={e => set('district', e.target.value)} placeholder="e.g., Nagpur" />
+                <Lbl>District</Lbl>
+                <Input style={css.input} value={form.district} onChange={e => set('district', e.target.value)} placeholder="e.g., Nagpur" />
               </Col>
               <Col md={4}>
-                <Label>Taluka</Label>
-                <Input value={form.taluka} onChange={e => set('taluka', e.target.value)} placeholder="e.g., Nagpur" />
+                <Lbl>Taluka</Lbl>
+                <Input style={css.input} value={form.taluka} onChange={e => set('taluka', e.target.value)} placeholder="e.g., Nagpur" />
               </Col>
               <Col md={4}>
-                <Label>Pincode</Label>
-                <Input value={form.pincode} invalid={fieldInvalid('pincode')} maxLength={6}
+                <Lbl>Pincode</Lbl>
+                <Input style={css.input} value={form.pincode} invalid={fieldInvalid('pincode')} maxLength={6}
                   onChange={e => set('pincode', e.target.value)} onBlur={() => touch('pincode')} placeholder="440001" />
-                <FormFeedback>{fieldError('pincode')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('pincode')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>State <span className="text-danger">*</span></Label>
-                <Input type="select" value={form.state} invalid={fieldInvalid('state')}
-                  onChange={e => set('state', e.target.value)}>
-                  <option value="">Select state</option>
-                  {['Maharashtra','Delhi','Karnataka','Tamil Nadu','Gujarat','Telangana','West Bengal'].map(s => <option key={s} value={s}>{s}</option>)}
-                </Input>
-                <FormFeedback>{fieldError('state')}</FormFeedback>
+                <Lbl>State <span className="text-danger">*</span></Lbl>
+                <SelectDD
+                  isOpen={ddState} toggle={() => setDdState(o => !o)}
+                  value={form.state} placeholder="Select state" fieldKey="state"
+                  options={['Maharashtra','Delhi','Karnataka','Tamil Nadu','Gujarat','Telangana','West Bengal']
+                    .map(s => ({ label: s, value: s }))}
+                />
               </Col>
               <Col md={4}>
-                <Label>Country <span className="text-danger">*</span></Label>
-                <Input type="select" value={form.country} onChange={e => set('country', e.target.value)}>
-                  <option value="India">India</option>
-                  <option value="USA">USA</option>
-                  <option value="UK">UK</option>
-                </Input>
+                <Lbl>Country <span className="text-danger">*</span></Lbl>
+                <SelectDD
+                  isOpen={ddCountry} toggle={() => setDdCountry(o => !o)}
+                  value={form.country} fieldKey="country"
+                  options={[
+                    { label: '🇮🇳 India', value: 'India' },
+                    { label: '🇺🇸 USA',   value: 'USA' },
+                    { label: '🇬🇧 UK',    value: 'UK' },
+                  ]}
+                />
               </Col>
             </Row>
 
-            {/* ═ Section C: Legal & Tax ═ */}
-            <SectionHeader icon="ri-file-text-line" title="Legal & Tax Information" badge="Section C" />
+            {/* ══ C: Legal & Tax ══ */}
+            <SectionHeader icon="ri-file-text-line" title="Legal & Tax Information" badge="C" />
             {form.country === 'India' && (
-              <Alert color="warning" className="d-flex align-items-center py-2">
-                <i className="ri-information-line me-2"></i>
-                GST and PAN are recommended for Indian organizations.
-              </Alert>
+              <div style={{ ...css.alert, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#B45309' }}>
+                <i className="ri-information-line" style={{ fontSize: '13px' }} />
+                <span style={{ fontSize: '11.5px' }}>GST and PAN are recommended for Indian organizations.</span>
+              </div>
             )}
-            <Row className="g-3 mb-4">
+            <Row className="g-2 mb-3">
               <Col md={6}>
-                <Label>GST Number</Label>
-                <Input value={form.gst_number} invalid={fieldInvalid('gst_number')} maxLength={15}
+                <Lbl>GST Number</Lbl>
+                <Input style={css.input} value={form.gst_number} invalid={fieldInvalid('gst_number')} maxLength={15}
                   onChange={e => set('gst_number', e.target.value.toUpperCase())} onBlur={() => touch('gst_number')}
                   placeholder="27AABCU9603R1ZM" />
-                <FormFeedback>{fieldError('gst_number')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('gst_number')}</FormFeedback>
               </Col>
               <Col md={6}>
-                <Label>PAN Number</Label>
-                <Input value={form.pan_number} invalid={fieldInvalid('pan_number')} maxLength={10}
+                <Lbl>PAN Number</Lbl>
+                <Input style={css.input} value={form.pan_number} invalid={fieldInvalid('pan_number')} maxLength={10}
                   onChange={e => set('pan_number', e.target.value.toUpperCase())} onBlur={() => touch('pan_number')}
                   placeholder="AABCU9603R" />
-                <FormFeedback>{fieldError('pan_number')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('pan_number')}</FormFeedback>
               </Col>
             </Row>
 
-            {/* ═ Section D: Plan ═ */}
-            <SectionHeader icon="ri-shield-check-line" title="Plan & Billing" badge="Section D" />
-            <Alert color="success" className="d-flex align-items-center py-2">
-              <i className="ri-checkbox-circle-line me-2"></i>
-              Client must complete payment after creation to activate.
-            </Alert>
-            <Row className="g-3 mb-4">
+            {/* ══ D: Plan ══ */}
+            <SectionHeader icon="ri-shield-check-line" title="Plan & Billing" badge="D" />
+            <div style={{ ...css.alert, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#059669' }}>
+              <i className="ri-checkbox-circle-line" style={{ fontSize: '13px' }} />
+              <span style={{ fontSize: '11.5px' }}>Client must complete payment after creation to activate.</span>
+            </div>
+            <Row className="g-2 mb-3">
               <Col md={4}>
-                <Label>Assign Plan <span className="text-danger">*</span></Label>
-                <Input type="select" value={form.plan_id} invalid={fieldInvalid('plan_id')}
-                  onChange={e => {
-                    const id = e.target.value;
-                    set('plan_id', id);
-                    const picked = plans.find(p => String(p.id) === id);
-                    if (picked) set('plan_type', Number(picked.price) > 0 ? 'paid' : 'free');
-                  }}
-                  disabled={loadingLookups}>
-                  <option value="">{loadingLookups ? 'Loading…' : 'Select plan'}</option>
-                  {plans.map(p => (
-                    <option key={p.id} value={p.id}>{formatPlanLabel(p)}</option>
-                  ))}
-                </Input>
-                <FormFeedback>{fieldError('plan_id')}</FormFeedback>
+                <Lbl>Assign Plan <span className="text-danger">*</span></Lbl>
+                <SelectDD
+                  isOpen={ddPlan} toggle={() => setDdPlan(o => !o)}
+                  value={form.plan_id}
+                  placeholder={loadingLookups ? 'Loading…' : 'Select plan'}
+                  fieldKey="plan_id"
+                  options={plans.map(p => ({ label: formatPlanLabel(p), value: String(p.id) }))}
+                />
               </Col>
               <Col md={4}>
-                <Label>Plan Type <span className="text-danger">*</span></Label>
-                <Input type="select" value={form.plan_type} onChange={e => set('plan_type', e.target.value)}>
-                  <option value="free">Free</option>
-                  <option value="paid">Paid</option>
-                </Input>
+                <Lbl>Plan Type <span className="text-danger">*</span></Lbl>
+                <SelectDD
+                  isOpen={ddPlanType} toggle={() => setDdPlanType(o => !o)}
+                  value={form.plan_type} fieldKey="plan_type" dotColor
+                  options={[
+                    { label: 'Free', value: 'free' },
+                    { label: 'Paid', value: 'paid' },
+                  ]}
+                />
               </Col>
               <Col md={4}>
-                <Label>Expires At</Label>
-                <Input type="date" value={form.plan_expires_at} onChange={e => set('plan_expires_at', e.target.value)} />
+                <Lbl>Expires At</Lbl>
+                <Input style={css.input} type="date" value={form.plan_expires_at} onChange={e => set('plan_expires_at', e.target.value)} />
               </Col>
             </Row>
 
-            {/* ═ Section E: Admin ═ */}
-            <SectionHeader icon="ri-user-line" title="Admin Credentials" badge="Section E" />
-            <Alert color="info" className="d-flex align-items-center py-2">
-              <i className="ri-lock-line me-2"></i>
-              Creates the first login user (Client Admin) for this organization.
-            </Alert>
-            <Row className="g-3 mb-4">
+            {/* ══ E: Admin ══ */}
+            <SectionHeader icon="ri-user-line" title="Admin Credentials" badge="E" />
+            <div style={{ ...css.alert, background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', color: '#2563EB' }}>
+              <i className="ri-lock-line" style={{ fontSize: '13px' }} />
+              <span style={{ fontSize: '11.5px' }}>Creates the first login user (Client Admin) for this organization.</span>
+            </div>
+            <Row className="g-2 mb-3">
               <Col md={4}>
-                <Label>Full Name <span className="text-danger">*</span></Label>
-                <Input value={form.admin_name} invalid={fieldInvalid('admin_name')}
+                <Lbl>Full Name <span className="text-danger">*</span></Lbl>
+                <Input style={css.input} value={form.admin_name} invalid={fieldInvalid('admin_name')}
                   onChange={e => set('admin_name', e.target.value)} onBlur={() => touch('admin_name')}
                   placeholder="Rajesh Meshram" />
-                <FormFeedback>{fieldError('admin_name')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('admin_name')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>Email <span className="text-danger">*</span></Label>
-                <Input type="email" value={form.admin_email} invalid={fieldInvalid('admin_email')}
+                <Lbl>Email <span className="text-danger">*</span></Lbl>
+                <Input style={css.input} type="email" value={form.admin_email} invalid={fieldInvalid('admin_email')}
                   onChange={e => set('admin_email', e.target.value)} onBlur={() => touch('admin_email')}
                   placeholder="admin@company.com" />
-                <FormFeedback>{fieldError('admin_email')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('admin_email')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>Phone {!isEdit && <span className="text-danger">*</span>}</Label>
-                <Input type="tel" value={form.admin_phone} invalid={fieldInvalid('admin_phone')}
+                <Lbl>Phone {!isEdit && <span className="text-danger">*</span>}</Lbl>
+                <Input style={css.input} type="tel" value={form.admin_phone} invalid={fieldInvalid('admin_phone')}
                   onChange={e => set('admin_phone', e.target.value)} onBlur={() => touch('admin_phone')}
                   placeholder="+91 9876543210" />
-                <FormFeedback>{fieldError('admin_phone')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('admin_phone')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>Designation</Label>
-                <Input value={form.admin_designation} onChange={e => set('admin_designation', e.target.value)}
+                <Lbl>Designation</Lbl>
+                <Input style={css.input} value={form.admin_designation} onChange={e => set('admin_designation', e.target.value)}
                   placeholder="CEO / Director" />
               </Col>
               <Col md={4}>
-                <Label>{isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Label>
-                <Input type="password" value={form.admin_password} invalid={fieldInvalid('admin_password')}
+                <Lbl>{isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Lbl>
+                <Input style={css.input} type="password" value={form.admin_password} invalid={fieldInvalid('admin_password')}
                   onChange={e => set('admin_password', e.target.value)} onBlur={() => touch('admin_password')}
                   placeholder={isEdit ? 'Leave blank to keep' : 'Min. 6 characters'} />
-                <FormFeedback>{fieldError('admin_password')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('admin_password')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>Confirm Password {!isEdit && <span className="text-danger">*</span>}</Label>
-                <Input type="password" value={form.admin_password_confirmation}
+                <Lbl>Confirm Password {!isEdit && <span className="text-danger">*</span>}</Lbl>
+                <Input style={css.input} type="password" value={form.admin_password_confirmation}
                   invalid={fieldInvalid('admin_password_confirmation')}
                   onChange={e => set('admin_password_confirmation', e.target.value)}
                   onBlur={() => touch('admin_password_confirmation')} placeholder="Re-enter password" />
-                <FormFeedback>{fieldError('admin_password_confirmation')}</FormFeedback>
+                <FormFeedback style={css.formFeedback}>{fieldError('admin_password_confirmation')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Label>Admin Status <span className="text-danger">*</span></Label>
-                <Input type="select" value={form.admin_status} onChange={e => set('admin_status', e.target.value)}>
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                  <option value="pending">Pending</option>
-                </Input>
+                <Lbl>Admin Status <span className="text-danger">*</span></Lbl>
+                <SelectDD
+                  isOpen={ddAdminStatus} toggle={() => setDdAdminStatus(o => !o)}
+                  value={form.admin_status} fieldKey="admin_status" dotColor
+                  options={[
+                    { label: 'Active',   value: 'active' },
+                    { label: 'Inactive', value: 'inactive' },
+                    { label: 'Pending',  value: 'pending' },
+                  ]}
+                />
               </Col>
             </Row>
 
-            {/* ═ Section F: Branding ═ */}
-            <SectionHeader icon="ri-palette-line" title="Branding" badge="Section F" />
-            <Row className="g-3 mb-4">
+            {/* ══ F: Branding ══ */}
+            <SectionHeader icon="ri-palette-line" title="Branding" badge="F" />
+            <Row className="g-2 mb-3">
               <Col md={6}>
-                <Label>Primary Color</Label>
+                <Lbl>Primary Color</Lbl>
                 <div className="d-flex gap-2">
-                  <Input type="color" value={form.primary_color} onChange={e => set('primary_color', e.target.value)} style={{ width: 48, height: 38 }} />
-                  <Input value={form.primary_color} onChange={e => set('primary_color', e.target.value)} className="font-monospace" />
+                  <Input type="color" value={form.primary_color} onChange={e => set('primary_color', e.target.value)}
+                    style={{ width: 36, height: 32, padding: '2px', borderRadius: '5px', cursor: 'pointer' }} />
+                  <Input style={{ ...css.input, fontFamily: 'monospace', fontSize: '12px' }} value={form.primary_color} onChange={e => set('primary_color', e.target.value)} />
                 </div>
               </Col>
               <Col md={6}>
-                <Label>Secondary Color</Label>
+                <Lbl>Secondary Color</Lbl>
                 <div className="d-flex gap-2">
-                  <Input type="color" value={form.secondary_color} onChange={e => set('secondary_color', e.target.value)} style={{ width: 48, height: 38 }} />
-                  <Input value={form.secondary_color} onChange={e => set('secondary_color', e.target.value)} className="font-monospace" />
+                  <Input type="color" value={form.secondary_color} onChange={e => set('secondary_color', e.target.value)}
+                    style={{ width: 36, height: 32, padding: '2px', borderRadius: '5px', cursor: 'pointer' }} />
+                  <Input style={{ ...css.input, fontFamily: 'monospace', fontSize: '12px' }} value={form.secondary_color} onChange={e => set('secondary_color', e.target.value)} />
                 </div>
               </Col>
               <Col md={6}>
-                <Label>Organization Logo</Label>
-                <div className="d-flex gap-3 align-items-center">
-                  {logoPreview && <img src={logoPreview} alt="logo" className="rounded border" style={{ width: 56, height: 56, objectFit: 'cover' }} />}
-                  <Input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleLogoChange(e.target.files?.[0] || null)} />
+                <Lbl>Organization Logo</Lbl>
+                <div className="d-flex gap-2 align-items-center">
+                  {logoPreview && <img src={logoPreview} alt="logo" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleLogoChange(e.target.files?.[0] || null)} />
                 </div>
-                <small className="text-muted">PNG, JPG — Max 2MB</small>
+                <small style={css.small}>PNG, JPG — Max 2MB</small>
               </Col>
               <Col md={6}>
-                <Label>Favicon</Label>
-                <div className="d-flex gap-3 align-items-center">
-                  {faviconPreview && <img src={faviconPreview} alt="favicon" className="rounded border" style={{ width: 56, height: 56, objectFit: 'cover' }} />}
-                  <Input type="file" accept="image/x-icon,image/png" onChange={e => handleFaviconChange(e.target.files?.[0] || null)} />
+                <Lbl>Favicon</Lbl>
+                <div className="d-flex gap-2 align-items-center">
+                  {faviconPreview && <img src={faviconPreview} alt="favicon" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/x-icon,image/png" onChange={e => handleFaviconChange(e.target.files?.[0] || null)} />
                 </div>
-                <small className="text-muted">PNG, ICO — Max 512KB</small>
+                <small style={css.small}>PNG, ICO — Max 512KB</small>
               </Col>
             </Row>
 
-            {/* ═ Section G: Notes ═ */}
-            <SectionHeader icon="ri-sticky-note-line" title="Additional Notes" badge="Section G" />
-            <Row className="g-3 mb-3">
+            {/* ══ G: Notes ══ */}
+            <SectionHeader icon="ri-sticky-note-line" title="Additional Notes" badge="G" />
+            <Row className="g-2 mb-3">
               <Col xs={12}>
-                <Label>Internal Notes</Label>
-                <Input type="textarea" rows={2} value={form.notes} onChange={e => set('notes', e.target.value)}
-                  placeholder="Any internal notes about this client..." />
+                <Lbl>Internal Notes</Lbl>
+                <Input style={css.textarea} type="textarea" rows={2} value={form.notes}
+                  onChange={e => set('notes', e.target.value)} placeholder="Any internal notes about this client..." />
               </Col>
             </Row>
 
-            {/* Actions */}
-            <div className="d-flex justify-content-between pt-3 border-top">
-              <Button color="light" type="button" onClick={onBack}>Cancel</Button>
+            {/* ══ Actions ══ */}
+            <div className="d-flex justify-content-between align-items-center pt-2 border-top" style={{ marginTop: '4px' }}>
+              <Button color="light" type="button" onClick={onBack} size="sm" style={{ fontSize: '12px' }}>
+                <i className="ri-arrow-left-line me-1" />Cancel
+              </Button>
               <div className="d-flex gap-2">
                 {!isEdit && (
-                  <Button color="light" type="button" onClick={handleReset}>
-                    <i className="ri-restart-line me-1"></i> Reset
+                  <Button color="light" type="button" onClick={handleReset} size="sm" style={{ fontSize: '12px' }}>
+                    <i className="ri-restart-line me-1" />Reset
                   </Button>
                 )}
-                <Button color="success" type="submit" disabled={saving}>
-                  {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-save-line me-1"></i>}
-                  {saving ? 'Saving...' : isEdit ? 'Update Client' : 'Create Client'}
+                <Button color="success" type="submit" disabled={saving} size="sm"
+                  className="btn-label waves-effect right waves-light rounded-pill"
+                  style={{ fontSize: '12px', minWidth: '140px' }}>
+                  {saving ? (
+                    <><Spinner size="sm" className="me-1" />Saving...</>
+                  ) : (
+                    <>
+                      <i className={`label-icon align-middle rounded-pill fs-16 ms-2 ${isEdit ? 'ri-check-double-line' : 'ri-save-line'}`} />
+                      {isEdit ? 'Update Client' : 'Create Client'}
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
+
           </CardBody>
         </Card>
       </Form>
