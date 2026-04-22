@@ -155,72 +155,88 @@ export default function Clients({ onNavigate }: Props) {
       cell: (info: any) => <Badge color={info.row.original.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">{info.row.original.status}</Badge>,
     },
  {
-  header: 'Actions',
+  header: () => <div style={{ textAlign: 'center' }}>Actions</div>,
   id: 'actions',
+  
+  
   cell: (info: any) => (
-    <div className="d-flex gap-2">
-      {/* View - Primary (Blue) */}
+    <div className="d-flex gap-1">
+      {/* View */}
       <button
-        className="btn  btn-icon btn-md border-0"
+        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
         title="View"
         onClick={() => onNavigate('client-view', { clientId: info.row.original.id })}
       >
-        <i className="ri-eye-line"></i>
+        <span className="avatar-title bg-transparent text-reset">
+          <i className="ri-eye-line"></i>
+        </span>
       </button>
 
-      {/* Edit - Warning (Orange/Yellow) */}
+      {/* Edit */}
       <button
-        className="btn btn-icon btn-md border-0"
+        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
         title="Edit"
         onClick={() => onNavigate('client-form', { editId: info.row.original.id })}
       >
-        <i className="ri-pencil-line"></i>
+        <span className="avatar-title bg-transparent text-reset">
+          <i className="ri-pencil-line"></i>
+        </span>
       </button>
 
-      {/* Delete - Danger (Red) */}
+      {/* Delete */}
       <button
-        className="btn  btn-icon btn-md border-0"
+        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
         title="Delete"
         disabled={deleting === info.row.original.id}
         onClick={() => handleDeleteClick(info.row.original)}
       >
-        <i className="ri-delete-bin-line"></i>
+        <span className="avatar-title bg-transparent text-reset">
+          <i className="ri-delete-bin-line"></i>
+        </span>
       </button>
 
-      {/* Branches - Info (Cyan) */}
+      {/* Branches */}
       <button
-        className="btn  btn-icon btn-md border-0"
+        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
         title="Branches"
         onClick={() => onNavigate('client-branches', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
       >
-        <i className="ri-git-branch-line"></i>
+        <span className="avatar-title bg-transparent text-reset">
+          <i className="ri-git-branch-line"></i>
+        </span>
       </button>
 
-      {/* Permissions - Secondary (Gray) with custom purple tint? Use purple variant if available */}
+      {/* Permissions */}
       <button
-        className="btn btn-icon btn-md border-0"
+        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
         title="Permissions"
         onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
       >
-        <i className="ri-shield-check-line" ></i>
+        <span className="avatar-title bg-transparent text-reset">
+          <i className="ri-shield-check-line"></i>
+        </span>
       </button>
 
-      {/* Payments - Success (Green) */}
+      {/* Payments */}
       <button
-        className="btn  btn-icon btn-md border-0"
+        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
         title="Payments"
         onClick={() => onNavigate('client-payments', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
       >
-        <i className="ri-bank-card-line"></i>
+        <span className="avatar-title bg-transparent text-reset">
+          <i className="ri-bank-card-line"></i>
+        </span>
       </button>
 
-      {/* Settings - Dark (Black/Dark Gray) */}
+      {/* Settings */}
       <button
-        className="btn btn-icon btn-md border-0"
+        className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
         title="Settings"
         onClick={() => onNavigate('client-settings', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
       >
-        <i className="ri-settings-3-line"></i>
+        <span className="avatar-title bg-transparent text-reset">
+          <i className="ri-settings-3-line"></i>
+        </span>
       </button>
     </div>
   ),
