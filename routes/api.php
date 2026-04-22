@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
+use App\Http\Controllers\Api\OrganizationTypeController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PermissionController;
 use App\Http\Controllers\Api\ForgotPasswordController;
@@ -36,6 +37,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Plans (admin CRUD)
     Route::apiResource('plans', PlanController::class);
+
+    // Organization Types (master data — super admin manages; all auth users can list)
+    Route::apiResource('organization-types', OrganizationTypeController::class)
+        ->parameters(['organization-types' => 'organizationType']);
 
     // Subscription (client buy plan)
     Route::get('/subscription/plans', [SubscriptionController::class, 'plans']);

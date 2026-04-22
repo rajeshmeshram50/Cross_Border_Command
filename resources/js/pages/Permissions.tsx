@@ -19,7 +19,7 @@ interface ManagedUser {
 }
 
 // Slugs hidden from grant UI (admin-only or not permissionable per-user)
-const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions']);
+const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions', 'master.organization_types']);
 
 export default function Permissions() {
   const { user: authUser } = useAuth();

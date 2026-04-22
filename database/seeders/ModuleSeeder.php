@@ -55,6 +55,7 @@ class ModuleSeeder extends Seeder
         // Slugs are prefixed with `master.` so they don't collide with existing top-level slugs.
         $leaves = [
             'master.identity' => [
+                ['name' => 'Organization Types','slug' => 'master.organization_types','icon' => 'Building',       'description' => 'Client organization categories (Business, Sports, NGO…)'],
                 ['name' => 'Company Details',   'slug' => 'master.company',           'icon' => 'Building',       'description' => 'Legal identity: GSTIN, PAN, IEC'],
                 ['name' => 'Bank Accounts',     'slug' => 'master.bank_accounts',     'icon' => 'Landmark',       'description' => 'Bank registry for export (SWIFT + AD code)'],
                 ['name' => 'Departments',       'slug' => 'master.departments',       'icon' => 'Building2',      'description' => 'Organizational units for staff assignment'],

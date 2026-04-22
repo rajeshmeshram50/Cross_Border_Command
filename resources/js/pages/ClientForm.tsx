@@ -8,6 +8,30 @@ interface Props {
   editId?: number;
 }
 
+interface OrgType {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string | null;
+  status: string;
+}
+
+interface PlanOption {
+  id: number;
+  name: string;
+  price: number | string;
+  period: string;
+  status: string;
+}
+
+const formatPlanLabel = (p: PlanOption): string => {
+  const price = Number(p.price);
+  const periodShort: Record<string, string> = { month: 'mo', quarter: 'qtr', year: 'yr' };
+  const per = periodShort[p.period] || p.period;
+  const priceText = price > 0 ? `₹${price.toLocaleString('en-IN')}/${per}` : 'Free';
+  return `${p.name} — ${priceText}`;
+};
+
 const empty = {
   org_name: '', org_type: '', email: '', phone: '', website: '',
   status: 'inactive', sports: '', industry: '', address: '', city: '',
@@ -71,6 +95,20 @@ export default function ClientForm({ onBack, editId }: Props) {
   const [serverErrors, setServerErrors] = useState<Record<string, string[]>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const touchedRef = useRef<Record<string, boolean>>({});
+  const [orgTypes, setOrgTypes] = useState<OrgType[]>([]);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
+  const [loadingLookups, setLoadingLookups] = useState(true);
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/organization-types', { params: { active_only: 1 } }).catch(() => ({ data: [] })),
+      api.get('/plans').catch(() => ({ data: [] })),
+    ]).then(([otRes, planRes]) => {
+      setOrgTypes(Array.isArray(otRes.data) ? otRes.data : []);
+      const allPlans: PlanOption[] = Array.isArray(planRes.data) ? planRes.data : [];
+      setPlans(allPlans.filter(p => p.status === 'active'));
+    }).finally(() => setLoadingLookups(false));
+  }, []);
 
   const set = useCallback((key: keyof FormState, val: string) => {
     setForm(f => (f[key] === val ? f : { ...f, [key]: val }));
@@ -246,9 +284,10 @@ export default function ClientForm({ onBack, editId }: Props) {
               <Col md={4}>
                 <Label>Org. Type <span className="text-danger">*</span></Label>
                 <Input type="select" value={form.org_type} invalid={fieldInvalid('org_type')}
-                  onChange={e => set('org_type', e.target.value)} onBlur={() => touch('org_type')}>
-                  <option value="">Select type</option>
-                  {['Business','Sports','Education','Healthcare','Government','NGO','Other'].map(t => <option key={t} value={t}>{t}</option>)}
+                  onChange={e => set('org_type', e.target.value)} onBlur={() => touch('org_type')}
+                  disabled={loadingLookups}>
+                  <option value="">{loadingLookups ? 'Loading…' : 'Select type'}</option>
+                  {orgTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
                 </Input>
                 <FormFeedback>{fieldError('org_type')}</FormFeedback>
               </Col>
@@ -377,12 +416,17 @@ export default function ClientForm({ onBack, editId }: Props) {
               <Col md={4}>
                 <Label>Assign Plan <span className="text-danger">*</span></Label>
                 <Input type="select" value={form.plan_id} invalid={fieldInvalid('plan_id')}
-                  onChange={e => set('plan_id', e.target.value)}>
-                  <option value="">Select plan</option>
-                  <option value="1">Starter — ₹0/mo</option>
-                  <option value="2">Basic — ₹1,999/mo</option>
-                  <option value="3">Pro — ₹4,999/mo</option>
-                  <option value="4">Business — ₹9,999/mo</option>
+                  onChange={e => {
+                    const id = e.target.value;
+                    set('plan_id', id);
+                    const picked = plans.find(p => String(p.id) === id);
+                    if (picked) set('plan_type', Number(picked.price) > 0 ? 'paid' : 'free');
+                  }}
+                  disabled={loadingLookups}>
+                  <option value="">{loadingLookups ? 'Loading…' : 'Select plan'}</option>
+                  {plans.map(p => (
+                    <option key={p.id} value={p.id}>{formatPlanLabel(p)}</option>
+                  ))}
                 </Input>
                 <FormFeedback>{fieldError('plan_id')}</FormFeedback>
               </Col>

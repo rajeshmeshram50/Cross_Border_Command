@@ -42,7 +42,7 @@ class ClientController extends Controller
         $request->validate([
             // Organization
             'org_name' => 'required|string|max:255',
-            'org_type' => 'required|string|max:50',
+            'org_type' => 'required|string|max:50|exists:organization_types,name',
             'email' => 'required|email|max:255',
             'phone' => 'nullable|string|max:20',
             'website' => 'nullable|string|max:500',
@@ -189,7 +189,7 @@ class ClientController extends Controller
 
         $request->validate([
             'org_name' => 'required|string|max:255',
-            'org_type' => 'required|string|max:50',
+            'org_type' => 'required|string|max:50|exists:organization_types,name',
             'email' => 'required|email|max:255',
             'phone' => 'nullable|string|max:20',
             'website' => 'nullable|string|max:500',
