@@ -3,14 +3,13 @@ import { useAuth } from "../../contexts/AuthContext";
 import { MENU_ITEMS } from "../../constants";
 
 /**
- * Velzon's VerticalLayout reads `navdata().props.children` — an array of
- * menu item objects with shape:
- *   { id, label, icon, link, isHeader?, subItems? }
+ * Velzon's Layout reads `navdata().props.children` — an array of menu items.
  *
- * We build that shape from CBC's MENU_ITEMS (with role + permission filtering).
+ * Master shows up as a SINGLE flat link in the nav; the `/master` page itself
+ * renders all 50 sub-masters as a card grid (filtered by permission).
+ * No dropdown in the sidebar/topnav.
  */
 
-// Map CBC icon names (lucide) → Velzon's Remix Icons (ri-*)
 const iconMap: Record<string, string> = {
   LayoutGrid: "ri-dashboard-2-line",
   Building2: "ri-building-line",
@@ -21,7 +20,10 @@ const iconMap: Record<string, string> = {
   ShieldCheck: "ri-shield-check-line",
   Settings: "ri-settings-3-line",
   UserCircle: "ri-account-circle-line",
+  Database: "ri-database-2-line",
 };
+
+const resolveIcon = (name?: string) => (name && iconMap[name]) || "ri-circle-line";
 
 const slugToPath = (slug: string): string => {
   switch (slug) {
@@ -35,6 +37,7 @@ const slugToPath = (slug: string): string => {
     case "permissions": return "/permissions";
     case "settings":    return "/settings";
     case "profile":     return "/profile";
+    case "master":      return "/master";
     default:            return `/${slug}`;
   }
 };
@@ -47,25 +50,48 @@ const Navdata = () => {
   const planExpiredOrMissing =
     isClient && user?.plan && (!user.plan.has_plan || user.plan.expired);
   const perms = user?.permissions || {};
+  // Slugs that are visible purely by role (no per-user grant needed).
+  // Dashboard/Profile/My-Plan are always visible to their role;
+  // Clients/Plans/Payments/Settings/Permissions are admin-level modules
+  // that are never grantable — role alone decides visibility.
   const defaultSlugs = ["dashboard", "profile", "my-plan"];
+  const roleOnlySlugs = ["clients", "plans", "payments", "settings", "permissions"];
+
+  // Master is visible if user has at least one master.* permission (any can_view = true)
+  const hasAnyMasterView = () => {
+    if (isSuperAdmin) return true;
+    if (planExpiredOrMissing) return false;
+    return Object.keys(perms).some(
+      (slug) => slug.startsWith("master.") && !!perms[slug]?.can_view
+    );
+  };
 
   const menuItems: any[] = [];
 
   for (const m of MENU_ITEMS) {
     if (!user || !m.roles.includes(user.user_type)) continue;
 
-    // Section header → Velzon isHeader style
+    // Section header
     if (m.section) {
+      menuItems.push({ label: m.section, isHeader: true });
+      continue;
+    }
+
+    // Master → single flat link (no dropdown). Visibility: any master.* view.
+    if (m.id === "master") {
+      if (!hasAnyMasterView()) continue;
       menuItems.push({
-        label: m.section,
-        isHeader: true,
+        id: m.id,
+        label: m.label,
+        icon: resolveIcon(m.icon),
+        link: slugToPath(m.id),
       });
       continue;
     }
 
-    // Permissions filter
+    // Plain permission-gated items
     if (!isSuperAdmin) {
-      if (!defaultSlugs.includes(m.id)) {
+      if (!defaultSlugs.includes(m.id) && !roleOnlySlugs.includes(m.id)) {
         if (planExpiredOrMissing) continue;
         if (!perms[m.id]?.can_view) continue;
       }
@@ -74,12 +100,12 @@ const Navdata = () => {
     menuItems.push({
       id: m.id,
       label: m.label,
-      icon: iconMap[m.icon] || "ri-circle-line",
+      icon: resolveIcon(m.icon),
       link: slugToPath(m.id),
     });
   }
 
-  // Clean up orphan section headers (header with no items below before next header)
+  // Drop orphan section headers
   const cleaned: any[] = [];
   for (let i = 0; i < menuItems.length; i++) {
     const it = menuItems[i];

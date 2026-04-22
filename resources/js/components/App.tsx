@@ -35,6 +35,8 @@ import ClientBranches from '../pages/ClientBranches';
 import ClientPermissions from '../pages/ClientPermissions';
 import ClientPayments from '../pages/ClientPayments';
 import ClientSettings from '../pages/ClientSettings';
+import MasterPlaceholder from '../pages/MasterPlaceholder';
+import MasterDashboard from '../pages/MasterDashboard';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -71,7 +73,11 @@ const getPagePath = (page: string, data?: any): string => {
     case 'permissions': return '/permissions';
     case 'settings': return '/settings';
     case 'profile': return '/profile';
-    default: return '/dashboard';
+    default:
+      // Master leaf slugs come as `master.xxx` — map to `/master/xxx`
+      if (page.startsWith('master.')) return `/master/${page.slice('master.'.length)}`;
+      if (page === 'master') return '/master';
+      return '/dashboard';
   }
 };
 
@@ -256,6 +262,8 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/permissions" element={<Permissions />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/master" element={<MasterDashboard />} />
+              <Route path="/master/:slug" element={<MasterPlaceholder />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </VelzonShell>

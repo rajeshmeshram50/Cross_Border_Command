@@ -1,15 +1,17 @@
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { MENU_ITEMS } from '../constants';
+import type { MenuGroup, MenuItem } from '../types';
 import Avatar from '../components/ui/Avatar';
 import Logo from '../components/Logo';
-import { LogOut, Maximize2, Minimize2, Moon, Sun, Bell, ChevronsLeft, ChevronsRight } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { LogOut, Maximize2, Minimize2, Moon, Sun, Bell, ChevronsLeft, ChevronsRight, ChevronDown, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import * as Icons from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-function getIcon(name: string): LucideIcon {
+function getIcon(name?: string): LucideIcon {
+  if (!name) return Icons.Circle;
   return (Icons as unknown as Record<string, LucideIcon>)[name] || Icons.Circle;
 }
 
@@ -25,32 +27,73 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
   const toast = useToast();
   const { theme, toggle: themeToggle } = useTheme();
   const [, setFsState] = useState(false);
+  const [openParents, setOpenParents] = useState<Record<string, boolean>>({});
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     const h = () => setFsState(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', h);
     return () => document.removeEventListener('fullscreenchange', h);
   }, []);
+
+  const isSuperAdmin = user?.user_type === 'super_admin';
+  const perms = user?.permissions || {};
+  const defaultSlugs = ['dashboard', 'profile', 'my-plan'];
+  const isClient = user?.user_type === 'client_admin' || user?.user_type === 'branch_user';
+  const planExpiredOrMissing = isClient && user?.plan && (!user.plan.has_plan || user.plan.expired);
+
+  const canView = (id: string) => {
+    if (!id) return false;
+    if (isSuperAdmin) return true;
+    if (defaultSlugs.includes(id)) return true;
+    if (planExpiredOrMissing) return false;
+    return !!perms[id]?.can_view;
+  };
+
+  // Filter groups/children by permission; keep only groups with at least one visible child
+  const filterGroups = (groups: MenuGroup[] | undefined): MenuGroup[] => {
+    if (!groups) return [];
+    return groups
+      .map(g => ({ ...g, children: g.children.filter(c => canView(c.id)) }))
+      .filter(g => g.children.length > 0);
+  };
+
+  // Compute visible items, attaching filtered groups for parents
+  const items = useMemo(() => {
+    if (!user) return [];
+    const out: (MenuItem & { _filteredGroups?: MenuGroup[] })[] = [];
+    MENU_ITEMS.forEach(m => {
+      if (!m.roles.includes(user.user_type)) return;
+      if (m.section) { out.push(m); return; }
+      if (m.groups) {
+        const filteredGroups = filterGroups(m.groups);
+        if (filteredGroups.length === 0) return; // hide parent with no visible children
+        out.push({ ...m, _filteredGroups: filteredGroups });
+        return;
+      }
+      if (!canView(m.id)) return;
+      out.push(m);
+    });
+    // Drop empty section headers (section with no visible item before next section)
+    return out.filter((m, i, arr) => {
+      if (!m.section) return true;
+      const next = arr[i + 1];
+      return next && !next.section;
+    });
+  }, [user, perms, planExpiredOrMissing]);
+
+  // Auto-open parent containing the current page
+  useEffect(() => {
+    const parent = items.find(m => m._filteredGroups?.some(g => g.children.some(c => c.id === current)));
+    if (parent && !openParents[parent.id]) {
+      setOpenParents(prev => ({ ...prev, [parent.id]: true }));
+    }
+  }, [current, items]);
+
   if (!user) return null;
 
-  const isSuperAdmin = user.user_type === 'super_admin';
-  const perms = user.permissions || {};
-  const defaultSlugs = ['dashboard', 'profile', 'my-plan'];
-  const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
-  const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
-
-  const items = MENU_ITEMS.filter(m => {
-    if (!m.roles.includes(user.user_type)) return false;
-    if (m.section) return true;
-    if (isSuperAdmin) return true;
-    if (defaultSlugs.includes(m.id)) return true;
-    // If plan expired/missing, only show defaults
-    if (planExpiredOrMissing) return false;
-    return !!perms[m.id]?.can_view;
-  }).filter((m, i, arr) => {
-    if (!m.section) return true;
-    const next = arr[i + 1];
-    return next && !next.section;
-  });
+  const toggleParent = (id: string) => setOpenParents(p => ({ ...p, [id]: !p[id] }));
+  const toggleGroup = (id: string) => setOpenGroups(p => ({ ...p, [id]: !p[id] }));
 
   return (
     <aside className={`${collapsed ? 'w-16' : 'w-[230px]'} bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 flex flex-col flex-shrink-0 transition-all duration-300 z-50 h-full overflow-hidden`}>
@@ -73,7 +116,79 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
               </div>
             ) : <div key={`s-${i}`} className="h-4" />;
           }
+
           const Icon = getIcon(m.icon);
+          const hasGroups = (m._filteredGroups?.length || 0) > 0;
+          const parentActive = current === m.id || !!m._filteredGroups?.some(g => g.children.some(c => c.id === current));
+          const parentOpen = !!openParents[m.id];
+
+          if (hasGroups) {
+            // Parent with submenu (e.g. Master)
+            return (
+              <div key={m.id}>
+                <button
+                  onClick={() => collapsed ? onNavigate(m._filteredGroups![0].children[0].id) : toggleParent(m.id)}
+                  title={collapsed ? m.label : undefined}
+                  className={`w-full flex items-center gap-2 px-2.5 py-[7px] rounded-lg text-[12.5px] font-medium cursor-pointer transition-all duration-150 whitespace-nowrap ${
+                    parentActive
+                      ? 'bg-primary/15 text-white font-semibold'
+                      : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300'
+                  }`}
+                >
+                  <Icon size={14} className={`flex-shrink-0 ${parentActive ? 'opacity-100 text-primary' : 'opacity-50'}`} />
+                  {!collapsed && <span className="flex-1 text-left">{m.label}</span>}
+                  {!collapsed && (parentOpen ? <ChevronDown size={13} className="opacity-50" /> : <ChevronRight size={13} className="opacity-50" />)}
+                </button>
+                {!collapsed && parentOpen && (
+                  <div className="ml-2 mt-0.5 border-l border-white/[.08] pl-1.5 space-y-0.5">
+                    {m._filteredGroups!.map(group => {
+                      const groupOpen = openGroups[group.id] !== false; // default open
+                      const GroupIcon = getIcon(group.icon);
+                      const activeInGroup = group.children.some(c => c.id === current);
+                      return (
+                        <div key={group.id}>
+                          <button
+                            onClick={() => toggleGroup(group.id)}
+                            className={`w-full flex items-center gap-1.5 px-2 py-[5px] rounded-md text-[11px] font-semibold uppercase tracking-wide cursor-pointer transition-colors ${
+                              activeInGroup ? 'text-primary' : 'text-white/40 hover:text-white/70'
+                            }`}
+                          >
+                            <GroupIcon size={11} className="flex-shrink-0 opacity-70" />
+                            <span className="flex-1 text-left truncate">{group.label}</span>
+                            <span className="text-[9px] bg-white/10 px-1.5 rounded-full leading-[14px]">{group.children.length}</span>
+                            {groupOpen ? <ChevronDown size={11} className="opacity-40" /> : <ChevronRight size={11} className="opacity-40" />}
+                          </button>
+                          {groupOpen && (
+                            <div className="space-y-0.5 mt-0.5 mb-1">
+                              {group.children.map(child => {
+                                const CIcon = getIcon(child.icon);
+                                const active = current === child.id;
+                                return (
+                                  <button
+                                    key={child.id}
+                                    onClick={() => onNavigate(child.id)}
+                                    className={`w-full flex items-center gap-2 px-2.5 py-[5px] rounded-md text-[11.5px] cursor-pointer transition-all duration-150 ${
+                                      active
+                                        ? 'bg-primary text-white font-semibold shadow-sm'
+                                        : 'text-white/60 hover:bg-white/[.06] hover:text-slate-200'
+                                    }`}
+                                  >
+                                    <CIcon size={11} className={`flex-shrink-0 ${active ? 'opacity-100' : 'opacity-50'}`} />
+                                    <span className="truncate">{child.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
           const active = current === m.id;
           return (
             <button

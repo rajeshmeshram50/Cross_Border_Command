@@ -16,8 +16,14 @@ import { useLocation } from 'react-router-dom';
 const getPageFromPath = (pathname: string): string => {
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length === 0) return 'dashboard';
-  
+
   const page = segments[0];
+
+  // Master leaf routes: /master/:slug -> master.slug
+  if (page === 'master') {
+    return segments[1] ? `master.${segments[1]}` : 'master';
+  }
+
   // Map URL paths to page names
   const pathToPage: Record<string, string> = {
     'dashboard': 'dashboard',
@@ -32,7 +38,7 @@ const getPageFromPath = (pathname: string): string => {
     'my-plan': 'my-plan',
     'plan-blocked': 'plan-blocked',
   };
-  
+
   return pathToPage[page] || 'dashboard';
 };
 

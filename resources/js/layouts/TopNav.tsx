@@ -1,15 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { MENU_ITEMS } from '../constants';
-import Avatar from '../components/ui/Avatar';
+import type { MenuGroup, MenuItem } from '../types';
 import Logo from '../components/Logo';
 import BranchSwitcher from '../components/BranchSwitcher';
 import * as Icons from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-function getIcon(name: string): LucideIcon {
+function getIcon(name?: string): LucideIcon {
+  if (!name) return Icons.Circle;
   return (Icons as unknown as Record<string, LucideIcon>)[name] || Icons.Circle;
 }
 
@@ -22,41 +23,64 @@ export default function TopNav({ current, onNavigate }: Props) {
   const { user, logout } = useAuth();
   const toast = useToast();
   const { theme, toggle } = useTheme();
-  const [moreOpen, setMoreOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [openParent, setOpenParent] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
 
-  if (!user) return null;
-
-  const isSuperAdmin = user.user_type === 'super_admin';
-  const perms = user.permissions || {};
+  const isSuperAdmin = user?.user_type === 'super_admin';
+  const perms = user?.permissions || {};
   const defaultSlugs = ['dashboard', 'profile', 'my-plan'];
-  const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
-  const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
+  const isClient = user?.user_type === 'client_admin' || user?.user_type === 'branch_user';
+  const planExpiredOrMissing = isClient && user?.plan && (!user.plan.has_plan || user.plan.expired);
 
-  const navItems = MENU_ITEMS.filter(m => {
-    if (m.section || !m.id) return false;
-    if (!m.roles.includes(user.user_type)) return false;
+  const canView = (id: string) => {
+    if (!id) return false;
     if (isSuperAdmin) return true;
-    if (defaultSlugs.includes(m.id)) return true;
+    if (defaultSlugs.includes(id)) return true;
     if (planExpiredOrMissing) return false;
-    return !!perms[m.id]?.can_view;
-  });
+    return !!perms[id]?.can_view;
+  };
+
+  const filterGroups = (groups: MenuGroup[] | undefined): MenuGroup[] => {
+    if (!groups) return [];
+    return groups
+      .map(g => ({ ...g, children: g.children.filter(c => canView(c.id)) }))
+      .filter(g => g.children.length > 0);
+  };
+
+  const navItems = useMemo(() => {
+    if (!user) return [];
+    const out: (MenuItem & { _filteredGroups?: MenuGroup[] })[] = [];
+    MENU_ITEMS.forEach(m => {
+      if (m.section || !m.id) return;
+      if (!m.roles.includes(user.user_type)) return;
+      if (m.groups) {
+        const filteredGroups = filterGroups(m.groups);
+        if (filteredGroups.length === 0) return;
+        out.push({ ...m, _filteredGroups: filteredGroups });
+        return;
+      }
+      if (!canView(m.id)) return;
+      out.push(m);
+    });
+    return out;
+  }, [user, perms, planExpiredOrMissing]);
 
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
-      if (!(e.target as HTMLElement).closest('.notif-wrap')) setNotifOpen(false);
+      const target = e.target as HTMLElement;
+      if (!target.closest('.topnav-parent')) setOpenParent(null);
+      if (!target.closest('.notif-wrap')) setNotifOpen(false);
     };
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
   }, []);
 
+  if (!user) return null;
+
   return (
-    <header className="h-14  bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 flex items-center px-4 gap-0 flex-shrink-0 z-50 border-b border-white/[.04]"
-     >
+    <header className="h-14  bg-gradient-to-br from-slate-800 via-slate-900 to-zinc-900 flex items-center px-4 gap-0 flex-shrink-0 z-50 border-b border-white/[.04]">
       {/* Logo — compact for topnav */}
       <div className="mr-4 flex-shrink-0">
         <Logo variant="topnav" />
@@ -66,9 +90,82 @@ export default function TopNav({ current, onNavigate }: Props) {
       <div className="w-px h-7 bg-white/10 mx-2.5 flex-shrink-0" />
 
       {/* Nav Items */}
-      <nav ref={menuRef} className="flex items-center gap-1 flex-1 min-w-0 overflow-hidden">
+      <nav ref={menuRef} className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto">
         {navItems.map(m => {
           const Icon = getIcon(m.icon);
+          const hasGroups = (m._filteredGroups?.length || 0) > 0;
+          const parentActive = current === m.id || !!m._filteredGroups?.some(g => g.children.some(c => c.id === current));
+
+          if (hasGroups) {
+            const isOpen = openParent === m.id;
+            return (
+              <div key={m.id} className="relative topnav-parent flex-shrink-0">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setOpenParent(isOpen ? null : m.id); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                    parentActive
+                      ? 'bg-primary text-white font-semibold shadow-md shadow-primary/35'
+                      : 'text-sidebar-text hover:bg-white/[.06] hover:text-slate-300'
+                  }`}
+                >
+                  <Icon size={13} className={`flex-shrink-0 ${parentActive ? 'text-white' : 'text-sidebar-text/60'}`} />
+                  <span className="hidden md:inline">{m.label}</span>
+                  <Icons.ChevronDown size={12} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {isOpen && (
+                  <div className="absolute top-full left-0 mt-2 w-[640px] bg-surface border border-border rounded-xl shadow-2xl z-[999] overflow-hidden animate-in max-h-[70vh] overflow-y-auto">
+                    <div className="px-4 py-2.5 border-b border-border bg-primary/5 flex items-center gap-2">
+                      <Icon size={14} className="text-primary" />
+                      <span className="text-[12px] font-bold text-text">{m.label}</span>
+                      <span className="ml-auto text-[10px] text-muted">
+                        {m._filteredGroups!.reduce((s, g) => s + g.children.length, 0)} items
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 p-3">
+                      {m._filteredGroups!.map(group => {
+                        const GIcon = getIcon(group.icon);
+                        return (
+                          <div key={group.id}>
+                            <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border/50 mb-1.5">
+                              <GIcon size={11} className="text-primary" />
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                {group.label}
+                              </span>
+                              <span className="ml-auto text-[9px] bg-primary/10 text-primary px-1.5 rounded-full font-bold">
+                                {group.children.length}
+                              </span>
+                            </div>
+                            <div className="space-y-0.5">
+                              {group.children.map(child => {
+                                const CIcon = getIcon(child.icon);
+                                const active = current === child.id;
+                                return (
+                                  <button
+                                    key={child.id}
+                                    onClick={() => { onNavigate(child.id); setOpenParent(null); }}
+                                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11.5px] cursor-pointer transition-all ${
+                                      active
+                                        ? 'bg-primary text-white font-semibold'
+                                        : 'text-text hover:bg-primary/10 hover:text-primary'
+                                    }`}
+                                  >
+                                    <CIcon size={12} className={`flex-shrink-0 ${active ? 'text-white' : 'text-muted'}`} />
+                                    <span className="truncate text-left">{child.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
           const active = current === m.id;
           return (
             <button
