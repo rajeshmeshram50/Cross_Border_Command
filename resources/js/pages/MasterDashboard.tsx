@@ -380,31 +380,7 @@ export default function MasterDashboard() {
                   {group.label}
                 </h6>
 
-                {/* Middle: "N masters · Click here to expand" — only when collapsed */}
-                {isCollapsed ? (
-                  <button
-                    type="button"
-                    onClick={() => toggle(group.id)}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      flexGrow: 1,
-                      justifyContent: 'center',
-                      background: 'transparent',
-                      border: 'none',
-                      color: s.color,
-                      fontSize: 12.5, fontWeight: 600,
-                      cursor: 'pointer', outline: 'none',
-                      padding: 0,
-                    }}
-                  >
-                    {group.children.length} masters · Click here to expand
-                    <i className="ri-arrow-down-s-line" style={{ fontSize: 14 }} />
-                  </button>
-                ) : (
-                  <div style={{ flexGrow: 1 }} />
-                )}
-
-                {/* Count badge */}
+                {/* Count badge — right after the title */}
                 <span style={{
                   background: s.softBg, color: s.color,
                   border: `1px solid ${s.border}`,
@@ -414,26 +390,32 @@ export default function MasterDashboard() {
                 }}>
                   {group.children.length} masters
                 </span>
-                {/* Show / Hide */}
+
+                {/* Spacer pushes the arrow to the right corner */}
+                <div style={{ flexGrow: 1 }} />
+
+                {/* Arrow-only toggle at the right corner */}
                 <button
                   type="button"
                   onClick={() => toggle(group.id)}
+                  aria-label={isCollapsed ? 'Expand section' : 'Collapse section'}
                   style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: 32, height: 32,
                     background: isCollapsed ? s.color : '#fff',
                     color: isCollapsed ? '#fff' : s.color,
                     border: `1px solid ${s.border}`,
-                    borderRadius: 6,
-                    padding: '5px 13px',
-                    fontSize: 12, fontWeight: 600,
-                    cursor: 'pointer', outline: 'none', lineHeight: 1.5,
-                    transition: 'background .15s, color .15s',
+                    borderRadius: 8,
+                    cursor: 'pointer', outline: 'none', padding: 0,
+                    transition: 'background .15s, color .15s, transform .2s ease',
+                    transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)',
+                    flexShrink: 0,
                     minWidth: 16,
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <i className={isCollapsed ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} style={{ fontSize: 13 }} />
+                  <i className="ri-arrow-down-s-fill" style={{ fontSize: 18 }} />
                 </button>
               </div>
             </div>
