@@ -1,18 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Card, CardBody, Col, Row, Button, Input, Spinner, Alert, Form, InputGroup, InputGroupText } from 'reactstrap';
+import { Card, CardBody, Col, Row, Input, Spinner, Alert, Form, InputGroup, InputGroupText } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 
 interface Props { onBack: () => void; editId?: number; }
 interface ModuleOption { id: number; name: string; slug: string; icon: string; }
 type AccessLevel = 'full' | 'limited' | 'addon' | 'not_included';
-
-const ACCESS_CFG: Record<AccessLevel, { label: string; color: string; icon: string }> = {
-  full:         { label: 'Full',         color: 'success',   icon: 'ri-checkbox-circle-fill' },
-  limited:      { label: 'Limited',      color: 'info',      icon: 'ri-indeterminate-circle-fill' },
-  addon:        { label: 'Add-on',       color: 'warning',   icon: 'ri-add-circle-fill' },
-  not_included: { label: 'Not Included', color: 'secondary', icon: 'ri-close-circle-fill' },
-};
 
 const empty = {
   name: '', price: '0', period: 'month',
@@ -1105,89 +1098,204 @@ export default function AddPlan({ onBack, editId }: Props) {
           </Col>
         </Row>
 
-        {/* Section C — Module Access */}
+        {/* ── Section C — Module Access ── */}
         <Row className="mt-0">
           <Col xs={12}>
             <Card className="shadow-sm">
               <CardBody className="p-3">
-                <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                  <i className="ri-stack-line" style={{ color: '#f7b84b', fontSize: 15, flexShrink: 0 }} />
-                  <span className="fw-bold text-uppercase" style={{ fontSize: 11, letterSpacing: '0.06em', color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                    Module Access
+                <style>{`
+                  .mod-tile {
+                    cursor: pointer;
+                    user-select: none;
+                    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
+                    background: var(--vz-card-bg);
+                    border: 1px solid var(--vz-border-color);
+                    border-radius: 10px;
+                    padding: 7px 10px;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    position: relative;
+                    overflow: hidden;
+                  }
+                  .mod-tile:hover {
+                    transform: translateY(-1px);
+                    border-color: #10b98155;
+                    background: rgba(16,185,129,0.05);
+                    box-shadow: 0 4px 12px rgba(16,185,129,0.18);
+                  }
+                  .mod-tile.active {
+                    box-shadow: 0 3px 10px var(--tile-color, #10b981)22;
+                  }
+                  .mod-tile.active::before {
+                    content: '';
+                    position: absolute;
+                    left: 0; top: 20%; bottom: 20%;
+                    width: 3px;
+                    border-radius: 3px;
+                    background: linear-gradient(180deg, transparent, var(--tile-color, #10b981), transparent);
+                    box-shadow: 0 0 6px var(--tile-color, #10b981)88;
+                  }
+                  .mod-letter {
+                    width: 28px; height: 28px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 7px;
+                    font-weight: 800;
+                    font-size: 12px;
+                    flex-shrink: 0;
+                    transition: all .18s ease;
+                  }
+                `}</style>
+
+                {/* Section header */}
+                <div
+                  className="section-head-premium"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(16,185,129,0.01))',
+                    border: '1px solid rgba(16,185,129,0.18)',
+                  }}
+                >
+                  <span
+                    className="head-icon"
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981, #14c9b1)',
+                      boxShadow: '0 4px 12px rgba(16,185,129,0.40), inset 0 1px 0 rgba(255,255,255,0.22)',
+                    }}
+                  >
+                    <i className="ri-stack-line" style={{ fontSize: 15 }} />
                   </span>
-                  <span style={{ color: 'var(--vz-secondary-color)', fontSize: 10, fontWeight: 400 }}>·</span>
-                  <span style={{ color: 'var(--vz-secondary-color)', fontSize: 10.5 }}>
-                    <span className="fw-semibold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{includedCount}</span> / {modules.length} included
-                  </span>
-                  <div className="d-flex align-items-center gap-1 ms-auto">
-                    <button type="button" className="btn btn-sm btn-light border px-2 py-1"
-                      onClick={() => { const a: Record<number, AccessLevel> = {}; modules.forEach(m => { a[m.id] = 'full'; }); setModuleAccess(a); }}>
-                      <i className="ri-checkbox-circle-line me-1 text-success fs-12"></i>
-                      <span className="fs-12">All Full</span>
+                  <div className="min-w-0 flex-grow-1">
+                    <div className="fw-bold text-uppercase" style={{ fontSize: 11, letterSpacing: '0.07em', lineHeight: 1.2, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                      Module Access
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
+                      <span className="fw-semibold" style={{ color: '#10b981' }}>{includedCount}</span>
+                      <span className="text-muted"> / {modules.length} modules included</span>
+                    </div>
+                  </div>
+                  <div className="d-flex align-items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                      style={{
+                        padding: '5px 12px',
+                        fontSize: 11.5,
+                        background: 'linear-gradient(135deg, #10b981, #14c9b1)',
+                        color: '#fff',
+                        border: 'none',
+                        boxShadow: '0 3px 10px rgba(16,185,129,0.40), inset 0 1px 0 rgba(255,255,255,0.22)',
+                        transition: 'all .18s ease',
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 14px rgba(16,185,129,0.55), inset 0 1px 0 rgba(255,255,255,0.30)'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 3px 10px rgba(16,185,129,0.40), inset 0 1px 0 rgba(255,255,255,0.22)'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; }}
+                      onClick={() => { const a: Record<number, AccessLevel> = {}; modules.forEach(m => { a[m.id] = 'full'; }); setModuleAccess(a); }}
+                    >
+                      <i className="ri-checkbox-multiple-line" style={{ fontSize: 12 }} />
+                      All Full
                     </button>
-                    <button type="button" className="btn btn-sm btn-light border px-2 py-1"
-                      onClick={() => { const a: Record<number, AccessLevel> = {}; modules.forEach(m => { a[m.id] = 'not_included'; }); setModuleAccess(a); }}>
-                      <i className="ri-close-circle-line me-1 text-danger fs-12"></i>
-                      <span className="fs-12">Clear</span>
+                    <button
+                      type="button"
+                      className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                      style={{
+                        padding: '5px 12px',
+                        fontSize: 11.5,
+                        background: 'rgba(239,68,68,0.10)',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239,68,68,0.30)',
+                        transition: 'all .18s ease',
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#ef4444'; (e.currentTarget as HTMLButtonElement).style.color = '#fff'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 14px rgba(239,68,68,0.45)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.10)'; (e.currentTarget as HTMLButtonElement).style.color = '#ef4444'; (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'; }}
+                      onClick={() => { const a: Record<number, AccessLevel> = {}; modules.forEach(m => { a[m.id] = 'not_included'; }); setModuleAccess(a); }}
+                    >
+                      <i className="ri-close-circle-line" style={{ fontSize: 12 }} />
+                      Clear
                     </button>
                   </div>
                 </div>
-                <div
-                  style={{
-                    height: 1,
-                    background: 'linear-gradient(90deg, #f7b84b55 0%, var(--vz-border-color) 35%, transparent 100%)',
-                    marginBottom: 12,
-                  }}
-                />
 
-                {/* Search + hint row */}
-                <div className="d-flex align-items-center gap-3 mb-3">
-                  <div className="position-relative flex-grow-1">
-                    <i className="ri-search-line position-absolute text-muted" style={{ left: 9, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 13 }}></i>
-                    <Input value={modSearch} onChange={e => setModSearch(e.target.value)} placeholder="Search modules..." style={{ paddingLeft: 28 }} bsSize="sm" />
+                {/* Search bar */}
+                <div className="mb-3">
+                  <div className="position-relative">
+                    <i className="ri-search-line position-absolute text-muted" style={{ left: 11, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 14 }}></i>
+                    <Input
+                      className="stylish-input"
+                      value={modSearch}
+                      onChange={e => setModSearch(e.target.value)}
+                      placeholder="Search modules..."
+                      style={{ paddingLeft: 34, fontSize: 13 }}
+                      bsSize="sm"
+                    />
                   </div>
-                  <span className="text-muted fs-11 flex-shrink-0">
-                    <i className="ri-click-line me-1"></i>Click tile to cycle access
-                  </span>
                 </div>
 
                 {/* Module grid */}
                 <div style={{ maxHeight: 460, overflowY: 'auto' }} className="pe-1">
                   {filteredModules.length === 0 ? (
-                    <div className="text-center text-muted py-4 fs-13">
-                      <i className="ri-search-line d-block fs-3 mb-1 opacity-40"></i>
-                      No modules match "{modSearch}"
+                    <div className="text-center py-4">
+                      <div
+                        className="d-inline-flex align-items-center justify-content-center rounded-3 mb-2"
+                        style={{ width: 48, height: 48, background: 'rgba(245,158,11,0.10)', border: '1px dashed rgba(245,158,11,0.40)' }}
+                      >
+                        <i className="ri-search-line" style={{ fontSize: 22, color: '#f59e0b', opacity: 0.7 }} />
+                      </div>
+                      <p className="text-muted mb-0 fs-13">
+                        No modules match "<strong style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{modSearch}</strong>"
+                      </p>
                     </div>
                   ) : (
                     <div className="row g-2">
                       {filteredModules.map(mod => {
                         const level = moduleAccess[mod.id] || 'not_included';
-                        const cfg = ACCESS_CFG[level];
                         const isActive = level !== 'not_included';
+                        const tileColor = '#10b981';
                         return (
-                          <div key={mod.id} className="col-4">
+                          <div key={mod.id} className="col-12 col-md-6 col-lg-4">
                             <div
-                              className="d-flex align-items-center gap-2 px-2 py-2 rounded-2"
+                              className={`mod-tile ${isActive ? 'active' : ''}`}
                               style={{
-                                cursor: 'pointer',
-                                userSelect: 'none',
-                                transition: 'all 0.13s ease',
-                                background: 'var(--vz-card-bg)',
-                                border: isActive
-                                  ? `1.5px solid ${{ full: '#0ab39c', limited: '#299cdb', addon: '#f7b84b' }[level as 'full' | 'limited' | 'addon']}`
-                                  : '1px solid var(--vz-border-color)',
-                                boxShadow: isActive ? '0 1px 4px rgba(0,0,0,0.07)' : 'none',
+                                ['--tile-color' as any]: tileColor,
+                                border: isActive ? `1.5px solid ${tileColor}` : '1px solid var(--vz-border-color)',
+                                background: isActive
+                                  ? `linear-gradient(135deg, ${tileColor}14 0%, ${tileColor}04 60%, var(--vz-card-bg))`
+                                  : 'var(--vz-card-bg)',
                               }}
                               onClick={() => cycleAccess(mod.id)}
                               title="Click to cycle: Not Included → Full → Limited → Add-on"
                             >
                               <span
-                                className={`d-inline-flex align-items-center justify-content-center rounded-1 flex-shrink-0 fw-bold fs-11 ${isActive ? `bg-${cfg.color}-subtle text-${cfg.color}` : 'bg-light text-muted'}`}
-                                style={{ width: 26, height: 26 }}
+                                className="mod-letter"
+                                style={{
+                                  background: isActive
+                                    ? `linear-gradient(135deg, ${tileColor}, ${tileColor}cc)`
+                                    : 'var(--vz-secondary-bg)',
+                                  color: isActive ? '#fff' : 'var(--vz-secondary-color)',
+                                  boxShadow: isActive
+                                    ? `0 3px 8px ${tileColor}55, inset 0 1px 0 rgba(255,255,255,0.22)`
+                                    : 'none',
+                                }}
                               >
                                 {mod.name.charAt(0).toUpperCase()}
                               </span>
-                              <span className="fw-medium fs-13 text-body flex-grow-1 text-truncate">{mod.name}</span>
+                              <span
+                                className="fw-medium flex-grow-1 text-truncate"
+                                style={{ fontSize: 12.5, color: isActive ? 'var(--vz-heading-color, var(--vz-body-color))' : 'var(--vz-body-color)' }}
+                              >
+                                {mod.name}
+                              </span>
+                              {isActive && (
+                                <i
+                                  className="ri-check-line flex-shrink-0"
+                                  style={{
+                                    color: tileColor,
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    filter: `drop-shadow(0 1px 2px ${tileColor}55)`,
+                                  }}
+                                />
+                              )}
                             </div>
                           </div>
                         );
@@ -1200,30 +1308,98 @@ export default function AddPlan({ onBack, editId }: Props) {
           </Col>
         </Row>
 
-        {/* Footer */}
+        {/* ── Premium sticky footer ── */}
         <Row>
           <Col xs={12}>
-            <div className="d-flex justify-content-between align-items-center py-3 px-1">
-              <span className="text-muted fs-13">
-                <i className="ri-information-line me-1"></i>
-                <strong className="text-body">{includedCount}</strong> modules selected
-                {form.name && <> · <span className="text-body">{form.name}</span></>}
-              </span>
+            <div
+              className="d-flex justify-content-between align-items-center mt-3 px-3 py-2 rounded-3 flex-wrap gap-2"
+              style={{
+                background: 'var(--vz-card-bg)',
+                border: '1px solid var(--vz-border-color)',
+                boxShadow: '0 -4px 12px rgba(15,23,42,0.04)',
+              }}
+            >
+              <div className="d-flex align-items-center gap-2">
+                <div
+                  className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
+                  style={{
+                    width: 32, height: 32,
+                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                    boxShadow: '0 3px 10px rgba(99,102,241,0.40), inset 0 1px 0 rgba(255,255,255,0.22)',
+                  }}
+                >
+                  <i className="ri-information-line" style={{ color: '#fff', fontSize: 14 }} />
+                </div>
+                <div>
+                  <div className="fw-semibold" style={{ fontSize: 12.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                    <span style={{ color: '#6366f1' }}>{includedCount}</span> modules selected
+                    {form.name && <> · <span style={{ color: form.color }}>{form.name}</span></>}
+                  </div>
+                  <div className="text-muted" style={{ fontSize: 10.5 }}>
+                    {includedCount === 0 ? 'Select at least one module to continue' : 'Review your selections before saving'}
+                  </div>
+                </div>
+              </div>
               <div className="d-flex gap-2">
-                <Button type="button" color="light" className="px-3" onClick={onBack}>Cancel</Button>
-                <Button type="button" color="light" className="px-3"
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  style={{
+                    padding: '7px 16px',
+                    fontSize: 12.5,
+                    background: 'var(--vz-secondary-bg)',
+                    color: 'var(--vz-body-color)',
+                    border: '1px solid var(--vz-border-color)',
+                    transition: 'all .18s ease',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--vz-secondary-color)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--vz-border-color)'; }}
+                >
+                  <i className="ri-arrow-left-line" />Cancel
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setForm(empty);
                     const a: Record<number, AccessLevel> = {};
                     Object.keys(moduleAccess).forEach(k => { a[Number(k)] = 'not_included'; });
                     setModuleAccess(a);
-                  }}>
-                  <i className="ri-restart-line me-1"></i>Reset
-                </Button>
-                <Button type="submit" color="primary" className="px-4" disabled={saving}>
-                  {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-save-line me-1"></i>}
+                  }}
+                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  style={{
+                    padding: '7px 16px',
+                    fontSize: 12.5,
+                    background: 'rgba(245,158,11,0.10)',
+                    color: '#f59e0b',
+                    border: '1px solid rgba(245,158,11,0.30)',
+                    transition: 'all .18s ease',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#f59e0b'; (e.currentTarget as HTMLButtonElement).style.color = '#fff'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,158,11,0.10)'; (e.currentTarget as HTMLButtonElement).style.color = '#f59e0b'; }}
+                >
+                  <i className="ri-restart-line" />Reset
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  style={{
+                    padding: '7px 20px',
+                    fontSize: 13,
+                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                    color: '#fff',
+                    border: 'none',
+                    boxShadow: '0 6px 18px rgba(99,102,241,0.45), inset 0 1px 0 rgba(255,255,255,0.22)',
+                    transition: 'all .18s ease',
+                    opacity: saving ? 0.7 : 1,
+                  }}
+                  onMouseEnter={e => { if (!saving) { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 10px 26px rgba(99,102,241,0.60), inset 0 1px 0 rgba(255,255,255,0.30)'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; } }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 18px rgba(99,102,241,0.45), inset 0 1px 0 rgba(255,255,255,0.22)'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; }}
+                >
+                  {saving ? <Spinner size="sm" /> : <i className={isEdit ? 'ri-check-double-line' : 'ri-save-line'} />}
                   {saving ? 'Saving...' : isEdit ? 'Update Plan' : 'Create Plan'}
-                </Button>
+                </button>
               </div>
             </div>
           </Col>
