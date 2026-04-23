@@ -490,23 +490,23 @@ export default function PermissionMatrix({
             <table className="table align-middle table-nowrap table-hover mb-0">
               <thead>
                 <tr style={{
-                  background: '#f4f6fb',
-                  borderBottom: '2px solid #405189',
+                  background: 'var(--vz-secondary-bg)',
+                  borderBottom: '2px solid var(--vz-primary)',
                 }}>
-                  <th className="ps-3 py-3 fw-bold text-uppercase align-items-center fs-11" style={{ width: '34%', color: '#405189', letterSpacing: '0.04em' }}>
+                  <th className="ps-3 py-3 fw-bold text-uppercase align-items-center fs-11" style={{ width: '34%', color: 'var(--vz-primary)', letterSpacing: '0.04em' }}>
                     Module
                   </th>
                   <th className="text-center py-3" style={{ width: '8%' }}>
                     <div className="d-flex flex-row align-items-center gap-1">
-                      <i className="ri-checkbox-multiple-line fs-14" style={{ color: '#405189' }}></i>
-                      <span className="fs-10 fw-bold text-uppercase" style={{ color: '#405189', letterSpacing: '0.05em' }}>All</span>
+                      <i className="ri-checkbox-multiple-line fs-14" style={{ color: 'var(--vz-primary)' }}></i>
+                      <span className="fs-10 fw-bold text-uppercase" style={{ color: 'var(--vz-primary)', letterSpacing: '0.05em' }}>All</span>
                     </div>
                   </th>
                   {PERMS.map(p => (
                     <th key={p.key} className="text-center py-3" style={{ width: `${58 / PERMS.length}%` }}>
                       <div className="d-flex flex-row align-items-center gap-1">
-                        <i className={`${p.icon} fs-14`} style={{ color: '#405189' }}></i>
-                        <span className="fs-10 fw-bold text-uppercase" style={{ color: '#405189', letterSpacing: '0.05em' }}>{p.label}</span>
+                        <i className={`${p.icon} fs-14`} style={{ color: 'var(--vz-primary)' }}></i>
+                        <span className="fs-10 fw-bold text-uppercase" style={{ color: 'var(--vz-primary)', letterSpacing: '0.05em' }}>{p.label}</span>
                       </div>
                     </th>
                   ))}
