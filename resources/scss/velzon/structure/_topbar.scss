@@ -54,10 +54,15 @@
     }
 
     .btn-topbar {
-        height: 42px;
-        width: 42px;
+        height: 46px;
+        width: 46px;
+        font-size: 22px;
         color: var(--#{$prefix}header-item-sub-color);
         transition: all 0.5s ease;
+
+        > i {
+            font-size: 22px;
+        }
 
         &:hover, &:focus, &:active, &.active {
             background-color: var(--#{$prefix}header-item-bg);
@@ -82,24 +87,30 @@
 /* Search */
 
 .app-search {
-    padding: calc(#{$header-height - 38px} * 0.5) 0;
+    padding: calc(#{$header-height - 42px} * 0.5) 0;
+    min-width: 420px;
+
+    @media (max-width: 1199.98px) {
+        min-width: 320px;
+    }
 
     .form-control {
         border: none;
-        height: 38px;
-        padding-left: 40px;
-        padding-right: 30px;
+        height: 42px;
+        padding-left: 44px;
+        padding-right: 32px;
         background-color: var(--#{$prefix}topbar-search-bg);
         color: var(--#{$prefix}topbar-search-color);
         box-shadow: none;
+        border-radius: 12px;
     }
 
     span.search-widget-icon {
         position: absolute;
         z-index: 10;
         font-size: 18px;
-        line-height: 38px;
-        left: 13px;
+        line-height: 42px;
+        left: 15px;
         top: 0;
         color: var(--#{$prefix}header-item-sub-color);
     }
@@ -165,13 +176,20 @@
 }
 
 .topbar-badge-sm {
-    right: 0;
-    top: 7px !important;
+    right: 4px;
+    top: 9px !important;
 }
 
 .topbar-badge {
-    right: -9px;
-    top: 4px !important;
+    right: -10px;
+    top: 9px !important;
+    min-width: 18px;
+    height: 18px;
+    padding: 2px 5px;
+    line-height: 14px;
+    font-size: 10px;
+    font-weight: 700;
+    box-shadow: 0 0 0 2px var(--#{$prefix}header-bg);
 }
 
 .topbar-user {
