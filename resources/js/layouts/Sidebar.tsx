@@ -239,16 +239,51 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
           </button>
         </div>
 
-        {/* Profile Row */}
-        <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/[.06] cursor-pointer transition-colors" onClick={() => onNavigate('profile')}>
-          <Avatar initials={user.initials} size="sm" />
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <div className="text-[12px] font-semibold text-slate-200 truncate">{user.name}</div>
-              <div className="text-[10px] text-sidebar-text">{user.user_type.replace('_', ' ')}</div>
+        {/* Profile Row — gradient-ringed avatar + online dot, gradient name, dedupe
+            when the display name equals the role label (super admin case). */}
+        {(() => {
+          const roleLabel = user.user_type.replace(/_/g, ' ');
+          const nameMatchesRole = user.name.trim().toLowerCase() === roleLabel.toLowerCase();
+          return (
+            <div
+              className="group flex items-center gap-2.5 px-2 py-2 rounded-xl cursor-pointer transition-all duration-200 hover:-translate-y-px"
+              style={{
+                backgroundImage: 'linear-gradient(135deg, rgba(64,81,137,0.14), rgba(10,179,156,0.12))',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
+              onClick={() => onNavigate('profile')}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = '0 6px 18px rgba(64,81,137,0.25)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}
+            >
+              <span className="relative inline-flex rounded-full p-[2px] flex-shrink-0" style={{ backgroundImage: 'linear-gradient(135deg,#405189,#0ab39c)' }}>
+                <span className="rounded-full p-[1.5px] bg-sidebar">
+                  <Avatar initials={user.initials} size="sm" />
+                </span>
+                <span className="absolute bottom-[1px] right-[1px] w-2 h-2 rounded-full bg-emerald-500 ring-[1.5px] ring-sidebar" />
+              </span>
+              {!collapsed && (
+                <div className="flex-1 min-w-0">
+                  <div
+                    className="text-[12.5px] font-bold truncate leading-tight"
+                    style={{
+                      backgroundImage: 'linear-gradient(135deg,#e2ecff,#a6efe0)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                    }}
+                  >
+                    {user.name}
+                  </div>
+                  {!nameMatchesRole && (
+                    <div className="text-[9.5px] text-sidebar-text uppercase tracking-wide mt-[1px] truncate">
+                      {roleLabel}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
       </div>
     </aside>
   );

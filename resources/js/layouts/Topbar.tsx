@@ -186,29 +186,78 @@ function UserDropdown({ open, setOpen, onNavigate }: { open: boolean; setOpen: (
 
   if (!user) return null;
 
-  const roleLabel = user.user_type.replace('_', ' ');
+  const roleLabel = user.user_type.replace(/_/g, ' ');
+  // Super admin's display name often equals the role string ("Super Admin"),
+  // so showing both stacks the same text twice. If they match (case-insensitive),
+  // show only the name on the chip and reveal the role inside the dropdown.
+  const nameMatchesRole = user.name.trim().toLowerCase() === roleLabel.toLowerCase();
 
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className={`flex items-center gap-2 px-1.5 py-[3px] rounded-md border transition-colors cursor-pointer ${open ? 'border-primary/40 bg-primary/5' : 'border-border hover:border-primary/40'}`}
+        className={`group flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border transition-all cursor-pointer ${
+          open
+            ? 'border-transparent shadow-md shadow-primary/20 ring-1 ring-primary/30'
+            : 'border-border hover:border-transparent hover:shadow-md hover:shadow-primary/15 hover:-translate-y-px'
+        }`}
+        style={{
+          backgroundImage: open
+            ? 'linear-gradient(135deg, rgba(64,81,137,0.10), rgba(10,179,156,0.10))'
+            : undefined,
+        }}
       >
-        <Avatar initials={user.initials} size="sm" />
-        <div className="hidden md:flex flex-col items-start leading-tight">
-          <span className="text-[11.5px] font-semibold text-text truncate max-w-[110px]">{user.name}</span>
-          <span className="text-[9.5px] text-muted uppercase tracking-wide">{roleLabel}</span>
+        {/* Avatar with gradient ring + online dot */}
+        <span className="relative inline-flex rounded-full p-[2px]" style={{ backgroundImage: 'linear-gradient(135deg,#405189,#0ab39c)' }}>
+          <span className="rounded-full p-[1.5px] bg-surface">
+            <Avatar initials={user.initials} size="sm" />
+          </span>
+          <span className="absolute bottom-[1px] right-[1px] w-2 h-2 rounded-full bg-emerald-500 ring-[1.5px] ring-surface" />
+        </span>
+
+        <div className="hidden md:flex flex-col items-start leading-tight max-w-[140px]">
+          <span
+            className="text-[12px] font-bold truncate w-full"
+            style={{
+              backgroundImage: 'linear-gradient(135deg,#405189,#0ab39c)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            {user.name}
+          </span>
+          {!nameMatchesRole && (
+            <span className="text-[9.5px] font-semibold uppercase tracking-wide truncate w-full text-muted">
+              {roleLabel}
+            </span>
+          )}
         </div>
-        <ChevronDown size={12} className={`text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={12} className={`text-muted transition-transform ${open ? 'rotate-180 text-primary' : 'group-hover:text-primary'}`} />
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-[220px] rounded-xl bg-surface border border-border shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-50">
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-border bg-surface-2">
-            <p className="text-[10px] text-muted uppercase tracking-wide">Welcome!</p>
-            <p className="text-[13px] font-bold text-text truncate mt-0.5">{user.name}</p>
-            <p className="text-[10.5px] text-primary font-semibold uppercase tracking-wide mt-0.5">{roleLabel}</p>
+        <div className="absolute right-0 mt-2 w-[260px] rounded-xl bg-surface border border-border shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-50">
+          {/* Gradient header with avatar */}
+          <div
+            className="px-4 py-3.5 text-white relative overflow-hidden"
+            style={{ backgroundImage: 'linear-gradient(135deg,#405189 0%,#6691e7 50%,#0ab39c 100%)' }}
+          >
+            <div className="absolute inset-0 opacity-20" style={{
+              backgroundImage: 'radial-gradient(circle at 80% 20%, rgba(255,255,255,0.5), transparent 50%)',
+            }} />
+            <div className="relative flex items-center gap-2.5">
+              <span className="relative inline-flex rounded-full p-[2px] bg-white/30">
+                <span className="rounded-full bg-white/90 p-[1px]">
+                  <Avatar initials={user.initials} size="sm" />
+                </span>
+                <span className="absolute bottom-[1px] right-[1px] w-2 h-2 rounded-full bg-emerald-400 ring-[1.5px] ring-white" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-bold truncate leading-tight text-white">{user.name}</p>
+                <p className="text-[10.5px] font-semibold uppercase tracking-wide mt-0.5 leading-tight text-white/85">{roleLabel}</p>
+              </div>
+            </div>
           </div>
 
           {/* Menu */}
