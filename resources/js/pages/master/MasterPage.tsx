@@ -6,10 +6,10 @@ import {
   Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
 } from 'reactstrap';
 import Swal from 'sweetalert2';
+import api from '../../api';
 import MasterPlaceholder from '../MasterPlaceholder';
 import {
   getMasterConfig,
-  resolveRef,
   type FieldDef,
   type MasterConfig,
 } from './masterConfigs';
@@ -31,7 +31,9 @@ function MasterPageInner({
   cfg: MasterConfig;
   navigate: ReturnType<typeof useNavigate>;
 }) {
-  const [records, setRecords] = useState<any[]>(cfg.data);
+  const [records, setRecords] = useState<any[]>([]);
+  const [refData, setRefData] = useState<Record<string, any[]>>({});
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -39,13 +41,55 @@ function MasterPageInner({
   const [viewOnly, setViewOnly] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // ref masters referenced by this master's fields
+  const refSlugs = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of cfg.fields) if (f.ref) set.add(f.ref);
+    return [...set];
+  }, [cfg]);
+
+  const labelFieldForRef = (refSlug: string, fallback?: string): string => {
+    const f = cfg.fields.find(ff => ff.ref === refSlug);
+    if (f?.refL) return f.refL;
+    if (fallback) return fallback;
+    return 'name';
+  };
+
+  const resolveRefLabel = (refSlug: string, refLabel: string | undefined, value: any): string => {
+    const rows = refData[refSlug] || [];
+    const row = rows.find(r => String(r.id) === String(value));
+    if (!row) return String(value ?? '');
+    const lf = refLabel || labelFieldForRef(refSlug);
+    return String(row[lf] ?? value);
+  };
+
+  // Load records whenever cfg changes
   useEffect(() => {
-    setRecords(cfg.data);
+    let aborted = false;
+    setLoading(true);
     setSearch('');
     setEditingId(null);
     setViewOnly(false);
     setModalOpen(false);
-  }, [cfg.slug]);
+    setRecords([]);
+
+    const loadRecords = api.get(`/master/${cfg.slug}`).then(r => {
+      if (!aborted) setRecords(Array.isArray(r.data) ? r.data : []);
+    }).catch(() => { if (!aborted) setRecords([]); });
+
+    const loadRefs = Promise.all(refSlugs.map(s =>
+      api.get(`/master/${s}`).then(r => [s, Array.isArray(r.data) ? r.data : []] as const).catch(() => [s, [] as any[]] as const)
+    )).then(pairs => {
+      if (aborted) return;
+      const next: Record<string, any[]> = {};
+      for (const [k, v] of pairs) next[k] = v;
+      setRefData(next);
+    });
+
+    Promise.all([loadRecords, loadRefs]).finally(() => { if (!aborted) setLoading(false); });
+
+    return () => { aborted = true; };
+  }, [cfg.slug, refSlugs.join('|')]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -53,41 +97,50 @@ function MasterPageInner({
     return records.filter(r =>
       cfg.cols.some(c => {
         const f = cfg.fields.find(ff => ff.n === c);
-        const val = f?.ref ? resolveRef(f.ref, f.refL, r[c]) : r[c];
+        const val = f?.ref ? resolveRefLabel(f.ref, f.refL, r[c]) : r[c];
         return String(val ?? '').toLowerCase().includes(s);
       }),
     );
-  }, [records, search, cfg]);
+  }, [records, search, cfg, refData]);
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
 
   const openAdd = () => { setEditingId(null); setViewOnly(false); setModalOpen(true); };
   const openEdit = (row: any, readonly = false) => { setEditingId(row.id); setViewOnly(readonly); setModalOpen(true); };
 
-  const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const next: Record<string, any> = {};
+    const payload: Record<string, any> = {};
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
       const raw = fd.get(f.n);
       if (f.t === 'number') {
-        next[f.n] = raw == null || raw === '' ? '' : Number(raw);
+        payload[f.n] = raw == null || raw === '' ? null : Number(raw);
       } else {
-        next[f.n] = String(raw ?? '').trim();
+        const s = String(raw ?? '').trim();
+        payload[f.n] = s === '' ? null : s;
       }
     }
+
     setSaving(true);
-    setTimeout(() => {
+    try {
       if (editingId != null) {
-        setRecords(prev => prev.map(r => r.id === editingId ? { ...r, ...next } : r));
+        const { data } = await api.put(`/master/${cfg.slug}/${editingId}`, payload);
+        setRecords(prev => prev.map(r => r.id === editingId ? data : r));
       } else {
-        const nextId = (records.length ? records[records.length - 1].id : 0) + 1;
-        setRecords(prev => [...prev, { id: nextId, ...next }]);
+        const { data } = await api.post(`/master/${cfg.slug}`, payload);
+        setRecords(prev => [data, ...prev]);
       }
-      setSaving(false);
       setModalOpen(false);
-    }, 200);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to save record.';
+      const errors = err?.response?.data?.errors;
+      const detail = errors ? Object.values(errors).flat().join('\n') : '';
+      Swal.fire({ title: 'Error', text: detail || msg, icon: 'error' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (row: any) => {
@@ -103,8 +156,14 @@ function MasterPageInner({
       cancelButtonColor: '#878a99',
     });
     if (!result.isConfirmed) return;
-    setRecords(prev => prev.filter(r => r.id !== row.id));
-    Swal.fire({ title: 'Deleted!', text: `"${label}" removed.`, icon: 'success', timer: 1500, showConfirmButton: false });
+    try {
+      await api.delete(`/master/${cfg.slug}/${row.id}`);
+      setRecords(prev => prev.filter(r => r.id !== row.id));
+      Swal.fire({ title: 'Deleted!', text: `"${label}" removed.`, icon: 'success', timer: 1500, showConfirmButton: false });
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Failed to delete.';
+      Swal.fire({ title: 'Error', text: msg, icon: 'error' });
+    }
   };
 
   const formatCell = (fieldName: string, row: any): React.ReactNode => {
@@ -115,13 +174,13 @@ function MasterPageInner({
       const active = String(raw).toLowerCase() === 'active';
       return (
         <Badge color={active ? 'success' : 'secondary'} pill className="text-uppercase">
-          {active ? 'Active' : 'Inactive'}
+          {active ? 'Active' : (raw || 'Inactive')}
         </Badge>
       );
     }
 
     if (f?.ref) {
-      return <span className="text-dark">{resolveRef(f.ref, f.refL, raw) || '—'}</span>;
+      return <span className="text-dark">{resolveRefLabel(f.ref, f.refL, raw) || '—'}</span>;
     }
 
     if (raw === undefined || raw === null || raw === '') {
@@ -204,7 +263,11 @@ function MasterPageInner({
             </CardHeader>
 
             <CardBody>
-              {filtered.length === 0 ? (
+              {loading ? (
+                <div className="text-center py-5">
+                  <Spinner /> <span className="ms-2 text-muted">Loading…</span>
+                </div>
+              ) : filtered.length === 0 ? (
                 <div className="text-center py-5">
                   <i className="ri-inbox-line display-5 text-muted"></i>
                   <p className="text-muted mt-2">No records found</p>
@@ -238,7 +301,11 @@ function MasterPageInner({
                           {cfg.cols.map((colName, idx) => (
                             <td key={colName} className={idx === 0 ? '' : 'text-muted'}>
                               {idx === 0 && colName !== 'status' ? (
-                                <strong>{row[colName] ?? '—'}</strong>
+                                <strong>{(() => {
+                                  const f = cfg.fields.find(ff => ff.n === colName);
+                                  if (f?.ref) return resolveRefLabel(f.ref, f.refL, row[colName]) || '—';
+                                  return row[colName] ?? '—';
+                                })()}</strong>
                               ) : (
                                 formatCell(colName, row)
                               )}
@@ -278,7 +345,7 @@ function MasterPageInner({
               {cfg.desc}
             </div>
             <Row className="g-3">
-              {cfg.fields.map((f, i) => renderField(f, i, editing, viewOnly))}
+              {cfg.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef))}
             </Row>
           </ModalBody>
           <ModalFooter>
@@ -424,6 +491,8 @@ function renderField(
   i: number,
   editing: any,
   viewOnly: boolean,
+  refData: Record<string, any[]>,
+  labelFieldForRef: (refSlug: string, fallback?: string) => string,
 ): React.ReactNode {
   if (f.sec) {
     return (
@@ -443,12 +512,12 @@ function renderField(
 
   let input: React.ReactNode;
   if (f.ref) {
-    const refMaster = getMasterConfig(f.ref);
-    const labelField = f.refL || 'name';
+    const rows = refData[f.ref] || [];
+    const labelField = f.refL || labelFieldForRef(f.ref);
     input = (
       <Input type="select" name={f.n} required={f.r} defaultValue={defaultVal} disabled={viewOnly}>
         <option value="">Select {f.l}…</option>
-        {refMaster?.data.map((r: any) => (
+        {rows.map((r: any) => (
           <option key={r.id} value={r.id}>{r[labelField] ?? r.id}</option>
         ))}
       </Input>
