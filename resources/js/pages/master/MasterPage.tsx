@@ -476,59 +476,98 @@ function MasterPageInner({
       </Row>
 
       {/* Add / Edit modal */}
-      <Modal isOpen={modalOpen} toggle={() => setModalOpen(false)} size="xl" centered contentClassName="border-0" style={{ borderRadius: 18 }}>
+      <style>{`
+        .master-modal .modal-content {
+          border-radius: 20px !important;
+          overflow: hidden;
+          border: 0;
+        }
+        .master-modal-cancel {
+          background: transparent;
+          border: 1.5px solid var(--vz-border-color);
+          color: var(--vz-heading-color, var(--vz-body-color));
+          font-weight: 600;
+          padding: 8px 22px;
+          border-radius: 999px;
+          transition: all .2s ease;
+        }
+        .master-modal-cancel:hover {
+          background: linear-gradient(90deg, #7c5cfc 0%, #706793 100%);
+          border-color: transparent;
+          color: #fff;
+          box-shadow: 0 6px 18px rgba(124,92,252,0.35);
+        }
+        .master-modal-save {
+          background: linear-gradient(135deg, #7c5cfc 0%, #a993fd 100%);
+          color: #fff;
+          border: 0;
+          font-weight: 600;
+          padding: 8px 22px;
+          border-radius: 999px;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          box-shadow: 0 6px 18px rgba(124,92,252,0.28);
+          transition: all .2s ease;
+        }
+        .master-modal-save:hover:not(:disabled) {
+          background: linear-gradient(135deg, #6b4fe8 0%, #9879f7 100%);
+          box-shadow: 0 8px 22px rgba(124,92,252,0.42);
+          transform: translateY(-1px);
+        }
+        .master-modal-save:disabled { opacity: .7; cursor: not-allowed; }
+      `}</style>
+      <Modal
+        isOpen={modalOpen}
+        toggle={() => setModalOpen(false)}
+        size="xl"
+        centered
+        modalClassName="master-modal"
+      >
         <div
           className="position-relative overflow-hidden"
           style={{
-            background: 'linear-gradient(135deg, #405189 0%, #4a63a8 45%, #6691e7 100%)',
-            padding: '20px 24px',
-            borderTopLeftRadius: 16,
-            borderTopRightRadius: 16,
+            background: 'linear-gradient(135deg, rgba(124,92,252,0.10) 0%, rgba(169,147,253,0.05) 60%, var(--vz-card-bg) 100%)',
+            padding: '22px 26px',
+            borderBottom: '1px solid var(--vz-border-color)',
           }}
         >
-          <div
-            className="position-absolute top-0 start-0 w-100 h-100"
-            style={{
-              backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.15) 0%, transparent 40%), radial-gradient(circle at 85% 80%, rgba(10,179,156,0.22) 0%, transparent 45%)',
-              pointerEvents: 'none',
-            }}
-          />
           <div className="d-flex align-items-center gap-3 position-relative">
             <span
               className="d-inline-flex align-items-center justify-content-center rounded-3"
               style={{
-                width: 46, height: 46,
-                background: 'rgba(255,255,255,0.18)',
-                border: '1px solid rgba(255,255,255,0.25)',
-                backdropFilter: 'blur(6px)',
+                width: 48, height: 48,
+                background: 'linear-gradient(135deg, rgb(64, 81, 137) 0%, rgb(102, 145, 231) 100%)',
+                boxShadow: '0 6px 16px rgba(124,92,252,0.32)',
               }}
             >
               <i className={`${cfg.icon}`} style={{ color: '#fff', fontSize: 22 }}></i>
             </span>
             <div className="flex-grow-1 min-w-0">
-              <h5 className="mb-0 text-white fw-semibold">
+              <h5 className="mb-0 fw-semibold" style={{ color: 'rgb(64, 81, 137)', fontWeight: 800 }}>
                 {viewOnly ? `View ${singular}` : editingId != null ? `Edit ${singular}` : `Add ${singular}`}
               </h5>
-              <small style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>{cfg.desc}</small>
+              <small className="text-muted" style={{ fontSize: 12 }}>{cfg.desc}</small>
             </div>
             <button
               type="button"
-              className="btn-close btn-close-white flex-shrink-0"
+              className="btn-close flex-shrink-0"
               onClick={() => setModalOpen(false)}
               aria-label="Close"
             />
           </div>
         </div>
         <Form onSubmit={handleSave}>
-          <ModalBody className="p-4">
+          <ModalBody className="p-4 align-items-center">
             <Row className="g-3">
               {cfg.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef))}
             </Row>
           </ModalBody>
-          <ModalFooter className="px-4 pb-3">
-            <Button color="light" type="button" className="rounded-pill px-3" onClick={() => setModalOpen(false)}>
+          <ModalFooter className="px-4 pb-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+            <button type="button" className="master-modal-cancel" onClick={() => setModalOpen(false)}>
+              <i className="ri-close-line align-middle me-1"></i>
               {viewOnly ? 'Close' : 'Cancel'}
-            </Button>
+            </button>
             {!viewOnly && (
               <Button color="secondary" type="submit" disabled={saving} className="btn-label waves-effect waves-light rounded-pill">
                 {saving
@@ -557,7 +596,7 @@ const STEP_PALETTES: { grad: string; tint: string; border: string; accent: strin
 function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
   const steps = cfg.wtd || [];
   const singular = cfg.titleSingular || cfg.title;
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <Card
