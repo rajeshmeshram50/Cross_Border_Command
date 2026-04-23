@@ -78,7 +78,7 @@ function ToastCard({ toast, onClose }: { toast: ToastItemType; onClose: () => vo
 
         <div className="flex-1 min-w-0 pt-0.5">
           <div className={`text-[13px] font-bold leading-tight ${c.titleColor}`}>{toast.title}</div>
-          {toast.message && <div className="text-[11.5px] text-secondary mt-1 leading-relaxed">{toast.message}</div>}
+          {toast.message && <div className="text-[11.5px] text-gray-600 mt-1 leading-relaxed">{toast.message}</div>}
         </div>
 
         <button
