@@ -12,8 +12,10 @@
 
         .layout-width,
         .container-fluid {
-            max-width: 90%;
+            max-width: 100%;
             margin: 0 auto;
+            padding-left: 10px;
+            padding-right: 10px;
         }
 
         .topnav-hamburger {
