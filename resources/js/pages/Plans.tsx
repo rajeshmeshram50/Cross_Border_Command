@@ -29,6 +29,17 @@ const accessColors: Record<string, string> = {
 };
 
 const SWIPER_STYLES = `
+  .plans-surface { background: #ffffff; }
+  [data-bs-theme="dark"] .plans-surface { background: #1c2531; }
+
+  /* Give the swiper breathing space above/below the cards so hover-lift
+     (translateY) and drop-shadow are NOT clipped by the swiper's own
+     overflow:hidden. */
+  .plans-swiper {
+    padding-top: 16px !important;
+    padding-bottom: 36px !important;
+  }
+
   .plans-swiper-outer {
     position: relative;
     padding: 0 56px;
@@ -124,55 +135,60 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
         }
       `}</style>
 
-      {/* ── Compact Page Header ── */}
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4 pb-2">
-        <div className="d-flex align-items-center gap-2">
-          <div
-            className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
-            style={{
-              width: 36, height: 36,
-              background: '#40518918',
-              border: '1px solid #40518928',
-            }}
-          >
-            <i className="ri-bank-card-line" style={{ color: '#405189', fontSize: 17 }} />
+      <div
+        className="plans-surface"
+        style={{
+          borderRadius: 16,
+          border: '1px solid var(--vz-border-color)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
+          padding: '20px',
+        }}
+      >
+        {/* ── Compact Page Header ── */}
+        <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 pb-2">
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
+              style={{
+                width: 36, height: 36,
+                background: '#40518918',
+                border: '1px solid #40518928',
+              }}
+            >
+              <i className="ri-bank-card-line" style={{ color: '#405189', fontSize: 17 }} />
+            </div>
+            <div>
+              <h5 className="mb-0 fw-bold" style={{ fontSize: 15, letterSpacing: '-0.01em' }}>Subscription Plans</h5>
+              <p className="mb-0 text-muted" style={{ fontSize: 11.5 }}>
+                Manage pricing, limits and features ·{' '}
+                <span style={{ color: '#405189', fontWeight: 700 }}>{plans.length}</span> plans
+              </p>
+            </div>
           </div>
-          <div>
-            <h5 className="mb-0 fw-bold" style={{ fontSize: 15, letterSpacing: '-0.01em' }}>Subscription Plans</h5>
-            <p className="mb-0 text-muted" style={{ fontSize: 11.5 }}>
-              Manage pricing, limits and features ·{' '}
-              <span style={{ color: '#405189', fontWeight: 700 }}>{plans.length}</span> plans
-            </p>
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            
+            <Button
+              color="secondary"
+              className="btn-label waves-effect waves-light rounded-pill"
+              onClick={() => onNavigate?.('add-plan')}
+            >
+              <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+              Add Plan
+            </Button>
           </div>
         </div>
-        <div className="d-flex align-items-center gap-2 flex-wrap">
-          <ol className="breadcrumb m-0" style={{ fontSize: 11.5 }}>
-            <li className="breadcrumb-item"><a href="#">IGC</a></li>
-            <li className="breadcrumb-item active">Plans</li>
-          </ol>
-          <Button
-            color="primary"
-            size="sm"
-            className="btn-label waves-effect waves-light rounded-pill"
-            onClick={() => onNavigate?.('add-plan')}
-          >
-            <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-            Add Plan
-          </Button>
-        </div>
-      </div>
 
-      {loading ? (
-        <div className="text-center py-5"><Spinner color="primary" /></div>
-      ) : plans.length === 0 ? (
-        <Card>
-          <CardBody className="text-center py-5">
-            <i className="ri-bank-card-line display-4 text-muted"></i>
-            <p className="mt-3 text-muted">No plans yet. Click "Add Plan" to create your first plan.</p>
-          </CardBody>
-        </Card>
-      ) : (
-        <div className="plans-swiper-outer">
+        {loading ? (
+          <div className="text-center py-5"><Spinner color="primary" /></div>
+        ) : plans.length === 0 ? (
+          <Card>
+            <CardBody className="text-center py-5">
+              <i className="ri-bank-card-line display-4 text-muted"></i>
+              <p className="mt-3 text-muted">No plans yet. Click "Add Plan" to create your first plan.</p>
+            </CardBody>
+          </Card>
+        ) : (
+          <div className="plans-swiper-outer">
           <button ref={prevRef} className="plans-nav-btn plans-nav-prev" aria-label="Previous">
             <i className="ri-arrow-left-s-line"></i>
           </button>
@@ -601,7 +617,8 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
             <i className="ri-arrow-right-s-line"></i>
           </button>
         </div>
-      )}
+        )}
+      </div>
 
       {/* Modules detail modal */}
       <Modal isOpen={!!modalPlan} toggle={() => setModalPlan(null)} size="lg" centered scrollable>
