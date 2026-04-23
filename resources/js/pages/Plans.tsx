@@ -660,6 +660,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                           <span style={{ color: textMain, fontSize: 10.5 }}>{p.trial_days}-day free trial</span>
                         </li>
                       )}
+                      
                       {p.yearly_discount && p.yearly_discount > 0 && (
                         <li className="d-flex align-items-center gap-2">
                           <i className="ri-check-line flex-shrink-0" style={{ color: '#0ab39c', fontSize: 13, fontWeight: 700 }} />
