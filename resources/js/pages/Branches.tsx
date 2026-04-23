@@ -34,7 +34,7 @@ export default function Branches({ onNavigate }: Props) {
     setLoading(true);
     try {
       const res = await api.get<PaginatedResponse<Branch>>('/branches', {
-        params: { search: search || undefined, page, per_page: 15 },
+        params: { search: search || undefined, page, per_page: 10 },
       });
       setBranches(res.data.data);
       setTotalPages(res.data.last_page);

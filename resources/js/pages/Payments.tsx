@@ -514,7 +514,7 @@ export default function Payments() {
                   columns={columns}
                   data={filteredPayments}
                   isGlobalFilter={false}
-                  customPageSize={15}
+                  customPageSize={10}
                   tableClass="align-middle table-nowrap mb-0"
                   theadClass="table-light"
                   divClass="table-responsive table-card border rounded"
