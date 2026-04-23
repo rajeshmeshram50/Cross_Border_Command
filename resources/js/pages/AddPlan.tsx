@@ -529,6 +529,59 @@ export default function AddPlan({ onBack, editId }: Props) {
                 33%      { transform: translate(8%, -6%) scale(1.08); }
                 66%      { transform: translate(-6%, 6%) scale(0.96); }
               }
+              @property --preview-angle {
+                syntax: "<angle>";
+                inherits: false;
+                initial-value: 0turn;
+              }
+              @keyframes addplan-border-spin {
+                to { --preview-angle: 1turn; }
+              }
+              /* Rotating gradient-border using conic-gradient + mask composite */
+              .preview-card {
+                isolation: isolate;
+              }
+              .preview-card::before {
+                content: "";
+                position: absolute;
+                inset: -1px;
+                z-index: 3;
+                border-radius: inherit;
+                padding: 1.5px;
+                background: conic-gradient(
+                  from var(--preview-angle),
+                  var(--trail-base, #7c5cfc33) 0%,
+                  var(--trail-base, #7c5cfc33) 72%,
+                  var(--trail-glow, #7c5cfc) 82%,
+                  var(--trail-glow, #fff) 88%,
+                  var(--trail-glow, #7c5cfc) 94%,
+                  var(--trail-base, #7c5cfc33) 100%
+                );
+                -webkit-mask:
+                  linear-gradient(#000 0 0) content-box,
+                  linear-gradient(#000 0 0);
+                mask:
+                  linear-gradient(#000 0 0) content-box,
+                  linear-gradient(#000 0 0);
+                -webkit-mask-composite: xor;
+                mask-composite: exclude;
+                pointer-events: none;
+                animation: addplan-border-spin 4.5s linear infinite;
+              }
+              .preview-card:hover::before {
+                animation-duration: 2.2s;
+              }
+              @supports not (background: paint(something)) {
+                .preview-card::before {
+                  animation: none;
+                  background: conic-gradient(
+                    var(--trail-base, #7c5cfc33) 0%,
+                    var(--trail-base, #7c5cfc33) 72%,
+                    var(--trail-glow, #7c5cfc) 88%,
+                    var(--trail-base, #7c5cfc33) 100%
+                  );
+                }
+              }
               @keyframes addplan-pulse-dot {
                 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,0.55); }
                 70%      { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(255,255,255,0); }
@@ -578,15 +631,46 @@ export default function AddPlan({ onBack, editId }: Props) {
               }}
             >
               <Card
-                className="position-relative overflow-hidden mb-0 d-flex flex-column w-100"
+                className="preview-card position-relative mb-0 d-flex flex-column w-100"
                 style={{
+                  ['--trail-base' as any]: form.color + '26',
+                  ['--trail-glow' as any]: form.color,
                   height: '100%',
                   minHeight: 0,
                   maxHeight: 'calc(100vh - 100px)',
                   borderRadius: 18,
                   border: `1px solid ${form.color}30`,
                   background: 'var(--vz-card-bg)',
-                  boxShadow: `0 20px 50px ${form.color}30, 0 6px 16px rgba(15,23,42,0.08), inset 0 1px 0 rgba(255,255,255,0.6)`,
+                  boxShadow: `
+                    0 20px 50px ${form.color}30,
+                    0 12px 28px rgba(15,23,42,0.10),
+                    0 4px 12px rgba(15,23,42,0.06),
+                    inset 0 1px 0 rgba(255,255,255,0.70)
+                  `,
+                  transition: 'transform .25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow .25s ease, border-color .25s ease',
+                  cursor: 'default',
+                }}
+                onMouseEnter={e => {
+                  const el = e.currentTarget as HTMLDivElement;
+                  el.style.transform = 'translateY(-6px)';
+                  el.style.boxShadow = `
+                    0 32px 70px ${form.color}55,
+                    0 16px 38px rgba(15,23,42,0.16),
+                    0 6px 16px rgba(15,23,42,0.10),
+                    inset 0 1px 0 rgba(255,255,255,0.85)
+                  `;
+                  el.style.borderColor = form.color + '70';
+                }}
+                onMouseLeave={e => {
+                  const el = e.currentTarget as HTMLDivElement;
+                  el.style.transform = 'translateY(0)';
+                  el.style.boxShadow = `
+                    0 20px 50px ${form.color}30,
+                    0 12px 28px rgba(15,23,42,0.10),
+                    0 4px 12px rgba(15,23,42,0.06),
+                    inset 0 1px 0 rgba(255,255,255,0.70)
+                  `;
+                  el.style.borderColor = form.color + '30';
                 }}
               >
                 {/* ── Premium gradient hero with animated mesh + glass orbs ── */}
