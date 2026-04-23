@@ -78,8 +78,7 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
   const trendColor = trend === 'up' ? '#0ab39c' : trend === 'down' ? '#f06548' : '#878a99';
   const arrow = trend === 'up' ? 'ri-arrow-up-line' : trend === 'down' ? 'ri-arrow-down-line' : 'ri-subtract-line';
   return (
-    <div style={{
-      background: 'var(--vz-card-bg)',
+    <div className="dashboard-surface" style={{
       borderRadius: 16,
       padding: '20px 20px 16px',
       boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
@@ -154,6 +153,11 @@ export default function AdminDashboard() {
 
   return (
     <>
+      <style>{`
+        /* Force white card surface in light theme; auto-flip in dark theme */
+        .dashboard-surface { background: #ffffff; }
+        [data-bs-theme="dark"] .dashboard-surface { background: #1c2531; }
+      `}</style>
       {/* Page Title */}
       <Row className="mb-2">
         <Col xs={12}>

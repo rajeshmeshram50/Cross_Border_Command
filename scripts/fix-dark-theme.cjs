@@ -19,6 +19,9 @@ const TARGETS = [
   'resources/js/pages/Profile.tsx',
   'resources/js/pages/Settings.tsx',
   'resources/js/pages/master/CompanyDetails.tsx',
+  'resources/js/pages/MasterDashboard.tsx',
+  'resources/js/pages/master/MasterPage.tsx',
+  'resources/js/components/PermissionMatrix.tsx',
 ];
 
 // Ordered substitutions. Each: [regex, replacement, description]
