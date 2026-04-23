@@ -86,63 +86,52 @@ function validateClientForm(form: FormState, isEdit: boolean): Record<string, st
   return e;
 }
 
-// ── Inline styles ─────────────────────────────────────────────────────────────
+// ── Section palette (AddPlan-style tints + gradients) ──
+const SECTION_STYLE: Record<string, { gradTint: string; border: string; iconGrad: string; pillBg: string; pillText: string; pillBorder: string; iconShadow: string }> = {
+  A: { gradTint: 'linear-gradient(135deg, rgba(99,102,241,0.10), rgba(99,102,241,0.02))', border: 'rgba(99,102,241,0.20)',  iconGrad: 'linear-gradient(135deg, #6366f1, #8b5cf6)', pillBg: 'rgba(99,102,241,0.15)', pillText: '#6366f1', pillBorder: 'rgba(99,102,241,0.30)', iconShadow: '0 4px 12px rgba(99,102,241,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
+  B: { gradTint: 'linear-gradient(135deg, rgba(14,165,233,0.10), rgba(14,165,233,0.02))', border: 'rgba(14,165,233,0.20)',  iconGrad: 'linear-gradient(135deg, #0ea5e9, #38bdf8)', pillBg: 'rgba(14,165,233,0.15)', pillText: '#0ea5e9', pillBorder: 'rgba(14,165,233,0.30)', iconShadow: '0 4px 12px rgba(14,165,233,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
+  C: { gradTint: 'linear-gradient(135deg, rgba(245,158,11,0.10), rgba(245,158,11,0.02))', border: 'rgba(245,158,11,0.22)',  iconGrad: 'linear-gradient(135deg, #f59e0b, #f7b84b)', pillBg: 'rgba(245,158,11,0.15)', pillText: '#d97a08', pillBorder: 'rgba(245,158,11,0.30)', iconShadow: '0 4px 12px rgba(245,158,11,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
+  D: { gradTint: 'linear-gradient(135deg, rgba(16,185,129,0.10), rgba(16,185,129,0.02))', border: 'rgba(16,185,129,0.20)',  iconGrad: 'linear-gradient(135deg, #10b981, #14c9b1)', pillBg: 'rgba(16,185,129,0.15)', pillText: '#10b981', pillBorder: 'rgba(16,185,129,0.30)', iconShadow: '0 4px 12px rgba(16,185,129,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
+  E: { gradTint: 'linear-gradient(135deg, rgba(139,92,246,0.10), rgba(139,92,246,0.02))', border: 'rgba(139,92,246,0.20)',  iconGrad: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', pillBg: 'rgba(139,92,246,0.15)', pillText: '#8b5cf6', pillBorder: 'rgba(139,92,246,0.30)', iconShadow: '0 4px 12px rgba(139,92,246,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
+  F: { gradTint: 'linear-gradient(135deg, rgba(236,72,153,0.10), rgba(236,72,153,0.02))', border: 'rgba(236,72,153,0.20)',  iconGrad: 'linear-gradient(135deg, #ec4899, #f9a8d4)', pillBg: 'rgba(236,72,153,0.15)', pillText: '#db2777', pillBorder: 'rgba(236,72,153,0.30)', iconShadow: '0 4px 12px rgba(236,72,153,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
+  G: { gradTint: 'linear-gradient(135deg, rgba(100,116,139,0.10), rgba(100,116,139,0.02))', border: 'rgba(100,116,139,0.20)', iconGrad: 'linear-gradient(135deg, #64748b, #94a3b8)', pillBg: 'rgba(100,116,139,0.15)', pillText: '#475569', pillBorder: 'rgba(100,116,139,0.30)', iconShadow: '0 4px 12px rgba(100,116,139,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
+};
+
+// ── Inline styles (AddPlan-aligned) ─────────────────────────────────────────
 const css = {
   label: {
-    fontSize: '11.5px', fontWeight: 600, letterSpacing: '0.02em',
-    marginBottom: '3px', display: 'block', opacity: 0.8,
+    fontSize: '11.5px', fontWeight: 600, letterSpacing: '0.01em',
+    marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '5px',
+    color: 'var(--vz-body-color)',
   } as React.CSSProperties,
   input: {
-    fontSize: '12.5px', padding: '5px 10px', height: '32px',
+    fontSize: '13px', padding: '7px 11px', height: '34px',
+    borderRadius: '6px',
   } as React.CSSProperties,
   textarea: {
-    fontSize: '12.5px', padding: '5px 10px',
+    fontSize: '13px', padding: '8px 11px', borderRadius: '6px',
   } as React.CSSProperties,
   ddToggle: {
-    fontSize: '12.5px', height: '32px', padding: '0 10px',
+    fontSize: '13px', height: '34px', padding: '0 11px',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    width: '100%', textAlign: 'left' as const, background: 'transparent',
+    width: '100%', textAlign: 'left' as const, background: 'var(--vz-card-bg)',
   } as React.CSSProperties,
   ddMenu: {
-    fontSize: '12.5px', minWidth: '100%', padding: '4px 0',
-    boxShadow: '0 4px 16px rgba(0,0,0,0.12)', borderRadius: '6px',
-    border: '1px solid rgba(128,128,128,0.2)',
+    fontSize: '13px', minWidth: '100%', padding: '5px 0',
+    boxShadow: '0 8px 22px rgba(0,0,0,0.12)', borderRadius: '8px',
+    border: '1px solid var(--vz-border-color)',
   } as React.CSSProperties,
   ddItem: {
-    fontSize: '12px', padding: '5px 12px', cursor: 'pointer',
-  } as React.CSSProperties,
-  sectionWrap: {
-    display: 'flex', alignItems: 'center', gap: '8px',
-    marginBottom: '10px', paddingBottom: '7px',
-    borderBottom: '1px solid rgba(128,128,128,0.18)',
-  } as React.CSSProperties,
-  sectionIconWrap: {
-    width: '26px', height: '26px', borderRadius: '6px',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: 'rgba(79,70,229,0.12)', flexShrink: 0,
-  } as React.CSSProperties,
-  sectionIcon: { fontSize: '13px', color: '#4F46E5' } as React.CSSProperties,
-  sectionTitle: {
-    fontSize: '12.5px', fontWeight: 700, letterSpacing: '0.03em',
-    margin: 0, flexGrow: 1, opacity: 0.85,
-  } as React.CSSProperties,
-  badge: {
-    fontSize: '10px', fontWeight: 600, padding: '2px 7px',
-    borderRadius: '20px', background: 'rgba(79,70,229,0.12)',
-    color: '#4F46E5', letterSpacing: '0.04em',
+    fontSize: '12.5px', padding: '6px 12px', cursor: 'pointer',
   } as React.CSSProperties,
   alert: {
-    fontSize: '11.5px', padding: '5px 10px', marginBottom: '10px',
-    display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '6px',
+    fontSize: '12px', padding: '8px 12px', marginBottom: '12px',
+    display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '8px',
   } as React.CSSProperties,
-  cardHeader: {
-    padding: '10px 16px', display: 'flex', alignItems: 'center',
-    justifyContent: 'space-between', borderBottom: '1px solid rgba(128,128,128,0.15)',
-  } as React.CSSProperties,
-  cardBody: { padding: '14px 16px' } as React.CSSProperties,
-  formFeedback: { fontSize: '10.5px' } as React.CSSProperties,
+  cardBody: { padding: '16px 18px' } as React.CSSProperties,
+  formFeedback: { fontSize: '10.5px', marginTop: '3px' } as React.CSSProperties,
   small: {
-    fontSize: '10.5px', opacity: 0.6, marginTop: '2px', display: 'block',
+    fontSize: '10.5px', color: 'var(--vz-secondary-color)', marginTop: '3px', display: 'block',
   } as React.CSSProperties,
 };
 
@@ -321,10 +310,11 @@ export default function ClientForm({ onBack, editId }: Props) {
             caret
             style={{
               ...css.ddToggle,
-              border: `1px solid ${invalid ? '#f06548' : 'rgba(128,128,128,0.3)'}`,
-              borderRadius: '4px',
-              color: value ? 'inherit' : 'rgba(128,128,128,0.65)',
+              border: `1px solid ${invalid ? '#f06548' : 'var(--vz-border-color)'}`,
+              borderRadius: '8px',
+              color: value ? 'var(--vz-heading-color, var(--vz-body-color))' : 'var(--vz-secondary-color)',
               boxShadow: invalid ? '0 0 0 2px rgba(240,101,72,0.15)' : 'none',
+              fontWeight: value ? 500 : 400,
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -363,56 +353,386 @@ export default function ClientForm({ onBack, editId }: Props) {
     );
   };
 
-  const SectionHeader = ({ icon, title, badge }: { icon: string; title: string; badge: string }) => (
-    <div style={css.sectionWrap}>
-      <div style={css.sectionIconWrap}><i className={icon} style={css.sectionIcon} /></div>
-      <h5 style={css.sectionTitle}>{title}</h5>
-      <span style={css.badge}>{badge}</span>
-    </div>
-  );
+  const SectionHeader = ({ icon, title, subtitle, badge }: { icon: string; title: string; subtitle?: string; badge: string }) => {
+    const s = SECTION_STYLE[badge] || SECTION_STYLE.A;
+    return (
+      <div
+        className="section-head-premium"
+        style={{
+          background: s.gradTint,
+          border: `1px solid ${s.border}`,
+        }}
+      >
+        <span
+          className="head-icon"
+          style={{
+            background: s.iconGrad,
+            boxShadow: s.iconShadow,
+          }}
+        >
+          <i className={icon} style={{ fontSize: 15 }} />
+        </span>
+        <div className="min-w-0 flex-grow-1">
+          <div className="fw-bold text-uppercase" style={{ fontSize: 11, letterSpacing: '0.07em', lineHeight: 1.2, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+            {title}
+          </div>
+          {subtitle && (
+            <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
+              {subtitle}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const Lbl = ({ children }: { children: React.ReactNode }) => (
     <Label style={css.label}>{children}</Label>
   );
 
+  // ── Themed date picker — click anywhere in field to open ─────────────────
+  const ThemedDatePicker = ({
+    value, onChange, placeholder, minDate,
+  }: { value: string; onChange: (v: string) => void; placeholder?: string; minDate?: string }) => {
+    const [open, setOpen] = useState(false);
+    const [viewDate, setViewDate] = useState(() => value ? new Date(value) : new Date());
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (!open) return;
+      const handler = (e: MouseEvent) => {
+        if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+      };
+      const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+      document.addEventListener('mousedown', handler);
+      document.addEventListener('keydown', key);
+      return () => {
+        document.removeEventListener('mousedown', handler);
+        document.removeEventListener('keydown', key);
+      };
+    }, [open]);
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const minD = minDate ? new Date(minDate) : null;
+    const today = new Date();
+    const selected = value ? new Date(value) : null;
+    const display = value
+      ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+      : '';
+
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const firstDow = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const prev = () => setViewDate(new Date(year, month - 1, 1));
+    const next = () => setViewDate(new Date(year, month + 1, 1));
+
+    const sameDay = (a: Date | null, b: Date | null) =>
+      !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+    return (
+      <div ref={wrapRef} style={{ position: 'relative' }}>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpen(o => !o)}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); } }}
+          style={{
+            ...css.input,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            cursor: 'pointer',
+            border: `1px solid ${open ? '#6a5acd' : 'var(--vz-border-color)'}`,
+            background: 'var(--vz-card-bg)',
+            transition: 'border-color .15s ease, box-shadow .15s ease',
+            boxShadow: open ? '0 0 0 3px rgba(106,90,205,0.15)' : 'none',
+            userSelect: 'none',
+          }}
+        >
+          <span style={{ flex: 1, color: value ? 'var(--vz-heading-color, var(--vz-body-color))' : 'var(--vz-secondary-color)', fontWeight: value ? 500 : 400 }}>
+            {display || (placeholder || 'dd-mm-yyyy')}
+          </span>
+          {value && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onChange(''); }}
+              className="btn p-0 d-inline-flex align-items-center justify-content-center text-muted"
+              style={{ border: 'none', background: 'transparent', fontSize: 14 }}
+              title="Clear"
+            >
+              <i className="ri-close-line" />
+            </button>
+          )}
+          <i className="ri-calendar-line" style={{ color: '#6a5acd', fontSize: 16 }} />
+        </div>
+
+        {open && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 6px)',
+              left: 0,
+              minWidth: 290,
+              background: 'var(--vz-card-bg)',
+              border: '1px solid var(--vz-border-color)',
+              borderRadius: 14,
+              boxShadow: '0 16px 40px rgba(0,0,0,0.18)',
+              padding: 14,
+              zIndex: 1050,
+            }}
+          >
+            {/* Header: month nav */}
+            <div className="d-flex align-items-center justify-content-between mb-2">
+              <button
+                type="button"
+                onClick={prev}
+                className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)' }}
+              >
+                <i className="ri-arrow-left-s-line" style={{ fontSize: 16 }} />
+              </button>
+              <div className="fw-bold" style={{ fontSize: 13.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                {viewDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+              </div>
+              <button
+                type="button"
+                onClick={next}
+                className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)' }}
+              >
+                <i className="ri-arrow-right-s-line" style={{ fontSize: 16 }} />
+              </button>
+            </div>
+
+            {/* Weekday labels */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
+              {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                <div key={d} className="text-center" style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', padding: '4px 0', letterSpacing: '0.04em' }}>
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* Day grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+              {Array.from({ length: firstDow }).map((_, i) => <div key={`blank-${i}`} />)}
+              {Array.from({ length: daysInMonth }).map((_, i) => {
+                const day = i + 1;
+                const d = new Date(year, month, day);
+                const isToday = sameDay(today, d);
+                const isSelected = sameDay(selected, d);
+                const disabled = minD ? d < new Date(minD.getFullYear(), minD.getMonth(), minD.getDate()) : false;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => { onChange(fmt(d)); setOpen(false); }}
+                    className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                    style={{
+                      height: 34,
+                      borderRadius: 8,
+                      fontSize: 12.5,
+                      fontWeight: isSelected ? 700 : 500,
+                      background: isSelected
+                        ? 'linear-gradient(135deg, #6a5acd, #a78bfa)'
+                        : isToday
+                        ? 'rgba(106,90,205,0.12)'
+                        : 'transparent',
+                      color: isSelected
+                        ? '#fff'
+                        : isToday
+                        ? '#6a5acd'
+                        : disabled
+                        ? 'var(--vz-secondary-color)'
+                        : 'var(--vz-heading-color, var(--vz-body-color))',
+                      border: 'none',
+                      boxShadow: isSelected ? '0 4px 10px rgba(106,90,205,0.3)' : 'none',
+                      opacity: disabled ? 0.35 : 1,
+                      cursor: disabled ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer: today + clear */}
+            <div
+              className="d-flex justify-content-between align-items-center pt-2 mt-2"
+              style={{ borderTop: '1px solid var(--vz-border-color)' }}
+            >
+              <button
+                type="button"
+                onClick={() => { onChange(''); setOpen(false); }}
+                className="btn p-0"
+                style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--vz-secondary-color)', border: 'none', background: 'transparent' }}
+              >
+                <i className="ri-close-line me-1" />Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => { onChange(fmt(today)); setViewDate(today); setOpen(false); }}
+                className="btn p-0 d-inline-flex align-items-center gap-1"
+                style={{ fontSize: 11.5, fontWeight: 700, color: '#6a5acd', border: 'none', background: 'transparent' }}
+              >
+                <i className="ri-focus-2-line" />Today
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
+      <style>{`
+        .stylish-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          color: var(--vz-body-color);
+          margin-bottom: 5px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+        }
+        .stylish-label i { font-size: 13px; }
+        .cf-wrap .form-control,
+        .cf-wrap .form-select,
+        .cf-wrap .dropdown-toggle.btn-light {
+          border: 1px solid var(--vz-border-color);
+          transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+          background: var(--vz-card-bg);
+        }
+        .cf-wrap .form-control:hover,
+        .cf-wrap .form-select:hover,
+        .cf-wrap .dropdown-toggle.btn-light:hover {
+          border-color: rgba(99,102,241,0.45);
+        }
+        .cf-wrap .form-control:focus,
+        .cf-wrap .form-select:focus,
+        .cf-wrap .dropdown-toggle.btn-light:focus,
+        .cf-wrap .show > .dropdown-toggle.btn-light {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+        .cf-wrap .form-control.is-invalid,
+        .cf-wrap .form-control.is-invalid:focus {
+          border-color: #f06548;
+          box-shadow: 0 0 0 3px rgba(240,101,72,0.15);
+        }
+        .section-head-premium {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          margin-bottom: 14px;
+        }
+        .section-head-premium .head-icon {
+          width: 30px; height: 30px;
+          border-radius: 8px;
+          display: flex; align-items: center; justify-content: center;
+          color: #fff;
+          flex-shrink: 0;
+        }
+      `}</style>
+
       {/* Page Title */}
-      <Row className="mb-2">
+      <div className="cf-wrap">
+      <Row className="mb-0">
         <Col xs={12}>
-          <div className="d-sm-flex align-items-center justify-content-between">
-            <h5 className="mb-sm-0" style={{ fontSize: '13.5px', fontWeight: 700 }}>
-              <button className="btn btn-sm btn-soft-primary me-2" onClick={onBack} style={{ fontSize: '11px', padding: '2px 8px' }}>
+          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
+            <h4 className="mb-sm-0 d-flex align-items-center gap-2">
+              <button
+                className="btn btn-sm btn-soft-secondary rounded-circle d-inline-flex align-items-center justify-content-center"
+                style={{ width: 32, height: 32 }}
+                onClick={onBack}
+                type="button"
+              >
                 <i className="ri-arrow-left-line" />
               </button>
               {isEdit ? 'Edit Client' : 'Register New Client'}
-            </h5>
-            <ol className="breadcrumb m-0" style={{ fontSize: '11px' }}>
-              <li className="breadcrumb-item"><a href="#" onClick={e => { e.preventDefault(); onBack(); }}>Clients</a></li>
-              <li className="breadcrumb-item active">{isEdit ? 'Edit' : 'New'}</li>
-            </ol>
+            </h4>
+            <div className="page-title-right">
+              <ol className="breadcrumb m-0">
+                <li className="breadcrumb-item"><a href="#" onClick={e => { e.preventDefault(); onBack(); }}>Clients</a></li>
+                <li className="breadcrumb-item active">{isEdit ? 'Edit' : 'New'}</li>
+              </ol>
+            </div>
           </div>
         </Col>
       </Row>
 
       {serverErrors.general && (
-        <div style={{ ...css.alert, background: 'rgba(240,101,72,0.08)', border: '1px solid rgba(240,101,72,0.2)', color: '#f06548' }}>
-          <i className="ri-error-warning-line" style={{ fontSize: '13px' }} />
+        <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(240,101,72,0.10), rgba(255,158,124,0.05))', border: '1px solid rgba(240,101,72,0.28)', color: '#f06548' }}>
+          <span
+            className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+            style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#f06548,#ff9e7c)', boxShadow: '0 3px 8px rgba(240,101,72,0.3)' }}
+          >
+            <i className="ri-error-warning-line" style={{ color: '#fff', fontSize: 13 }} />
+          </span>
           <span>{serverErrors.general[0]}</span>
         </div>
       )}
 
       <Form onSubmit={handleSubmit}>
-        <Card className="shadow-sm">
-          <CardHeader style={css.cardHeader}>
-            <div>
-              <h6 className="mb-0" style={{ fontSize: '12.5px', fontWeight: 700 }}>Client Registration Form</h6>
-              <p className="mb-0" style={{ fontSize: '11px', opacity: 0.55, marginTop: '1px' }}>
-                Fields marked <span className="text-danger">*</span> are required
-              </p>
+        <Card
+          className="shadow-sm border-0 mb-3"
+          style={{ borderRadius: 20, overflow: 'hidden', boxShadow: '0 4px 24px rgba(64,81,137,0.08)' }}
+        >
+          <CardHeader
+            style={{
+              padding: '14px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderBottom: '1px solid var(--vz-border-color)',
+              background: 'linear-gradient(135deg, rgba(99,102,241,0.06), rgba(99,102,241,0.01))',
+            }}
+          >
+            <div className="d-flex align-items-center gap-3">
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                style={{
+                  width: 44, height: 44,
+                  background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
+                  boxShadow: '0 6px 16px rgba(64,81,137,0.28)',
+                }}
+              >
+                <i className={isEdit ? 'ri-edit-2-line' : 'ri-user-add-line'} style={{ color: '#fff', fontSize: 20 }} />
+              </span>
+              <div>
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 15 }}>Client Registration Form</h6>
+                <p className="mb-0 text-muted" style={{ fontSize: 12, marginTop: 2 }}>
+                  Fields marked <span className="text-danger fw-bold">*</span> are required
+                </p>
+              </div>
             </div>
-            <span style={{ ...css.badge, background: isEdit ? 'rgba(16,185,129,0.12)' : 'rgba(79,70,229,0.12)', color: isEdit ? '#10B981' : '#4F46E5' }}>
-              {isEdit ? '✏ Edit Mode' : '＋ New Client'}
+            <span
+              className="rounded-pill fw-bold"
+              style={{
+                fontSize: 11,
+                padding: '4px 10px',
+                letterSpacing: '0.06em',
+                background: isEdit
+                  ? 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)'
+                  : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                color: '#fff',
+                boxShadow: isEdit
+                  ? '0 4px 10px rgba(10,179,156,0.28)'
+                  : '0 4px 10px rgba(99,102,241,0.28)',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <i className={isEdit ? 'ri-edit-2-fill' : 'ri-add-circle-fill'} style={{ fontSize: 12 }} />
+              {isEdit ? 'Edit Mode' : 'New Client'}
             </span>
           </CardHeader>
 
@@ -535,9 +855,14 @@ export default function ClientForm({ onBack, editId }: Props) {
             {/* ══ C: Legal & Tax ══ */}
             <SectionHeader icon="ri-file-text-line" title="Legal & Tax Information" badge="C" />
             {form.country === 'India' && (
-              <div style={{ ...css.alert, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#B45309' }}>
-                <i className="ri-information-line" style={{ fontSize: '13px' }} />
-                <span style={{ fontSize: '11.5px' }}>GST and PAN are recommended for Indian organizations.</span>
+              <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(245,158,11,0.10), rgba(255,212,122,0.05))', border: '1px solid rgba(245,158,11,0.28)', color: '#B45309' }}>
+                <span
+                  className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                  style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#f7b84b,#ffd47a)', boxShadow: '0 3px 8px rgba(247,184,75,0.3)' }}
+                >
+                  <i className="ri-information-line" style={{ color: '#fff', fontSize: 13 }} />
+                </span>
+                <span>GST and PAN are recommended for Indian organizations.</span>
               </div>
             )}
             <Row className="g-2 mb-3">
@@ -559,9 +884,14 @@ export default function ClientForm({ onBack, editId }: Props) {
 
             {/* ══ D: Plan ══ */}
             <SectionHeader icon="ri-shield-check-line" title="Plan & Billing" badge="D" />
-            <div style={{ ...css.alert, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#059669' }}>
-              <i className="ri-checkbox-circle-line" style={{ fontSize: '13px' }} />
-              <span style={{ fontSize: '11.5px' }}>Client must complete payment after creation to activate.</span>
+            <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(10,179,156,0.10), rgba(48,213,181,0.05))', border: '1px solid rgba(10,179,156,0.28)', color: '#059669' }}>
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#0ab39c,#30d5b5)', boxShadow: '0 3px 8px rgba(10,179,156,0.3)' }}
+              >
+                <i className="ri-checkbox-circle-line" style={{ color: '#fff', fontSize: 13 }} />
+              </span>
+              <span>Client must complete payment after creation to activate.</span>
             </div>
             <Row className="g-2 mb-3">
               <Col md={4}>
@@ -587,15 +917,24 @@ export default function ClientForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Expires At</Lbl>
-                <Input style={css.input} type="date" value={form.plan_expires_at} onChange={e => set('plan_expires_at', e.target.value)} />
+                <ThemedDatePicker
+                  value={form.plan_expires_at}
+                  onChange={v => set('plan_expires_at', v)}
+                  placeholder="Select date"
+                />
               </Col>
             </Row>
 
             {/* ══ E: Admin ══ */}
             <SectionHeader icon="ri-user-line" title="Admin Credentials" badge="E" />
-            <div style={{ ...css.alert, background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', color: '#2563EB' }}>
-              <i className="ri-lock-line" style={{ fontSize: '13px' }} />
-              <span style={{ fontSize: '11.5px' }}>Creates the first login user (Client Admin) for this organization.</span>
+            <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(106,90,205,0.10), rgba(167,139,250,0.05))', border: '1px solid rgba(106,90,205,0.28)', color: '#4c3fb1' }}>
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#6a5acd,#a78bfa)', boxShadow: '0 3px 8px rgba(106,90,205,0.3)' }}
+              >
+                <i className="ri-lock-line" style={{ color: '#fff', fontSize: 13 }} />
+              </span>
+              <span>Creates the first login user (Client Admin) for this organization.</span>
             </div>
             <Row className="g-2 mb-3">
               <Col md={4}>
@@ -700,35 +1039,122 @@ export default function ClientForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ Actions ══ */}
-            <div className="d-flex justify-content-between align-items-center pt-2 border-top" style={{ marginTop: '4px' }}>
-              <Button color="light" type="button" onClick={onBack} size="sm" style={{ fontSize: '12px' }}>
-                <i className="ri-arrow-left-line me-1" />Cancel
-              </Button>
-              <div className="d-flex gap-2">
+            {/* ══ Actions (AddPlan-style sticky footer) ══ */}
+            <div
+              className="d-flex justify-content-between align-items-center mt-3 px-3 py-2 rounded-3 flex-wrap gap-2"
+              style={{
+                background: 'var(--vz-card-bg)',
+                border: '1px solid var(--vz-border-color)',
+                boxShadow: '0 -4px 12px rgba(15,23,42,0.04)',
+              }}
+            >
+              <div className="d-flex align-items-center gap-2">
+                <div
+                  className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
+                  style={{
+                    width: 32, height: 32,
+                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                    boxShadow: '0 3px 10px rgba(99,102,241,0.40), inset 0 1px 0 rgba(255,255,255,0.22)',
+                  }}
+                >
+                  <i className="ri-information-line" style={{ color: '#fff', fontSize: 14 }} />
+                </div>
+                <div>
+                  <div className="fw-semibold" style={{ fontSize: 12.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                    {isEdit ? 'Review changes before saving' : 'Ready to create client'}
+                    {form.org_name && <> · <span style={{ color: '#6366f1' }}>{form.org_name}</span></>}
+                  </div>
+                  <div className="text-muted" style={{ fontSize: 10.5 }}>
+                    {Object.keys(validationErrors).length > 0
+                      ? `${Object.keys(validationErrors).length} field${Object.keys(validationErrors).length === 1 ? '' : 's'} need attention`
+                      : 'All required fields are validated on save'}
+                  </div>
+                </div>
+              </div>
+              <div className="d-flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  style={{
+                    padding: '7px 16px',
+                    fontSize: 12.5,
+                    background: 'var(--vz-secondary-bg)',
+                    color: 'var(--vz-body-color)',
+                    border: '1px solid var(--vz-border-color)',
+                    transition: 'all .18s ease',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--vz-secondary-color)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--vz-border-color)'; }}
+                >
+                  <i className="ri-arrow-left-line" />Cancel
+                </button>
                 {!isEdit && (
-                  <Button color="light" type="button" onClick={handleReset} size="sm" style={{ fontSize: '12px' }}>
-                    <i className="ri-restart-line me-1" />Reset
-                  </Button>
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                    style={{
+                      padding: '7px 16px',
+                      fontSize: 12.5,
+                      background: 'rgba(245,158,11,0.10)',
+                      color: '#f59e0b',
+                      border: '1px solid rgba(245,158,11,0.30)',
+                      transition: 'all .18s ease',
+                    }}
+                    onMouseEnter={e => {
+                      const el = e.currentTarget as HTMLButtonElement;
+                      el.style.background = '#f59e0b';
+                      el.style.color = '#fff';
+                      el.style.boxShadow = '0 6px 14px rgba(245,158,11,0.45)';
+                    }}
+                    onMouseLeave={e => {
+                      const el = e.currentTarget as HTMLButtonElement;
+                      el.style.background = 'rgba(245,158,11,0.10)';
+                      el.style.color = '#f59e0b';
+                      el.style.boxShadow = 'none';
+                    }}
+                  >
+                    <i className="ri-restart-line" />Reset
+                  </button>
                 )}
-                <Button color="success" type="submit" disabled={saving} size="sm"
-                  className="btn-label waves-effect right waves-light rounded-pill"
-                  style={{ fontSize: '12px', minWidth: '140px' }}>
-                  {saving ? (
-                    <><Spinner size="sm" className="me-1" />Saving...</>
-                  ) : (
-                    <>
-                      <i className={`label-icon align-middle rounded-pill fs-16 ms-2 ${isEdit ? 'ri-check-double-line' : 'ri-save-line'}`} />
-                      {isEdit ? 'Update Client' : 'Create Client'}
-                    </>
-                  )}
-                </Button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+                  style={{
+                    padding: '7px 20px',
+                    fontSize: 13,
+                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                    color: '#fff',
+                    border: 'none',
+                    boxShadow: '0 6px 18px rgba(99,102,241,0.45), inset 0 1px 0 rgba(255,255,255,0.22)',
+                    transition: 'all .18s ease',
+                    opacity: saving ? 0.7 : 1,
+                    minWidth: 160,
+                  }}
+                  onMouseEnter={e => {
+                    if (saving) return;
+                    const el = e.currentTarget as HTMLButtonElement;
+                    el.style.boxShadow = '0 10px 26px rgba(99,102,241,0.60), inset 0 1px 0 rgba(255,255,255,0.30)';
+                    el.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={e => {
+                    const el = e.currentTarget as HTMLButtonElement;
+                    el.style.boxShadow = '0 6px 18px rgba(99,102,241,0.45), inset 0 1px 0 rgba(255,255,255,0.22)';
+                    el.style.transform = 'translateY(0)';
+                  }}
+                >
+                  {saving ? <Spinner size="sm" /> : <i className={isEdit ? 'ri-check-double-line' : 'ri-save-line'} />}
+                  {saving ? 'Saving...' : isEdit ? 'Update Client' : 'Create Client'}
+                </button>
               </div>
             </div>
 
           </CardBody>
         </Card>
       </Form>
+      </div>
     </>
   );
 }
