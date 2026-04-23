@@ -78,12 +78,11 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
   const trendColor = trend === 'up' ? '#0ab39c' : trend === 'down' ? '#f06548' : '#878a99';
   const arrow = trend === 'up' ? 'ri-arrow-up-line' : trend === 'down' ? 'ri-arrow-down-line' : 'ri-subtract-line';
   return (
-    <div style={{
-      background: '#fff',
+    <div className="dashboard-surface" style={{
       borderRadius: 16,
       padding: '20px 20px 16px',
       boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
-      border: '1px solid #f0f3f8',
+      border: '1px solid var(--vz-border-color)',
       position: 'relative',
       overflow: 'hidden',
       height: '100%',
@@ -94,14 +93,14 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
       }} />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: '#878a99', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
-          <h3 style={{ fontSize: 28, fontWeight: 800, color: '#1e2a3a', margin: 0, lineHeight: 1 }}>{value}</h3>
+          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
+          <h3 style={{ fontSize: 28, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>{value}</h3>
           {(change || changeText) && (
             <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: trendColor + '18', color: trendColor, borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
                 <i className={arrow} style={{ fontSize: 11 }}></i> {change}
               </span>
-              {changeText && <span style={{ fontSize: 11, color: '#a0aec0' }}>{changeText}</span>}
+              {changeText && <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)' }}>{changeText}</span>}
             </div>
           )}
         </div>
@@ -118,15 +117,16 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
 
 const cardStyle: React.CSSProperties = {
   borderRadius: 16,
-  border: '1px solid #f0f3f8',
+  border: '1px solid var(--vz-border-color)',
   boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
   overflow: 'hidden',
   marginBottom: 0,
+  height: '100%',
 };
 
 const cardHeaderStyle: React.CSSProperties = {
-  background: '#fff',
-  borderBottom: '1px solid #f0f3f8',
+  background: 'var(--vz-card-bg)',
+  borderBottom: '1px solid var(--vz-border-color)',
   padding: '16px 20px',
   display: 'flex',
   alignItems: 'center',
@@ -153,13 +153,18 @@ export default function AdminDashboard() {
 
   return (
     <>
+      <style>{`
+        /* Force white card surface in light theme; auto-flip in dark theme */
+        .dashboard-surface { background: #ffffff; }
+        [data-bs-theme="dark"] .dashboard-surface { background: #1c2531; }
+      `}</style>
       {/* Page Title */}
       <Row className="mb-2">
         <Col xs={12}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px' }}>
             <div>
-              <h4 style={{ fontWeight: 800, fontSize: 20, color: '#1e2a3a', margin: 0 }}>Dashboard</h4>
-              <p style={{ margin: 0, fontSize: 12, color: '#a0aec0', marginTop: 2 }}>Welcome back! Here's what's happening today.</p>
+              <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Dashboard</h4>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Welcome back! Here's what's happening today.</p>
             </div>
             <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
               <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>Velzon</a></li>
@@ -209,13 +214,13 @@ export default function AdminDashboard() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Revenue Analytics</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Monthly revenue performance</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Revenue Analytics</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Monthly revenue performance</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }}>₹{revenue.total.toLocaleString()}</div>
-                  <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 600 }}>TOTAL REVENUE</div>
+                  <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>TOTAL REVENUE</div>
                 </div>
                 <button type="button" style={{
                   background: 'linear-gradient(135deg,#405189,#6691e7)', color: '#fff', border: 'none',
@@ -227,17 +232,17 @@ export default function AdminDashboard() {
             </div>
             <CardBody style={{ padding: '12px 16px 8px' }}>
               {/* Mini stats strip */}
-              <div style={{ display: 'flex', gap: 24, marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid #f0f3f8' }}>
+              <div style={{ display: 'flex', gap: 24, marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid var(--vz-border-color)' }}>
                 <div>
-                  <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Monthly</div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: '#1e2a3a' }}>₹{revenue.monthly.toLocaleString()}</div>
+                  <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Monthly</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>₹{revenue.monthly.toLocaleString()}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transactions</div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: '#1e2a3a' }}>{counts.total_payments}</div>
+                  <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Transactions</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{counts.total_payments}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Success Rate</div>
+                  <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Success Rate</div>
                   <div style={{ fontSize: 15, fontWeight: 800, color: '#0ab39c' }}>{successRate}%</div>
                 </div>
               </div>
@@ -264,8 +269,8 @@ export default function AdminDashboard() {
           <Card style={{ ...cardStyle, height: '100%' }}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Plan Distribution</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Clients by plan type</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Plan Distribution</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Clients by plan type</p>
               </div>
             </div>
             <CardBody style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -279,8 +284,8 @@ export default function AdminDashboard() {
                 </PieChart>
               </ResponsiveContainer>
               <div style={{ textAlign: 'center', marginTop: 4 }}>
-                <div style={{ fontSize: 24, fontWeight: 800, color: '#1e2a3a' }}>{counts.total_clients}</div>
-                <div style={{ fontSize: 11, color: '#a0aec0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Clients</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{counts.total_clients}</div>
+                <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Clients</div>
               </div>
             </CardBody>
           </Card>
@@ -293,8 +298,8 @@ export default function AdminDashboard() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Client Growth</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>New clients per month</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Client Growth</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>New clients per month</p>
               </div>
             </div>
             <CardBody style={{ padding: '12px 16px' }}>
@@ -321,8 +326,8 @@ export default function AdminDashboard() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Organization Types</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Client breakdown by type</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Organization Types</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Client breakdown by type</p>
               </div>
             </div>
             <CardBody style={{ padding: '16px 20px' }}>
@@ -339,14 +344,14 @@ export default function AdminDashboard() {
                         }}>
                           {o.org_type.charAt(0)}
                         </div>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#1e2a3a' }}>{o.org_type}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{o.org_type}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 12, color: '#a0aec0', fontWeight: 600 }}>{pct.toFixed(0)}%</span>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: '#1e2a3a' }}>{o.count}</span>
+                        <span style={{ fontSize: 12, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{pct.toFixed(0)}%</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{o.count}</span>
                       </div>
                     </div>
-                    <div style={{ height: 6, borderRadius: 999, background: '#f0f3f8', overflow: 'hidden' }}>
+                    <div style={{ height: 6, borderRadius: 999, background: 'var(--vz-border-color)', overflow: 'hidden' }}>
                       <div style={{
                         height: '100%', borderRadius: 999, width: `${Math.max(pct, 6)}%`,
                         background: `linear-gradient(90deg,${COLORS[i % COLORS.length]},${COLORS[(i + 1) % COLORS.length]})`,
@@ -364,8 +369,8 @@ export default function AdminDashboard() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Payment Health</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Transaction status overview</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Payment Health</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Transaction status overview</p>
               </div>
             </div>
             <CardBody style={{ padding: '16px 20px' }}>
@@ -373,9 +378,9 @@ export default function AdminDashboard() {
               <HealthRow label="Pending" value={counts.pending_payments} total={counts.total_payments} color="#f7b84b" iconClass="ri-time-line" />
               <HealthRow label="Failed" value={counts.failed_payments} total={counts.total_payments} color="#f06548" iconClass="ri-close-circle-line" />
 
-              <div style={{ height: 1, background: '#f0f3f8', margin: '16px 0' }} />
+              <div style={{ height: 1, background: 'var(--vz-border-color)', margin: '16px 0' }} />
 
-              <p style={{ fontSize: 11, fontWeight: 700, color: '#a0aec0', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>User Roles</p>
+              <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>User Roles</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {Object.entries(data.user_types).map(([type, count], i) => (
                   <div key={type} style={{
@@ -396,13 +401,13 @@ export default function AdminDashboard() {
       </Row>
 
       {/* Recent Clients + Payments */}
-      <Row className="g-3">
+      <Row className="g-3 mb-3">
         <Col xl={6}>
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Recent Clients</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Latest registered clients</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Recent Clients</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Latest registered clients</p>
               </div>
               <button style={{
                 background: 'transparent', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 14px',
@@ -428,8 +433,8 @@ export default function AdminDashboard() {
                       {c.org_name.charAt(0)}{c.org_name.split(' ')[1]?.charAt(0) || ''}
                     </div>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e2a3a' }}>{c.org_name}</div>
-                      <div style={{ fontSize: 11, color: '#a0aec0', marginTop: 1 }}>{c.email}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{c.org_name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>{c.email}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -453,8 +458,8 @@ export default function AdminDashboard() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Recent Payments</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Latest transactions</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Recent Payments</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Latest transactions</p>
               </div>
               <button style={{
                 background: 'transparent', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 14px',
@@ -485,15 +490,15 @@ export default function AdminDashboard() {
                         <i className={cfg.icon}></i>
                       </div>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1e2a3a' }}>{p.client?.org_name || 'Unknown'}</div>
-                        <div style={{ fontSize: 11, color: '#a0aec0', marginTop: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{p.client?.org_name || 'Unknown'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
                           {p.invoice_number} · {methodLabels[p.method] || p.method}
                         </div>
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 14, fontWeight: 800, color: cfg.color }}>₹{parseFloat(p.total).toLocaleString()}</div>
-                      <div style={{ fontSize: 10, color: '#a0aec0', marginTop: 2 }}>
+                      <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
                         {new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                       </div>
                     </div>
@@ -520,14 +525,14 @@ function HealthRow({ label, value, total, color, iconClass }: { label: string; v
           }}>
             <i className={iconClass}></i>
           </div>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#1e2a3a' }}>{label}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{label}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, color: '#a0aec0', fontWeight: 600 }}>{pct.toFixed(0)}%</span>
-          <span style={{ fontSize: 14, fontWeight: 800, color: '#1e2a3a' }}>{value}</span>
+          <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{pct.toFixed(0)}%</span>
+          <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{value}</span>
         </div>
       </div>
-      <div style={{ height: 6, borderRadius: 999, background: '#f0f3f8', overflow: 'hidden' }}>
+      <div style={{ height: 6, borderRadius: 999, background: 'var(--vz-border-color)', overflow: 'hidden' }}>
         <div style={{
           height: '100%', borderRadius: 999, width: `${pct}%`, background: color,
           transition: 'width 0.8s ease',

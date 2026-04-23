@@ -59,11 +59,11 @@ function KpiCard({ label, value, iconClass, gradient, changeText, trend = 'neutr
   const arrow = trend === 'up' ? 'ri-arrow-up-line' : trend === 'down' ? 'ri-arrow-down-line' : 'ri-subtract-line';
   return (
     <div style={{
-      background: '#fff',
+      background: 'var(--vz-card-bg)',
       borderRadius: 16,
       padding: '20px 20px 16px',
       boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
-      border: '1px solid #f0f3f8',
+      border: '1px solid var(--vz-border-color)',
       position: 'relative',
       overflow: 'hidden',
       height: '100%',
@@ -74,8 +74,8 @@ function KpiCard({ label, value, iconClass, gradient, changeText, trend = 'neutr
       }} />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div style={{ flex: 1 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: '#878a99', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
-          <h3 style={{ fontSize: 28, fontWeight: 800, color: '#1e2a3a', margin: 0, lineHeight: 1 }}>{value}</h3>
+          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
+          <h3 style={{ fontSize: 28, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>{value}</h3>
           {(change || changeText) && (
             <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
               {change && (
@@ -83,7 +83,7 @@ function KpiCard({ label, value, iconClass, gradient, changeText, trend = 'neutr
                   <i className={arrow} style={{ fontSize: 11 }}></i> {change}
                 </span>
               )}
-              {changeText && <span style={{ fontSize: 11, color: '#a0aec0' }}>{changeText}</span>}
+              {changeText && <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)' }}>{changeText}</span>}
             </div>
           )}
         </div>
@@ -100,15 +100,16 @@ function KpiCard({ label, value, iconClass, gradient, changeText, trend = 'neutr
 
 const cardStyle: React.CSSProperties = {
   borderRadius: 16,
-  border: '1px solid #f0f3f8',
+  border: '1px solid var(--vz-border-color)',
   boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
   overflow: 'hidden',
   marginBottom: 0,
+  height: '100%',
 };
 
 const cardHeaderStyle: React.CSSProperties = {
-  background: '#fff',
-  borderBottom: '1px solid #f0f3f8',
+  background: 'var(--vz-card-bg)',
+  borderBottom: '1px solid var(--vz-border-color)',
   padding: '16px 20px',
   display: 'flex',
   alignItems: 'center',
@@ -139,8 +140,8 @@ export default function ClientDashboard() {
         <Col xs={12}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px' }}>
             <div>
-              <h4 style={{ fontWeight: 800, fontSize: 20, color: '#1e2a3a', margin: 0 }}>Dashboard</h4>
-              <p style={{ margin: 0, fontSize: 12, color: '#a0aec0', marginTop: 2 }}>Welcome back! Here's your organization overview.</p>
+              <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Dashboard</h4>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Welcome back! Here's your organization overview.</p>
             </div>
             <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
               <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{user?.client_name}</a></li>
@@ -225,12 +226,12 @@ export default function ClientDashboard() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Payment History</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Monthly payment trend</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Payment History</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Monthly payment trend</p>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }}>₹{counts.total_paid.toLocaleString()}</div>
-                <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 600 }}>TOTAL PAID</div>
+                <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>TOTAL PAID</div>
               </div>
             </div>
             <CardBody style={{ padding: '12px 16px 8px' }}>
@@ -256,16 +257,16 @@ export default function ClientDashboard() {
           <Card style={{ ...cardStyle, height: '100%' }}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Payment Success</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Transaction health</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Payment Success</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Transaction health</p>
               </div>
             </div>
             <CardBody className="text-center py-4">
               <SuccessRing percent={successRate} />
-              <p className="mt-3 mb-1" style={{ fontSize: 13, fontWeight: 700, color: '#1e2a3a' }}>
+              <p className="mt-3 mb-1" style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
                 {successRate >= 80 ? 'Healthy' : successRate >= 50 ? 'Moderate' : 'Needs attention'}
               </p>
-              <p style={{ fontSize: 11, color: '#a0aec0', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <p style={{ fontSize: 11, color: 'var(--vz-secondary-color)', margin: 0, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {counts.success_payments} of {counts.total_payments}
               </p>
             </CardBody>
@@ -279,8 +280,8 @@ export default function ClientDashboard() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Branches</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>{branches.length} total</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Branches</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>{branches.length} total</p>
               </div>
             </div>
             <CardBody style={{ padding: 0 }}>
@@ -304,17 +305,17 @@ export default function ClientDashboard() {
                       {b.code?.substring(0, 2).toUpperCase() || b.name.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e2a3a', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         {b.name}
                         {b.is_main && <i className="ri-star-fill" style={{ color: '#f7b84b', fontSize: 12 }}></i>}
                       </div>
-                      <div style={{ fontSize: 11, color: '#a0aec0', marginTop: 1 }}>
+                      <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
                         {[b.city, b.state].filter(Boolean).join(', ') || 'No location'}
                       </div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 11, color: '#a0aec0', fontWeight: 600 }}>{b.users_count} users</span>
+                    <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>{b.users_count} users</span>
                     <span style={{
                       fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.04em',
                       background: b.status === 'active' ? '#0ab39c18' : '#f0654818',
@@ -332,8 +333,8 @@ export default function ClientDashboard() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Recent Payments</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Latest transactions</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Recent Payments</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Latest transactions</p>
               </div>
             </div>
             <CardBody style={{ padding: 0 }}>
@@ -360,15 +361,15 @@ export default function ClientDashboard() {
                         <i className={cfg.icon}></i>
                       </div>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1e2a3a' }}>{p.plan?.name || 'Payment'}</div>
-                        <div style={{ fontSize: 11, color: '#a0aec0', marginTop: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{p.plan?.name || 'Payment'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
                           {p.invoice_number} · {methodLabels[p.method] || p.method}
                         </div>
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 14, fontWeight: 800, color: cfg.color }}>₹{parseFloat(p.total).toLocaleString()}</div>
-                      <div style={{ fontSize: 10, color: '#a0aec0', marginTop: 2 }}>
+                      <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
                         {new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                       </div>
                     </div>
@@ -387,8 +388,8 @@ export default function ClientDashboard() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Team Roles</h5>
-                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Staff breakdown by role</p>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Team Roles</h5>
+                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Staff breakdown by role</p>
               </div>
             </div>
             <CardBody style={{ padding: '16px 20px' }}>

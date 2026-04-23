@@ -269,7 +269,7 @@ export default function CompanyDetailsMaster() {
                   <Col md={6} lg={3} key={s.n}>
                     <div className="text-center px-2">
                       <span
-                        className="d-inline-flex align-items-center justify-content-center rounded-circle bg-white border border-primary text-primary fw-bold shadow-sm mb-2"
+                        className="d-inline-flex align-items-center justify-content-center rounded-circle bg-body-tertiary border border-primary text-primary fw-bold shadow-sm mb-2"
                         style={{ width: 44, height: 44, fontSize: 16 }}
                       >
                         {s.n}
@@ -318,7 +318,7 @@ export default function CompanyDetailsMaster() {
 
       {/* Table card */}
       <Card className="shadow-sm border-0">
-        <CardHeader className="bg-white border-0 pt-3 pb-0">
+        <CardHeader className="bg-body-tertiary border-0 pt-3 pb-0">
           <div className="d-flex align-items-center flex-wrap gap-2">
             <h5 className="mb-0 fw-bold me-2">
               All Companies <Badge color="primary-subtle" className="text-primary ms-1">{filtered.length}</Badge>

@@ -219,7 +219,7 @@ export default function Permissions() {
                 <div style={{ animation: 'perm-fade .5s ease-out .1s both' }}>
                   <h4 style={{
                     marginTop: 22, marginBottom: 6,
-                    fontWeight: 700, color: '#1f2937',
+                    fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))',
                     background: 'linear-gradient(135deg,#405189,#6691e7)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
@@ -244,8 +244,8 @@ export default function Permissions() {
                     { icon: 'ri-check-double-line', title: 'Approve & Save', desc: 'Apply permissions instantly' },
                   ].map(f => (
                     <div key={f.title} style={{
-                      background: '#fff',
-                      border: '1px solid #eef0f3',
+                      background: 'var(--vz-card-bg)',
+                      border: '1px solid var(--vz-border-color)',
                       borderRadius: 12,
                       padding: '12px 16px',
                       minWidth: 180, maxWidth: 220,
@@ -261,8 +261,8 @@ export default function Permissions() {
                         <i className={f.icon} style={{ color: '#fff', fontSize: 16 }} />
                       </span>
                       <div className="text-start">
-                        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1f2937' }}>{f.title}</div>
-                        <div style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.4 }}>{f.desc}</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{f.title}</div>
+                        <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', lineHeight: 1.4 }}>{f.desc}</div>
                       </div>
                     </div>
                   ))}

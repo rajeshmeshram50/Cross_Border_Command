@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Spinner,
   Modal, ModalHeader, ModalBody, ModalFooter, Form, Label,
 } from 'reactstrap';
+import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -50,12 +51,7 @@ export default function Payments() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
   const [viewPayment, setViewPayment] = useState<Payment | null>(null);
   const [addModal, setAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -64,23 +60,22 @@ export default function Payments() {
   const [sendingReminder, setSendingReminder] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  useEffect(() => {
-    const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 400);
-    return () => clearTimeout(t);
-  }, [searchInput]);
-
+  // Fetch all payments once. Search + pagination are handled client-side by TableContainer
+  // so the UX matches the Clients page (see Clients.tsx).
   const fetchPayments = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/payments', {
-        params: { search: search || undefined, status: statusFilter || undefined, page, per_page: 15 },
-      });
+      const res = await api.get('/payments', { params: { per_page: 9999 } });
       setPayments(res.data.data || []);
-      setTotalPages(res.data.last_page || 1);
-      setTotal(res.data.total || 0);
     } catch { setPayments([]); }
     finally { setLoading(false); }
-  }, [search, statusFilter, page]);
+  }, []);
+
+  // Status filter is applied client-side before the data hits TableContainer.
+  const filteredPayments = useMemo(() => {
+    if (!statusFilter) return payments;
+    return payments.filter(p => p.status === statusFilter);
+  }, [payments, statusFilter]);
 
   const fetchStats = async () => {
     try { const res = await api.get('/payments/stats'); setStats(res.data); } catch {}
@@ -171,6 +166,137 @@ export default function Payments() {
     window.open(`/api/payments/${p.id}/invoice/view?token=${token}`, '_blank');
   };
 
+  // Outline icon pill — identical to the one used on the Clients page.
+  const ActionBtn = ({
+    title, icon, color, onClick, disabled,
+  }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      className="btn p-0 d-inline-flex align-items-center justify-content-center"
+      style={{
+        width: 30, height: 30, borderRadius: 8,
+        background: 'var(--vz-secondary-bg)',
+        border: '1px solid var(--vz-border-color)',
+        color: 'var(--vz-secondary-color)',
+        transition: 'all .15s ease',
+      }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.borderColor = `var(--vz-${color})`;
+        el.style.color = `var(--vz-${color})`;
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.borderColor = 'var(--vz-border-color)';
+        el.style.color = 'var(--vz-secondary-color)';
+      }}
+      onClick={onClick}
+    >
+      <i className={`${icon} fs-14`} />
+    </button>
+  );
+
+  const columns = useMemo(() => [
+    {
+      header: '#',
+      accessorKey: 'index',
+      cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
+    },
+    {
+      header: 'Invoice',
+      accessorKey: 'invoice_number',
+      cell: (info: any) => (
+        <span className="fw-medium font-monospace text-primary fs-13">
+          {info.row.original.invoice_number || `#${info.row.original.id}`}
+        </span>
+      ),
+    },
+    {
+      header: 'Client',
+      accessorKey: 'client_name',
+      cell: (info: any) => info.row.original.client?.org_name
+        ? <span className="fw-semibold fs-13">{info.row.original.client.org_name}</span>
+        : <span className="text-muted">—</span>,
+    },
+    {
+      header: 'Plan',
+      accessorKey: 'plan_name',
+      cell: (info: any) => info.row.original.plan?.name
+        ? <span className="fs-13">{info.row.original.plan.name}</span>
+        : <span className="text-muted">—</span>,
+    },
+    {
+      header: 'Method',
+      accessorKey: 'method',
+      cell: (info: any) => (
+        <Badge color="light" className="text-dark fw-medium">
+          {methodLabels[info.row.original.method] || info.row.original.method}
+        </Badge>
+      ),
+    },
+    {
+      header: 'Amount',
+      accessorKey: 'total',
+      cell: (info: any) => (
+        <span className="text-success fw-semibold fs-13">
+          ₹{parseFloat(info.row.original.total).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      cell: (info: any) => {
+        const cfg = statusCfg[info.row.original.status] || statusCfg.pending;
+        return (
+          <span className={`badge rounded-pill border border-${cfg.bsColor} text-${cfg.bsColor} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
+            <span className={`bg-${cfg.bsColor} rounded-circle`} style={{ width: 6, height: 6 }} />
+            {info.row.original.status}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Date',
+      accessorKey: 'created_at',
+      cell: (info: any) => (
+        <span className="text-muted fs-13">
+          {new Date(info.row.original.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+        </span>
+      ),
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: 'actions',
+      cell: (info: any) => {
+        const p: Payment = info.row.original;
+        return (
+          <div className="d-flex gap-1 justify-content-center">
+            <ActionBtn title="View" icon="ri-eye-line" color="info" onClick={() => setViewPayment(p)} />
+            {p.status === 'success' && (
+              <ActionBtn title="Invoice PDF" icon="ri-file-pdf-2-line" color="primary" onClick={() => viewInvoice(p)} />
+            )}
+            {isSuperAdmin && p.status === 'success' && (
+              <ActionBtn
+                title="Send Reminder"
+                icon={sendingReminder === p.id ? 'ri-loader-4-line' : 'ri-send-plane-line'}
+                color="success"
+                disabled={sendingReminder === p.id}
+                onClick={() => handleSendReminder(p)}
+              />
+            )}
+            {isSuperAdmin && (
+              <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger" onClick={() => handleDelete(p)} />
+            )}
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [isSuperAdmin, sendingReminder]);
+
   return (
     <>
       <Row>
@@ -259,141 +385,67 @@ export default function Payments() {
       <Row>
         <Col xs={12}>
           <Card>
-            <CardHeader className="border-0">
-              <Row className="align-items-center gy-3">
+            <CardHeader className="border-0 py-2">
+              <Row className="align-items-center gy-2">
                 <div className="col-sm">
-                  <h5 className="card-title mb-0">Payment List <span className="badge bg-primary-subtle text-primary ms-1">{total}</span></h5>
+                  <h5 className="card-title mb-0 fs-15">
+                    Payment List <span className="badge bg-primary-subtle text-primary ms-1">{filteredPayments.length}</span>
+                  </h5>
                 </div>
                 {isSuperAdmin && (
                   <div className="col-sm-auto">
                     <div className="d-flex gap-2 flex-wrap">
-                      <Button color="light" onClick={handleExport} disabled={exporting}>
+                      <Button color="light" size="sm" onClick={handleExport} disabled={exporting}>
                         {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
-                        Export
+                        {exporting ? 'Exporting...' : 'Export'}
                       </Button>
                       <Button
-                          color="primary"
-                          className="btn-label waves-effect waves-light rounded-pill"
-                          onClick={openAddModal}
-                        >
-                          <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                          Record Payment
-                        </Button>
+                        color="primary"
+                        size="sm"
+                        className="btn-label waves-effect waves-light rounded-pill"
+                        onClick={openAddModal}
+                      >
+                        <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                        Record Payment
+                      </Button>
                     </div>
                   </div>
                 )}
               </Row>
             </CardHeader>
 
-            <CardBody className="border border-dashed border-end-0 border-start-0 py-3">
-              <Row className="g-2">
-                <Col md={4}>
-                  <div className="search-box">
-                    <Input type="text" className="form-control search" placeholder="Search by txn ID, invoice, client..."
-                      value={searchInput} onChange={e => setSearchInput(e.target.value)} />
-                    <i className="ri-search-line search-icon"></i>
-                  </div>
-                </Col>
-                <Col md={8}>
-                  <div className="d-flex gap-1 flex-wrap">
-                    {['', 'success', 'pending', 'failed', 'refunded'].map(s => (
-                      <Button key={s} color={statusFilter === s ? 'primary' : 'light'} size="sm"
-                        onClick={() => { setStatusFilter(s); setPage(1); }}>
-                        {s || 'All'}
-                      </Button>
-                    ))}
-                  </div>
-                </Col>
-              </Row>
+            {/* Status filter pills — client-side filter applied before data hits the table */}
+            <CardBody className="border-top border-dashed py-2">
+              <div className="d-flex gap-1 flex-wrap">
+                {['', 'success', 'pending', 'failed', 'refunded'].map(s => (
+                  <Button
+                    key={s || 'all'}
+                    color={statusFilter === s ? 'primary' : 'light'}
+                    size="sm"
+                    onClick={() => setStatusFilter(s)}
+                  >
+                    {s || 'All'}
+                  </Button>
+                ))}
+              </div>
             </CardBody>
 
-            <CardBody>
-              <div className="table-responsive table-card">
-                <table className="table align-middle table-nowrap mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th>Invoice</th>
-                      <th>Client</th>
-                      <th>Plan</th>
-                      <th>Method</th>
-                      <th>Amount</th>
-                      <th>Status</th>
-                      <th>Date</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <tr><td colSpan={8} className="text-center py-5"><Spinner color="primary" /></td></tr>
-                    ) : payments.length === 0 ? (
-                      <tr><td colSpan={8} className="text-center text-muted py-5">
-                        <i className="ri-bill-line display-4 d-block text-muted mb-2"></i>
-                        No payments found
-                      </td></tr>
-                    ) : payments.map(p => {
-                      const cfg = statusCfg[p.status] || statusCfg.pending;
-                      return (
-                        <tr key={p.id}>
-                          <td><span className="fw-medium font-monospace text-primary">{p.invoice_number || `#${p.id}`}</span></td>
-                          <td>{p.client?.org_name || <span className="text-muted">—</span>}</td>
-                          <td>{p.plan?.name || <span className="text-muted">—</span>}</td>
-                          <td>
-                            <Badge color="light" className="text-dark">{methodLabels[p.method] || p.method}</Badge>
-                          </td>
-                          <td className="fw-bold">₹{parseFloat(p.total).toLocaleString()}</td>
-                          <td>
-                            <Badge color={cfg.bsColor} pill className="text-uppercase">
-                              <i className={`${cfg.icon} me-1`}></i>{p.status}
-                            </Badge>
-                          </td>
-                          <td className="text-muted">{new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                          <td>
-                            <div className="d-flex gap-1">
-                              <button className="btn btn-sm btn-soft-info" title="View" onClick={() => setViewPayment(p)}>
-                                <i className="ri-eye-fill"></i>
-                              </button>
-                              {p.status === 'success' && (
-                                <button className="btn btn-sm btn-soft-primary" title="Invoice PDF" onClick={() => viewInvoice(p)}>
-                                  <i className="ri-file-pdf-2-line"></i>
-                                </button>
-                              )}
-                              {isSuperAdmin && p.status === 'success' && (
-                                <button className="btn btn-sm btn-soft-success" title="Send Reminder" disabled={sendingReminder === p.id} onClick={() => handleSendReminder(p)}>
-                                  {sendingReminder === p.id ? <Spinner size="sm" /> : <i className="ri-send-plane-fill"></i>}
-                                </button>
-                              )}
-                              {isSuperAdmin && (
-                                <button className="btn btn-sm btn-soft-danger" title="Delete" onClick={() => handleDelete(p)}>
-                                  <i className="ri-delete-bin-5-fill"></i>
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {totalPages > 1 && (
-                <div className="d-flex justify-content-between align-items-center mt-3">
-                  <span className="text-muted fs-13">Showing {payments.length} of {total} entries</span>
-                  <nav>
-                    <ul className="pagination pagination-sm mb-0">
-                      <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
-                        <button className="page-link" onClick={() => setPage(p => Math.max(1, p - 1))}><i className="ri-arrow-left-s-line"></i></button>
-                      </li>
-                      {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                        <li key={n} className={`page-item ${n === page ? 'active' : ''}`}>
-                          <button className="page-link" onClick={() => setPage(n)}>{n}</button>
-                        </li>
-                      ))}
-                      <li className={`page-item ${page === totalPages ? 'disabled' : ''}`}>
-                        <button className="page-link" onClick={() => setPage(p => Math.min(totalPages, p + 1))}><i className="ri-arrow-right-s-line"></i></button>
-                      </li>
-                    </ul>
-                  </nav>
+            <CardBody className="pt-2">
+              <TableContainer
+                columns={columns}
+                data={filteredPayments}
+                isGlobalFilter={true}
+                customPageSize={15}
+                tableClass="align-middle table-nowrap mb-0"
+                theadClass="table-light"
+                divClass="table-responsive table-card border rounded"
+                SearchPlaceholder="Search by txn ID, invoice, client..."
+              />
+              {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
+              {!loading && filteredPayments.length === 0 && (
+                <div className="text-center text-muted py-5">
+                  <i className="ri-bill-line display-4 d-block text-muted mb-2"></i>
+                  No payments found
                 </div>
               )}
             </CardBody>
