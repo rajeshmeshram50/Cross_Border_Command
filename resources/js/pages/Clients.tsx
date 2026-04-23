@@ -272,7 +272,7 @@ export default function Clients({ onNavigate }: Props) {
           <ActionBtn title="Branches"    icon="ri-git-branch-line"  color="primary" onClick={() => onNavigate('client-branches',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
           <ActionBtn title="Permissions" icon="ri-shield-check-line" color="success" onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
           <ActionBtn title="Payments"    icon="ri-bank-card-line"   color="warning" onClick={() => onNavigate('client-payments',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
-          <ActionBtn title="Settings"    icon="ri-settings-3-line"  color="secondary" onClick={() => onNavigate('client-settings',  { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionBtn title="Settings"    icon="ri-settings-3-line"  color="secondary" onClick={() => toast.info('Coming Soon', 'Client settings will be available in a future update.')} />
         </div>
       ),
     },

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Spinner, Alert } from 'reactstrap';
+import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Spinner, Alert } from 'reactstrap';
+import SearchableSelect from '../components/ui/SearchableSelect';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -104,6 +105,23 @@ export default function Permissions() {
 
   const selectedUser = users.find(u => u.id === Number(selectedUserId));
 
+  // Options for the searchable Select. Keep the original user record on `raw`
+  // so the custom Option / SingleValue components can render rich rows.
+  const userOptions = users.map(u => {
+    // Super admin scans by organization; client admin scans by branch.
+    const primary = isSuperAdmin
+      ? (u.client?.org_name || 'No Organization')
+      : (u.branch?.name   || 'No Branch');
+    const context = isSuperAdmin
+      ? (u.branch?.name     ? ` · ${u.branch.name}` : '')
+      : (u.client?.org_name ? ` · ${u.client.org_name}` : '');
+    return {
+      value: String(u.id),
+      label: `${primary} — ${u.name} (${u.email})${context}`,
+      raw: u,
+    };
+  });
+
   if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
 
   return (
@@ -132,19 +150,126 @@ export default function Permissions() {
                     <i className="ri-user-settings-line me-1"></i>
                     {isSuperAdmin ? 'Client Admin' : 'Branch User'}
                   </label>
-                  <Input
-                    type="select"
-                    className="form-select-lg rounded-pill"
-                    value={selectedUserId}
-                    onChange={e => setSelectedUserId(e.target.value)}
-                  >
-                    <option value="">— {isSuperAdmin ? 'Select client admin...' : 'Select branch user...'} —</option>
-                    {users.map(u => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} ({u.email}){u.client ? `  ${u.client.org_name}` : ''}
-                      </option>
-                    ))}
-                  </Input>
+                  <SearchableSelect
+                    value={selectedUserId || null}
+                    onChange={v => setSelectedUserId(v || '')}
+                    options={userOptions}
+                    placeholder={isSuperAdmin ? 'Select client admin...' : 'Select branch user...'}
+                    searchPlaceholder={isSuperAdmin
+                      ? 'Search by organization, name or email...'
+                      : 'Search branch user by name, email or branch...'}
+                    emptyLabel="No match — try a different search"
+                    getSearchText={(u: ManagedUser) =>
+                      [u.client?.org_name, u.name, u.email, u.branch?.name, u.user_type]
+                        .filter(Boolean)
+                        .join(' ')
+                    }
+                    renderTrigger={(u: ManagedUser) => {
+                      // Super admin picks client admins → show org name as title.
+                      // Client admin picks branch users → show branch name as title.
+                      const roleLabel = (u.user_type || '').replace(/_/g, ' ');
+                      const title     = isSuperAdmin
+                        ? (u.client?.org_name || 'No Organization')
+                        : (u.branch?.name   || 'No Branch');
+                      const titleIcon = isSuperAdmin ? 'ri-building-line' : 'ri-git-branch-line';
+                      return (
+                        <span className="d-inline-flex align-items-center gap-2 text-truncate">
+                          <i className={`${titleIcon} text-primary`} />
+                          <span className="fw-bold" style={{ fontSize: 13 }}>{title}</span>
+                          <span className="badge bg-primary-subtle text-primary text-capitalize" style={{ fontSize: 10 }}>
+                            {roleLabel}
+                          </span>
+                          <span className="text-muted" style={{ fontSize: 12 }}>{u.name}</span>
+                        </span>
+                      );
+                    }}
+                    renderOption={(u: ManagedUser, isSelected) => {
+                      const roleLabel = (u.user_type || '').replace(/_/g, ' ');
+                      const isActive  = u.status === 'active';
+                      const muted     = isSelected ? 'rgba(255,255,255,0.82)' : 'var(--vz-secondary-color)';
+
+                      // Super admin view → org-first; client admin view → branch-first.
+                      const title    = isSuperAdmin
+                        ? (u.client?.org_name || 'No Organization')
+                        : (u.branch?.name   || 'No Branch');
+                      const initials = (title.split(' ').map(w => w.charAt(0)).join('') || '?').slice(0, 2).toUpperCase();
+
+                      // Second supporting line (after email): for super admin we show the branch,
+                      // for client admin we show the parent org instead (useful context across multi-org setups).
+                      const secondaryTag = isSuperAdmin
+                        ? (u.branch?.name ? { icon: 'ri-git-branch-line', text: u.branch.name } : null)
+                        : (u.client?.org_name ? { icon: 'ri-building-line',  text: u.client.org_name } : null);
+
+                      return (
+                        <div className="d-flex align-items-center gap-2">
+                          <div
+                            className="rounded d-flex align-items-center justify-content-center fw-bold flex-shrink-0"
+                            style={{
+                              width: 36, height: 36, fontSize: 12,
+                              color: '#fff',
+                              background: isSelected
+                                ? 'rgba(255,255,255,0.18)'
+                                : 'linear-gradient(135deg,#405189,#6691e7)',
+                              boxShadow: isSelected ? 'none' : '0 2px 6px rgba(64,81,137,0.25)',
+                            }}
+                          >
+                            {initials}
+                          </div>
+                          <div className="flex-grow-1 min-w-0">
+                            <div className="d-flex align-items-center gap-2">
+                              <span className="fw-bold text-truncate" style={{ fontSize: 13.5 }}>
+                                {title}
+                              </span>
+                              <span
+                                className="badge rounded-pill border text-uppercase fw-semibold flex-shrink-0"
+                                style={{
+                                  fontSize: 8.5,
+                                  padding: '1px 6px',
+                                  borderColor: isSelected ? 'rgba(255,255,255,0.55)' : (isActive ? 'var(--vz-success)' : 'var(--vz-secondary)'),
+                                  color:       isSelected ? '#fff' : (isActive ? 'var(--vz-success)' : 'var(--vz-secondary)'),
+                                }}
+                              >
+                                <span
+                                  className="d-inline-block rounded-circle me-1"
+                                  style={{
+                                    width: 5, height: 5, verticalAlign: 'middle',
+                                    background: isSelected ? '#fff' : (isActive ? 'var(--vz-success)' : 'var(--vz-secondary)'),
+                                  }}
+                                />
+                                {u.status}
+                              </span>
+                            </div>
+                            <div className="d-flex align-items-center gap-1 mt-1" style={{ fontSize: 11 }}>
+                              <span
+                                className="badge text-capitalize"
+                                style={{
+                                  fontSize: 9.5,
+                                  padding: '2px 6px',
+                                  background: isSelected ? 'rgba(255,255,255,0.22)' : 'var(--vz-primary-bg-subtle, rgba(64,81,137,0.1))',
+                                  color:      isSelected ? '#fff' : 'var(--vz-primary)',
+                                }}
+                              >
+                                <i className="ri-user-settings-line me-1" />{roleLabel}
+                              </span>
+                              <span className="fw-medium text-truncate">{u.name}</span>
+                            </div>
+                            <div className="d-flex align-items-center gap-2 text-truncate" style={{ fontSize: 10.5, marginTop: 1, color: muted }}>
+                              <span className="d-inline-flex align-items-center gap-1 text-truncate">
+                                <i className="ri-mail-line" style={{ fontSize: 10 }} />
+                                {u.email}
+                              </span>
+                              {secondaryTag && (
+                                <span className="d-inline-flex align-items-center gap-1 text-truncate">
+                                  <i className={secondaryTag.icon} style={{ fontSize: 10 }} />
+                                  {secondaryTag.text}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
                 </Col>
                 <Col md={5} className="text-md-end">
                   <Button

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Card, CardBody, CardHeader, Col, Row, Spinner } from 'reactstrap';
+import { Col, Row, Spinner } from 'reactstrap';
 import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
 import api from '../api';
 
@@ -34,6 +34,16 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
   const totalPaid = payments.filter(p => p.status === 'success').reduce((s, p) => s + Number(p.total || p.amount || 0), 0);
   const pending = payments.filter(p => p.status === 'pending');
   const lastPayment = payments.find(p => p.status === 'success');
+  const lastPaymentLabel = lastPayment
+    ? new Date(lastPayment.payment_date || lastPayment.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '—';
+
+  const KPI_CARDS: { label: string; value: string; icon: string; gradient: string }[] = [
+    { label: 'Total Paid',   value: `₹${totalPaid.toLocaleString()}`,      icon: 'ri-line-chart-line',     gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+    { label: 'Pending',      value: pending.length.toLocaleString(),        icon: 'ri-time-line',           gradient: 'linear-gradient(135deg,#f7b84b,#ffd47a)' },
+    { label: 'Transactions', value: payments.length.toLocaleString(),       icon: 'ri-bank-card-line',      gradient: 'linear-gradient(135deg,#299cdb,#5fc8ff)' },
+    { label: 'Last Payment', value: lastPaymentLabel,                       icon: 'ri-calendar-line',       gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
+  ];
 
   const columns = useMemo(() => [
     {
@@ -117,11 +127,16 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
 
   return (
     <>
+      <style>{`
+        .payments-surface { background: #ffffff; }
+        [data-bs-theme="dark"] .payments-surface { background: #1c2531; }
+      `}</style>
+
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">
-              <button className="btn btn-sm btn-soft-primary me-2" onClick={onBack}>
+            <h4 className="mb-sm-0 d-flex align-items-center gap-2">
+              <button className="btn btn-sm btn-soft-secondary rounded-circle d-inline-flex align-items-center justify-content-center" style={{ width: 32, height: 32 }} onClick={onBack}>
                 <i className="ri-arrow-left-line"></i>
               </button>
               Payment History
@@ -138,80 +153,82 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
       </Row>
 
       <Row>
-        <Col md={3} sm={6}>
-          <Card className="card-animate">
-            <CardBody>
-              <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Total Paid</p>
-              <div className="d-flex align-items-end justify-content-between mt-3">
-                <h4 className="fs-22 fw-semibold mb-0">₹{totalPaid.toLocaleString()}</h4>
-                <div className="avatar-sm"><span className="avatar-title rounded bg-success-subtle text-success fs-3"><i className="ri-line-chart-line"></i></span></div>
+        <Col xs={12}>
+          <div
+            className="payments-surface"
+            style={{
+              borderRadius: 16,
+              border: '1px solid var(--vz-border-color)',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
+              padding: '20px',
+            }}
+          >
+            {/* ── KPI cards (single row, equal height) ── */}
+            <Row className="g-3 mb-3 align-items-stretch">
+              {KPI_CARDS.map(k => (
+                <Col key={k.label} md={3} sm={6} xs={12}>
+                  <div
+                    className="payments-surface"
+                    style={{
+                      borderRadius: 14,
+                      border: '1px solid var(--vz-border-color)',
+                      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                      padding: '16px 18px',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      height: '100%',
+                    }}
+                  >
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                          {k.label}
+                        </p>
+                        <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {k.value}
+                        </h3>
+                      </div>
+                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+                      </div>
+                    </div>
+                  </div>
+                </Col>
+              ))}
+            </Row>
+
+            {/* ── Title row ── */}
+            <Row className="g-2 align-items-center mb-3">
+              <Col xs={12}>
+                <h5 className="mb-0 fw-bold d-inline-flex align-items-center gap-2">
+                  All Payments
+                  <span className="badge bg-primary-subtle text-primary">{payments.length}</span>
+                </h5>
+              </Col>
+            </Row>
+
+            {/* ── Table ── */}
+            <TableContainer
+              columns={columns}
+              data={payments}
+              isGlobalFilter={true}
+              customPageSize={15}
+              tableClass="align-middle table-nowrap mb-0 "
+              theadClass="table-light"
+              divClass="table-responsive table-card border rounded"
+              SearchPlaceholder="Search by plan, txn ID, method..."
+            />
+            {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
+            {!loading && payments.length === 0 && (
+              <div className="text-center text-muted py-5">
+                <i className="ri-bill-line display-4 d-block mb-2"></i>
+                No payment records for this client yet.
               </div>
-            </CardBody>
-          </Card>
-        </Col>
-        <Col md={3} sm={6}>
-          <Card className="card-animate">
-            <CardBody>
-              <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Pending</p>
-              <div className="d-flex align-items-end justify-content-between mt-3">
-                <h4 className="fs-22 fw-semibold mb-0">{pending.length}</h4>
-                <div className="avatar-sm"><span className="avatar-title rounded bg-warning-subtle text-warning fs-3"><i className="ri-time-line"></i></span></div>
-              </div>
-            </CardBody>
-          </Card>
-        </Col>
-        <Col md={3} sm={6}>
-          <Card className="card-animate">
-            <CardBody>
-              <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Transactions</p>
-              <div className="d-flex align-items-end justify-content-between mt-3">
-                <h4 className="fs-22 fw-semibold mb-0">{payments.length}</h4>
-                <div className="avatar-sm"><span className="avatar-title rounded bg-info-subtle text-info fs-3"><i className="ri-bank-card-line"></i></span></div>
-              </div>
-            </CardBody>
-          </Card>
-        </Col>
-        <Col md={3} sm={6}>
-          <Card className="card-animate">
-            <CardBody>
-              <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Last Payment</p>
-              <div className="d-flex align-items-end justify-content-between mt-3">
-                <h6 className="mb-0">
-                  {lastPayment ? new Date(lastPayment.payment_date || lastPayment.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                </h6>
-                <div className="avatar-sm"><span className="avatar-title rounded bg-primary-subtle text-primary fs-3"><i className="ri-calendar-line"></i></span></div>
-              </div>
-            </CardBody>
-          </Card>
+            )}
+          </div>
         </Col>
       </Row>
-
-      <Card>
-        <CardHeader className="border-0 py-2">
-          <h5 className="card-title mb-0 fs-15">
-            All Payments <span className="badge bg-primary-subtle text-primary ms-1">{payments.length}</span>
-          </h5>
-        </CardHeader>
-        <CardBody className="pt-2">
-          <TableContainer
-            columns={columns}
-            data={payments}
-            isGlobalFilter={true}
-            customPageSize={15}
-            tableClass="align-middle table-nowrap mb-0"
-            theadClass="table-light"
-            divClass="table-responsive table-card border rounded"
-            SearchPlaceholder="Search by plan, txn ID, method..."
-          />
-          {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
-          {!loading && payments.length === 0 && (
-            <div className="text-center text-muted py-5">
-              <i className="ri-bill-line display-4 d-block mb-2"></i>
-              No payment records for this client yet.
-            </div>
-          )}
-        </CardBody>
-      </Card>
     </>
   );
 }
