@@ -28,6 +28,20 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   const [processing, setProcessing] = useState(false);
   const [paymentStep, setPaymentStep] = useState<'select' | 'processing' | 'success'>('select');
   const [txnResult, setTxnResult] = useState<any>(null);
+  const [darkTheme, setDarkTheme] = useState(false);
+
+  // Watch the document for Velzon dark-theme toggle
+  useEffect(() => {
+    const check = () => {
+      const html = document.documentElement;
+      const mode = html.getAttribute('data-layout-mode') || html.getAttribute('data-bs-theme');
+      setDarkTheme(mode === 'dark');
+    };
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-layout-mode', 'data-bs-theme'] });
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     api.get('/subscription/plans').then(res => setPlans(res.data || []))
@@ -280,7 +294,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
         </div>
       </div>
 
-      {/* Shine animation keyframes — shared across all cards */}
+      {/* Shine animation + custom thin scrollbar */}
       <style>{`
         @keyframes plan-shine-sweep {
           0%   { transform: translateX(-120%) skewX(-20deg); opacity: 0; }
@@ -288,6 +302,21 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
           35%  { transform: translateX(320%) skewX(-20deg); opacity: 0; }
           100% { transform: translateX(320%) skewX(-20deg); opacity: 0; }
         }
+        .plan-modules-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(124, 92, 252, 0.25) transparent;
+        }
+        .plan-modules-scroll::-webkit-scrollbar { width: 4px; }
+        .plan-modules-scroll::-webkit-scrollbar-track { background: transparent; }
+        .plan-modules-scroll::-webkit-scrollbar-thumb {
+          background: rgba(124, 92, 252, 0.22);
+          border-radius: 4px;
+          transition: background 0.2s ease;
+        }
+        .plan-modules-scroll::-webkit-scrollbar-thumb:hover { background: rgba(124, 92, 252, 0.45); }
+        .plan-modules-scroll.plan-scroll-dark { scrollbar-color: rgba(247, 184, 75, 0.30) transparent; }
+        .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb { background: rgba(247, 184, 75, 0.28); }
+        .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb:hover { background: rgba(247, 184, 75, 0.50); }
       `}</style>
 
       {plans.length === 0 ? (
@@ -299,9 +328,8 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
         <Row className="g-3">
           {plans.map((p, idx) => {
             const price = getPrice(p, billingCycle);
-            // Per-plan accent color — featured gets gold, rest cycle through premium palette
-            const PLAN_ACCENTS = ['#405189', '#0ab39c', '#299cdb', '#7c5cfc', '#e83e8c', '#f06548'];
-            const accent = p.is_featured ? '#f7b84b' : PLAN_ACCENTS[idx % PLAN_ACCENTS.length];
+            // Unified violet accent for all non-featured cards, gold for featured
+            const accent = p.is_featured ? '#f7b84b' : '#7c5cfc';
             return (
               <Col xl={3} lg={4} md={6} key={p.id} className="d-flex">
                 {(() => {
@@ -312,8 +340,14 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                   const textMuted = isDark ? 'rgba(255,255,255,0.65)' : 'var(--vz-secondary-color)';
                   const dividerColor = isDark ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color)';
                   const bgBase = isDark
-                    ? 'linear-gradient(160deg, #0b1324 0%, #1a2545 60%, #2d4373 100%)'
-                    : `linear-gradient(160deg, ${accent}0a 0%, var(--vz-card-bg) 45%)`;
+                    ? `
+                      linear-gradient(135deg, rgba(247,184,75,0.10) 0%, transparent 55%),
+                      linear-gradient(225deg, rgba(102,145,231,0.14) 0%, transparent 55%),
+                      linear-gradient(160deg, #0b1324 0%, #1a2545 60%, #2d4373 100%)
+                    `
+                    : darkTheme
+                      ? `linear-gradient(135deg, ${accent}14 0%, transparent 60%), var(--vz-card-bg)`
+                      : 'var(--vz-card-bg)';
 
                   return (
                     <Card
@@ -321,31 +355,64 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                       style={{
                         height: 560,
                         borderRadius: 20,
-                        border: isDark ? `1px solid ${accent}88` : '1px solid var(--vz-border-color)',
+                        border: isDark ? `1px solid ${accent}88` : `1px solid ${accent}30`,
                         background: bgBase,
                         boxShadow: isDark
-                          ? `0 14px 36px ${accent}38, 0 4px 12px rgba(0,0,0,0.12)`
-                          : '0 4px 14px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)',
+                          ? `
+                            0 20px 50px ${accent}38,
+                            0 12px 28px rgba(0,0,0,0.20),
+                            0 4px 10px rgba(0,0,0,0.10),
+                            inset 0 1px 0 rgba(255,255,255,0.06)
+                          `
+                          : darkTheme
+                            ? `
+                              0 14px 38px ${accent}30,
+                              0 6px 14px rgba(0,0,0,0.28),
+                              0 2px 6px rgba(0,0,0,0.16),
+                              inset 0 1px 0 rgba(255,255,255,0.05)
+                            `
+                            : `
+                              0 12px 32px ${accent}22,
+                              0 6px 14px rgba(15, 23, 42, 0.08),
+                              0 2px 6px rgba(15, 23, 42, 0.04),
+                              inset 0 1px 0 rgba(255,255,255,0.85)
+                            `,
                         display: 'flex',
                         flexDirection: 'column',
-                        transition: 'transform .25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow .25s ease, border-color .22s ease',
+                        transition: 'transform .28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow .28s ease, border-color .22s ease',
                         cursor: 'default',
                         position: 'relative',
                         overflow: 'hidden',
                       }}
                       onMouseEnter={e => {
                         const el = e.currentTarget as HTMLDivElement;
-                        el.style.transform = 'translateY(-6px)';
+                        el.style.transform = 'translateY(-8px)';
                         el.style.boxShadow = isDark
-                          ? `0 22px 50px ${accent}55, 0 6px 16px rgba(0,0,0,0.18)`
-                          : `0 16px 34px ${accent}30, 0 4px 10px rgba(15, 23, 42, 0.08)`;
-                        if (!isDark) el.style.borderColor = accent + '66';
-                        // Trigger a slow single shine sweep on hover
+                          ? `
+                            0 32px 70px ${accent}55,
+                            0 16px 36px rgba(0,0,0,0.28),
+                            0 6px 14px rgba(0,0,0,0.14),
+                            inset 0 1px 0 rgba(255,255,255,0.10)
+                          `
+                          : darkTheme
+                            ? `
+                              0 26px 60px ${accent}50,
+                              0 12px 28px rgba(0,0,0,0.40),
+                              0 4px 10px rgba(0,0,0,0.20),
+                              inset 0 1px 0 rgba(255,255,255,0.08)
+                            `
+                            : `
+                              0 24px 54px ${accent}40,
+                              0 12px 26px rgba(15, 23, 42, 0.12),
+                              0 4px 10px rgba(15, 23, 42, 0.06),
+                              inset 0 1px 0 rgba(255,255,255,0.95)
+                            `;
+                        if (!isDark) el.style.borderColor = accent + '70';
                         const shine = el.querySelector<HTMLDivElement>('.plan-shine-overlay');
                         if (shine) {
                           shine.style.animation = 'none';
                           // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-                          void shine.offsetWidth; // restart animation
+                          void shine.offsetWidth;
                           shine.style.animation = 'plan-shine-sweep 2.2s ease-out 1 forwards';
                         }
                       }}
@@ -353,9 +420,26 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                         const el = e.currentTarget as HTMLDivElement;
                         el.style.transform = 'translateY(0)';
                         el.style.boxShadow = isDark
-                          ? `0 14px 36px ${accent}38, 0 4px 12px rgba(0,0,0,0.12)`
-                          : '0 4px 14px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)';
-                        if (!isDark) el.style.borderColor = 'var(--vz-border-color)';
+                          ? `
+                            0 20px 50px ${accent}38,
+                            0 12px 28px rgba(0,0,0,0.20),
+                            0 4px 10px rgba(0,0,0,0.10),
+                            inset 0 1px 0 rgba(255,255,255,0.06)
+                          `
+                          : darkTheme
+                            ? `
+                              0 14px 38px ${accent}30,
+                              0 6px 14px rgba(0,0,0,0.28),
+                              0 2px 6px rgba(0,0,0,0.16),
+                              inset 0 1px 0 rgba(255,255,255,0.05)
+                            `
+                            : `
+                              0 12px 32px ${accent}22,
+                              0 6px 14px rgba(15, 23, 42, 0.08),
+                              0 2px 6px rgba(15, 23, 42, 0.04),
+                              inset 0 1px 0 rgba(255,255,255,0.85)
+                            `;
+                        if (!isDark) el.style.borderColor = accent + '30';
                       }}
                     >
                       {/* ── Corner badge (Active / Popular / Save %) ── */}
@@ -433,47 +517,40 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                         style={{ minHeight: 0, zIndex: 2 }}
                       >
                         {/* ── Plan name ── */}
-                        <h4
+                        <h5
                           className="mb-2 fw-bold"
-                          style={{ color: textMain, fontSize: 19, letterSpacing: '-0.01em' }}
+                          style={{ color: textMain, fontSize: 16, letterSpacing: '-0.01em' }}
                         >
                           {p.name}
-                        </h4>
+                        </h5>
 
-                        {/* ── Price ── */}
+                        {/* ── Price — colored per accent ── */}
                         <div className="mb-2">
                           {p.price <= 0 ? (
                             <div
                               className="fw-bold lh-1"
                               style={{
-                                fontSize: 44,
-                                background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text',
-                                display: 'inline-block',
+                                fontSize: 30,
+                                color: accent,
                                 letterSpacing: '-0.02em',
+                                display: 'inline-block',
                               }}
                             >
                               Free
                             </div>
                           ) : (
-                            <>
+                            <div className="d-inline-flex align-items-baseline justify-content-center gap-1">
+                              <small style={{ fontSize: 14, color: accent, fontWeight: 600, opacity: 0.75 }}>₹</small>
                               <span
                                 className="fw-bold lh-1"
-                                style={{
-                                  fontSize: 44,
-                                  color: isDark ? accent : textMain,
-                                  letterSpacing: '-0.02em',
-                                }}
+                                style={{ fontSize: 30, color: accent, letterSpacing: '-0.02em' }}
                               >
-                                <small style={{ fontSize: 20, opacity: 0.6, fontWeight: 500 }}>₹</small>
                                 {Math.round(price).toLocaleString()}
                               </span>
-                              <div style={{ color: textMuted, fontSize: 12, marginTop: 4 }}>
-                                / {billingCycle === 'month' ? 'month' : billingCycle === 'quarter' ? 'quarter' : 'year'} (INR)
-                              </div>
-                            </>
+                              <small style={{ fontSize: 11, color: textMuted, fontWeight: 500 }}>
+                                / {billingCycle === 'month' ? 'mo' : billingCycle === 'quarter' ? 'qtr' : 'yr'}
+                              </small>
+                            </div>
                           )}
                           {billingCycle === 'year' && p.yearly_discount && p.yearly_discount > 0 && (
                             <div className="mt-1" style={{ color: '#0ab39c', fontSize: 11, fontWeight: 600 }}>
@@ -488,16 +565,16 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                             className="mb-3"
                             style={{
                               color: textMuted,
-                              fontSize: 11.5,
-                              lineHeight: 1.5,
-                              minHeight: 34,
+                              fontSize: 11,
+                              lineHeight: 1.4,
+                              minHeight: 26,
                             }}
                           >
                             {p.best_for}
                           </p>
                         )}
 
-                        {/* ── Stat boxes 2×2 — dark/light aware ── */}
+                        {/* ── Stat boxes 2×2 — stylish cross gradient with glossy top ── */}
                         <Row className="gx-2 gy-2 mb-3">
                           {[
                             { icon: 'ri-git-branch-line',         label: 'Branches', val: p.max_branches  ?? '∞' },
@@ -507,44 +584,89 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                           ].map(l => (
                             <Col xs={6} key={l.label}>
                               <div
-                                className="rounded-3 p-2 text-center"
+                                className="rounded-2 d-flex align-items-center gap-2 px-2 py-2 position-relative"
                                 style={{
-                                  background: isDark ? 'rgba(255,255,255,0.06)' : 'var(--vz-secondary-bg)',
-                                  border: isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid var(--vz-border-color)',
-                                  transition: 'background .18s ease, border-color .18s ease',
+                                  background: (isDark || darkTheme)
+                                    ? `
+                                      linear-gradient(135deg, ${accent}26 0%, ${accent}10 45%, transparent 100%),
+                                      linear-gradient(225deg, ${accent}18 0%, transparent 60%),
+                                      rgba(255,255,255,0.04)
+                                    `
+                                    : `
+                                      linear-gradient(135deg, ${accent}22 0%, ${accent}10 45%, ${accent}06 100%),
+                                      linear-gradient(225deg, ${accent}18 0%, transparent 60%),
+                                      linear-gradient(180deg, rgba(255,255,255,0.55), transparent 60%),
+                                      var(--vz-card-bg)
+                                    `,
+                                  border: (isDark || darkTheme) ? `1px solid ${accent}40` : `1px solid ${accent}2e`,
+                                  boxShadow: (isDark || darkTheme)
+                                    ? `inset 0 1px 0 rgba(255,255,255,0.06)`
+                                    : `0 1px 3px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.7)`,
+                                  transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
+                                  overflow: 'hidden',
+                                }}
+                                onMouseEnter={e => {
+                                  const el = e.currentTarget as HTMLDivElement;
+                                  el.style.transform = 'translateY(-2px)';
+                                  el.style.boxShadow = (isDark || darkTheme)
+                                    ? `0 6px 18px ${accent}45, inset 0 1px 0 rgba(255,255,255,0.10)`
+                                    : `0 8px 20px ${accent}30, inset 0 1px 0 rgba(255,255,255,0.8)`;
+                                  el.style.borderColor = accent + '70';
+                                }}
+                                onMouseLeave={e => {
+                                  const el = e.currentTarget as HTMLDivElement;
+                                  el.style.transform = 'translateY(0)';
+                                  el.style.boxShadow = (isDark || darkTheme)
+                                    ? `inset 0 1px 0 rgba(255,255,255,0.06)`
+                                    : `0 1px 3px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.7)`;
+                                  el.style.borderColor = (isDark || darkTheme) ? accent + '40' : accent + '2e';
                                 }}
                               >
+                                {/* Top-right corner glow */}
                                 <div
-                                  className="d-inline-flex align-items-center justify-content-center rounded-2 mb-1"
                                   style={{
-                                    width: 24, height: 24,
-                                    background: accent + (isDark ? '28' : '15'),
-                                    border: `1px solid ${accent}${isDark ? '45' : '30'}`,
+                                    position: 'absolute',
+                                    top: -18, right: -18,
+                                    width: 42, height: 42,
+                                    borderRadius: '50%',
+                                    background: `radial-gradient(circle, ${accent}45 0%, transparent 70%)`,
+                                    pointerEvents: 'none',
                                   }}
-                                >
-                                  <i className={l.icon} style={{ color: accent, fontSize: 12 }} />
-                                </div>
+                                />
+                                {/* Left accent strip */}
                                 <div
-                                  className="text-uppercase fw-semibold"
                                   style={{
-                                    fontSize: 9.5,
-                                    color: textMuted,
-                                    letterSpacing: '0.05em',
-                                    lineHeight: 1.2,
-                                    marginBottom: 2,
+                                    position: 'absolute',
+                                    left: 0, top: '18%', bottom: '18%',
+                                    width: 2.5,
+                                    borderRadius: 2,
+                                    background: `linear-gradient(180deg, transparent 0%, ${accent} 50%, transparent 100%)`,
+                                    boxShadow: `0 0 6px ${accent}66`,
                                   }}
-                                >
-                                  {l.label}
-                                </div>
-                                <div
-                                  className="fw-bold text-truncate"
+                                />
+                                <i
+                                  className={l.icon}
                                   style={{
-                                    fontSize: 13,
-                                    color: textMain,
-                                    lineHeight: 1.2,
+                                    color: accent,
+                                    fontSize: 16,
+                                    flexShrink: 0,
+                                    marginLeft: 3,
+                                    filter: `drop-shadow(0 1px 2px ${accent}45)`,
                                   }}
-                                >
-                                  {l.val}
+                                />
+                                <div className="text-start min-w-0 flex-grow-1">
+                                  <div
+                                    className="text-uppercase fw-semibold"
+                                    style={{ fontSize: 8.5, color: textMuted, letterSpacing: '0.07em', lineHeight: 1.2 }}
+                                  >
+                                    {l.label}
+                                  </div>
+                                  <div
+                                    className="fw-bold text-truncate"
+                                    style={{ fontSize: 12.5, color: textMain, lineHeight: 1.25, marginTop: 1 }}
+                                  >
+                                    {l.val}
+                                  </div>
                                 </div>
                               </div>
                             </Col>
@@ -554,22 +676,23 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                         {/* ── Divider ── */}
                         <div style={{ height: 1, background: dividerColor, margin: '0 -4px 12px' }} />
 
-                        {/* ── Modules list — scrollable ── */}
+                        {/* ── Included modules header ── */}
                         {p.modules && p.modules.length > 0 && (
                           <div className="d-flex align-items-center justify-content-between mb-2">
                             <span
                               className="text-uppercase fw-bold"
-                              style={{ fontSize: 9.5, letterSpacing: '0.06em', color: textMuted }}
+                              style={{ fontSize: 9, letterSpacing: '0.08em', color: textMuted }}
                             >
-                              Modules
+                              Included Modules
                             </span>
                             <span
                               className="rounded-pill px-2 fw-bold"
                               style={{
-                                fontSize: 10,
-                                background: '#0ab39c20',
-                                color: '#0ab39c',
-                                border: '1px solid #0ab39c40',
+                                fontSize: 9.5,
+                                background: accent + '20',
+                                color: accent,
+                                border: `1px solid ${accent}45`,
+                                padding: '2px 7px',
                               }}
                             >
                               {p.modules.length}
@@ -577,44 +700,31 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                           </div>
                         )}
                         <ul
-                          className="list-unstyled vstack gap-2 mb-0 pe-1 text-start"
+                          className={`list-unstyled vstack gap-1 mb-0 pe-1 text-start plan-modules-scroll ${isDark ? 'plan-scroll-dark' : ''}`}
                           style={{
                             overflowY: 'auto',
                             flex: '1 1 auto',
                             minHeight: 0,
-                            scrollbarWidth: 'thin',
                           }}
                         >
                           {(p.modules || []).map(m => (
-                            <li key={m.id} className="d-flex align-items-center gap-2">
-                              <span
-                                className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                            <li key={m.id} className="d-flex align-items-center gap-2" title={m.name}>
+                              <i
+                                className="ri-check-line flex-shrink-0"
                                 style={{
-                                  width: 18, height: 18,
-                                  background: m.pivot?.access_level === 'limited' ? '#f7b84b' : '#0ab39c',
-                                  boxShadow: `0 2px 6px ${m.pivot?.access_level === 'limited' ? 'rgba(247,184,75,0.30)' : 'rgba(10,179,156,0.30)'}`,
+                                  color: m.pivot?.access_level === 'limited' ? '#f7b84b' : '#0ab39c',
+                                  fontSize: 13,
+                                  fontWeight: 700,
                                 }}
-                              >
-                                <i className="ri-check-line" style={{ color: '#fff', fontSize: 11, fontWeight: 700 }} />
-                              </span>
-                              <span style={{ color: textMain, fontSize: 12.5 }} className="text-truncate flex-grow-1">
+                              />
+                              <span className="text-truncate flex-grow-1" style={{ color: textMain, fontSize: 10.5 }}>
                                 {m.name}
+                                {m.pivot?.access_level && m.pivot.access_level !== 'full' && (
+                                  <span className="text-muted ms-1" style={{ fontSize: 10 }}>
+                                    ({m.pivot.access_level})
+                                  </span>
+                                )}
                               </span>
-                              {m.pivot?.access_level === 'limited' && (
-                                <span
-                                  className="badge rounded-pill flex-shrink-0"
-                                  style={{
-                                    fontSize: 9,
-                                    fontWeight: 600,
-                                    background: '#f7b84b22',
-                                    color: '#f7b84b',
-                                    border: '1px solid #f7b84b40',
-                                    padding: '2px 6px',
-                                  }}
-                                >
-                                  Limited
-                                </span>
-                              )}
                             </li>
                           ))}
                         </ul>
