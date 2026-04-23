@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card, CardBody, CardHeader, Row, Col,
-  Button, Badge, Input, Label, Form, Table,
+  Button, Badge, Input, Label, Form,
   Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
 } from 'reactstrap';
 import Swal from 'sweetalert2';
 import api from '../../api';
 import MasterPlaceholder from '../MasterPlaceholder';
+import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   getMasterConfig,
@@ -36,7 +37,6 @@ function MasterPageInner({
   const [records, setRecords] = useState<any[]>([]);
   const [refData, setRefData] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -57,7 +57,7 @@ function MasterPageInner({
         { key: '__creator', label: 'Created By' },
       ];
     }
-    if (ut === 'client_admin' || ut === 'client_user') {
+    if (ut === 'client_admin') {
       return [
         { key: '__branch',  label: 'Branch' },
         { key: '__creator', label: 'Created By' },
@@ -95,7 +95,6 @@ function MasterPageInner({
   useEffect(() => {
     let aborted = false;
     setLoading(true);
-    setSearch('');
     setEditingId(null);
     setViewOnly(false);
     setModalOpen(false);
@@ -118,18 +117,6 @@ function MasterPageInner({
 
     return () => { aborted = true; };
   }, [cfg.slug, refSlugs.join('|')]);
-
-  const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    if (!s) return records;
-    return records.filter(r =>
-      cfg.cols.some(c => {
-        const f = cfg.fields.find(ff => ff.n === c);
-        const val = f?.ref ? resolveRefLabel(f.ref, f.refL, r[c]) : r[c];
-        return String(val ?? '').toLowerCase().includes(s);
-      }),
-    );
-  }, [records, search, cfg, refData]);
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
 
@@ -222,6 +209,82 @@ function MasterPageInner({
     return <span className="text-dark">{String(raw)}</span>;
   };
 
+  // Columns for TableContainer (TanStack Table). Built dynamically from cfg.cols + ownershipCols
+  // so every master automatically gets the same look as the Clients table (Clients.tsx).
+  const columns = useMemo(() => {
+    const cols: any[] = [
+      {
+        header: '#',
+        accessorKey: '__index',
+        cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
+      },
+      {
+        header: 'Icon',
+        accessorKey: '__icon',
+        enableGlobalFilter: false,
+        cell: () => (
+          <div className="avatar-xs">
+            <span className={`avatar-title rounded bg-${cfg.iconBg}-subtle text-${cfg.iconColor} fs-4`}>
+              <i className={cfg.icon}></i>
+            </span>
+          </div>
+        ),
+      },
+    ];
+    cfg.cols.forEach((colName, idx) => {
+      cols.push({
+        header: cfg.colL[idx] || colName,
+        // Accessor: resolve ref labels upfront so TableContainer's global filter can search them.
+        accessorFn: (row: any) => {
+          const f = cfg.fields.find(ff => ff.n === colName);
+          if (f?.ref) return resolveRefLabel(f.ref, f.refL, row[colName]);
+          return row[colName];
+        },
+        id: `col_${colName}`,
+        cell: (info: any) => {
+          const row = info.row.original;
+          if (idx === 0 && colName !== 'status') {
+            const f = cfg.fields.find(ff => ff.n === colName);
+            const val = f?.ref ? resolveRefLabel(f.ref, f.refL, row[colName]) || '—' : row[colName] ?? '—';
+            return <strong>{val}</strong>;
+          }
+          return formatCell(colName, row);
+        },
+      });
+    });
+    ownershipCols.forEach(o => {
+      cols.push({
+        header: o.label,
+        id: o.key,
+        accessorFn: (row: any) =>
+          o.key === '__client' ? row.client_name :
+          o.key === '__branch' ? row.branch_name :
+          o.key === '__creator' ? row.creator_name : '',
+        cell: (info: any) => renderOwnership(o.key, info.row.original),
+      });
+    });
+    cols.push({
+      header: () => <div className="text-end">Actions</div>,
+      id: '__actions',
+      enableGlobalFilter: false,
+      cell: (info: any) => (
+        <div className="d-flex justify-content-end gap-1">
+          <Button size="sm" color="soft-secondary" onClick={() => openEdit(info.row.original, true)} title="View">
+            <i className="ri-eye-line"></i>
+          </Button>
+          <Button size="sm" color="soft-primary" onClick={() => openEdit(info.row.original)} title="Edit">
+            <i className="ri-pencil-line"></i>
+          </Button>
+          <Button size="sm" color="soft-danger" onClick={() => handleDelete(info.row.original)} title="Delete">
+            <i className="ri-delete-bin-line"></i>
+          </Button>
+        </div>
+      ),
+    });
+    return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg, ownershipCols, refData]);
+
   const renderOwnership = (key: string, row: any): React.ReactNode => {
     if (key === '__client') {
       const name = row.client_name;
@@ -292,29 +355,22 @@ function MasterPageInner({
       <Row>
         <Col xs={12}>
           <Card className="shadow-sm">
-            <CardHeader className="bg-light-subtle border-bottom">
+            <CardHeader className="border-0 py-2">
               <Row className="g-2 align-items-center">
-                <Col md={5}>
+                <Col md>
                   <div className="d-flex align-items-center gap-2">
                     <i className={`${cfg.icon} fs-4 text-${cfg.iconColor}`}></i>
                     <div>
-                      <h5 className="mb-0">Manage {cfg.title}</h5>
+                      <h5 className="card-title mb-0 fs-15">
+                        Manage {cfg.title}
+                        <span className="badge bg-primary-subtle text-primary ms-2">{records.length}</span>
+                      </h5>
                       <small className="text-muted">{cfg.desc}</small>
                     </div>
                   </div>
                 </Col>
-                <Col md={4}>
-                  <div className="search-box">
-                    <Input
-                      type="text"
-                      placeholder={`Search ${cfg.title.toLowerCase()}…`}
-                      value={search}
-                      onChange={e => setSearch(e.target.value)}
-                    />
-                  </div>
-                </Col>
-                <Col md={3} className="text-md-end">
-                  <Button color={cfg.iconColor} className="btn-label waves-effect waves-light rounded-pill" onClick={openAdd}>
+                <Col md="auto">
+                  <Button color={cfg.iconColor} size="sm" className="btn-label waves-effect waves-light rounded-pill" onClick={openAdd}>
                     <i className="ri-add-line label-icon align-middle fs-16 me-2"></i>
                     Add New
                   </Button>
@@ -322,76 +378,22 @@ function MasterPageInner({
               </Row>
             </CardHeader>
 
-            <CardBody>
-              {loading ? (
-                <div className="text-center py-5">
-                  <Spinner /> <span className="ms-2 text-muted">Loading…</span>
-                </div>
-              ) : filtered.length === 0 ? (
+            <CardBody className="pt-2">
+              <TableContainer
+                columns={columns}
+                data={records}
+                isGlobalFilter={true}
+                customPageSize={15}
+                tableClass="align-middle table-nowrap mb-0"
+                theadClass="table-light"
+                divClass="table-responsive table-card border rounded"
+                SearchPlaceholder={`Search ${cfg.title.toLowerCase()}...`}
+              />
+              {loading && <div className="text-center py-5"><Spinner /></div>}
+              {!loading && records.length === 0 && (
                 <div className="text-center py-5">
                   <i className="ri-inbox-line display-5 text-muted"></i>
                   <p className="text-muted mt-2">No records found</p>
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <Table className="align-middle table-nowrap mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th style={{ width: 60 }}>#</th>
-                        <th style={{ width: 70 }}>Icon</th>
-                        {cfg.cols.map((colName, idx) => (
-                          <th key={colName} style={colName === 'status' ? { width: 100 } : undefined}>
-                            {cfg.colL[idx] || colName}
-                          </th>
-                        ))}
-                        {ownershipCols.map(o => (
-                          <th key={o.key}>{o.label}</th>
-                        ))}
-                        <th style={{ width: 150 }} className="text-end">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((row, i) => (
-                        <tr key={row.id}>
-                          <td className="text-muted">{i + 1}</td>
-                          <td>
-                            <div className="avatar-xs">
-                              <span className={`avatar-title rounded bg-${cfg.iconBg}-subtle text-${cfg.iconColor} fs-4`}>
-                                <i className={cfg.icon}></i>
-                              </span>
-                            </div>
-                          </td>
-                          {cfg.cols.map((colName, idx) => (
-                            <td key={colName} className={idx === 0 ? '' : 'text-muted'}>
-                              {idx === 0 && colName !== 'status' ? (
-                                <strong>{(() => {
-                                  const f = cfg.fields.find(ff => ff.n === colName);
-                                  if (f?.ref) return resolveRefLabel(f.ref, f.refL, row[colName]) || '—';
-                                  return row[colName] ?? '—';
-                                })()}</strong>
-                              ) : (
-                                formatCell(colName, row)
-                              )}
-                            </td>
-                          ))}
-                          {ownershipCols.map(o => (
-                            <td key={o.key}>{renderOwnership(o.key, row)}</td>
-                          ))}
-                          <td className="text-end">
-                            <Button size="sm" color="soft-secondary" className="me-1" onClick={() => openEdit(row, true)} title="View">
-                              <i className="ri-eye-line"></i>
-                            </Button>
-                            <Button size="sm" color="soft-primary" className="me-1" onClick={() => openEdit(row)} title="Edit">
-                              <i className="ri-pencil-line"></i>
-                            </Button>
-                            <Button size="sm" color="soft-danger" onClick={() => handleDelete(row)} title="Delete">
-                              <i className="ri-delete-bin-line"></i>
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
                 </div>
               )}
             </CardBody>

@@ -30,5 +30,8 @@ class DatabaseSeeder extends Seeder
                 'employee_code' => 'SA001',
             ]
         );
+
+        // Seed every master table with 10+ admin-created rows (idempotent).
+        $this->call(MasterDataSeeder::class);
     }
 }
