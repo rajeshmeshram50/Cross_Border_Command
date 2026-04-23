@@ -66,16 +66,20 @@ export default function TopNav({ current, onNavigate }: Props) {
     return out;
   }, [user, perms, planExpiredOrMissing]);
 
-  // Close dropdowns on outside click
+  // Close dropdowns on outside click — uses `mousedown` (fires before React's synthetic
+  // click) and skips targets tagged `data-dropdown-toggle` so clicking any toggle button
+  // doesn't race-close the dropdown it just opened.
   useEffect(() => {
+    if (!openParent && !notifOpen) return;
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('.topnav-parent')) setOpenParent(null);
-      if (!target.closest('.notif-wrap')) setNotifOpen(false);
+      if (target.closest('[data-dropdown-toggle]')) return;
+      if (openParent && !target.closest('.topnav-parent')) setOpenParent(null);
+      if (notifOpen  && !target.closest('.notif-wrap'))    setNotifOpen(false);
     };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, []);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [openParent, notifOpen]);
 
   if (!user) return null;
 
@@ -101,7 +105,11 @@ export default function TopNav({ current, onNavigate }: Props) {
             return (
               <div key={m.id} className="relative topnav-parent flex-shrink-0">
                 <button
-                  onClick={(e) => { e.stopPropagation(); setOpenParent(isOpen ? null : m.id); }}
+                  data-dropdown-toggle
+                  onClick={() => {
+                    setOpenParent(prev => (prev === m.id ? null : m.id));
+                    setNotifOpen(false);
+                  }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium whitespace-nowrap transition-all duration-150 cursor-pointer ${
                     parentActive
                       ? 'bg-primary text-white font-semibold shadow-md shadow-primary/35'
@@ -209,7 +217,11 @@ export default function TopNav({ current, onNavigate }: Props) {
         {/* Notifications */}
         <div className="relative notif-wrap">
           <button
-            onClick={(e) => { e.stopPropagation(); setNotifOpen(!notifOpen); }}
+            data-dropdown-toggle
+            onClick={() => {
+              setNotifOpen(v => !v);
+              setOpenParent(null);
+            }}
             className="relative w-8 h-8 rounded-md border border-white/12 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/[.06] hover:border-white/25 transition-all cursor-pointer"
           >
             <Icons.Bell size={14} />
