@@ -230,17 +230,27 @@ const TableContainer = ({
         <div className="col-sm-auto">
           <ul className="pagination pagination-separated pagination-md justify-content-center justify-content-sm-start mb-0">
             <li className={!getCanPreviousPage() ? "page-item disabled" : "page-item"}>
-              <Link to="#" className="page-link" onClick={previousPage}>Previous</Link>
+              <Link to="#" className="page-link" onClick={previousPage}><i className="ri-arrow-left-s-line"></i></Link>
             </li>
-            {getPageOptions().map((item: any, key: number) => (
-              <React.Fragment key={key}>
-                <li className="page-item">
-                  <Link to="#" className={getState().pagination.pageIndex === item ? "page-link active" : "page-link"} onClick={() => setPageIndex(item)}>{item + 1}</Link>
-                </li>
-              </React.Fragment>
-            ))}
+            {getPageOptions().map((item: any, key: number) => {
+              const isActive = getState().pagination.pageIndex === item;
+              return (
+                <React.Fragment key={key}>
+                  <li className="page-item">
+                    <Link
+                      to="#"
+                      className={isActive ? "page-link active" : "page-link"}
+                      style={isActive ? { backgroundColor: 'var(--vz-secondary)', borderColor: 'var(--vz-secondary)', color: '#fff' } : undefined}
+                      onClick={() => setPageIndex(item)}
+                    >
+                      {item + 1}
+                    </Link>
+                  </li>
+                </React.Fragment>
+              );
+            })}
             <li className={!getCanNextPage() ? "page-item disabled" : "page-item"}>
-              <Link to="#" className="page-link" onClick={nextPage}>Next</Link>
+              <Link to="#" className="page-link" onClick={nextPage}><i className="ri-arrow-right-s-line"></i></Link>
             </li>
           </ul>
         </div>
