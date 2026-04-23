@@ -11,6 +11,7 @@ export default function Profile() {
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
+  const [showAllPerms, setShowAllPerms] = useState(false);
 
   if (!user) return null;
 
@@ -543,17 +544,39 @@ export default function Profile() {
       {!isSuperAdmin && user.permissions && Object.keys(user.permissions).length > 0 && (
         <Row className="mt-1">
           <Col xs={12}>
-            <Card className="mb-0" style={cardStyle}>
+            <Card className="mb-3" style={cardStyle}>
               <CardBody>
                 <SectionHeader
                   title="Your Permissions"
                   gradient={GRAD_PURPLE}
                   icon="ri-shield-check-line"
-                  action={(
-                    <span className="badge rounded-pill fw-semibold fs-11 px-2 py-1" style={{ background: 'rgba(106,90,205,0.12)', color: '#6a5acd' }}>
-                      {Object.keys(user.permissions).length} {Object.keys(user.permissions).length === 1 ? 'module' : 'modules'}
-                    </span>
-                  )}
+                  action={(() => {
+                    const totalModules = Object.keys(user.permissions).length;
+                    return (
+                      <div className="d-inline-flex align-items-center gap-2">
+                        <span className="badge rounded-pill fw-semibold fs-11 px-2 py-1" style={{ background: 'rgba(106,90,205,0.12)', color: '#6a5acd' }}>
+                          {totalModules} {totalModules === 1 ? 'module' : 'modules'}
+                        </span>
+                        {totalModules > 5 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllPerms(v => !v)}
+                            className="btn btn-sm rounded-pill d-inline-flex align-items-center gap-1 fw-semibold fs-12"
+                            style={{
+                              background: showAllPerms ? 'rgba(106,90,205,0.12)' : 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)',
+                              color: showAllPerms ? '#6a5acd' : '#fff',
+                              border: 'none',
+                              padding: '4px 12px',
+                              boxShadow: showAllPerms ? 'none' : '0 4px 10px rgba(106,90,205,0.28)',
+                            }}
+                          >
+                            <i className={showAllPerms ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'}></i>
+                            {showAllPerms ? 'View Less' : 'View More'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 />
                 <p className="text-muted fs-12 mb-3">Modules you have access to and the actions you can perform.</p>
                 <style>{`
@@ -561,21 +584,17 @@ export default function Profile() {
                     display: grid;
                     gap: 8px;
                     grid-template-columns: repeat(1, minmax(0, 1fr));
-                    max-height: 640px;
-                    overflow-y: auto;
-                    padding-right: 6px;
                   }
                   @media (min-width: 576px)  { .perm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
                   @media (min-width: 992px)  { .perm-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
                   @media (min-width: 1200px) { .perm-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
                   @media (min-width: 1400px) { .perm-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
-                  .perm-grid::-webkit-scrollbar { width: 8px; }
-                  .perm-grid::-webkit-scrollbar-track { background: transparent; }
-                  .perm-grid::-webkit-scrollbar-thumb { background: var(--vz-border-color); border-radius: 8px; }
-                  .perm-grid::-webkit-scrollbar-thumb:hover { background: #6a5acd; }
                 `}</style>
                 <div className="perm-grid">
-                  {Object.entries(user.permissions as Record<string, Record<string, boolean>>).map(([slug, perms]) => {
+                  {(showAllPerms
+                    ? Object.entries(user.permissions as Record<string, Record<string, boolean>>)
+                    : Object.entries(user.permissions as Record<string, Record<string, boolean>>).slice(0, 5)
+                  ).map(([slug, perms]) => {
                     const entries = Object.entries(perms);
                     const enabled = entries.filter(([, v]) => v).length;
                     const total = entries.length;
