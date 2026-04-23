@@ -37,6 +37,31 @@ class ClientController extends Controller
         return response()->json($clients);
     }
 
+    /**
+     * KPI card stats for the Clients listing page.
+     */
+    public function stats()
+    {
+        $total    = Client::count();
+        $active   = Client::where('status', 'active')->count();
+        $inactive = Client::where('status', '!=', 'active')->count();
+
+        // Plan-wise breakdown by name (Free for un-planned)
+        $planBreakdown = Client::leftJoin('plans', 'clients.plan_id', '=', 'plans.id')
+            ->select(DB::raw("COALESCE(plans.name, 'Free') as plan_name"), DB::raw('count(*) as count'))
+            ->groupBy('plan_name')
+            ->orderByDesc('count')
+            ->get();
+
+        return response()->json([
+            'total'           => $total,
+            'active'          => $active,
+            'inactive'        => $inactive,
+            'plans_count'     => $planBreakdown->count(),
+            'plan_breakdown'  => $planBreakdown,
+        ]);
+    }
+
     public function store(Request $request)
     {
         $request->validate([

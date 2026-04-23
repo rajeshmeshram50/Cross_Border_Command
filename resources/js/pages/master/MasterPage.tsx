@@ -8,6 +8,7 @@ import {
 import Swal from 'sweetalert2';
 import api from '../../api';
 import MasterPlaceholder from '../MasterPlaceholder';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   getMasterConfig,
   type FieldDef,
@@ -31,6 +32,7 @@ function MasterPageInner({
   cfg: MasterConfig;
   navigate: ReturnType<typeof useNavigate>;
 }) {
+  const { user } = useAuth();
   const [records, setRecords] = useState<any[]>([]);
   const [refData, setRefData] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
@@ -40,6 +42,32 @@ function MasterPageInner({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Ownership columns injected by role:
+  //  - super_admin      -> Client | Branch | Created By
+  //  - client_admin/user -> Branch | Created By
+  //  - branch_user      -> Created By
+  // These columns render directly from the API (rows include client_name, branch_name, creator_name).
+  const ownershipCols = useMemo<{ key: string; label: string }[]>(() => {
+    const ut = user?.user_type;
+    if (ut === 'super_admin') {
+      return [
+        { key: '__client',  label: 'Client' },
+        { key: '__branch',  label: 'Branch' },
+        { key: '__creator', label: 'Created By' },
+      ];
+    }
+    if (ut === 'client_admin' || ut === 'client_user') {
+      return [
+        { key: '__branch',  label: 'Branch' },
+        { key: '__creator', label: 'Created By' },
+      ];
+    }
+    if (ut === 'branch_user') {
+      return [{ key: '__creator', label: 'Created By' }];
+    }
+    return [];
+  }, [user?.user_type]);
 
   // ref masters referenced by this master's fields
   const refSlugs = useMemo(() => {
@@ -194,6 +222,38 @@ function MasterPageInner({
     return <span className="text-dark">{String(raw)}</span>;
   };
 
+  const renderOwnership = (key: string, row: any): React.ReactNode => {
+    if (key === '__client') {
+      const name = row.client_name;
+      return name
+        ? <span className="text-dark">{name}</span>
+        : <span className="text-muted">—</span>;
+    }
+    if (key === '__branch') {
+      const name = row.branch_name;
+      return name
+        ? <span className="badge bg-info-subtle text-info border border-info-subtle">{name}</span>
+        : <span className="text-muted">—</span>;
+    }
+    if (key === '__creator') {
+      const name = row.creator_name;
+      if (!name) return <span className="text-muted">—</span>;
+      // Show a small hint line indicating which scope the row belongs to.
+      const scope = row.branch_name
+        ? `Branch: ${row.branch_name}`
+        : row.client_name
+        ? `Client: ${row.client_name}`
+        : null;
+      return (
+        <div>
+          <div className="text-dark fw-medium">{name}</div>
+          {scope && <div className="text-muted fs-11">{scope}</div>}
+        </div>
+      );
+    }
+    return null;
+  };
+
   const singular = cfg.titleSingular || cfg.title;
 
   return (
@@ -284,6 +344,9 @@ function MasterPageInner({
                             {cfg.colL[idx] || colName}
                           </th>
                         ))}
+                        {ownershipCols.map(o => (
+                          <th key={o.key}>{o.label}</th>
+                        ))}
                         <th style={{ width: 150 }} className="text-end">Actions</th>
                       </tr>
                     </thead>
@@ -310,6 +373,9 @@ function MasterPageInner({
                                 formatCell(colName, row)
                               )}
                             </td>
+                          ))}
+                          {ownershipCols.map(o => (
+                            <td key={o.key}>{renderOwnership(o.key, row)}</td>
                           ))}
                           <td className="text-end">
                             <Button size="sm" color="soft-secondary" className="me-1" onClick={() => openEdit(row, true)} title="View">
