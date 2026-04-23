@@ -1,11 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Label, Spinner,
   Modal, ModalHeader, ModalBody, ModalFooter,
 } from 'reactstrap';
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { Navigation, Pagination } from 'swiper/modules';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+// @ts-ignore
+import 'swiper/css';
+// @ts-ignore
+import 'swiper/css/navigation';
+// @ts-ignore
+import 'swiper/css/pagination';
 
 interface Plan {
   id: number; name: string; price: number; period: string;
@@ -29,6 +37,8 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   const [paymentStep, setPaymentStep] = useState<'select' | 'processing' | 'success'>('select');
   const [txnResult, setTxnResult] = useState<any>(null);
   const [darkTheme, setDarkTheme] = useState(false);
+  const prevRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
 
   // Watch the document for Velzon dark-theme toggle
   useEffect(() => {
@@ -317,6 +327,65 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
         .plan-modules-scroll.plan-scroll-dark { scrollbar-color: rgba(247, 184, 75, 0.30) transparent; }
         .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb { background: rgba(247, 184, 75, 0.28); }
         .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb:hover { background: rgba(247, 184, 75, 0.50); }
+
+        /* ── Swiper carousel styling ── */
+        .plansel-swiper-outer {
+          position: relative;
+          padding: 0 52px;
+        }
+        .plansel-swiper {
+          padding-top: 10px !important;
+          padding-bottom: 36px !important;
+        }
+        .plansel-nav-btn {
+          position: absolute;
+          top: calc(50% - 18px);
+          transform: translateY(-50%);
+          z-index: 10;
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          border: 1px solid var(--vz-border-color);
+          background: var(--vz-card-bg, #fff);
+          color: #7c5cfc;
+          font-size: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          box-shadow: 0 6px 18px rgba(124,92,252,0.18);
+          transition: all 0.2s ease;
+          outline: none;
+        }
+        .plansel-nav-btn:hover:not(:disabled) {
+          background: linear-gradient(135deg, #7c5cfc, #6366f1);
+          color: #fff;
+          border-color: #7c5cfc;
+          box-shadow: 0 10px 24px rgba(124,92,252,0.40);
+          transform: translateY(-50%) scale(1.08);
+        }
+        .plansel-nav-btn:disabled {
+          opacity: 0.30;
+          cursor: not-allowed;
+        }
+        .plansel-nav-prev { left: 0; }
+        .plansel-nav-next { right: 0; }
+        [data-layout-mode="dark"] .plansel-nav-btn,
+        [data-bs-theme="dark"] .plansel-nav-btn {
+          background: var(--vz-card-bg);
+          box-shadow: 0 6px 18px rgba(124,92,252,0.35);
+        }
+
+        /* Violet pagination bullets */
+        .plansel-swiper .swiper-pagination-bullet {
+          background: #7c5cfc !important;
+          opacity: 0.35;
+          transition: all 0.2s ease;
+        }
+        .plansel-swiper .swiper-pagination-bullet-active {
+          opacity: 1;
+          transform: scale(1.3);
+        }
       `}</style>
 
       {plans.length === 0 ? (
@@ -325,13 +394,35 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
           <p className="text-muted mt-3">No plans available. Contact administrator.</p>
         </CardBody></Card>
       ) : (
-        <Row className="g-3">
+        <div className="plansel-swiper-outer">
+          <button ref={prevRef} type="button" className="plansel-nav-btn plansel-nav-prev" aria-label="Previous">
+            <i className="ri-arrow-left-s-line"></i>
+          </button>
+          <Swiper
+            modules={[Navigation, Pagination]}
+            onBeforeInit={swiper => {
+              if (typeof swiper.params.navigation === 'object' && swiper.params.navigation) {
+                (swiper.params.navigation as any).prevEl = prevRef.current;
+                (swiper.params.navigation as any).nextEl = nextRef.current;
+              }
+            }}
+            navigation={{ prevEl: prevRef.current, nextEl: nextRef.current }}
+            pagination={{ clickable: true, dynamicBullets: true }}
+            loop={plans.length > 3}
+            breakpoints={{
+              0:    { slidesPerView: 1, spaceBetween: 12 },
+              576:  { slidesPerView: 2, spaceBetween: 14 },
+              992:  { slidesPerView: 3, spaceBetween: 18 },
+              1400: { slidesPerView: 4, spaceBetween: 20 },
+            }}
+            className="plansel-swiper"
+          >
           {plans.map((p, idx) => {
             const price = getPrice(p, billingCycle);
             // Unified violet accent for all non-featured cards, gold for featured
             const accent = p.is_featured ? '#f7b84b' : '#7c5cfc';
             return (
-              <Col xl={3} lg={4} md={6} key={p.id} className="d-flex">
+              <SwiperSlide key={p.id} style={{ height: 'auto', display: 'flex' }}>
                 {(() => {
                   const isCurrent = hasPlan
                     && user?.plan?.plan_name?.toLowerCase() === p.name.toLowerCase();
@@ -775,10 +866,14 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                     </Card>
                   );
                 })()}
-              </Col>
+              </SwiperSlide>
             );
           })}
-        </Row>
+          </Swiper>
+          <button ref={nextRef} type="button" className="plansel-nav-btn plansel-nav-next" aria-label="Next">
+            <i className="ri-arrow-right-s-line"></i>
+          </button>
+        </div>
       )}
 
       {/* Payment Modal */}

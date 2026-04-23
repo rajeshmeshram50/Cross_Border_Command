@@ -119,15 +119,42 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
   const handleDelete = async (plan: Plan) => {
     const result = await Swal.fire({
       title: 'Delete Plan?',
-      html: `Delete <strong>"${plan.name}"</strong> plan? This cannot be undone.`,
-      icon: 'warning', showCancelButton: true,
-      confirmButtonText: 'Delete', confirmButtonColor: '#f06548', cancelButtonColor: '#878a99',
+      html: `Delete <strong>"${plan.name}"</strong> plan?<br/><span style="font-size:12px;opacity:0.75;">This action cannot be undone.</span>`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '<i class="ri-delete-bin-line" style="margin-right:4px;"></i> Delete',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#f06548',
+      cancelButtonColor: '#878a99',
+      width: 360,
+      padding: '1.2em 1.2em 1.4em',
+      backdrop: 'rgba(15, 23, 42, 0.45)',
+      customClass: {
+        popup: 'plans-swal-popup',
+        title: 'plans-swal-title',
+        htmlContainer: 'plans-swal-html',
+        confirmButton: 'plans-swal-confirm',
+        cancelButton: 'plans-swal-cancel',
+        actions: 'plans-swal-actions',
+        icon: 'plans-swal-icon',
+      },
+      buttonsStyling: false,
     });
     if (!result.isConfirmed) return;
     setDeleting(plan.id);
     try {
       await api.delete(`/plans/${plan.id}`);
-      Swal.fire({ title: 'Deleted!', text: `"${plan.name}" has been removed.`, icon: 'success', timer: 1800, showConfirmButton: false });
+      Swal.fire({
+        title: 'Deleted!',
+        text: `"${plan.name}" has been removed.`,
+        icon: 'success',
+        timer: 1800,
+        showConfirmButton: false,
+        width: 340,
+        padding: '1.2em',
+        backdrop: 'rgba(15, 23, 42, 0.45)',
+        customClass: { popup: 'plans-swal-popup', title: 'plans-swal-title' },
+      });
       fetchPlans();
     } catch (err: any) {
       toast.error('Delete Failed', err.response?.data?.message || 'Cannot delete plan');
@@ -176,6 +203,75 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
         }
         .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb:hover {
           background: rgba(247, 184, 75, 0.50);
+        }
+
+        /* ── Compact Delete Confirmation Popup ── */
+        .swal2-container.swal2-backdrop-show {
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+        }
+        .plans-swal-popup {
+          border-radius: 16px !important;
+          box-shadow: 0 24px 60px rgba(15,23,42,0.25), 0 8px 20px rgba(15,23,42,0.12) !important;
+          border: 1px solid rgba(15,23,42,0.08) !important;
+        }
+        .plans-swal-icon {
+          width: 56px !important;
+          height: 56px !important;
+          margin: 0 auto 0.6em !important;
+          border-width: 2px !important;
+        }
+        .plans-swal-icon .swal2-icon-content {
+          font-size: 2rem !important;
+        }
+        .plans-swal-title {
+          font-size: 16px !important;
+          font-weight: 700 !important;
+          letter-spacing: -0.01em !important;
+          margin: 0 0 0.4em !important;
+          padding: 0 !important;
+        }
+        .plans-swal-html {
+          font-size: 13px !important;
+          line-height: 1.5 !important;
+          margin: 0 0 0.6em !important;
+        }
+        .plans-swal-actions {
+          gap: 8px !important;
+          margin-top: 0.8em !important;
+          width: 100%;
+          padding: 0 4px;
+        }
+        .plans-swal-confirm,
+        .plans-swal-cancel {
+          border: none !important;
+          border-radius: 999px !important;
+          padding: 8px 18px !important;
+          font-size: 12.5px !important;
+          font-weight: 600 !important;
+          letter-spacing: 0.01em !important;
+          cursor: pointer !important;
+          transition: all 0.18s ease !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: 4px !important;
+        }
+        .plans-swal-confirm {
+          background: linear-gradient(135deg, #f06548, #ef4444) !important;
+          color: #fff !important;
+          box-shadow: 0 4px 14px rgba(240,101,72,0.40), inset 0 1px 0 rgba(255,255,255,0.22) !important;
+        }
+        .plans-swal-confirm:hover {
+          box-shadow: 0 8px 20px rgba(240,101,72,0.55), inset 0 1px 0 rgba(255,255,255,0.30) !important;
+          transform: translateY(-1px) !important;
+        }
+        .plans-swal-cancel {
+          background: var(--vz-secondary-bg, #f3f4f6) !important;
+          color: var(--vz-body-color, #374151) !important;
+          border: 1px solid var(--vz-border-color, #e5e7eb) !important;
+        }
+        .plans-swal-cancel:hover {
+          background: var(--vz-border-color, #e5e7eb) !important;
         }
       `}</style>
 
