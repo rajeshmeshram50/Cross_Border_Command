@@ -58,8 +58,7 @@ function KpiCard({ label, value, iconClass, gradient, changeText, trend = 'neutr
   const trendColor = trend === 'up' ? '#0ab39c' : trend === 'down' ? '#f06548' : '#878a99';
   const arrow = trend === 'up' ? 'ri-arrow-up-line' : trend === 'down' ? 'ri-arrow-down-line' : 'ri-subtract-line';
   return (
-    <div style={{
-      background: 'var(--vz-card-bg)',
+    <div className="dashboard-kpi-card" style={{
       borderRadius: 16,
       padding: '20px 20px 16px',
       boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
@@ -135,6 +134,10 @@ export default function ClientDashboard() {
 
   return (
     <>
+      <style>{`
+        .dashboard-kpi-card { background: #ffffff; }
+        [data-bs-theme="dark"] .dashboard-kpi-card { background: #1c2531; }
+      `}</style>
       {/* Page Title */}
       <Row className="mb-2">
         <Col xs={12}>
@@ -184,7 +187,7 @@ export default function ClientDashboard() {
       )}
 
       {/* KPI Cards */}
-      <Row className="g-3 mb-3">
+      <Row className="g-3 mb-3 ">
         <Col xl={2} md={4} xs={6}>
           <KpiCard label="Branches" value={<AnimatedNumber value={counts.total_branches} />}
             iconClass="ri-git-branch-line" gradient="linear-gradient(135deg,#299cdb,#50c3e6)"
