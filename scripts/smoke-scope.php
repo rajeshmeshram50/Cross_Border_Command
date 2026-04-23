@@ -130,14 +130,15 @@ asUser($clientB, function () {
         "clientB sees 1 row (ClientBLand): [" . implode(',', $names) . "]");
 });
 
-// (6) branch_user A1 (not main) sees only branch 201 rows.
+// (6) branch_user A1 (not main) sees: super-admin globals, own client-level rows, own branch rows.
+// Per the SaaS rules, it does NOT see other sub-branches (Branch202Land).
 asUser($branchA1, function () {
     [, $rows] = call('GET', '/master/countries');
     $names = array_column($rows, 'name');
     sort($names);
-    $expected = ['Branch201Land', 'SuperLand']; // both client=101 branch=201
+    $expected = ['Branch201Land', 'ClientALand', 'SuperLand'];
     sort($expected);
-    assertTrue($names === $expected, "branchA1 sees only branch 201 rows: [" . implode(',', $names) . "]");
+    assertTrue($names === $expected, "branchA1 sees its own branch + client-level + globals: [" . implode(',', $names) . "]");
 });
 
 // (7) super_admin sees everything.

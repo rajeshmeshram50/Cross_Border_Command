@@ -200,7 +200,11 @@ for (const m of metadata) {
 
 namespace App\\Models\\Masters;
 
+use App\\Models\\Branch;
+use App\\Models\\Client;
+use App\\Models\\User;
 use Illuminate\\Database\\Eloquent\\Model;
+use Illuminate\\Database\\Eloquent\\Relations\\BelongsTo;
 
 class ${m.model} extends Model
 {
@@ -209,6 +213,21 @@ class ${m.model} extends Model
     protected $fillable = [
 ${fillableList}
     ];
+
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class);
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 }
 `;
   fs.writeFileSync(path.join(MODEL_DIR, `${m.model}.php`), php);
@@ -275,10 +294,20 @@ ${classMapLines}
 ${schemaMapLines}
     ];
 
+    /**
+     * Relationships to eager-load on every list/show so the frontend can render
+     * client name / branch name / creator name without extra round-trips.
+     */
+    private const OWNERSHIP_WITH = [
+        'client:id,org_name',
+        'branch:id,name',
+        'creator:id,name',
+    ];
+
     public function list(Request $request, string $slug)
     {
         $modelClass = $this->resolveModel($slug);
-        $q = $modelClass::query()->orderByDesc('id');
+        $q = $modelClass::query()->with(self::OWNERSHIP_WITH)->orderByDesc('id');
         $this->applyScope($q, $request->user());
 
         if ($search = $request->query('search')) {
@@ -293,16 +322,16 @@ ${schemaMapLines}
             });
         }
 
-        return response()->json($q->get());
+        return response()->json($q->get()->map(fn ($r) => $this->withOwnership($r)));
     }
 
     public function show(Request $request, string $slug, $id)
     {
         $modelClass = $this->resolveModel($slug);
-        $q = $modelClass::query();
+        $q = $modelClass::query()->with(self::OWNERSHIP_WITH);
         $this->applyScope($q, $request->user());
         $row = $q->findOrFail($id);
-        return response()->json($row);
+        return response()->json($this->withOwnership($row));
     }
 
     public function store(Request $request, string $slug)
@@ -319,18 +348,20 @@ ${schemaMapLines}
         $data['branch_id'] = $branchId;
 
         $row = $modelClass::create($data);
-        return response()->json($row, 201);
+        $row->load(self::OWNERSHIP_WITH);
+        return response()->json($this->withOwnership($row), 201);
     }
 
     public function update(Request $request, string $slug, $id)
     {
         $modelClass = $this->resolveModel($slug);
-        $q = $modelClass::query();
+        $q = $modelClass::query()->with(self::OWNERSHIP_WITH);
         $this->applyScope($q, $request->user());
         $row = $q->findOrFail($id);
         $data = $this->validatePayload($request, $slug, $id);
         $row->update($data);
-        return response()->json($row);
+        $row->load(self::OWNERSHIP_WITH);
+        return response()->json($this->withOwnership($row));
     }
 
     public function destroy(Request $request, string $slug, $id)
@@ -354,11 +385,36 @@ ${schemaMapLines}
     }
 
     /**
-     * Scope a query to what the current user is allowed to see.
+     * Flatten eager-loaded client/branch/creator into scalar name fields on the
+     * serialized row so the frontend doesn't need to drill into nested objects.
+     */
+    private function withOwnership($row): array
+    {
+        $arr = $row->toArray();
+        $arr['client_name']  = $row->client?->org_name;
+        $arr['branch_name']  = $row->branch?->name;
+        $arr['creator_name'] = $row->creator?->name;
+        return $arr;
+    }
+
+    /**
+     * Scope a query to what the current user is allowed to see. Rules:
+     *
      *   super_admin         -> everything
-     *   client_admin/user   -> rows for their client_id
-     *   branch_user (main)  -> rows for their client_id (all branches)
-     *   branch_user         -> rows for their branch_id under their client_id
+     *
+     *   client_admin/user   -> rows where client_id IS NULL (super-admin "global" rows)
+     *                          OR client_id = own client
+     *
+     *   branch_user (main)  -> rows where client_id IS NULL
+     *                          OR client_id = own client (any branch, any null branch)
+     *                          A main-branch user sees every row under their client.
+     *
+     *   branch_user (sub)   -> rows where client_id IS NULL
+     *                          OR (client_id = own client AND (
+     *                                branch_id IS NULL                    -- client-level rows
+     *                                OR branch_id = own branch            -- own rows
+     *                                OR branch_id = main branch id        -- main-branch shared rows
+     *                              ))
      */
     private function applyScope($q, $user): void
     {
@@ -366,16 +422,43 @@ ${schemaMapLines}
         if ($user->user_type === 'super_admin') return;
 
         if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
-            $q->where('client_id', $user->client_id);
+            $clientId = $user->client_id;
+            $q->where(function ($w) use ($clientId) {
+                $w->whereNull('client_id')->orWhere('client_id', $clientId);
+            });
             return;
         }
 
         if ($user->user_type === 'branch_user') {
-            $q->where('client_id', $user->client_id);
-            $isMain = $user->branch?->is_main ?? false;
-            if (!$isMain) {
-                $q->where('branch_id', $user->branch_id);
+            $clientId = $user->client_id;
+            $branchId = $user->branch_id;
+            $isMain   = $user->branch?->is_main ?? false;
+
+            if ($isMain) {
+                $q->where(function ($w) use ($clientId) {
+                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
+                });
+                return;
             }
+
+            // Non-main branch user: include global rows, client-level rows, own branch, main-branch-shared rows.
+            $mainBranchId = \\App\\Models\\Branch::where('client_id', $clientId)
+                ->where('is_main', true)
+                ->value('id');
+
+            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
+                $w->whereNull('client_id')
+                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
+                      $ww->where('client_id', $clientId)
+                         ->where(function ($wb) use ($branchId, $mainBranchId) {
+                             $wb->whereNull('branch_id')
+                                ->orWhere('branch_id', $branchId);
+                             if ($mainBranchId) {
+                                 $wb->orWhere('branch_id', $mainBranchId);
+                             }
+                         });
+                  });
+            });
             return;
         }
 
