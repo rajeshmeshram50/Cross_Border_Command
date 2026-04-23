@@ -29,6 +29,7 @@ import Settings from '../pages/Settings';
 import Profile from '../pages/Profile';
 import AddPlan from '../pages/AddPlan';
 import BranchForm from '../pages/BranchForm';
+import BranchView from '../pages/BranchView';
 import PlanSelection from '../pages/PlanSelection';
 import ClientView from '../pages/ClientView';
 import ClientBranches from '../pages/ClientBranches';
@@ -63,6 +64,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'client-settings': return `/clients/${data?.clientId}/settings`;
     case 'branches': return '/branches';
     case 'branch-form': return data?.editId ? `/branches/${data.editId}/edit` : '/branches/new';
+    case 'branch-view': return `/branches/${data?.branchId}`;
     case 'branch-users': return '/branches/users';
     case 'client-users': return '/clients/users';
     case 'employees': return '/employees';
@@ -123,6 +125,12 @@ function BranchFormWrapper() {
   const { id } = useParams();
   const navigateFn = useNavigateContext().navigate;
   return <BranchForm onBack={() => navigateFn('branches')} editId={id ? Number(id) : undefined} />;
+}
+
+function BranchViewWrapper() {
+  const { id } = useParams();
+  const navigateFn = useNavigateContext().navigate;
+  return <BranchView branchId={Number(id)} onBack={() => navigateFn('branches')} onNavigate={navigateFn} />;
 }
 
 function AddPlanWrapper() {
@@ -234,6 +242,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/clients/:id/settings" element={<ClientSettingsWrapper />} />
               <Route path="/branches" element={<Branches onNavigate={navigateFn} />} />
               <Route path="/branches/new" element={<BranchFormWrapper />} />
+              <Route path="/branches/:id" element={<BranchViewWrapper />} />
               <Route path="/branches/:id/edit" element={<BranchFormWrapper />} />
               <Route path="/branches/users" element={<UsersPage />} />
               <Route path="/clients/users" element={<UsersPage />} />
