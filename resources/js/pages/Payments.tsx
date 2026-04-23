@@ -52,6 +52,7 @@ export default function Payments() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [viewPayment, setViewPayment] = useState<Payment | null>(null);
   const [addModal, setAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -71,11 +72,20 @@ export default function Payments() {
     finally { setLoading(false); }
   }, []);
 
-  // Status filter is applied client-side before the data hits TableContainer.
+  // Status filter + search are applied client-side before the data hits TableContainer.
   const filteredPayments = useMemo(() => {
-    if (!statusFilter) return payments;
-    return payments.filter(p => p.status === statusFilter);
-  }, [payments, statusFilter]);
+    const q = search.trim().toLowerCase();
+    return payments.filter(p => {
+      if (statusFilter && p.status !== statusFilter) return false;
+      if (!q) return true;
+      return (
+        (p.txn_id || '').toLowerCase().includes(q) ||
+        (p.invoice_number || '').toLowerCase().includes(q) ||
+        (p.client?.org_name || '').toLowerCase().includes(q) ||
+        (p.plan?.name || '').toLowerCase().includes(q)
+      );
+    });
+  }, [payments, statusFilter, search]);
 
   const fetchStats = async () => {
     try { const res = await api.get('/payments/stats'); setStats(res.data); } catch {}
@@ -297,8 +307,46 @@ export default function Payments() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [isSuperAdmin, sendingReminder]);
 
+  const KPI_CARDS = [
+    {
+      label: 'Total Revenue',
+      value: `₹${(stats?.total_revenue || 0).toLocaleString()}`,
+      hint: `${stats?.successful || 0} successful`,
+      icon: 'ri-money-rupee-circle-fill',
+      gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+    },
+    {
+      label: 'Transactions',
+      value: (stats?.total_transactions || 0).toLocaleString(),
+      hint: `${stats?.pending || 0} pending`,
+      icon: 'ri-bank-card-fill',
+      gradient: 'linear-gradient(135deg,#405189,#6691e7)',
+    },
+    {
+      label: 'Failed',
+      value: (stats?.failed || 0).toLocaleString(),
+      hint: 'need attention',
+      icon: 'ri-close-circle-fill',
+      gradient: 'linear-gradient(135deg,#f06548,#f4907b)',
+    },
+    {
+      label: 'Refunded',
+      value: `₹${(stats?.refund_amount || 0).toLocaleString()}`,
+      hint: `${stats?.refunded || 0} refunds`,
+      icon: 'ri-refresh-fill',
+      gradient: 'linear-gradient(135deg,#f7b84b,#f1963b)',
+    },
+  ];
+
+  const STATUS_FILTERS = ['', 'success', 'pending', 'failed', 'refunded'];
+
   return (
     <>
+      <style>{`
+        .payments-surface { background: #ffffff; }
+        [data-bs-theme="dark"] .payments-surface { background: #1c2531; }
+      `}</style>
+
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -313,143 +361,152 @@ export default function Payments() {
         </Col>
       </Row>
 
-      {/* Stat cards */}
-      <Row>
-        <Col md={3} sm={6}>
-          <Card className="card-animate">
-            <CardBody>
-              <div className="d-flex align-items-center">
-                <div className="flex-grow-1"><p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Total Revenue</p></div>
-              </div>
-              <div className="d-flex align-items-end justify-content-between mt-4">
-                <div>
-                  <h4 className="fs-22 fw-semibold mb-0">₹{(stats?.total_revenue || 0).toLocaleString()}</h4>
-                  <p className="mb-0 text-muted mt-2 fs-12">{stats?.successful || 0} successful</p>
-                </div>
-                <div className="avatar-sm"><span className="avatar-title rounded bg-success-subtle text-success fs-3"><i className="ri-money-rupee-circle-line"></i></span></div>
-              </div>
-            </CardBody>
-          </Card>
-        </Col>
-        <Col md={3} sm={6}>
-          <Card className="card-animate">
-            <CardBody>
-              <div className="d-flex align-items-center">
-                <div className="flex-grow-1"><p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Transactions</p></div>
-              </div>
-              <div className="d-flex align-items-end justify-content-between mt-4">
-                <div>
-                  <h4 className="fs-22 fw-semibold mb-0">{stats?.total_transactions || 0}</h4>
-                  <p className="mb-0 text-muted mt-2 fs-12">{stats?.pending || 0} pending</p>
-                </div>
-                <div className="avatar-sm"><span className="avatar-title rounded bg-primary-subtle text-primary fs-3"><i className="ri-bank-card-line"></i></span></div>
-              </div>
-            </CardBody>
-          </Card>
-        </Col>
-        <Col md={3} sm={6}>
-          <Card className="card-animate">
-            <CardBody>
-              <div className="d-flex align-items-center">
-                <div className="flex-grow-1"><p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Failed</p></div>
-              </div>
-              <div className="d-flex align-items-end justify-content-between mt-4">
-                <div>
-                  <h4 className="fs-22 fw-semibold mb-0">{stats?.failed || 0}</h4>
-                  <p className="mb-0 text-muted mt-2 fs-12">need attention</p>
-                </div>
-                <div className="avatar-sm"><span className="avatar-title rounded bg-danger-subtle text-danger fs-3"><i className="ri-close-circle-line"></i></span></div>
-              </div>
-            </CardBody>
-          </Card>
-        </Col>
-        <Col md={3} sm={6}>
-          <Card className="card-animate">
-            <CardBody>
-              <div className="d-flex align-items-center">
-                <div className="flex-grow-1"><p className="text-uppercase fw-semibold fs-12 text-muted mb-0">Refunded</p></div>
-              </div>
-              <div className="d-flex align-items-end justify-content-between mt-4">
-                <div>
-                  <h4 className="fs-22 fw-semibold mb-0">₹{(stats?.refund_amount || 0).toLocaleString()}</h4>
-                  <p className="mb-0 text-muted mt-2 fs-12">{stats?.refunded || 0} refunds</p>
-                </div>
-                <div className="avatar-sm"><span className="avatar-title rounded bg-warning-subtle text-warning fs-3"><i className="ri-refresh-line"></i></span></div>
-              </div>
-            </CardBody>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Main table */}
       <Row>
         <Col xs={12}>
-          <Card>
-            <CardHeader className="border-0 py-2">
-              <Row className="align-items-center gy-2">
-                <div className="col-sm">
-                  <h5 className="card-title mb-0 fs-15">
-                    Payment List <span className="badge bg-primary-subtle text-primary ms-1">{filteredPayments.length}</span>
-                  </h5>
-                </div>
-                {isSuperAdmin && (
-                  <div className="col-sm-auto">
-                    <div className="d-flex gap-2 flex-wrap">
-                      <Button color="light" size="sm" onClick={handleExport} disabled={exporting}>
-                        {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
-                        {exporting ? 'Exporting...' : 'Export'}
-                      </Button>
-                      <Button
-                        color="primary"
-                        size="sm"
-                        className="btn-label waves-effect waves-light rounded-pill"
-                        onClick={openAddModal}
-                      >
-                        <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                        Record Payment
-                      </Button>
+          <div
+            className="payments-surface"
+            style={{
+              borderRadius: 16,
+              border: '1px solid var(--vz-border-color)',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
+              padding: '20px',
+            }}
+          >
+            {/* ── KPI cards (admin-dashboard style) ── */}
+            <Row className="g-3 mb-3 align-items-stretch">
+              {KPI_CARDS.map(k => (
+                <Col key={k.label} md={3} sm={6} xs={12}>
+                  <div
+                    className="payments-surface"
+                    style={{
+                      borderRadius: 14,
+                      border: '1px solid var(--vz-border-color)',
+                      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                      padding: '16px 18px',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      height: '100%',
+                    }}
+                  >
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                          {k.label}
+                        </p>
+                        <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                          {k.value}
+                        </h3>
+                        <small style={{ fontSize: 11, color: 'var(--vz-secondary-color)' }}>{k.hint}</small>
+                      </div>
+                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+                      </div>
                     </div>
                   </div>
-                )}
-              </Row>
-            </CardHeader>
+                </Col>
+              ))}
+            </Row>
 
-            {/* Status filter pills — client-side filter applied before data hits the table */}
-            <CardBody className="border-top border-dashed py-2">
-              <div className="d-flex gap-1 flex-wrap">
-                {['', 'success', 'pending', 'failed', 'refunded'].map(s => (
-                  <Button
-                    key={s || 'all'}
-                    color={statusFilter === s ? 'primary' : 'light'}
-                    size="sm"
-                    onClick={() => setStatusFilter(s)}
-                  >
-                    {s || 'All'}
-                  </Button>
-                ))}
-              </div>
-            </CardBody>
-
-            <CardBody className="pt-2">
-              <TableContainer
-                columns={columns}
-                data={filteredPayments}
-                isGlobalFilter={true}
-                customPageSize={15}
-                tableClass="align-middle table-nowrap mb-0"
-                theadClass="table-light"
-                divClass="table-responsive table-card border rounded"
-                SearchPlaceholder="Search by txn ID, invoice, client..."
-              />
-              {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
-              {!loading && filteredPayments.length === 0 && (
-                <div className="text-center text-muted py-5">
-                  <i className="ri-bill-line display-4 d-block text-muted mb-2"></i>
-                  No payments found
+            {/* ── Single toolbar row: search + status pills + export + record ── */}
+            <Row className="g-2 align-items-center mb-3">
+              <Col lg={4} md={6} sm={12}>
+                <div className="search-box">
+                  <Input
+                    type="text"
+                    className="form-control"
+                    placeholder="Search by txn ID, invoice, client..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                  <i className="ri-search-line search-icon"></i>
                 </div>
+              </Col>
+
+              <Col lg md={12} sm={12} className="d-flex flex-wrap gap-1">
+                {STATUS_FILTERS.map(s => {
+                  const isActive = statusFilter === s;
+                  return (
+                    <Button
+                      key={s || 'all'}
+                      color={isActive ? 'primary' : 'light'}
+                      size="sm"
+                      onClick={() => setStatusFilter(s)}
+                      className="rounded-pill px-3 text-capitalize"
+                    >
+                      {s || 'All'}
+                    </Button>
+                  );
+                })}
+              </Col>
+
+              {isSuperAdmin && (
+                <Col lg="auto" md={12} sm={12} className="d-flex justify-content-md-end gap-2 flex-wrap">
+                  <Button
+                    onClick={handleExport}
+                    disabled={exporting}
+                    className="rounded-pill px-3"
+                    style={{
+                      background: '#fff',
+                      color: 'var(--vz-secondary)',
+                      border: '1px solid var(--vz-secondary)',
+                      fontWeight: 600,
+                      transition: 'background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease',
+                    }}
+                    onMouseEnter={e => {
+                      const el = e.currentTarget as HTMLButtonElement;
+                      if (el.disabled) return;
+                      el.style.background = 'var(--vz-secondary)';
+                      el.style.color = '#fff';
+                      el.style.boxShadow = '0 4px 12px rgba(135,138,153,0.35)';
+                      el.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseLeave={e => {
+                      const el = e.currentTarget as HTMLButtonElement;
+                      el.style.background = '#fff';
+                      el.style.color = 'var(--vz-secondary)';
+                      el.style.boxShadow = 'none';
+                      el.style.transform = 'translateY(0)';
+                    }}
+                  >
+                    {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
+                    {exporting ? 'Exporting...' : 'Export'}
+                  </Button>
+                  <Button
+                    color="secondary"
+                    className="btn-label waves-effect waves-light rounded-pill"
+                    onClick={openAddModal}
+                  >
+                    <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                    Record Payment
+                  </Button>
+                </Col>
               )}
-            </CardBody>
-          </Card>
+            </Row>
+
+            {/* ── Table ── */}
+            <Card className="border-0 shadow-none mb-0">
+              <CardBody className="p-3">
+                <TableContainer
+                  columns={columns}
+                  data={filteredPayments}
+                  isGlobalFilter={false}
+                  customPageSize={15}
+                  tableClass="align-middle table-nowrap mb-0"
+                  theadClass="table-light"
+                  divClass="table-responsive table-card border rounded"
+                  SearchPlaceholder="Search by txn ID, invoice, client..."
+                />
+                {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
+                {!loading && filteredPayments.length === 0 && (
+                  <div className="text-center text-muted py-5">
+                    <i className="ri-bill-line display-4 d-block text-muted mb-2"></i>
+                    No payments found
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          </div>
         </Col>
       </Row>
 

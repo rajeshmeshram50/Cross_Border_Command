@@ -491,7 +491,33 @@ export default function Clients({ onNavigate }: Props) {
                 </div>
               </Col>
               <Col md={6} sm={12} className="d-flex justify-content-md-end gap-2 flex-wrap">
-                <Button color="light" onClick={handleExport} disabled={exporting} className="rounded-pill px-3">
+                <Button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="rounded-pill px-3"
+                  style={{
+                    background: '#fff',
+                    color: 'var(--vz-secondary)',
+                    border: '1px solid var(--vz-secondary)',
+                    fontWeight: 600,
+                    transition: 'background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease',
+                  }}
+                  onMouseEnter={e => {
+                    const el = e.currentTarget as HTMLButtonElement;
+                    if (el.disabled) return;
+                    el.style.background = 'var(--vz-secondary)';
+                    el.style.color = '#fff';
+                    el.style.boxShadow = '0 4px 12px rgba(135,138,153,0.35)';
+                    el.style.transform = 'translateY(-1px)';
+                  }}
+                  onMouseLeave={e => {
+                    const el = e.currentTarget as HTMLButtonElement;
+                    el.style.background = '#fff';
+                    el.style.color = 'var(--vz-secondary)';
+                    el.style.boxShadow = 'none';
+                    el.style.transform = 'translateY(0)';
+                  }}
+                >
                   {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
                   {exporting ? 'Exporting...' : 'Export'}
                 </Button>
