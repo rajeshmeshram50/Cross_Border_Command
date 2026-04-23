@@ -274,7 +274,7 @@ export default function Clients({ onNavigate }: Props) {
       <Row>
         <Col xs={12}>
           <Card>
-            <CardHeader className="border-0 py-2">
+            <CardHeader className="border-0 py-3">
               <Row className="align-items-center gy-2">
                 <div className="col-sm">
                   <h5 className="card-title mb-0 fs-15">All Clients <span className="badge bg-primary-subtle text-primary ms-1">{total}</span></h5>
@@ -286,8 +286,8 @@ export default function Clients({ onNavigate }: Props) {
                       {exporting ? 'Exporting...' : 'Export'}
                     </Button>
                     <Button
-                      color="primary"
-                      size="sm"
+                      color="secondary"
+                      size="md"
                       className="btn-label waves-effect waves-light rounded-pill"
                       onClick={() => onNavigate('client-form')}
                     >
@@ -309,7 +309,7 @@ export default function Clients({ onNavigate }: Props) {
                 divClass="table-responsive table-card border rounded"
                 SearchPlaceholder="Search by name or ID..."
               />
-              {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
+              {loading && <div className="text-center py-5"><Spinner color="secondary" /></div>}
               {!loading && clients.length === 0 && <div className="text-center text-muted py-5">No clients found</div>}
             </CardBody>
           </Card>

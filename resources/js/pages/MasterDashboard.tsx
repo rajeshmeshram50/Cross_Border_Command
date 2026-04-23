@@ -161,6 +161,12 @@ export default function MasterDashboard() {
   const statValues = [totals.total, totals.active, totals.inactive, totals.records];
 
   return (
+    <>
+    <style>{`
+      /* Force white card surface in light theme; auto-flip in dark theme */
+      .master-surface { background: #ffffff; }
+      [data-bs-theme="dark"] .master-surface { background: #1c2531; }
+    `}</style>
     <div>
       {/* ── Page Header ── */}
       <div className="page-title-box d-sm-flex align-items-center justify-content-between mb-4">
@@ -178,7 +184,7 @@ export default function MasterDashboard() {
       <Row className="g-3 mb-4">
         {STAT_CARDS.map((sc, i) => (
           <Col key={sc.label} xl={3} md={6} xs={12}>
-            <div style={{ background: 'var(--vz-card-bg)', borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px' }}>
+            <div className="master-surface" style={{ borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: sc.gradient }} />
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                 <div>
@@ -197,7 +203,7 @@ export default function MasterDashboard() {
       </Row>
 
       {/* ── Search Bar ── */}
-      <div style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="master-surface" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
         <i className="ri-search-line" style={{ color: 'var(--vz-secondary-color)', fontSize: 17 }} />
         <input
           type="text"
@@ -236,8 +242,8 @@ export default function MasterDashboard() {
 
             {/* ── Category Header — single white row, clickable to toggle ── */}
             <div
+              className="master-surface"
               style={{
-                background: 'var(--vz-card-bg)',
                 border: '1px solid var(--vz-border-color)',
                 borderRadius: 12,
                 padding: '12px 16px',
@@ -306,6 +312,7 @@ export default function MasterDashboard() {
         );
       })}
     </div>
+    </>
   );
 }
 
@@ -314,7 +321,8 @@ function MasterCard({ leaf, s, onClick }: { leaf: MenuChild; s: CategoryStyle; o
   return (
     <div
       onClick={onClick}
-      style={{ background: 'var(--vz-card-bg)', borderRadius: 12, border: '1px solid var(--vz-border-color)', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'box-shadow .18s ease, transform .18s ease, border-color .18s ease', display: 'flex', flexDirection: 'column', height: '100%', padding: '15px 15px 13px', position: 'relative', overflow: 'hidden' }}
+      className="master-surface"
+      style={{ borderRadius: 12, border: '1px solid var(--vz-border-color)', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'box-shadow .18s ease, transform .18s ease, border-color .18s ease', display: 'flex', flexDirection: 'column', height: '100%', padding: '15px 15px 13px', position: 'relative', overflow: 'hidden' }}
       onMouseEnter={e => {
         const el = e.currentTarget as HTMLDivElement;
         el.style.boxShadow = `0 8px 24px ${s.color}22`;
