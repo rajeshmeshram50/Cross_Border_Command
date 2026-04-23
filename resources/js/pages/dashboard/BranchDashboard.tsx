@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, CardBody, CardHeader, Col, Row, Badge, Alert } from 'reactstrap';
+import { Card, CardBody, Col, Row, Badge, Alert } from 'reactstrap';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -29,40 +29,90 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
   return <>{prefix}{display.toLocaleString()}{suffix}</>;
 }
 
-const ChartTooltip = ({ active, payload, label }: any) => {
+const ChartTooltip = ({ active, payload, label, prefix = '' }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="bg-white border rounded px-3 py-2 shadow-sm" style={{ fontSize: 11 }}>
-      <div className="fw-bold text-dark mb-1">{label}</div>
-      <div className="text-muted fw-semibold">₹{payload[0]?.value?.toLocaleString()}</div>
+    <div style={{ background: '#1e2a3a', borderRadius: 10, padding: '8px 14px', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: 'none', fontSize: 12 }}>
+      <div style={{ color: '#a8b8c8', fontWeight: 600, marginBottom: 4, fontSize: 11 }}>{label}</div>
+      {payload.map((p: any, i: number) => (
+        <div key={i} style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>
+          {prefix}{typeof p.value === 'number' ? p.value.toLocaleString() : p.value}
+        </div>
+      ))}
     </div>
   );
 };
 
-function KpiCard({ label, value, iconClass, iconBg, changeText }: { label: string; value: React.ReactNode; iconClass: string; iconBg: string; changeText?: string }) {
+interface KpiProps {
+  label: string;
+  value: React.ReactNode;
+  iconClass: string;
+  gradient: string;
+  changeText?: string;
+  trend?: 'up' | 'down' | 'neutral';
+  change?: string;
+}
+
+function KpiCard({ label, value, iconClass, gradient, changeText, trend = 'neutral', change }: KpiProps) {
+  const trendColor = trend === 'up' ? '#0ab39c' : trend === 'down' ? '#f06548' : '#878a99';
+  const arrow = trend === 'up' ? 'ri-arrow-up-line' : trend === 'down' ? 'ri-arrow-down-line' : 'ri-subtract-line';
   return (
-    <Card className="card-animate">
-      <CardBody>
-        <div className="d-flex align-items-center">
-          <div className="flex-grow-1">
-            <p className="text-uppercase fw-semibold fs-12 text-muted mb-0">{label}</p>
-          </div>
+    <div style={{
+      background: '#fff',
+      borderRadius: 16,
+      padding: '20px 20px 16px',
+      boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+      border: '1px solid #f0f3f8',
+      position: 'relative',
+      overflow: 'hidden',
+      height: '100%',
+    }}>
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+        background: gradient,
+      }} />
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: '#878a99', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
+          <h3 style={{ fontSize: 28, fontWeight: 800, color: '#1e2a3a', margin: 0, lineHeight: 1 }}>{value}</h3>
+          {(change || changeText) && (
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+              {change && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: trendColor + '18', color: trendColor, borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
+                  <i className={arrow} style={{ fontSize: 11 }}></i> {change}
+                </span>
+              )}
+              {changeText && <span style={{ fontSize: 11, color: '#a0aec0' }}>{changeText}</span>}
+            </div>
+          )}
         </div>
-        <div className="d-flex align-items-end justify-content-between mt-4">
-          <div>
-            <h4 className="fs-22 fw-semibold ff-secondary mb-0">{value}</h4>
-            {changeText && <p className="mb-0 text-muted mt-2 fs-12">{changeText}</p>}
-          </div>
-          <div className="avatar-sm flex-shrink-0">
-            <span className="avatar-title rounded fs-3" style={{ backgroundColor: iconBg + '29', color: iconBg }}>
-              <i className={iconClass}></i>
-            </span>
-          </div>
+        <div style={{
+          width: 46, height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: gradient, flexShrink: 0,
+        }}>
+          <i className={iconClass} style={{ fontSize: 20, color: '#fff' }}></i>
         </div>
-      </CardBody>
-    </Card>
+      </div>
+    </div>
   );
 }
+
+const cardStyle: React.CSSProperties = {
+  borderRadius: 16,
+  border: '1px solid #f0f3f8',
+  boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+  overflow: 'hidden',
+  marginBottom: 0,
+};
+
+const cardHeaderStyle: React.CSSProperties = {
+  background: '#fff',
+  borderBottom: '1px solid #f0f3f8',
+  padding: '16px 20px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+};
 
 export default function BranchDashboard() {
   const { user } = useAuth();
@@ -90,22 +140,27 @@ export default function BranchDashboard() {
 
   return (
     <>
-      <Row>
+      {/* Page Title */}
+      <Row className="mb-2">
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Dashboard</h4>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">{displayName}</a></li>
-                <li className="breadcrumb-item active">{isMainBranchUser && !selectedBranchId ? 'All Branches' : 'Branch Overview'}</li>
-              </ol>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px' }}>
+            <div>
+              <h4 style={{ fontWeight: 800, fontSize: 20, color: '#1e2a3a', margin: 0 }}>Dashboard</h4>
+              <p style={{ margin: 0, fontSize: 12, color: '#a0aec0', marginTop: 2 }}>
+                {isMainBranchUser && !selectedBranchId ? 'All branches overview' : 'Branch operations summary'}
+              </p>
             </div>
+            <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
+              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{displayName}</a></li>
+              <li className="breadcrumb-item active">{isMainBranchUser && !selectedBranchId ? 'All Branches' : 'Overview'}</li>
+            </ol>
           </div>
         </Col>
       </Row>
 
+      {/* Plan banner */}
       {plan.status === 'expired' ? (
-        <Alert color="danger" className="d-flex align-items-center">
+        <Alert color="danger" className="d-flex align-items-center" style={{ borderRadius: 14, border: '1px solid #f8d5d0' }}>
           <i className="ri-error-warning-line me-2 fs-4"></i>
           <div className="flex-grow-1">
             <strong>Plan Expired — Access Restricted</strong>
@@ -113,7 +168,7 @@ export default function BranchDashboard() {
           </div>
         </Alert>
       ) : (
-        <Alert color="primary" className="d-flex align-items-center">
+        <Alert color="primary" className="d-flex align-items-center" style={{ borderRadius: 14, border: '1px solid #c5caf0' }}>
           <i className="ri-shield-check-line me-2 fs-4"></i>
           <div className="flex-grow-1">
             <strong>{plan.name} Plan</strong>
@@ -127,46 +182,58 @@ export default function BranchDashboard() {
         </Alert>
       )}
 
-      <Row>
+      {/* KPI Cards */}
+      <Row className="g-3 mb-3">
         <Col md={3} xs={6}>
           <KpiCard label="Branches" value={<AnimatedNumber value={branches.length} />}
-            iconClass="ri-git-branch-line" iconBg="#299cdb" changeText={`${branches.length} visible`} />
+            iconClass="ri-git-branch-line" gradient="linear-gradient(135deg,#299cdb,#50c3e6)"
+            changeText="visible" />
         </Col>
         <Col md={3} xs={6}>
           <KpiCard label="Users" value={<AnimatedNumber value={branchUsers} />}
-            iconClass="ri-user-3-line" iconBg="#9b72cf" changeText="branch staff" />
+            iconClass="ri-user-3-line" gradient="linear-gradient(135deg,#9b72cf,#865ce2)"
+            changeText="branch staff" />
         </Col>
         <Col md={3} xs={6}>
           <KpiCard label="Total Paid" value={<>₹<AnimatedNumber value={Math.round(counts.total_paid / 1000)} suffix="K" /></>}
-            iconClass="ri-money-rupee-circle-line" iconBg="#0ab39c" changeText={`${counts.success_payments} payments`} />
+            iconClass="ri-money-rupee-circle-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
+            trend="up" change={`${counts.success_payments}`} changeText="payments" />
         </Col>
         <Col md={3} xs={6}>
           <KpiCard label="Payments" value={<AnimatedNumber value={counts.total_payments} />}
-            iconClass="ri-bank-card-line" iconBg="#405189" changeText={`${successRate}% ok`} />
+            iconClass="ri-bank-card-line" gradient="linear-gradient(135deg,#405189,#6691e7)"
+            trend={successRate > 80 ? 'up' : 'down'} change={`${successRate}%`} changeText="success rate" />
         </Col>
       </Row>
 
-      <Row>
+      {/* Payment Trend */}
+      <Row className="g-3 mb-3">
         <Col xs={12}>
-          <Card>
-            <CardHeader className="align-items-center d-flex">
-              <h4 className="card-title mb-0 flex-grow-1">Payment Trend</h4>
-              <span className="text-success fw-semibold">₹{counts.total_paid.toLocaleString()}</span>
-            </CardHeader>
-            <CardBody>
-              <ResponsiveContainer width="100%" height={280}>
-                <AreaChart data={payment_trend} margin={{ top: 5, right: 15, left: 5, bottom: 0 }}>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Payment Trend</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Monthly cash flow</p>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }}>₹{counts.total_paid.toLocaleString()}</div>
+                <div style={{ fontSize: 10, color: '#a0aec0', fontWeight: 600 }}>TOTAL PAID</div>
+              </div>
+            </div>
+            <CardBody style={{ padding: '12px 16px 8px' }}>
+              <ResponsiveContainer width="100%" height={260}>
+                <AreaChart data={payment_trend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="branchRevGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0ab39c" stopOpacity={0.3} />
+                      <stop offset="0%" stopColor="#0ab39c" stopOpacity={0.25} />
                       <stop offset="100%" stopColor="#0ab39c" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e9ebec" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#878a99' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#878a99' }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Area type="monotone" dataKey="amount" stroke="#0ab39c" strokeWidth={2} fill="url(#branchRevGrad)" dot={{ r: 3, fill: '#0ab39c' }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
+                  <Tooltip content={<ChartTooltip prefix="₹" />} />
+                  <Area type="monotone" dataKey="amount" stroke="#0ab39c" strokeWidth={2.5} fill="url(#branchRevGrad)" dot={{ r: 4, fill: '#0ab39c', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, fill: '#0ab39c' }} />
                 </AreaChart>
               </ResponsiveContainer>
             </CardBody>
@@ -174,75 +241,107 @@ export default function BranchDashboard() {
         </Col>
       </Row>
 
-      <Row>
+      {/* Branches + Recent Payments */}
+      <Row className="g-3">
         <Col xl={6}>
-          <Card>
-            <CardHeader><h4 className="card-title mb-0">Branches</h4></CardHeader>
-            <div className="table-responsive table-card">
-              <table className="table align-middle table-borderless mb-0">
-                <tbody>
-                  {branches.map((b: any) => (
-                    <tr key={b.id}>
-                      <td>
-                        <div className="d-flex align-items-center gap-2">
-                          <div className="avatar-xs rounded d-flex align-items-center justify-content-center text-white fw-bold" style={{ backgroundColor: b.is_main ? '#f7b84b' : '#299cdb', fontSize: 10 }}>
-                            {b.code?.substring(0, 2) || b.name.charAt(0)}
-                          </div>
-                          <div>
-                            <h6 className="mb-0 fs-14 d-inline-flex align-items-center gap-1">
-                              {b.name}
-                              {b.is_main && <i className="ri-star-fill text-warning fs-12"></i>}
-                            </h6>
-                            <p className="mb-0 text-muted fs-12">{b.users_count} users</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="text-end">
-                        <Badge color={b.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">{b.status}</Badge>
-                      </td>
-                    </tr>
-                  ))}
-                  {branches.length === 0 && <tr><td className="text-center text-muted py-4">No branches</td></tr>}
-                </tbody>
-              </table>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Branches</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>{branches.length} accessible</p>
+              </div>
             </div>
+            <CardBody style={{ padding: 0 }}>
+              {branches.map((b: any, i: number) => (
+                <div key={b.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 20px', borderBottom: i < branches.length - 1 ? '1px solid #f8f9fa' : 'none',
+                  transition: 'background 0.15s',
+                }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{
+                      width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: b.is_main
+                        ? 'linear-gradient(135deg,#f7b84b,#f1963b)'
+                        : 'linear-gradient(135deg,#299cdb,#50c3e6)',
+                      color: '#fff', fontWeight: 800, fontSize: 12, flexShrink: 0,
+                    }}>
+                      {b.code?.substring(0, 2).toUpperCase() || b.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e2a3a', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        {b.name}
+                        {b.is_main && <i className="ri-star-fill" style={{ color: '#f7b84b', fontSize: 12 }}></i>}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#a0aec0', marginTop: 1 }}>
+                        {b.users_count} users
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.04em',
+                    background: b.status === 'active' ? '#0ab39c18' : '#f0654818',
+                    color: b.status === 'active' ? '#0ab39c' : '#f06548',
+                  }}>{b.status}</span>
+                </div>
+              ))}
+              {branches.length === 0 && <div className="text-center text-muted py-4">No branches</div>}
+            </CardBody>
           </Card>
         </Col>
 
         <Col xl={6}>
-          <Card>
-            <CardHeader><h4 className="card-title mb-0">Recent Payments</h4></CardHeader>
-            <div className="table-responsive table-card">
-              <table className="table align-middle table-borderless mb-0">
-                <tbody>
-                  {recent_payments.map((p: any) => {
-                    const cfg = p.status === 'success' ? { color: '#0ab39c', icon: 'ri-checkbox-circle-line' }
-                      : p.status === 'failed' ? { color: '#f06548', icon: 'ri-close-circle-line' }
-                      : { color: '#f7b84b', icon: 'ri-time-line' };
-                    return (
-                      <tr key={p.id}>
-                        <td>
-                          <div className="d-flex align-items-center gap-2">
-                            <div className="avatar-xs rounded-circle d-flex align-items-center justify-content-center" style={{ backgroundColor: cfg.color + '20', color: cfg.color }}>
-                              <i className={cfg.icon}></i>
-                            </div>
-                            <div>
-                              <h6 className="mb-0 fs-14">{p.plan?.name || 'Payment'}</h6>
-                              <p className="mb-0 text-muted fs-12">{p.invoice_number} · {methodLabels[p.method] || p.method}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="text-end">
-                          <h6 className="mb-0 fs-14" style={{ color: cfg.color }}>₹{parseFloat(p.total).toLocaleString()}</h6>
-                          <small className="text-muted">{new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</small>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {recent_payments.length === 0 && <tr><td className="text-center text-muted py-4">No payments yet</td></tr>}
-                </tbody>
-              </table>
+          <Card style={cardStyle}>
+            <div style={cardHeaderStyle}>
+              <div>
+                <h5 style={{ fontWeight: 700, fontSize: 15, color: '#1e2a3a', margin: 0 }}>Recent Payments</h5>
+                <p style={{ margin: 0, fontSize: 11, color: '#a0aec0', marginTop: 2 }}>Latest transactions</p>
+              </div>
             </div>
+            <CardBody style={{ padding: 0 }}>
+              {recent_payments.map((p: any, i: number) => {
+                const cfg = p.status === 'success'
+                  ? { color: '#0ab39c', icon: 'ri-checkbox-circle-fill', bg: '#0ab39c18' }
+                  : p.status === 'failed'
+                  ? { color: '#f06548', icon: 'ri-close-circle-fill', bg: '#f0654818' }
+                  : { color: '#f7b84b', icon: 'ri-time-fill', bg: '#f7b84b18' };
+                return (
+                  <div key={p.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '12px 20px', borderBottom: i < recent_payments.length - 1 ? '1px solid #f8f9fa' : 'none',
+                    transition: 'background 0.15s',
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: cfg.bg, color: cfg.color, flexShrink: 0, fontSize: 16,
+                      }}>
+                        <i className={cfg.icon}></i>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1e2a3a' }}>{p.plan?.name || 'Payment'}</div>
+                        <div style={{ fontSize: 11, color: '#a0aec0', marginTop: 1 }}>
+                          {p.invoice_number} · {methodLabels[p.method] || p.method}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: cfg.color }}>₹{parseFloat(p.total).toLocaleString()}</div>
+                      <div style={{ fontSize: 10, color: '#a0aec0', marginTop: 2 }}>
+                        {new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {recent_payments.length === 0 && <div className="text-center text-muted py-4">No payments yet</div>}
+            </CardBody>
           </Card>
         </Col>
       </Row>
