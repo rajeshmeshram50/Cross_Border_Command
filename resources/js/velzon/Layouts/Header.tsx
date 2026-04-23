@@ -9,10 +9,7 @@ import logoLight from "../assets/images/igc-logo.png";
 
 //import Components
 import SearchOption from '../Components/Common/SearchOption';
-import WebAppsDropdown from '../Components/Common/WebAppsDropdown';
-import MyCartDropdown from '../Components/Common/MyCartDropdown';
 import FullScreenDropdown from '../Components/Common/FullScreenDropdown';
-import NotificationDropdown from '../Components/Common/NotificationDropdown';
 import ProfileDropdown from '../Components/Common/ProfileDropdown';
 import LightDark from '../Components/Common/LightDark';
 
@@ -134,12 +131,6 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                                 </DropdownMenu>
                             </Dropdown>
 
-                            {/* WebAppsDropdown */}
-                            <WebAppsDropdown />
-
-                            {/* MyCartDropdwon */}
-                            <MyCartDropdown />
-
                             {/* FullScreenDropdown */}
                             <FullScreenDropdown />
 
@@ -148,9 +139,6 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                                 layoutMode={layoutModeType}
                                 onChangeLayoutMode={onChangeLayoutMode}
                             />
-
-                            {/* NotificationDropdown */}
-                            <NotificationDropdown />
 
                             {/* ProfileDropdown */}
                             <ProfileDropdown />
