@@ -80,6 +80,7 @@ export default function Profile() {
   const GRAD_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
   const GRAD_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
   const GRAD_INFO    = 'linear-gradient(135deg, #299cdb 0%, #5fc8ff 100%)';
+  const GRAD_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
 
   const SectionHeader = ({ title, gradient, icon, action }: { title: string; gradient: string; icon: string; action?: React.ReactNode }) => (
     <div className="d-flex align-items-center gap-2 mb-3">
@@ -534,8 +535,124 @@ export default function Profile() {
               </Form>
             </CardBody>
           </Card>
+
         </Col>
       </Row>
+
+      {/* ── Permissions — full width below the main grid ── */}
+      {!isSuperAdmin && user.permissions && Object.keys(user.permissions).length > 0 && (
+        <Row className="mt-1">
+          <Col xs={12}>
+            <Card className="mb-0" style={cardStyle}>
+              <CardBody>
+                <SectionHeader
+                  title="Your Permissions"
+                  gradient={GRAD_PURPLE}
+                  icon="ri-shield-check-line"
+                  action={(
+                    <span className="badge rounded-pill fw-semibold fs-11 px-2 py-1" style={{ background: 'rgba(106,90,205,0.12)', color: '#6a5acd' }}>
+                      {Object.keys(user.permissions).length} {Object.keys(user.permissions).length === 1 ? 'module' : 'modules'}
+                    </span>
+                  )}
+                />
+                <p className="text-muted fs-12 mb-3">Modules you have access to and the actions you can perform.</p>
+                <style>{`
+                  .perm-grid {
+                    display: grid;
+                    gap: 8px;
+                    grid-template-columns: repeat(1, minmax(0, 1fr));
+                    max-height: 640px;
+                    overflow-y: auto;
+                    padding-right: 6px;
+                  }
+                  @media (min-width: 576px)  { .perm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+                  @media (min-width: 992px)  { .perm-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+                  @media (min-width: 1200px) { .perm-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+                  @media (min-width: 1400px) { .perm-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+                  .perm-grid::-webkit-scrollbar { width: 8px; }
+                  .perm-grid::-webkit-scrollbar-track { background: transparent; }
+                  .perm-grid::-webkit-scrollbar-thumb { background: var(--vz-border-color); border-radius: 8px; }
+                  .perm-grid::-webkit-scrollbar-thumb:hover { background: #6a5acd; }
+                `}</style>
+                <div className="perm-grid">
+                  {Object.entries(user.permissions as Record<string, Record<string, boolean>>).map(([slug, perms]) => {
+                    const entries = Object.entries(perms);
+                    const enabled = entries.filter(([, v]) => v).length;
+                    const total = entries.length;
+                    const allOn = enabled === total && total > 0;
+                    const someOn = enabled > 0 && enabled < total;
+                    const avatarBg = allOn ? GRAD_SUCCESS : someOn ? GRAD_PURPLE : 'var(--vz-secondary-bg)';
+                    const avatarColor = (allOn || someOn) ? '#fff' : 'var(--vz-secondary-color)';
+                    const tileBorder = allOn ? '1px solid rgba(10,179,156,0.25)' : someOn ? '1px solid rgba(106,90,205,0.2)' : '1px solid var(--vz-border-color)';
+
+                    const permMeta: Record<string, { icon: string; label: string; color: string }> = {
+                      can_view:    { icon: 'ri-eye-line',          label: 'View',    color: 'success' },
+                      can_add:     { icon: 'ri-add-line',          label: 'Add',     color: 'primary' },
+                      can_edit:    { icon: 'ri-pencil-line',       label: 'Edit',    color: 'warning' },
+                      can_delete:  { icon: 'ri-delete-bin-line',   label: 'Delete',  color: 'danger'  },
+                      can_export:  { icon: 'ri-download-2-line',   label: 'Export',  color: 'info'    },
+                      can_import:  { icon: 'ri-upload-2-line',     label: 'Import',  color: 'info'    },
+                      can_approve: { icon: 'ri-check-double-line', label: 'Approve', color: 'success' },
+                    };
+
+                    return (
+                      <div
+                        key={slug}
+                        className="p-3"
+                        style={{
+                          borderRadius: 14,
+                          background: 'var(--vz-secondary-bg)',
+                          border: tileBorder,
+                        }}
+                      >
+                        <div className="d-flex align-items-center gap-2 mb-3">
+                          <span
+                            className="d-inline-flex align-items-center justify-content-center rounded-2 fw-bold flex-shrink-0"
+                            style={{ width: 36, height: 36, background: avatarBg, color: avatarColor, fontSize: 14, boxShadow: (allOn || someOn) ? '0 3px 8px rgba(0,0,0,0.12)' : 'none' }}
+                          >
+                            {slug.charAt(0).toUpperCase()}
+                          </span>
+                          <div className="flex-grow-1 min-w-0">
+                            <div className="fs-13 fw-bold text-capitalize text-truncate">{slug.replace(/-/g, ' ')}</div>
+                            <div className="fs-11 d-inline-flex align-items-center gap-1">
+                              <span className={allOn ? 'text-success fw-semibold' : someOn ? 'fw-semibold' : 'text-muted'} style={someOn ? { color: '#6a5acd' } : undefined}>
+                                {enabled}
+                              </span>
+                              <span className="text-muted">of {total} enabled</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="d-flex flex-wrap gap-1">
+                          {entries.map(([key, val]) => {
+                            const meta = permMeta[key];
+                            if (!meta) return null;
+                            return (
+                              <span
+                                key={key}
+                                title={`${meta.label}${val ? '' : ' (off)'}`}
+                                className={val
+                                  ? `d-inline-flex align-items-center justify-content-center rounded-2 bg-${meta.color} text-white`
+                                  : 'd-inline-flex align-items-center justify-content-center rounded-2 text-muted'}
+                                style={{
+                                  width: 28, height: 28,
+                                  background: val ? undefined : 'var(--vz-border-color)',
+                                  opacity: val ? 1 : 0.55,
+                                }}
+                              >
+                                <i className={meta.icon} style={{ fontSize: 13 }}></i>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardBody>
+            </Card>
+          </Col>
+        </Row>
+      )}
     </>
   );
 }
