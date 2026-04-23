@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Spinner } from 'reactstrap';
+import { Card, CardBody, CardHeader, Col, Row, Button, Spinner } from 'reactstrap';
 import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
 import api from '../api';
@@ -95,55 +95,119 @@ export default function Clients({ onNavigate }: Props) {
     }
   };
 
+  // Reusable action button — outline icon pill with hover color
+  const ActionBtn = ({
+    title, icon, color, onClick, disabled,
+  }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      className="btn p-0 d-inline-flex align-items-center justify-content-center"
+      style={{
+        width: 30, height: 30, borderRadius: 8,
+        background: 'var(--vz-secondary-bg)',
+        border: '1px solid var(--vz-border-color)',
+        color: 'var(--vz-secondary-color)',
+        transition: 'all .15s ease',
+      }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.background = `var(--vz-${color}-bg-subtle, ${color === 'primary' ? '#40518918' : color === 'danger' ? '#f0654818' : color === 'success' ? '#0ab39c18' : color === 'info' ? '#299cdb18' : color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)'})`;
+        el.style.borderColor = `var(--vz-${color})`;
+        el.style.color = `var(--vz-${color})`;
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.background = 'var(--vz-secondary-bg)';
+        el.style.borderColor = 'var(--vz-border-color)';
+        el.style.color = 'var(--vz-secondary-color)';
+      }}
+      onClick={onClick}
+    >
+      <i className={`${icon} fs-14`} />
+    </button>
+  );
+
   // Table columns for TableContainer
   const columns = [
     {
       header: '#',
       accessorKey: 'index',
-      cell: (info: any) => (page - 1) * 15 + info.row.index + 1,
+      cell: (info: any) => <span className="text-muted fs-13">{(page - 1) * 15 + info.row.index + 1}</span>,
     },
     {
       header: 'Organization',
       accessorKey: 'org_name',
       cell: (info: any) => (
         <div className="d-flex align-items-center gap-2">
-          <div className="avatar-xs rounded-circle d-flex align-items-center justify-content-center text-white fw-bold" style={{ backgroundColor: AVATAR_COLORS[info.row.index % AVATAR_COLORS.length], fontSize: 11 }}>
+          <div
+            className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+            style={{
+              width: 34, height: 34, fontSize: 12,
+              background: `linear-gradient(135deg, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}cc)`,
+              boxShadow: `0 2px 6px ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}40`,
+            }}
+          >
             {info.row.original.org_name.charAt(0)}{info.row.original.org_name.split(' ')[1]?.charAt(0) || ''}
           </div>
-          <span className="fw-semibold text-dark">{info.row.original.org_name}</span>
+          <span className="fw-semibold fs-13">{info.row.original.org_name}</span>
         </div>
       ),
     },
     {
       header: 'Unique ID',
       accessorKey: 'unique_number',
-      cell: (info: any) => <span className="fw-medium text-primary font-monospace">{info.row.original.unique_number}</span>,
+      cell: (info: any) => (
+        <span className="fw-medium text-primary font-monospace fs-13">
+          {info.row.original.unique_number}
+        </span>
+      ),
     },
     {
-      header: 'Contact',
+      header: 'Email',
       accessorKey: 'email',
       cell: (info: any) => (
-        <>
-          <div>{info.row.original.email}</div>
-          {info.row.original.phone && <div className="text-muted fs-12">{info.row.original.phone}</div>}
-        </>
+        <a href={`mailto:${info.row.original.email}`} className="text-body text-decoration-none d-inline-flex align-items-center gap-1">
+          <i className="ri-mail-line text-muted fs-13"></i>
+          <span className="fs-13">{info.row.original.email}</span>
+        </a>
       ),
+    },
+    {
+      header: 'Phone',
+      accessorKey: 'phone',
+      cell: (info: any) => info.row.original.phone ? (
+        <a href={`tel:${info.row.original.phone}`} className="text-body text-decoration-none d-inline-flex align-items-center gap-1">
+          <i className="ri-phone-line text-muted fs-13"></i>
+          <span className="fs-13 font-monospace">{info.row.original.phone}</span>
+        </a>
+      ) : <span className="text-muted">—</span>,
     },
     {
       header: 'Type',
       accessorKey: 'org_type',
-      cell: (info: any) => <span className="text-uppercase text-muted small">{info.row.original.org_type}</span>,
+      cell: (info: any) => (
+        <span className="text-uppercase fw-medium text-muted fs-12">
+          {info.row.original.org_type}
+        </span>
+      ),
     },
     {
       header: 'Branches',
       accessorKey: 'branches_count',
-      cell: (info: any) => <span className="text-dark">{info.row.original.branches_count ?? 0}</span>,
+      cell: (info: any) => (
+        <span className="d-inline-flex align-items-center gap-1 fs-13">
+          <i className="ri-git-branch-line text-muted"></i>
+          <span className="fw-semibold">{info.row.original.branches_count ?? 0}</span>
+        </span>
+      ),
     },
     {
       header: 'Plan',
       accessorKey: 'plan_name',
       cell: (info: any) => (
-        <span className="fw-semibold text-dark">{info.row.original.plan?.name || 'Free'}</span>
+        <span className="fw-semibold fs-13">{info.row.original.plan?.name || 'Free'}</span>
       ),
     },
     {
@@ -154,7 +218,7 @@ export default function Clients({ onNavigate }: Props) {
         if (!plan || plan.price <= 0) return <span className="text-muted">—</span>;
         const suffix = plan.period === 'month' ? '/mo' : plan.period === 'quarter' ? '/qtr' : '/yr';
         return (
-          <span className="text-success fw-semibold">
+          <span className="text-success fw-semibold fs-13">
             ₹{plan.price.toLocaleString()}
             <small className="text-muted fw-normal fs-11 ms-1">{suffix}</small>
           </span>
@@ -164,90 +228,29 @@ export default function Clients({ onNavigate }: Props) {
     {
       header: 'Status',
       accessorKey: 'status',
-      cell: (info: any) => <Badge color={info.row.original.status === 'active' ? 'success' : 'danger'} pill className="text-uppercase">{info.row.original.status}</Badge>,
+      cell: (info: any) => {
+        const isActive = info.row.original.status === 'active';
+        const color = isActive ? 'success' : 'danger';
+        return (
+          <span className={`badge rounded-pill border border-${color} text-${color} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
+            <span className={`bg-${color} rounded-circle`} style={{ width: 6, height: 6 }} />
+            {info.row.original.status}
+          </span>
+        );
+      },
     },
     {
       header: () => <div className="text-center">Actions</div>,
       id: 'actions',
       cell: (info: any) => (
         <div className="d-flex gap-1 justify-content-center">
-          {/* View */}
-          <button
-            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-            title="View"
-            onClick={() => onNavigate('client-view', { clientId: info.row.original.id })}
-          >
-            <span className="avatar-title bg-transparent text-reset">
-              <i className="ri-eye-line"></i>
-            </span>
-          </button>
-
-          {/* Edit */}
-          <button
-            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-            title="Edit"
-            onClick={() => onNavigate('client-form', { editId: info.row.original.id })}
-          >
-            <span className="avatar-title bg-transparent text-reset">
-              <i className="ri-pencil-line"></i>
-            </span>
-          </button>
-
-          {/* Delete */}
-          <button
-            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-            title="Delete"
-            disabled={deleting === info.row.original.id}
-            onClick={() => handleDeleteClick(info.row.original)}
-          >
-            <span className="avatar-title bg-transparent text-reset">
-              <i className="ri-delete-bin-line"></i>
-            </span>
-          </button>
-
-          {/* Branches */}
-          <button
-            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-            title="Branches"
-            onClick={() => onNavigate('client-branches', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
-          >
-            <span className="avatar-title bg-transparent text-reset">
-              <i className="ri-git-branch-line"></i>
-            </span>
-          </button>
-
-          {/* Permissions */}
-          <button
-            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-            title="Permissions"
-            onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
-          >
-            <span className="avatar-title bg-transparent text-reset">
-              <i className="ri-shield-check-line"></i>
-            </span>
-          </button>
-
-          {/* Payments */}
-          <button
-            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-            title="Payments"
-            onClick={() => onNavigate('client-payments', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
-          >
-            <span className="avatar-title bg-transparent text-reset">
-              <i className="ri-bank-card-line"></i>
-            </span>
-          </button>
-
-          {/* Settings */}
-          <button
-            className="btn btn-light position-relative p-0 avatar-xs rounded-circle"
-            title="Settings"
-            onClick={() => onNavigate('client-settings', { clientId: info.row.original.id, clientName: info.row.original.org_name })}
-          >
-            <span className="avatar-title bg-transparent text-reset">
-              <i className="ri-settings-3-line"></i>
-            </span>
-          </button>
+          <ActionBtn title="View"        icon="ri-eye-line"         color="primary" onClick={() => onNavigate('client-view',        { clientId: info.row.original.id })} />
+          <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"    onClick={() => onNavigate('client-form',        { editId:   info.row.original.id })} />
+          <ActionBtn title="Delete"      icon="ri-delete-bin-line"  color="danger"  disabled={deleting === info.row.original.id} onClick={() => handleDeleteClick(info.row.original)} />
+          <ActionBtn title="Branches"    icon="ri-git-branch-line"  color="primary" onClick={() => onNavigate('client-branches',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionBtn title="Permissions" icon="ri-shield-check-line" color="success" onClick={() => onNavigate('client-permissions', { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionBtn title="Payments"    icon="ri-bank-card-line"   color="warning" onClick={() => onNavigate('client-payments',    { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
+          <ActionBtn title="Settings"    icon="ri-settings-3-line"  color="secondary" onClick={() => onNavigate('client-settings',  { clientId: info.row.original.id, clientName: info.row.original.org_name })} />
         </div>
       ),
     },
@@ -271,20 +274,21 @@ export default function Clients({ onNavigate }: Props) {
       <Row>
         <Col xs={12}>
           <Card>
-            <CardHeader className="border-0">
-              <Row className="align-items-center gy-3">
+            <CardHeader className="border-0 py-2">
+              <Row className="align-items-center gy-2">
                 <div className="col-sm">
-                  <h5 className="card-title mb-0">All Clients <span className="badge bg-primary-subtle text-primary ms-1">{total}</span></h5>
+                  <h5 className="card-title mb-0 fs-15">All Clients <span className="badge bg-primary-subtle text-primary ms-1">{total}</span></h5>
                 </div>
                 <div className="col-sm-auto">
                   <div className="d-flex gap-2 flex-wrap">
-                    <Button color="light" onClick={handleExport} disabled={exporting}>
+                    <Button color="light" size="sm" onClick={handleExport} disabled={exporting}>
                       {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
                       {exporting ? 'Exporting...' : 'Export'}
                     </Button>
                     <Button
                       color="primary"
-                      className="btn-label waves-effect waves-light rounded-pill btn btn-primary"
+                      size="sm"
+                      className="btn-label waves-effect waves-light rounded-pill"
                       onClick={() => onNavigate('client-form')}
                     >
                       <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
@@ -294,7 +298,7 @@ export default function Clients({ onNavigate }: Props) {
                 </div>
               </Row>
             </CardHeader>
-            <CardBody>
+            <CardBody className="pt-2">
               <TableContainer
                 columns={columns}
                 data={clients}
