@@ -8,7 +8,9 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rule;
 use App\Mail\WelcomeCredentialsMail;
 
 class BranchController extends Controller
@@ -63,6 +65,18 @@ class BranchController extends Controller
             return response()->json(['message' => 'Only client admins can create branches'], 403);
         }
 
+        // Enforce plan limit (max_branches) if configured
+        $client = \App\Models\Client::with('plan')->find($clientId);
+        $maxBranches = (int) ($client?->plan?->max_branches ?? 0);
+        if ($maxBranches > 0) {
+            $currentCount = Branch::where('client_id', $clientId)->count();
+            if ($currentCount >= $maxBranches) {
+                return response()->json([
+                    'message' => "Branch limit reached. Your plan allows up to {$maxBranches} branches (currently {$currentCount}). Upgrade your plan to add more.",
+                ], 422);
+            }
+        }
+
         $request->validate([
             'name' => 'required|string|max:255',
             'code' => 'nullable|string|max:50',
@@ -91,7 +105,7 @@ class BranchController extends Controller
 
             // Branch user login credentials
             'user_name' => 'required|string|max:255',
-            'user_email' => 'required|email|unique:users,email',
+            'user_email' => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
             'user_phone' => 'nullable|string|max:20',
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'required|string|min:6',
@@ -150,7 +164,7 @@ class BranchController extends Controller
 
             $branch->loadCount(['users', 'departments']);
 
-            // Send welcome email
+            // Send welcome email (non-fatal — branch creation succeeds even if mail fails)
             try {
                 $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
                 Mail::to($request->user_email)->send(new WelcomeCredentialsMail(
@@ -161,7 +175,11 @@ class BranchController extends Controller
                     $clientName,
                 ));
             } catch (\Exception $e) {
-                // Don't fail the request if email fails
+                Log::warning('Branch welcome mail failed', [
+                    'branch_id' => $branch->id,
+                    'user_email' => $request->user_email,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
             return response()->json([
@@ -231,7 +249,7 @@ class BranchController extends Controller
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
             'user_name' => 'nullable|string|max:255',
-            'user_email' => 'nullable|email|unique:users,email,' . ($branchUser?->id ?? 'NULL'),
+            'user_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($branchUser?->id)->whereNull('deleted_at')],
             'user_phone' => 'nullable|string|max:20',
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'nullable|string|min:6',

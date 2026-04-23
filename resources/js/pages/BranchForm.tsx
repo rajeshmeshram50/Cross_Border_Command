@@ -23,6 +23,21 @@ const empty = {
 
 type FormState = typeof empty;
 
+// Human-readable field labels used for error summaries / toasts
+const FIELD_LABELS: Record<string, string> = {
+  name: 'Branch Name',
+  email: 'Branch Email',
+  phone: 'Branch Phone',
+  pincode: 'Pincode',
+  gst_number: 'GST Number',
+  pan_number: 'PAN Number',
+  max_users: 'Max Users',
+  user_name: 'User Full Name',
+  user_email: 'User Email',
+  user_password: 'Password',
+  user_password_confirmation: 'Confirm Password',
+};
+
 function validateBranchForm(form: FormState, isEdit: boolean): Record<string, string> {
   const e: Record<string, string> = {};
   if (!form.name?.trim()) e.name = 'Branch name is required';
@@ -34,6 +49,7 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
     if (form.gst_number && !/^[0-9A-Z]{15}$/.test(form.gst_number)) e.gst_number = '15 alphanumeric characters';
     if (form.pan_number && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan_number)) e.pan_number = 'Invalid PAN format';
   }
+  if (form.max_users && parseInt(form.max_users) < 0) e.max_users = 'Cannot be negative';
   if (!isEdit) {
     if (!form.user_name?.trim()) e.user_name = 'User name is required';
     if (!form.user_email?.trim()) e.user_email = 'Email is required';
@@ -107,12 +123,35 @@ export default function BranchForm({ onBack, editId }: Props) {
     }).catch(() => {}).finally(() => setLoadingData(false));
   }, [editId]);
 
-  const handleSubmit = async (e?: React.FormEvent) => {
-    e?.preventDefault();
+  // Focus + scroll to first invalid field so user sees what's missing, even if it's far down the form
+  const focusFirstError = (errs: Record<string, string | string[]>) => {
+    const keys = Object.keys(errs);
+    if (!keys.length) return;
+    // Try each error key in order — use name/id selectors
+    for (const k of keys) {
+      const el = document.querySelector<HTMLElement>(`[name="${k}"], #branch-field-${k}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Delay focus slightly so scroll completes before focus jumps
+        setTimeout(() => { try { (el as HTMLInputElement).focus?.(); } catch {} }, 350);
+        return;
+      }
+    }
+  };
+
+  const handleSubmit = async (e?: { preventDefault?: () => void }) => {
+    e?.preventDefault?.();
     const allKeys = Object.keys(empty) as (keyof FormState)[];
     allKeys.forEach(k => { touchedRef.current[k] = true; });
     const errs = validateBranchForm(form, isEdit);
-    if (Object.keys(errs).length) { setValidationErrors(errs); toast.error('Validation Error', 'Please fix the highlighted fields'); return; }
+    if (Object.keys(errs).length) {
+      setValidationErrors(errs);
+      const missing = Object.keys(errs).slice(0, 3).map(k => FIELD_LABELS[k] || k).join(', ');
+      const more = Object.keys(errs).length > 3 ? ` +${Object.keys(errs).length - 3} more` : '';
+      toast.error('Fix these fields', `${missing}${more}`);
+      focusFirstError(errs);
+      return;
+    }
     setServerErrors({}); setSaving(true);
     try {
       const payload: Record<string, any> = { ...form };
@@ -131,8 +170,13 @@ export default function BranchForm({ onBack, editId }: Props) {
       setTimeout(() => onBack(), 1200);
     } catch (err: any) {
       if (err.response?.status === 422) {
-        setServerErrors(err.response.data.errors || {});
-        toast.error('Validation Error', 'Please fix the highlighted fields');
+        const svErrs = err.response.data.errors || {};
+        setServerErrors(svErrs);
+        const keys = Object.keys(svErrs);
+        const missing = keys.slice(0, 3).map(k => FIELD_LABELS[k] || k).join(', ');
+        const more = keys.length > 3 ? ` +${keys.length - 3} more` : '';
+        toast.error('Fix these fields', `${missing}${more}`);
+        focusFirstError(svErrs);
       } else {
         toast.error('Error', err.response?.data?.message || 'Something went wrong');
       }
@@ -191,6 +235,24 @@ export default function BranchForm({ onBack, editId }: Props) {
         </Alert>
       )}
 
+      {(Object.keys(validationErrors).length > 0 || Object.keys(serverErrors).filter(k => k !== 'general').length > 0) && (
+        <Alert color="danger" className="d-flex align-items-start gap-2">
+          <i className="ri-error-warning-line mt-1"></i>
+          <div className="flex-grow-1">
+            <strong className="d-block mb-1">
+              {Object.keys({ ...validationErrors, ...serverErrors }).filter(k => k !== 'general').length} field{Object.keys({ ...validationErrors, ...serverErrors }).filter(k => k !== 'general').length !== 1 ? 's' : ''} need attention:
+            </strong>
+            <div className="d-flex flex-wrap gap-1">
+              {Object.keys({ ...validationErrors, ...serverErrors }).filter(k => k !== 'general').map(k => (
+                <span key={k} className="badge bg-danger-subtle text-danger fs-11 fw-medium">
+                  {FIELD_LABELS[k] || k}
+                </span>
+              ))}
+            </div>
+          </div>
+        </Alert>
+      )}
+
       <Form onSubmit={handleSubmit}>
         <Card>
           <CardHeader className="d-flex align-items-center justify-content-between">
@@ -207,7 +269,7 @@ export default function BranchForm({ onBack, editId }: Props) {
             <Row className="g-3 mb-4">
               <Col md={4}>
                 <Label>Branch Name <span className="text-danger">*</span></Label>
-                <Input value={form.name} invalid={fieldInvalid('name')}
+                <Input name="name" value={form.name} invalid={fieldInvalid('name')}
                   onChange={e => set('name', e.target.value)} onBlur={() => touch('name')} placeholder="e.g., Head Office" />
                 <FormFeedback>{fieldError('name')}</FormFeedback>
               </Col>
@@ -242,13 +304,13 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Label>Email</Label>
-                <Input type="email" value={form.email} invalid={fieldInvalid('email')}
+                <Input name="email" type="email" value={form.email} invalid={fieldInvalid('email')}
                   onChange={e => set('email', e.target.value)} onBlur={() => touch('email')} placeholder="branch@company.com" />
                 <FormFeedback>{fieldError('email')}</FormFeedback>
               </Col>
               <Col md={4}>
                 <Label>Phone</Label>
-                <Input type="tel" value={form.phone} invalid={fieldInvalid('phone')}
+                <Input name="phone" type="tel" value={form.phone} invalid={fieldInvalid('phone')}
                   onChange={e => set('phone', e.target.value)} onBlur={() => touch('phone')} placeholder="+91 9876543210" />
                 <FormFeedback>{fieldError('phone')}</FormFeedback>
               </Col>
@@ -278,7 +340,9 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Label>Max Users (0 = unlimited)</Label>
-                <Input type="number" min={0} value={form.max_users} onChange={e => set('max_users', e.target.value)} />
+                <Input name="max_users" type="number" min={0} value={form.max_users} invalid={fieldInvalid('max_users')}
+                  onChange={e => set('max_users', e.target.value)} onBlur={() => touch('max_users')} />
+                <FormFeedback>{fieldError('max_users')}</FormFeedback>
               </Col>
               <Col md={4}>
                 <Label>Established Date</Label>
@@ -307,7 +371,7 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Label>Pincode</Label>
-                <Input value={form.pincode} invalid={fieldInvalid('pincode')} maxLength={6}
+                <Input name="pincode" value={form.pincode} invalid={fieldInvalid('pincode')} maxLength={6}
                   onChange={e => set('pincode', e.target.value)} onBlur={() => touch('pincode')} placeholder="400001" />
                 <FormFeedback>{fieldError('pincode')}</FormFeedback>
               </Col>
@@ -333,13 +397,13 @@ export default function BranchForm({ onBack, editId }: Props) {
             <Row className="g-3 mb-4">
               <Col md={4}>
                 <Label>GST Number</Label>
-                <Input value={form.gst_number} invalid={fieldInvalid('gst_number')} maxLength={15}
+                <Input name="gst_number" value={form.gst_number} invalid={fieldInvalid('gst_number')} maxLength={15}
                   onChange={e => set('gst_number', e.target.value.toUpperCase())} onBlur={() => touch('gst_number')} placeholder="27AABCU9603R1ZM" />
                 <FormFeedback>{fieldError('gst_number')}</FormFeedback>
               </Col>
               <Col md={4}>
                 <Label>PAN Number</Label>
-                <Input value={form.pan_number} invalid={fieldInvalid('pan_number')} maxLength={10}
+                <Input name="pan_number" value={form.pan_number} invalid={fieldInvalid('pan_number')} maxLength={10}
                   onChange={e => set('pan_number', e.target.value.toUpperCase())} onBlur={() => touch('pan_number')} placeholder="AABCU9603R" />
                 <FormFeedback>{fieldError('pan_number')}</FormFeedback>
               </Col>
@@ -350,21 +414,23 @@ export default function BranchForm({ onBack, editId }: Props) {
             </Row>
 
             {/* E: Branch user credentials */}
-            <SectionHeader icon="ri-user-line" title="Branch User Credentials" badge="Section E" />
-            <Alert color="info" className="d-flex align-items-center py-2">
-              <i className="ri-lock-line me-2"></i>
-              Creates the first login user for this branch.
+            <SectionHeader icon="ri-user-line" title={isEdit ? 'Branch User Credentials' : 'Branch User Credentials (Required)'} badge="Section E" />
+            <Alert color={isEdit ? 'info' : 'warning'} className="d-flex align-items-center py-2">
+              <i className={`${isEdit ? 'ri-lock-line' : 'ri-error-warning-line'} me-2`}></i>
+              {isEdit
+                ? 'Update the login user for this branch. Leave password blank to keep current.'
+                : 'Name, Email and Password are required — this creates the first login user for this branch.'}
             </Alert>
             <Row className="g-3 mb-4">
               <Col md={4}>
                 <Label>Full Name {!isEdit && <span className="text-danger">*</span>}</Label>
-                <Input value={form.user_name} invalid={fieldInvalid('user_name')}
+                <Input name="user_name" value={form.user_name} invalid={fieldInvalid('user_name')}
                   onChange={e => set('user_name', e.target.value)} onBlur={() => touch('user_name')} placeholder="User full name" />
                 <FormFeedback>{fieldError('user_name')}</FormFeedback>
               </Col>
               <Col md={4}>
                 <Label>Email {!isEdit && <span className="text-danger">*</span>}</Label>
-                <Input type="email" value={form.user_email} invalid={fieldInvalid('user_email')}
+                <Input name="user_email" type="email" value={form.user_email} invalid={fieldInvalid('user_email')}
                   onChange={e => set('user_email', e.target.value)} onBlur={() => touch('user_email')} placeholder="user@branch.com" />
                 <FormFeedback>{fieldError('user_email')}</FormFeedback>
               </Col>
@@ -378,14 +444,14 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Label>{isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Label>
-                <Input type="password" value={form.user_password} invalid={fieldInvalid('user_password')}
+                <Input name="user_password" type="password" value={form.user_password} invalid={fieldInvalid('user_password')}
                   onChange={e => set('user_password', e.target.value)} onBlur={() => touch('user_password')}
                   placeholder={isEdit ? 'Leave blank to keep' : 'Min. 6 characters'} />
                 <FormFeedback>{fieldError('user_password')}</FormFeedback>
               </Col>
               <Col md={4}>
                 <Label>Confirm Password {!isEdit && <span className="text-danger">*</span>}</Label>
-                <Input type="password" value={form.user_password_confirmation}
+                <Input name="user_password_confirmation" type="password" value={form.user_password_confirmation}
                   invalid={fieldInvalid('user_password_confirmation')}
                   onChange={e => set('user_password_confirmation', e.target.value)}
                   onBlur={() => touch('user_password_confirmation')} placeholder="Re-enter password" />

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, CardBody, Col, Row, Badge, Alert } from 'reactstrap';
+import { Card, CardBody, Col, Row } from 'reactstrap';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -137,54 +137,62 @@ export default function ClientDashboard() {
       <style>{`
         .dashboard-kpi-card { background: #ffffff; }
         [data-bs-theme="dark"] .dashboard-kpi-card { background: #1c2531; }
+        @keyframes cd-plan-pulse {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 var(--cd-plan-color); }
+          50% { transform: scale(1.15); box-shadow: 0 0 0 4px transparent; }
+        }
       `}</style>
       {/* Page Title */}
-      <Row className="mb-2">
+      <Row className="mb-3">
         <Col xs={12}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Dashboard</h4>
               <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Welcome back! Here's your organization overview.</p>
             </div>
-            <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
-              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{user?.client_name}</a></li>
-              <li className="breadcrumb-item active">Overview</li>
-            </ol>
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              {(() => {
+                const isExpired = plan.status === 'expired';
+                const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
+                const color = isExpired ? '#f06548' : isWarn ? '#f7b84b' : '#0ab39c';
+                const label = isExpired ? 'EXPIRED' : isWarn ? 'EXPIRES SOON' : 'CURRENT';
+                return (
+                  <span
+                    className="d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1 fw-semibold"
+                    style={{
+                      background: `${color}15`,
+                      color,
+                      border: `1px solid ${color}40`,
+                      fontSize: 10.5,
+                      letterSpacing: '0.04em',
+                      ['--cd-plan-color' as any]: `${color}66`,
+                    }}
+                    title={isExpired ? `Expired ${plan.expires_at}` : `Valid until ${plan.expires_at}`}
+                  >
+                    <span
+                      className="rounded-circle"
+                      style={{
+                        width: 6, height: 6,
+                        background: color,
+                        animation: 'cd-plan-pulse 1.8s ease-in-out infinite',
+                      }}
+                    />
+                    {label}: {plan.name?.toUpperCase()}
+                    {isWarn && (
+                      <span className="fw-normal ms-1" style={{ opacity: 0.85 }}>· {plan.days_remaining}d</span>
+                    )}
+                    <span className="fw-normal ms-1" style={{ opacity: 0.75 }}>· {plan.expires_at}</span>
+                  </span>
+                );
+              })()}
+              <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
+                <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{user?.client_name}</a></li>
+                <li className="breadcrumb-item active">Overview</li>
+              </ol>
+            </div>
           </div>
         </Col>
       </Row>
-
-      {/* Plan banner */}
-      {plan.status === 'expired' ? (
-        <Alert color="danger" className="d-flex align-items-center" style={{ borderRadius: 14, border: '1px solid #f8d5d0' }}>
-          <i className="ri-error-warning-line me-2 fs-4"></i>
-          <div className="flex-grow-1">
-            <strong>Plan Expired</strong>
-            <div className="fs-13">Your {plan.name} plan has expired. Renew to continue.</div>
-          </div>
-          <small className="text-danger-emphasis">Expired {plan.expires_at}</small>
-        </Alert>
-      ) : plan.days_remaining !== null && plan.days_remaining <= 30 ? (
-        <Alert color="warning" className="d-flex align-items-center" style={{ borderRadius: 14, border: '1px solid #fce3a1' }}>
-          <i className="ri-time-line me-2 fs-4"></i>
-          <div className="flex-grow-1">
-            <strong>{plan.days_remaining} Days Remaining</strong>
-            <div className="fs-13">{plan.name} plan expires on {plan.expires_at}</div>
-          </div>
-          <Badge color="warning" className="text-uppercase">Renew Soon</Badge>
-        </Alert>
-      ) : (
-        <Alert color="primary" className="d-flex align-items-center" style={{ borderRadius: 14, border: '1px solid #c5caf0' }}>
-          <i className="ri-shield-check-line me-2 fs-4"></i>
-          <div className="flex-grow-1">
-            <strong>{plan.name} Plan</strong>
-            <div className="fs-13">
-              {plan.days_remaining !== null ? `${plan.days_remaining} days remaining · Expires ${plan.expires_at}` : 'Active subscription'}
-            </div>
-          </div>
-          {plan.price > 0 && <span className="fw-bold">₹{plan.price.toLocaleString()}<small className="text-muted">/yr</small></span>}
-        </Alert>
-      )}
 
       {/* KPI Cards */}
       <Row className="g-3 mb-3 ">
