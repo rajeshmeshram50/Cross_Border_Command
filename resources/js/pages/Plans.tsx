@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardBody, Col, Row, Badge, Button, Spinner, Modal, ModalHeader, ModalBody } from 'reactstrap';
+import { Card, CardBody, Col, Row, Badge, Button, Spinner, Modal, ModalBody } from 'reactstrap';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination, Autoplay } from 'swiper/modules';
 import { useToast } from '../contexts/ToastContext';
@@ -178,17 +178,17 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
           </div>
         </div>
 
-        {loading ? (
-          <div className="text-center py-5"><Spinner color="primary" /></div>
-        ) : plans.length === 0 ? (
-          <Card>
-            <CardBody className="text-center py-5">
-              <i className="ri-bank-card-line display-4 text-muted"></i>
-              <p className="mt-3 text-muted">No plans yet. Click "Add Plan" to create your first plan.</p>
-            </CardBody>
-          </Card>
-        ) : (
-          <div className="plans-swiper-outer">
+      {loading ? (
+        <div className="text-center py-3"><Spinner color="primary" /></div>
+      ) : plans.length === 0 ? (
+        <Card>
+          <CardBody className="text-center py-5">
+            <i className="ri-bank-card-line display-4 text-muted"></i>
+            <p className="mt-3 text-muted">No plans yet. Click "Add Plan" to create your first plan.</p>
+          </CardBody>
+        </Card>
+      ) : (
+        <div className="plans-swiper-outer">
           <button ref={prevRef} className="plans-nav-btn plans-nav-prev" aria-label="Previous">
             <i className="ri-arrow-left-s-line"></i>
           </button>
@@ -473,15 +473,15 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                       </div>
                     )}
                     <ul
-                      className="list-unstyled vstack gap-1 mb-0 pe-1 text-start"
+                      className="list-unstyled vstack gap-1 mb-0 pe-1 text-start plan-modules-scroll"
                       style={{
                         overflowY: 'auto',
-                        maxHeight: 160,
+                        maxHeight: 180,
                         minHeight: 0,
                         scrollbarWidth: 'thin',
                       }}
                     >
-                      {(p.modules || []).slice(0, 4).map(m => (
+                      {(p.modules || []).map(m => (
                         <li key={m.id} className="d-flex align-items-center gap-2" title={m.name}>
                           <span
                             className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
@@ -531,21 +531,6 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                           <span style={{ color: textMain, fontSize: 12 }}>
                             {p.clients_count} active client{p.clients_count !== 1 ? 's' : ''}
                           </span>
-                        </li>
-                      )}
-                      {p.modules && p.modules.length > 4 && (
-                        <li>
-                          <button
-                            className="btn btn-link p-0 d-inline-flex align-items-center gap-1"
-                            onClick={() => setModalPlan(p)}
-                            style={{
-                              fontSize: 11,
-                              color: textMuted,
-                              textDecoration: 'none',
-                            }}
-                          >
-                            +{p.modules.length - 4} more modules <i className="ri-arrow-right-s-line" />
-                          </button>
                         </li>
                       )}
                     </ul>
@@ -620,53 +605,121 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
         )}
       </div>
 
-      {/* Modules detail modal */}
-      <Modal isOpen={!!modalPlan} toggle={() => setModalPlan(null)} size="lg" centered scrollable>
-        <ModalHeader
-          toggle={() => setModalPlan(null)}
-          className="border-0 pb-0"
-          style={{ background: 'linear-gradient(135deg, var(--vz-primary) 0%, #6f42c1 100%)' }}
+      {/* ── Premium Modules Detail Modal ── */}
+      <Modal
+        isOpen={!!modalPlan}
+        toggle={() => setModalPlan(null)}
+        size="lg"
+        centered
+        scrollable
+        contentClassName="border-0 overflow-hidden"
+        style={{ borderRadius: 16 }}
+      >
+        <div
+          className="position-relative text-white px-4 py-3"
+          style={{
+            background: 'linear-gradient(135deg, #0b1324 0%, #1e2a4a 50%, #2d4373 100%)',
+          }}
         >
-          <div className="d-flex align-items-center gap-2 text-white">
-            <div className="avatar-xs">
-              <div className="avatar-title rounded bg-white bg-opacity-25 text-white fs-5">
-                <i className="ri-apps-2-line"></i>
+          <div
+            className="position-absolute top-0 start-0 w-100 h-100"
+            style={{
+              backgroundImage: 'radial-gradient(circle at 15% 20%, rgba(102,145,231,0.22) 0%, transparent 42%), radial-gradient(circle at 85% 85%, rgba(10,179,156,0.14) 0%, transparent 48%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <div className="position-relative d-flex align-items-center justify-content-between gap-2">
+            <div className="d-flex align-items-center gap-2">
+              <div
+                className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
+                style={{
+                  width: 40, height: 40,
+                  background: 'linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.08))',
+                  border: '1px solid rgba(255,255,255,0.22)',
+                  backdropFilter: 'blur(6px)',
+                }}
+              >
+                <i className="ri-apps-2-line" style={{ color: '#fff', fontSize: 18 }} />
+              </div>
+              <div>
+                <h5 className="text-white mb-0 fw-bold" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
+                  {modalPlan?.name}
+                </h5>
+                <div className="d-inline-flex align-items-center gap-1 mt-1" style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11.5 }}>
+                  <i className="ri-checkbox-multiple-line" />
+                  <span className="fw-semibold" style={{ color: '#fff' }}>{modalPlan?.modules?.length}</span>
+                  modules included
+                </div>
               </div>
             </div>
-            <div>
-              <div className="fw-bold fs-16">{modalPlan?.name}</div>
-              <div className="fs-12 opacity-75">{modalPlan?.modules?.length} modules included</div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setModalPlan(null)}
+              className="btn p-0 d-inline-flex align-items-center justify-content-center rounded-circle"
+              style={{
+                width: 32, height: 32,
+                background: 'rgba(255,255,255,0.14)',
+                border: '1px solid rgba(255,255,255,0.22)',
+                color: '#fff',
+              }}
+              aria-label="Close"
+            >
+              <i className="ri-close-line" style={{ fontSize: 16 }} />
+            </button>
           </div>
-        </ModalHeader>
+        </div>
 
-        <ModalBody className="pt-4">
+        <ModalBody className="p-3" style={{ background: 'var(--vz-card-bg)' }}>
           {modalPlan?.modules && modalPlan.modules.length > 0 ? (
             <>
-              <p className="text-muted fs-13 mb-4">
-                All modules available in the <strong>{modalPlan.name}</strong> plan. Hover over any module for the full name.
+              <p className="mb-3" style={{ color: 'var(--vz-secondary-color)', fontSize: 12.5 }}>
+                All modules available in the <strong style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{modalPlan.name}</strong> plan.
               </p>
-              <div className="row gx-3 gy-3">
-                {modalPlan.modules.map((m, idx) => (
+              <div className="row gx-2 gy-2">
+                {modalPlan.modules.map(m => (
                   <div key={m.id} className="col-md-4 col-sm-6" title={m.name}>
                     <div
-                      className="d-flex align-items-center gap-2 p-2 rounded border"
-                      style={{ background: idx % 2 === 0 ? 'var(--vz-light)' : '#fff', minHeight: '44px' }}
+                      className="d-flex align-items-center gap-2 px-2 py-2 rounded-2"
+                      style={{
+                        background: 'var(--vz-secondary-bg)',
+                        border: '1px solid var(--vz-border-color)',
+                        transition: 'background .15s ease, border-color .15s ease',
+                        minHeight: 40,
+                      }}
+                      onMouseEnter={e => {
+                        (e.currentTarget as HTMLDivElement).style.background = '#0ab39c10';
+                        (e.currentTarget as HTMLDivElement).style.borderColor = '#0ab39c50';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLDivElement).style.background = 'var(--vz-secondary-bg)';
+                        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--vz-border-color)';
+                      }}
                     >
-                      <div
-                        className="avatar-xxs rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-                        style={{ width: 28, height: 28, background: 'var(--vz-primary-bg-subtle)' }}
+                      <span
+                        className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                        style={{
+                          width: 20, height: 20,
+                          background: m.pivot?.access_level === 'limited' ? '#f7b84b' : '#0ab39c',
+                          boxShadow: `0 2px 4px ${m.pivot?.access_level === 'limited' ? 'rgba(247,184,75,0.25)' : 'rgba(10,179,156,0.25)'}`,
+                        }}
                       >
-                        <i className="ri-checkbox-circle-fill text-success fs-14"></i>
-                      </div>
-                      <span className="fs-13 fw-medium text-truncate flex-grow-1" style={{ minWidth: 0 }}>
+                        <i className="ri-check-line" style={{ color: '#fff', fontSize: 12, fontWeight: 700 }} />
+                      </span>
+                      <span
+                        className="fw-medium text-truncate flex-grow-1"
+                        style={{
+                          fontSize: 12.5,
+                          color: 'var(--vz-heading-color, var(--vz-body-color))',
+                          minWidth: 0,
+                        }}
+                      >
                         {m.name}
                       </span>
                       {m.pivot?.access_level && m.pivot.access_level !== 'full' && (
                         <Badge
                           color={accessColors[m.pivot.access_level] || 'secondary'}
                           className="flex-shrink-0 text-capitalize"
-                          style={{ fontSize: '10px' }}
+                          style={{ fontSize: '9.5px' }}
                         >
                           {m.pivot.access_level}
                         </Badge>
@@ -676,22 +729,29 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                 ))}
               </div>
 
-              <div className="mt-4 p-3 rounded" style={{ background: 'var(--vz-primary-bg-subtle)' }}>
-                <div className="d-flex align-items-center gap-2 text-primary">
-                  <i className="ri-information-line fs-16"></i>
-                  <span className="fs-13">
-                    Access levels: <strong>full</strong> = complete access &nbsp;|&nbsp;
-                    <strong>limited</strong> = restricted &nbsp;|&nbsp;
-                    <strong>read</strong> = view only &nbsp;|&nbsp;
-                    <strong>write</strong> = edit only
-                  </span>
-                </div>
+              <div
+                className="mt-3 px-3 py-2 rounded-2 d-flex align-items-center gap-2"
+                style={{
+                  background: '#40518910',
+                  border: '1px solid #40518930',
+                  borderLeft: '3px solid #405189',
+                }}
+              >
+                <i className="ri-information-line" style={{ color: '#405189', fontSize: 16 }} />
+                <span style={{ fontSize: 11.5, color: 'var(--vz-body-color)' }}>
+                  Access levels: <strong>full</strong> complete access · <strong>limited</strong> restricted · <strong>read</strong> view only · <strong>write</strong> edit only
+                </span>
               </div>
             </>
           ) : (
-            <div className="text-center text-muted py-4">
-              <i className="ri-apps-2-line display-5 d-block mb-2"></i>
-              No modules assigned to this plan.
+            <div className="text-center py-4">
+              <div
+                className="d-inline-flex align-items-center justify-content-center rounded-circle mb-2"
+                style={{ width: 52, height: 52, background: '#f7b84b18', border: '1px solid #f7b84b30' }}
+              >
+                <i className="ri-apps-2-line" style={{ color: '#f7b84b', fontSize: 24 }} />
+              </div>
+              <p className="mb-0 fs-13" style={{ color: 'var(--vz-secondary-color)' }}>No modules assigned to this plan.</p>
             </div>
           )}
         </ModalBody>
