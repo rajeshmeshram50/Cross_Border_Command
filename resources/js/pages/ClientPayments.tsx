@@ -213,7 +213,7 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
               columns={columns}
               data={payments}
               isGlobalFilter={true}
-              customPageSize={15}
+              customPageSize={10}
               tableClass="align-middle table-nowrap mb-0 "
               theadClass="table-light"
               divClass="table-responsive table-card border rounded"

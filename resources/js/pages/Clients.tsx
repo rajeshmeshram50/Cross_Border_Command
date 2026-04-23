@@ -44,7 +44,7 @@ export default function Clients({ onNavigate }: Props) {
     setLoading(true);
     try {
       const res = await api.get<PaginatedResponse<Client>>('/clients', {
-        params: { search: search || undefined, page, per_page: 15 },
+        params: { search: search || undefined, page, per_page: 10 },
       });
       setClients(res.data.data);
       setTotalPages(res.data.last_page);
@@ -539,7 +539,7 @@ export default function Clients({ onNavigate }: Props) {
                   columns={columns}
                   data={clients}
                   isGlobalFilter={false}
-                  customPageSize={15}
+                  customPageSize={10}
                   tableClass="align-middle table-nowrap mb-0"
                   theadClass="table-light"
                   divClass="table-responsive table-card border rounded"
