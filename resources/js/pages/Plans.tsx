@@ -91,8 +91,22 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [modalPlan, setModalPlan] = useState<Plan | null>(null);
+  const [darkTheme, setDarkTheme] = useState(false);
   const prevRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
+
+  // Watch the document for Velzon dark-theme toggle
+  useEffect(() => {
+    const check = () => {
+      const html = document.documentElement;
+      const mode = html.getAttribute('data-layout-mode') || html.getAttribute('data-bs-theme');
+      setDarkTheme(mode === 'dark');
+    };
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-layout-mode', 'data-bs-theme'] });
+    return () => observer.disconnect();
+  }, []);
 
   const fetchPlans = () => {
     setLoading(true);
@@ -125,13 +139,43 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
   return (
     <>
       <style>{SWIPER_STYLES}</style>
-      {/* Shine animation keyframes — shared across all cards */}
+      {/* Shine animation + custom thin scrollbar for module list */}
       <style>{`
         @keyframes plan-shine-sweep {
           0%   { transform: translateX(-120%) skewX(-20deg); opacity: 0; }
           8%   { opacity: 1; }
           35%  { transform: translateX(320%) skewX(-20deg); opacity: 0; }
           100% { transform: translateX(320%) skewX(-20deg); opacity: 0; }
+        }
+
+        /* Slim custom scrollbar for modules list */
+        .plan-modules-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(124, 92, 252, 0.25) transparent;
+        }
+        .plan-modules-scroll::-webkit-scrollbar {
+          width: 4px;
+        }
+        .plan-modules-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .plan-modules-scroll::-webkit-scrollbar-thumb {
+          background: rgba(124, 92, 252, 0.22);
+          border-radius: 4px;
+          transition: background 0.2s ease;
+        }
+        .plan-modules-scroll::-webkit-scrollbar-thumb:hover {
+          background: rgba(124, 92, 252, 0.45);
+        }
+        /* Dark card scrollbar — slightly brighter for contrast */
+        .plan-modules-scroll.plan-scroll-dark {
+          scrollbar-color: rgba(247, 184, 75, 0.30) transparent;
+        }
+        .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb {
+          background: rgba(247, 184, 75, 0.28);
+        }
+        .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb:hover {
+          background: rgba(247, 184, 75, 0.50);
         }
       `}</style>
 
@@ -214,15 +258,21 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
             className="plans-swiper pb-5"
           >
           {plans.map((p, idx) => {
-            const PLAN_ACCENTS = ['#405189', '#0ab39c', '#299cdb', '#7c5cfc', '#e83e8c', '#f06548'];
-            const accent = p.is_featured ? '#f7b84b' : PLAN_ACCENTS[idx % PLAN_ACCENTS.length];
+            // All non-featured cards share the same glossy violet theme
+            const accent = p.is_featured ? '#f7b84b' : '#7c5cfc';
             const isDark = p.is_featured;
             const textMain = isDark ? '#fff' : 'var(--vz-heading-color, var(--vz-body-color))';
             const textMuted = isDark ? 'rgba(255,255,255,0.65)' : 'var(--vz-secondary-color)';
             const dividerColor = isDark ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color)';
             const bgBase = isDark
-              ? 'linear-gradient(160deg, #0b1324 0%, #1a2545 60%, #2d4373 100%)'
-              : `linear-gradient(160deg, ${accent}0a 0%, var(--vz-card-bg) 45%)`;
+              ? `
+                linear-gradient(135deg, rgba(247,184,75,0.10) 0%, transparent 55%),
+                linear-gradient(225deg, rgba(102,145,231,0.14) 0%, transparent 55%),
+                linear-gradient(160deg, #0b1324 0%, #1a2545 60%, #2d4373 100%)
+              `
+              : darkTheme
+                ? `linear-gradient(135deg, ${accent}14 0%, transparent 60%), var(--vz-card-bg)`
+                : 'var(--vz-card-bg)';
 
             return (
               <SwiperSlide key={p.id} style={{ height: 'auto' }}>
@@ -231,25 +281,59 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                   style={{
                     height: 520,
                     borderRadius: 16,
-                    border: isDark ? `1px solid ${accent}88` : '1px solid var(--vz-border-color)',
+                    border: isDark ? `1px solid ${accent}88` : `1px solid ${accent}30`,
                     background: bgBase,
                     boxShadow: isDark
-                      ? `0 12px 32px ${accent}35, 0 3px 10px rgba(0,0,0,0.10)`
-                      : '0 3px 12px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.03)',
+                      ? `
+                        0 20px 50px ${accent}38,
+                        0 12px 28px rgba(0,0,0,0.20),
+                        0 4px 10px rgba(0,0,0,0.10),
+                        inset 0 1px 0 rgba(255,255,255,0.06)
+                      `
+                      : darkTheme
+                        ? `
+                          0 14px 38px ${accent}30,
+                          0 6px 14px rgba(0,0,0,0.28),
+                          0 2px 6px rgba(0,0,0,0.16),
+                          inset 0 1px 0 rgba(255,255,255,0.05)
+                        `
+                        : `
+                          0 12px 32px ${accent}22,
+                          0 6px 14px rgba(15, 23, 42, 0.08),
+                          0 2px 6px rgba(15, 23, 42, 0.04),
+                          inset 0 1px 0 rgba(255,255,255,0.85)
+                        `,
                     display: 'flex',
                     flexDirection: 'column',
-                    transition: 'transform .25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow .25s ease, border-color .22s ease',
+                    transition: 'transform .28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow .28s ease, border-color .22s ease',
                     cursor: 'default',
                     position: 'relative',
                     overflow: 'hidden',
                   }}
                   onMouseEnter={e => {
                     const el = e.currentTarget as HTMLDivElement;
-                    el.style.transform = 'translateY(-6px)';
+                    el.style.transform = 'translateY(-8px)';
                     el.style.boxShadow = isDark
-                      ? `0 22px 50px ${accent}55, 0 6px 16px rgba(0,0,0,0.18)`
-                      : `0 16px 34px ${accent}30, 0 4px 10px rgba(15, 23, 42, 0.08)`;
-                    if (!isDark) el.style.borderColor = accent + '66';
+                      ? `
+                        0 32px 70px ${accent}55,
+                        0 16px 36px rgba(0,0,0,0.28),
+                        0 6px 14px rgba(0,0,0,0.14),
+                        inset 0 1px 0 rgba(255,255,255,0.10)
+                      `
+                      : darkTheme
+                        ? `
+                          0 26px 60px ${accent}50,
+                          0 12px 28px rgba(0,0,0,0.40),
+                          0 4px 10px rgba(0,0,0,0.20),
+                          inset 0 1px 0 rgba(255,255,255,0.08)
+                        `
+                        : `
+                          0 24px 54px ${accent}40,
+                          0 12px 26px rgba(15, 23, 42, 0.12),
+                          0 4px 10px rgba(15, 23, 42, 0.06),
+                          inset 0 1px 0 rgba(255,255,255,0.95)
+                        `;
+                    if (!isDark) el.style.borderColor = accent + '70';
                     const shine = el.querySelector<HTMLDivElement>('.plan-shine-overlay');
                     if (shine) {
                       shine.style.animation = 'none';
@@ -262,9 +346,26 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                     const el = e.currentTarget as HTMLDivElement;
                     el.style.transform = 'translateY(0)';
                     el.style.boxShadow = isDark
-                      ? `0 14px 36px ${accent}38, 0 4px 12px rgba(0,0,0,0.12)`
-                      : '0 4px 14px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)';
-                    if (!isDark) el.style.borderColor = 'var(--vz-border-color)';
+                      ? `
+                        0 20px 50px ${accent}38,
+                        0 12px 28px rgba(0,0,0,0.20),
+                        0 4px 10px rgba(0,0,0,0.10),
+                        inset 0 1px 0 rgba(255,255,255,0.06)
+                      `
+                      : darkTheme
+                        ? `
+                          0 14px 38px ${accent}30,
+                          0 6px 14px rgba(0,0,0,0.28),
+                          0 2px 6px rgba(0,0,0,0.16),
+                          inset 0 1px 0 rgba(255,255,255,0.05)
+                        `
+                        : `
+                          0 12px 32px ${accent}22,
+                          0 6px 14px rgba(15, 23, 42, 0.08),
+                          0 2px 6px rgba(15, 23, 42, 0.04),
+                          inset 0 1px 0 rgba(255,255,255,0.85)
+                        `;
+                    if (!isDark) el.style.borderColor = accent + '30';
                   }}
                 >
                   {/* ── Diagonal shine sweep overlay ── */}
@@ -276,7 +377,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                       width: '55%', height: '100%',
                       background: isDark
                         ? 'linear-gradient(100deg, transparent 15%, rgba(255,255,255,0.14) 50%, transparent 85%)'
-                        : `linear-gradient(100deg, transparent 15%, ${accent}20 50%, transparent 85%)`,
+                        : `linear-gradient(100deg, transparent 15%, ${accent}26 50%, transparent 85%)`,
                       transform: 'translateX(-120%) skewX(-20deg)',
                       opacity: 0,
                       pointerEvents: 'none',
@@ -352,7 +453,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                       </span>
                     </div>
 
-                    {/* ── Price ── */}
+                    {/* ── Price — colored per plan accent ── */}
                     <div className="mb-2">
                       {p.price <= 0 ? (
                         <div
@@ -371,10 +472,10 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                         </div>
                       ) : (
                         <div className="d-inline-flex align-items-baseline justify-content-center gap-1">
-                          <small style={{ fontSize: 14, color: textMuted, fontWeight: 500 }}>₹</small>
+                          <small style={{ fontSize: 14, color: accent, fontWeight: 600, opacity: 0.75 }}>₹</small>
                           <span
                             className="fw-bold lh-1"
-                            style={{ fontSize: 30, color: isDark ? accent : textMain, letterSpacing: '-0.02em' }}
+                            style={{ fontSize: 30, color: accent, letterSpacing: '-0.02em' }}
                           >
                             {p.price.toLocaleString()}
                           </span>
@@ -392,7 +493,7 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                       </p>
                     )}
 
-                    {/* ── Stat boxes 2×2 — compact ── */}
+                    {/* ── Stat boxes 2×2 — stylish with left accent + hover lift ── */}
                     <Row className="gx-2 gy-2 mb-3">
                       {[
                         { icon: 'ri-git-branch-line',         label: 'Branches', val: p.max_branches  ?? '∞' },
@@ -402,32 +503,88 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                       ].map(l => (
                         <Col xs={6} key={l.label}>
                           <div
-                            className="rounded-2 d-flex align-items-center gap-2 px-2 py-1"
+                            className="rounded-2 d-flex align-items-center gap-2 px-2 py-2 position-relative"
                             style={{
-                              background: isDark ? 'rgba(255,255,255,0.06)' : 'var(--vz-secondary-bg)',
-                              border: isDark ? '1px solid rgba(255,255,255,0.10)' : '1px solid var(--vz-border-color)',
+                              background: (isDark || darkTheme)
+                                ? `
+                                  linear-gradient(135deg, ${accent}26 0%, ${accent}10 45%, transparent 100%),
+                                  linear-gradient(225deg, ${accent}18 0%, transparent 60%),
+                                  rgba(255,255,255,0.04)
+                                `
+                                : `
+                                  linear-gradient(135deg, ${accent}22 0%, ${accent}10 45%, ${accent}06 100%),
+                                  linear-gradient(225deg, ${accent}18 0%, transparent 60%),
+                                  linear-gradient(180deg, rgba(255,255,255,0.55), transparent 60%),
+                                  var(--vz-card-bg)
+                                `,
+                              border: (isDark || darkTheme) ? `1px solid ${accent}40` : `1px solid ${accent}2e`,
+                              boxShadow: (isDark || darkTheme)
+                                ? `inset 0 1px 0 rgba(255,255,255,0.06)`
+                                : `0 1px 3px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.7)`,
+                              transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
+                              overflow: 'hidden',
+                            }}
+                            onMouseEnter={e => {
+                              const el = e.currentTarget as HTMLDivElement;
+                              el.style.transform = 'translateY(-2px)';
+                              el.style.boxShadow = (isDark || darkTheme)
+                                ? `0 6px 18px ${accent}45, inset 0 1px 0 rgba(255,255,255,0.10)`
+                                : `0 8px 20px ${accent}30, inset 0 1px 0 rgba(255,255,255,0.8)`;
+                              el.style.borderColor = accent + '70';
+                            }}
+                            onMouseLeave={e => {
+                              const el = e.currentTarget as HTMLDivElement;
+                              el.style.transform = 'translateY(0)';
+                              el.style.boxShadow = (isDark || darkTheme)
+                                ? `inset 0 1px 0 rgba(255,255,255,0.06)`
+                                : `0 1px 3px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.7)`;
+                              el.style.borderColor = (isDark || darkTheme) ? accent + '40' : accent + '2e';
                             }}
                           >
+                            {/* Top-right corner glow dot */}
                             <div
-                              className="d-inline-flex align-items-center justify-content-center rounded-1 flex-shrink-0"
                               style={{
-                                width: 24, height: 24,
-                                background: accent + (isDark ? '28' : '15'),
-                                border: `1px solid ${accent}${isDark ? '45' : '30'}`,
+                                position: 'absolute',
+                                top: -18, right: -18,
+                                width: 42, height: 42,
+                                borderRadius: '50%',
+                                background: `radial-gradient(circle, ${accent}45 0%, transparent 70%)`,
+                                pointerEvents: 'none',
                               }}
-                            >
-                              <i className={l.icon} style={{ color: accent, fontSize: 11 }} />
-                            </div>
+                            />
+                            {/* Left accent strip */}
+                            <div
+                              style={{
+                                position: 'absolute',
+                                left: 0, top: '18%', bottom: '18%',
+                                width: 2.5,
+                                borderRadius: 2,
+                                background: `linear-gradient(180deg, transparent 0%, ${accent} 50%, transparent 100%)`,
+                                boxShadow: `0 0 6px ${accent}66`,
+                              }}
+                            />
+                            {/* Icon — plain, no chip */}
+                            <i
+                              className={l.icon}
+                              style={{
+                                color: accent,
+                                fontSize: 16,
+                                flexShrink: 0,
+                                marginLeft: 3,
+                                filter: `drop-shadow(0 1px 2px ${accent}45)`,
+                              }}
+                            />
+
                             <div className="text-start min-w-0 flex-grow-1">
                               <div
                                 className="text-uppercase fw-semibold"
-                                style={{ fontSize: 8.5, color: textMuted, letterSpacing: '0.04em', lineHeight: 1.1 }}
+                                style={{ fontSize: 8.5, color: textMuted, letterSpacing: '0.07em', lineHeight: 1.2 }}
                               >
                                 {l.label}
                               </div>
                               <div
                                 className="fw-bold text-truncate"
-                                style={{ fontSize: 11.5, color: textMain, lineHeight: 1.2 }}
+                                style={{ fontSize: 12.5, color: textMain, lineHeight: 1.25, marginTop: 1 }}
                               >
                                 {l.val}
                               </div>
@@ -440,95 +597,80 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                     {/* ── Divider ── */}
                     <div style={{ height: 1, background: dividerColor, margin: '4px -4px 14px' }} />
 
-                    {/* ── Modules + perks ── */}
+                    {/* ── Included modules header ── */}
                     {p.modules && p.modules.length > 0 && (
                       <div className="d-flex align-items-center justify-content-between mb-2">
-                        <span className="text-uppercase fw-bold" style={{ fontSize: 9.5, letterSpacing: '0.06em', color: textMuted }}>
-                          Modules
+                        <span className="text-uppercase fw-bold" style={{ fontSize: 9, letterSpacing: '0.08em', color: textMuted }}>
+                          Included Modules
                         </span>
                         <button
                           type="button"
                           onClick={() => setModalPlan(p)}
-                          className="btn btn-link p-0 d-inline-flex align-items-center gap-1"
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: accent,
-                            textDecoration: 'none',
-                          }}
+                          className="btn p-0 border-0 bg-transparent"
+                          style={{ lineHeight: 1 }}
+                          title="View all"
                         >
                           <span
                             className="rounded-pill px-2 fw-bold"
                             style={{
-                              fontSize: 10,
-                              background: accent + '22',
+                              fontSize: 9.5,
+                              background: accent + '20',
                               color: accent,
-                              border: `1px solid ${accent}50`,
+                              border: `1px solid ${accent}45`,
+                              padding: '2px 7px',
                             }}
                           >
                             {p.modules.length}
                           </span>
-                          {p.modules.length > 4 && <><i className="ri-external-link-line" /></>}
                         </button>
                       </div>
                     )}
                     <ul
-                      className="list-unstyled vstack gap-1 mb-0 pe-1 text-start plan-modules-scroll"
+                      className={`list-unstyled vstack gap-1 mb-0 pe-1 text-start plan-modules-scroll ${isDark ? 'plan-scroll-dark' : ''}`}
                       style={{
                         overflowY: 'auto',
                         maxHeight: 180,
                         minHeight: 0,
-                        scrollbarWidth: 'thin',
                       }}
                     >
                       {(p.modules || []).map(m => (
                         <li key={m.id} className="d-flex align-items-center gap-2" title={m.name}>
-                          <span
-                            className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                          <i
+                            className="ri-check-line flex-shrink-0"
                             style={{
-                              width: 16, height: 16,
-                              background: m.pivot?.access_level === 'limited' ? '#f7b84b' : '#0ab39c',
+                              color: m.pivot?.access_level === 'limited' ? '#f7b84b' : '#0ab39c',
+                              fontSize: 13,
+                              fontWeight: 700,
                             }}
-                          >
-                            <i className="ri-check-line" style={{ color: '#fff', fontSize: 10, fontWeight: 700 }} />
-                          </span>
-                          <span className="text-truncate flex-grow-1" style={{ color: textMain, fontSize: 12 }}>
+                          />
+                          <span className="text-truncate flex-grow-1" style={{ color: textMain, fontSize: 10.5 }}>
                             {m.name}
+                            {m.pivot?.access_level && m.pivot.access_level !== 'full' && (
+                              <span className="text-muted ms-1" style={{ fontSize: 10 }}>
+                                ({m.pivot.access_level})
+                              </span>
+                            )}
                           </span>
-                          {m.pivot?.access_level && m.pivot.access_level !== 'full' && (
-                            <Badge
-                              color={accessColors[m.pivot.access_level] || 'secondary'}
-                              className="flex-shrink-0"
-                              style={{ fontSize: '8.5px' }}
-                            >
-                              {m.pivot.access_level}
-                            </Badge>
-                          )}
                         </li>
                       ))}
                       {/* Perks */}
                       {p.trial_days && p.trial_days > 0 && (
                         <li className="d-flex align-items-center gap-2">
-                          <span className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: 16, height: 16, background: '#0ab39c' }}>
-                            <i className="ri-check-line" style={{ color: '#fff', fontSize: 10, fontWeight: 700 }} />
-                          </span>
-                          <span style={{ color: textMain, fontSize: 12 }}>{p.trial_days}-day free trial</span>
+                          <i className="ri-check-line flex-shrink-0" style={{ color: '#0ab39c', fontSize: 13, fontWeight: 700 }} />
+                          <span style={{ color: textMain, fontSize: 10.5 }}>{p.trial_days}-day free trial</span>
                         </li>
                       )}
+                      
                       {p.yearly_discount && p.yearly_discount > 0 && (
                         <li className="d-flex align-items-center gap-2">
-                          <span className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: 16, height: 16, background: '#0ab39c' }}>
-                            <i className="ri-check-line" style={{ color: '#fff', fontSize: 10, fontWeight: 700 }} />
-                          </span>
-                          <span style={{ color: textMain, fontSize: 12 }}>{p.yearly_discount}% yearly discount</span>
+                          <i className="ri-check-line flex-shrink-0" style={{ color: '#0ab39c', fontSize: 13, fontWeight: 700 }} />
+                          <span style={{ color: textMain, fontSize: 10.5 }}>{p.yearly_discount}% yearly discount</span>
                         </li>
                       )}
                       {p.clients_count !== undefined && p.clients_count > 0 && (
                         <li className="d-flex align-items-center gap-2">
-                          <span className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: 16, height: 16, background: accent }}>
-                            <i className="ri-user-3-line" style={{ color: '#fff', fontSize: 10 }} />
-                          </span>
-                          <span style={{ color: textMain, fontSize: 12 }}>
+                          <i className="ri-user-3-line flex-shrink-0" style={{ color: accent, fontSize: 12 }} />
+                          <span style={{ color: textMain, fontSize: 10.5 }}>
                             {p.clients_count} active client{p.clients_count !== 1 ? 's' : ''}
                           </span>
                         </li>
