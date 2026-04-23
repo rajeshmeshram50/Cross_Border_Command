@@ -104,6 +104,7 @@ const cardStyle: React.CSSProperties = {
   boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
   overflow: 'hidden',
   marginBottom: 0,
+  height: '100%',
 };
 
 const cardHeaderStyle: React.CSSProperties = {
