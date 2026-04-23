@@ -31,6 +31,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard/client-stats', [DashboardController::class, 'clientStats']);
 
     // Clients
+    Route::get('/clients/stats', [ClientController::class, 'stats']);
     Route::apiResource('clients', ClientController::class);
 
     // Branches
