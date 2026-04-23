@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card, CardBody, CardHeader, Row, Col,
-  Button, Badge, Input, Label, Form,
+  Button, Input, Label, Form,
   Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
 } from 'reactstrap';
 import Swal from 'sweetalert2';
@@ -42,6 +42,7 @@ function MasterPageInner({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
 
   // Ownership columns injected by role:
   //  - super_admin      -> Client | Branch | Created By
@@ -120,8 +121,67 @@ function MasterPageInner({
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
 
+  // Filter rows by search input across all column accessors + ownership fields
+  const filteredRecords = useMemo(() => {
+    const q = searchInput.trim().toLowerCase();
+    if (!q) return records;
+    const searchableKeys = [
+      ...cfg.cols,
+      'client_name', 'branch_name', 'creator_name',
+    ];
+    return records.filter(row => {
+      for (const key of searchableKeys) {
+        const f = cfg.fields.find(ff => ff.n === key);
+        const val = f?.ref ? resolveRefLabel(f.ref, f.refL, row[key]) : row[key];
+        if (val != null && String(val).toLowerCase().includes(q)) return true;
+      }
+      return false;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [records, searchInput, cfg, refData]);
+
   const openAdd = () => { setEditingId(null); setViewOnly(false); setModalOpen(true); };
   const openEdit = (row: any, readonly = false) => { setEditingId(row.id); setViewOnly(readonly); setModalOpen(true); };
+
+  // Clients-page style compact action button
+  const ActionBtn = ({
+    title, icon, color, onClick, disabled,
+  }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      className="btn p-0 d-inline-flex align-items-center justify-content-center"
+      style={{
+        width: 30, height: 30, borderRadius: 8,
+        background: 'var(--vz-secondary-bg)',
+        border: '1px solid var(--vz-border-color)',
+        color: 'var(--vz-secondary-color)',
+        transition: 'all .15s ease',
+      }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLButtonElement;
+        const tint =
+          color === 'primary' ? '#40518918' :
+          color === 'danger'  ? '#f0654818' :
+          color === 'success' ? '#0ab39c18' :
+          color === 'info'    ? '#299cdb18' :
+          color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)';
+        el.style.background = tint;
+        el.style.borderColor = `var(--vz-${color})`;
+        el.style.color = `var(--vz-${color})`;
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLButtonElement;
+        el.style.background = 'var(--vz-secondary-bg)';
+        el.style.borderColor = 'var(--vz-border-color)';
+        el.style.color = 'var(--vz-secondary-color)';
+      }}
+      onClick={onClick}
+    >
+      <i className={`${icon} fs-14`} />
+    </button>
+  );
 
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -187,10 +247,12 @@ function MasterPageInner({
 
     if (fieldName === 'status') {
       const active = String(raw).toLowerCase() === 'active';
+      const color = active ? 'success' : 'danger';
       return (
-        <Badge color={active ? 'success' : 'secondary'} pill className="text-uppercase">
+        <span className={`badge rounded-pill border border-${color} text-${color} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
+          <span className={`bg-${color} rounded-circle`} style={{ width: 6, height: 6 }} />
           {active ? 'Active' : (raw || 'Inactive')}
-        </Badge>
+        </span>
       );
     }
 
@@ -264,20 +326,14 @@ function MasterPageInner({
       });
     });
     cols.push({
-      header: () => <div className="text-end">Actions</div>,
+      header: () => <div className="text-center">Actions</div>,
       id: '__actions',
       enableGlobalFilter: false,
       cell: (info: any) => (
-        <div className="d-flex justify-content-end gap-1">
-          <Button size="sm" color="soft-secondary" onClick={() => openEdit(info.row.original, true)} title="View">
-            <i className="ri-eye-line"></i>
-          </Button>
-          <Button size="sm" color="soft-primary" onClick={() => openEdit(info.row.original)} title="Edit">
-            <i className="ri-pencil-line"></i>
-          </Button>
-          <Button size="sm" color="soft-danger" onClick={() => handleDelete(info.row.original)} title="Delete">
-            <i className="ri-delete-bin-line"></i>
-          </Button>
+        <div className="d-flex gap-1 justify-content-center">
+          <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openEdit(info.row.original, true)} />
+          <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => openEdit(info.row.original)} />
+          <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  onClick={() => handleDelete(info.row.original)} />
         </div>
       ),
     });
@@ -351,42 +407,60 @@ function MasterPageInner({
       {/* "What you are doing here" — gradient card with colored step chips */}
       <WhatYouDoHere cfg={cfg} />
 
-      {/* Main card */}
+      {/* Main card — search + Add New row, then table */}
       <Row>
         <Col xs={12}>
-          <Card className="shadow-sm">
-            <CardHeader className="border-0 py-2">
-              <Row className="g-2 align-items-center">
-                <Col md>
-                  <div className="d-flex align-items-center gap-2">
-                    <i className={`${cfg.icon} fs-4 text-${cfg.iconColor}`}></i>
-                    <div>
-                      <h5 className="card-title mb-0 fs-15">
-                        Manage {cfg.title}
-                        <span className="badge bg-primary-subtle text-primary ms-2">{records.length}</span>
-                      </h5>
-                      <small className="text-muted">{cfg.desc}</small>
-                    </div>
+          <Card className="shadow-sm" style={{ borderRadius: 16 }}>
+            <CardBody>
+              {/* Search bar + Add New in one row (Add Client style) */}
+              <Row className="g-2 align-items-center mb-3">
+                <Col md={6} sm={12}>
+                  <div className="search-box">
+                    <Input
+                      type="text"
+                      className="form-control"
+                      placeholder={`Search ${cfg.title.toLowerCase()}...`}
+                      value={searchInput}
+                      onChange={e => setSearchInput(e.target.value)}
+                    />
+                    <i className="ri-search-line search-icon"></i>
                   </div>
                 </Col>
-                <Col md="auto">
-                  <Button color={cfg.iconColor} size="sm" className="btn-label waves-effect waves-light rounded-pill" onClick={openAdd}>
-                    <i className="ri-add-line label-icon align-middle fs-16 me-2"></i>
+                <Col md={6} sm={12} className="d-flex justify-content-md-end">
+                  <Button
+                    color="secondary"
+                    className="btn-label waves-effect waves-light rounded-pill"
+                    onClick={openAdd}
+                  >
+                    <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
                     Add New
                   </Button>
                 </Col>
               </Row>
-            </CardHeader>
 
-            <CardBody className="pt-2">
+              <style>{`
+                .master-scroll-wrap {
+                  max-height: 445px;
+                  overflow-y: auto;
+                }
+                .master-scroll-wrap thead {
+                  position: sticky;
+                  top: 0;
+                  z-index: 2;
+                }
+                .master-scroll-wrap::-webkit-scrollbar { width: 8px; }
+                .master-scroll-wrap::-webkit-scrollbar-track { background: transparent; }
+                .master-scroll-wrap::-webkit-scrollbar-thumb { background: var(--vz-border-color); border-radius: 8px; }
+                .master-scroll-wrap::-webkit-scrollbar-thumb:hover { background: var(--vz-secondary-color); }
+              `}</style>
               <TableContainer
                 columns={columns}
-                data={records}
-                isGlobalFilter={true}
-                customPageSize={10}
+                data={filteredRecords}
+                isGlobalFilter={false}
+                customPageSize={7}
                 tableClass="align-middle table-nowrap mb-0"
                 theadClass="table-light"
-                divClass="table-responsive table-card border rounded"
+                divClass="table-responsive border rounded master-scroll-wrap"
                 SearchPlaceholder={`Search ${cfg.title.toLowerCase()}...`}
               />
               {loading && <div className="text-center py-5"><Spinner /></div>}
@@ -402,27 +476,64 @@ function MasterPageInner({
       </Row>
 
       {/* Add / Edit modal */}
-      <Modal isOpen={modalOpen} toggle={() => setModalOpen(false)} size="xl" centered>
-        <ModalHeader toggle={() => setModalOpen(false)}>
-          {viewOnly ? `View ${singular}` : editingId != null ? `Edit ${singular}` : `Add ${singular}`}
-        </ModalHeader>
-        <Form onSubmit={handleSave}>
-          <ModalBody>
-            <div className={`alert alert-${cfg.iconColor === 'primary' ? 'info' : cfg.iconColor} py-2 mb-3 fs-12`}>
-              <i className="ri-information-line me-1"></i>
-              {cfg.desc}
+      <Modal isOpen={modalOpen} toggle={() => setModalOpen(false)} size="xl" centered contentClassName="border-0" style={{ borderRadius: 18 }}>
+        <div
+          className="position-relative overflow-hidden"
+          style={{
+            background: 'linear-gradient(135deg, #405189 0%, #4a63a8 45%, #6691e7 100%)',
+            padding: '20px 24px',
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
+          }}
+        >
+          <div
+            className="position-absolute top-0 start-0 w-100 h-100"
+            style={{
+              backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.15) 0%, transparent 40%), radial-gradient(circle at 85% 80%, rgba(10,179,156,0.22) 0%, transparent 45%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <div className="d-flex align-items-center gap-3 position-relative">
+            <span
+              className="d-inline-flex align-items-center justify-content-center rounded-3"
+              style={{
+                width: 46, height: 46,
+                background: 'rgba(255,255,255,0.18)',
+                border: '1px solid rgba(255,255,255,0.25)',
+                backdropFilter: 'blur(6px)',
+              }}
+            >
+              <i className={`${cfg.icon}`} style={{ color: '#fff', fontSize: 22 }}></i>
+            </span>
+            <div className="flex-grow-1 min-w-0">
+              <h5 className="mb-0 text-white fw-semibold">
+                {viewOnly ? `View ${singular}` : editingId != null ? `Edit ${singular}` : `Add ${singular}`}
+              </h5>
+              <small style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>{cfg.desc}</small>
             </div>
+            <button
+              type="button"
+              className="btn-close btn-close-white flex-shrink-0"
+              onClick={() => setModalOpen(false)}
+              aria-label="Close"
+            />
+          </div>
+        </div>
+        <Form onSubmit={handleSave}>
+          <ModalBody className="p-4">
             <Row className="g-3">
               {cfg.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef))}
             </Row>
           </ModalBody>
-          <ModalFooter>
-            <Button color="light" type="button" onClick={() => setModalOpen(false)}>
+          <ModalFooter className="px-4 pb-3">
+            <Button color="light" type="button" className="rounded-pill px-3" onClick={() => setModalOpen(false)}>
               {viewOnly ? 'Close' : 'Cancel'}
             </Button>
             {!viewOnly && (
-              <Button color="success" type="submit" disabled={saving}>
-                {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-save-line me-1"></i>}
+              <Button color="secondary" type="submit" disabled={saving} className="btn-label waves-effect waves-light rounded-pill">
+                {saving
+                  ? <Spinner size="sm" className="label-icon align-middle me-2" />
+                  : <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
                 {saving ? 'Saving...' : 'Save Record'}
               </Button>
             )}
@@ -433,122 +544,131 @@ function MasterPageInner({
   );
 }
 
-/* ── "What you are doing here" gradient card with colored step chips ── */
-const STEP_PALETTES = [
-  { top: '#7248f0', num: '#7248f0', numBg: '#ede7ff', title: '#6232e8' }, // purple
-  { top: '#3577f1', num: '#3577f1', numBg: '#e0ecff', title: '#1f60dd' }, // blue
-  { top: '#8168e4', num: '#8168e4', numBg: '#ece5fb', title: '#6b4fdb' }, // violet
-  { top: '#10b981', num: '#10b981', numBg: '#d1fae5', title: '#059669' }, // green
-  { top: '#f59f0a', num: '#f59f0a', numBg: '#fff0cc', title: '#d97a08' }, // amber
-  { top: '#f06548', num: '#f06548', numBg: '#ffe3dc', title: '#d9421f' }, // red/orange
+/* ── "What you are doing here" — gradient step tiles ── */
+const STEP_PALETTES: { grad: string; tint: string; border: string; accent: string }[] = [
+  { grad: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)', tint: 'linear-gradient(135deg, rgba(64,81,137,0.08), rgba(102,145,231,0.04))', border: 'rgba(64,81,137,0.20)', accent: '#405189' },
+  { grad: 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)', tint: 'linear-gradient(135deg, rgba(10,179,156,0.08), rgba(48,213,181,0.04))', border: 'rgba(10,179,156,0.22)', accent: '#0ab39c' },
+  { grad: 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)', tint: 'linear-gradient(135deg, rgba(247,184,75,0.10), rgba(255,212,122,0.05))', border: 'rgba(247,184,75,0.25)', accent: '#d97a08' },
+  { grad: 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)', tint: 'linear-gradient(135deg, rgba(106,90,205,0.08), rgba(167,139,250,0.04))', border: 'rgba(106,90,205,0.20)', accent: '#6a5acd' },
+  { grad: 'linear-gradient(135deg, #299cdb 0%, #5fc8ff 100%)', tint: 'linear-gradient(135deg, rgba(41,156,219,0.08), rgba(95,200,255,0.04))', border: 'rgba(41,156,219,0.20)', accent: '#299cdb' },
+  { grad: 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)', tint: 'linear-gradient(135deg, rgba(240,101,72,0.08), rgba(255,158,124,0.04))', border: 'rgba(240,101,72,0.22)', accent: '#f06548' },
 ];
 
 function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
   const steps = cfg.wtd || [];
   const singular = cfg.titleSingular || cfg.title;
+  const [open, setOpen] = useState(true);
 
   return (
     <Card
       className="border shadow-sm mb-3 overflow-hidden"
       style={{
-        background: 'var(--vz-secondary-bg)',
+        background: 'var(--vz-card-bg)',
         borderColor: 'var(--vz-border-color)',
+        borderRadius: 16,
       }}
     >
-      <CardBody>
-        <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-          <div className="d-flex align-items-center gap-2">
-            <span
-              className="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary"
-              style={{ width: 34, height: 34 }}
-            >
-              <i className="ri-checkbox-circle-line fs-18"></i>
-            </span>
-            <div className="fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 15 }}>
-              {cfg.title} — What you are doing here:
-            </div>
-          </div>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="d-flex align-items-center justify-content-between flex-wrap gap-2 px-3 py-3 border-0 w-100 text-start"
+        style={{
+          cursor: 'pointer',
+          background: open ? 'linear-gradient(135deg, rgba(64,81,137,0.06), rgba(102,145,231,0.03))' : 'transparent',
+          borderBottom: open ? '1px solid var(--vz-border-color)' : 'none',
+          transition: 'background .2s ease',
+          userSelect: 'none',
+        }}
+      >
+        <div className="d-flex align-items-center gap-2">
           <span
-            className="d-inline-flex align-items-center gap-1 px-3 py-1 rounded-pill fw-semibold bg-primary-subtle text-primary border border-primary-subtle"
-            style={{ fontSize: 12 }}
+            className="d-inline-flex align-items-center justify-content-center rounded-3"
+            style={{
+              width: 36, height: 36,
+              background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
+              boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
+            }}
           >
-            <i className="ri-information-line"></i>
-            {cfg.title} Screen Intelligence Note
+            <i className="ri-lightbulb-flash-line" style={{ color: '#fff', fontSize: 16 }}></i>
           </span>
+          <div>
+            <div className="fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 15 }}>
+              {cfg.title} — What you are doing here
+            </div>
+            <small className="text-muted">Quick 4-step guide to set up a {singular} record</small>
+          </div>
         </div>
+        <span
+          className="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary-subtle text-primary flex-shrink-0"
+          style={{
+            width: 32, height: 32,
+            transition: 'transform .25s ease',
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+          }}
+        >
+          <i className="ri-arrow-down-s-line fs-18"></i>
+        </span>
+      </button>
 
-        <Row className="g-3 align-items-stretch">
-          {steps.map((s, i) => {
-            const p = STEP_PALETTES[i % STEP_PALETTES.length];
-            const isLast = i === steps.length - 1;
-            const colSize = steps.length <= 3 ? 4 : steps.length === 4 ? 3 : steps.length === 5 ? { md: 6, lg: 'auto' as const } : { md: 6, lg: 4 };
-            return (
-              <Col
-                key={i}
-                md={typeof colSize === 'object' ? colSize.md : 6}
-                lg={typeof colSize === 'object' ? colSize.lg : (colSize as number)}
-                className="position-relative"
-              >
-                <div
-                  className="rounded-3 h-100 p-3 position-relative border"
-                  style={{
-                    background: 'var(--vz-card-bg)',
-                    borderTopWidth: 3,
-                    borderTopColor: p.top,
-                    borderTopStyle: 'solid',
-                    boxShadow: '0 1px 2px rgba(18,38,63,0.04)',
-                  }}
-                >
-                  <div className="d-flex align-items-center gap-2 mb-2">
-                    <span
-                      className="d-inline-flex align-items-center justify-content-center rounded-circle fw-bold flex-shrink-0"
-                      style={{
-                        width: 26,
-                        height: 26,
-                        background: p.numBg,
-                        color: p.num,
-                        fontSize: 13,
-                      }}
-                    >
-                      {i + 1}
-                    </span>
-                    <div className="fw-bold d-flex align-items-center gap-1" style={{ color: p.title, fontSize: 14 }}>
-                      <i className={s.icon}></i>
-                      {s.title}
-                    </div>
-                  </div>
-                  <div className="text-muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-                    {s.desc}
-                  </div>
-                </div>
-                {!isLast && (
+      <div
+        style={{
+          maxHeight: open ? 1200 : 0,
+          overflow: 'hidden',
+          transition: 'max-height .35s ease',
+        }}
+      >
+        <CardBody className="pt-3">
+          <Row className="g-3 align-items-stretch">
+            {steps.map((s, i) => {
+              const p = STEP_PALETTES[i % STEP_PALETTES.length];
+              const colSpan = steps.length <= 3 ? 4 : steps.length === 4 ? 3 : steps.length === 5 ? 'auto' as const : 4;
+              return (
+                <Col key={i} xs={12} sm={6} md={steps.length === 5 ? 6 : 6} lg={colSpan}>
                   <div
-                    className="d-none d-lg-flex align-items-center justify-content-center position-absolute"
+                    className="h-100 p-3 position-relative"
                     style={{
-                      right: -10,
-                      top: '50%',
-                      transform: 'translateY(-50%)',
-                      width: 20,
-                      height: 20,
-                      zIndex: 2,
-                      color: '#a3adc2',
-                      pointerEvents: 'none',
+                      borderRadius: 14,
+                      background: p.tint,
+                      border: `1px solid ${p.border}`,
+                      boxShadow: '0 2px 8px rgba(18,38,63,0.04)',
                     }}
                   >
-                    <i className="ri-arrow-right-s-line fs-20"></i>
+                    <div className="d-flex align-items-center gap-2 mb-2">
+                      <span
+                        className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                        style={{
+                          width: 40, height: 40,
+                          background: p.grad,
+                          boxShadow: `0 4px 10px ${p.border}`,
+                        }}
+                      >
+                        <i className={s.icon} style={{ color: '#fff', fontSize: 18 }}></i>
+                      </span>
+                      <div className="flex-grow-1 min-w-0">
+                        <div className="fs-11 fw-bold text-uppercase" style={{ color: p.accent, letterSpacing: '0.05em' }}>
+                          Step {i + 1}
+                        </div>
+                        <div className="fw-bold text-truncate" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 14 }}>
+                          {s.title}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                      {s.desc}
+                    </div>
                   </div>
-                )}
-              </Col>
-            );
-          })}
-        </Row>
+                </Col>
+              );
+            })}
+          </Row>
 
-        {steps.length === 0 && (
-          <div className="text-muted text-center py-3">
-            Define the workflow for {singular} records in the master config.
-          </div>
-        )}
-      </CardBody>
+          {steps.length === 0 && (
+            <div className="text-muted text-center py-3">
+              Define the workflow for {singular} records in the master config.
+            </div>
+          )}
+        </CardBody>
+      </div>
     </Card>
   );
 }
