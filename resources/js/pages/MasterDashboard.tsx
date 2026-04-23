@@ -178,7 +178,7 @@ export default function MasterDashboard() {
       <Row className="g-3 mb-4">
         {STAT_CARDS.map((sc, i) => (
           <Col key={sc.label} xl={3} md={6} xs={12}>
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px' }}>
+            <div style={{ background: 'var(--vz-card-bg)', borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: sc.gradient }} />
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                 <div>
@@ -237,8 +237,8 @@ export default function MasterDashboard() {
             {/* ── Category Header — single white row, clickable to toggle ── */}
             <div
               style={{
-                background: '#fff',
-                border: '1px solid #eef0f3',
+                background: 'var(--vz-card-bg)',
+                border: '1px solid var(--vz-border-color)',
                 borderRadius: 12,
                 padding: '12px 16px',
                 boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
@@ -257,13 +257,13 @@ export default function MasterDashboard() {
               <div style={{ width: 4, height: 28, borderRadius: 4, background: s.gradient, flexShrink: 0 }} />
 
               {/* Icon chip */}
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f4f6fb', border: '1px solid #eef0f3', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <i className={s.icon} style={{ color: s.color, fontSize: 15 }} />
               </div>
 
               {/* Title + count badge */}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#1f2937', lineHeight: 1.2 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.2 }}>
                   {group.label}
                 </span>
                 <span style={{ background: s.gradient, color: '#fff', borderRadius: 20, padding: '1px 9px', fontSize: 10.5, fontWeight: 700, flexShrink: 0, lineHeight: '18px', boxShadow: `0 2px 6px ${s.color}40` }}>
@@ -314,7 +314,7 @@ function MasterCard({ leaf, s, onClick }: { leaf: MenuChild; s: CategoryStyle; o
   return (
     <div
       onClick={onClick}
-      style={{ background: '#fff', borderRadius: 12, border: '1px solid #eef0f3', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'box-shadow .18s ease, transform .18s ease, border-color .18s ease', display: 'flex', flexDirection: 'column', height: '100%', padding: '15px 15px 13px', position: 'relative', overflow: 'hidden' }}
+      style={{ background: 'var(--vz-card-bg)', borderRadius: 12, border: '1px solid var(--vz-border-color)', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'box-shadow .18s ease, transform .18s ease, border-color .18s ease', display: 'flex', flexDirection: 'column', height: '100%', padding: '15px 15px 13px', position: 'relative', overflow: 'hidden' }}
       onMouseEnter={e => {
         const el = e.currentTarget as HTMLDivElement;
         el.style.boxShadow = `0 8px 24px ${s.color}22`;
@@ -325,7 +325,7 @@ function MasterCard({ leaf, s, onClick }: { leaf: MenuChild; s: CategoryStyle; o
         const el = e.currentTarget as HTMLDivElement;
         el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.05)';
         el.style.transform = 'translateY(0)';
-        el.style.borderColor = '#eef0f3';
+        el.style.borderColor = 'var(--vz-border-color)';
       }}
     >
       {/* Left gradient strip */}

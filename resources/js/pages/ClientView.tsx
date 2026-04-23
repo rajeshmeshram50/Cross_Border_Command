@@ -109,7 +109,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
           />
           <div className="d-flex align-items-center gap-3 flex-wrap position-relative">
             {client.logo ? (
-              <img src={client.logo} alt="" className="rounded-3 bg-white p-1 shadow-sm" style={{ width: 64, height: 64, objectFit: 'contain' }} />
+              <img src={client.logo} alt="" className="rounded-3 bg-body-tertiary p-1 shadow-sm" style={{ width: 64, height: 64, objectFit: 'contain' }} />
             ) : (
               <div className="rounded-3 bg-white bg-opacity-25 text-white fw-bold d-flex align-items-center justify-content-center border border-white border-opacity-25 shadow-sm" style={{ width: 64, height: 64, fontSize: 22, backdropFilter: 'blur(4px)' }}>
                 {client.org_name.charAt(0)}{client.org_name.split(' ')[1]?.charAt(0) || ''}
@@ -218,7 +218,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                     </button>
                   </div>
                   {adminUser ? (
-                    <div className="d-flex align-items-center gap-3 p-3 bg-white rounded-3 border">
+                    <div className="d-flex align-items-center gap-3 p-3 bg-body-tertiary rounded-3 border">
                       <div className="avatar-sm">
                         <div className="avatar-title rounded-3 bg-primary text-white fw-bold">
                           {adminUser.name?.charAt(0)?.toUpperCase() || 'A'}
@@ -244,14 +244,14 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                     </button>
                   </div>
                   <div className="d-flex gap-3 flex-wrap">
-                    <div className="d-flex align-items-center gap-2 p-2 bg-white rounded-3 border flex-grow-1">
+                    <div className="d-flex align-items-center gap-2 p-2 bg-body-tertiary rounded-3 border flex-grow-1">
                       <div className="rounded-3 shadow-sm" style={{ width: 40, height: 40, backgroundColor: client.primary_color }} />
                       <div>
                         <div className="text-muted fs-11 text-uppercase fw-semibold">Primary</div>
                         <div className="font-monospace fs-12 fw-semibold">{client.primary_color}</div>
                       </div>
                     </div>
-                    <div className="d-flex align-items-center gap-2 p-2 bg-white rounded-3 border flex-grow-1">
+                    <div className="d-flex align-items-center gap-2 p-2 bg-body-tertiary rounded-3 border flex-grow-1">
                       <div className="rounded-3 shadow-sm" style={{ width: 40, height: 40, backgroundColor: client.secondary_color }} />
                       <div>
                         <div className="text-muted fs-11 text-uppercase fw-semibold">Secondary</div>

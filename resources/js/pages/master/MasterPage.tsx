@@ -381,32 +381,28 @@ function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
 
   return (
     <Card
-      className="border-0 shadow-sm mb-3 overflow-hidden"
+      className="border shadow-sm mb-3 overflow-hidden"
       style={{
-        background: 'linear-gradient(135deg, #f2f5ff 0%, #f7fff5 100%)',
+        background: 'var(--vz-secondary-bg)',
+        borderColor: 'var(--vz-border-color)',
       }}
     >
       <CardBody>
         <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
           <div className="d-flex align-items-center gap-2">
             <span
-              className="d-inline-flex align-items-center justify-content-center rounded-3"
-              style={{ width: 34, height: 34, background: '#e0ecff', color: '#3577f1' }}
+              className="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary"
+              style={{ width: 34, height: 34 }}
             >
               <i className="ri-checkbox-circle-line fs-18"></i>
             </span>
-            <div className="fw-bold" style={{ color: '#2d3a56', fontSize: 15 }}>
+            <div className="fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 15 }}>
               {cfg.title} — What you are doing here:
             </div>
           </div>
           <span
-            className="d-inline-flex align-items-center gap-1 px-3 py-1 rounded-pill fw-semibold"
-            style={{
-              background: '#e8edf7',
-              color: '#3577f1',
-              fontSize: 12,
-              border: '1px solid #d0dcf2',
-            }}
+            className="d-inline-flex align-items-center gap-1 px-3 py-1 rounded-pill fw-semibold bg-primary-subtle text-primary border border-primary-subtle"
+            style={{ fontSize: 12 }}
           >
             <i className="ri-information-line"></i>
             {cfg.title} Screen Intelligence Note
@@ -426,9 +422,12 @@ function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
                 className="position-relative"
               >
                 <div
-                  className="bg-white rounded-3 h-100 p-3 position-relative"
+                  className="rounded-3 h-100 p-3 position-relative border"
                   style={{
-                    borderTop: `3px solid ${p.top}`,
+                    background: 'var(--vz-card-bg)',
+                    borderTopWidth: 3,
+                    borderTopColor: p.top,
+                    borderTopStyle: 'solid',
                     boxShadow: '0 1px 2px rgba(18,38,63,0.04)',
                   }}
                 >
