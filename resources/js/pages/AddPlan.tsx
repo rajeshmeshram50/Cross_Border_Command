@@ -1110,8 +1110,8 @@ export default function AddPlan({ onBack, editId }: Props) {
                     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease;
                     background: var(--vz-card-bg);
                     border: 1px solid var(--vz-border-color);
-                    border-radius: 10px;
-                    padding: 7px 10px;
+                    border-radius: 8px;
+                    padding: 4px 10px;
                     display: flex;
                     align-items: center;
                     gap: 8px;
@@ -1137,13 +1137,13 @@ export default function AddPlan({ onBack, editId }: Props) {
                     box-shadow: 0 0 6px var(--tile-color, #10b981)88;
                   }
                   .mod-letter {
-                    width: 28px; height: 28px;
+                    width: 22px; height: 22px;
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
-                    border-radius: 7px;
+                    border-radius: 6px;
                     font-weight: 800;
-                    font-size: 12px;
+                    font-size: 11px;
                     flex-shrink: 0;
                     transition: all .18s ease;
                   }
