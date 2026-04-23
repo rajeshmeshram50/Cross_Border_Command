@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
+use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OrganizationTypeController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PermissionController;
@@ -41,6 +42,18 @@ Route::middleware('auth:sanctum')->group(function () {
     // Organization Types (master data — super admin manages; all auth users can list)
     Route::apiResource('organization-types', OrganizationTypeController::class)
         ->parameters(['organization-types' => 'organizationType']);
+
+    // Generic Master APIs — one set of routes dispatches 50 master tables by slug.
+    // GET    /api/master/{slug}          list
+    // POST   /api/master/{slug}          create
+    // GET    /api/master/{slug}/{id}     show
+    // PUT    /api/master/{slug}/{id}     update
+    // DELETE /api/master/{slug}/{id}     delete
+    Route::get   ('/master/{slug}',         [MasterController::class, 'list']);
+    Route::post  ('/master/{slug}',         [MasterController::class, 'store']);
+    Route::get   ('/master/{slug}/{id}',    [MasterController::class, 'show']);
+    Route::put   ('/master/{slug}/{id}',    [MasterController::class, 'update']);
+    Route::delete('/master/{slug}/{id}',    [MasterController::class, 'destroy']);
 
     // Subscription (client buy plan)
     Route::get('/subscription/plans', [SubscriptionController::class, 'plans']);

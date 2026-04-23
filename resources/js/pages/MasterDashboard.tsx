@@ -16,7 +16,7 @@ const CATEGORY_STYLES: Record<string, CategoryStyle> = {
   'master.party':      { color: '#f06548', icon: 'ri-team-line',       gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
   'master.legal':      { color: '#e83e8c', icon: 'ri-scales-3-line',   gradient: 'linear-gradient(135deg,#e83e8c,#ef79b0)' },
   'master.operations': { color: '#299cdb', icon: 'ri-tools-line',      gradient: 'linear-gradient(135deg,#299cdb,#63bcec)' },
-  'master.p2p':        { color: '#7c5cfc', icon: 'ri-handshake-line',  gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)' },
+  'master.p2p':        { color: '#7c5cfc', icon: 'ri-exchange-funds-line',  gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)' },
   'master.warehouse':  { color: '#10b981', icon: 'ri-building-2-line', gradient: 'linear-gradient(135deg,#10b981,#34d399)' },
 };
 
@@ -178,7 +178,7 @@ export default function MasterDashboard() {
       <Row className="g-3 mb-4">
         {STAT_CARDS.map((sc, i) => (
           <Col key={sc.label} xl={3} md={6} xs={12}>
-            <div style={{ background: 'var(--vz-card-bg)', borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px' }}>
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: sc.gradient }} />
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                 <div>
@@ -187,8 +187,8 @@ export default function MasterDashboard() {
                     {statValues[i].toLocaleString()}
                   </div>
                 </div>
-                <div style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', flexShrink: 0 }}>
-                  <i className={sc.icon} style={{ fontSize: 18, color: 'var(--vz-secondary-color)' }} />
+                <div style={{ width: 44, height: 44, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: sc.gradient, flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                  <i className={sc.icon} style={{ fontSize: 20, color: '#fff' }} />
                 </div>
               </div>
             </div>
@@ -234,11 +234,11 @@ export default function MasterDashboard() {
         return (
           <div key={group.id} style={{ marginBottom: 12 }}>
 
-            {/* ── Category Header — entire row is clickable ── */}
+            {/* ── Category Header — single white row, clickable to toggle ── */}
             <div
               style={{
-                background: 'var(--vz-card-bg)',
-                border: '1px solid var(--vz-border-color)',
+                background: '#fff',
+                border: '1px solid #eef0f3',
                 borderRadius: 12,
                 padding: '12px 16px',
                 boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
@@ -257,30 +257,39 @@ export default function MasterDashboard() {
               <div style={{ width: 4, height: 28, borderRadius: 4, background: s.gradient, flexShrink: 0 }} />
 
               {/* Icon chip */}
-              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: '#f4f6fb', border: '1px solid #eef0f3', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <i className={s.icon} style={{ color: s.color, fontSize: 15 }} />
               </div>
 
               {/* Title + count badge */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.2 }}>
-                    {group.label}
-                  </span>
-                  <span style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-secondary-color)', border: '1px solid var(--vz-border-color)', borderRadius: 20, padding: '1px 9px', fontSize: 10.5, fontWeight: 600, flexShrink: 0, lineHeight: '18px' }}>
-                    {group.children.length}
-                  </span>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
-                  {group.children.length} masters · {isCollapsed ? 'Click to expand' : 'Click to collapse'}
-                </div>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: '#1f2937', lineHeight: 1.2 }}>
+                  {group.label}
+                </span>
+                <span style={{ background: s.gradient, color: '#fff', borderRadius: 20, padding: '1px 9px', fontSize: 10.5, fontWeight: 700, flexShrink: 0, lineHeight: '18px', boxShadow: `0 2px 6px ${s.color}40` }}>
+                  {group.children.length}
+                </span>
               </div>
 
-              {/* Chevron toggle */}
-              <div style={{ width: 28, height: 28, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', transition: 'all 0.2s ease', flexShrink: 0 }}>
-                <i className={isCollapsed ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'}
-                  style={{ fontSize: 16, color: 'var(--vz-secondary-color)' }} />
-              </div>
+              {/* Right-corner arrow — icon only, in category color */}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); toggle(group.id); }}
+                aria-label={isCollapsed ? 'Expand section' : 'Collapse section'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 28, height: 28,
+                  background: 'transparent',
+                  color: s.color,
+                  border: 'none',
+                  cursor: 'pointer', outline: 'none', padding: 0,
+                  transition: 'transform .2s ease',
+                  transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)',
+                  flexShrink: 0,
+                }}
+              >
+                <i className="ri-arrow-down-s-fill" style={{ fontSize: 22 }} />
+              </button>
             </div>
 
             {/* ── Expanded master cards ── */}
@@ -305,7 +314,7 @@ function MasterCard({ leaf, s, onClick }: { leaf: MenuChild; s: CategoryStyle; o
   return (
     <div
       onClick={onClick}
-      style={{ background: 'var(--vz-card-bg)', borderRadius: 12, border: '1px solid var(--vz-border-color)', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'box-shadow .18s ease, transform .18s ease, border-color .18s ease', display: 'flex', flexDirection: 'column', height: '100%', padding: '15px 15px 13px', position: 'relative', overflow: 'hidden' }}
+      style={{ background: '#fff', borderRadius: 12, border: '1px solid #eef0f3', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'pointer', transition: 'box-shadow .18s ease, transform .18s ease, border-color .18s ease', display: 'flex', flexDirection: 'column', height: '100%', padding: '15px 15px 13px', position: 'relative', overflow: 'hidden' }}
       onMouseEnter={e => {
         const el = e.currentTarget as HTMLDivElement;
         el.style.boxShadow = `0 8px 24px ${s.color}22`;
@@ -316,7 +325,7 @@ function MasterCard({ leaf, s, onClick }: { leaf: MenuChild; s: CategoryStyle; o
         const el = e.currentTarget as HTMLDivElement;
         el.style.boxShadow = '0 1px 4px rgba(0,0,0,0.05)';
         el.style.transform = 'translateY(0)';
-        el.style.borderColor = 'var(--vz-border-color)';
+        el.style.borderColor = '#eef0f3';
       }}
     >
       {/* Left gradient strip */}
