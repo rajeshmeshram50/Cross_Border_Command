@@ -357,9 +357,9 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
             // All non-featured cards share the same glossy violet theme
             const accent = p.is_featured ? '#f7b84b' : '#7c5cfc';
             const isDark = p.is_featured;
-            const textMain = isDark ? '#fff' : 'var(--vz-heading-color, var(--vz-body-color))';
-            const textMuted = isDark ? 'rgba(255,255,255,0.65)' : 'var(--vz-secondary-color)';
-            const dividerColor = isDark ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color)';
+            const textMain = (isDark || darkTheme) ? 'rgba(255,255,255,0.95)' : 'var(--vz-heading-color, var(--vz-body-color))';
+            const textMuted = (isDark || darkTheme) ? 'rgba(255,255,255,0.72)' : 'var(--vz-secondary-color)';
+            const dividerColor = (isDark || darkTheme) ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color)';
             const bgBase = isDark
               ? `
                 linear-gradient(135deg, rgba(247,184,75,0.10) 0%, transparent 55%),
@@ -599,78 +599,42 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                       ].map(l => (
                         <Col xs={6} key={l.label}>
                           <div
-                            className="rounded-2 d-flex align-items-center gap-2 px-2 py-2 position-relative"
+                            className="rounded-2 d-flex align-items-center gap-2 px-2 py-2"
                             style={{
-                              background: (isDark || darkTheme)
-                                ? `
-                                  linear-gradient(135deg, ${accent}26 0%, ${accent}10 45%, transparent 100%),
-                                  linear-gradient(225deg, ${accent}18 0%, transparent 60%),
-                                  rgba(255,255,255,0.04)
-                                `
-                                : `
-                                  linear-gradient(135deg, ${accent}22 0%, ${accent}10 45%, ${accent}06 100%),
-                                  linear-gradient(225deg, ${accent}18 0%, transparent 60%),
-                                  linear-gradient(180deg, rgba(255,255,255,0.55), transparent 60%),
-                                  var(--vz-card-bg)
-                                `,
-                              border: (isDark || darkTheme) ? `1px solid ${accent}40` : `1px solid ${accent}2e`,
+                              background: (isDark || darkTheme) ? 'rgba(255,255,255,0.03)' : '#fff',
+                              border: (isDark || darkTheme) ? '1px solid rgba(255,255,255,0.08)' : '1px solid var(--vz-border-color)',
                               boxShadow: (isDark || darkTheme)
-                                ? `inset 0 1px 0 rgba(255,255,255,0.06)`
-                                : `0 1px 3px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.7)`,
+                                ? '0 1px 2px rgba(0,0,0,0.35)'
+                                : '0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.04)',
                               transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
-                              overflow: 'hidden',
                             }}
                             onMouseEnter={e => {
                               const el = e.currentTarget as HTMLDivElement;
                               el.style.transform = 'translateY(-2px)';
                               el.style.boxShadow = (isDark || darkTheme)
-                                ? `0 6px 18px ${accent}45, inset 0 1px 0 rgba(255,255,255,0.10)`
-                                : `0 8px 20px ${accent}30, inset 0 1px 0 rgba(255,255,255,0.8)`;
-                              el.style.borderColor = accent + '70';
+                                ? `0 6px 16px rgba(0,0,0,0.5), 0 0 0 1px ${accent}55`
+                                : `0 6px 14px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.05)`;
+                              el.style.borderColor = accent + '55';
                             }}
                             onMouseLeave={e => {
                               const el = e.currentTarget as HTMLDivElement;
                               el.style.transform = 'translateY(0)';
                               el.style.boxShadow = (isDark || darkTheme)
-                                ? `inset 0 1px 0 rgba(255,255,255,0.06)`
-                                : `0 1px 3px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.7)`;
-                              el.style.borderColor = (isDark || darkTheme) ? accent + '40' : accent + '2e';
+                                ? '0 1px 2px rgba(0,0,0,0.35)'
+                                : '0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.04)';
+                              el.style.borderColor = (isDark || darkTheme) ? 'rgba(255,255,255,0.08)' : 'var(--vz-border-color)';
                             }}
                           >
-                            {/* Top-right corner glow dot */}
-                            <div
+                            <span
+                              className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
                               style={{
-                                position: 'absolute',
-                                top: -18, right: -18,
-                                width: 42, height: 42,
-                                borderRadius: '50%',
-                                background: `radial-gradient(circle, ${accent}45 0%, transparent 70%)`,
-                                pointerEvents: 'none',
-                              }}
-                            />
-                            {/* Left accent strip */}
-                            <div
-                              style={{
-                                position: 'absolute',
-                                left: 0, top: '18%', bottom: '18%',
-                                width: 2.5,
-                                borderRadius: 2,
-                                background: `linear-gradient(180deg, transparent 0%, ${accent} 50%, transparent 100%)`,
-                                boxShadow: `0 0 6px ${accent}66`,
-                              }}
-                            />
-                            {/* Icon — plain, no chip */}
-                            <i
-                              className={l.icon}
-                              style={{
+                                width: 28, height: 28,
+                                background: accent + (isDark || darkTheme ? '20' : '15'),
                                 color: accent,
-                                fontSize: 16,
-                                flexShrink: 0,
-                                marginLeft: 3,
-                                filter: `drop-shadow(0 1px 2px ${accent}45)`,
                               }}
-                            />
-
+                            >
+                              <i className={l.icon} style={{ fontSize: 14 }} />
+                            </span>
                             <div className="text-start min-w-0 flex-grow-1">
                               <div
                                 className="text-uppercase fw-semibold"

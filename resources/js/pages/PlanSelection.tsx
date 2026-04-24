@@ -4,7 +4,7 @@ import {
   Modal, ModalHeader, ModalBody, ModalFooter,
 } from 'reactstrap';
 import { Swiper, SwiperSlide } from 'swiper/react';
-import { Navigation, Pagination } from 'swiper/modules';
+import { Navigation, Pagination, Autoplay } from 'swiper/modules';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -99,8 +99,45 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   return (
     <>
       {/* ── Compact Page Header ── */}
-      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-        <div className="d-flex align-items-center gap-2">
+      {hasPlan && (
+        <style>{`
+          @keyframes cp-dot-pulse {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(10,179,156,0.55); }
+            50%      { transform: scale(1.25); box-shadow: 0 0 0 5px rgba(10,179,156,0); }
+          }
+          @keyframes cp-blink {
+            0%, 100% {
+              box-shadow: 0 0 0 0 rgba(10,179,156,0), 0 2px 6px rgba(10,179,156,0.35);
+              filter: brightness(1);
+            }
+            50% {
+              box-shadow: 0 0 0 4px rgba(10,179,156,0.22), 0 4px 14px rgba(10,179,156,0.40);
+              filter: brightness(1.08);
+            }
+          }
+          @keyframes cp-sweep {
+            0%   { transform: translateX(-140%); }
+            60%  { transform: translateX(140%); }
+            100% { transform: translateX(140%); }
+          }
+          .cp-current-pill {
+            position: relative;
+            overflow: hidden;
+            animation: cp-blink 1.8s ease-in-out infinite;
+          }
+          .cp-current-pill::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(110deg, transparent 40%, rgba(255,255,255,0.45) 50%, transparent 60%);
+            transform: translateX(-140%);
+            animation: cp-sweep 2.6s ease-in-out infinite;
+            pointer-events: none;
+          }
+        `}</style>
+      )}
+      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <div className="d-flex align-items-center gap-2 flex-wrap">
           <div
             className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
             style={{
@@ -117,73 +154,51 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
               Select the perfect plan to power your organization
             </p>
           </div>
-        </div>
 
-        <div className="d-flex align-items-center gap-2 flex-wrap">
-          {/* Current plan chip — animated pulse + shimmer */}
+          {/* Current plan pill — inline with header (right of title on wide, wraps on narrow) */}
           {hasPlan && (
-            <>
-              <style>{`
-                @keyframes cp-pulse {
-                  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(10,179,156,0.55), 0 0 6px #0ab39c; }
-                  70%     { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(10,179,156,0), 0 0 10px #0ab39c; }
-                }
-                @keyframes cp-shimmer {
-                  0%   { transform: translateX(-120%); }
-                  60%  { transform: translateX(220%); }
-                  100% { transform: translateX(220%); }
-                }
-                .cp-badge { position: relative; overflow: hidden; }
-                .cp-badge::after {
-                  content: '';
-                  position: absolute;
-                  top: 0; left: 0;
-                  width: 35%; height: 100%;
-                  background: linear-gradient(90deg, transparent, rgba(10,179,156,0.35), transparent);
-                  animation: cp-shimmer 3.2s ease-in-out infinite;
-                  pointer-events: none;
-                }
-              `}</style>
-              <span
-                className="cp-badge d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1 fw-semibold"
-                style={{
-                  background: '#0ab39c15',
-                  color: '#0ab39c',
-                  border: '1px solid #0ab39c40',
-                  fontSize: 10.5,
-                  letterSpacing: '0.04em',
-                }}
-                title={`Valid until ${user?.plan?.expires_at}`}
-              >
-                <span
-                  className="rounded-circle"
-                  style={{
-                    width: 6, height: 6,
-                    background: '#0ab39c',
-                    animation: 'cp-pulse 1.8s ease-in-out infinite',
-                  }}
-                />
-                CURRENT: {user?.plan?.plan_name?.toUpperCase()}
-                <span className="text-muted fw-normal ms-1" style={{ opacity: 0.75 }}>· {user?.plan?.expires_at}</span>
-              </span>
-            </>
-          )}
-
-          {user?.client_name && (
             <span
-              className="d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1 text-uppercase fw-semibold"
+              className="cp-current-pill d-inline-flex align-items-center gap-2 rounded-pill ms-md-2"
               style={{
-                background: '#40518915',
-                color: '#405189',
-                border: '1px solid #40518930',
-                fontSize: 10.5,
-                letterSpacing: '0.05em',
+                background: 'linear-gradient(135deg, rgba(10,179,156,0.18) 0%, rgba(10,179,156,0.10) 100%)',
+                color: '#0ab39c',
+                border: '1px solid #0ab39c',
+                fontSize: 12,
+                fontWeight: 500,
+                letterSpacing: '0.03em',
+                padding: '4px 11px',
               }}
+              title={`Valid until ${user?.plan?.expires_at}`}
             >
-              <i className="ri-building-line" />{user.client_name}
+              <span
+                className="rounded-circle"
+                style={{
+                  width: 7, height: 7,
+                  background: '#0ab39c',
+                  animation: 'cp-dot-pulse 1.4s ease-in-out infinite',
+                  flexShrink: 0,
+                }}
+              />
+              CURRENT: {user?.plan?.plan_name?.toUpperCase()}
+              <span className="ms-1" style={{ opacity: 0.8 }}>· {user?.plan?.expires_at}</span>
             </span>
           )}
         </div>
+
+        {user?.client_name && (
+          <span
+            className="d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1 text-uppercase fw-semibold"
+            style={{
+              background: '#40518915',
+              color: '#405189',
+              border: '1px solid #40518930',
+              fontSize: 10.5,
+              letterSpacing: '0.05em',
+            }}
+          >
+            <i className="ri-building-line" />{user.client_name}
+          </span>
+        )}
       </div>
 
       {/* ── Expired alert (only shown when urgent action needed) ── */}
@@ -243,7 +258,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
         }
         .bc-save-badge { animation: bc-save-pulse 2s ease-in-out infinite; }
       `}</style>
-      <div className="d-flex justify-content-center mb-6">
+      <div className="d-flex justify-content-center mb-3">
         <div
           className="d-inline-flex rounded-pill"
           style={{
@@ -399,7 +414,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
             <i className="ri-arrow-left-s-line"></i>
           </button>
           <Swiper
-            modules={[Navigation, Pagination]}
+            modules={[Navigation, Pagination, Autoplay]}
             onBeforeInit={swiper => {
               if (typeof swiper.params.navigation === 'object' && swiper.params.navigation) {
                 (swiper.params.navigation as any).prevEl = prevRef.current;
@@ -409,6 +424,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
             navigation={{ prevEl: prevRef.current, nextEl: nextRef.current }}
             pagination={{ clickable: true, dynamicBullets: true }}
             loop={plans.length > 3}
+            autoplay={{ delay: 2000, disableOnInteraction: false, pauseOnMouseEnter: true }}
             breakpoints={{
               0:    { slidesPerView: 1, spaceBetween: 12 },
               576:  { slidesPerView: 2, spaceBetween: 14 },
@@ -427,9 +443,9 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                   const isCurrent = hasPlan
                     && user?.plan?.plan_name?.toLowerCase() === p.name.toLowerCase();
                   const isDark = p.is_featured;
-                  const textMain = isDark ? '#fff' : 'var(--vz-heading-color, var(--vz-body-color))';
-                  const textMuted = isDark ? 'rgba(255,255,255,0.65)' : 'var(--vz-secondary-color)';
-                  const dividerColor = isDark ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color)';
+                  const textMain = (isDark || darkTheme) ? 'rgba(255,255,255,0.95)' : 'var(--vz-heading-color, var(--vz-body-color))';
+                  const textMuted = (isDark || darkTheme) ? 'rgba(255,255,255,0.72)' : 'var(--vz-secondary-color)';
+                  const dividerColor = (isDark || darkTheme) ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color)';
                   const bgBase = isDark
                     ? `
                       linear-gradient(135deg, rgba(247,184,75,0.10) 0%, transparent 55%),
@@ -675,76 +691,42 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                           ].map(l => (
                             <Col xs={6} key={l.label}>
                               <div
-                                className="rounded-2 d-flex align-items-center gap-2 px-2 py-2 position-relative"
+                                className="rounded-2 d-flex align-items-center gap-2 px-2 py-2"
                                 style={{
-                                  background: (isDark || darkTheme)
-                                    ? `
-                                      linear-gradient(135deg, ${accent}26 0%, ${accent}10 45%, transparent 100%),
-                                      linear-gradient(225deg, ${accent}18 0%, transparent 60%),
-                                      rgba(255,255,255,0.04)
-                                    `
-                                    : `
-                                      linear-gradient(135deg, ${accent}22 0%, ${accent}10 45%, ${accent}06 100%),
-                                      linear-gradient(225deg, ${accent}18 0%, transparent 60%),
-                                      linear-gradient(180deg, rgba(255,255,255,0.55), transparent 60%),
-                                      var(--vz-card-bg)
-                                    `,
-                                  border: (isDark || darkTheme) ? `1px solid ${accent}40` : `1px solid ${accent}2e`,
+                                  background: (isDark || darkTheme) ? 'rgba(255,255,255,0.03)' : '#fff',
+                                  border: (isDark || darkTheme) ? '1px solid rgba(255,255,255,0.08)' : '1px solid var(--vz-border-color)',
                                   boxShadow: (isDark || darkTheme)
-                                    ? `inset 0 1px 0 rgba(255,255,255,0.06)`
-                                    : `0 1px 3px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.7)`,
+                                    ? '0 1px 2px rgba(0,0,0,0.35)'
+                                    : '0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.04)',
                                   transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
-                                  overflow: 'hidden',
                                 }}
                                 onMouseEnter={e => {
                                   const el = e.currentTarget as HTMLDivElement;
                                   el.style.transform = 'translateY(-2px)';
                                   el.style.boxShadow = (isDark || darkTheme)
-                                    ? `0 6px 18px ${accent}45, inset 0 1px 0 rgba(255,255,255,0.10)`
-                                    : `0 8px 20px ${accent}30, inset 0 1px 0 rgba(255,255,255,0.8)`;
-                                  el.style.borderColor = accent + '70';
+                                    ? `0 6px 16px rgba(0,0,0,0.5), 0 0 0 1px ${accent}55`
+                                    : `0 6px 14px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.05)`;
+                                  el.style.borderColor = accent + '55';
                                 }}
                                 onMouseLeave={e => {
                                   const el = e.currentTarget as HTMLDivElement;
                                   el.style.transform = 'translateY(0)';
                                   el.style.boxShadow = (isDark || darkTheme)
-                                    ? `inset 0 1px 0 rgba(255,255,255,0.06)`
-                                    : `0 1px 3px ${accent}12, inset 0 1px 0 rgba(255,255,255,0.7)`;
-                                  el.style.borderColor = (isDark || darkTheme) ? accent + '40' : accent + '2e';
+                                    ? '0 1px 2px rgba(0,0,0,0.35)'
+                                    : '0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.04)';
+                                  el.style.borderColor = (isDark || darkTheme) ? 'rgba(255,255,255,0.08)' : 'var(--vz-border-color)';
                                 }}
                               >
-                                {/* Top-right corner glow */}
-                                <div
+                                <span
+                                  className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
                                   style={{
-                                    position: 'absolute',
-                                    top: -18, right: -18,
-                                    width: 42, height: 42,
-                                    borderRadius: '50%',
-                                    background: `radial-gradient(circle, ${accent}45 0%, transparent 70%)`,
-                                    pointerEvents: 'none',
-                                  }}
-                                />
-                                {/* Left accent strip */}
-                                <div
-                                  style={{
-                                    position: 'absolute',
-                                    left: 0, top: '18%', bottom: '18%',
-                                    width: 2.5,
-                                    borderRadius: 2,
-                                    background: `linear-gradient(180deg, transparent 0%, ${accent} 50%, transparent 100%)`,
-                                    boxShadow: `0 0 6px ${accent}66`,
-                                  }}
-                                />
-                                <i
-                                  className={l.icon}
-                                  style={{
+                                    width: 28, height: 28,
+                                    background: accent + (isDark || darkTheme ? '20' : '15'),
                                     color: accent,
-                                    fontSize: 16,
-                                    flexShrink: 0,
-                                    marginLeft: 3,
-                                    filter: `drop-shadow(0 1px 2px ${accent}45)`,
                                   }}
-                                />
+                                >
+                                  <i className={l.icon} style={{ fontSize: 14 }} />
+                                </span>
                                 <div className="text-start min-w-0 flex-grow-1">
                                   <div
                                     className="text-uppercase fw-semibold"
