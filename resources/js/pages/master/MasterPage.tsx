@@ -650,13 +650,28 @@ function MasterPageInner({
               {viewOnly ? 'Close' : 'Cancel'}
             </button>
             {!viewOnly && (
-              <Button color="secondary" type="submit" disabled={saving} className="btn-label waves-effect waves-light rounded-pill">
-                {saving
-                  ? <Spinner size="sm" className="label-icon align-middle me-2" />
-                  : <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
-                {saving
-                  ? (editingId != null ? 'Updating...' : 'Saving...')
-                  : (editingId != null ? 'Update Record' : 'Save Record')}
+              <Button
+                color="secondary"
+                type="submit"
+                disabled={saving}
+                className={
+                  saving
+                    ? 'rounded-pill d-inline-flex align-items-center justify-content-center gap-2'
+                    : 'btn-label waves-effect waves-light rounded-pill'
+                }
+                style={{ minWidth: 160 }}
+              >
+                {saving ? (
+                  <>
+                    <Spinner size="sm" />
+                    <span>{editingId != null ? 'Updating...' : 'Saving...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                    {editingId != null ? 'Update Record' : 'Save Record'}
+                  </>
+                )}
               </Button>
             )}
           </ModalFooter>
