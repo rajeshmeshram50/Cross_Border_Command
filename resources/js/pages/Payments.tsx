@@ -334,7 +334,7 @@ export default function Payments() {
       label: 'Total Revenue',
       value: `₹${(stats?.total_revenue || 0).toLocaleString()}`,
       hint: `${stats?.successful || 0} successful`,
-      icon: 'ri-money-rupee-circle-fill',
+      icon: 'ri-wallet-3-fill',
       gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
     },
     {
@@ -708,7 +708,7 @@ export default function Payments() {
       >
         {/* ── Hero header — icon chip + title + "New Payment" pill + close X ── */}
         <div className="pmt-reg-hero">
-          <span className="pmt-reg-hero-icon"><i className="ri-money-rupee-circle-line" /></span>
+          <span className="pmt-reg-hero-icon"><i className="ri-secure-payment-line" /></span>
           <div className="flex-grow-1 min-w-0">
             <h5 className="pmt-reg-hero-title">Record New Payment</h5>
           

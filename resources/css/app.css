@@ -834,12 +834,12 @@ tbody tr:nth-child(10) {
   padding: 20px;
 }
 
-/* KPI cards */
+/* KPI cards — compact */
 .pmt-kpi-card {
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--vz-border-color);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-  padding: 16px 18px;
+  padding: 10px 14px;
   position: relative;
   overflow: hidden;
   height: 100%;
@@ -851,34 +851,35 @@ tbody tr:nth-child(10) {
   right: 0;
   height: 3px;
 }
-.pmt-kpi-row { display: flex; align-items: flex-start; justify-content: space-between; }
+.pmt-kpi-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .pmt-kpi-label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--vz-secondary-color);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  margin: 0 0 8px;
+  margin: 0 0 4px;
 }
 .pmt-kpi-value {
-  font-size: 26px;
+  font-size: 20px;
   font-weight: 800;
   color: var(--vz-heading-color, var(--vz-body-color));
   margin: 0;
   line-height: 1;
+  letter-spacing: -0.01em;
 }
-.pmt-kpi-hint { font-size: 11px; color: var(--vz-secondary-color); }
+.pmt-kpi-hint { font-size: 10.5px; color: var(--vz-secondary-color); margin-top: 3px; }
 .pmt-kpi-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
-.pmt-kpi-icon i { font-size: 20px; color: #fff; }
+.pmt-kpi-icon i { font-size: 17px; color: #fff; }
 
 /* Export button — teal/green outline, signals "download data"
    Uses .btn.pmt-btn-export to outrank Bootstrap's default .btn-secondary */
@@ -1433,29 +1434,29 @@ tbody tr:nth-child(10) {
 @media (min-width: 768px) {
   .cbc-payment-modal .modal-dialog,
   .cbc-payment-modal.modal .modal-dialog {
-    --bs-modal-width: 92vw;
-    max-width: 92vw !important;
+    --bs-modal-width: 94vw;
+    max-width: 94vw !important;
   }
 }
 @media (min-width: 992px) {
   .cbc-payment-modal .modal-dialog,
   .cbc-payment-modal.modal .modal-dialog {
-    --bs-modal-width: min(88vw, 1300px);
-    max-width: min(88vw, 1300px) !important;
+    --bs-modal-width: min(92vw, 1450px);
+    max-width: min(92vw, 1450px) !important;
   }
 }
 @media (min-width: 1400px) {
   .cbc-payment-modal .modal-dialog,
   .cbc-payment-modal.modal .modal-dialog {
-    --bs-modal-width: min(85vw, 1500px);
-    max-width: min(85vw, 1500px) !important;
+    --bs-modal-width: min(90vw, 1700px);
+    max-width: min(90vw, 1700px) !important;
   }
 }
 @media (min-width: 1800px) {
   .cbc-payment-modal .modal-dialog,
   .cbc-payment-modal.modal .modal-dialog {
-    --bs-modal-width: 1700px;
-    max-width: 1700px !important;
+    --bs-modal-width: 1850px;
+    max-width: 1850px !important;
   }
 }
 
