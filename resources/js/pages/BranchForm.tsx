@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card, CardBody, CardHeader, Col, Row, Input, Label,
   Spinner, Form, FormFeedback,
-  Dropdown, DropdownToggle, DropdownMenu, DropdownItem,
 } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { MasterSelect, MasterFormStyles } from './master/masterFormKit';
 
 interface Props {
   onBack: () => void;
@@ -114,12 +114,6 @@ const css = {
   small: {
     fontSize: '10.5px', color: 'var(--vz-secondary-color)', marginTop: '3px', display: 'block',
   } as React.CSSProperties,
-};
-
-// dot colors for status-type fields
-const statusColor: Record<string, string> = {
-  active: '#10B981', inactive: '#6B7280', suspended: '#EF4444',
-  pending: '#F59E0B',
 };
 
 export default function BranchForm({ onBack, editId }: Props) {
@@ -258,57 +252,31 @@ export default function BranchForm({ onBack, editId }: Props) {
     </div>
   );
 
-  // ── Reusable SelectDD component ────────────────────────────────────────────
-  const SelectDD = ({
-    isOpen, toggle, value, placeholder = 'Select', options, fieldKey, dotColor = false,
-  }: {
-    isOpen: boolean; toggle: () => void; value: string; placeholder?: string;
-    options: { label: string; value: string }[]; fieldKey: string; dotColor?: boolean;
+  // ── SelectDD — thin wrapper that delegates to MasterSelect so every ────
+  //   dropdown in this form matches the master / client-form dropdown.
+  //   Legacy props (isOpen, toggle, dotColor) are kept for backwards
+  //   compatibility with existing call sites but ignored — MasterSelect
+  //   manages its own open state and doesn't render status dots.
+  const SelectDD = (props: {
+    isOpen?: boolean;
+    toggle?: () => void;
+    value: string;
+    placeholder?: string;
+    options: { label: string; value: string }[];
+    fieldKey: string;
+    dotColor?: boolean;
   }) => {
+    const { value, placeholder = 'Select', options, fieldKey } = props;
     const invalid = fieldInvalid(fieldKey);
-    const selectedLabel = options.find(o => o.value === value)?.label || placeholder;
     return (
       <>
-        <Dropdown isOpen={isOpen} toggle={toggle} className="w-100">
-          <DropdownToggle
-            color="light"
-            caret
-            style={{
-              ...css.ddToggle,
-              border: `1px solid ${invalid ? '#f06548' : 'var(--vz-border-color)'}`,
-              borderRadius: '8px',
-              color: value ? 'var(--vz-heading-color, var(--vz-body-color))' : 'var(--vz-secondary-color)',
-              boxShadow: invalid ? '0 0 0 2px rgba(240,101,72,0.15)' : 'none',
-              fontWeight: value ? 500 : 400,
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {dotColor && value && (
-                <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                  background: statusColor[value] || '#6B7280', display: 'inline-block' }} />
-              )}
-              {selectedLabel}
-            </span>
-          </DropdownToggle>
-          <DropdownMenu style={css.ddMenu}>
-            {options.map(o => (
-              <DropdownItem
-                key={o.value}
-                active={value === o.value}
-                style={css.ddItem}
-                onClick={() => { set(fieldKey as keyof FormState, o.value); touch(fieldKey); }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {dotColor && (
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                      background: statusColor[o.value] || '#6B7280', display: 'inline-block' }} />
-                  )}
-                  {o.label}
-                </span>
-              </DropdownItem>
-            ))}
-          </DropdownMenu>
-        </Dropdown>
+        <MasterSelect
+          value={value}
+          placeholder={placeholder}
+          options={options}
+          invalid={invalid}
+          onChange={val => { set(fieldKey as keyof FormState, val); touch(fieldKey); }}
+        />
         {invalid && (
           <div style={{ fontSize: '10.5px', color: '#f06548', marginTop: '2px' }}>
             {fieldError(fieldKey)}
@@ -438,48 +406,49 @@ export default function BranchForm({ onBack, editId }: Props) {
           <div
             style={{
               position: 'absolute',
-              top: 'calc(100% + 6px)',
+              top: 'calc(100% + 5px)',
               left: 0,
-              minWidth: 290,
+              minWidth: 240,
+              maxWidth: 240,
               background: 'var(--vz-card-bg)',
               border: '1px solid var(--vz-border-color)',
-              borderRadius: 14,
-              boxShadow: '0 16px 40px rgba(0,0,0,0.18)',
-              padding: 14,
+              borderRadius: 12,
+              boxShadow: '0 12px 32px rgba(0,0,0,0.16)',
+              padding: 10,
               zIndex: 1050,
             }}
           >
-            <div className="d-flex align-items-center justify-content-between mb-2">
+            <div className="d-flex align-items-center justify-content-between mb-1">
               <button
                 type="button"
                 onClick={prev}
                 className="btn p-0 d-inline-flex align-items-center justify-content-center"
-                style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)' }}
+                style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)' }}
               >
-                <i className="ri-arrow-left-s-line" style={{ fontSize: 16 }} />
+                <i className="ri-arrow-left-s-line" style={{ fontSize: 13 }} />
               </button>
-              <div className="fw-bold" style={{ fontSize: 13.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+              <div className="fw-bold" style={{ fontSize: 12, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
                 {viewDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
               </div>
               <button
                 type="button"
                 onClick={next}
                 className="btn p-0 d-inline-flex align-items-center justify-content-center"
-                style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)' }}
+                style={{ width: 24, height: 24, borderRadius: 6, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)' }}
               >
-                <i className="ri-arrow-right-s-line" style={{ fontSize: 16 }} />
+                <i className="ri-arrow-right-s-line" style={{ fontSize: 13 }} />
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 2 }}>
               {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
-                <div key={d} className="text-center" style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', padding: '4px 0', letterSpacing: '0.04em' }}>
+                <div key={d} className="text-center" style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--vz-secondary-color)', padding: '2px 0', letterSpacing: '0.03em' }}>
                   {d}
                 </div>
               ))}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
               {Array.from({ length: firstDow }).map((_, i) => <div key={`blank-${i}`} />)}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
@@ -495,9 +464,9 @@ export default function BranchForm({ onBack, editId }: Props) {
                     onClick={() => { onChange(fmt(d)); setOpen(false); }}
                     className="btn p-0 d-inline-flex align-items-center justify-content-center"
                     style={{
-                      height: 34,
-                      borderRadius: 8,
-                      fontSize: 12.5,
+                      height: 26,
+                      borderRadius: 6,
+                      fontSize: 11.5,
                       fontWeight: isSelected ? 700 : 500,
                       background: isSelected
                         ? 'linear-gradient(135deg, #6a5acd, #a78bfa)'
@@ -512,7 +481,7 @@ export default function BranchForm({ onBack, editId }: Props) {
                         ? 'var(--vz-secondary-color)'
                         : 'var(--vz-heading-color, var(--vz-body-color))',
                       border: 'none',
-                      boxShadow: isSelected ? '0 4px 10px rgba(106,90,205,0.3)' : 'none',
+                      boxShadow: isSelected ? '0 3px 8px rgba(106,90,205,0.3)' : 'none',
                       opacity: disabled ? 0.35 : 1,
                       cursor: disabled ? 'not-allowed' : 'pointer',
                     }}
@@ -524,14 +493,14 @@ export default function BranchForm({ onBack, editId }: Props) {
             </div>
 
             <div
-              className="d-flex justify-content-between align-items-center pt-2 mt-2"
+              className="d-flex justify-content-between align-items-center pt-1 mt-1"
               style={{ borderTop: '1px solid var(--vz-border-color)' }}
             >
               <button
                 type="button"
                 onClick={() => { onChange(''); setOpen(false); }}
                 className="btn p-0"
-                style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--vz-secondary-color)', border: 'none', background: 'transparent' }}
+                style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--vz-secondary-color)', border: 'none', background: 'transparent' }}
               >
                 <i className="ri-close-line me-1" />Clear
               </button>
@@ -539,7 +508,7 @@ export default function BranchForm({ onBack, editId }: Props) {
                 type="button"
                 onClick={() => { onChange(fmt(today)); setViewDate(today); setOpen(false); }}
                 className="btn p-0 d-inline-flex align-items-center gap-1"
-                style={{ fontSize: 11.5, fontWeight: 700, color: '#6a5acd', border: 'none', background: 'transparent' }}
+                style={{ fontSize: 10.5, fontWeight: 700, color: '#6a5acd', border: 'none', background: 'transparent' }}
               >
                 <i className="ri-focus-2-line" />Today
               </button>
@@ -552,6 +521,7 @@ export default function BranchForm({ onBack, editId }: Props) {
 
   return (
     <>
+      <MasterFormStyles />
       <style>{`
         .stylish-label {
           font-size: 11.5px;
@@ -807,11 +777,13 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Established Date</Lbl>
-                <ThemedDatePicker
-                  value={form.established_at}
-                  onChange={v => set('established_at', v)}
-                  placeholder="Select date"
-                />
+                <div style={{ maxWidth: 240 }}>
+                  <ThemedDatePicker
+                    value={form.established_at}
+                    onChange={v => set('established_at', v)}
+                    placeholder="Select date"
+                  />
+                </div>
               </Col>
             </Row>
 
