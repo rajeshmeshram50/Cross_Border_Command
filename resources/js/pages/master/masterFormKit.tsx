@@ -172,14 +172,14 @@ export const MASTER_MODAL_CSS = `
   }
 
   /* Custom MasterSelect — replaces native <select> dropdowns */
-  .master-field.sel .master-select-wrap { width: 100%; }
+  .master-select-wrap { width: 100%; }
   .master-select-toggle {
     display: flex;
     align-items: center;
     justify-content: space-between;
     width: 100%;
     height: 38px;
-    padding: 7px 12px 7px 36px;
+    padding: 7px 12px;
     border: 1px solid var(--vz-border-color);
     border-radius: 10px;
     background: var(--vz-card-bg);
@@ -191,6 +191,9 @@ export const MASTER_MODAL_CSS = `
     box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
     transition: border-color .18s ease, box-shadow .18s ease;
   }
+  /* Extra left padding only when sitting inside a master-field wrapper
+     (accommodates the prefix icon used in master-modal forms) */
+  .master-field .master-select-toggle { padding-left: 36px; }
   .master-select-toggle:hover:not(:disabled) {
     border-color: rgba(99,102,241,0.55);
     box-shadow: 0 2px 6px rgba(99,102,241,0.08);
