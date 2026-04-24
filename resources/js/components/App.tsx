@@ -37,7 +37,6 @@ import ClientPermissions from '../pages/ClientPermissions';
 import ClientPayments from '../pages/ClientPayments';
 import ClientSettings from '../pages/ClientSettings';
 import MasterDashboard from '../pages/MasterDashboard';
-import OrganizationTypes from '../pages/OrganizationTypes';
 import MasterPage from '../pages/master/MasterPage';
 
 // Create NavigateContext for consistent navigation across the app
@@ -273,7 +272,6 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/master" element={<MasterDashboard />} />
-              <Route path="/master/organization_types" element={<OrganizationTypes />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

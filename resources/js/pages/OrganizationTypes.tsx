@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, CardBody, CardHeader, Col, Row, Button, Input, Label, Spinner,
-  Table, Badge, Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, FormFeedback,
+  Table, Badge, Modal, ModalBody, ModalFooter, Form, FormFeedback,
 } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import Swal from 'sweetalert2';
+import { MasterSelect, MasterFormStyles } from './master/masterFormKit';
 
 interface OrgType {
   id: number;
@@ -268,72 +269,129 @@ export default function OrganizationTypes() {
         </Col>
       </Row>
 
-      <Modal isOpen={modalOpen} toggle={() => setModalOpen(false)} centered backdrop="static">
-        <ModalHeader toggle={() => setModalOpen(false)}>
-          {editId ? 'Edit Organization Type' : 'Add Organization Type'}
-        </ModalHeader>
+      <MasterFormStyles />
+      <Modal
+        isOpen={modalOpen}
+        toggle={() => { /* explicit Cancel only — outside click & Esc disabled */ }}
+        centered
+        modalClassName="master-modal"
+        backdrop="static"
+        keyboard={false}
+      >
+        <div
+          className="position-relative overflow-hidden"
+          style={{
+            background: 'linear-gradient(135deg, rgba(124,92,252,0.10) 0%, rgba(169,147,253,0.05) 60%, var(--vz-card-bg) 100%)',
+            padding: '22px 26px',
+            borderBottom: '1px solid var(--vz-border-color)',
+          }}
+        >
+          <div className="d-flex align-items-center gap-3 position-relative">
+            <span
+              className="d-inline-flex align-items-center justify-content-center rounded-3"
+              style={{
+                width: 48, height: 48,
+                background: 'linear-gradient(135deg, rgb(64, 81, 137) 0%, rgb(102, 145, 231) 100%)',
+                boxShadow: '0 6px 16px rgba(124,92,252,0.32)',
+              }}
+            >
+              <i className="ri-building-line" style={{ color: '#fff', fontSize: 22 }}></i>
+            </span>
+            <div className="flex-grow-1 min-w-0">
+              <h4 className="mb-0 fw-bold" style={{ color: 'rgb(64, 81, 137)', fontWeight: 900 }}>
+                {editId ? 'Edit Organization Type' : 'Add Organization Type'}
+              </h4>
+              <small className="text-muted" style={{ fontSize: 12 }}>Used in client registration dropdown</small>
+            </div>
+          </div>
+        </div>
         <Form onSubmit={handleSave}>
-          <ModalBody>
-            <FormGroup>
-              <Label>Name <span className="text-danger">*</span></Label>
-              <Input
-                value={form.name}
-                invalid={!!errors.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="e.g., Manufacturing, Logistics"
-                autoFocus
-              />
-              <FormFeedback>{errors.name}</FormFeedback>
-            </FormGroup>
-            <FormGroup>
-              <Label>Icon (Remix Icon class)</Label>
-              <div className="d-flex align-items-center gap-2">
-                <div className="avatar-xs">
-                  <span className="avatar-title rounded bg-primary-subtle text-primary fs-4">
+          <ModalBody className="p-4">
+            <Row className="g-3">
+              <Col md={12}>
+                <Label>Name<span className="req-star">*</span></Label>
+                <div className="master-field">
+                  <i className="ri-price-tag-3-line master-field-icon" />
+                  <Input
+                    value={form.name}
+                    invalid={!!errors.name}
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="e.g., Manufacturing, Logistics"
+                    autoFocus
+                  />
+                </div>
+                <FormFeedback style={{ display: errors.name ? 'block' : 'none', fontSize: 11.5, marginTop: 4 }}>{errors.name}</FormFeedback>
+              </Col>
+
+              <Col md={12}>
+                <Label>Icon (Remix Icon class)</Label>
+                <div className="d-flex align-items-center gap-2">
+                  <span
+                    className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                    style={{
+                      width: 38, height: 38,
+                      background: 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.06))',
+                      border: '1px solid rgba(99,102,241,0.25)',
+                      color: '#6366f1',
+                      fontSize: 18,
+                    }}
+                  >
                     <i className={form.icon || 'ri-building-line'}></i>
                   </span>
+                  <div className="master-field flex-grow-1">
+                    <i className="ri-code-s-slash-line master-field-icon" />
+                    <Input
+                      value={form.icon}
+                      onChange={e => setForm(f => ({ ...f, icon: e.target.value }))}
+                      placeholder="ri-building-line"
+                    />
+                  </div>
                 </div>
-                <Input
-                  value={form.icon}
-                  onChange={e => setForm(f => ({ ...f, icon: e.target.value }))}
-                  placeholder="ri-building-line"
-                />
-              </div>
-              <small className="text-muted">
-                Browse icons at <a href="https://remixicon.com" target="_blank" rel="noreferrer">remixicon.com</a>
-              </small>
-            </FormGroup>
-            <FormGroup>
-              <Label>Description</Label>
-              <Input
-                type="textarea"
-                rows={2}
-                value={form.description}
-                invalid={!!errors.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                placeholder="Short description shown in admin lists"
-              />
-              <FormFeedback>{errors.description}</FormFeedback>
-            </FormGroup>
-            <Row>
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Status <span className="text-danger">*</span></Label>
-                  <Input
-                    type="select"
-                    value={form.status}
-                    invalid={!!errors.status}
-                    onChange={e => setForm(f => ({ ...f, status: e.target.value as 'active' | 'inactive' }))}
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </Input>
-                  <FormFeedback>{errors.status}</FormFeedback>
-                </FormGroup>
+                <small className="text-muted" style={{ fontSize: 11 }}>
+                  Browse icons at <a href="https://remixicon.com" target="_blank" rel="noreferrer">remixicon.com</a>
+                </small>
               </Col>
+
+              <Col md={12}>
+                <Label>Description</Label>
+                <div className="master-field ta">
+                  <i className="ri-file-text-line master-field-icon ta" />
+                  <Input
+                    type="textarea"
+                    rows={3}
+                    value={form.description}
+                    invalid={!!errors.description}
+                    onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                    placeholder="Short description shown in admin lists"
+                  />
+                </div>
+                <FormFeedback style={{ display: errors.description ? 'block' : 'none', fontSize: 11.5, marginTop: 4 }}>{errors.description}</FormFeedback>
+              </Col>
+
               <Col md={6}>
-                <FormGroup>
-                  <Label>Sort Order</Label>
+                <Label>Status<span className="req-star">*</span></Label>
+                <div className="master-field sel">
+                  <i className="ri-pulse-line master-field-icon" />
+                  <MasterSelect
+                    value={form.status}
+                    options={[
+                      { value: 'active',   label: 'Active' },
+                      { value: 'inactive', label: 'Inactive' },
+                    ]}
+                    placeholder="Select status…"
+                    invalid={!!errors.status}
+                    onChange={val => setForm(f => ({ ...f, status: val as 'active' | 'inactive' }))}
+                  />
+                </div>
+                {errors.status && (
+                  <div style={{ color: '#f06548', fontSize: 11.5, marginTop: 4 }}>{errors.status}</div>
+                )}
+              </Col>
+
+              <Col md={6}>
+                <Label>Sort Order</Label>
+                <div className="master-field">
+                  <i className="ri-hashtag master-field-icon" />
                   <Input
                     type="number"
                     min={0}
@@ -341,17 +399,32 @@ export default function OrganizationTypes() {
                     onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))}
                     placeholder="auto"
                   />
-                </FormGroup>
+                </div>
               </Col>
             </Row>
           </ModalBody>
-          <ModalFooter>
-            <Button color="light" type="button" onClick={() => setModalOpen(false)} disabled={saving}>
+          <ModalFooter className="px-4 pb-3 justify-content-center gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+            <button
+              type="button"
+              className="master-modal-cancel"
+              onClick={() => setModalOpen(false)}
+              disabled={saving}
+            >
+              <i className="ri-close-line align-middle me-1"></i>
               Cancel
-            </Button>
-            <Button color="success" type="submit" disabled={saving}>
-              {saving ? <Spinner size="sm" className="me-1" /> : <i className="ri-save-line me-1"></i>}
-              {editId ? 'Update' : 'Create'}
+            </button>
+            <Button
+              color="secondary"
+              type="submit"
+              disabled={saving}
+              className="btn-label waves-effect waves-light rounded-pill"
+            >
+              {saving
+                ? <Spinner size="sm" className="label-icon align-middle me-2" />
+                : <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
+              {saving
+                ? (editId ? 'Updating...' : 'Saving...')
+                : (editId ? 'Update Record' : 'Save Record')}
             </Button>
           </ModalFooter>
         </Form>

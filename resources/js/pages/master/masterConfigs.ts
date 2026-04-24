@@ -1,6 +1,8 @@
 // Generic master config — one entry per master.
 // Every master shares the same page shell; only fields/columns/seed/wtd differ.
 
+export type FieldOption = string | { value: string; label: string };
+
 export type FieldDef = {
   n: string;                // field name (row key)
   l: string;                // label
@@ -8,7 +10,7 @@ export type FieldDef = {
   r?: boolean;              // required
   p?: string;               // placeholder
   full?: boolean;           // span full row
-  opts?: string[];          // select options
+  opts?: FieldOption[];     // select options — string or { value, label } for distinct display/payload
   ref?: string;             // ref to another master key (dropdown from that master's data)
   refL?: string;            // label field on the referenced master
   sec?: string;             // section divider (no input, header only)
@@ -26,6 +28,7 @@ export type MasterConfig = {
   iconBg: string;           // used with ${color}-subtle bg
   desc: string;
   cat: string;
+  endpoint?: string;        // custom REST endpoint prefix (default: `/master/${slug}`)
   fields: FieldDef[];
   cols: string[];
   colL: string[];
@@ -33,6 +36,16 @@ export type MasterConfig = {
   data: any[];
   wtd: WtdStep[];
 };
+
+/** Turn opts (string | {value,label}) into uniform {value,label} pairs for rendering. */
+export function normalizeOpts(opts: FieldOption[] | undefined): { value: string; label: string }[] {
+  return (opts || []).map(o => typeof o === 'string' ? { value: o, label: o } : o);
+}
+
+/** Endpoint for a master — honors the optional override. */
+export function masterEndpoint(cfg: Pick<MasterConfig, 'slug' | 'endpoint'>): string {
+  return cfg.endpoint || `/master/${cfg.slug}`;
+}
 
 const C: Record<string, MasterConfig> = {
   // ---------- IDENTITY & ENTITY ----------
@@ -64,6 +77,31 @@ const C: Record<string, MasterConfig> = {
       { icon: 'ri-file-list-3-line', title: 'Add Tax Info', desc: 'GSTIN, PAN, CIN, IEC for exports' },
       { icon: 'ri-global-line', title: 'Add Contact Details', desc: 'Email, mobile, website, address' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Enables use across all modules' },
+    ],
+  },
+
+  organization_types: {
+    key: 'organization_types', slug: 'organization_types', title: 'Organization Types', titleSingular: 'Organization Type',
+    icon: 'ri-building-line', iconColor: 'primary', iconBg: 'primary',
+    desc: 'Industry categories used in the client registration dropdown',
+    cat: 'Identity & Entity',
+    endpoint: '/organization-types',
+    fields: [
+      { n: 'name', l: 'Name', t: 'text', r: true, p: 'e.g. Manufacturing, Logistics', full: true },
+      { n: 'icon', l: 'Icon (Remix Icon class)', t: 'text', p: 'ri-building-line' },
+      { n: 'sort_order', l: 'Sort Order', t: 'number', p: 'auto' },
+      { n: 'description', l: 'Description', t: 'textarea', p: 'Short description shown in admin lists', full: true },
+      { n: 'status', l: 'Status', t: 'select', r: true, opts: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }] },
+    ],
+    cols: ['name', 'description', 'sort_order', 'status'],
+    colL: ['Name', 'Description', 'Order', 'Status'],
+    uFields: ['name'],
+    data: [],
+    wtd: [
+      { icon: 'ri-building-line',        title: 'Define Organization Types', desc: 'Create industry categories for client onboarding' },
+      { icon: 'ri-image-line',           title: 'Assign Icon',               desc: 'Pick a Remix Icon to visualize each type' },
+      { icon: 'ri-file-text-line',       title: 'Add Description',           desc: 'Short hint shown in admin lists' },
+      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active',         desc: 'Enables the type in client registration' },
     ],
   },
 
