@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardBody, Col, Row, Badge, Button, Spinner, Modal, ModalBody } from 'reactstrap';
+import { Card, CardBody, Badge, Button, Spinner, Modal, ModalBody } from 'reactstrap';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination, Autoplay } from 'swiper/modules';
 import { useToast } from '../contexts/ToastContext';
@@ -19,8 +19,6 @@ interface Plan {
   modules?: { id: number; name: string; slug: string; pivot?: { access_level: string } }[];
 }
 
-const periodLabel: Record<string, string> = { month: '/mo', quarter: '/qtr', year: '/yr' };
-
 const accessColors: Record<string, string> = {
   limited: 'warning',
   read: 'info',
@@ -29,8 +27,17 @@ const accessColors: Record<string, string> = {
 };
 
 const SWIPER_STYLES = `
-  .plans-surface { background: #ffffff; }
-  [data-bs-theme="dark"] .plans-surface { background: #1c2531; }
+  .plans-surface {
+    background:
+      radial-gradient(ellipse at top, rgba(124, 92, 252, 0.05) 0%, transparent 55%),
+      #ffffff;
+  }
+  [data-bs-theme="dark"] .plans-surface {
+    background:
+      radial-gradient(ellipse at top, rgba(124, 92, 252, 0.10) 0%, transparent 55%),
+      radial-gradient(ellipse at bottom right, rgba(16, 185, 129, 0.04) 0%, transparent 55%),
+      linear-gradient(180deg, #242d3d 0%, #1d2634 100%);
+  }
 
   /* Give the swiper breathing space above/below the cards so hover-lift
      (translateY) and drop-shadow are NOT clipped by the swiper's own
@@ -91,22 +98,8 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [modalPlan, setModalPlan] = useState<Plan | null>(null);
-  const [darkTheme, setDarkTheme] = useState(false);
   const prevRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
-
-  // Watch the document for Velzon dark-theme toggle
-  useEffect(() => {
-    const check = () => {
-      const html = document.documentElement;
-      const mode = html.getAttribute('data-layout-mode') || html.getAttribute('data-bs-theme');
-      setDarkTheme(mode === 'dark');
-    };
-    check();
-    const observer = new MutationObserver(check);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-layout-mode', 'data-bs-theme'] });
-    return () => observer.disconnect();
-  }, []);
 
   const fetchPlans = () => {
     setLoading(true);
@@ -173,6 +166,604 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
           8%   { opacity: 1; }
           35%  { transform: translateX(320%) skewX(-20deg); opacity: 0; }
           100% { transform: translateX(320%) skewX(-20deg); opacity: 0; }
+        }
+
+        /* Premium hero animations (mirrors AddPlan preview) */
+        @keyframes planlist-mesh {
+          0%, 100% { background-position: 0% 0%; }
+          50%      { background-position: 100% 100%; }
+        }
+        @keyframes planlist-pulse-dot {
+          0%, 100% { opacity: 0.55; transform: scale(1); }
+          50%      { opacity: 1;    transform: scale(1.25); }
+        }
+        @keyframes planlist-float-blob {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          33%      { transform: translate(10px, -6px) scale(1.05); }
+          66%      { transform: translate(-8px, 4px) scale(0.96); }
+        }
+        @keyframes planlist-tick-in {
+          0%   { opacity: 0; transform: scale(0.4); }
+          60%  { transform: scale(1.12); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        .planlist-tick { animation: planlist-tick-in .35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+        /* Animated border — a bright gradient sweep travels around the card.
+           Uses @property so a CSS custom angle can be animated smoothly. */
+        @property --plan-angle {
+          syntax: '<angle>';
+          initial-value: 0deg;
+          inherits: false;
+        }
+        @keyframes plan-border-spin {
+          to { --plan-angle: 360deg; }
+        }
+        .plan-card-animated { position: relative; }
+        .plan-card-animated::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          padding: 2px;
+          background:
+            conic-gradient(
+              from var(--plan-angle),
+              transparent 0deg,
+              var(--card-accent, #7c5cfc) 40deg,
+              rgba(255, 255, 255, 0.95) 80deg,
+              var(--card-accent, #7c5cfc) 120deg,
+              transparent 200deg,
+              transparent 360deg
+            );
+          -webkit-mask:
+            linear-gradient(#000 0 0) content-box,
+            linear-gradient(#000 0 0);
+          -webkit-mask-composite: xor;
+          mask-composite: exclude;
+          animation: plan-border-spin 3.5s linear infinite;
+          pointer-events: none;
+          z-index: 5;
+          opacity: 0.9;
+        }
+        /* Dark-mode — the sweep reads a bit brighter and wider */
+        [data-bs-theme="dark"] .plan-card-animated::before,
+        [data-layout-mode="dark"] .plan-card-animated::before {
+          opacity: 1;
+          background:
+            conic-gradient(
+              from var(--plan-angle),
+              transparent 0deg,
+              var(--card-accent, #7c5cfc) 30deg,
+              #ffffff 80deg,
+              var(--card-accent, #7c5cfc) 130deg,
+              transparent 210deg,
+              transparent 360deg
+            );
+        }
+        /* Pause rotation on hover so the user can read the card calmly */
+        .plan-card-animated:hover::before { animation-play-state: paused; }
+
+        /* ═══════════════════════════════════════════════════════════════
+           Minimal pricing-card design (infographic style)
+           Light mode: white card / violet text accents
+           Dark mode:  charcoal card / violet accents
+           Featured:   ALWAYS solid violet gradient with white content
+           ═══════════════════════════════════════════════════════════════ */
+        /* Card surface — all cards share one look (deep navy in dark mode,
+           clean white in light mode). Featured card is NOT a different
+           background — it's signaled by a GREEN accent on icon + price,
+           matching the reference infographic. */
+        .plan-card-v2 {
+          --card-accent: #7c5cfc;
+          --accent-price: #0f172a;
+          background:
+            linear-gradient(180deg, rgba(124, 92, 252, 0.04) 0%, transparent 45%),
+            var(--vz-card-bg);
+          color: var(--vz-body-color);
+          border: 1px solid var(--vz-border-color);
+          box-shadow:
+            0 16px 36px rgba(15, 23, 42, 0.10),
+            0 4px 12px rgba(15, 23, 42, 0.05),
+            inset 0 1px 0 rgba(255, 255, 255, 0.80);
+          transition: transform .28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow .28s ease;
+          padding-top: 20px !important;
+          /* Crisp text rendering (HD look) */
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+          text-rendering: optimizeLegibility;
+        }
+        .plan-card-v2:hover {
+          transform: translateY(-6px);
+          box-shadow:
+            0 24px 54px color-mix(in srgb, var(--card-accent) 28%, transparent),
+            0 8px 18px rgba(15, 23, 42, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.90);
+        }
+        /* Glossy top highlight removed — text stays perfectly crisp with no overlay */
+        /* Dark navy — flat surface for ultra-crisp text */
+        [data-bs-theme="dark"] .plan-card-v2,
+        [data-layout-mode="dark"] .plan-card-v2 {
+          background: #232d3f;
+          border-color: rgba(255, 255, 255, 0.10);
+          color: rgba(255, 255, 255, 0.92);
+          box-shadow:
+            0 18px 44px rgba(0, 0, 0, 0.50),
+            0 6px 14px rgba(0, 0, 0, 0.22),
+            inset 0 1px 0 rgba(255, 255, 255, 0.07);
+          --accent-price: #fff;
+        }
+        [data-bs-theme="dark"] .plan-card-v2:hover,
+        [data-layout-mode="dark"] .plan-card-v2:hover {
+          box-shadow:
+            0 28px 62px rgba(0, 0, 0, 0.60),
+            0 10px 22px color-mix(in srgb, var(--card-accent) 28%, transparent),
+            inset 0 1px 0 rgba(255, 255, 255, 0.12);
+        }
+        /* Featured — green accent overlay */
+        .plan-card-v2.is-featured {
+          --card-accent: #10b981;
+          --accent-price: #10b981;
+          background:
+            linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, transparent 45%),
+            var(--vz-card-bg);
+          box-shadow:
+            0 16px 40px rgba(16, 185, 129, 0.22),
+            0 6px 14px rgba(15, 23, 42, 0.06),
+            inset 0 1px 0 rgba(255, 255, 255, 0.85);
+          border-color: color-mix(in srgb, #10b981 30%, transparent);
+        }
+        .plan-card-v2.is-featured:hover {
+          box-shadow:
+            0 24px 56px rgba(16, 185, 129, 0.36),
+            0 8px 22px rgba(15, 23, 42, 0.10),
+            inset 0 1px 0 rgba(255, 255, 255, 0.90);
+        }
+        [data-bs-theme="dark"] .plan-card-v2.is-featured,
+        [data-layout-mode="dark"] .plan-card-v2.is-featured {
+          background: #232d3f;
+          border-color: rgba(16, 185, 129, 0.40);
+          --accent-price: #34d399;
+          box-shadow:
+            0 22px 52px rgba(16, 185, 129, 0.30),
+            0 8px 22px rgba(0, 0, 0, 0.42),
+            inset 0 1px 0 rgba(255, 255, 255, 0.09);
+        }
+
+        /* ── Floating icon chip at top-center ── */
+        .plan-icon-chip {
+          position: absolute;
+          top: 14px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: color-mix(in srgb, var(--card-accent) 14%, transparent);
+          border: 2px solid color-mix(in srgb, var(--card-accent) 40%, transparent);
+          z-index: 3;
+          transition: transform .3s ease, box-shadow .3s ease;
+        }
+        .plan-icon-chip i {
+          font-size: 22px;
+          color: var(--card-accent);
+        }
+        [data-bs-theme="dark"] .plan-icon-chip,
+        [data-layout-mode="dark"] .plan-icon-chip {
+          background: color-mix(in srgb, var(--card-accent) 18%, transparent);
+          border-color: color-mix(in srgb, var(--card-accent) 55%, transparent);
+          box-shadow: 0 0 24px color-mix(in srgb, var(--card-accent) 35%, transparent);
+        }
+        .plan-card-v2:hover .plan-icon-chip { transform: translateX(-50%) scale(1.08); }
+
+        /* ── Plan-name pill (uppercase, small) ── */
+        .plan-name-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 5px 14px;
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--card-accent) 14%, transparent);
+          color: var(--card-accent);
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          border: 1px solid color-mix(in srgb, var(--card-accent) 28%, transparent);
+        }
+        [data-bs-theme="dark"] .plan-card-v2 .plan-name-pill,
+        [data-layout-mode="dark"] .plan-card-v2 .plan-name-pill {
+          background: color-mix(in srgb, var(--card-accent) 22%, transparent);
+          border-color: color-mix(in srgb, var(--card-accent) 45%, transparent);
+          color: color-mix(in srgb, var(--card-accent) 70%, #fff);
+        }
+
+        /* Status / Popular badge pill */
+        .plan-badge-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 3px 10px;
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--card-accent) 15%, transparent);
+          color: var(--card-accent);
+          font-size: 8.5px;
+          font-weight: 800;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          border: 1px solid color-mix(in srgb, var(--card-accent) 28%, transparent);
+        }
+        [data-bs-theme="dark"] .plan-card-v2 .plan-badge-pill,
+        [data-layout-mode="dark"] .plan-card-v2 .plan-badge-pill {
+          background: color-mix(in srgb, var(--card-accent) 22%, transparent);
+          border-color: color-mix(in srgb, var(--card-accent) 42%, transparent);
+          color: color-mix(in srgb, var(--card-accent) 60%, #fff);
+        }
+
+        /* Subtitle */
+        .plan-subtitle {
+          font-size: 12px;
+          line-height: 1.45;
+          color: var(--vz-secondary-color);
+          margin: 2px 0 14px;
+          font-weight: 500;
+        }
+        [data-bs-theme="dark"] .plan-card-v2 .plan-subtitle,
+        [data-layout-mode="dark"] .plan-card-v2 .plan-subtitle {
+          color: rgba(255, 255, 255, 0.75);
+        }
+
+        /* ── Price ── */
+        .plan-price {
+          font-size: 2.4rem;
+          font-weight: 600;
+          letter-spacing: -0.01em;
+          line-height: 1;
+          color: var(--accent-price);
+          display: inline-flex;
+          align-items: baseline;
+          gap: 2px;
+          font-variant-numeric: tabular-nums;
+        }
+        .plan-price .cur { font-size: 1rem; font-weight: 500; opacity: 0.65; }
+        .plan-card-v2.is-featured .plan-price { /* green accent handled by --accent-price */ }
+
+        .plan-price-meta {
+          font-size: 9.5px;
+          line-height: 1.3;
+          color: var(--vz-secondary-color);
+          text-transform: capitalize;
+          font-weight: 600;
+          padding-bottom: 4px;
+        }
+        [data-bs-theme="dark"] .plan-card-v2 .plan-price-meta,
+        [data-layout-mode="dark"] .plan-card-v2 .plan-price-meta { color: rgba(255, 255, 255, 0.55); }
+
+        /* Divider */
+        .plan-divider {
+          border: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, var(--vz-border-color), transparent);
+          margin: 14px 0 12px;
+        }
+        [data-bs-theme="dark"] .plan-divider,
+        [data-layout-mode="dark"] .plan-divider {
+          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.10), transparent);
+        }
+
+        /* ── Tick list with circular check ── */
+        .plan-ticks {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          overflow-y: auto;
+          flex: 1 1 0;
+          min-height: 0;
+        }
+        .plan-ticks li {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 12.5px;
+          line-height: 1.35;
+          color: var(--vz-body-color);
+          font-weight: 500;
+        }
+        .plan-ticks li strong {
+          font-weight: 700;
+          color: var(--vz-heading-color, var(--vz-body-color));
+          margin-right: 2px;
+        }
+        [data-bs-theme="dark"] .plan-card-v2 .plan-ticks li,
+        [data-layout-mode="dark"] .plan-card-v2 .plan-ticks li { color: rgba(255, 255, 255, 0.94); }
+        [data-bs-theme="dark"] .plan-card-v2 .plan-ticks li strong,
+        [data-layout-mode="dark"] .plan-card-v2 .plan-ticks li strong { color: #fff; }
+
+        /* Circular / line check icon — crisp, no blur */
+        .plan-ticks li > i.ri-check-line,
+        .plan-ticks li > i.ri-checkbox-circle-fill {
+          font-size: 15px;
+          font-weight: 700;
+          color: #0ab39c;
+          flex-shrink: 0;
+        }
+
+        /* Scrollbar */
+        .plan-ticks::-webkit-scrollbar { width: 4px; }
+        .plan-ticks::-webkit-scrollbar-track { background: transparent; }
+        .plan-ticks::-webkit-scrollbar-thumb {
+          background: color-mix(in srgb, var(--card-accent) 25%, transparent);
+          border-radius: 4px;
+        }
+
+        /* ── CTA button: violet pill with icon chip on the left ── */
+        .plan-cta {
+          flex: 1;
+          border: none;
+          border-radius: 999px;
+          padding: 8px 20px 8px 8px;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          display: inline-flex;
+          align-items: center;
+          justify-content: flex-start;
+          gap: 10px;
+          cursor: pointer;
+          transition: transform .18s ease, box-shadow .18s ease;
+          background: linear-gradient(135deg, #7c5cfc 0%, #6366f1 100%);
+          color: #fff;
+          box-shadow: 0 6px 18px rgba(124, 92, 252, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+        }
+        .plan-cta:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 24px rgba(124, 92, 252, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.30);
+        }
+        /* Icon chip on the left of the button */
+        .plan-cta-icon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px; height: 28px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.22);
+          color: #fff;
+          flex-shrink: 0;
+          transition: transform .18s ease, background .18s ease;
+        }
+        .plan-cta:hover .plan-cta-icon { background: rgba(255, 255, 255, 0.32); transform: rotate(12deg); }
+        .plan-cta .plan-cta-label { flex: 1; text-align: center; padding-right: 4px; }
+
+        /* Limited-time offer tag below CTA for featured cards */
+        .plan-limited-tag {
+          text-align: center;
+          font-size: 9.5px;
+          font-weight: 600;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          color: #10b981;
+          margin-top: 8px;
+          opacity: 0.85;
+        }
+
+        /* ── Plan title + price row (centered top block) ── */
+        .plan-title {
+          font-size: 19px;
+          font-weight: 700;
+          letter-spacing: -0.01em;
+          color: var(--vz-heading-color, var(--vz-body-color));
+          margin: 0;
+          line-height: 1.1;
+        }
+        [data-bs-theme="dark"] .plan-card-v2 .plan-title,
+        [data-layout-mode="dark"] .plan-card-v2 .plan-title { color: #fff; }
+
+        /* Period suffix right after the price */
+        .plan-price-period {
+          font-size: 12.5px;
+          font-weight: 500;
+          color: var(--vz-secondary-color);
+          letter-spacing: 0;
+          text-transform: lowercase;
+          margin-left: 2px;
+        }
+        [data-bs-theme="dark"] .plan-card-v2 .plan-price-period,
+        [data-layout-mode="dark"] .plan-card-v2 .plan-price-period { color: rgba(255, 255, 255, 0.55); }
+
+        /* ── 2×2 stat boxes ── */
+        .plan-stat-box {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 11px;
+          border-radius: 10px;
+          background: color-mix(in srgb, var(--card-accent) 6%, transparent);
+          border: 1px solid color-mix(in srgb, var(--card-accent) 14%, transparent);
+          transition: transform .18s ease, border-color .18s ease;
+        }
+        .plan-stat-box:hover {
+          transform: translateY(-1px);
+          border-color: color-mix(in srgb, var(--card-accent) 32%, transparent);
+        }
+        [data-bs-theme="dark"] .plan-stat-box,
+        [data-layout-mode="dark"] .plan-stat-box {
+          background: rgba(255, 255, 255, 0.04);
+          border-color: rgba(255, 255, 255, 0.08);
+        }
+        [data-bs-theme="dark"] .plan-stat-box:hover,
+        [data-layout-mode="dark"] .plan-stat-box:hover {
+          background: rgba(255, 255, 255, 0.06);
+          border-color: color-mix(in srgb, var(--card-accent) 45%, transparent);
+        }
+        .plan-stat-icon {
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: color-mix(in srgb, var(--card-accent) 14%, transparent);
+          border: 1px solid color-mix(in srgb, var(--card-accent) 22%, transparent);
+          color: var(--card-accent);
+          flex-shrink: 0;
+        }
+        [data-bs-theme="dark"] .plan-stat-icon,
+        [data-layout-mode="dark"] .plan-stat-icon {
+          background: color-mix(in srgb, var(--card-accent) 22%, transparent);
+          border-color: color-mix(in srgb, var(--card-accent) 40%, transparent);
+          color: color-mix(in srgb, var(--card-accent) 65%, #fff);
+        }
+        .plan-stat-icon i { font-size: 15px; }
+        .plan-stat-label {
+          font-size: 9px;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: var(--vz-secondary-color);
+          line-height: 1;
+        }
+        [data-bs-theme="dark"] .plan-stat-label,
+        [data-layout-mode="dark"] .plan-stat-label { color: rgba(255, 255, 255, 0.72); }
+        .plan-stat-value {
+          font-size: 14.5px;
+          font-weight: 800;
+          color: var(--vz-heading-color, var(--vz-body-color));
+          margin-top: 4px;
+          line-height: 1;
+          letter-spacing: -0.01em;
+        }
+        [data-bs-theme="dark"] .plan-stat-value,
+        [data-layout-mode="dark"] .plan-stat-value { color: #fff; }
+
+        /* ── Included Modules section header ── */
+        .plan-modules-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        .plan-modules-title {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: var(--vz-secondary-color);
+        }
+        [data-bs-theme="dark"] .plan-modules-title,
+        [data-layout-mode="dark"] .plan-modules-title { color: rgba(255, 255, 255, 0.72); }
+        .plan-modules-title i { font-size: 13px; color: var(--card-accent); }
+        .plan-modules-count-pill {
+          display: inline-flex;
+          align-items: center;
+          padding: 3px 11px;
+          border-radius: 999px;
+          background: linear-gradient(135deg, var(--card-accent), color-mix(in srgb, var(--card-accent) 70%, #fff));
+          color: #fff;
+          font-size: 10.5px;
+          font-weight: 800;
+          border: none;
+          box-shadow: 0 2px 8px color-mix(in srgb, var(--card-accent) 45%, transparent);
+          cursor: pointer;
+          transition: transform .18s ease, box-shadow .18s ease;
+        }
+        .plan-modules-count-pill:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--card-accent) 60%, transparent);
+        }
+
+        /* Delete button */
+        .plan-delete-btn {
+          width: 40px; height: 40px;
+          padding: 0;
+          border-radius: 50%;
+          flex-shrink: 0;
+          background: transparent;
+          color: #f06548;
+          border: 1.5px solid rgba(240, 101, 72, 0.45);
+          cursor: pointer;
+          transition: all .18s ease;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .plan-delete-btn:hover:not(:disabled) {
+          background: #f06548;
+          color: #fff;
+          border-color: #f06548;
+        }
+        .plan-card-v2.is-featured .plan-delete-btn {
+          color: rgba(255, 255, 255, 0.92);
+          border-color: rgba(255, 255, 255, 0.45);
+        }
+        .plan-card-v2.is-featured .plan-delete-btn:hover:not(:disabled) {
+          background: rgba(255, 255, 255, 0.22);
+          color: #fff;
+          border-color: rgba(255, 255, 255, 0.65);
+        }
+
+        /* Modules-count chip — shown when there are modules beyond limits */
+        .plan-view-all {
+          background: transparent;
+          border: none;
+          color: inherit;
+          opacity: 0.72;
+          font-size: 10.5px;
+          font-weight: 600;
+          text-decoration: none;
+          padding: 4px 0;
+          cursor: pointer;
+        }
+        .plan-view-all:hover { opacity: 1; text-decoration: underline; }
+
+        /* Stat box — uses --stat-c CSS var set inline per box.
+           color-mix() gives us tint / border / shadow that respect dark vs light. */
+        .planlist-stat {
+          --stat-c: #7c5cfc;
+          background:
+            linear-gradient(135deg, color-mix(in srgb, var(--stat-c) 12%, transparent) 0%, color-mix(in srgb, var(--stat-c) 4%, transparent) 55%, transparent 100%),
+            var(--vz-card-bg);
+          border: 1px solid color-mix(in srgb, var(--stat-c) 28%, transparent);
+          box-shadow:
+            0 2px 6px color-mix(in srgb, var(--stat-c) 14%, transparent),
+            inset 0 1px 0 rgba(255, 255, 255, 0.55);
+          transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+        .planlist-stat:hover {
+          transform: translateY(-2px);
+          border-color: color-mix(in srgb, var(--stat-c) 50%, transparent);
+          box-shadow:
+            0 6px 14px color-mix(in srgb, var(--stat-c) 24%, transparent),
+            inset 0 1px 0 rgba(255, 255, 255, 0.60);
+        }
+        /* Dark mode — stronger tint so the box reads clearly on dark card-bg,
+           and a subtle inner highlight instead of the bright white one. */
+        [data-bs-theme="dark"] .planlist-stat,
+        [data-layout-mode="dark"] .planlist-stat {
+          background:
+            linear-gradient(135deg, color-mix(in srgb, var(--stat-c) 26%, transparent) 0%, color-mix(in srgb, var(--stat-c) 10%, transparent) 55%, transparent 100%),
+            #1f2935;
+          border: 1px solid color-mix(in srgb, var(--stat-c) 40%, transparent);
+          box-shadow:
+            0 2px 10px rgba(0, 0, 0, 0.35),
+            inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        }
+        [data-bs-theme="dark"] .planlist-stat:hover,
+        [data-layout-mode="dark"] .planlist-stat:hover {
+          border-color: color-mix(in srgb, var(--stat-c) 60%, transparent);
+          box-shadow:
+            0 6px 18px rgba(0, 0, 0, 0.45),
+            0 0 0 1px color-mix(in srgb, var(--stat-c) 35%, transparent),
+            inset 0 1px 0 rgba(255, 255, 255, 0.08);
         }
 
         /* Slim custom scrollbar for modules list */
@@ -353,447 +944,147 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
             }}
             className="plans-swiper pb-5"
           >
-          {plans.map((p, idx) => {
-            // All non-featured cards share the same glossy violet theme
-            const accent = p.is_featured ? '#f7b84b' : '#7c5cfc';
-            const isDark = p.is_featured;
-            const textMain = (isDark || darkTheme) ? 'rgba(255,255,255,0.95)' : 'var(--vz-heading-color, var(--vz-body-color))';
-            const textMuted = (isDark || darkTheme) ? 'rgba(255,255,255,0.72)' : 'var(--vz-secondary-color)';
-            const dividerColor = (isDark || darkTheme) ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color)';
-            const bgBase = isDark
-              ? `
-                linear-gradient(135deg, rgba(247,184,75,0.10) 0%, transparent 55%),
-                linear-gradient(225deg, rgba(102,145,231,0.14) 0%, transparent 55%),
-                linear-gradient(160deg, #0b1324 0%, #1a2545 60%, #2d4373 100%)
-              `
-              : darkTheme
-                ? `linear-gradient(135deg, ${accent}14 0%, transparent 60%), var(--vz-card-bg)`
-                : 'var(--vz-card-bg)';
-
+          {plans.map((p) => {
+            const modules = p.modules || [];
+            const moduleCount = modules.length;
+            const periodShort = p.period === 'month' ? 'mo' : p.period === 'quarter' ? 'qtr' : p.period === 'year' ? 'yr' : p.period;
+            const stats = [
+              { l: 'Branches', v: (p.max_branches  ?? '∞') as string | number, ic: 'ri-git-branch-line'   },
+              { l: 'Users',    v: (p.max_users     ?? '∞') as string | number, ic: 'ri-user-3-line'       },
+              { l: 'Storage',  v: p.storage_limit || '∞',                      ic: 'ri-hard-drive-2-line' },
+              { l: 'Support',  v: p.support_level || '—',                      ic: 'ri-headphone-line'    },
+            ];
+            // Tick list only has modules + perks now (stats moved to boxes above)
+            const ticks: { label: string; sub?: string }[] = [
+              ...modules.map(m => ({
+                label: m.name,
+                sub: m.pivot?.access_level && m.pivot.access_level !== 'full' ? m.pivot.access_level : undefined,
+              })),
+              ...(p.trial_days && p.trial_days > 0 ? [{ label: `${p.trial_days}-day free trial` }] : []),
+              ...(p.yearly_discount && p.yearly_discount > 0 ? [{ label: `${p.yearly_discount}% yearly discount` }] : []),
+            ];
             return (
               <SwiperSlide key={p.id} style={{ height: 'auto' }}>
                 <Card
-                  className="w-100 mb-0"
+                  className={`w-100 mb-0 position-relative d-flex flex-column plan-card-animated plan-card-v2 ${p.is_featured ? 'is-featured' : ''}`}
                   style={{
-                    height: 520,
-                    borderRadius: 16,
-                    border: isDark ? `1px solid ${accent}88` : `1px solid ${accent}30`,
-                    background: bgBase,
-                    boxShadow: isDark
-                      ? `
-                        0 20px 50px ${accent}38,
-                        0 12px 28px rgba(0,0,0,0.20),
-                        0 4px 10px rgba(0,0,0,0.10),
-                        inset 0 1px 0 rgba(255,255,255,0.06)
-                      `
-                      : darkTheme
-                        ? `
-                          0 14px 38px ${accent}30,
-                          0 6px 14px rgba(0,0,0,0.28),
-                          0 2px 6px rgba(0,0,0,0.16),
-                          inset 0 1px 0 rgba(255,255,255,0.05)
-                        `
-                        : `
-                          0 12px 32px ${accent}22,
-                          0 6px 14px rgba(15, 23, 42, 0.08),
-                          0 2px 6px rgba(15, 23, 42, 0.04),
-                          inset 0 1px 0 rgba(255,255,255,0.85)
-                        `,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    transition: 'transform .28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow .28s ease, border-color .22s ease',
-                    cursor: 'default',
-                    position: 'relative',
+                    height: 560,
+                    borderRadius: 20,
+                    padding: '22px 22px 18px',
                     overflow: 'hidden',
-                  }}
-                  onMouseEnter={e => {
-                    const el = e.currentTarget as HTMLDivElement;
-                    el.style.transform = 'translateY(-8px)';
-                    el.style.boxShadow = isDark
-                      ? `
-                        0 32px 70px ${accent}55,
-                        0 16px 36px rgba(0,0,0,0.28),
-                        0 6px 14px rgba(0,0,0,0.14),
-                        inset 0 1px 0 rgba(255,255,255,0.10)
-                      `
-                      : darkTheme
-                        ? `
-                          0 26px 60px ${accent}50,
-                          0 12px 28px rgba(0,0,0,0.40),
-                          0 4px 10px rgba(0,0,0,0.20),
-                          inset 0 1px 0 rgba(255,255,255,0.08)
-                        `
-                        : `
-                          0 24px 54px ${accent}40,
-                          0 12px 26px rgba(15, 23, 42, 0.12),
-                          0 4px 10px rgba(15, 23, 42, 0.06),
-                          inset 0 1px 0 rgba(255,255,255,0.95)
-                        `;
-                    if (!isDark) el.style.borderColor = accent + '70';
-                    const shine = el.querySelector<HTMLDivElement>('.plan-shine-overlay');
-                    if (shine) {
-                      shine.style.animation = 'none';
-                      // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-                      void shine.offsetWidth;
-                      shine.style.animation = 'plan-shine-sweep 2.2s ease-out 1 forwards';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    const el = e.currentTarget as HTMLDivElement;
-                    el.style.transform = 'translateY(0)';
-                    el.style.boxShadow = isDark
-                      ? `
-                        0 20px 50px ${accent}38,
-                        0 12px 28px rgba(0,0,0,0.20),
-                        0 4px 10px rgba(0,0,0,0.10),
-                        inset 0 1px 0 rgba(255,255,255,0.06)
-                      `
-                      : darkTheme
-                        ? `
-                          0 14px 38px ${accent}30,
-                          0 6px 14px rgba(0,0,0,0.28),
-                          0 2px 6px rgba(0,0,0,0.16),
-                          inset 0 1px 0 rgba(255,255,255,0.05)
-                        `
-                        : `
-                          0 12px 32px ${accent}22,
-                          0 6px 14px rgba(15, 23, 42, 0.08),
-                          0 2px 6px rgba(15, 23, 42, 0.04),
-                          inset 0 1px 0 rgba(255,255,255,0.85)
-                        `;
-                    if (!isDark) el.style.borderColor = accent + '30';
+                    textAlign: 'center',
                   }}
                 >
-                  {/* ── Diagonal shine sweep overlay ── */}
-                  <div
-                    className="plan-shine-overlay"
-                    style={{
-                      position: 'absolute',
-                      top: 0, left: 0,
-                      width: '55%', height: '100%',
-                      background: isDark
-                        ? 'linear-gradient(100deg, transparent 15%, rgba(255,255,255,0.14) 50%, transparent 85%)'
-                        : `linear-gradient(100deg, transparent 15%, ${accent}26 50%, transparent 85%)`,
-                      transform: 'translateX(-120%) skewX(-20deg)',
-                      opacity: 0,
-                      pointerEvents: 'none',
-                      zIndex: 3,
-                      animation: `plan-shine-sweep 2.6s ease-out ${0.6 + idx * 0.35}s 1 forwards`,
-                    }}
-                  />
-
-                  {/* ── Top-center "Popular" ribbon ── */}
-                  {p.is_featured && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: '50%',
-                        transform: 'translateX(-50%)',
-                        zIndex: 4,
-                        padding: '3px 16px 4px',
-                        borderRadius: '0 0 10px 10px',
-                        fontSize: 9,
-                        fontWeight: 800,
-                        letterSpacing: '0.1em',
-                        background: `linear-gradient(180deg, ${accent}, ${accent}dd)`,
-                        color: '#0b1324',
-                        boxShadow: `0 4px 12px ${accent}66`,
-                        textTransform: 'uppercase',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      <i className="ri-vip-crown-fill me-1" style={{ fontSize: 10 }} />
-                      {p.badge || 'Popular'}
-                    </div>
-                  )}
-
-                  {/* ── Featured corner glows ── */}
-                  {isDark && (
-                    <>
-                      <div style={{ position: 'absolute', top: -80, right: -80, width: 220, height: 220, borderRadius: '50%', background: `radial-gradient(circle, ${accent}26 0%, transparent 70%)`, pointerEvents: 'none', zIndex: 0 }} />
-                      <div style={{ position: 'absolute', bottom: -80, left: -80, width: 200, height: 200, borderRadius: '50%', background: `radial-gradient(circle, #6691e722 0%, transparent 70%)`, pointerEvents: 'none', zIndex: 0 }} />
-                    </>
-                  )}
-
-                  <CardBody
-                    className="px-3 d-flex flex-column position-relative text-center"
-                    style={{
-                      minHeight: 0,
-                      zIndex: 2,
-                      paddingTop: p.is_featured ? 24 : 14,
-                      paddingBottom: 14,
-                    }}
-                  >
-                    {/* ── Plan name + status ── */}
-                    <div className="d-flex align-items-center justify-content-center gap-2 mb-2">
-                      <h5 className="mb-0 fw-bold" style={{ color: textMain, fontSize: 16, letterSpacing: '-0.01em' }}>
-                        {p.name}
-                      </h5>
-                      <span
-                        className="badge rounded-pill text-uppercase fw-semibold d-inline-flex align-items-center gap-1"
-                        style={{
-                          background: p.status === 'active' ? '#0ab39c20' : '#f0654820',
-                          color: p.status === 'active' ? '#0ab39c' : '#f06548',
-                          border: `1px solid ${p.status === 'active' ? '#0ab39c40' : '#f0654840'}`,
-                          fontSize: 8.5,
-                          letterSpacing: '0.05em',
-                          padding: '2px 6px',
-                        }}
-                      >
-                        <span
-                          className="rounded-circle"
-                          style={{ width: 4.5, height: 4.5, background: p.status === 'active' ? '#0ab39c' : '#f06548' }}
-                        />
-                        {p.status}
-                      </span>
-                    </div>
-
-                    {/* ── Price — colored per plan accent ── */}
-                    <div className="mb-2">
+                  {/* ── Header: Title + Price + Subtitle ── */}
+                  <div className="text-center position-relative" style={{ zIndex: 2 }}>
+                    <h4 className="plan-title mb-2">{p.name}</h4>
+                    <div className="d-inline-flex align-items-baseline justify-content-center gap-1">
                       {p.price <= 0 ? (
-                        <div
-                          className="fw-bold lh-1"
-                          style={{
-                            fontSize: 30,
-                            background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
-                            WebkitBackgroundClip: 'text',
-                            WebkitTextFillColor: 'transparent',
-                            backgroundClip: 'text',
-                            display: 'inline-block',
-                            letterSpacing: '-0.02em',
-                          }}
-                        >
-                          Free
-                        </div>
+                        <div className="plan-price">Free</div>
                       ) : (
-                        <div className="d-inline-flex align-items-baseline justify-content-center gap-1">
-                          <small style={{ fontSize: 14, color: accent, fontWeight: 600, opacity: 0.75 }}>₹</small>
-                          <span
-                            className="fw-bold lh-1"
-                            style={{ fontSize: 30, color: accent, letterSpacing: '-0.02em' }}
-                          >
+                        <>
+                          <div className="plan-price">
+                            <span className="cur">₹</span>
                             {p.price.toLocaleString()}
-                          </span>
-                          <small style={{ fontSize: 11, color: textMuted, fontWeight: 500 }}>
-                            {periodLabel[p.period] || '/' + p.period}
-                          </small>
-                        </div>
+                          </div>
+                          <span className="plan-price-period">/ {periodShort}</span>
+                        </>
                       )}
                     </div>
-
-                    {/* ── Description ── */}
                     {p.best_for && (
-                      <p className="mb-2" style={{ color: textMuted, fontSize: 11, lineHeight: 1.4, minHeight: 26 }}>
-                        {p.best_for}
-                      </p>
+                      <p className="plan-subtitle mt-2 mb-0">{p.best_for}</p>
                     )}
+                  </div>
 
-                    {/* ── Stat boxes 2×2 — stylish with left accent + hover lift ── */}
-                    <Row className="gx-2 gy-2 mb-3">
-                      {[
-                        { icon: 'ri-git-branch-line',         label: 'Branches', val: p.max_branches  ?? '∞' },
-                        { icon: 'ri-user-3-line',             label: 'Users',    val: p.max_users     ?? '∞' },
-                        { icon: 'ri-hard-drive-2-line',       label: 'Storage',  val: p.storage_limit || '—' },
-                        { icon: 'ri-customer-service-2-line', label: 'Support',  val: p.support_level || '—' },
-                      ].map(l => (
-                        <Col xs={6} key={l.label}>
-                          <div
-                            className="rounded-2 d-flex align-items-center gap-2 px-2 py-2"
-                            style={{
-                              background: (isDark || darkTheme) ? 'rgba(255,255,255,0.03)' : '#fff',
-                              border: (isDark || darkTheme) ? '1px solid rgba(255,255,255,0.08)' : '1px solid var(--vz-border-color)',
-                              boxShadow: (isDark || darkTheme)
-                                ? '0 1px 2px rgba(0,0,0,0.35)'
-                                : '0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.04)',
-                              transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
-                            }}
-                            onMouseEnter={e => {
-                              const el = e.currentTarget as HTMLDivElement;
-                              el.style.transform = 'translateY(-2px)';
-                              el.style.boxShadow = (isDark || darkTheme)
-                                ? `0 6px 16px rgba(0,0,0,0.5), 0 0 0 1px ${accent}55`
-                                : `0 6px 14px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.05)`;
-                              el.style.borderColor = accent + '55';
-                            }}
-                            onMouseLeave={e => {
-                              const el = e.currentTarget as HTMLDivElement;
-                              el.style.transform = 'translateY(0)';
-                              el.style.boxShadow = (isDark || darkTheme)
-                                ? '0 1px 2px rgba(0,0,0,0.35)'
-                                : '0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.04)';
-                              el.style.borderColor = (isDark || darkTheme) ? 'rgba(255,255,255,0.08)' : 'var(--vz-border-color)';
-                            }}
-                          >
-                            <span
-                              className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
-                              style={{
-                                width: 28, height: 28,
-                                background: accent + (isDark || darkTheme ? '20' : '15'),
-                                color: accent,
-                              }}
-                            >
-                              <i className={l.icon} style={{ fontSize: 14 }} />
-                            </span>
-                            <div className="text-start min-w-0 flex-grow-1">
-                              <div
-                                className="text-uppercase fw-semibold"
-                                style={{ fontSize: 8.5, color: textMuted, letterSpacing: '0.07em', lineHeight: 1.2 }}
-                              >
-                                {l.label}
-                              </div>
-                              <div
-                                className="fw-bold text-truncate"
-                                style={{ fontSize: 12.5, color: textMain, lineHeight: 1.25, marginTop: 1 }}
-                              >
-                                {l.val}
-                              </div>
-                            </div>
+                  {/* ── 2×2 Stat grid ── */}
+                  <div className="row g-2 mt-3 position-relative" style={{ zIndex: 2 }}>
+                    {stats.map(s => (
+                      <div className="col-6" key={s.l}>
+                        <div className="plan-stat-box">
+                          <div className="plan-stat-icon">
+                            <i className={s.ic} />
                           </div>
-                        </Col>
-                      ))}
-                    </Row>
+                          <div className="text-start min-w-0">
+                            <div className="plan-stat-label">{s.l}</div>
+                            <div className="plan-stat-value text-truncate" title={String(s.v)}>{s.v}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
-                    {/* ── Divider ── */}
-                    <div style={{ height: 1, background: dividerColor, margin: '4px -4px 14px' }} />
+                  {/* ── Included Modules section ── */}
+                  <div className="mt-3 d-flex flex-column position-relative" style={{ zIndex: 2, flex: '1 1 0', minHeight: 0 }}>
+                    <div className="plan-modules-header">
+                      <span className="plan-modules-title">
+                        <i className="ri-stack-line" />
+                        Included Modules
+                      </span>
+                      <button
+                        type="button"
+                        className="plan-modules-count-pill"
+                        onClick={() => setModalPlan(p)}
+                        title="View all"
+                      >
+                        {moduleCount}
+                      </button>
+                    </div>
 
-                    {/* ── Included modules header ── */}
-                    {p.modules && p.modules.length > 0 && (
-                      <div className="d-flex align-items-center justify-content-between mb-2">
-                        <span className="text-uppercase fw-bold" style={{ fontSize: 9, letterSpacing: '0.08em', color: textMuted }}>
-                          Included Modules
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setModalPlan(p)}
-                          className="btn p-0 border-0 bg-transparent"
-                          style={{ lineHeight: 1 }}
-                          title="View all"
-                        >
-                          <span
-                            className="rounded-pill px-2 fw-bold"
-                            style={{
-                              fontSize: 9.5,
-                              background: accent + '20',
-                              color: accent,
-                              border: `1px solid ${accent}45`,
-                              padding: '2px 7px',
-                            }}
-                          >
-                            {p.modules.length}
-                          </span>
-                        </button>
+                    {ticks.length > 0 ? (
+                      <ul className="plan-ticks text-start">
+                        {ticks.map((t, i) => (
+                          <li key={i} className="planlist-tick" style={{ animationDelay: `${Math.min(i * 0.03, 0.4)}s` }} title={t.label}>
+                            <i className="ri-check-line" />
+                            <span className="text-truncate flex-grow-1">
+                              {t.label}
+                              {t.sub && <span className="opacity-75 ms-1" style={{ fontSize: 10 }}>({t.sub})</span>}
+                            </span>
+                          </li>
+                        ))}
+                        {p.clients_count !== undefined && p.clients_count > 0 && (
+                          <li style={{ opacity: 0.72 }}>
+                            <i className="ri-user-3-line" style={{ fontSize: 13, color: 'inherit' }} />
+                            <span className="text-truncate flex-grow-1">
+                              {p.clients_count} active client{p.clients_count !== 1 ? 's' : ''}
+                            </span>
+                          </li>
+                        )}
+                      </ul>
+                    ) : (
+                      <div className="text-center py-3 flex-grow-1 d-flex flex-column align-items-center justify-content-center">
+                        <p className="text-muted mb-0" style={{ fontSize: 11 }}>No modules included</p>
                       </div>
                     )}
-                    <ul
-                      className={`list-unstyled vstack gap-1 mb-0 pe-1 text-start plan-modules-scroll ${isDark ? 'plan-scroll-dark' : ''}`}
-                      style={{
-                        overflowY: 'auto',
-                        maxHeight: 180,
-                        minHeight: 0,
-                      }}
-                    >
-                      {(p.modules || []).map(m => (
-                        <li key={m.id} className="d-flex align-items-center gap-2" title={m.name}>
-                          <i
-                            className="ri-check-line flex-shrink-0"
-                            style={{
-                              color: m.pivot?.access_level === 'limited' ? '#f7b84b' : '#0ab39c',
-                              fontSize: 13,
-                              fontWeight: 700,
-                            }}
-                          />
-                          <span className="text-truncate flex-grow-1" style={{ color: textMain, fontSize: 10.5 }}>
-                            {m.name}
-                            {m.pivot?.access_level && m.pivot.access_level !== 'full' && (
-                              <span className="text-muted ms-1" style={{ fontSize: 10 }}>
-                                ({m.pivot.access_level})
-                              </span>
-                            )}
-                          </span>
-                        </li>
-                      ))}
-                      {/* Perks */}
-                      {p.trial_days && p.trial_days > 0 && (
-                        <li className="d-flex align-items-center gap-2">
-                          <i className="ri-check-line flex-shrink-0" style={{ color: '#0ab39c', fontSize: 13, fontWeight: 700 }} />
-                          <span style={{ color: textMain, fontSize: 10.5 }}>{p.trial_days}-day free trial</span>
-                        </li>
-                      )}
-                      
-                      {p.yearly_discount && p.yearly_discount > 0 && (
-                        <li className="d-flex align-items-center gap-2">
-                          <i className="ri-check-line flex-shrink-0" style={{ color: '#0ab39c', fontSize: 13, fontWeight: 700 }} />
-                          <span style={{ color: textMain, fontSize: 10.5 }}>{p.yearly_discount}% yearly discount</span>
-                        </li>
-                      )}
-                      {p.clients_count !== undefined && p.clients_count > 0 && (
-                        <li className="d-flex align-items-center gap-2">
-                          <i className="ri-user-3-line flex-shrink-0" style={{ color: accent, fontSize: 12 }} />
-                          <span style={{ color: textMain, fontSize: 10.5 }}>
-                            {p.clients_count} active client{p.clients_count !== 1 ? 's' : ''}
-                          </span>
-                        </li>
-                      )}
-                    </ul>
+                  </div>
 
-                    {/* ── Actions — pinned to bottom ── */}
-                    <div className="d-flex gap-2 mt-auto pt-2">
-                      <button
-                        type="button"
-                        onClick={() => onNavigate?.('add-plan', { editId: p.id })}
-                        className="btn flex-grow-1 rounded-pill fw-semibold d-inline-flex align-items-center justify-content-center gap-1"
-                        style={{
-                          padding: '6px 14px',
-                          fontSize: 12,
-                          background: isDark ? accent : 'transparent',
-                          color: isDark ? '#0b1324' : accent,
-                          border: isDark ? 'none' : `1.5px solid ${accent}`,
-                          boxShadow: isDark ? `0 4px 14px ${accent}55` : 'none',
-                          transition: 'all .18s ease',
-                        }}
-                        onMouseEnter={e => {
-                          const el = e.currentTarget;
-                          if (!isDark) { el.style.background = accent; el.style.color = '#fff'; }
-                          else { el.style.boxShadow = `0 8px 20px ${accent}88`; }
-                        }}
-                        onMouseLeave={e => {
-                          const el = e.currentTarget;
-                          if (!isDark) { el.style.background = 'transparent'; el.style.color = accent; }
-                          else { el.style.boxShadow = `0 4px 14px ${accent}55`; }
-                        }}
-                      >
-                        <i className="ri-pencil-line" /> Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(p)}
-                        disabled={deleting === p.id}
-                        className="btn rounded-pill d-inline-flex align-items-center justify-content-center"
-                        style={{
-                          width: 34, height: 34, padding: 0, flexShrink: 0,
-                          background: isDark ? 'rgba(240,101,72,0.18)' : '#f0654815',
-                          color: '#f06548',
-                          border: `1px solid ${isDark ? 'rgba(240,101,72,0.40)' : '#f0654840'}`,
-                          transition: 'all .18s ease',
-                        }}
-                        onMouseEnter={e => {
-                          const el = e.currentTarget;
-                          el.style.background = '#f06548';
-                          el.style.color = '#fff';
-                          el.style.borderColor = '#f06548';
-                        }}
-                        onMouseLeave={e => {
-                          const el = e.currentTarget;
-                          el.style.background = isDark ? 'rgba(240,101,72,0.18)' : '#f0654815';
-                          el.style.color = '#f06548';
-                          el.style.borderColor = isDark ? 'rgba(240,101,72,0.40)' : '#f0654840';
-                        }}
-                      >
-                        {deleting === p.id ? <Spinner size="sm" /> : <i className="ri-delete-bin-5-line" />}
-                      </button>
+                  {/* ── Actions row ── */}
+                  <div className="d-flex gap-2 pt-3 mt-auto position-relative" style={{ zIndex: 2 }}>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate?.('add-plan', { editId: p.id })}
+                      className="plan-cta"
+                    >
+                      <span className="plan-cta-icon">
+                        <i className="ri-pencil-line" style={{ fontSize: 14 }} />
+                      </span>
+                      <span className="plan-cta-label">Edit Plan</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(p)}
+                      disabled={deleting === p.id}
+                      className="plan-delete-btn"
+                    >
+                      {deleting === p.id ? <Spinner size="sm" /> : <i className="ri-delete-bin-5-line" />}
+                    </button>
+                  </div>
+
+                  {/* Limited-time / Popular tag for featured */}
+                  {p.is_featured && (
+                    <div className="plan-limited-tag position-relative" style={{ zIndex: 2 }}>
+                      — {p.badge || 'Most popular plan'} —
                     </div>
-                  </CardBody>
+                  )}
                 </Card>
               </SwiperSlide>
             );
