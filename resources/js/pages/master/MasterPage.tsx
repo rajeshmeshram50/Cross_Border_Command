@@ -2,10 +2,9 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card, CardBody, CardHeader, Row, Col,
-  Button, Input, Label, Form,
+  Button, Input, Label, Form, FormFeedback,
   Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
 } from 'reactstrap';
-import Swal from 'sweetalert2';
 import api from '../../api';
 import MasterPlaceholder from '../MasterPlaceholder';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
@@ -50,6 +49,16 @@ function MasterPageInner({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const clearFieldError = (name: string) => {
+    setFieldErrors(prev => {
+      if (!prev[name]) return prev;
+      const n = { ...prev };
+      delete n[name];
+      return n;
+    });
+  };
 
   // Ownership columns injected by role:
   //  - super_admin      -> Client | Branch | Created By
@@ -147,8 +156,8 @@ function MasterPageInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, searchInput, cfg, refData]);
 
-  const openAdd = () => { setEditingId(null); setViewOnly(false); setModalOpen(true); };
-  const openEdit = (row: any, readonly = false) => { setEditingId(row.id); setViewOnly(readonly); setModalOpen(true); };
+  const openAdd = () => { setFieldErrors({}); setEditingId(null); setViewOnly(false); setModalOpen(true); };
+  const openEdit = (row: any, readonly = false) => { setFieldErrors({}); setEditingId(row.id); setViewOnly(readonly); setModalOpen(true); };
 
   // Clients-page style compact action button
   const ActionBtn = ({
@@ -190,9 +199,38 @@ function MasterPageInner({
     </button>
   );
 
+  const validateForm = (fd: FormData): Record<string, string> => {
+    const errs: Record<string, string> = {};
+    for (const f of cfg.fields) {
+      if (f.sec || !f.n) continue;
+      const raw = String(fd.get(f.n) ?? '').trim();
+      if (f.r && !raw) {
+        errs[f.n] = `${f.l} is required`;
+        continue;
+      }
+      if (!raw) continue;
+      if (f.t === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+        errs[f.n] = 'Please enter a valid email address';
+      } else if (f.t === 'number' && isNaN(Number(raw))) {
+        errs[f.n] = 'Must be a valid number';
+      }
+    }
+    return errs;
+  };
+
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
+
+    const errs = validateForm(fd);
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      const count = Object.keys(errs).length;
+      toast.error('Validation Error', `${count} field${count === 1 ? '' : 's'} need attention`);
+      return;
+    }
+    setFieldErrors({});
+
     const payload: Record<string, any> = {};
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
@@ -210,16 +248,27 @@ function MasterPageInner({
       if (editingId != null) {
         const { data } = await api.put(`/master/${cfg.slug}/${editingId}`, payload);
         setRecords(prev => prev.map(r => r.id === editingId ? data : r));
+        toast.success('Updated', `${cfg.titleSingular || cfg.title} updated successfully`);
       } else {
         const { data } = await api.post(`/master/${cfg.slug}`, payload);
         setRecords(prev => [data, ...prev]);
+        toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
       }
       setModalOpen(false);
     } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Failed to save record.';
-      const errors = err?.response?.data?.errors;
-      const detail = errors ? Object.values(errors).flat().join('\n') : '';
-      Swal.fire({ title: 'Error', text: detail || msg, icon: 'error' });
+      if (err?.response?.status === 422 && err?.response?.data?.errors) {
+        const serverErrors = err.response.data.errors as Record<string, string | string[]>;
+        const mapped: Record<string, string> = {};
+        for (const k of Object.keys(serverErrors)) {
+          const v = serverErrors[k];
+          mapped[k] = Array.isArray(v) ? String(v[0]) : String(v);
+        }
+        setFieldErrors(mapped);
+        toast.error('Validation Error', 'Please fix the highlighted fields');
+      } else {
+        const msg = err?.response?.data?.message || 'Failed to save record.';
+        toast.error('Error', msg);
+      }
     } finally {
       setSaving(false);
     }
@@ -269,7 +318,7 @@ function MasterPageInner({
     }
 
     if (f?.ref) {
-      return <span className="text-dark">{resolveRefLabel(f.ref, f.refL, raw) || '—'}</span>;
+      return <span className="text-body">{resolveRefLabel(f.ref, f.refL, raw) || '—'}</span>;
     }
 
     if (raw === undefined || raw === null || raw === '') {
@@ -277,10 +326,10 @@ function MasterPageInner({
     }
 
     if (typeof raw === 'string' && /^[A-Z0-9]{6,}$/.test(raw.replace(/\s|-/g, ''))) {
-      return <code className="text-muted">{raw}</code>;
+      return <code className="text-body">{raw}</code>;
     }
 
-    return <span className="text-dark">{String(raw)}</span>;
+    return <span className="text-body">{String(raw)}</span>;
   };
 
   // Columns for TableContainer (TanStack Table). Built dynamically from cfg.cols + ownershipCols
@@ -357,7 +406,7 @@ function MasterPageInner({
     if (key === '__client') {
       const name = row.client_name;
       return name
-        ? <span className="text-dark">{name}</span>
+        ? <span className="text-body">{name}</span>
         : <span className="text-muted">—</span>;
     }
     if (key === '__branch') {
@@ -369,7 +418,6 @@ function MasterPageInner({
     if (key === '__creator') {
       const name = row.creator_name;
       if (!name) return <span className="text-muted">—</span>;
-      // Show a small hint line indicating which scope the row belongs to.
       const scope = row.branch_name
         ? `Branch: ${row.branch_name}`
         : row.client_name
@@ -377,7 +425,7 @@ function MasterPageInner({
         : null;
       return (
         <div>
-          <div className="text-dark fw-medium">{name}</div>
+          <div className="text-body fw-medium">{name}</div>
           {scope && <div className="text-muted fs-11">{scope}</div>}
         </div>
       );
@@ -571,7 +619,7 @@ function MasterPageInner({
         <Form onSubmit={handleSave}>
           <ModalBody className="p-4 align-items-center">
             <Row className="g-3">
-              {cfg.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef))}
+              {cfg.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError))}
             </Row>
           </ModalBody>
           <ModalFooter className="px-4 pb-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
@@ -771,6 +819,8 @@ function renderField(
   viewOnly: boolean,
   refData: Record<string, any[]>,
   labelFieldForRef: (refSlug: string, fallback?: string) => string,
+  fieldErrors: Record<string, string> = {},
+  clearFieldError: (name: string) => void = () => {},
 ): React.ReactNode {
   if (f.sec) {
     return (
@@ -787,13 +837,15 @@ function renderField(
 
   const span = f.full ? 12 : f.t === 'textarea' ? 12 : 4;
   const defaultVal = editing?.[f.n] ?? '';
+  const err = fieldErrors[f.n];
+  const onFieldChange = () => clearFieldError(f.n);
 
   let input: React.ReactNode;
   if (f.ref) {
     const rows = refData[f.ref] || [];
     const labelField = f.refL || labelFieldForRef(f.ref);
     input = (
-      <Input type="select" name={f.n} required={f.r} defaultValue={defaultVal} disabled={viewOnly}>
+      <Input type="select" name={f.n} defaultValue={defaultVal} disabled={viewOnly} invalid={!!err} onChange={onFieldChange}>
         <option value="">Select {f.l}…</option>
         {rows.map((r: any) => (
           <option key={r.id} value={r.id}>{r[labelField] ?? r.id}</option>
@@ -805,9 +857,10 @@ function renderField(
       <Input
         type="select"
         name={f.n}
-        required={f.r}
         defaultValue={defaultVal || (f.opts?.[0] ?? '')}
         disabled={viewOnly}
+        invalid={!!err}
+        onChange={onFieldChange}
       >
         {!f.r && <option value="">Select…</option>}
         {(f.opts || []).map(o => <option key={o} value={o}>{o}</option>)}
@@ -822,7 +875,8 @@ function renderField(
         placeholder={f.p}
         defaultValue={defaultVal}
         disabled={viewOnly}
-        required={f.r}
+        invalid={!!err}
+        onInput={onFieldChange}
       />
     );
   } else {
@@ -833,7 +887,8 @@ function renderField(
         placeholder={f.p}
         defaultValue={defaultVal}
         disabled={viewOnly}
-        required={f.r}
+        invalid={!!err}
+        onInput={onFieldChange}
       />
     );
   }
@@ -844,6 +899,7 @@ function renderField(
         {f.l} {f.r && <span className="text-danger">*</span>}
       </Label>
       {input}
+      {err && <FormFeedback style={{ display: 'block', fontSize: 11.5 }}>{err}</FormFeedback>}
     </Col>
   );
 }
