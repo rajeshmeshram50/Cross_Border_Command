@@ -142,7 +142,7 @@ const Layout = (props : any) => {
                 <Sidebar
                     layoutType={layoutType}
                 />
-                <div className="main-content">
+                <div className="main-content mb-2">
                     {props.children}
                     <Footer />
                 </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, CardBody, Col, Row, Button, Input, Label, Spinner, Form } from 'reactstrap';
+import { Card, CardBody, Col, Row, Input, Label, Spinner, Form } from 'reactstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
@@ -97,15 +97,418 @@ export default function Profile() {
   );
 
   const infoItems = [
-    { icon: 'ri-mail-line',      label: 'Email',        value: user.email,                                                                    color: 'primary' },
-    { icon: 'ri-phone-line',     label: 'Phone',        value: user.phone || 'Not set',                                                       color: 'success' },
-    { icon: 'ri-briefcase-line', label: 'Designation',  value: user.designation || (isSuperAdmin ? 'Platform Administrator' : 'Not set'),     color: 'warning' },
-    ...(!isSuperAdmin ? [{ icon: 'ri-building-line',   label: 'Organization', value: user.client_name || 'N/A', color: 'info' }] : []),
-    ...(isBranchUser  ? [{ icon: 'ri-git-branch-line', label: 'Branch',       value: user.branch_name || 'N/A', color: 'info' }] : []),
-    { icon: 'ri-global-line',    label: 'Timezone',     value: 'Asia/Kolkata (IST)',                                                          color: 'secondary' },
+    { icon: 'ri-mail-fill',       label: 'Email',        value: user.email,                                                                    color: 'primary' },
+    { icon: 'ri-phone-fill',      label: 'Phone',        value: user.phone || 'Not set',                                                       color: 'success' },
+    { icon: 'ri-briefcase-fill',  label: 'Designation',  value: user.designation || (isSuperAdmin ? 'Platform Administrator' : 'Not set'),     color: 'warning' },
+    ...(!isSuperAdmin ? [{ icon: 'ri-building-fill',   label: 'Organization', value: user.client_name || 'N/A', color: 'info' }] : []),
+    ...(isBranchUser  ? [{ icon: 'ri-git-branch-fill', label: 'Branch',       value: user.branch_name || 'N/A', color: 'info' }] : []),
+    { icon: 'ri-earth-fill',      label: 'Timezone',     value: 'Asia/Kolkata (IST)',                                                          color: 'secondary' },
   ];
 
   const plan = user.plan;
+  const hasPlan = !!(plan && plan.has_plan);
+
+  // Gradient map for colored text-masked icons
+  const iconGradient: Record<string, string> = {
+    primary:   GRAD_PRIMARY,
+    success:   GRAD_SUCCESS,
+    warning:   'linear-gradient(135deg, #f7b84b 0%, #ffd58c 100%)',
+    info:      GRAD_INFO,
+    danger:    GRAD_DANGER,
+    secondary: 'linear-gradient(135deg, #6e7891 0%, #a0a9bd 100%)',
+  };
+
+  // ── Individual card definitions ───────────────────────────────
+  const accountInfoCard = (
+    <Card className="h-100 mb-0" style={cardStyle}>
+      <CardBody className="d-flex flex-column">
+        <SectionHeader
+          title="Account Info"
+          gradient={GRAD_PRIMARY}
+          icon="ri-information-line"
+          action={(
+            <button
+              type="button"
+              className="btn btn-sm btn-soft-danger rounded-pill d-inline-flex align-items-center gap-1"
+              onClick={logout}
+              title="Logout"
+            >
+              <i className="ri-logout-box-r-line"></i>
+              <span className="fs-12 fw-semibold">Logout</span>
+            </button>
+          )}
+        />
+        <style>{`
+          .acct-info-row {
+            border-radius: 12px;
+            transition: background .18s ease, transform .18s ease;
+          }
+          .acct-info-row:hover {
+            background: var(--vz-secondary-bg);
+            transform: translateX(2px);
+          }
+          .acct-info-label {
+            font-size: 10.5px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            color: var(--vz-secondary-color);
+            text-transform: uppercase;
+            margin-bottom: 3px;
+          }
+          .acct-info-value {
+            font-size: 14.5px;
+            font-weight: 700;
+            color: var(--vz-heading-color, var(--vz-body-color));
+            line-height: 1.25;
+          }
+        `}</style>
+        <div className="vstack gap-1 flex-grow-1">
+          {infoItems.map(item => (
+            <div
+              key={item.label}
+              className="d-flex align-items-center gap-3 px-2 py-2 acct-info-row"
+            >
+              <span
+                className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                style={{ width: 40, height: 40 }}
+              >
+                <i
+                  className={item.icon}
+                  style={{
+                    fontSize: 28,
+                    lineHeight: 1,
+                    background: iconGradient[item.color],
+                    WebkitBackgroundClip: 'text',
+                    backgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    color: 'transparent',
+                  }}
+                />
+              </span>
+              <div className="flex-grow-1 min-w-0">
+                <p className="acct-info-label mb-0">{item.label}</p>
+                <div className="acct-info-value text-truncate" title={item.value}>{item.value}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardBody>
+    </Card>
+  );
+
+  const subscriptionCard = hasPlan ? (
+    <Card className="h-100 mb-0" style={cardStyle}>
+      <CardBody className="d-flex flex-column">
+        <SectionHeader
+          title="Subscription"
+          gradient={GRAD_SUCCESS}
+          icon="ri-bank-card-line"
+          action={(
+            <span
+              className={`badge rounded-pill border border-${plan!.expired ? 'danger' : 'success'} text-${plan!.expired ? 'danger' : 'success'} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}
+            >
+              <span className={`bg-${plan!.expired ? 'danger' : 'success'} rounded-circle`} style={{ width: 6, height: 6 }} />
+              {plan!.expired ? 'Expired' : 'Active'}
+            </span>
+          )}
+        />
+        <div
+          className="flex-grow-1 d-flex flex-column align-items-center justify-content-center text-center rounded-3 p-3"
+          style={{
+            background: 'linear-gradient(180deg, rgba(10,179,156,0.08) 0%, rgba(48,213,181,0.03) 100%)',
+            border: '1px solid rgba(10,179,156,0.18)',
+          }}
+        >
+          <span
+            className="d-inline-flex align-items-center justify-content-center rounded-circle mb-2"
+            style={{
+              width: 64,
+              height: 64,
+              background: GRAD_SUCCESS,
+              boxShadow: '0 10px 24px rgba(10,179,156,0.35), inset 0 1px 0 rgba(255,255,255,0.22)',
+            }}
+          >
+            <i className="ri-vip-crown-line" style={{ color: '#fff', fontSize: 30 }}></i>
+          </span>
+          <p className="text-muted fs-11 text-uppercase fw-semibold mb-1" style={{ letterSpacing: '0.06em' }}>Current Plan</p>
+          <h5 className="mb-1 fw-bold">{plan!.plan_name || 'Active Plan'}</h5>
+          {plan!.expires_at && (
+            <p className="text-muted mb-0 fs-12">
+              <i className={`${plan!.expired ? 'ri-alert-line text-danger' : 'ri-calendar-check-line text-success'} me-1`}></i>
+              {plan!.expired ? 'Plan expired' : `Expires on ${plan!.expires_at}`}
+            </p>
+          )}
+        </div>
+      </CardBody>
+    </Card>
+  ) : null;
+
+  const platformAccessCard = isSuperAdmin ? (
+    <Card className="h-100 mb-0" style={cardStyle}>
+      <CardBody>
+        <SectionHeader title="Platform Access" gradient={GRAD_PRIMARY} icon="ri-shield-star-line" />
+        <div
+          className="d-flex align-items-center gap-3 p-2 mb-1"
+          style={{
+            borderRadius: 14,
+            background: 'linear-gradient(135deg, rgba(64,81,137,0.08), rgba(102,145,231,0.04))',
+            border: '1px solid var(--vz-border-color)',
+          }}
+        >
+          <span
+            className="d-inline-flex align-items-center justify-content-center rounded-circle text-white"
+            style={{ width: 30, height: 30, background: GRAD_PRIMARY, boxShadow: '0 4px 10px rgba(64,81,137,0.3)' }}
+          >
+            <i className="ri-shield-keyhole-fill" style={{ fontSize: 14 }}></i>
+          </span>
+          <div className="flex-grow-1 min-w-0">
+            <h6 className="mb-1 text-truncate">Super Administrator</h6>
+            <p className="text-muted mb-0 fs-12">Full platform-wide privileges</p>
+          </div>
+        </div>
+        <div className="vstack gap-2 mt-2">
+          {[
+            { label: 'Clients & Billing',     icon: 'ri-building-4-line' },
+            { label: 'Plans & Payments',      icon: 'ri-money-rupee-circle-line' },
+            { label: 'Permissions & Roles',   icon: 'ri-shield-check-line' },
+            { label: 'Master Data & Reports', icon: 'ri-database-2-line' },
+          ].map(item => (
+            <div
+              key={item.label}
+              className="d-flex align-items-center gap-2 px-3 py-2"
+              style={{
+                borderRadius: 10,
+                background: 'var(--vz-secondary-bg)',
+                border: '1px solid var(--vz-border-color)',
+              }}
+            >
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-circle bg-success-subtle text-success flex-shrink-0"
+                style={{ width: 24, height: 24 }}
+              >
+                <i className="ri-check-line" style={{ fontSize: 12 }} />
+              </span>
+              <i className={`${item.icon} text-muted`} style={{ fontSize: 14 }}></i>
+              <span className="fs-13 fw-medium flex-grow-1">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      </CardBody>
+    </Card>
+  ) : null;
+
+  const personalInfoCard = (
+    <Card className="pf-wrap h-100 mb-0" style={cardStyle}>
+      <CardBody className="d-flex flex-column">
+        <SectionHeader title="Personal Information" gradient={GRAD_PRIMARY} icon="ri-user-settings-line" />
+        <Form onSubmit={(e) => e.preventDefault()} className="d-flex flex-column flex-grow-1">
+          <Row className="g-2">
+            <Col md={6}>
+              <Label className="pf-label">Full Name <span className="text-danger">*</span></Label>
+              <Input defaultValue={user.name} placeholder="Your full name" />
+            </Col>
+            <Col md={6}>
+              <Label className="pf-label">
+                Email
+                <i className="ri-lock-line" style={{ fontSize: 11, opacity: 0.6 }} />
+              </Label>
+              <Input type="email" defaultValue={user.email} disabled />
+            </Col>
+            <Col md={6}>
+              <Label className="pf-label">Phone</Label>
+              <Input defaultValue={user.phone || ''} placeholder="+91 98765 43210" />
+            </Col>
+            <Col md={6}>
+              <Label className="pf-label">Designation</Label>
+              <Input defaultValue={user.designation || ''} placeholder="e.g., Manager" />
+            </Col>
+          </Row>
+          <div className="d-flex justify-content-end align-items-center mt-auto pt-3 flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+              style={{
+                padding: '7px 20px',
+                fontSize: 13,
+                background: GRAD_PRIMARY,
+                color: '#fff',
+                border: 'none',
+                boxShadow: '0 6px 18px rgba(64,81,137,0.45), inset 0 1px 0 rgba(255,255,255,0.22)',
+                transition: 'all .18s ease',
+                minWidth: 150,
+              }}
+              onMouseEnter={e => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.boxShadow = '0 10px 26px rgba(64,81,137,0.60), inset 0 1px 0 rgba(255,255,255,0.30)';
+                el.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.boxShadow = '0 6px 18px rgba(64,81,137,0.45), inset 0 1px 0 rgba(255,255,255,0.22)';
+                el.style.transform = 'translateY(0)';
+              }}
+            >
+              <i className="ri-save-line" />
+              Save Changes
+            </button>
+          </div>
+        </Form>
+      </CardBody>
+    </Card>
+  );
+
+  const changePasswordCard = (
+    <Card className="pf-wrap h-100 mb-0" style={cardStyle}>
+      <CardBody className="d-flex flex-column">
+        <SectionHeader title="Change Password" gradient={GRAD_DANGER} icon="ri-lock-password-line" />
+        <div
+          className="d-flex align-items-center gap-2 mb-3 px-3 py-2"
+          style={{
+            background: 'linear-gradient(135deg, rgba(41,156,219,0.08), rgba(95,200,255,0.04))',
+            border: '1px solid rgba(41,156,219,0.25)',
+            borderRadius: 12,
+            color: 'var(--vz-heading-color, var(--vz-body-color))',
+            fontSize: 12.5,
+          }}
+        >
+          <span
+            className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+            style={{ width: 26, height: 26, background: GRAD_INFO, boxShadow: '0 2px 6px rgba(41,156,219,0.35)' }}
+          >
+            <i className="ri-shield-keyhole-line" style={{ color: '#fff', fontSize: 12 }}></i>
+          </span>
+          <div>Choose a strong password with at least 8 characters, including uppercase, lowercase, and a number.</div>
+        </div>
+        <Form onSubmit={(e) => { e.preventDefault(); handleChangePassword(); }} className="d-flex flex-column flex-grow-1">
+          <Row className="g-2">
+            <Col md={12}>
+              <Label className="pf-label">Current Password <span className="text-danger">*</span></Label>
+              <Input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} placeholder="Enter current password" />
+            </Col>
+            <Col md={6}>
+              <Label className="pf-label">New Password <span className="text-danger">*</span></Label>
+              <Input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Minimum 8 characters" />
+              {newPw && (
+                <div className="mt-2">
+                  <div className="d-flex align-items-center gap-2 mb-1">
+                    <div
+                      style={{
+                        flex: 1,
+                        height: 6,
+                        background: 'var(--vz-secondary-bg)',
+                        borderRadius: 999,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${(strength.level / 4) * 100}%`,
+                          height: '100%',
+                          background: strength.barColor,
+                          transition: 'width .25s ease, background .25s ease',
+                        }}
+                      />
+                    </div>
+                    <span className={`fs-11 fw-bold ${strength.color}`} style={{ minWidth: 44, textAlign: 'right' }}>
+                      {strength.text}
+                    </span>
+                  </div>
+                  <ul className="list-unstyled mb-0 mt-2" style={{ fontSize: 11 }}>
+                    {[
+                      'At least 8 characters',
+                      'One uppercase letter',
+                      'One lowercase letter',
+                      'One number',
+                    ].map(rule => {
+                      const passed = !validatePassword(newPw).includes(rule);
+                      return (
+                        <li
+                          key={rule}
+                          className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}
+                        >
+                          <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
+                          {rule}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </Col>
+            <Col md={6}>
+              <Label className="pf-label">Confirm New Password <span className="text-danger">*</span></Label>
+              <Input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Re-enter password" />
+              {confirmPw && (
+                <div className="mt-2 d-inline-flex align-items-center gap-1 fs-11 fw-semibold">
+                  {newPw === confirmPw ? (
+                    <span className="text-success d-inline-flex align-items-center gap-1">
+                      <i className="ri-checkbox-circle-fill" style={{ fontSize: 12 }}></i>
+                      Passwords match
+                    </span>
+                  ) : (
+                    <span className="text-danger d-inline-flex align-items-center gap-1">
+                      <i className="ri-close-circle-fill" style={{ fontSize: 12 }}></i>
+                      Passwords do not match
+                    </span>
+                  )}
+                </div>
+              )}
+            </Col>
+          </Row>
+          <div className="d-flex justify-content-end align-items-center mt-auto pt-3 flex-wrap gap-2">
+            <button
+              type="submit"
+              disabled={changingPw}
+              className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
+              style={{
+                padding: '7px 20px',
+                fontSize: 13,
+                background: GRAD_DANGER,
+                color: '#fff',
+                border: 'none',
+                boxShadow: '0 6px 18px rgba(240,101,72,0.45), inset 0 1px 0 rgba(255,255,255,0.22)',
+                transition: 'all .18s ease',
+                opacity: changingPw ? 0.7 : 1,
+                minWidth: 150,
+              }}
+              onMouseEnter={e => {
+                if (changingPw) return;
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.boxShadow = '0 10px 26px rgba(240,101,72,0.60), inset 0 1px 0 rgba(255,255,255,0.30)';
+                el.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.boxShadow = '0 6px 18px rgba(240,101,72,0.45), inset 0 1px 0 rgba(255,255,255,0.22)';
+                el.style.transform = 'translateY(0)';
+              }}
+            >
+              {changingPw ? <Spinner size="sm" /> : <i className="ri-lock-password-line" />}
+              {changingPw ? 'Updating...' : 'Change Password'}
+            </button>
+          </div>
+        </Form>
+      </CardBody>
+    </Card>
+  );
+
+  // ── Pair cards by natural height for visual balance ─────────
+  // Super admin: compact pair (Account Info + Personal Info) | tall pair (Platform Access + Change Password)
+  // Client/Branch with plan: compact pair (Subscription + Personal Info) | tall pair (Account Info + Change Password)
+  // Client/Branch without plan: Account Info + Personal Info, then Change Password full width
+  let row1LeftCard: React.ReactNode;
+  let row2LeftCard: React.ReactNode;
+
+  if (isSuperAdmin) {
+    row1LeftCard = accountInfoCard;
+    row2LeftCard = platformAccessCard;
+  } else if (hasPlan) {
+    row1LeftCard = subscriptionCard;
+    row2LeftCard = accountInfoCard;
+  } else {
+    row1LeftCard = accountInfoCard;
+    row2LeftCard = null;
+  }
 
   return (
     <>
@@ -244,307 +647,70 @@ export default function Profile() {
         </div>
       </Card>
 
-      {/* ── Main grid ── */}
+      {/* ── Shared form styles (Personal Information + Change Password) ── */}
+      <style>{`
+        .pf-wrap .pf-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          margin-bottom: 5px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          color: var(--vz-body-color);
+        }
+        .pf-wrap .form-control {
+          font-size: 13px;
+          padding: 7px 11px;
+          height: 34px;
+          border-radius: 6px;
+          border: 1px solid var(--vz-border-color);
+          background: var(--vz-card-bg);
+          transition: border-color .18s ease, box-shadow .18s ease;
+        }
+        .pf-wrap .form-control:hover:not(:disabled):not([readonly]) {
+          border-color: rgba(99,102,241,0.45);
+        }
+        .pf-wrap .form-control:focus {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+        .pf-wrap .form-control.is-invalid,
+        .pf-wrap .form-control.is-invalid:focus {
+          border-color: #f06548;
+          box-shadow: 0 0 0 3px rgba(240,101,72,0.15);
+        }
+        .pf-wrap .form-control:disabled,
+        .pf-wrap .form-control[readonly] {
+          background: var(--vz-secondary-bg);
+          color: var(--vz-secondary-color);
+          cursor: not-allowed;
+        }
+      `}</style>
+
+      {/* ── Row 1: compact pair ── */}
       <Row className="mt-1 g-3 align-items-stretch">
-        {/* ── LEFT COLUMN ── */}
-        <Col xl={4}>
-          <Card className="mb-3" style={cardStyle}>
-            <CardBody>
-              <SectionHeader
-                title="Account Info"
-                gradient={GRAD_PRIMARY}
-                icon="ri-information-line"
-                action={(
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-soft-danger rounded-pill d-inline-flex align-items-center gap-1"
-                    onClick={logout}
-                    title="Logout"
-                  >
-                    <i className="ri-logout-box-r-line"></i>
-                    <span className="fs-12 fw-semibold">Logout</span>
-                  </button>
-                )}
-              />
-              <div className="vstack gap-0">
-                {infoItems.map((item, i) => (
-                  <div
-                    key={item.label}
-                    className="d-flex align-items-center py-2"
-                    style={{ borderBottom: i < infoItems.length - 1 ? '1px dashed var(--vz-border-color)' : 'none' }}
-                  >
-                    <div className="flex-shrink-0 me-3">
-                      <span
-                        className={`d-inline-flex align-items-center justify-content-center rounded-circle bg-${item.color}-subtle text-${item.color}`}
-                        style={{ width: 36, height: 36 }}
-                      >
-                        <i className={item.icon} style={{ fontSize: 16 }} />
-                      </span>
-                    </div>
-                    <div className="flex-grow-1 min-w-0">
-                      <p className="text-muted mb-0 fs-11 text-uppercase fw-semibold" style={{ letterSpacing: '0.05em' }}>{item.label}</p>
-                      <h6 className="mb-0 fs-13 text-truncate" title={item.value}>{item.value}</h6>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardBody>
-          </Card>
-
-          {isSuperAdmin && (
-            <Card className="mb-3" style={cardStyle}>
-              <CardBody>
-                <SectionHeader title="Platform Access" gradient={GRAD_PRIMARY} icon="ri-shield-star-line" />
-                <div
-                  className="d-flex align-items-center gap-3 p-3 mb-2"
-                  style={{
-                    borderRadius: 14,
-                    background: 'linear-gradient(135deg, rgba(64,81,137,0.08), rgba(102,145,231,0.04))',
-                    border: '1px solid var(--vz-border-color)',
-                  }}
-                >
-                  <span
-                    className="d-inline-flex align-items-center justify-content-center rounded-circle text-white"
-                    style={{ width: 42, height: 42, background: GRAD_PRIMARY, boxShadow: '0 4px 10px rgba(64,81,137,0.3)' }}
-                  >
-                    <i className="ri-shield-keyhole-fill" style={{ fontSize: 18 }}></i>
-                  </span>
-                  <div className="flex-grow-1 min-w-0">
-                    <h6 className="mb-1 text-truncate">Super Administrator</h6>
-                    <p className="text-muted mb-0 fs-12">Full platform-wide privileges</p>
-                  </div>
-                </div>
-                <div className="vstack gap-2 mt-2">
-                  {[
-                    { label: 'Clients & Billing',     icon: 'ri-building-4-line' },
-                    { label: 'Plans & Payments',      icon: 'ri-money-rupee-circle-line' },
-                    { label: 'Permissions & Roles',   icon: 'ri-shield-check-line' },
-                    { label: 'Master Data & Reports', icon: 'ri-database-2-line' },
-                  ].map(item => (
-                    <div
-                      key={item.label}
-                      className="d-flex align-items-center gap-2 px-3 py-2"
-                      style={{
-                        borderRadius: 10,
-                        background: 'var(--vz-secondary-bg)',
-                        border: '1px solid var(--vz-border-color)',
-                      }}
-                    >
-                      <span
-                        className="d-inline-flex align-items-center justify-content-center rounded-circle bg-success-subtle text-success flex-shrink-0"
-                        style={{ width: 24, height: 24 }}
-                      >
-                        <i className="ri-check-line" style={{ fontSize: 12 }} />
-                      </span>
-                      <i className={`${item.icon} text-muted`} style={{ fontSize: 14 }}></i>
-                      <span className="fs-13 fw-medium flex-grow-1">{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardBody>
-            </Card>
-          )}
-
-          {plan && plan.has_plan && (
-            <Card className="mb-0" style={cardStyle}>
-              <CardBody>
-                <SectionHeader
-                  title="Subscription"
-                  gradient={GRAD_SUCCESS}
-                  icon="ri-bank-card-line"
-                  action={(
-                    <span
-                      className={`badge rounded-pill border border-${plan.expired ? 'danger' : 'success'} text-${plan.expired ? 'danger' : 'success'} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}
-                    >
-                      <span className={`bg-${plan.expired ? 'danger' : 'success'} rounded-circle`} style={{ width: 6, height: 6 }} />
-                      {plan.expired ? 'Expired' : 'Active'}
-                    </span>
-                  )}
-                />
-                <div
-                  className="d-flex align-items-center gap-3 p-3"
-                  style={{
-                    borderRadius: 14,
-                    background: 'linear-gradient(135deg, rgba(10,179,156,0.08), rgba(48,213,181,0.04))',
-                    border: '1px solid var(--vz-border-color)',
-                  }}
-                >
-                  <span
-                    className="d-inline-flex align-items-center justify-content-center rounded-circle text-white"
-                    style={{ width: 42, height: 42, background: GRAD_SUCCESS, boxShadow: '0 4px 10px rgba(10,179,156,0.3)' }}
-                  >
-                    <i className="ri-vip-crown-line" style={{ fontSize: 18 }}></i>
-                  </span>
-                  <div className="flex-grow-1 min-w-0">
-                    <h6 className="mb-1 text-truncate">{plan.plan_name || 'Active Plan'}</h6>
-                    {plan.expires_at && (
-                      <p className="text-muted mb-0 fs-12">
-                        {plan.expired ? 'Plan expired' : `Expires on ${plan.expires_at}`}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-          )}
-        </Col>
-
-        {/* ── RIGHT COLUMN ── */}
-        <Col xl={8}>
-          <Card className="mb-3" style={cardStyle}>
-            <CardBody>
-              <SectionHeader title="Personal Information" gradient={GRAD_PRIMARY} icon="ri-user-settings-line" />
-              <Form>
-                <Row className="g-3">
-                  <Col md={6}>
-                    <Label className="fw-semibold fs-13">Full Name</Label>
-                    <Input defaultValue={user.name} />
-                  </Col>
-                  <Col md={6}>
-                    <Label className="fw-semibold fs-13">Email</Label>
-                    <Input type="email" defaultValue={user.email} disabled />
-                  </Col>
-                  <Col md={6}>
-                    <Label className="fw-semibold fs-13">Phone</Label>
-                    <Input defaultValue={user.phone || ''} placeholder="+91 98765 43210" />
-                  </Col>
-                  <Col md={6}>
-                    <Label className="fw-semibold fs-13">Designation</Label>
-                    <Input defaultValue={user.designation || ''} placeholder="e.g., Manager" />
-                  </Col>
-                </Row>
-                <div className="text-end mt-4">
-                  <Button color="success" className="btn-label waves-effect waves-light rounded-pill">
-                    <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                    Save Changes
-                  </Button>
-                </div>
-              </Form>
-            </CardBody>
-          </Card>
-
-          <Card className="mb-3" style={cardStyle}>
-            <CardBody>
-              <SectionHeader title="Change Password" gradient={GRAD_DANGER} icon="ri-lock-password-line" />
-              <div
-                className="d-flex align-items-center gap-2 mb-3 px-3 py-2"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(41,156,219,0.08), rgba(95,200,255,0.04))',
-                  border: '1px solid rgba(41,156,219,0.25)',
-                  borderRadius: 12,
-                  color: 'var(--vz-heading-color, var(--vz-body-color))',
-                  fontSize: 13,
-                }}
-              >
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                  style={{ width: 26, height: 26, background: GRAD_INFO, boxShadow: '0 2px 6px rgba(41,156,219,0.35)' }}
-                >
-                  <i className="ri-shield-keyhole-line" style={{ color: '#fff', fontSize: 12 }}></i>
-                </span>
-                <div>Choose a strong password with at least 8 characters.</div>
-              </div>
-              <Form>
-                <Row className="g-3">
-                  <Col md={12}>
-                    <Label className="fw-semibold fs-13">Current Password</Label>
-                    <Input type="password" value={currentPw} onChange={e => setCurrentPw(e.target.value)} placeholder="Enter current password" />
-                  </Col>
-                  <Col md={6}>
-                    <Label className="fw-semibold fs-13">New Password</Label>
-                    <Input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="Minimum 8 characters" />
-                    {newPw && (
-                      <div className="mt-2">
-                        <div className="d-flex align-items-center gap-2 mb-1">
-                          <div
-                            style={{
-                              flex: 1,
-                              height: 6,
-                              background: 'var(--vz-secondary-bg)',
-                              borderRadius: 999,
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: `${(strength.level / 4) * 100}%`,
-                                height: '100%',
-                                background: strength.barColor,
-                                transition: 'width .25s ease, background .25s ease',
-                              }}
-                            />
-                          </div>
-                          <span className={`fs-11 fw-bold ${strength.color}`} style={{ minWidth: 44, textAlign: 'right' }}>
-                            {strength.text}
-                          </span>
-                        </div>
-                        <ul className="list-unstyled mb-0 mt-2" style={{ fontSize: 11.5 }}>
-                          {[
-                            'At least 8 characters',
-                            'One uppercase letter',
-                            'One lowercase letter',
-                            'One number',
-                          ].map(rule => {
-                            const passed = !validatePassword(newPw).includes(rule);
-                            return (
-                              <li
-                                key={rule}
-                                className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}
-                              >
-                                <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
-                                {rule}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    )}
-                  </Col>
-                  <Col md={6}>
-                    <Label className="fw-semibold fs-13">Confirm New Password</Label>
-                    <Input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Re-enter password" />
-                    {confirmPw && (
-                      <div className="mt-2 d-inline-flex align-items-center gap-1 fs-11 fw-semibold">
-                        {newPw === confirmPw ? (
-                          <span className="text-success d-inline-flex align-items-center gap-1">
-                            <i className="ri-checkbox-circle-fill" style={{ fontSize: 12 }}></i>
-                            Passwords match
-                          </span>
-                        ) : (
-                          <span className="text-danger d-inline-flex align-items-center gap-1">
-                            <i className="ri-close-circle-fill" style={{ fontSize: 12 }}></i>
-                            Passwords do not match
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </Col>
-                </Row>
-                <div className="text-end mt-2">
-                  <Button
-                    color="primary"
-                    className="btn-label waves-effect waves-light rounded-pill"
-                    onClick={handleChangePassword}
-                    disabled={changingPw}
-                  >
-                    {changingPw
-                      ? <Spinner size="sm" className="me-2" />
-                      : <i className="ri-lock-password-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
-                    {changingPw ? 'Updating...' : 'Change Password'}
-                  </Button>
-                </div>
-              </Form>
-            </CardBody>
-          </Card>
-
-        </Col>
+        <Col xl={4}>{row1LeftCard}</Col>
+        <Col xl={8}>{personalInfoCard}</Col>
       </Row>
 
-      {/* ── Permissions — full width below the main grid ── */}
+      {/* ── Row 2: tall pair (or Change Password full width if no left card) ── */}
+      {row2LeftCard ? (
+        <Row className="mt-0 g-3 align-items-stretch">
+          <Col xl={4}>{row2LeftCard}</Col>
+          <Col xl={8}>{changePasswordCard}</Col>
+        </Row>
+      ) : (
+        <Row className="mt-3 g-3">
+          <Col xs={12}>{changePasswordCard}</Col>
+        </Row>
+      )}
+
+      {/* ── Row 3: Permissions (full width) ── */}
       {!isSuperAdmin && user.permissions && Object.keys(user.permissions).length > 0 && (
-        <Row className="mt-1">
+        <Row className="mt-3">
           <Col xs={12}>
-            <Card className="mb-3" style={cardStyle}>
+            <Card className="mb-0" style={cardStyle}>
               <CardBody>
                 <SectionHeader
                   title="Your Permissions"
@@ -645,20 +811,60 @@ export default function Profile() {
                           {entries.map(([key, val]) => {
                             const meta = permMeta[key];
                             if (!meta) return null;
+                            const tint =
+                              meta.color === 'primary' ? 'rgba(64,81,137,0.12)'  :
+                              meta.color === 'danger'  ? 'rgba(240,101,72,0.12)' :
+                              meta.color === 'success' ? 'rgba(10,179,156,0.12)' :
+                              meta.color === 'info'    ? 'rgba(41,156,219,0.12)' :
+                              meta.color === 'warning' ? 'rgba(247,184,75,0.14)' :
+                              'var(--vz-secondary-bg)';
+                            const borderCol =
+                              meta.color === 'primary' ? 'rgba(64,81,137,0.35)'  :
+                              meta.color === 'danger'  ? 'rgba(240,101,72,0.35)' :
+                              meta.color === 'success' ? 'rgba(10,179,156,0.35)' :
+                              meta.color === 'info'    ? 'rgba(41,156,219,0.35)' :
+                              meta.color === 'warning' ? 'rgba(247,184,75,0.40)' :
+                              'var(--vz-border-color)';
+                            const enabledStyle: React.CSSProperties = {
+                              width: 30, height: 30, borderRadius: 8,
+                              background: tint,
+                              border: `1px solid ${borderCol}`,
+                              color: `var(--vz-${meta.color})`,
+                              transition: 'all .15s ease',
+                            };
+                            const disabledStyle: React.CSSProperties = {
+                              width: 30, height: 30, borderRadius: 8,
+                              background: 'var(--vz-secondary-bg)',
+                              border: '1px dashed var(--vz-border-color)',
+                              color: 'var(--vz-secondary-color)',
+                              opacity: 0.55,
+                              transition: 'all .15s ease',
+                            };
                             return (
                               <span
                                 key={key}
-                                title={`${meta.label}${val ? '' : ' (off)'}`}
-                                className={val
-                                  ? `d-inline-flex align-items-center justify-content-center rounded-2 bg-${meta.color} text-white`
-                                  : 'd-inline-flex align-items-center justify-content-center rounded-2 text-muted'}
-                                style={{
-                                  width: 28, height: 28,
-                                  background: val ? undefined : 'var(--vz-border-color)',
-                                  opacity: val ? 1 : 0.55,
-                                }}
+                                title={`${meta.label} ${val ? 'enabled' : 'disabled'}`}
+                                className="d-inline-flex align-items-center justify-content-center position-relative"
+                                style={val ? enabledStyle : disabledStyle}
                               >
-                                <i className={meta.icon} style={{ fontSize: 13 }}></i>
+                                <i className={meta.icon} style={{ fontSize: 14 }}></i>
+                                {!val && (
+                                  <span
+                                    aria-hidden="true"
+                                    className="position-absolute top-0 end-0 d-inline-flex align-items-center justify-content-center rounded-circle"
+                                    style={{
+                                      width: 11, height: 11,
+                                      transform: 'translate(30%, -30%)',
+                                      background: 'var(--vz-card-bg)',
+                                      border: '1px solid var(--vz-border-color)',
+                                      color: 'var(--vz-secondary-color)',
+                                      fontSize: 9,
+                                      lineHeight: 1,
+                                    }}
+                                  >
+                                    <i className="ri-close-line" />
+                                  </span>
+                                )}
                               </span>
                             );
                           })}
