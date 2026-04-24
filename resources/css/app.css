@@ -819,3 +819,197 @@ tbody tr:nth-child(10) {
           z-index: 0;
         }
         .bc-save-badge { animation: bc-save-pulse 2s ease-in-out infinite; }
+
+/* ═══════════════════════════════════════════════════════════════
+   Payments page (Payments.tsx)
+   ═══════════════════════════════════════════════════════════════ */
+.payments-surface { background: #ffffff; }
+[data-bs-theme="dark"] .payments-surface { background: #1c2531; }
+
+/* Page-level wrapper card */
+.pmt-page-card {
+  border-radius: 16px;
+  border: 1px solid var(--vz-border-color);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  padding: 20px;
+}
+
+/* KPI cards */
+.pmt-kpi-card {
+  border-radius: 14px;
+  border: 1px solid var(--vz-border-color);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+.pmt-kpi-top-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+}
+.pmt-kpi-row { display: flex; align-items: flex-start; justify-content: space-between; }
+.pmt-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--vz-secondary-color);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 0 0 8px;
+}
+.pmt-kpi-value {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  margin: 0;
+  line-height: 1;
+}
+.pmt-kpi-hint { font-size: 11px; color: var(--vz-secondary-color); }
+.pmt-kpi-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10);
+}
+.pmt-kpi-icon i { font-size: 20px; color: #fff; }
+
+/* Export button — pill with secondary outline */
+.pmt-btn-export {
+  background: #fff;
+  color: var(--vz-secondary);
+  border: 1px solid var(--vz-secondary);
+  font-weight: 600;
+  transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.pmt-btn-export:not(:disabled):hover {
+  background: var(--vz-secondary);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(135, 138, 153, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Row action button (view / PDF / reminder / delete) */
+.pmt-action-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--vz-secondary-bg);
+  border: 1px solid var(--vz-border-color);
+  color: var(--vz-secondary-color);
+  transition: all .15s ease;
+}
+.pmt-action-btn[data-color="primary"]:hover { border-color: var(--vz-primary); color: var(--vz-primary); }
+.pmt-action-btn[data-color="info"]:hover    { border-color: var(--vz-info);    color: var(--vz-info);    }
+.pmt-action-btn[data-color="success"]:hover { border-color: var(--vz-success); color: var(--vz-success); }
+.pmt-action-btn[data-color="warning"]:hover { border-color: var(--vz-warning); color: var(--vz-warning); }
+.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-danger);  color: var(--vz-danger);  }
+
+/* Status badge dot inside the table column */
+.pmt-status-dot { width: 6px; height: 6px; }
+
+/* ── View Payment modal ── */
+.cbc-view-payment .modal-content { border-radius: 18px; overflow: hidden; }
+.pmt-modal-header { background: var(--vz-secondary-bg); }
+.pmt-modal-icon { width: 36px; height: 36px; }
+.pmt-modal-icon i { font-size: 18px; }
+.pmt-modal-body-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+
+.pmt-view-summary {
+  background: var(--vz-secondary-bg);
+  border: 1px solid var(--vz-border-color);
+}
+.pmt-small-caps {
+  color: var(--vz-secondary-color);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+.pmt-total-value {
+  font-size: 22px;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  line-height: 1.2;
+}
+.pmt-client-line { font-size: 12px; margin-top: 2px; }
+.pmt-status-pill { font-size: 10px; padding: 4px 10px; }
+.pmt-view-notes {
+  background: var(--vz-secondary-bg);
+  border: 1px solid var(--vz-border-color);
+}
+.pmt-notes-text { color: var(--vz-body-color); font-size: 13px; line-height: 1.5; }
+
+/* ── Add / Record Payment modal ── */
+.cbc-payment-modal .modal-content { border-radius: 18px; }
+.cbc-payment-modal .modal-content > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.pmt-modal-icon-success {
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, #0ab39c, #02c8a7);
+}
+.pmt-hint-banner {
+  background: var(--vz-info-bg-subtle, rgba(41, 156, 219, 0.08));
+  border: 1px solid var(--vz-info-border-subtle, rgba(41, 156, 219, 0.25));
+}
+.pmt-hint-banner i { color: var(--vz-info, #299cdb); }
+.pmt-hint-banner-text { color: var(--vz-body-color); }
+
+/* ── PlainDetail helper ── */
+.pmt-detail {
+  background: var(--vz-secondary-bg);
+  border: 1px solid var(--vz-border-color);
+  padding: 10px 12px;
+}
+.pmt-detail-label {
+  color: var(--vz-secondary-color);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+.pmt-detail-value {
+  color: var(--vz-heading-color, var(--vz-body-color));
+  font-size: 14px;
+  margin-top: 2px;
+}
+.pmt-detail-value.pmt-detail-emphasize { font-size: 16px; }
+
+/* ── DetailCard helper (legacy, kept for back-compat) ── */
+.pmt-detail-card {
+  background: var(--vz-card-bg);
+  border: 1px solid var(--vz-border-color);
+  padding: 10px 12px 10px 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.pmt-detail-accent {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+}
+.pmt-detail-card-icon { width: 28px; height: 28px; font-size: 14px; }
+.pmt-detail-card-value {
+  color: var(--vz-heading-color, var(--vz-body-color));
+  font-size: 14px;
+  margin-top: 2px;
+}
+.pmt-detail-card-value.pmt-detail-emphasize { font-size: 17px; }
+
+/* ── SectionHeader helper ── */
+.pmt-section-head { border-bottom: 1px dashed var(--vz-border-color); }
+.pmt-section-chip { width: 26px; height: 26px; font-size: 13px; }
+.pmt-section-title {
+  letter-spacing: 0.04em;
+  font-size: 11px;
+  color: var(--vz-heading-color, var(--vz-body-color));
+}
+.pmt-section-hint { line-height: 1.2; }

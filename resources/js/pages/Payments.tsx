@@ -207,24 +207,8 @@ export default function Payments() {
       type="button"
       title={title}
       disabled={disabled}
-      className="btn p-0 d-inline-flex align-items-center justify-content-center"
-      style={{
-        width: 30, height: 30, borderRadius: 8,
-        background: 'var(--vz-secondary-bg)',
-        border: '1px solid var(--vz-border-color)',
-        color: 'var(--vz-secondary-color)',
-        transition: 'all .15s ease',
-      }}
-      onMouseEnter={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.borderColor = `var(--vz-${color})`;
-        el.style.color = `var(--vz-${color})`;
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.borderColor = 'var(--vz-border-color)';
-        el.style.color = 'var(--vz-secondary-color)';
-      }}
+      data-color={color}
+      className="btn p-0 d-inline-flex align-items-center justify-content-center pmt-action-btn"
       onClick={onClick}
     >
       <i className={`${icon} fs-14`} />
@@ -285,7 +269,7 @@ export default function Payments() {
         const cfg = statusCfg[info.row.original.status] || statusCfg.pending;
         return (
           <span className={`badge rounded-pill border border-${cfg.bsColor} text-${cfg.bsColor} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
-            <span className={`bg-${cfg.bsColor} rounded-circle`} style={{ width: 6, height: 6 }} />
+            <span className={`bg-${cfg.bsColor} rounded-circle pmt-status-dot`} />
             {info.row.original.status}
           </span>
         );
@@ -365,11 +349,6 @@ export default function Payments() {
 
   return (
     <>
-      <style>{`
-        .payments-surface { background: #ffffff; }
-        [data-bs-theme="dark"] .payments-surface { background: #1c2531; }
-      `}</style>
-
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
@@ -386,44 +365,21 @@ export default function Payments() {
 
       <Row>
         <Col xs={12}>
-          <div
-            className="payments-surface"
-            style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
-            }}
-          >
+          <div className="payments-surface pmt-page-card">
             {/* ── KPI cards (admin-dashboard style) ── */}
             <Row className="g-3 mb-3 align-items-stretch">
               {KPI_CARDS.map(k => (
                 <Col key={k.label} md={3} sm={6} xs={12}>
-                  <div
-                    className="payments-surface"
-                    style={{
-                      borderRadius: 14,
-                      border: '1px solid var(--vz-border-color)',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                      padding: '16px 18px',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      height: '100%',
-                    }}
-                  >
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                  <div className="payments-surface pmt-kpi-card">
+                    <div className="pmt-kpi-top-bar" style={{ background: k.gradient }} />
+                    <div className="pmt-kpi-row">
                       <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                          {k.label}
-                        </p>
-                        <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                          {k.value}
-                        </h3>
-                        <small style={{ fontSize: 11, color: 'var(--vz-secondary-color)' }}>{k.hint}</small>
+                        <p className="pmt-kpi-label">{k.label}</p>
+                        <h3 className="pmt-kpi-value">{k.value}</h3>
+                        <small className="pmt-kpi-hint">{k.hint}</small>
                       </div>
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+                      <div className="pmt-kpi-icon" style={{ background: k.gradient }}>
+                        <i className={k.icon} />
                       </div>
                     </div>
                   </div>
@@ -468,29 +424,7 @@ export default function Payments() {
                   <Button
                     onClick={handleExport}
                     disabled={exporting}
-                    className="rounded-pill px-3"
-                    style={{
-                      background: '#fff',
-                      color: 'var(--vz-secondary)',
-                      border: '1px solid var(--vz-secondary)',
-                      fontWeight: 600,
-                      transition: 'background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease',
-                    }}
-                    onMouseEnter={e => {
-                      const el = e.currentTarget as HTMLButtonElement;
-                      if (el.disabled) return;
-                      el.style.background = 'var(--vz-secondary)';
-                      el.style.color = '#fff';
-                      el.style.boxShadow = '0 4px 12px rgba(135,138,153,0.35)';
-                      el.style.transform = 'translateY(-1px)';
-                    }}
-                    onMouseLeave={e => {
-                      const el = e.currentTarget as HTMLButtonElement;
-                      el.style.background = '#fff';
-                      el.style.color = 'var(--vz-secondary)';
-                      el.style.boxShadow = 'none';
-                      el.style.transform = 'translateY(0)';
-                    }}
+                    className="rounded-pill px-3 pmt-btn-export"
                   >
                     {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
                     {exporting ? 'Exporting...' : 'Export'}
@@ -534,9 +468,6 @@ export default function Payments() {
       </Row>
 
       {/* ── View Payment Details Modal ── */}
-      <style>{`
-        .cbc-view-payment .modal-content { border-radius: 18px; overflow: hidden; }
-      `}</style>
       <Modal
         isOpen={!!viewPayment}
         toggle={() => setViewPayment(null)}
@@ -558,15 +489,11 @@ export default function Payments() {
               {/* ── Header (same clean style as Record Payment modal) ── */}
               <ModalHeader
                 toggle={() => setViewPayment(null)}
-                className="border-bottom px-4"
-                style={{ background: 'var(--vz-secondary-bg)' }}
+                className="border-bottom px-4 pmt-modal-header"
               >
                 <div className="d-flex align-items-center gap-2">
-                  <span
-                    className="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary flex-shrink-0"
-                    style={{ width: 36, height: 36 }}
-                  >
-                    <i className="ri-file-list-3-line fs-18" />
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary flex-shrink-0 pmt-modal-icon">
+                    <i className="ri-file-list-3-line" />
                   </span>
                   <div>
                     <h5 className="mb-0 fs-16 fw-bold">Payment Details</h5>
@@ -577,38 +504,21 @@ export default function Payments() {
                 </div>
               </ModalHeader>
 
-              <ModalBody className="px-4 py-4" style={{ overflowY: 'auto' }}>
+              <ModalBody className="px-4 py-4 pmt-modal-body-scroll">
                 {/* ── Summary row — total, client, status ── */}
-                <div
-                  className="d-flex align-items-center justify-content-between flex-wrap gap-3 rounded-3 mb-4 p-3"
-                  style={{
-                    background: 'var(--vz-secondary-bg)',
-                    border: '1px solid var(--vz-border-color)',
-                  }}
-                >
+                <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 rounded-3 mb-4 p-3 pmt-view-summary">
                   <div className="min-w-0">
-                    <div
-                      className="text-uppercase fw-bold"
-                      style={{ color: 'var(--vz-secondary-color)', fontSize: 10, letterSpacing: '0.05em' }}
-                    >
-                      Total Amount
-                    </div>
-                    <div
-                      className="fw-bold"
-                      style={{ fontSize: 22, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.2 }}
-                    >
-                      {fmtMoney(viewPayment.total)}
-                    </div>
-                    <div className="text-muted text-truncate" style={{ fontSize: 12, marginTop: 2 }}>
+                    <div className="text-uppercase fw-bold pmt-small-caps">Total Amount</div>
+                    <div className="fw-bold pmt-total-value">{fmtMoney(viewPayment.total)}</div>
+                    <div className="text-muted text-truncate pmt-client-line">
                       <i className="ri-building-line me-1" />
                       {viewPayment.client?.org_name || '—'}
                     </div>
                   </div>
                   <span
-                    className={`badge rounded-pill border border-${cfg.bsColor} text-${cfg.bsColor} text-uppercase fw-semibold d-inline-flex align-items-center gap-1 flex-shrink-0`}
-                    style={{ fontSize: 10, padding: '4px 10px' }}
+                    className={`badge rounded-pill border border-${cfg.bsColor} text-${cfg.bsColor} text-uppercase fw-semibold d-inline-flex align-items-center gap-1 flex-shrink-0 pmt-status-pill`}
                   >
-                    <span className={`bg-${cfg.bsColor} rounded-circle`} style={{ width: 6, height: 6 }} />
+                    <span className={`bg-${cfg.bsColor} rounded-circle pmt-status-dot`} />
                     {viewPayment.status}
                   </span>
                 </div>
@@ -647,22 +557,9 @@ export default function Payments() {
 
                 {/* ── Notes (subtle, no colored background) ── */}
                 {viewPayment.notes && (
-                  <div
-                    className="rounded-3 mt-4 p-3"
-                    style={{
-                      background: 'var(--vz-secondary-bg)',
-                      border: '1px solid var(--vz-border-color)',
-                    }}
-                  >
-                    <div
-                      className="fw-bold text-uppercase mb-1"
-                      style={{ color: 'var(--vz-secondary-color)', fontSize: 10, letterSpacing: '0.05em' }}
-                    >
-                      Notes
-                    </div>
-                    <div style={{ color: 'var(--vz-body-color)', fontSize: 13, lineHeight: 1.5 }}>
-                      {viewPayment.notes}
-                    </div>
+                  <div className="rounded-3 mt-4 p-3 pmt-view-notes">
+                    <div className="fw-bold text-uppercase mb-1 pmt-small-caps">Notes</div>
+                    <div className="pmt-notes-text">{viewPayment.notes}</div>
                   </div>
                 )}
               </ModalBody>
@@ -687,21 +584,7 @@ export default function Payments() {
         })()}
       </Modal>
 
-      {/* Add Payment Modal */}
-      {/* Local CSS: make the nested <form> element stretch + scroll correctly inside a
-          Reactstrap scrollable modal. By default Bootstrap 5.3 expects header / body /
-          footer as direct children of .modal-content; wrapping body+footer in <form>
-          breaks the flex chain, so we explicitly make <form> a column flex-fill child. */}
-      <style>{`
-        .cbc-payment-modal .modal-content { border-radius: 18px; }
-        .cbc-payment-modal .modal-content > form {
-          display: flex;
-          flex-direction: column;
-          flex: 1 1 auto;
-          min-height: 0;
-          overflow: hidden;
-        }
-      `}</style>
+      {/* Add Payment Modal — <form> flex-chain rules live in app.css (.cbc-payment-modal) */}
       <Modal
         isOpen={addModal}
         toggle={() => { setAddModal(false); resetPaymentForm(); }}
@@ -713,14 +596,10 @@ export default function Payments() {
       >
         <ModalHeader
           toggle={() => { setAddModal(false); resetPaymentForm(); }}
-          className="border-bottom px-4"
-          style={{ background: 'var(--vz-secondary-bg)' }}
+          className="border-bottom px-4 pmt-modal-header"
         >
           <div className="d-flex align-items-center gap-2">
-            <span
-              className="d-inline-flex align-items-center justify-content-center rounded-3 text-white flex-shrink-0"
-              style={{ width: 36, height: 36, background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}
-            >
+            <span className="d-inline-flex align-items-center justify-content-center rounded-3 text-white flex-shrink-0 pmt-modal-icon pmt-modal-icon-success">
               <i className="ri-money-rupee-circle-line fs-18" />
             </span>
             <div>
@@ -731,17 +610,11 @@ export default function Payments() {
         </ModalHeader>
 
         <Form onSubmit={handleAdd} className="d-flex flex-column flex-grow-1 overflow-hidden">
-          <ModalBody
-            className="px-4 py-3"
-            style={{ overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}
-          >
+          <ModalBody className="px-4 py-3 pmt-modal-body-scroll">
             {/* Hint banner */}
-            <div
-              className="d-flex align-items-start gap-2 rounded-3 mb-4 p-3"
-              style={{ background: 'var(--vz-info-bg-subtle, rgba(41,156,219,0.08))', border: '1px solid var(--vz-info-border-subtle, rgba(41,156,219,0.25))' }}
-            >
-              <i className="ri-information-line fs-16 flex-shrink-0" style={{ color: 'var(--vz-info, #299cdb)' }} />
-              <div className="fs-12" style={{ color: 'var(--vz-body-color)' }}>
+            <div className="d-flex align-items-start gap-2 rounded-3 mb-4 p-3 pmt-hint-banner">
+              <i className="ri-information-line fs-16 flex-shrink-0" />
+              <div className="fs-12 pmt-hint-banner-text">
                 If status is <strong>"Success"</strong>, an invoice PDF is generated and emailed to the client automatically.
               </div>
             </div>
@@ -982,27 +855,10 @@ function PlainDetail({
 }) {
   return (
     <Col md={col}>
-      <div
-        className="h-100 rounded-3"
-        style={{
-          background: 'var(--vz-secondary-bg)',
-          border: '1px solid var(--vz-border-color)',
-          padding: '10px 12px',
-        }}
-      >
+      <div className="h-100 rounded-3 pmt-detail">
+        <div className="text-uppercase fw-bold pmt-detail-label">{label}</div>
         <div
-          className="text-uppercase fw-bold"
-          style={{ color: 'var(--vz-secondary-color)', fontSize: 10, letterSpacing: '0.05em' }}
-        >
-          {label}
-        </div>
-        <div
-          className={`fw-semibold text-truncate ${mono ? 'font-monospace' : ''}`}
-          style={{
-            color: 'var(--vz-heading-color, var(--vz-body-color))',
-            fontSize: emphasize ? 16 : 14,
-            marginTop: 2,
-          }}
+          className={`fw-semibold text-truncate pmt-detail-value ${emphasize ? 'pmt-detail-emphasize' : ''} ${mono ? 'font-monospace' : ''}`}
           title={typeof value === 'string' ? value : undefined}
         >
           {value}
@@ -1029,40 +885,17 @@ function DetailCard({
 }) {
   return (
     <Col md={col}>
-      <div
-        className="h-100 rounded-3 position-relative overflow-hidden"
-        style={{
-          background: 'var(--vz-card-bg)',
-          border: '1px solid var(--vz-border-color)',
-          padding: '10px 12px 10px 16px',
-          boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
-        }}
-      >
-        <div
-          className="position-absolute top-0 bottom-0 start-0"
-          style={{ width: 3, background: `var(--vz-${color})` }}
-        />
+      <div className="h-100 rounded-3 position-relative overflow-hidden pmt-detail-card">
+        <div className="pmt-detail-accent" style={{ background: `var(--vz-${color})` }} />
         <div className="d-flex align-items-start gap-2">
-          <span
-            className={`d-inline-flex align-items-center justify-content-center rounded-2 bg-${color}-subtle text-${color} flex-shrink-0`}
-            style={{ width: 28, height: 28, fontSize: 14 }}
-          >
+          <span className={`d-inline-flex align-items-center justify-content-center rounded-2 bg-${color}-subtle text-${color} flex-shrink-0 pmt-detail-card-icon`}>
             <i className={icon} />
           </span>
           <div className="flex-grow-1 min-w-0">
+            <div className="text-uppercase fw-bold pmt-detail-label">{label}</div>
             <div
-              className="text-uppercase fw-bold"
-              style={{ color: 'var(--vz-secondary-color)', fontSize: 10, letterSpacing: '0.05em' }}
-            >
-              {label}
-            </div>
-            <div
-              className={`fw-bold text-truncate ${mono ? 'font-monospace' : ''}`}
-              style={{
-                color: emphasize ? `var(--vz-${color})` : 'var(--vz-heading-color, var(--vz-body-color))',
-                fontSize: emphasize ? 17 : 14,
-                marginTop: 2,
-              }}
+              className={`fw-bold text-truncate pmt-detail-card-value ${emphasize ? 'pmt-detail-emphasize' : ''} ${mono ? 'font-monospace' : ''}`}
+              style={emphasize ? { color: `var(--vz-${color})` } : undefined}
               title={typeof value === 'string' ? value : undefined}
             >
               {value}
@@ -1077,20 +910,13 @@ function DetailCard({
 /** Small labelled section header used inside the Record Payment modal. */
 function SectionHeader({ icon, title, hint }: { icon: string; title: string; hint?: string }) {
   return (
-    <div className="d-flex align-items-center gap-2 mb-2 pb-2" style={{ borderBottom: '1px dashed var(--vz-border-color)' }}>
-      <span
-        className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0 bg-primary-subtle text-primary"
-        style={{ width: 26, height: 26, fontSize: 13 }}
-      >
+    <div className="d-flex align-items-center gap-2 mb-2 pb-2 pmt-section-head">
+      <span className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0 bg-primary-subtle text-primary pmt-section-chip">
         <i className={icon} />
       </span>
       <div className="flex-grow-1 min-w-0">
-        <div className="fw-bold text-uppercase" style={{ letterSpacing: '0.04em', fontSize: 11, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-          {title}
-        </div>
-        {hint && (
-          <div className="text-muted fs-11" style={{ lineHeight: 1.2 }}>{hint}</div>
-        )}
+        <div className="fw-bold text-uppercase pmt-section-title">{title}</div>
+        {hint && <div className="text-muted fs-11 pmt-section-hint">{hint}</div>}
       </div>
     </div>
   );
