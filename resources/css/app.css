@@ -924,6 +924,309 @@ tbody tr:nth-child(10) {
 /* Status badge dot inside the table column */
 .pmt-status-dot { width: 6px; height: 6px; }
 
+/* ═══════════════════════════════════════════════════════════════
+   Record Payment form — "Registration-form" style
+   (section banners + stacked label-over-input)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Top header — compact hero strip with icon chip and "New Payment" pill */
+.pmt-reg-hero {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(124, 92, 252, 0.08) 0%, rgba(236, 72, 153, 0.04) 100%), #ffffff;
+  border-bottom: 1px solid rgba(124, 92, 252, 0.15);
+  border-top: 2px solid #7c5cfc;
+}
+[data-bs-theme="dark"] .pmt-reg-hero,
+[data-layout-mode="dark"] .pmt-reg-hero {
+  background: linear-gradient(135deg, rgba(124, 92, 252, 0.14) 0%, rgba(236, 72, 153, 0.05) 100%), #1c2531;
+  border-bottom-color: rgba(124, 92, 252, 0.22);
+}
+.pmt-reg-hero-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #7c5cfc 0%, #a78bfa 100%);
+  box-shadow: 0 4px 10px rgba(124, 92, 252, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+}
+.pmt-reg-hero-icon i { color: #fff; font-size: 16px; }
+.pmt-reg-hero-title { font-size: 13.5px; font-weight: 600; margin: 0; color: var(--vz-heading-color, #0f172a); line-height: 1.2; letter-spacing: -0.01em; }
+.pmt-reg-hero-sub { font-size: 10.5px; color: var(--vz-secondary-color); margin: 1px 0 0; font-weight: 400; line-height: 1.25; }
+.pmt-reg-hero-sub .req-star { color: #ec4899; font-weight: 700; }
+.pmt-reg-hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7c5cfc 0%, #a78bfa 100%);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 0 2px 6px rgba(124, 92, 252, 0.26);
+  flex-shrink: 0;
+}
+.pmt-reg-hero-pill i { font-size: 7px; }
+
+/* Close (×) button at the top-right of the hero */
+.pmt-reg-hero-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: transparent;
+  color: var(--vz-secondary-color);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+  flex-shrink: 0;
+  padding: 0;
+  margin-left: 2px;
+}
+.pmt-reg-hero-close i { font-size: 14px; }
+.pmt-reg-hero-close:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.28);
+  color: #ef4444;
+  transform: rotate(90deg);
+}
+[data-bs-theme="dark"] .pmt-reg-hero-close,
+[data-layout-mode="dark"] .pmt-reg-hero-close {
+  border-color: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.65);
+}
+[data-bs-theme="dark"] .pmt-reg-hero-close:hover,
+[data-layout-mode="dark"] .pmt-reg-hero-close:hover {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.38);
+  color: #fca5a5;
+}
+
+/* Close button anchored to absolute top-right corner of the View Payment modal header */
+.pmt-view-header { position: relative; padding-right: 48px !important; }
+.pmt-close-corner {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  margin: 0 !important;
+}
+
+/* Section label — minimal inline header (no banner / no box) */
+.pmt-reg-banner {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 14px 0 8px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+.pmt-reg-banner:first-child { margin-top: 0; }
+.pmt-reg-banner-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--reg-banner-grad, linear-gradient(135deg, #7c5cfc, #a78bfa));
+  flex-shrink: 0;
+}
+.pmt-reg-banner-icon i { color: #fff; font-size: 9px; }
+.pmt-reg-banner-title {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+}
+
+/* Color variants */
+.pmt-reg-banner.is-violet {
+  --reg-banner-tint: rgba(124, 92, 252, 0.12);
+  --reg-banner-border: rgba(124, 92, 252, 0.22);
+  --reg-banner-grad: linear-gradient(135deg, #7c5cfc, #a78bfa);
+  --reg-banner-shadow: rgba(124, 92, 252, 0.35);
+}
+.pmt-reg-banner.is-green {
+  --reg-banner-tint: rgba(10, 179, 156, 0.12);
+  --reg-banner-border: rgba(10, 179, 156, 0.22);
+  --reg-banner-grad: linear-gradient(135deg, #0ab39c, #14c9b1);
+  --reg-banner-shadow: rgba(10, 179, 156, 0.35);
+}
+.pmt-reg-banner.is-blue {
+  --reg-banner-tint: rgba(14, 165, 233, 0.12);
+  --reg-banner-border: rgba(14, 165, 233, 0.22);
+  --reg-banner-grad: linear-gradient(135deg, #0ea5e9, #38bdf8);
+  --reg-banner-shadow: rgba(14, 165, 233, 0.35);
+}
+.pmt-reg-banner.is-sky {
+  --reg-banner-tint: rgba(56, 189, 248, 0.15);
+  --reg-banner-border: rgba(56, 189, 248, 0.25);
+  --reg-banner-grad: linear-gradient(135deg, #0284c7, #38bdf8);
+  --reg-banner-shadow: rgba(2, 132, 199, 0.35);
+}
+.pmt-reg-banner.is-amber {
+  --reg-banner-tint: rgba(245, 158, 11, 0.12);
+  --reg-banner-border: rgba(245, 158, 11, 0.25);
+  --reg-banner-grad: linear-gradient(135deg, #f59e0b, #fbbf24);
+  --reg-banner-shadow: rgba(245, 158, 11, 0.35);
+}
+
+/* Registration-style fields — label above input, clean white input (compact) */
+.pmt-reg-form .form-label,
+.pmt-reg-form label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--vz-body-color);
+  margin: 0 0 3px 0 !important;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  line-height: 1.25;
+}
+.pmt-reg-form label .text-danger { color: #ec4899 !important; margin-left: 2px; font-weight: 500; }
+.pmt-reg-form .form-control,
+.pmt-reg-form .form-select {
+  font-size: 11.5px;
+  font-weight: 400;
+  padding: 2px 9px;
+  height: 26px;
+  min-height: 26px;
+  background: #fff;
+  border: 1px solid var(--vz-border-color);
+  border-radius: 4px;
+  color: var(--vz-body-color);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.pmt-reg-form .form-control::placeholder,
+.pmt-reg-form .form-select option[value=""] {
+  color: rgba(15, 23, 42, 0.40);
+  font-weight: 300;
+  font-size: 10px;
+  font-style: normal;
+}
+[data-bs-theme="dark"] .pmt-reg-form .form-control::placeholder,
+[data-bs-theme="dark"] .pmt-reg-form .form-select option[value=""] {
+  color: rgba(255, 255, 255, 0.32);
+  font-weight: 300;
+}
+
+/* Inline info-icon next to labels — native browser tooltip (title attr) shows on hover */
+.pmt-hint-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  color: rgba(124, 92, 252, 0.55);
+  cursor: help;
+  font-size: 11px;
+  vertical-align: middle;
+  transition: color .15s ease;
+}
+.pmt-hint-icon:hover { color: #7c5cfc; }
+[data-bs-theme="dark"] .pmt-hint-icon,
+[data-layout-mode="dark"] .pmt-hint-icon { color: rgba(167, 139, 250, 0.65); }
+[data-bs-theme="dark"] .pmt-hint-icon:hover,
+[data-layout-mode="dark"] .pmt-hint-icon:hover { color: #c4b5fd; }
+
+/* Icon-inside-input wrapper — prefix icon on the left of the field */
+.pmt-reg-field { position: relative; }
+.pmt-reg-field-icon {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(124, 92, 252, 0.60);
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 2;
+}
+.pmt-reg-form .pmt-reg-field .form-control,
+.pmt-reg-form .pmt-reg-field .form-select {
+  padding-left: 25px;
+}
+[data-bs-theme="dark"] .pmt-reg-field-icon,
+[data-layout-mode="dark"] .pmt-reg-field-icon {
+  color: rgba(167, 139, 250, 0.70);
+}
+.pmt-reg-form .form-control:focus,
+.pmt-reg-form .form-select:focus {
+  border-color: #7c5cfc;
+  box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.14);
+  background: #fff;
+}
+.pmt-reg-form textarea.form-control {
+  height: auto;
+  min-height: 38px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+/* Tighter row gutters inside the form */
+.pmt-reg-form .row.g-3 { --bs-gutter-y: 0.35rem; --bs-gutter-x: 0.6rem; }
+.pmt-reg-form .row.g-2 { --bs-gutter-y: 0.3rem; --bs-gutter-x: 0.5rem; }
+.pmt-reg-form .mb-3 { margin-bottom: 0.35rem !important; }
+.pmt-reg-form .mb-4 { margin-bottom: 0.5rem !important; }
+
+/* Help text — tighter */
+.pmt-reg-form .form-text { font-size: 10px; color: var(--vz-secondary-color); margin-top: 2px; line-height: 1.3; }
+
+/* AUTO / FROM PLAN chips inside labels */
+.pmt-chip {
+  font-size: 9px !important;
+  padding: 1px 6px !important;
+  letter-spacing: 0.04em;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  border-radius: 999px;
+}
+[data-bs-theme="dark"] .badge.pmt-chip.bg-success-subtle,
+[data-layout-mode="dark"] .badge.pmt-chip.bg-success-subtle {
+  background-color: rgba(10, 179, 156, 0.18) !important;
+  color: #2dd4bf !important;
+}
+[data-bs-theme="dark"] .badge.pmt-chip.bg-info-subtle,
+[data-layout-mode="dark"] .badge.pmt-chip.bg-info-subtle {
+  background-color: rgba(41, 156, 219, 0.18) !important;
+  color: #7dd3fc !important;
+}
+
+/* Inline reset link next to auto-filled labels */
+.pmt-reset-link {
+  font-size: 10px !important;
+  color: #94a3b8 !important;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  transition: color .15s ease;
+  background: transparent !important;
+  padding: 0 !important;
+}
+.pmt-reset-link:hover { color: #7c5cfc !important; }
+.pmt-reset-link i { font-size: 11px; margin-right: 2px; }
+[data-bs-theme="dark"] .pmt-reset-link,
+[data-layout-mode="dark"] .pmt-reset-link { color: rgba(255, 255, 255, 0.55) !important; }
+[data-bs-theme="dark"] .pmt-reset-link:hover,
+[data-layout-mode="dark"] .pmt-reset-link:hover { color: #c4b5fd !important; }
+[data-bs-theme="dark"] .pmt-reg-form .form-control,
+[data-bs-theme="dark"] .pmt-reg-form .form-select {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+[data-bs-theme="dark"] .pmt-reg-form .form-control::placeholder { color: rgba(255, 255, 255, 0.28); }
+
 /* Ghost Close button used in View Payment modal footer */
 .btn.pmt-btn-ghost {
   background-color: transparent !important;
@@ -1118,6 +1421,93 @@ tbody tr:nth-child(10) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+/* Wider than default .modal-lg (800px) — near-full-width so 4-column rows really breathe
+   We override Bootstrap's `--bs-modal-width` variable AND `max-width` with !important
+   because Reactstrap's size="lg" pins .modal-lg { --bs-modal-width: 800px } */
+.cbc-payment-modal .modal-dialog,
+.cbc-payment-modal.modal .modal-dialog,
+.modal.cbc-payment-modal .modal-dialog {
+  --bs-modal-width: 100%;
+}
+@media (min-width: 768px) {
+  .cbc-payment-modal .modal-dialog,
+  .cbc-payment-modal.modal .modal-dialog {
+    --bs-modal-width: 92vw;
+    max-width: 92vw !important;
+  }
+}
+@media (min-width: 992px) {
+  .cbc-payment-modal .modal-dialog,
+  .cbc-payment-modal.modal .modal-dialog {
+    --bs-modal-width: min(88vw, 1300px);
+    max-width: min(88vw, 1300px) !important;
+  }
+}
+@media (min-width: 1400px) {
+  .cbc-payment-modal .modal-dialog,
+  .cbc-payment-modal.modal .modal-dialog {
+    --bs-modal-width: min(85vw, 1500px);
+    max-width: min(85vw, 1500px) !important;
+  }
+}
+@media (min-width: 1800px) {
+  .cbc-payment-modal .modal-dialog,
+  .cbc-payment-modal.modal .modal-dialog {
+    --bs-modal-width: 1700px;
+    max-width: 1700px !important;
+  }
+}
+
+/* Compact footer — reduce vertical padding + shrink footer buttons */
+.cbc-payment-modal .modal-footer {
+  padding: 10px 18px !important;
+  gap: 10px;
+  background: linear-gradient(180deg, transparent, rgba(124, 92, 252, 0.02));
+}
+.cbc-payment-modal .modal-footer .btn {
+  padding: 6px 18px !important;
+  font-size: 12.5px !important;
+  line-height: 1.3;
+  border-radius: 999px !important;
+}
+.cbc-payment-modal .modal-footer .btn i { font-size: 13px !important; }
+
+/* Premium "Record Payment" submit button */
+.cbc-payment-modal .modal-footer .btn.btn-primary {
+  background: linear-gradient(135deg, #7c5cfc 0%, #6366f1 50%, #4f46e5 100%) !important;
+  border: none !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+  padding: 7px 20px !important;
+  box-shadow: 0 4px 12px rgba(124, 92, 252, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease !important;
+}
+.cbc-payment-modal .modal-footer .btn.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(124, 92, 252, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.30) !important;
+  filter: brightness(1.05);
+}
+.cbc-payment-modal .modal-footer .btn.btn-primary:active {
+  transform: translateY(0);
+}
+
+/* Cancel / secondary in the footer — clean ghost look */
+.cbc-payment-modal .modal-footer .btn.btn-light {
+  background: transparent !important;
+  border: 1px solid var(--vz-border-color) !important;
+  color: var(--vz-body-color) !important;
+  font-weight: 500 !important;
+}
+.cbc-payment-modal .modal-footer .btn.btn-light:hover {
+  background: rgba(15, 23, 42, 0.04) !important;
+  border-color: rgba(15, 23, 42, 0.18) !important;
+}
+[data-bs-theme="dark"] .cbc-payment-modal .modal-footer .btn.btn-light,
+[data-layout-mode="dark"] .cbc-payment-modal .modal-footer .btn.btn-light {
+  color: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
 }
 .pmt-modal-icon-success {
   width: 36px;

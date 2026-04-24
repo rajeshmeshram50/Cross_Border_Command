@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Spinner,
   Modal, ModalHeader, ModalBody, ModalFooter, Form, Label,
-  InputGroup, InputGroupText, FormText,
+  FormText,
 } from 'reactstrap';
 import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
@@ -280,13 +280,24 @@ export default function Payments() {
       },
     },
     {
-      header: 'Date',
-      accessorKey: 'created_at',
-      cell: (info: any) => (
-        <span className="text-muted fs-13">
-          {new Date(info.row.original.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-        </span>
-      ),
+      header: 'Valid From',
+      accessorKey: 'valid_from',
+      cell: (info: any) => {
+        const d = info.row.original.valid_from;
+        return d
+          ? <span className="text-muted fs-13">{new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          : <span className="text-muted">—</span>;
+      },
+    },
+    {
+      header: 'Valid Until',
+      accessorKey: 'valid_until',
+      cell: (info: any) => {
+        const d = info.row.original.valid_until;
+        return d
+          ? <span className="text-muted fs-13">{new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          : <span className="text-muted">—</span>;
+      },
     },
     {
       header: () => <div className="text-center">Actions</div>,
@@ -490,8 +501,8 @@ export default function Payments() {
 
           return (
             <>
-              {/* ── Header — title on left, invoice number pill on right (no X; Close button in footer) ── */}
-              <ModalHeader tag="div" className="border-bottom px-4 pmt-modal-header">
+              {/* ── Header — title on left, invoice pill on right; close × anchored to top-right corner ── */}
+              <ModalHeader tag="div" className="border-bottom px-4 pmt-modal-header pmt-view-header">
                 <div className="d-flex align-items-center w-100 gap-2">
                   <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0 pmt-modal-icon">
                     <i className="ri-file-list-3-line" />
@@ -505,6 +516,14 @@ export default function Payments() {
                     {viewPayment.invoice_number || `#${viewPayment.id}`}
                   </span>
                 </div>
+                <button
+                  type="button"
+                  className="pmt-reg-hero-close pmt-close-corner"
+                  onClick={() => setViewPayment(null)}
+                  aria-label="Close"
+                >
+                  <i className="ri-close-line" />
+                </button>
               </ModalHeader>
 
               <ModalBody className="px-4 py-3 pmt-modal-body-scroll">
@@ -687,136 +706,146 @@ export default function Payments() {
         className="cbc-payment-modal"
         contentClassName="border-0 shadow-lg"
       >
-        <ModalHeader
-          toggle={() => { setAddModal(false); resetPaymentForm(); }}
-          className="border-bottom px-4 pmt-modal-header"
-        >
-          <div className="d-flex align-items-center gap-2">
-            <span className="d-inline-flex align-items-center justify-content-center rounded-3 text-white flex-shrink-0 pmt-modal-icon pmt-modal-icon-success">
-              <i className="ri-money-rupee-circle-line fs-18" />
-            </span>
-            <div>
-              <h5 className="mb-0 fs-16 fw-bold">Record New Payment</h5>
-              <p className="mb-0 fs-11 text-muted">Capture a transaction against a client and plan</p>
-            </div>
+        {/* ── Hero header — icon chip + title + "New Payment" pill + close X ── */}
+        <div className="pmt-reg-hero">
+          <span className="pmt-reg-hero-icon"><i className="ri-money-rupee-circle-line" /></span>
+          <div className="flex-grow-1 min-w-0">
+            <h5 className="pmt-reg-hero-title">Record New Payment</h5>
+          
           </div>
-        </ModalHeader>
+          <span className="pmt-reg-hero-pill">
+            <i className="ri-circle-fill" />New Payment
+          </span>
+          <button
+            type="button"
+            className="pmt-reg-hero-close"
+            onClick={() => { setAddModal(false); resetPaymentForm(); }}
+            aria-label="Close"
+          >
+            <i className="ri-close-line" />
+          </button>
+        </div>
 
-        <Form onSubmit={handleAdd} className="d-flex flex-column flex-grow-1 overflow-hidden">
+        <Form onSubmit={handleAdd} className="d-flex flex-column flex-grow-1 overflow-hidden pmt-reg-form">
           <ModalBody className="px-4 py-3 pmt-modal-body-scroll">
-            {/* Hint banner */}
-            <div className="d-flex align-items-start gap-2 rounded-3 mb-4 p-3 pmt-hint-banner">
-              <i className="ri-information-line fs-16 flex-shrink-0" />
-              <div className="fs-12 pmt-hint-banner-text">
-                If status is <strong>"Success"</strong>, an invoice PDF is generated and emailed to the client automatically.
-              </div>
-            </div>
-
             {/* ── Section: Customer & Plan ── */}
-            <SectionHeader icon="ri-user-3-line" title="Customer & Plan" />
-            <Row className="g-3 mb-4">
+            <div className="pmt-reg-banner is-violet">
+              <span className="pmt-reg-banner-icon"><i className="ri-user-3-line" /></span>
+              <span className="pmt-reg-banner-title">Customer &amp; Plan</span>
+            </div>
+            <Row className="g-3 mb-3">
               <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Client <span className="text-danger">*</span></Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-building-line" /></InputGroupText>
+                <Label>Client <span className="text-danger">*</span></Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-building-line pmt-reg-field-icon" />
                   <Input type="select" name="client_id" required>
                     <option value="">— Select client —</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.org_name}</option>)}
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
               <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Plan</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-vip-crown-line" /></InputGroupText>
+                <Label>Plan</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-vip-crown-line pmt-reg-field-icon" />
                   <Input type="select" name="plan_id">
                     <option value="">— Select plan —</option>
                     {plans.map(p => <option key={p.id} value={p.id}>{p.name} — ₹{p.price}</option>)}
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
             </Row>
 
-            {/* ── Section: Amount ── */}
-            <SectionHeader icon="ri-money-rupee-circle-line" title="Amount Breakdown" hint="Total is auto-calculated (Amount + GST − Discount). Override if needed." />
-            <Row className="g-3 mb-4">
-              <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Amount <span className="text-danger">*</span></Label>
-                <InputGroup>
-                  <InputGroupText>₹</InputGroupText>
+            {/* ── Section: Amount Breakdown ── */}
+            <div className="pmt-reg-banner is-green">
+              <span className="pmt-reg-banner-icon"><i className="ri-money-rupee-circle-line" /></span>
+              <span className="pmt-reg-banner-title">Amount Breakdown</span>
+            </div>
+            <Row className="g-3 mb-3">
+              <Col md={3}>
+                <Label>Amount <span className="text-danger">*</span></Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-money-rupee-circle-line pmt-reg-field-icon" />
                   <Input
                     type="number" name="amount" step="0.01" min="0" required placeholder="0.00"
                     value={formAmount}
                     onChange={e => setFormAmount(e.target.value)}
                   />
-                </InputGroup>
+                </div>
               </Col>
-              <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">GST</Label>
-                <InputGroup>
-                  <InputGroupText>₹</InputGroupText>
+              <Col md={3}>
+                <Label>GST</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-percent-line pmt-reg-field-icon" />
                   <Input
                     type="number" name="gst" step="0.01" min="0" placeholder="0.00"
                     value={formGst}
                     onChange={e => setFormGst(e.target.value)}
                   />
-                </InputGroup>
+                </div>
               </Col>
-              <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Discount</Label>
-                <InputGroup>
-                  <InputGroupText>₹</InputGroupText>
+              <Col md={3}>
+                <Label>Discount</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-price-tag-3-line pmt-reg-field-icon" />
                   <Input
                     type="number" name="discount" step="0.01" min="0" placeholder="0.00"
                     value={formDiscount}
                     onChange={e => setFormDiscount(e.target.value)}
                   />
-                </InputGroup>
+                </div>
               </Col>
-              <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1 d-flex align-items-center gap-2">
+              <Col md={3}>
+                <Label className="d-flex align-items-center gap-2">
                   Total <span className="text-danger">*</span>
-                  {!totalEdited && <span className="badge bg-success-subtle text-success fs-10 fw-semibold">AUTO</span>}
+                  <i
+                    className="ri-information-line pmt-hint-icon"
+                    title="Auto-calculated: Amount + GST − Discount. Edit to override."
+                  />
+                  {!totalEdited && <span className="badge bg-success-subtle text-success pmt-chip">AUTO</span>}
+                  {totalEdited && (
+                    <button
+                      type="button"
+                      className="btn btn-sm border-0 p-0 ms-auto pmt-reset-link"
+                      onClick={() => setTotalEdited(false)}
+                      title="Reset to auto-calculated"
+                    >
+                      <i className="ri-refresh-line" /> reset
+                    </button>
+                  )}
                 </Label>
-                <InputGroup>
-                  <InputGroupText>₹</InputGroupText>
+                <div className="pmt-reg-field">
+                  <i className="ri-equal-line pmt-reg-field-icon" />
                   <Input
                     type="number" name="total" step="0.01" min="0" required placeholder="0.00"
                     value={formTotal}
                     onChange={e => { setFormTotal(e.target.value); setTotalEdited(true); }}
+                    title="Auto-calculated: Amount + GST − Discount. Edit to override."
                   />
-                  {totalEdited && (
-                    <Button
-                      type="button"
-                      color="light"
-                      className="border"
-                      onClick={() => setTotalEdited(false)}
-                      title="Reset to auto-calculated"
-                    >
-                      <i className="ri-refresh-line" />
-                    </Button>
-                  )}
-                </InputGroup>
+                </div>
               </Col>
             </Row>
 
             {/* ── Section: Payment Method ── */}
-            <SectionHeader icon="ri-bank-card-line" title="Payment Method" />
-            <Row className="g-3 mb-4">
+            <div className="pmt-reg-banner is-blue">
+              <span className="pmt-reg-banner-icon"><i className="ri-bank-card-line" /></span>
+              <span className="pmt-reg-banner-title">Payment Method</span>
+            </div>
+            <Row className="g-3 mb-3">
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Method <span className="text-danger">*</span></Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-wallet-3-line" /></InputGroupText>
+                <Label>Method <span className="text-danger">*</span></Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-wallet-3-line pmt-reg-field-icon" />
                   <Input type="select" name="method" required>
                     <option value="">— Select method —</option>
                     {Object.entries(methodLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Gateway</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-global-line" /></InputGroupText>
+                <Label>Gateway</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-global-line pmt-reg-field-icon" />
                   <Input type="select" name="gateway">
                     <option value="">— Select gateway —</option>
                     <option value="razorpay">Razorpay</option>
@@ -824,73 +853,97 @@ export default function Payments() {
                     <option value="paytm">Paytm</option>
                     <option value="manual">Manual</option>
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Status <span className="text-danger">*</span></Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-checkbox-circle-line" /></InputGroupText>
-                  <Input type="select" name="status" required defaultValue="success">
+                <Label>
+                  Status <span className="text-danger">*</span>
+                  <i
+                    className="ri-information-line pmt-hint-icon"
+                    title="If Success is selected, an invoice PDF is auto-generated and emailed to the client."
+                  />
+                </Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-checkbox-circle-line pmt-reg-field-icon" />
+                  <Input
+                    type="select" name="status" required defaultValue="success"
+                    title="If Success is selected, an invoice PDF is auto-generated and emailed to the client."
+                  >
                     <option value="success">Success</option>
                     <option value="pending">Pending</option>
                     <option value="failed">Failed</option>
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
             </Row>
 
-            {/* ── Section: Validity Window ── */}
-            <SectionHeader icon="ri-calendar-2-line" title="Billing Period" />
-            <Row className="g-3 mb-4">
+            {/* ── Section: Billing Period ── */}
+            <div className="pmt-reg-banner is-sky">
+              <span className="pmt-reg-banner-icon"><i className="ri-calendar-2-line" /></span>
+              <span className="pmt-reg-banner-title">Billing Period</span>
+            </div>
+            <Row className="g-3 mb-3">
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Billing Cycle</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-refresh-line" /></InputGroupText>
+                <Label>Billing Cycle</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-refresh-line pmt-reg-field-icon" />
                   <Input type="select" name="billing_cycle">
                     <option value="">—</option>
                     <option value="monthly">Monthly</option>
                     <option value="quarterly">Quarterly</option>
                     <option value="yearly">Yearly</option>
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Valid From</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-calendar-check-line" /></InputGroupText>
+                <Label>Valid From</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-calendar-check-line pmt-reg-field-icon" />
                   <Input type="date" name="valid_from" />
-                </InputGroup>
+                </div>
               </Col>
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Valid Until</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-calendar-event-line" /></InputGroupText>
-                  <Input type="date" name="valid_until" />
-                </InputGroup>
+                <Label>
+                  Valid Until
+                  <i
+                    className="ri-information-line pmt-hint-icon"
+                    title="Subscription active window. Leave blank for one-time payments."
+                  />
+                </Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-calendar-event-line pmt-reg-field-icon" />
+                  <Input
+                    type="date" name="valid_until"
+                    title="Subscription active window. Leave blank for one-time payments."
+                  />
+                </div>
               </Col>
             </Row>
 
             {/* ── Section: Reference & Notes ── */}
-            <SectionHeader icon="ri-hashtag" title="Reference & Notes" />
+            <div className="pmt-reg-banner is-amber">
+              <span className="pmt-reg-banner-icon"><i className="ri-hashtag" /></span>
+              <span className="pmt-reg-banner-title">Reference &amp; Notes</span>
+            </div>
             <Row className="g-3">
               <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Transaction ID</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-hashtag" /></InputGroupText>
+                <Label>Transaction ID</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-hashtag pmt-reg-field-icon" />
                   <Input type="text" name="txn_id" placeholder="e.g. TXN202604221234" />
-                </InputGroup>
-                <FormText className="text-muted fs-11">The gateway's reference for this payment (optional)</FormText>
+                </div>
+                <FormText>The gateway's reference for this payment (optional)</FormText>
               </Col>
               <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Order ID</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-shopping-bag-3-line" /></InputGroupText>
+                <Label>Order ID</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-shopping-bag-3-line pmt-reg-field-icon" />
                   <Input type="text" name="order_id" placeholder="e.g. ORD-A1B2C3" />
-                </InputGroup>
-                <FormText className="text-muted fs-11">Internal / gateway order identifier (optional)</FormText>
+                </div>
+                <FormText>Internal / gateway order identifier (optional)</FormText>
               </Col>
               <Col xs={12}>
-                <Label className="fw-semibold fs-12 mb-1">Notes</Label>
+                <Label>Notes</Label>
                 <Input
                   type="textarea" name="notes" rows={3}
                   placeholder="Any additional details about this payment…"
@@ -901,27 +954,27 @@ export default function Payments() {
 
           <ModalFooter className="border-top">
             <Button
-              color="light"
               type="button"
               onClick={() => { setAddModal(false); resetPaymentForm(); }}
+              className="rounded-pill fw-semibold px-4 pmt-btn-ghost"
             >
-              <i className="ri-close-line me-1" />Cancel
+              Cancel
             </Button>
             <Button
               color="primary"
               type="submit"
               disabled={saving}
-              className="btn-label waves-effect waves-light rounded-pill"
+              className="rounded-pill fw-semibold d-inline-flex align-items-center gap-2"
             >
               {saving ? (
                 <>
-                  <Spinner size="sm" className="label-icon align-middle rounded-pill me-2" />
-                  Saving…
+                  <Spinner size="sm" />
+                  <span>Saving…</span>
                 </>
               ) : (
                 <>
-                  <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2" />
-                  Record Payment
+                  <i className="ri-save-line" />
+                  <span>Record Payment</span>
                 </>
               )}
             </Button>
@@ -942,17 +995,3 @@ export default function Payments() {
   );
 }
 
-/** Small labelled section header used inside the Record Payment modal. */
-function SectionHeader({ icon, title, hint }: { icon: string; title: string; hint?: string }) {
-  return (
-    <div className="d-flex align-items-center gap-2 mb-2 pb-2 pmt-section-head">
-      <span className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0 bg-primary-subtle text-primary pmt-section-chip">
-        <i className={icon} />
-      </span>
-      <div className="flex-grow-1 min-w-0">
-        <div className="fw-bold text-uppercase pmt-section-title">{title}</div>
-        {hint && <div className="text-muted fs-11 pmt-section-hint">{hint}</div>}
-      </div>
-    </div>
-  );
-}
