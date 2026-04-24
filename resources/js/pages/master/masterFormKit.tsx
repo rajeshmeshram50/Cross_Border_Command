@@ -35,7 +35,14 @@ export function MasterSelect({
   }, [defaultValue, value]);
   const currentValue = value !== undefined ? value : internal;
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  // Reset the search filter each time the menu closes so the next open is fresh.
+  useEffect(() => { if (!open) setSearch(''); }, [open]);
   const selected = options.find(o => o.value === currentValue);
+  const showSearch = options.length > 4;
+  const filtered = search.trim()
+    ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
+    : options;
   const handlePick = (val: string) => {
     if (value === undefined) setInternal(val);
     onChange?.(val);
@@ -59,18 +66,40 @@ export function MasterSelect({
           <i className="ri-arrow-down-s-line master-select-chev" />
         </DropdownToggle>
         <DropdownMenu className="master-select-menu">
-          {options.length === 0 ? (
-            <div className="master-select-empty">No options</div>
-          ) : options.map(opt => (
-            <DropdownItem
-              key={opt.value}
-              active={opt.value === currentValue}
-              onClick={() => handlePick(opt.value)}
-              className="master-select-item"
+          {showSearch && (
+            <div
+              className="master-select-search"
+              onClick={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
             >
-              {opt.label}
-            </DropdownItem>
-          ))}
+              <i className="ri-search-line master-select-search-icon" />
+              <input
+                type="text"
+                className="master-select-search-input"
+                placeholder="Search…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => e.stopPropagation()}
+                autoFocus
+              />
+            </div>
+          )}
+          <div className="master-select-list">
+            {filtered.length === 0 ? (
+              <div className="master-select-empty">
+                {options.length === 0 ? 'No options' : 'No results'}
+              </div>
+            ) : filtered.map(opt => (
+              <DropdownItem
+                key={opt.value}
+                active={opt.value === currentValue}
+                onClick={() => handlePick(opt.value)}
+                className="master-select-item"
+              >
+                {opt.label}
+              </DropdownItem>
+            ))}
+          </div>
         </DropdownMenu>
       </Dropdown>
       {name !== undefined && <input type="hidden" name={name} value={currentValue} />}
@@ -217,8 +246,6 @@ export const MASTER_MODAL_CSS = `
     box-shadow: 0 14px 30px rgba(18,38,63,0.14), 0 2px 8px rgba(18,38,63,0.06) !important;
     border: 1px solid var(--vz-border-color) !important;
     margin-top: 6px !important;
-    max-height: 280px;
-    overflow-y: auto;
     background-color: #ffffff !important;
     background-image: none !important;
     backdrop-filter: none !important;
@@ -226,6 +253,57 @@ export const MASTER_MODAL_CSS = `
     opacity: 1 !important;
     filter: none !important;
     z-index: 2000 !important;
+  }
+  /* Search row at the top of the menu (sticks — not part of scroll area) */
+  .master-select-search {
+    position: relative;
+    padding: 2px 2px 6px 2px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--vz-border-color);
+  }
+  .master-select-search-icon {
+    position: absolute;
+    left: 11px;
+    top: calc(50% - 3px);
+    transform: translateY(-50%);
+    font-size: 14px;
+    color: var(--vz-secondary-color);
+    pointer-events: none;
+  }
+  .master-select-search-input {
+    width: 100%;
+    height: 34px;
+    padding: 6px 10px 6px 34px;
+    border: 1px solid var(--vz-border-color);
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: var(--vz-body-color);
+    background: var(--vz-secondary-bg);
+    outline: none;
+    transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+  }
+  .master-select-search-input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99,102,241,0.15);
+    background: var(--vz-card-bg);
+  }
+  .master-select-search-input::placeholder {
+    color: var(--vz-secondary-color);
+    opacity: 0.65;
+  }
+  /* Scroll area — caps to ~4 items, rest scrolls */
+  .master-select-list {
+    max-height: 152px;
+    overflow-y: auto;
+  }
+  .master-select-list::-webkit-scrollbar { width: 6px; }
+  .master-select-list::-webkit-scrollbar-track { background: transparent; }
+  .master-select-list::-webkit-scrollbar-thumb {
+    background: var(--vz-border-color);
+    border-radius: 6px;
+  }
+  .master-select-list::-webkit-scrollbar-thumb:hover {
+    background: var(--vz-secondary-color);
   }
   html[data-bs-theme="dark"] .master-modal .master-select-menu.dropdown-menu,
   html[data-layout-mode="dark"] .master-modal .master-select-menu.dropdown-menu,
