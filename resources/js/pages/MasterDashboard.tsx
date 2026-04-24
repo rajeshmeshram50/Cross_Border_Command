@@ -111,8 +111,7 @@ export default function MasterDashboard() {
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perms = user?.permissions || {};
 
-  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
-  const [initialized, setInitialized]  = useState(false);
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
 
   const groups = useMemo<MenuGroup[]>(() => {
@@ -121,8 +120,6 @@ export default function MasterDashboard() {
       .map(g => ({ ...g, children: g.children.filter(c => !SUPER_ADMIN_ONLY_MASTERS.has(c.id) && !!perms[c.id]?.can_view) }))
       .filter(g => g.children.length > 0);
   }, [isSuperAdmin, perms]);
-
-  if (!initialized && groups.length > 0) { setOpenGroupId(groups[0].id); setInitialized(true); }
 
   const q = search.trim().toLowerCase();
   const hasSearch = q.length > 0;
@@ -139,7 +136,11 @@ export default function MasterDashboard() {
     return { total, active: total, inactive: 0, records: 0 };
   }, [groups]);
 
-  const toggle = (id: string) => setOpenGroupId(prev => (prev === id ? null : id));
+  const toggle = (id: string) => setClosedGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const goTo   = (leaf: MenuChild) => navigate(`/master/${leaf.id.replace('master.', '')}`);
 
   if (groups.length === 0) {
@@ -235,7 +236,7 @@ export default function MasterDashboard() {
       {/* ── Category Sections ── */}
       {filteredGroups.map(group => {
         const s = CATEGORY_STYLES[group.id] || { color: '#405189', icon: 'ri-folder-line', gradient: 'linear-gradient(135deg,#405189,#6691e7)' };
-        const isCollapsed = hasSearch ? false : openGroupId !== group.id;
+        const isCollapsed = hasSearch ? false : closedGroups.has(group.id);
 
         return (
           <div key={group.id} style={{ marginBottom: 12 }}>
