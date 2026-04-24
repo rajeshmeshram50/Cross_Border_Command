@@ -1326,6 +1326,127 @@ tbody tr:nth-child(10) {
 .pmt-view-hero[data-status="failed"]::before   { background: #f06548; }
 .pmt-view-hero[data-status="refunded"]::before { background: #299cdb; }
 
+/* ── Dark-mode glossy treatment for the View Payment modal ── */
+[data-bs-theme="dark"] .cbc-view-payment .modal-content,
+[data-layout-mode="dark"] .cbc-view-payment .modal-content {
+  background:
+    linear-gradient(180deg, rgba(124, 92, 252, 0.04) 0%, transparent 60%),
+    #151a24;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Hero card — rich glossy gradient with status tint */
+[data-bs-theme="dark"] .pmt-view-hero,
+[data-layout-mode="dark"] .pmt-view-hero {
+  background:
+    linear-gradient(135deg, rgba(10, 179, 156, 0.12) 0%, rgba(10, 179, 156, 0) 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%),
+    #1a2030;
+  border: 1px solid rgba(10, 179, 156, 0.22);
+  box-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+[data-bs-theme="dark"] .pmt-view-hero[data-status="pending"],
+[data-layout-mode="dark"] .pmt-view-hero[data-status="pending"] {
+  background:
+    linear-gradient(135deg, rgba(247, 184, 75, 0.14) 0%, rgba(247, 184, 75, 0) 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
+    #1a2030;
+  border-color: rgba(247, 184, 75, 0.24);
+}
+[data-bs-theme="dark"] .pmt-view-hero[data-status="failed"],
+[data-layout-mode="dark"] .pmt-view-hero[data-status="failed"] {
+  background:
+    linear-gradient(135deg, rgba(240, 101, 72, 0.14) 0%, rgba(240, 101, 72, 0) 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
+    #1a2030;
+  border-color: rgba(240, 101, 72, 0.24);
+}
+[data-bs-theme="dark"] .pmt-view-hero[data-status="refunded"],
+[data-layout-mode="dark"] .pmt-view-hero[data-status="refunded"] {
+  background:
+    linear-gradient(135deg, rgba(41, 156, 219, 0.14) 0%, rgba(41, 156, 219, 0) 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
+    #1a2030;
+  border-color: rgba(41, 156, 219, 0.24);
+}
+
+/* Left accent bar gets a glow in dark mode */
+[data-bs-theme="dark"] .pmt-view-hero::before,
+[data-layout-mode="dark"] .pmt-view-hero::before {
+  box-shadow: 0 0 12px 0 rgba(10, 179, 156, 0.55);
+}
+[data-bs-theme="dark"] .pmt-view-hero[data-status="pending"]::before,
+[data-layout-mode="dark"] .pmt-view-hero[data-status="pending"]::before { box-shadow: 0 0 12px 0 rgba(247, 184, 75, 0.55); }
+[data-bs-theme="dark"] .pmt-view-hero[data-status="failed"]::before,
+[data-layout-mode="dark"] .pmt-view-hero[data-status="failed"]::before { box-shadow: 0 0 12px 0 rgba(240, 101, 72, 0.55); }
+[data-bs-theme="dark"] .pmt-view-hero[data-status="refunded"]::before,
+[data-layout-mode="dark"] .pmt-view-hero[data-status="refunded"]::before { box-shadow: 0 0 12px 0 rgba(41, 156, 219, 0.55); }
+
+/* Info group cards — glass surface with subtle top highlight */
+[data-bs-theme="dark"] .pmt-view-group,
+[data-layout-mode="dark"] .pmt-view-group {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.008) 100%),
+    #1a2030;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+[data-bs-theme="dark"] .pmt-view-group-head,
+[data-layout-mode="dark"] .pmt-view-group-head {
+  background: linear-gradient(180deg, rgba(124, 92, 252, 0.10) 0%, rgba(124, 92, 252, 0.03) 100%);
+  border-bottom: 1px solid rgba(124, 92, 252, 0.18);
+  color: rgba(255, 255, 255, 0.70);
+}
+[data-bs-theme="dark"] .pmt-view-group-head i,
+[data-layout-mode="dark"] .pmt-view-group-head i {
+  color: #c4b5fd;
+  filter: drop-shadow(0 0 4px rgba(124, 92, 252, 0.45));
+}
+
+/* Dashed divider lines between kv rows — softer in dark */
+[data-bs-theme="dark"] .pmt-view-kv,
+[data-layout-mode="dark"] .pmt-view-kv {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+[data-bs-theme="dark"] .pmt-view-kv .k,
+[data-layout-mode="dark"] .pmt-view-kv .k { color: rgba(255, 255, 255, 0.55); }
+[data-bs-theme="dark"] .pmt-view-kv .v,
+[data-layout-mode="dark"] .pmt-view-kv .v { color: rgba(255, 255, 255, 0.92); }
+
+/* Receipt-style rows — brighter total */
+[data-bs-theme="dark"] .pmt-view-receipt-row .k,
+[data-layout-mode="dark"] .pmt-view-receipt-row .k { color: rgba(255, 255, 255, 0.55); }
+[data-bs-theme="dark"] .pmt-view-receipt-row .v,
+[data-layout-mode="dark"] .pmt-view-receipt-row .v { color: rgba(255, 255, 255, 0.92); }
+[data-bs-theme="dark"] .pmt-view-receipt-total,
+[data-layout-mode="dark"] .pmt-view-receipt-total {
+  border-top-color: rgba(255, 255, 255, 0.10);
+}
+[data-bs-theme="dark"] .pmt-view-receipt-total .v,
+[data-layout-mode="dark"] .pmt-view-receipt-total .v {
+  color: #2dd4bf;
+  filter: drop-shadow(0 0 8px rgba(10, 179, 156, 0.35));
+}
+
+/* Total value in the hero glows softly */
+[data-bs-theme="dark"] .pmt-view-hero .pmt-total-value,
+[data-layout-mode="dark"] .pmt-view-hero .pmt-total-value {
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 0 18px rgba(10, 179, 156, 0.25);
+}
+
+/* Header strip gets a whispered violet wash */
+[data-bs-theme="dark"] .cbc-view-payment .pmt-modal-header,
+[data-layout-mode="dark"] .cbc-view-payment .pmt-modal-header {
+  background: linear-gradient(180deg, rgba(124, 92, 252, 0.05), transparent);
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
 .pmt-small-caps {
   color: var(--vz-secondary-color);
   font-size: 10px;
