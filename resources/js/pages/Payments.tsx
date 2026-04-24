@@ -2,13 +2,13 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Spinner,
   Modal, ModalHeader, ModalBody, ModalFooter, Form, Label,
-  InputGroup, InputGroupText, FormText,
+  FormText,
 } from 'reactstrap';
 import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
+import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import Swal from 'sweetalert2';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
@@ -61,6 +61,8 @@ export default function Payments() {
   const [plans, setPlans] = useState<{ id: number; name: string; price: number }[]>([]);
   const [sendingReminder, setSendingReminder] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [deleteModal, setDeleteModal] = useState<{ open: boolean; payment: Payment | null }>({ open: false, payment: null });
+  const [deleting, setDeleting] = useState(false);
 
   // Live state for the Record Payment form — lets us auto-compute the Total
   // as amount + gst − discount so the admin doesn't need to do math.
@@ -144,19 +146,21 @@ export default function Payments() {
     } finally { setSaving(false); }
   };
 
-  const handleDelete = async (p: Payment) => {
-    const result = await Swal.fire({
-      title: 'Are you sure?',
-      text: `Delete payment ${p.invoice_number || '#' + p.id}?`,
-      icon: 'warning', showCancelButton: true,
-      confirmButtonText: 'Delete', confirmButtonColor: '#f06548', cancelButtonColor: '#878a99',
-    });
-    if (!result.isConfirmed) return;
+  const openDeleteModal = (p: Payment) => setDeleteModal({ open: true, payment: p });
+  const confirmDelete = async () => {
+    if (!deleteModal.payment) return;
+    setDeleting(true);
     try {
-      await api.delete(`/payments/${p.id}`);
-      Swal.fire({ title: 'Deleted!', icon: 'success', timer: 1500, showConfirmButton: false });
-      fetchPayments(); fetchStats();
-    } catch { toast.error('Failed', 'Could not delete payment'); }
+      await api.delete(`/payments/${deleteModal.payment.id}`);
+      toast.success('Deleted', `Payment ${deleteModal.payment.invoice_number || `#${deleteModal.payment.id}`} has been deleted`);
+      setDeleteModal({ open: false, payment: null });
+      fetchPayments();
+      fetchStats();
+    } catch {
+      toast.error('Failed', 'Could not delete payment');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleSendReminder = async (p: Payment) => {
@@ -248,7 +252,7 @@ export default function Payments() {
       header: 'Method',
       accessorKey: 'method',
       cell: (info: any) => (
-        <Badge color="light" className="text-dark fw-medium">
+        <Badge className="fw-medium pmt-method-badge">
           {methodLabels[info.row.original.method] || info.row.original.method}
         </Badge>
       ),
@@ -276,13 +280,24 @@ export default function Payments() {
       },
     },
     {
-      header: 'Date',
-      accessorKey: 'created_at',
-      cell: (info: any) => (
-        <span className="text-muted fs-13">
-          {new Date(info.row.original.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-        </span>
-      ),
+      header: 'Valid From',
+      accessorKey: 'valid_from',
+      cell: (info: any) => {
+        const d = info.row.original.valid_from;
+        return d
+          ? <span className="text-muted fs-13">{new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          : <span className="text-muted">—</span>;
+      },
+    },
+    {
+      header: 'Valid Until',
+      accessorKey: 'valid_until',
+      cell: (info: any) => {
+        const d = info.row.original.valid_until;
+        return d
+          ? <span className="text-muted fs-13">{new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+          : <span className="text-muted">—</span>;
+      },
     },
     {
       header: () => <div className="text-center">Actions</div>,
@@ -305,7 +320,7 @@ export default function Payments() {
               />
             )}
             {isSuperAdmin && (
-              <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger" onClick={() => handleDelete(p)} />
+              <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger" onClick={() => openDeleteModal(p)} />
             )}
           </div>
         );
@@ -319,7 +334,7 @@ export default function Payments() {
       label: 'Total Revenue',
       value: `₹${(stats?.total_revenue || 0).toLocaleString()}`,
       hint: `${stats?.successful || 0} successful`,
-      icon: 'ri-money-rupee-circle-fill',
+      icon: 'ri-wallet-3-fill',
       gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
     },
     {
@@ -486,34 +501,45 @@ export default function Payments() {
 
           return (
             <>
-              {/* ── Header (same clean style as Record Payment modal) ── */}
-              <ModalHeader
-                toggle={() => setViewPayment(null)}
-                className="border-bottom px-4 pmt-modal-header"
-              >
-                <div className="d-flex align-items-center gap-2">
-                  <span className="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary flex-shrink-0 pmt-modal-icon">
+              {/* ── Header — title on left, invoice pill on right; close × anchored to top-right corner ── */}
+              <ModalHeader tag="div" className="border-bottom px-4 pmt-modal-header pmt-view-header">
+                <div className="d-flex align-items-center w-100 gap-2">
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0 pmt-modal-icon">
                     <i className="ri-file-list-3-line" />
                   </span>
-                  <div>
-                    <h5 className="mb-0 fs-16 fw-bold">Payment Details</h5>
-                    <p className="mb-0 fs-11 text-muted">
-                      {viewPayment.invoice_number || `Payment #${viewPayment.id}`}
-                    </p>
+                  <div className="min-w-0">
+                    <h5 className="mb-0 fw-bold">Payment Details</h5>
+                    <p className="mb-0 text-muted">Transaction summary and breakdown</p>
                   </div>
+                  <span className="pmt-invoice-pill flex-shrink-0 ms-auto">
+                    <i className="ri-hashtag" />
+                    {viewPayment.invoice_number || `#${viewPayment.id}`}
+                  </span>
                 </div>
+                <button
+                  type="button"
+                  className="pmt-reg-hero-close pmt-close-corner"
+                  onClick={() => setViewPayment(null)}
+                  aria-label="Close"
+                >
+                  <i className="ri-close-line" />
+                </button>
               </ModalHeader>
 
-              <ModalBody className="px-4 py-4 pmt-modal-body-scroll">
-                {/* ── Summary row — total, client, status ── */}
-                <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 rounded-3 mb-4 p-3 pmt-view-summary">
-                  <div className="min-w-0">
-                    <div className="text-uppercase fw-bold pmt-small-caps">Total Amount</div>
-                    <div className="fw-bold pmt-total-value">{fmtMoney(viewPayment.total)}</div>
-                    <div className="text-muted text-truncate pmt-client-line">
+              <ModalBody className="px-4 py-3 pmt-modal-body-scroll">
+                {/* ── Hero — inline total + client + status ── */}
+                <div
+                  className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3 pmt-view-hero"
+                  data-status={viewPayment.status}
+                >
+                  <div className="d-flex align-items-center flex-wrap gap-2 min-w-0">
+                    <span className="pmt-small-caps">Total Amount</span>
+                    <span className="fw-bold pmt-total-value">{fmtMoney(viewPayment.total)}</span>
+                    <span className="pmt-hero-sep">·</span>
+                    <span className="text-muted text-truncate pmt-client-line">
                       <i className="ri-building-line me-1" />
                       {viewPayment.client?.org_name || '—'}
-                    </div>
+                    </span>
                   </div>
                   <span
                     className={`badge rounded-pill border border-${cfg.bsColor} text-${cfg.bsColor} text-uppercase fw-semibold d-inline-flex align-items-center gap-1 flex-shrink-0 pmt-status-pill`}
@@ -523,50 +549,136 @@ export default function Payments() {
                   </span>
                 </div>
 
-                {/* ── Section: Amount breakdown ── */}
-                <SectionHeader icon="ri-money-rupee-circle-line" title="Amount Breakdown" />
-                <Row className="g-3 mb-4">
-                  <PlainDetail col={3} label="Amount"   value={fmtMoney(viewPayment.amount)} />
-                  <PlainDetail col={3} label="GST"      value={fmtMoney(viewPayment.gst)} />
-                  <PlainDetail col={3} label="Discount" value={fmtMoney(viewPayment.discount)} />
-                  <PlainDetail col={3} label="Total"    value={fmtMoney(viewPayment.total)} emphasize />
+                <Row className="g-2">
+                  {/* Amount Breakdown — receipt style */}
+                  <Col md={6}>
+                    <div className="pmt-view-group h-100">
+                      <div className="pmt-view-group-head">
+                        <i className="ri-money-rupee-circle-line" />Amount Breakdown
+                      </div>
+                      <div className="pmt-view-group-body">
+                        <div className="pmt-view-receipt-row">
+                          <span className="k">Amount</span>
+                          <span className="v">{fmtMoney(viewPayment.amount)}</span>
+                        </div>
+                        <div className="pmt-view-receipt-row">
+                          <span className="k">GST</span>
+                          <span className="v">{fmtMoney(viewPayment.gst)}</span>
+                        </div>
+                        <div className="pmt-view-receipt-row">
+                          <span className="k">Discount</span>
+                          <span className="v">
+                            {viewPayment.discount && parseFloat(viewPayment.discount) > 0
+                              ? `−${fmtMoney(viewPayment.discount)}`
+                              : fmtMoney(viewPayment.discount)}
+                          </span>
+                        </div>
+                        <div className="pmt-view-receipt-row pmt-view-receipt-total">
+                          <span className="k">Total</span>
+                          <span className="v">{fmtMoney(viewPayment.total)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Col>
+
+                  {/* Payment Method */}
+                  <Col md={6}>
+                    <div className="pmt-view-group h-100">
+                      <div className="pmt-view-group-head">
+                        <i className="ri-bank-card-line" />Payment Method
+                      </div>
+                      <div className="pmt-view-group-body">
+                        <div className="pmt-view-kv">
+                          <span className="k">Method</span>
+                          <span className="v">{methodLabels[viewPayment.method] || viewPayment.method || '—'}</span>
+                        </div>
+                        <div className="pmt-view-kv">
+                          <span className="k">Gateway</span>
+                          <span className="v">
+                            {viewPayment.gateway
+                              ? viewPayment.gateway.charAt(0).toUpperCase() + viewPayment.gateway.slice(1)
+                              : '—'}
+                          </span>
+                        </div>
+                        <div className="pmt-view-kv">
+                          <span className="k">Plan</span>
+                          <span className="v">{viewPayment.plan?.name || '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Col>
+
+                  {/* Billing Period */}
+                  <Col md={6}>
+                    <div className="pmt-view-group h-100">
+                      <div className="pmt-view-group-head">
+                        <i className="ri-calendar-2-line" />Billing Period
+                      </div>
+                      <div className="pmt-view-group-body">
+                        <div className="pmt-view-kv">
+                          <span className="k">Cycle</span>
+                          <span className="v">
+                            {viewPayment.billing_cycle
+                              ? viewPayment.billing_cycle.charAt(0).toUpperCase() + viewPayment.billing_cycle.slice(1)
+                              : '—'}
+                          </span>
+                        </div>
+                        <div className="pmt-view-kv">
+                          <span className="k">Valid From</span>
+                          <span className="v">{fmtDate(viewPayment.valid_from)}</span>
+                        </div>
+                        <div className="pmt-view-kv">
+                          <span className="k">Valid Until</span>
+                          <span className="v">{fmtDate(viewPayment.valid_until)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Col>
+
+                  {/* Reference */}
+                  <Col md={6}>
+                    <div className="pmt-view-group h-100">
+                      <div className="pmt-view-group-head">
+                        <i className="ri-hashtag" />Reference
+                      </div>
+                      <div className="pmt-view-group-body">
+                        <div className="pmt-view-kv">
+                          <span className="k">Transaction ID</span>
+                          <span className="v font-monospace" title={viewPayment.txn_id || ''}>
+                            {viewPayment.txn_id || '—'}
+                          </span>
+                        </div>
+                        <div className="pmt-view-kv">
+                          <span className="k">Order ID</span>
+                          <span className="v font-monospace" title={viewPayment.order_id || ''}>
+                            {viewPayment.order_id || '—'}
+                          </span>
+                        </div>
+                        <div className="pmt-view-kv">
+                          <span className="k">Processed By</span>
+                          <span className="v">{viewPayment.processed_by_user?.name || '—'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Col>
                 </Row>
 
-                {/* ── Section: Payment method ── */}
-                <SectionHeader icon="ri-bank-card-line" title="Payment Method" />
-                <Row className="g-3 mb-4">
-                  <PlainDetail col={4} label="Method"   value={methodLabels[viewPayment.method] || viewPayment.method || '—'} />
-                  <PlainDetail col={4} label="Gateway"  value={viewPayment.gateway ? viewPayment.gateway.charAt(0).toUpperCase() + viewPayment.gateway.slice(1) : '—'} />
-                  <PlainDetail col={4} label="Plan"     value={viewPayment.plan?.name || '—'} />
-                </Row>
-
-                {/* ── Section: Billing period ── */}
-                <SectionHeader icon="ri-calendar-2-line" title="Billing Period" />
-                <Row className="g-3 mb-4">
-                  <PlainDetail col={4} label="Billing Cycle" value={viewPayment.billing_cycle ? viewPayment.billing_cycle.charAt(0).toUpperCase() + viewPayment.billing_cycle.slice(1) : '—'} />
-                  <PlainDetail col={4} label="Valid From"    value={fmtDate(viewPayment.valid_from)} />
-                  <PlainDetail col={4} label="Valid Until"   value={fmtDate(viewPayment.valid_until)} />
-                </Row>
-
-                {/* ── Section: Reference ── */}
-                <SectionHeader icon="ri-hashtag" title="Reference" />
-                <Row className="g-3">
-                  <PlainDetail col={6} label="Transaction ID" value={viewPayment.txn_id || '—'} mono />
-                  <PlainDetail col={6} label="Order ID"       value={viewPayment.order_id || '—'} mono />
-                </Row>
-
-                {/* ── Notes (subtle, no colored background) ── */}
+                {/* Notes (only if present) */}
                 {viewPayment.notes && (
-                  <div className="rounded-3 mt-4 p-3 pmt-view-notes">
-                    <div className="fw-bold text-uppercase mb-1 pmt-small-caps">Notes</div>
+                  <div className="rounded-3 mt-2 p-3 pmt-view-notes">
+                    <div className="mb-1 pmt-small-caps">Notes</div>
                     <div className="pmt-notes-text">{viewPayment.notes}</div>
                   </div>
                 )}
               </ModalBody>
 
               <ModalFooter className="border-top px-4">
-                <Button color="light" onClick={() => setViewPayment(null)}>
-                  <i className="ri-close-line me-1" />Close
+                <Button
+                  type="button"
+                  onClick={() => setViewPayment(null)}
+                  className="rounded-pill fw-semibold px-4 pmt-btn-ghost"
+                >
+                  Close
                 </Button>
                 {viewPayment.status === 'success' && (
                   <Button
@@ -594,136 +706,146 @@ export default function Payments() {
         className="cbc-payment-modal"
         contentClassName="border-0 shadow-lg"
       >
-        <ModalHeader
-          toggle={() => { setAddModal(false); resetPaymentForm(); }}
-          className="border-bottom px-4 pmt-modal-header"
-        >
-          <div className="d-flex align-items-center gap-2">
-            <span className="d-inline-flex align-items-center justify-content-center rounded-3 text-white flex-shrink-0 pmt-modal-icon pmt-modal-icon-success">
-              <i className="ri-money-rupee-circle-line fs-18" />
-            </span>
-            <div>
-              <h5 className="mb-0 fs-16 fw-bold">Record New Payment</h5>
-              <p className="mb-0 fs-11 text-muted">Capture a transaction against a client and plan</p>
-            </div>
+        {/* ── Hero header — icon chip + title + "New Payment" pill + close X ── */}
+        <div className="pmt-reg-hero">
+          <span className="pmt-reg-hero-icon"><i className="ri-secure-payment-line" /></span>
+          <div className="flex-grow-1 min-w-0">
+            <h5 className="pmt-reg-hero-title">Record New Payment</h5>
+          
           </div>
-        </ModalHeader>
+          <span className="pmt-reg-hero-pill">
+            <i className="ri-circle-fill" />New Payment
+          </span>
+          <button
+            type="button"
+            className="pmt-reg-hero-close"
+            onClick={() => { setAddModal(false); resetPaymentForm(); }}
+            aria-label="Close"
+          >
+            <i className="ri-close-line" />
+          </button>
+        </div>
 
-        <Form onSubmit={handleAdd} className="d-flex flex-column flex-grow-1 overflow-hidden">
+        <Form onSubmit={handleAdd} className="d-flex flex-column flex-grow-1 overflow-hidden pmt-reg-form">
           <ModalBody className="px-4 py-3 pmt-modal-body-scroll">
-            {/* Hint banner */}
-            <div className="d-flex align-items-start gap-2 rounded-3 mb-4 p-3 pmt-hint-banner">
-              <i className="ri-information-line fs-16 flex-shrink-0" />
-              <div className="fs-12 pmt-hint-banner-text">
-                If status is <strong>"Success"</strong>, an invoice PDF is generated and emailed to the client automatically.
-              </div>
-            </div>
-
             {/* ── Section: Customer & Plan ── */}
-            <SectionHeader icon="ri-user-3-line" title="Customer & Plan" />
-            <Row className="g-3 mb-4">
+            <div className="pmt-reg-banner is-violet">
+              <span className="pmt-reg-banner-icon"><i className="ri-user-3-line" /></span>
+              <span className="pmt-reg-banner-title">Customer &amp; Plan</span>
+            </div>
+            <Row className="g-3 mb-3">
               <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Client <span className="text-danger">*</span></Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-building-line" /></InputGroupText>
+                <Label>Client <span className="text-danger">*</span></Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-building-line pmt-reg-field-icon" />
                   <Input type="select" name="client_id" required>
                     <option value="">— Select client —</option>
                     {clients.map(c => <option key={c.id} value={c.id}>{c.org_name}</option>)}
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
               <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Plan</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-vip-crown-line" /></InputGroupText>
+                <Label>Plan</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-vip-crown-line pmt-reg-field-icon" />
                   <Input type="select" name="plan_id">
                     <option value="">— Select plan —</option>
                     {plans.map(p => <option key={p.id} value={p.id}>{p.name} — ₹{p.price}</option>)}
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
             </Row>
 
-            {/* ── Section: Amount ── */}
-            <SectionHeader icon="ri-money-rupee-circle-line" title="Amount Breakdown" hint="Total is auto-calculated (Amount + GST − Discount). Override if needed." />
-            <Row className="g-3 mb-4">
-              <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Amount <span className="text-danger">*</span></Label>
-                <InputGroup>
-                  <InputGroupText>₹</InputGroupText>
+            {/* ── Section: Amount Breakdown ── */}
+            <div className="pmt-reg-banner is-green">
+              <span className="pmt-reg-banner-icon"><i className="ri-money-rupee-circle-line" /></span>
+              <span className="pmt-reg-banner-title">Amount Breakdown</span>
+            </div>
+            <Row className="g-3 mb-3">
+              <Col md={3}>
+                <Label>Amount <span className="text-danger">*</span></Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-money-rupee-circle-line pmt-reg-field-icon" />
                   <Input
                     type="number" name="amount" step="0.01" min="0" required placeholder="0.00"
                     value={formAmount}
                     onChange={e => setFormAmount(e.target.value)}
                   />
-                </InputGroup>
+                </div>
               </Col>
-              <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">GST</Label>
-                <InputGroup>
-                  <InputGroupText>₹</InputGroupText>
+              <Col md={3}>
+                <Label>GST</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-percent-line pmt-reg-field-icon" />
                   <Input
                     type="number" name="gst" step="0.01" min="0" placeholder="0.00"
                     value={formGst}
                     onChange={e => setFormGst(e.target.value)}
                   />
-                </InputGroup>
+                </div>
               </Col>
-              <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Discount</Label>
-                <InputGroup>
-                  <InputGroupText>₹</InputGroupText>
+              <Col md={3}>
+                <Label>Discount</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-price-tag-3-line pmt-reg-field-icon" />
                   <Input
                     type="number" name="discount" step="0.01" min="0" placeholder="0.00"
                     value={formDiscount}
                     onChange={e => setFormDiscount(e.target.value)}
                   />
-                </InputGroup>
+                </div>
               </Col>
-              <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1 d-flex align-items-center gap-2">
+              <Col md={3}>
+                <Label className="d-flex align-items-center gap-2">
                   Total <span className="text-danger">*</span>
-                  {!totalEdited && <span className="badge bg-success-subtle text-success fs-10 fw-semibold">AUTO</span>}
+                  <i
+                    className="ri-information-line pmt-hint-icon"
+                    title="Auto-calculated: Amount + GST − Discount. Edit to override."
+                  />
+                  {!totalEdited && <span className="badge bg-success-subtle text-success pmt-chip">AUTO</span>}
+                  {totalEdited && (
+                    <button
+                      type="button"
+                      className="btn btn-sm border-0 p-0 ms-auto pmt-reset-link"
+                      onClick={() => setTotalEdited(false)}
+                      title="Reset to auto-calculated"
+                    >
+                      <i className="ri-refresh-line" /> reset
+                    </button>
+                  )}
                 </Label>
-                <InputGroup>
-                  <InputGroupText>₹</InputGroupText>
+                <div className="pmt-reg-field">
+                  <i className="ri-equal-line pmt-reg-field-icon" />
                   <Input
                     type="number" name="total" step="0.01" min="0" required placeholder="0.00"
                     value={formTotal}
                     onChange={e => { setFormTotal(e.target.value); setTotalEdited(true); }}
+                    title="Auto-calculated: Amount + GST − Discount. Edit to override."
                   />
-                  {totalEdited && (
-                    <Button
-                      type="button"
-                      color="light"
-                      className="border"
-                      onClick={() => setTotalEdited(false)}
-                      title="Reset to auto-calculated"
-                    >
-                      <i className="ri-refresh-line" />
-                    </Button>
-                  )}
-                </InputGroup>
+                </div>
               </Col>
             </Row>
 
             {/* ── Section: Payment Method ── */}
-            <SectionHeader icon="ri-bank-card-line" title="Payment Method" />
-            <Row className="g-3 mb-4">
+            <div className="pmt-reg-banner is-blue">
+              <span className="pmt-reg-banner-icon"><i className="ri-bank-card-line" /></span>
+              <span className="pmt-reg-banner-title">Payment Method</span>
+            </div>
+            <Row className="g-3 mb-3">
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Method <span className="text-danger">*</span></Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-wallet-3-line" /></InputGroupText>
+                <Label>Method <span className="text-danger">*</span></Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-wallet-3-line pmt-reg-field-icon" />
                   <Input type="select" name="method" required>
                     <option value="">— Select method —</option>
                     {Object.entries(methodLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Gateway</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-global-line" /></InputGroupText>
+                <Label>Gateway</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-global-line pmt-reg-field-icon" />
                   <Input type="select" name="gateway">
                     <option value="">— Select gateway —</option>
                     <option value="razorpay">Razorpay</option>
@@ -731,73 +853,97 @@ export default function Payments() {
                     <option value="paytm">Paytm</option>
                     <option value="manual">Manual</option>
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Status <span className="text-danger">*</span></Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-checkbox-circle-line" /></InputGroupText>
-                  <Input type="select" name="status" required defaultValue="success">
+                <Label>
+                  Status <span className="text-danger">*</span>
+                  <i
+                    className="ri-information-line pmt-hint-icon"
+                    title="If Success is selected, an invoice PDF is auto-generated and emailed to the client."
+                  />
+                </Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-checkbox-circle-line pmt-reg-field-icon" />
+                  <Input
+                    type="select" name="status" required defaultValue="success"
+                    title="If Success is selected, an invoice PDF is auto-generated and emailed to the client."
+                  >
                     <option value="success">Success</option>
                     <option value="pending">Pending</option>
                     <option value="failed">Failed</option>
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
             </Row>
 
-            {/* ── Section: Validity Window ── */}
-            <SectionHeader icon="ri-calendar-2-line" title="Billing Period" />
-            <Row className="g-3 mb-4">
+            {/* ── Section: Billing Period ── */}
+            <div className="pmt-reg-banner is-sky">
+              <span className="pmt-reg-banner-icon"><i className="ri-calendar-2-line" /></span>
+              <span className="pmt-reg-banner-title">Billing Period</span>
+            </div>
+            <Row className="g-3 mb-3">
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Billing Cycle</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-refresh-line" /></InputGroupText>
+                <Label>Billing Cycle</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-refresh-line pmt-reg-field-icon" />
                   <Input type="select" name="billing_cycle">
                     <option value="">—</option>
                     <option value="monthly">Monthly</option>
                     <option value="quarterly">Quarterly</option>
                     <option value="yearly">Yearly</option>
                   </Input>
-                </InputGroup>
+                </div>
               </Col>
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Valid From</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-calendar-check-line" /></InputGroupText>
+                <Label>Valid From</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-calendar-check-line pmt-reg-field-icon" />
                   <Input type="date" name="valid_from" />
-                </InputGroup>
+                </div>
               </Col>
               <Col md={4}>
-                <Label className="fw-semibold fs-12 mb-1">Valid Until</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-calendar-event-line" /></InputGroupText>
-                  <Input type="date" name="valid_until" />
-                </InputGroup>
+                <Label>
+                  Valid Until
+                  <i
+                    className="ri-information-line pmt-hint-icon"
+                    title="Subscription active window. Leave blank for one-time payments."
+                  />
+                </Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-calendar-event-line pmt-reg-field-icon" />
+                  <Input
+                    type="date" name="valid_until"
+                    title="Subscription active window. Leave blank for one-time payments."
+                  />
+                </div>
               </Col>
             </Row>
 
             {/* ── Section: Reference & Notes ── */}
-            <SectionHeader icon="ri-hashtag" title="Reference & Notes" />
+            <div className="pmt-reg-banner is-amber">
+              <span className="pmt-reg-banner-icon"><i className="ri-hashtag" /></span>
+              <span className="pmt-reg-banner-title">Reference &amp; Notes</span>
+            </div>
             <Row className="g-3">
               <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Transaction ID</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-hashtag" /></InputGroupText>
+                <Label>Transaction ID</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-hashtag pmt-reg-field-icon" />
                   <Input type="text" name="txn_id" placeholder="e.g. TXN202604221234" />
-                </InputGroup>
-                <FormText className="text-muted fs-11">The gateway's reference for this payment (optional)</FormText>
+                </div>
+                <FormText>The gateway's reference for this payment (optional)</FormText>
               </Col>
               <Col md={6}>
-                <Label className="fw-semibold fs-12 mb-1">Order ID</Label>
-                <InputGroup>
-                  <InputGroupText><i className="ri-shopping-bag-3-line" /></InputGroupText>
+                <Label>Order ID</Label>
+                <div className="pmt-reg-field">
+                  <i className="ri-shopping-bag-3-line pmt-reg-field-icon" />
                   <Input type="text" name="order_id" placeholder="e.g. ORD-A1B2C3" />
-                </InputGroup>
-                <FormText className="text-muted fs-11">Internal / gateway order identifier (optional)</FormText>
+                </div>
+                <FormText>Internal / gateway order identifier (optional)</FormText>
               </Col>
               <Col xs={12}>
-                <Label className="fw-semibold fs-12 mb-1">Notes</Label>
+                <Label>Notes</Label>
                 <Input
                   type="textarea" name="notes" rows={3}
                   placeholder="Any additional details about this payment…"
@@ -808,116 +954,44 @@ export default function Payments() {
 
           <ModalFooter className="border-top">
             <Button
-              color="light"
               type="button"
               onClick={() => { setAddModal(false); resetPaymentForm(); }}
+              className="rounded-pill fw-semibold px-4 pmt-btn-ghost"
             >
-              <i className="ri-close-line me-1" />Cancel
+              Cancel
             </Button>
             <Button
               color="primary"
               type="submit"
               disabled={saving}
-              className="btn-label waves-effect waves-light rounded-pill"
+              className="rounded-pill fw-semibold d-inline-flex align-items-center gap-2"
             >
               {saving ? (
                 <>
-                  <Spinner size="sm" className="label-icon align-middle rounded-pill me-2" />
-                  Saving…
+                  <Spinner size="sm" />
+                  <span>Saving…</span>
                 </>
               ) : (
                 <>
-                  <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2" />
-                  Record Payment
+                  <i className="ri-save-line" />
+                  <span>Record Payment</span>
                 </>
               )}
             </Button>
           </ModalFooter>
         </Form>
       </Modal>
+
+      <DeleteConfirmModal
+        open={deleteModal.open}
+        title="Delete Payment"
+        itemName={deleteModal.payment?.invoice_number || (deleteModal.payment ? `#${deleteModal.payment.id}` : '')}
+        subMessage="This action cannot be undone. The payment record and its invoice will be permanently removed."
+        onClose={() => !deleting && setDeleteModal({ open: false, payment: null })}
+        onConfirm={confirmDelete}
+        loading={deleting}
+      />
     </>
   );
 }
 
-/**
- * Clean label/value tile used inside the "View Payment Details" modal.
- * Subtle theme-aware background + border, uppercase label, bold value.
- * No colored accents — matches the rest of the app's calm/neutral look.
- */
-function PlainDetail({
-  col, label, value, emphasize, mono,
-}: {
-  col: number;
-  label: string;
-  value: React.ReactNode;
-  emphasize?: boolean;
-  mono?: boolean;
-}) {
-  return (
-    <Col md={col}>
-      <div className="h-100 rounded-3 pmt-detail">
-        <div className="text-uppercase fw-bold pmt-detail-label">{label}</div>
-        <div
-          className={`fw-semibold text-truncate pmt-detail-value ${emphasize ? 'pmt-detail-emphasize' : ''} ${mono ? 'font-monospace' : ''}`}
-          title={typeof value === 'string' ? value : undefined}
-        >
-          {value}
-        </div>
-      </div>
-    </Col>
-  );
-}
-
-/**
- * (Legacy) Color-accented detail card — kept only in case something references it.
- * Prefer `PlainDetail` for a clean, neutral look.
- */
-function DetailCard({
-  col, icon, color, label, value, emphasize, mono,
-}: {
-  col: number;
-  icon: string;
-  color: 'primary' | 'info' | 'success' | 'warning' | 'danger';
-  label: string;
-  value: React.ReactNode;
-  emphasize?: boolean;
-  mono?: boolean;
-}) {
-  return (
-    <Col md={col}>
-      <div className="h-100 rounded-3 position-relative overflow-hidden pmt-detail-card">
-        <div className="pmt-detail-accent" style={{ background: `var(--vz-${color})` }} />
-        <div className="d-flex align-items-start gap-2">
-          <span className={`d-inline-flex align-items-center justify-content-center rounded-2 bg-${color}-subtle text-${color} flex-shrink-0 pmt-detail-card-icon`}>
-            <i className={icon} />
-          </span>
-          <div className="flex-grow-1 min-w-0">
-            <div className="text-uppercase fw-bold pmt-detail-label">{label}</div>
-            <div
-              className={`fw-bold text-truncate pmt-detail-card-value ${emphasize ? 'pmt-detail-emphasize' : ''} ${mono ? 'font-monospace' : ''}`}
-              style={emphasize ? { color: `var(--vz-${color})` } : undefined}
-              title={typeof value === 'string' ? value : undefined}
-            >
-              {value}
-            </div>
-          </div>
-        </div>
-      </div>
-    </Col>
-  );
-}
-
-/** Small labelled section header used inside the Record Payment modal. */
-function SectionHeader({ icon, title, hint }: { icon: string; title: string; hint?: string }) {
-  return (
-    <div className="d-flex align-items-center gap-2 mb-2 pb-2 pmt-section-head">
-      <span className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0 bg-primary-subtle text-primary pmt-section-chip">
-        <i className={icon} />
-      </span>
-      <div className="flex-grow-1 min-w-0">
-        <div className="fw-bold text-uppercase pmt-section-title">{title}</div>
-        {hint && <div className="text-muted fs-11 pmt-section-hint">{hint}</div>}
-      </div>
-    </div>
-  );
-}
