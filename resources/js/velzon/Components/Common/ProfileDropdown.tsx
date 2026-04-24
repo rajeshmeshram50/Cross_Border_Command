@@ -26,8 +26,83 @@ const ProfileDropdown = () => {
     logout();
   };
 
+  const menuItems: { to: string; icon: string; label: string; grad: string }[] = [
+    { to: '/profile',  icon: 'ri-user-3-line',     label: 'Profile',  grad: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' },
+    { to: '/my-plan',  icon: 'ri-bank-card-line',  label: 'My Plan',  grad: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)' },
+    { to: '/settings', icon: 'ri-settings-3-line', label: 'Settings', grad: 'linear-gradient(135deg, #f59e0b 0%, #f7b84b 100%)' },
+  ];
+
   return (
     <React.Fragment>
+      <style>{`
+        .cbc-profile-menu.dropdown-menu,
+        div.cbc-profile-menu.dropdown-menu {
+          min-width: 232px !important;
+          max-width: 232px !important;
+          padding: 0 !important;
+          border: 1px solid var(--vz-border-color) !important;
+          border-radius: 14px !important;
+          overflow: hidden;
+          margin-top: 6px !important;
+          background-color: #ffffff !important;
+          background-image: none !important;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          opacity: 1 !important;
+          filter: none !important;
+          box-shadow: 0 14px 32px rgba(18,38,63,0.16), 0 2px 8px rgba(18,38,63,0.08) !important;
+          z-index: 2000 !important;
+        }
+        html[data-bs-theme="dark"] .cbc-profile-menu.dropdown-menu,
+        html[data-layout-mode="dark"] .cbc-profile-menu.dropdown-menu,
+        [data-bs-theme="dark"] div.cbc-profile-menu.dropdown-menu,
+        [data-layout-mode="dark"] div.cbc-profile-menu.dropdown-menu {
+          background-color: #2a2f34 !important;
+          border-color: rgba(255,255,255,0.08) !important;
+        }
+        .cbc-profile-menu .dropdown-item {
+          padding: 0 !important;
+          background: transparent !important;
+          color: inherit !important;
+          border-radius: 10px !important;
+        }
+        .cbc-profile-menu .dropdown-item:hover,
+        .cbc-profile-menu .dropdown-item:focus,
+        .cbc-profile-menu .dropdown-item:active {
+          background: transparent !important;
+          color: inherit !important;
+        }
+        .cbc-profile-row {
+          display: flex;
+          align-items: center;
+          gap: 9px;
+          padding: 7px 8px;
+          border-radius: 9px;
+          color: var(--vz-body-color);
+          text-decoration: none;
+          transition: background .18s ease, transform .18s ease;
+        }
+        .cbc-profile-menu .dropdown-item:hover .cbc-profile-row,
+        .cbc-profile-menu .dropdown-item:focus .cbc-profile-row {
+          background: var(--vz-secondary-bg);
+          color: var(--vz-heading-color, var(--vz-body-color));
+          transform: translateX(2px);
+        }
+        .cbc-profile-menu .dropdown-item:hover .cbc-profile-row .cbc-profile-chev,
+        .cbc-profile-menu .dropdown-item:focus .cbc-profile-row .cbc-profile-chev {
+          transform: translateX(2px);
+          color: #6366f1;
+        }
+        .cbc-profile-menu .dropdown-item:hover .cbc-profile-row.logout .cbc-profile-chev,
+        .cbc-profile-menu .dropdown-item:focus .cbc-profile-row.logout .cbc-profile-chev {
+          color: #f06548;
+        }
+        .cbc-profile-chev {
+          color: var(--vz-secondary-color);
+          font-size: 14px;
+          transition: transform .18s ease, color .18s ease;
+        }
+      `}</style>
       <Dropdown
         isOpen={isProfileDropdown}
         toggle={toggleProfileDropdown}
@@ -113,53 +188,121 @@ const ProfileDropdown = () => {
             </svg>
           </span>
         </DropdownToggle>
-        <DropdownMenu className="dropdown-menu-end">
+
+        <DropdownMenu className="dropdown-menu-end cbc-profile-menu">
+          {/* Gradient header — avatar, name, role pill */}
           <div
-            className="px-3 py-3 mb-1 text-white position-relative overflow-hidden"
-            style={{ backgroundImage: 'linear-gradient(135deg,#405189 0%,#6691e7 50%,#0ab39c 100%)' }}
+            className="position-relative overflow-hidden"
+            style={{
+              padding: '14px 14px 12px 14px',
+              backgroundImage: 'linear-gradient(135deg, rgb(64, 81, 137), rgb(10, 179, 156))',
+            }}
           >
             <div
-              className="position-absolute"
+              className="position-absolute top-0 start-0 w-100 h-100"
               style={{
-                inset: 0,
-                opacity: 0.2,
-                backgroundImage: 'radial-gradient(circle at 80% 20%, rgba(255,255,255,0.5), transparent 50%)',
+                backgroundImage:
+                  'radial-gradient(circle at 85% 15%, rgba(255,255,255,0.28), transparent 55%),' +
+                  'radial-gradient(circle at 10% 100%, rgba(255,255,255,0.12), transparent 50%)',
                 pointerEvents: 'none',
               }}
             />
             <div className="position-relative d-flex align-items-center gap-2">
-              <span className="d-inline-flex rounded-circle" style={{ padding: 2, background: 'rgba(255,255,255,0.3)' }}>
-                <img src={avatar1} alt="" className="rounded-circle" style={{ width: 32, height: 32, display: 'block' }} />
+              <span
+                className="d-inline-flex rounded-circle flex-shrink-0"
+                style={{
+                  padding: 2,
+                  background: 'rgba(255,255,255,0.35)',
+                  boxShadow: '0 5px 14px rgba(0,0,0,0.18)',
+                }}
+              >
+                <img
+                  src={avatar1}
+                  alt=""
+                  className="rounded-circle"
+                  style={{ width: 38, height: 38, display: 'block' }}
+                />
               </span>
               <div className="flex-grow-1 min-w-0">
-                <div className="fw-bold text-white text-truncate" style={{ fontSize: 13, lineHeight: 1.2 }}>{user.name}</div>
-                <div className="text-white-50 text-uppercase fw-semibold text-capitalize" style={{ fontSize: 10.5, letterSpacing: '0.05em', lineHeight: 1.2, marginTop: 2 }}>{roleLabel}</div>
+                <div
+                  className="fw-bold text-white text-truncate"
+                  style={{ fontSize: 13, lineHeight: 1.2 }}
+                  title={user.name}
+                >
+                  {user.name}
+                </div>
+                <div
+                  className="d-inline-flex align-items-center gap-1 mt-1 px-2 py-0 rounded-pill fw-semibold text-capitalize"
+                  style={{
+                    fontSize: 9.5,
+                    letterSpacing: '0.07em',
+                    textTransform: 'uppercase',
+                    color: '#fff',
+                    background: 'rgba(255,255,255,0.22)',
+                    border: '1px solid rgba(255,255,255,0.28)',
+                    backdropFilter: 'blur(6px)',
+                  }}
+                >
+                  <i className="ri-shield-keyhole-line" style={{ fontSize: 10 }}></i>
+                  {roleLabel}
+                </div>
               </div>
             </div>
           </div>
-          <DropdownItem className='p-0'>
-            <Link to="/profile" className="dropdown-item">
-              <i className="mdi mdi-account-circle text-muted fs-16 align-middle me-1"></i>
-              <span className="align-middle">Profile</span>
-            </Link>
-          </DropdownItem>
-          <DropdownItem className='p-0'>
-            <Link to="/my-plan" className="dropdown-item">
-              <i className="mdi mdi-wallet text-muted fs-16 align-middle me-1"></i>
-              <span className="align-middle">My Plan</span>
-            </Link>
-          </DropdownItem>
-          <DropdownItem className='p-0'>
-            <Link to="/settings" className="dropdown-item">
-              <i className="mdi mdi-cog-outline text-muted fs-16 align-middle me-1"></i>
-              <span className="align-middle">Settings</span>
-            </Link>
-          </DropdownItem>
-          <div className="dropdown-divider"></div>
-          <DropdownItem onClick={handleLogout}>
-            <i className="mdi mdi-logout text-muted fs-16 align-middle me-1"></i>
-            <span className="align-middle">Logout</span>
-          </DropdownItem>
+
+          {/* Menu items */}
+          <div style={{ padding: 6 }}>
+            {menuItems.map(item => (
+              <DropdownItem key={item.to} tag="div">
+                <Link to={item.to} className="cbc-profile-row">
+                  <span
+                    className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                    style={{
+                      width: 28,
+                      height: 28,
+                      background: item.grad,
+                      boxShadow: '0 3px 8px rgba(18,38,63,0.12)',
+                    }}
+                  >
+                    <i className={item.icon} style={{ color: '#fff', fontSize: 14 }}></i>
+                  </span>
+                  <span className="fw-semibold flex-grow-1" style={{ fontSize: 12.5 }}>{item.label}</span>
+                  <i className="ri-arrow-right-s-line cbc-profile-chev" />
+                </Link>
+              </DropdownItem>
+            ))}
+
+            <div
+              style={{
+                height: 1,
+                background: 'var(--vz-border-color)',
+                margin: '4px 2px',
+              }}
+            />
+
+            <DropdownItem tag="div" onClick={handleLogout}>
+              <div className="cbc-profile-row logout" style={{ cursor: 'pointer' }}>
+                <span
+                  className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    background: 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)',
+                    boxShadow: '0 3px 8px rgba(240,101,72,0.28)',
+                  }}
+                >
+                  <i className="ri-logout-box-r-line" style={{ color: '#fff', fontSize: 14 }}></i>
+                </span>
+                <span
+                  className="fw-semibold flex-grow-1"
+                  style={{ fontSize: 12.5, color: '#f06548' }}
+                >
+                  Logout
+                </span>
+                <i className="ri-arrow-right-s-line cbc-profile-chev" />
+              </div>
+            </DropdownItem>
+          </div>
         </DropdownMenu>
       </Dropdown>
     </React.Fragment>
