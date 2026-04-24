@@ -143,6 +143,23 @@ export default function BranchDashboard() {
       <style>{`
         .dashboard-kpi-card { background: #ffffff; }
         [data-bs-theme="dark"] .dashboard-kpi-card { background: #1c2531; }
+        .bd-list-row {
+          transition: background 0.18s ease, box-shadow 0.18s ease;
+          cursor: pointer;
+          position: relative;
+        }
+        .bd-list-row:hover {
+          background: rgba(124, 92, 252, 0.08);
+          box-shadow: inset 3px 0 0 0 rgba(124, 92, 252, 0.7);
+        }
+        [data-bs-theme="dark"] .bd-list-row:hover,
+        [data-layout-mode="dark"] .bd-list-row:hover {
+          background: rgba(255, 255, 255, 0.05);
+          box-shadow: inset 3px 0 0 0 rgba(124, 92, 252, 0.9);
+        }
+        .bd-list-row + .bd-list-row { border-top: 1px solid #f1f3f9; }
+        [data-bs-theme="dark"] .bd-list-row + .bd-list-row,
+        [data-layout-mode="dark"] .bd-list-row + .bd-list-row { border-top-color: rgba(255,255,255,0.06); }
       `}</style>
       {/* Page Title */}
       <Row className="mb-2">
@@ -236,7 +253,7 @@ export default function BranchDashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip content={<ChartTooltip prefix="₹" />} />
+                  <Tooltip content={<ChartTooltip prefix="₹" />} cursor={{ stroke: 'rgba(10,179,156,0.4)', strokeWidth: 1, strokeDasharray: '3 3' }} />
                   <Area type="monotone" dataKey="amount" stroke="#0ab39c" strokeWidth={2.5} fill="url(#branchRevGrad)" dot={{ r: 4, fill: '#0ab39c', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, fill: '#0ab39c' }} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -256,15 +273,11 @@ export default function BranchDashboard() {
               </div>
             </div>
             <CardBody style={{ padding: 0 }}>
-              {branches.map((b: any, i: number) => (
-                <div key={b.id} style={{
+              {branches.map((b: any) => (
+                <div key={b.id} className="bd-list-row" style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 20px', borderBottom: i < branches.length - 1 ? '1px solid #f8f9fa' : 'none',
-                  transition: 'background 0.15s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
+                  padding: '12px 20px',
+                }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{
                       width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -306,21 +319,17 @@ export default function BranchDashboard() {
               </div>
             </div>
             <CardBody style={{ padding: 0 }}>
-              {recent_payments.map((p: any, i: number) => {
+              {recent_payments.map((p: any) => {
                 const cfg = p.status === 'success'
                   ? { color: '#0ab39c', icon: 'ri-checkbox-circle-fill', bg: '#0ab39c18' }
                   : p.status === 'failed'
                   ? { color: '#f06548', icon: 'ri-close-circle-fill', bg: '#f0654818' }
                   : { color: '#f7b84b', icon: 'ri-time-fill', bg: '#f7b84b18' };
                 return (
-                  <div key={p.id} style={{
+                  <div key={p.id} className="bd-list-row" style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '12px 20px', borderBottom: i < recent_payments.length - 1 ? '1px solid #f8f9fa' : 'none',
-                    transition: 'background 0.15s',
-                  }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
+                    padding: '12px 20px',
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{
                         width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',

@@ -137,20 +137,80 @@ export default function ClientDashboard() {
       <style>{`
         .dashboard-kpi-card { background: #ffffff; }
         [data-bs-theme="dark"] .dashboard-kpi-card { background: #1c2531; }
-        @keyframes cd-plan-pulse {
+        @keyframes cd-plan-dot {
           0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 var(--cd-plan-color); }
-          50% { transform: scale(1.15); box-shadow: 0 0 0 4px transparent; }
+          50%      { transform: scale(1.25); box-shadow: 0 0 0 5px transparent; }
+        }
+        @keyframes cd-plan-blink {
+          0%, 100% {
+            box-shadow: 0 0 0 0 var(--cd-plan-ring), 0 2px 6px var(--cd-plan-shadow);
+            filter: brightness(1);
+          }
+          50% {
+            box-shadow: 0 0 0 4px var(--cd-plan-ring-soft), 0 4px 14px var(--cd-plan-shadow);
+            filter: brightness(1.08);
+          }
+        }
+        @keyframes cd-plan-sweep {
+          0%   { transform: translateX(-140%); }
+          60%  { transform: translateX(140%); }
+          100% { transform: translateX(140%); }
+        }
+        .cd-plan-pill {
+          position: relative;
+          overflow: hidden;
+          animation: cd-plan-blink 1.8s ease-in-out infinite;
+        }
+        .cd-plan-pill::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(110deg, transparent 40%, rgba(255,255,255,0.55) 50%, transparent 60%);
+          transform: translateX(-140%);
+          animation: cd-plan-sweep 2.6s ease-in-out infinite;
+          pointer-events: none;
+        }
+        /* Theme-aware row hover (branches / recent payments lists) */
+        .cd-list-row {
+          transition: background 0.18s ease, box-shadow 0.18s ease;
+          cursor: pointer;
+          position: relative;
+        }
+        .cd-list-row:hover {
+          background: rgba(124, 92, 252, 0.08);
+          box-shadow: inset 3px 0 0 0 rgba(124, 92, 252, 0.7);
+        }
+        [data-bs-theme="dark"] .cd-list-row:hover,
+        [data-layout-mode="dark"] .cd-list-row:hover {
+          background: rgba(255, 255, 255, 0.05);
+          box-shadow: inset 3px 0 0 0 rgba(124, 92, 252, 0.9);
+        }
+        .cd-list-row + .cd-list-row { border-top: 1px solid #f1f3f9; }
+        [data-bs-theme="dark"] .cd-list-row + .cd-list-row,
+        [data-layout-mode="dark"] .cd-list-row + .cd-list-row { border-top-color: rgba(255,255,255,0.06); }
+
+        /* Team Roles chips hover */
+        .cd-role-chip {
+          transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+          cursor: default;
+        }
+        .cd-role-chip:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+          filter: brightness(1.05);
+        }
+        [data-bs-theme="dark"] .cd-role-chip:hover,
+        [data-layout-mode="dark"] .cd-role-chip:hover {
+          box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+          filter: brightness(1.15);
         }
       `}</style>
       {/* Page Title */}
       <Row className="mb-3">
         <Col xs={12}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '4px 0 12px', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Dashboard</h4>
-              <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Welcome back! Here's your organization overview.</p>
-            </div>
-            <div className="d-flex align-items-center gap-2 flex-wrap">
               {(() => {
                 const isExpired = plan.status === 'expired';
                 const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
@@ -158,38 +218,45 @@ export default function ClientDashboard() {
                 const label = isExpired ? 'EXPIRED' : isWarn ? 'EXPIRES SOON' : 'CURRENT';
                 return (
                   <span
-                    className="d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1 fw-semibold"
+                    className="cd-plan-pill d-inline-flex align-items-center gap-2 rounded-pill"
                     style={{
-                      background: `${color}15`,
+                      background: `linear-gradient(135deg, ${color}1f 0%, ${color}12 100%)`,
                       color,
-                      border: `1px solid ${color}40`,
-                      fontSize: 10.5,
-                      letterSpacing: '0.04em',
+                      border: `1px solid ${color}`,
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      letterSpacing: '0.03em',
+                      padding: '5px 13px',
+                      marginTop: 6,
                       ['--cd-plan-color' as any]: `${color}66`,
+                      ['--cd-plan-ring' as any]: `${color}00`,
+                      ['--cd-plan-ring-soft' as any]: `${color}33`,
+                      ['--cd-plan-shadow' as any]: `${color}55`,
                     }}
                     title={isExpired ? `Expired ${plan.expires_at}` : `Valid until ${plan.expires_at}`}
                   >
                     <span
                       className="rounded-circle"
                       style={{
-                        width: 6, height: 6,
+                        width: 8, height: 8,
                         background: color,
-                        animation: 'cd-plan-pulse 1.8s ease-in-out infinite',
+                        animation: 'cd-plan-dot 1.4s ease-in-out infinite',
+                        flexShrink: 0,
                       }}
                     />
                     {label}: {plan.name?.toUpperCase()}
-                    {isWarn && (
-                      <span className="fw-normal ms-1" style={{ opacity: 0.85 }}>· {plan.days_remaining}d</span>
+                    {isWarn && plan.days_remaining !== null && (
+                      <span className="ms-1" style={{ opacity: 0.9 }}>· {plan.days_remaining}d</span>
                     )}
-                    <span className="fw-normal ms-1" style={{ opacity: 0.75 }}>· {plan.expires_at}</span>
+                    <span className="ms-1" style={{ opacity: 0.8 }}>· {plan.expires_at}</span>
                   </span>
                 );
               })()}
-              <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
-                <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{user?.client_name}</a></li>
-                <li className="breadcrumb-item active">Overview</li>
-              </ol>
             </div>
+            <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
+              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{user?.client_name}</a></li>
+              <li className="breadcrumb-item active">Overview</li>
+            </ol>
           </div>
         </Col>
       </Row>
@@ -257,7 +324,7 @@ export default function ClientDashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip content={<ChartTooltip prefix="₹" />} />
+                  <Tooltip content={<ChartTooltip prefix="₹" />} cursor={{ stroke: 'rgba(10,179,156,0.4)', strokeWidth: 1, strokeDasharray: '3 3' }} />
                   <Area type="monotone" dataKey="amount" stroke="#0ab39c" strokeWidth={2.5} fill="url(#clientRevGrad)" dot={{ r: 4, fill: '#0ab39c', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, fill: '#0ab39c' }} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -296,15 +363,11 @@ export default function ClientDashboard() {
               </div>
             </div>
             <CardBody style={{ padding: 0 }}>
-              {branches.map((b: any, i: number) => (
-                <div key={b.id} style={{
+              {branches.map((b: any) => (
+                <div key={b.id} className="cd-list-row" style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 20px', borderBottom: i < branches.length - 1 ? '1px solid #f8f9fa' : 'none',
-                  transition: 'background 0.15s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
+                  padding: '12px 20px',
+                }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{
                       width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -349,21 +412,17 @@ export default function ClientDashboard() {
               </div>
             </div>
             <CardBody style={{ padding: 0 }}>
-              {recent_payments.map((p: any, i: number) => {
+              {recent_payments.map((p: any) => {
                 const cfg = p.status === 'success'
                   ? { color: '#0ab39c', icon: 'ri-checkbox-circle-fill', bg: '#0ab39c18' }
                   : p.status === 'failed'
                   ? { color: '#f06548', icon: 'ri-close-circle-fill', bg: '#f0654818' }
                   : { color: '#f7b84b', icon: 'ri-time-fill', bg: '#f7b84b18' };
                 return (
-                  <div key={p.id} style={{
+                  <div key={p.id} className="cd-list-row" style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '12px 20px', borderBottom: i < recent_payments.length - 1 ? '1px solid #f8f9fa' : 'none',
-                    transition: 'background 0.15s',
-                  }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
+                    padding: '12px 20px',
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{
                         width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -406,13 +465,13 @@ export default function ClientDashboard() {
             <CardBody style={{ padding: '16px 20px' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                 {Object.entries(user_roles).map(([role, count], i) => (
-                  <div key={role} style={{
+                  <div key={role} className="cd-role-chip" style={{
                     display: 'flex', alignItems: 'center', gap: 10,
                     background: COLORS[i % COLORS.length] + '12',
                     borderRadius: 10, padding: '8px 14px', border: `1px solid ${COLORS[i % COLORS.length]}30`,
                   }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS[i % COLORS.length], flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: '#495057', textTransform: 'capitalize', fontWeight: 600 }}>
+                    <span style={{ fontSize: 12, color: 'var(--vz-body-color)', textTransform: 'capitalize', fontWeight: 600 }}>
                       {role.replace(/_/g, ' ')}
                     </span>
                     <span style={{ fontSize: 14, fontWeight: 800, color: COLORS[i % COLORS.length] }}>{count as number}</span>

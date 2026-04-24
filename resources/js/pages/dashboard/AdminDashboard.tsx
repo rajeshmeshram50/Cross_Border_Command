@@ -157,6 +157,23 @@ export default function AdminDashboard() {
         /* Force white card surface in light theme; auto-flip in dark theme */
         .dashboard-surface { background: #ffffff; }
         [data-bs-theme="dark"] .dashboard-surface { background: #1c2531; }
+        .ad-list-row {
+          transition: background 0.18s ease, box-shadow 0.18s ease;
+          cursor: pointer;
+          position: relative;
+        }
+        .ad-list-row:hover {
+          background: rgba(124, 92, 252, 0.08);
+          box-shadow: inset 3px 0 0 0 rgba(124, 92, 252, 0.7);
+        }
+        [data-bs-theme="dark"] .ad-list-row:hover,
+        [data-layout-mode="dark"] .ad-list-row:hover {
+          background: rgba(255, 255, 255, 0.05);
+          box-shadow: inset 3px 0 0 0 rgba(124, 92, 252, 0.9);
+        }
+        .ad-list-row + .ad-list-row { border-top: 1px solid #f1f3f9; }
+        [data-bs-theme="dark"] .ad-list-row + .ad-list-row,
+        [data-layout-mode="dark"] .ad-list-row + .ad-list-row { border-top-color: rgba(255,255,255,0.06); }
       `}</style>
       {/* Page Title */}
       <Row className="mb-2">
@@ -257,7 +274,7 @@ export default function AdminDashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
                   <XAxis dataKey="short" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
-                  <Tooltip content={<ChartTooltip prefix="₹" />} />
+                  <Tooltip content={<ChartTooltip prefix="₹" />} cursor={{ stroke: 'rgba(124,92,252,0.35)', strokeWidth: 1, strokeDasharray: '3 3' }} />
                   <Area type="monotone" dataKey="revenue" stroke="#405189" strokeWidth={2.5} fill="url(#adminRevGrad)" dot={{ r: 4, fill: '#405189', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, fill: '#405189' }} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -314,7 +331,7 @@ export default function AdminDashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} allowDecimals={false} width={24} />
-                  <Tooltip content={<ChartTooltip />} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(124,92,252,0.08)', radius: 6 }} />
                   <Bar dataKey="clients" fill="url(#barGrad)" radius={[6, 6, 0, 0]} barSize={22} />
                 </BarChart>
               </ResponsiveContainer>
@@ -416,14 +433,10 @@ export default function AdminDashboard() {
             </div>
             <CardBody style={{ padding: 0 }}>
               {data.recent_clients.map((c: any, i: number) => (
-                <div key={c.id} style={{
+                <div key={c.id} className="ad-list-row" style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 20px', borderBottom: i < data.recent_clients.length - 1 ? '1px solid #f8f9fa' : 'none',
-                  transition: 'background 0.15s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
+                  padding: '12px 20px',
+                }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{
                       width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -467,21 +480,17 @@ export default function AdminDashboard() {
               }}>View All</button>
             </div>
             <CardBody style={{ padding: 0 }}>
-              {data.recent_payments.map((p: any, i: number) => {
+              {data.recent_payments.map((p: any) => {
                 const cfg = p.status === 'success'
                   ? { color: '#0ab39c', icon: 'ri-checkbox-circle-fill', bg: '#0ab39c18' }
                   : p.status === 'failed'
                   ? { color: '#f06548', icon: 'ri-close-circle-fill', bg: '#f0654818' }
                   : { color: '#f7b84b', icon: 'ri-time-fill', bg: '#f7b84b18' };
                 return (
-                  <div key={p.id} style={{
+                  <div key={p.id} className="ad-list-row" style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '12px 20px', borderBottom: i < data.recent_payments.length - 1 ? '1px solid #f8f9fa' : 'none',
-                    transition: 'background 0.15s',
-                  }}
-                    onMouseEnter={e => (e.currentTarget.style.background = '#f8faff')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                  >
+                    padding: '12px 20px',
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                       <div style={{
                         width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',

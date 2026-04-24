@@ -158,7 +158,7 @@ export default function Settings() {
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 10px 12px;
+          padding: 8px 12px;
           border-radius: 10px;
           cursor: pointer;
           user-select: none;
@@ -187,6 +187,67 @@ export default function Settings() {
         .settings-pane { animation: settings-fade-up .25s ease; }
         /* Remove hanging bottom border on last toggle in each group */
         .toggle-row-hover:last-child { border-bottom: none !important; }
+
+        /* ── Custom tooltip for compact (icon-only) mode ── */
+        .settings-tab-btn .settings-tip {
+          position: absolute;
+          left: calc(100% + 10px);
+          top: 50%;
+          transform: translateY(-50%) translateX(-4px);
+          background: #1f2937;
+          color: #fff;
+          font-size: 11.5px;
+          font-weight: 600;
+          letter-spacing: 0.02em;
+          padding: 5px 10px;
+          border-radius: 6px;
+          white-space: nowrap;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity .15s ease, transform .15s ease;
+          z-index: 50;
+          box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+        }
+        .settings-tab-btn .settings-tip::before {
+          content: '';
+          position: absolute;
+          left: -4px;
+          top: 50%;
+          transform: translateY(-50%) rotate(45deg);
+          width: 8px; height: 8px;
+          background: #1f2937;
+        }
+        .settings-tab-btn:hover .settings-tip,
+        .settings-tab-btn:focus-visible .settings-tip {
+          opacity: 1;
+          transform: translateY(-50%) translateX(0);
+        }
+
+        /* ── Compact (icon-only) mode on laptop-width screens ── */
+        @media (max-width: 1399.98px) {
+          .settings-sidebar-label,
+          .settings-sidebar-header-text,
+          .settings-sidebar-active-arrow {
+            display: none !important;
+          }
+          .settings-tab-btn {
+            justify-content: center;
+            padding: 8px;
+          }
+          .settings-sidebar-header {
+            justify-content: center !important;
+          }
+        }
+        @media (min-width: 1400px) {
+          .settings-tab-btn .settings-tip { display: none; }
+        }
+
+        /* On very small phones, switch to a horizontal scrollable strip */
+        @media (max-width: 575.98px) {
+          .settings-tab-list { flex-direction: row !important; overflow-x: auto; gap: 6px !important; }
+          .settings-tab-list .settings-tab-btn { flex: 0 0 auto; width: auto; padding: 8px 10px; }
+          .settings-tab-btn .settings-tip { display: none; }
+        }
       `}</style>
 
       {/* ── Compact Page Header ── */}
@@ -209,23 +270,23 @@ export default function Settings() {
         </ol>
       </div>
 
-      <Row className="g-3">
+      <Row className="g-3 align-items-start pb-3">
         {/* ── Left: Sidebar Nav ── */}
-        <Col xl={3} lg={4}>
+        <Col xxl={3} xl={3} lg="auto" md="auto" xs={12}>
           <Card className="mb-0" style={{ borderRadius: 14 }}>
             <CardBody className="p-2">
-              <div className="px-2 py-2 mb-1 d-flex align-items-center gap-2">
+              <div className="settings-sidebar-header px-2 py-2 mb-1 d-flex align-items-center gap-2">
                 <div
                   className="d-inline-flex align-items-center justify-content-center rounded-1"
                   style={{ width: 26, height: 26, background: '#7c5cfc18', border: '1px solid #7c5cfc28' }}
                 >
                   <i className="ri-apps-2-line" style={{ color: '#7c5cfc', fontSize: 13 }} />
                 </div>
-                <span className="text-uppercase fw-bold" style={{ fontSize: 10, letterSpacing: '0.07em', color: 'var(--vz-secondary-color)' }}>
+                <span className="settings-sidebar-header-text text-uppercase fw-bold" style={{ fontSize: 10, letterSpacing: '0.07em', color: 'var(--vz-secondary-color)' }}>
                   Categories
                 </span>
                 <span
-                  className="ms-auto rounded-pill px-2 fw-bold"
+                  className="settings-sidebar-header-text ms-auto rounded-pill px-2 fw-bold"
                   style={{
                     fontSize: 9.5,
                     background: '#7c5cfc20',
@@ -236,7 +297,7 @@ export default function Settings() {
                   {TABS.length}
                 </span>
               </div>
-              <div className="vstack gap-1">
+              <div className="settings-tab-list vstack gap-1">
                 {TABS.map(t => {
                   const isActive = tab === t.id;
                   return (
@@ -244,6 +305,8 @@ export default function Settings() {
                       key={t.id}
                       type="button"
                       onClick={() => setTab(t.id)}
+                      aria-label={t.label}
+                      title={t.label}
                       className={`settings-tab-btn ${isActive ? 'active' : ''}`}
                       style={{
                         ['--accent-col' as any]: t.color + '14',
@@ -262,7 +325,7 @@ export default function Settings() {
                       >
                         <i className={t.icon} style={{ color: t.color, fontSize: 15 }} />
                       </div>
-                      <div className="flex-grow-1 min-w-0">
+                      <div className="settings-sidebar-label flex-grow-1 min-w-0">
                         <div
                           className="fw-semibold text-truncate"
                           style={{
@@ -275,7 +338,9 @@ export default function Settings() {
                         </div>
                         <div className="text-muted text-truncate" style={{ fontSize: 10.5 }}>{t.desc}</div>
                       </div>
-                      {isActive && <i className="ri-arrow-right-s-line" style={{ color: t.color, fontSize: 16 }} />}
+                      {isActive && <i className="settings-sidebar-active-arrow ri-arrow-right-s-line" style={{ color: t.color, fontSize: 16 }} />}
+                      {/* Tooltip shown only in compact mode via CSS */}
+                      <span className="settings-tip">{t.label}</span>
                     </button>
                   );
                 })}
@@ -285,7 +350,7 @@ export default function Settings() {
         </Col>
 
         {/* ── Right: Content ── */}
-        <Col xl={9} lg={8}>
+        <Col xxl={9} xl={9} lg={true} md={true} xs={12}>
           <Card className="mb-0" style={{ borderRadius: 14 }}>
             <CardBody className="p-3">
               <TabContent activeTab={tab}>
@@ -719,9 +784,7 @@ export default function Settings() {
                       >
                         PROPRIETARY
                       </span>
-                      <span style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)' }}>
-                        Built with <i className="ri-heart-fill" style={{ color: '#ef4444', fontSize: 11 }} /> in India
-                      </span>
+                      
                     </div>
                   </div>
                 </TabPane>
