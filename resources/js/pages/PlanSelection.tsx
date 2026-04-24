@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, Label, Spinner,
+  Card, CardBody, Col, Row, Button, Input, Label, Spinner,
   Modal, ModalHeader, ModalBody, ModalFooter,
 } from 'reactstrap';
 import { Swiper, SwiperSlide } from 'swiper/react';
@@ -220,44 +220,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
       )}
 
       {/* ── Billing cycle toggle — glossy animated pill ── */}
-      <style>{`
-        @keyframes bc-shine {
-          0%   { transform: translateX(-120%) skewX(-20deg); }
-          100% { transform: translateX(260%) skewX(-20deg); }
-        }
-        @keyframes bc-save-pulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(10,179,156,0.45), 0 1px 4px rgba(10,179,156,0.35); }
-          60%      { box-shadow: 0 0 0 5px rgba(10,179,156,0),     0 1px 4px rgba(10,179,156,0.50); }
-        }
-        .bc-btn-active {
-          background: linear-gradient(135deg, #405189 0%, #4a63a8 45%, #6691e7 100%) !important;
-          position: relative;
-          overflow: hidden;
-        }
-        .bc-btn-active::before {
-          content: '';
-          position: absolute;
-          inset: 1px 1px auto 1px;
-          height: 48%;
-          border-radius: 999px;
-          background: linear-gradient(180deg, rgba(255,255,255,0.30), rgba(255,255,255,0));
-          pointer-events: none;
-          z-index: 0;
-        }
-        .bc-btn-active::after {
-          content: '';
-          position: absolute;
-          top: 0; left: 0;
-          width: 42%; height: 100%;
-          background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,0.38) 50%, transparent 80%);
-          transform: translateX(-120%) skewX(-20deg);
-          animation: bc-shine 3.4s ease-in-out infinite;
-          animation-delay: 1s;
-          pointer-events: none;
-          z-index: 0;
-        }
-        .bc-save-badge { animation: bc-save-pulse 2s ease-in-out infinite; }
-      `}</style>
+      
       <div className="d-flex justify-content-center mb-3">
         <div
           className="d-inline-flex rounded-pill"
@@ -317,91 +280,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
             );
           })}
         </div>
-      </div>
-
-      {/* Shine animation + custom thin scrollbar */}
-      <style>{`
-        @keyframes plan-shine-sweep {
-          0%   { transform: translateX(-120%) skewX(-20deg); opacity: 0; }
-          8%   { opacity: 1; }
-          35%  { transform: translateX(320%) skewX(-20deg); opacity: 0; }
-          100% { transform: translateX(320%) skewX(-20deg); opacity: 0; }
-        }
-        .plan-modules-scroll {
-          scrollbar-width: thin;
-          scrollbar-color: rgba(124, 92, 252, 0.25) transparent;
-        }
-        .plan-modules-scroll::-webkit-scrollbar { width: 4px; }
-        .plan-modules-scroll::-webkit-scrollbar-track { background: transparent; }
-        .plan-modules-scroll::-webkit-scrollbar-thumb {
-          background: rgba(124, 92, 252, 0.22);
-          border-radius: 4px;
-          transition: background 0.2s ease;
-        }
-        .plan-modules-scroll::-webkit-scrollbar-thumb:hover { background: rgba(124, 92, 252, 0.45); }
-        .plan-modules-scroll.plan-scroll-dark { scrollbar-color: rgba(247, 184, 75, 0.30) transparent; }
-        .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb { background: rgba(247, 184, 75, 0.28); }
-        .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb:hover { background: rgba(247, 184, 75, 0.50); }
-
-        /* ── Swiper carousel styling ── */
-        .plansel-swiper-outer {
-          position: relative;
-          padding: 0 52px;
-        }
-        .plansel-swiper {
-          padding-top: 10px !important;
-          padding-bottom: 36px !important;
-        }
-        .plansel-nav-btn {
-          position: absolute;
-          top: calc(50% - 18px);
-          transform: translateY(-50%);
-          z-index: 10;
-          width: 42px;
-          height: 42px;
-          border-radius: 50%;
-          border: 1px solid var(--vz-border-color);
-          background: var(--vz-card-bg, #fff);
-          color: #7c5cfc;
-          font-size: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          box-shadow: 0 6px 18px rgba(124,92,252,0.18);
-          transition: all 0.2s ease;
-          outline: none;
-        }
-        .plansel-nav-btn:hover:not(:disabled) {
-          background: linear-gradient(135deg, #7c5cfc, #6366f1);
-          color: #fff;
-          border-color: #7c5cfc;
-          box-shadow: 0 10px 24px rgba(124,92,252,0.40);
-          transform: translateY(-50%) scale(1.08);
-        }
-        .plansel-nav-btn:disabled {
-          opacity: 0.30;
-          cursor: not-allowed;
-        }
-        .plansel-nav-prev { left: 0; }
-        .plansel-nav-next { right: 0; }
-        [data-layout-mode="dark"] .plansel-nav-btn,
-        [data-bs-theme="dark"] .plansel-nav-btn {
-          background: var(--vz-card-bg);
-          box-shadow: 0 6px 18px rgba(124,92,252,0.35);
-        }
-
-        /* Violet pagination bullets */
-        .plansel-swiper .swiper-pagination-bullet {
-          background: #7c5cfc !important;
-          opacity: 0.35;
-          transition: all 0.2s ease;
-        }
-        .plansel-swiper .swiper-pagination-bullet-active {
-          opacity: 1;
-          transform: scale(1.3);
-        }
-      `}</style>
+      </div>   
 
       {plans.length === 0 ? (
         <Card><CardBody className="text-center py-5">
@@ -859,133 +738,205 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
       )}
 
       {/* Payment Modal */}
-      <Modal isOpen={paymentModal} toggle={() => !processing && setPaymentModal(false)} centered size="md">
-        <ModalHeader toggle={() => !processing && setPaymentModal(false)}>
-          {paymentStep === 'success' ? 'Payment Successful' : `Subscribe to ${selectedPlan?.name}`}
-        </ModalHeader>
-        <ModalBody>
+      <Modal isOpen={paymentModal} toggle={() => !processing && setPaymentModal(false)} centered size="md" className="pay-modal">
+        {/* Styles live in resources/css/app.css under the "Payment Modal" section */}
+
+        {/* ── Premium Hero Header ── */}
+        {selectedPlan && paymentStep !== 'success' && (
+          <div className="pay-hero">
+            <button
+              type="button"
+              className="pay-hero-close"
+              onClick={() => !processing && setPaymentModal(false)}
+              aria-label="Close"
+            >
+              <i className="ri-close-line" />
+            </button>
+            <div className="d-flex align-items-center gap-3 position-relative">
+              <div className="pay-hero-icon d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0">
+                <i className={selectedPlan.is_featured ? 'ri-vip-crown-2-fill' : 'ri-rocket-2-line'} />
+              </div>
+              <div className="flex-grow-1 min-w-0">
+                <div className="pay-hero-label">Subscribe to</div>
+                <h4 className="pay-hero-title mb-0 fw-bold">{selectedPlan.name} Plan</h4>
+                <div className="pay-hero-meta d-flex align-items-center gap-2 mt-1">
+                  <i className="ri-calendar-check-line" />
+                  <span className="text-capitalize">{billingCycle}ly billing</span>
+                  <span className="pay-hero-sep">·</span>
+                  <span>₹{grandTotal.toLocaleString()} total</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {paymentStep === 'success' && (
+          <ModalHeader toggle={() => !processing && setPaymentModal(false)} className="border-0 pb-0" />
+        )}
+
+        <ModalBody className="p-3">
           {paymentStep === 'select' && selectedPlan && (
             <>
-              {/* Order summary */}
-              <Card className="mb-3">
-                <CardHeader className="bg-light"><h6 className="mb-0 text-uppercase fs-12">Order Summary</h6></CardHeader>
-                <CardBody>
-                  <div className="d-flex justify-content-between mb-1">
-                    <span className="text-muted">{selectedPlan.name} Plan ({billingCycle}ly)</span>
-                    <span className="fw-bold">₹{Math.round(total).toLocaleString()}</span>
+              {/* ── Order Summary ── */}
+              <div className="pay-summary mb-3">
+                <div className="pay-summary-head d-flex align-items-center gap-2">
+                  <i className="ri-file-list-3-line pay-section-label-icon text-vz-primary" />
+                  <span className="pay-section-label text-uppercase fw-bold">Order Summary</span>
+                </div>
+                <div className="p-3">
+                  <div className="pay-row d-flex justify-content-between mb-2">
+                    <span className="text-muted">{selectedPlan.name} Plan <span className="text-capitalize">({billingCycle}ly)</span></span>
+                    <span className="fw-semibold">₹{Math.round(total).toLocaleString()}</span>
                   </div>
-                  <div className="d-flex justify-content-between mb-2 fs-13">
+                  <div className="pay-row-sm d-flex justify-content-between mb-2">
                     <span className="text-muted">GST (18%)</span>
                     <span className="text-muted">₹{gst.toLocaleString()}</span>
                   </div>
-                  <div className="d-flex justify-content-between border-top pt-2">
-                    <strong>Total</strong>
-                    <strong className="text-success fs-15">₹{grandTotal.toLocaleString()}</strong>
+                  <div className="pay-total-row d-flex justify-content-between align-items-center pt-2">
+                    <span className="pay-total-label fw-bold">Total</span>
+                    <span className="pay-total-amount fw-bold">₹{grandTotal.toLocaleString()}</span>
                   </div>
-                </CardBody>
-              </Card>
+                </div>
+              </div>
 
-              {/* Payment method */}
-              <Label>Payment Method</Label>
+              {/* ── Payment method ── */}
+              <div className="d-flex align-items-center gap-2 mb-2">
+                <i className="ri-wallet-3-line pay-section-label-icon text-violet" />
+                <span className="pay-section-label text-uppercase fw-bold">Payment Method</span>
+              </div>
               <Row className="g-2 mb-3">
                 {([
-                  { id: 'upi',         label: 'UPI',         icon: 'ri-smartphone-line',  desc: 'Google Pay / PhonePe' },
+                  { id: 'upi',         label: 'UPI',         icon: 'ri-smartphone-line',  desc: 'GPay / PhonePe' },
                   { id: 'card',        label: 'Card',        icon: 'ri-bank-card-line',   desc: 'Credit / Debit' },
                   { id: 'net_banking', label: 'Net Banking', icon: 'ri-bank-line',        desc: 'Bank Transfer' },
                 ] as const).map(m => (
                   <Col xs={4} key={m.id}>
                     <div
                       onClick={() => setPaymentMethod(m.id)}
-                      className={`p-3 rounded border-2 text-center cursor-pointer ${paymentMethod === m.id ? 'border-primary bg-primary bg-opacity-10' : 'border-light'}`}
+                      className={`pay-method-tile ${paymentMethod === m.id ? 'active' : ''}`}
                       role="button"
                     >
-                      <i className={`${m.icon} fs-4 ${paymentMethod === m.id ? 'text-primary' : 'text-muted'}`}></i>
-                      <div className="fw-bold fs-13 mt-1">{m.label}</div>
-                      <div className="text-muted fs-11">{m.desc}</div>
+                      <div className="pay-chip">
+                        <i className={m.icon} />
+                      </div>
+                      <div className="pay-method-label fw-bold">{m.label}</div>
+                      <div className="pay-method-desc text-muted">{m.desc}</div>
                     </div>
                   </Col>
                 ))}
               </Row>
 
+              {/* ── Payment input ── */}
               {paymentMethod === 'upi' && (
-                <>
-                  <Label>UPI ID</Label>
-                  <Input defaultValue="payment@ybl" placeholder="yourname@upi" />
-                </>
+                <div>
+                  <Label className="pay-form-label fw-semibold mb-1">
+                    <i className="ri-at-line me-1" />UPI ID
+                  </Label>
+                  <Input className="pay-input" defaultValue="payment@ybl" placeholder="yourname@upi" />
+                </div>
               )}
               {paymentMethod === 'card' && (
-                <>
-                  <Label>Card Number</Label>
-                  <Input defaultValue="4111 1111 1111 1111" placeholder="4111 1111 1111 1111" />
+                <div>
+                  <Label className="pay-form-label fw-semibold mb-1">
+                    <i className="ri-bank-card-line me-1" />Card Number
+                  </Label>
+                  <Input className="pay-input-mono" defaultValue="4111 1111 1111 1111" placeholder="4111 1111 1111 1111" />
                   <Row className="g-2 mt-2">
-                    <Col xs={6}><Label>Expiry</Label><Input defaultValue="12/28" placeholder="MM/YY" /></Col>
-                    <Col xs={6}><Label>CVV</Label><Input type="password" defaultValue="123" placeholder="***" /></Col>
+                    <Col xs={6}>
+                      <Label className="pay-form-label fw-semibold mb-1">
+                        <i className="ri-calendar-line me-1" />Expiry
+                      </Label>
+                      <Input className="pay-input-mono" defaultValue="12/28" placeholder="MM/YY" />
+                    </Col>
+                    <Col xs={6}>
+                      <Label className="pay-form-label fw-semibold mb-1">
+                        <i className="ri-lock-2-line me-1" />CVV
+                      </Label>
+                      <Input className="pay-input-mono" type="password" defaultValue="123" placeholder="***" />
+                    </Col>
                   </Row>
-                </>
+                </div>
               )}
               {paymentMethod === 'net_banking' && (
-                <div
-                  className="text-center p-3 rounded-2"
-                  style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)' }}
-                >
-                  <i className="ri-bank-line fs-2 text-muted"></i>
-                  <p className="mb-0 fs-13 text-muted mt-1">You will be redirected to your bank's secure page</p>
+                <div className="pay-netbank-box d-flex align-items-center gap-2 p-3 rounded-2">
+                  <i className="ri-bank-line pay-netbank-icon" />
+                  <p className="pay-netbank-text mb-0">
+                    You will be redirected to your bank's secure page to complete payment.
+                  </p>
                 </div>
               )}
 
-              <div className="text-muted fs-11 mt-3">
-                <i className="ri-shield-check-line me-1"></i>Secured by Razorpay · 256-bit SSL encryption
+              {/* ── Trust row ── */}
+              <div className="pay-trust d-flex align-items-center gap-2 mt-3 px-3 py-2 rounded-pill">
+                <i className="ri-shield-check-fill" />
+                <span className="pay-trust-text">
+                  Secured by <strong>Razorpay</strong> · 256-bit SSL encryption
+                </span>
               </div>
             </>
           )}
 
           {paymentStep === 'processing' && (
             <div className="text-center py-5">
-              <Spinner color="primary" style={{ width: 48, height: 48 }} />
-              <h5 className="mt-3 mb-1">Processing Payment...</h5>
-              <p className="text-muted mb-0">Please wait while we process your payment</p>
+              <Spinner color="success" className="pay-processing-spinner" />
+              <h5 className="pay-processing-title mt-3 mb-1 fw-bold">Processing Payment...</h5>
+              <p className="pay-processing-desc text-muted mb-0">
+                Securely processing your transaction. Please don't close this window.
+              </p>
             </div>
           )}
 
           {paymentStep === 'success' && txnResult && (
             <div className="text-center">
-              <div className="avatar-lg mx-auto mb-3">
-                <div className="avatar-title rounded-circle bg-success-subtle text-success fs-1">
-                  <i className="ri-checkbox-circle-line"></i>
-                </div>
+              <div className="pay-success-icon mx-auto mb-3 d-inline-flex align-items-center justify-content-center rounded-circle">
+                <i className="ri-check-line pay-success-check" />
               </div>
-              <h3 className="mb-1">Payment Successful!</h3>
-              <p className="text-muted mb-3">{txnResult.plan} plan has been activated</p>
-              <Card className="text-start mb-0">
-                <CardBody>
-                  {[
-                    ['Transaction ID', txnResult.txn_id],
-                    ['Amount Paid', `₹${txnResult.total?.toLocaleString()}`],
-                    ['Plan', txnResult.plan],
-                    ['Valid Until', txnResult.valid_until],
-                  ].map(([l, v]) => (
-                    <div key={l} className="d-flex justify-content-between fs-13 py-1">
-                      <span className="text-muted">{l}</span>
-                      <span className="fw-bold">{v}</span>
-                    </div>
-                  ))}
-                </CardBody>
-              </Card>
+              <h4 className="pay-success-title mb-1 fw-bold">Payment Successful!</h4>
+              <p className="pay-success-desc text-muted mb-3">
+                Your <strong>{txnResult.plan}</strong> plan has been activated
+              </p>
+              <div className="pay-receipt text-start mx-auto">
+                {[
+                  { l: 'Transaction ID', v: txnResult.txn_id,                        mono: true,  valueClass: 'pay-value-muted'   },
+                  { l: 'Amount Paid',    v: `₹${txnResult.total?.toLocaleString()}`, mono: false, valueClass: 'pay-value-success' },
+                  { l: 'Plan',           v: txnResult.plan,                          mono: false, valueClass: 'pay-value-primary' },
+                  { l: 'Valid Until',    v: txnResult.valid_until,                   mono: false, valueClass: 'pay-value-warning' },
+                ].map((row) => (
+                  <div key={row.l} className="pay-receipt-row d-flex justify-content-between align-items-center py-2">
+                    <span className="text-muted">{row.l}</span>
+                    <span className={`fw-bold ${row.valueClass} ${row.mono ? 'font-monospace' : ''}`}>{row.v}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </ModalBody>
         {paymentStep === 'select' && (
-          <ModalFooter>
-            <Button color="light" onClick={() => setPaymentModal(false)}>Cancel</Button>
-            <Button color="success" onClick={handlePay}>
-              <i className="ri-money-rupee-circle-line me-1"></i> Pay ₹{grandTotal.toLocaleString()}
+          <ModalFooter className="border-0 pt-0">
+            <Button
+              color="light"
+              className="pay-btn-cancel rounded-pill fw-semibold px-4"
+              onClick={() => setPaymentModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="pay-btn-pay rounded-pill pay-primary-btn px-4 text-white"
+              onClick={handlePay}
+            >
+              <i className="ri-secure-payment-line me-1" />
+              Pay ₹{grandTotal.toLocaleString()}
             </Button>
           </ModalFooter>
         )}
         {paymentStep === 'success' && (
-          <ModalFooter>
-            <Button color="primary" className="w-100" onClick={() => { setPaymentModal(false); onSuccess(); }}>
-              <i className="ri-flashlight-line me-1"></i> Go to Dashboard
+          <ModalFooter className="border-0 pt-0">
+            <Button
+              className="pay-btn-dash w-100 rounded-pill fw-semibold pay-primary-btn text-white"
+              onClick={() => { setPaymentModal(false); onSuccess(); }}
+            >
+              <i className="ri-flashlight-line me-1" />
+              Go to Dashboard
             </Button>
           </ModalFooter>
         )}

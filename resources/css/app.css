@@ -429,3 +429,393 @@ tbody tr:nth-child(9) {
 tbody tr:nth-child(10) {
   animation-delay: 270ms;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Payment Modal (PlanSelection.tsx — Subscribe flow)
+   ═══════════════════════════════════════════════════════════════ */
+.pay-modal .modal-content {
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22), 0 8px 20px rgba(15, 23, 42, 0.10);
+}
+[data-bs-theme="dark"] .pay-modal .modal-content,
+[data-layout-mode="dark"] .pay-modal .modal-content {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.pay-hero {
+  position: relative;
+  padding: 20px 22px 18px;
+  background: linear-gradient(135deg, #0b0f1e 0%, #1e1b4b 30%, #350d72 65%, #251541 100%);
+  color: #fff;
+  overflow: hidden;
+}
+.pay-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 0% 0%, rgba(139, 92, 246, 0.40) 0%, transparent 45%),
+    radial-gradient(ellipse at 100% 100%, rgba(236, 72, 153, 0.28) 0%, transparent 50%),
+    radial-gradient(circle at 70% 20%, rgba(255, 255, 255, 0.10) 0%, transparent 35%);
+  pointer-events: none;
+}
+.pay-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black, transparent 80%);
+  pointer-events: none;
+}
+
+.pay-hero-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all .18s ease;
+  z-index: 2;
+  backdrop-filter: blur(8px);
+}
+.pay-hero-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  transform: rotate(90deg);
+}
+
+.pay-summary {
+  border-radius: 12px;
+  border: 1px solid var(--vz-border-color);
+  background: var(--vz-card-bg);
+  overflow: hidden;
+}
+.pay-summary-head {
+  padding: 8px 14px;
+  background: rgba(64, 81, 137, 0.06);
+  border-bottom: 1px solid var(--vz-border-color);
+}
+[data-bs-theme="dark"] .pay-summary-head,
+[data-layout-mode="dark"] .pay-summary-head {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pay-method-tile {
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 12px 10px;
+  text-align: center;
+  border: 1.5px solid var(--vz-border-color);
+  background: var(--vz-card-bg);
+  transition: all .18s ease;
+}
+.pay-method-tile:hover {
+  border-color: rgba(124, 92, 252, 0.45);
+  background: rgba(124, 92, 252, 0.04);
+  transform: translateY(-1px);
+}
+.pay-method-tile.active {
+  border-color: #7c5cfc;
+  background: linear-gradient(135deg, rgba(124, 92, 252, 0.12), rgba(124, 92, 252, 0.04));
+  box-shadow: 0 4px 14px rgba(124, 92, 252, 0.20), inset 0 0 0 1px #7c5cfc;
+}
+.pay-method-tile .pay-chip {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 6px;
+  background: rgba(64, 81, 137, 0.08);
+  color: #64748b;
+  transition: all .18s ease;
+}
+.pay-method-tile.active .pay-chip {
+  background: linear-gradient(135deg, #7c5cfc, #a78bfa);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(124, 92, 252, 0.35);
+}
+
+.pay-primary-btn {
+  background: linear-gradient(135deg, #0ab39c, #14c9b1) !important;
+  border: none !important;
+  box-shadow: 0 6px 16px rgba(10, 179, 156, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  font-weight: 600;
+  transition: all .18s ease;
+}
+.pay-primary-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(10, 179, 156, 0.50), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+@keyframes pay-success-pop {
+  0%   { transform: scale(0.5); opacity: 0; }
+  60%  { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.pay-success-icon {
+  animation: pay-success-pop .45s cubic-bezier(.22, 1, .36, 1) both;
+}
+
+/* ── Hero header elements ── */
+.pay-hero-close i { font-size: 15px; }
+
+.pay-hero-icon {
+  width: 46px;
+  height: 46px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.08));
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(6px);
+}
+.pay-hero-icon i { color: #fff; font-size: 22px; }
+
+.pay-hero-label {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  font-weight: 600;
+}
+.pay-hero-title { font-size: 19px; letter-spacing: -0.01em; }
+.pay-hero-meta { font-size: 11.5px; opacity: 0.9; }
+.pay-hero-meta i { font-size: 13px; }
+.pay-hero-meta .pay-hero-sep { opacity: 0.5; }
+
+/* ── Section header label (Order Summary / Payment Method) ── */
+.pay-section-label {
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  color: var(--vz-secondary-color);
+}
+.pay-section-label-icon { font-size: 14px; }
+.pay-section-label-icon.text-violet { color: #7c5cfc; }
+.pay-section-label-icon.text-vz-primary { color: #405189; }
+
+/* ── Order summary inner ── */
+.pay-row        { font-size: 13px; }
+.pay-row-sm     { font-size: 12.5px; }
+.pay-total-row  { border-top: 1px dashed var(--vz-border-color); }
+.pay-total-label  { font-size: 13px; }
+.pay-total-amount {
+  font-size: 17px;
+  color: #0ab39c;
+  letter-spacing: -0.01em;
+}
+
+/* ── Method tiles ── */
+.pay-method-tile .pay-chip i { font-size: 17px; }
+.pay-method-label { font-size: 12.5px; }
+.pay-method-desc  { font-size: 10.5px; margin-top: 1px; }
+
+/* ── Form labels + inputs ── */
+.pay-form-label { font-size: 12px; }
+.pay-form-label i { color: #7c5cfc; }
+.pay-input      { font-size: 13px; }
+.pay-input-mono { font-size: 13px; font-family: monospace; }
+
+/* ── Net banking callout ── */
+.pay-netbank-box {
+  background: rgba(124, 92, 252, 0.06);
+  border: 1px solid rgba(124, 92, 252, 0.20);
+}
+.pay-netbank-box .pay-netbank-icon { font-size: 22px; color: #7c5cfc; }
+.pay-netbank-box .pay-netbank-text {
+  font-size: 12.5px;
+  color: var(--vz-body-color);
+}
+
+/* ── Trust row ── */
+.pay-trust {
+  background: rgba(10, 179, 156, 0.08);
+  border: 1px solid rgba(10, 179, 156, 0.25);
+}
+.pay-trust i { color: #0ab39c; font-size: 14px; }
+.pay-trust .pay-trust-text {
+  font-size: 11.5px;
+  color: var(--vz-body-color);
+}
+.pay-trust .pay-trust-text strong { color: #0ab39c; }
+
+/* ── Processing screen ── */
+.pay-processing-spinner {
+  width: 54px;
+  height: 54px;
+  border-width: 4px;
+}
+.pay-processing-title { font-size: 16px; }
+.pay-processing-desc  { font-size: 12.5px; }
+
+/* ── Success screen ── */
+.pay-success-icon {
+  width: 72px;
+  height: 72px;
+  background: linear-gradient(135deg, #0ab39c, #14c9b1);
+  box-shadow: 0 10px 28px rgba(10, 179, 156, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.pay-success-check {
+  color: #fff;
+  font-size: 40px;
+  font-weight: 700;
+}
+.pay-success-title {
+  font-size: 19px;
+  letter-spacing: -0.01em;
+}
+.pay-success-desc { font-size: 13px; }
+
+.pay-receipt {
+  background: var(--vz-card-bg);
+  border: 1px dashed var(--vz-border-color);
+  border-radius: 12px;
+  padding: 12px 16px;
+  max-width: 380px;
+}
+.pay-receipt-row {
+  font-size: 12.5px;
+  border-bottom: 1px dashed var(--vz-border-color);
+}
+.pay-receipt-row:last-child { border-bottom: none; }
+
+.pay-value-muted   { color: #64748b; }
+.pay-value-success { color: #0ab39c; }
+.pay-value-primary { color: #405189; }
+.pay-value-warning { color: #f7b84b; }
+
+/* ── Footer buttons ── */
+.pay-btn-cancel { font-size: 13px; }
+.pay-btn-pay    { font-size: 13px; }
+.pay-btn-pay i  { font-size: 15px; }
+.pay-btn-dash   { font-size: 13px; padding: 10px 16px; }
+.pay-btn-dash i { font-size: 15px; }
+
+ @keyframes plan-shine-sweep {
+          0%   { transform: translateX(-120%) skewX(-20deg); opacity: 0; }
+          8%   { opacity: 1; }
+          35%  { transform: translateX(320%) skewX(-20deg); opacity: 0; }
+          100% { transform: translateX(320%) skewX(-20deg); opacity: 0; }
+        }
+        .plan-modules-scroll {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(124, 92, 252, 0.25) transparent;
+        }
+        .plan-modules-scroll::-webkit-scrollbar { width: 4px; }
+        .plan-modules-scroll::-webkit-scrollbar-track { background: transparent; }
+        .plan-modules-scroll::-webkit-scrollbar-thumb {
+          background: rgba(124, 92, 252, 0.22);
+          border-radius: 4px;
+          transition: background 0.2s ease;
+        }
+        .plan-modules-scroll::-webkit-scrollbar-thumb:hover { background: rgba(124, 92, 252, 0.45); }
+        .plan-modules-scroll.plan-scroll-dark { scrollbar-color: rgba(247, 184, 75, 0.30) transparent; }
+        .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb { background: rgba(247, 184, 75, 0.28); }
+        .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb:hover { background: rgba(247, 184, 75, 0.50); }
+
+        /* ── Swiper carousel styling ── */
+        .plansel-swiper-outer {
+          position: relative;
+          padding: 0 52px;
+        }
+        .plansel-swiper {
+          padding-top: 10px !important;
+          padding-bottom: 36px !important;
+        }
+        .plansel-nav-btn {
+          position: absolute;
+          top: calc(50% - 18px);
+          transform: translateY(-50%);
+          z-index: 10;
+          width: 42px;
+          height: 42px;
+          border-radius: 50%;
+          border: 1px solid var(--vz-border-color);
+          background: var(--vz-card-bg, #fff);
+          color: #7c5cfc;
+          font-size: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          box-shadow: 0 6px 18px rgba(124,92,252,0.18);
+          transition: all 0.2s ease;
+          outline: none;
+        }
+        .plansel-nav-btn:hover:not(:disabled) {
+          background: linear-gradient(135deg, #7c5cfc, #6366f1);
+          color: #fff;
+          border-color: #7c5cfc;
+          box-shadow: 0 10px 24px rgba(124,92,252,0.40);
+          transform: translateY(-50%) scale(1.08);
+        }
+        .plansel-nav-btn:disabled {
+          opacity: 0.30;
+          cursor: not-allowed;
+        }
+        .plansel-nav-prev { left: 0; }
+        .plansel-nav-next { right: 0; }
+        [data-layout-mode="dark"] .plansel-nav-btn,
+        [data-bs-theme="dark"] .plansel-nav-btn {
+          background: var(--vz-card-bg);
+          box-shadow: 0 6px 18px rgba(124,92,252,0.35);
+        }
+
+        /* Violet pagination bullets */
+        .plansel-swiper .swiper-pagination-bullet {
+          background: #7c5cfc !important;
+          opacity: 0.35;
+          transition: all 0.2s ease;
+        }
+        .plansel-swiper .swiper-pagination-bullet-active {
+          opacity: 1;
+          transform: scale(1.3);
+        }
+
+        @keyframes bc-shine {
+          0%   { transform: translateX(-120%) skewX(-20deg); }
+          100% { transform: translateX(260%) skewX(-20deg); }
+        }
+        @keyframes bc-save-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(10,179,156,0.45), 0 1px 4px rgba(10,179,156,0.35); }
+          60%      { box-shadow: 0 0 0 5px rgba(10,179,156,0),     0 1px 4px rgba(10,179,156,0.50); }
+        }
+        .bc-btn-active {
+          background: linear-gradient(135deg, #405189 0%, #4a63a8 45%, #6691e7 100%) !important;
+          position: relative;
+          overflow: hidden;
+        }
+        .bc-btn-active::before {
+          content: '';
+          position: absolute;
+          inset: 1px 1px auto 1px;
+          height: 48%;
+          border-radius: 999px;
+          background: linear-gradient(180deg, rgba(255,255,255,0.30), rgba(255,255,255,0));
+          pointer-events: none;
+          z-index: 0;
+        }
+        .bc-btn-active::after {
+          content: '';
+          position: absolute;
+          top: 0; left: 0;
+          width: 42%; height: 100%;
+          background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,0.38) 50%, transparent 80%);
+          transform: translateX(-120%) skewX(-20deg);
+          animation: bc-shine 3.4s ease-in-out infinite;
+          animation-delay: 1s;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .bc-save-badge { animation: bc-save-pulse 2s ease-in-out infinite; }
