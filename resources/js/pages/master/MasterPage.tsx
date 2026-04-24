@@ -18,7 +18,7 @@ import {
   type FieldDef,
   type MasterConfig,
 } from './masterConfigs';
-import { MasterSelect, MasterFormStyles } from './masterFormKit';
+import { MasterSelect, MasterDatePicker, MasterFormStyles } from './masterFormKit';
 
 export default function MasterPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -954,10 +954,21 @@ function renderField(
         onInput={onFieldChange}
       />
     );
+  } else if (f.t === 'date') {
+    input = (
+      <MasterDatePicker
+        name={f.n}
+        defaultValue={defaultVal ? String(defaultVal) : ''}
+        placeholder={f.p || 'Select date'}
+        disabled={viewOnly}
+        invalid={!!err}
+        onChange={onFieldChange}
+      />
+    );
   } else {
     input = (
       <Input
-        type={f.t === 'email' ? 'email' : f.t === 'number' ? 'number' : f.t === 'date' ? 'date' : 'text'}
+        type={f.t === 'email' ? 'email' : f.t === 'number' ? 'number' : 'text'}
         name={f.n}
         placeholder={f.p}
         defaultValue={defaultVal}

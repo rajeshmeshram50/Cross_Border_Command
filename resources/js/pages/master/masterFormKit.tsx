@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 
 /**
@@ -104,6 +105,238 @@ export function MasterSelect({
       </Dropdown>
       {name !== undefined && <input type="hidden" name={name} value={currentValue} />}
     </>
+  );
+}
+
+/**
+ * Compact themed date picker — same visual language as MasterSelect.
+ *   - Click-to-open toggle (looks like an input, 38px height, 10px radius)
+ *   - 240px compact calendar popup
+ *   - Indigo focus ring, indigo "today" highlight, gradient selected day
+ *   - Supports both controlled (value + onChange) and uncontrolled (defaultValue) usage
+ *   - Renders a hidden <input name> so FormData-based forms get the value
+ */
+export function MasterDatePicker({
+  name,
+  value,
+  defaultValue,
+  onChange,
+  placeholder = 'Select date',
+  minDate,
+  disabled,
+  invalid,
+}: {
+  name?: string;
+  value?: string;
+  defaultValue?: string;
+  onChange?: (v: string) => void;
+  placeholder?: string;
+  minDate?: string;
+  disabled?: boolean;
+  invalid?: boolean;
+}) {
+  const [internal, setInternal] = useState<string>(defaultValue ?? '');
+  useEffect(() => {
+    if (value === undefined) setInternal(defaultValue ?? '');
+  }, [defaultValue, value]);
+  const currentValue = value !== undefined ? value : internal;
+
+  const [open, setOpen] = useState(false);
+  const [viewDate, setViewDate] = useState<Date>(() => currentValue ? new Date(currentValue) : new Date());
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  // Compute popup position from the toggle's bounding rect. Runs whenever `open`
+  // flips to true, and on window resize/scroll while open so the popup tracks
+  // (we close on any scroll inside the modal to avoid stale positions there).
+  useEffect(() => {
+    if (!open || !wrapRef.current) { setPopupPos(null); return; }
+    const update = () => {
+      if (!wrapRef.current) return;
+      const rect = wrapRef.current.getBoundingClientRect();
+      setPopupPos({
+        top: rect.bottom + 5,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const inWrap = wrapRef.current?.contains(target);
+      const inPopup = popupRef.current?.contains(target);
+      if (!inWrap && !inPopup) setOpen(false);
+    };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    // Close if the user scrolls any ancestor (modal body, page, etc.) so the
+    // portalled popup doesn't float in a stale position.
+    const onScroll = () => setOpen(false);
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('keydown', key);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('keydown', key);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [open]);
+
+  // When the bound value changes externally (e.g. record loaded in edit mode),
+  // pull the month view into the selected month so it's visible on open.
+  useEffect(() => {
+    if (currentValue) setViewDate(new Date(currentValue));
+  }, [currentValue]);
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const minD = minDate ? new Date(minDate) : null;
+  const today = new Date();
+  const selected = currentValue ? new Date(currentValue) : null;
+  const display = currentValue
+    ? new Date(currentValue).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '';
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const prev = () => setViewDate(new Date(year, month - 1, 1));
+  const next = () => setViewDate(new Date(year, month + 1, 1));
+
+  const sameDay = (a: Date | null, b: Date | null) =>
+    !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+  const commit = (v: string) => {
+    if (value === undefined) setInternal(v);
+    onChange?.(v);
+  };
+
+  return (
+    <div
+      ref={wrapRef}
+      className={`master-datepicker-wrap${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}`}
+      style={{ position: 'relative', width: '100%' }}
+    >
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        onClick={() => { if (!disabled) setOpen(o => !o); }}
+        onKeyDown={e => {
+          if (disabled) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); }
+        }}
+        className={`master-datepicker-toggle${open ? ' open' : ''}`}
+      >
+        <span className={display ? 'master-datepicker-value' : 'master-datepicker-placeholder'}>
+          {display || placeholder}
+        </span>
+        {currentValue && !disabled && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); commit(''); }}
+            className="master-datepicker-clear"
+            title="Clear"
+          >
+            <i className="ri-close-line" />
+          </button>
+        )}
+        <i className="ri-calendar-line master-datepicker-icon" />
+      </div>
+
+      {open && !disabled && popupPos && createPortal(
+        <div
+          ref={popupRef}
+          className="master-datepicker-popup"
+          style={{
+            position: 'fixed',
+            top: popupPos.top,
+            left: popupPos.left,
+            minWidth: Math.max(240, popupPos.width),
+            backgroundColor: '#ffffff',
+            backgroundImage: 'none',
+            opacity: 1,
+          }}
+        >
+          {/* Header: month nav */}
+          <div className="d-flex align-items-center justify-content-between mb-1">
+            <button type="button" onClick={prev} className="master-datepicker-nav">
+              <i className="ri-arrow-left-s-line" style={{ fontSize: 13 }} />
+            </button>
+            <div className="master-datepicker-title">
+              {viewDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+            </div>
+            <button type="button" onClick={next} className="master-datepicker-nav">
+              <i className="ri-arrow-right-s-line" style={{ fontSize: 13 }} />
+            </button>
+          </div>
+
+          {/* Weekday labels */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 2 }}>
+            {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+              <div key={d} className="master-datepicker-dow">{d}</div>
+            ))}
+          </div>
+
+          {/* Day grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+            {Array.from({ length: firstDow }).map((_, i) => <div key={`blank-${i}`} />)}
+            {Array.from({ length: daysInMonth }).map((_, i) => {
+              const day = i + 1;
+              const d = new Date(year, month, day);
+              const isToday = sameDay(today, d);
+              const isSelected = sameDay(selected, d);
+              const isDisabled = minD ? d < new Date(minD.getFullYear(), minD.getMonth(), minD.getDate()) : false;
+              const cls = [
+                'master-datepicker-day',
+                isSelected && 'is-selected',
+                isToday && !isSelected && 'is-today',
+              ].filter(Boolean).join(' ');
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => { commit(fmt(d)); setOpen(false); }}
+                  className={cls}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Footer */}
+          <div className="master-datepicker-footer">
+            <button
+              type="button"
+              onClick={() => { commit(''); setOpen(false); }}
+              className="clear-btn"
+            >
+              <i className="ri-close-line" />Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => { commit(fmt(today)); setViewDate(today); setOpen(false); }}
+              className="today-btn"
+            >
+              <i className="ri-focus-2-line" />Today
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {name !== undefined && <input type="hidden" name={name} value={currentValue} />}
+    </div>
   );
 }
 
@@ -397,5 +630,216 @@ export const MASTER_MODAL_CSS = `
     background: var(--vz-light);
     border-color: transparent;
     color: var(--vz-heading-color, var(--vz-body-color));
+  }
+
+  /* ── MasterDatePicker ─────────────────────────────────────────── */
+  .master-datepicker-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 38px;
+    padding: 7px 12px;
+    border: 1px solid var(--vz-border-color);
+    border-radius: 10px;
+    background: var(--vz-card-bg);
+    color: var(--vz-heading-color, var(--vz-body-color));
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+    transition: border-color .18s ease, box-shadow .18s ease;
+  }
+  .master-datepicker-toggle:hover:not([aria-disabled="true"]) {
+    border-color: rgba(99,102,241,0.55);
+    box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+  }
+  .master-datepicker-toggle.open {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+  }
+  .master-datepicker-wrap.invalid .master-datepicker-toggle {
+    border-color: #f06548;
+    box-shadow: 0 0 0 3px rgba(240,101,72,0.15);
+  }
+  .master-datepicker-toggle[aria-disabled="true"],
+  .master-datepicker-wrap.disabled .master-datepicker-toggle {
+    background: var(--vz-secondary-bg);
+    color: var(--vz-secondary-color);
+    cursor: not-allowed;
+    opacity: 0.85;
+    box-shadow: none;
+  }
+  /* Extra left padding when inside a master-field wrapper with a prefix icon */
+  .master-field .master-datepicker-toggle { padding-left: 36px; }
+  /* Hide the internal right-side calendar icon when already shown as prefix */
+  .master-field .master-datepicker-icon { display: none; }
+  /* Tint the master-field prefix icon indigo while the picker is open */
+  .master-field:has(.master-datepicker-toggle.open) .master-field-icon {
+    color: #6366f1;
+  }
+
+  .master-datepicker-placeholder {
+    flex: 1;
+    color: var(--vz-secondary-color);
+    opacity: 0.65;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .master-datepicker-value {
+    flex: 1;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .master-datepicker-icon {
+    color: #6366f1;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .master-datepicker-clear {
+    border: none;
+    background: transparent;
+    color: var(--vz-secondary-color);
+    font-size: 14px;
+    padding: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color .15s ease;
+  }
+  .master-datepicker-clear:hover { color: #f06548; }
+
+  /* Popup — compact 240px. Extra selectors + resets to beat anything that
+     tries to leak through (transparent CSS vars, opacity inheritance, etc.) */
+  .master-datepicker-popup,
+  div.master-datepicker-popup,
+  .master-modal .master-datepicker-popup,
+  .master-field .master-datepicker-popup {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 0;
+    min-width: 240px;
+    max-width: 240px;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    opacity: 1 !important;
+    filter: none !important;
+    border: 1px solid var(--vz-border-color);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.16);
+    padding: 10px;
+    z-index: 2000 !important;
+  }
+  html[data-bs-theme="dark"] .master-datepicker-popup,
+  html[data-layout-mode="dark"] .master-datepicker-popup,
+  [data-bs-theme="dark"] .master-datepicker-popup,
+  [data-layout-mode="dark"] .master-datepicker-popup,
+  [data-bs-theme="dark"] div.master-datepicker-popup,
+  [data-layout-mode="dark"] div.master-datepicker-popup {
+    background-color: #2a2f34 !important;
+    border-color: rgba(255,255,255,0.08);
+  }
+  .master-datepicker-nav {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: var(--vz-secondary-bg);
+    border: 1px solid var(--vz-border-color);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .master-datepicker-nav:hover {
+    background: rgba(99,102,241,0.10);
+    color: #6366f1;
+    border-color: rgba(99,102,241,0.3);
+  }
+  .master-datepicker-title {
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--vz-heading-color, var(--vz-body-color));
+  }
+  .master-datepicker-dow {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: var(--vz-secondary-color);
+    padding: 2px 0;
+    text-align: center;
+    letter-spacing: 0.03em;
+  }
+  .master-datepicker-day {
+    height: 26px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 500;
+    background: transparent;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background .15s ease, color .15s ease;
+  }
+  .master-datepicker-day:hover:not(:disabled):not(.is-selected) {
+    background: rgba(99,102,241,0.10);
+    color: #6366f1;
+  }
+  .master-datepicker-day.is-today {
+    background: rgba(99,102,241,0.12);
+    color: #6366f1;
+    font-weight: 600;
+  }
+  .master-datepicker-day.is-selected {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 3px 8px rgba(99,102,241,0.30);
+  }
+  .master-datepicker-day:disabled {
+    color: var(--vz-secondary-color);
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .master-datepicker-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 4px;
+    margin-top: 4px;
+    border-top: 1px solid var(--vz-border-color);
+  }
+  .master-datepicker-footer .clear-btn,
+  .master-datepicker-footer .today-btn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    font-size: 10.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .master-datepicker-footer .clear-btn {
+    color: var(--vz-secondary-color);
+    font-weight: 600;
+  }
+  .master-datepicker-footer .today-btn {
+    color: #6366f1;
+    font-weight: 700;
   }
 `;
