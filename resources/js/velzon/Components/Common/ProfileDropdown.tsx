@@ -5,7 +5,7 @@ import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from 'reactstrap
 // Use CBC's AuthContext instead of Velzon's Profile slice (which we stripped)
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
-import avatar1 from "../../assets/images/users/avatar-1.jpg";
+import avatar1 from "../../assets/images/users/image.png";
 
 const ProfileDropdown = () => {
   const { user, logout } = useAuth();
@@ -190,20 +190,20 @@ const ProfileDropdown = () => {
         </DropdownToggle>
 
         <DropdownMenu className="dropdown-menu-end cbc-profile-menu">
-          {/* Gradient header — avatar, name, role pill */}
+          {/* Neutral dark-slate header — reads well with any avatar image */}
           <div
             className="position-relative overflow-hidden"
             style={{
               padding: '14px 14px 12px 14px',
-              backgroundImage: 'linear-gradient(135deg, rgb(64, 81, 137), rgb(10, 179, 156))',
+              backgroundImage: 'linear-gradient(135deg, #0f172a 0%, #1e293b 55%, #334155 100%)',
             }}
           >
             <div
               className="position-absolute top-0 start-0 w-100 h-100"
               style={{
                 backgroundImage:
-                  'radial-gradient(circle at 85% 15%, rgba(255,255,255,0.28), transparent 55%),' +
-                  'radial-gradient(circle at 10% 100%, rgba(255,255,255,0.12), transparent 50%)',
+                  'radial-gradient(circle at 85% 15%, rgba(99,102,241,0.20), transparent 55%),' +
+                  'radial-gradient(circle at 10% 100%, rgba(14,165,233,0.12), transparent 50%)',
                 pointerEvents: 'none',
               }}
             />
