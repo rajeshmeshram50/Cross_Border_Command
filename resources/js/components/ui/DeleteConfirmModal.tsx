@@ -5,12 +5,15 @@ import { AlertTriangle, Loader2, X } from 'lucide-react';
 interface Props {
   open: boolean;
   clientName?: string;
+  itemName?: string;
+  title?: string;
+  subMessage?: string;
   onClose: () => void;
   onConfirm: () => void;
   loading?: boolean;
 }
 
-export default function DeleteConfirmModal({ open, clientName, onClose, onConfirm, loading = false }: Props) {
+export default function DeleteConfirmModal({ open, clientName, itemName: itemNameProp, title, subMessage, onClose, onConfirm, loading = false }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && !loading) onClose(); };
     if (open) document.addEventListener('keydown', handler);
@@ -19,7 +22,10 @@ export default function DeleteConfirmModal({ open, clientName, onClose, onConfir
 
   if (!open) return null;
 
-  const itemName = clientName ? `"${clientName}"` : 'this item';
+  const rawName = itemNameProp ?? clientName;
+  const itemName = rawName ? `"${rawName}"` : 'this item';
+  const resolvedTitle = title ?? 'Delete Client';
+  const resolvedSub = subMessage ?? 'This action cannot be undone. All branches, users, and data will be permanently removed.';
 
   return createPortal(
     <>
@@ -202,13 +208,13 @@ export default function DeleteConfirmModal({ open, clientName, onClose, onConfir
               </div>
             </div>
 
-            <h2 className="dcm-title">Delete Client</h2>
+            <h2 className="dcm-title">{resolvedTitle}</h2>
 
             <p className="dcm-message">
               Delete <strong>{itemName}</strong>?
             </p>
             <p className="dcm-sub">
-              This action cannot be undone. All branches, users, and data will be permanently removed.
+              {resolvedSub}
             </p>
           </div>
 
