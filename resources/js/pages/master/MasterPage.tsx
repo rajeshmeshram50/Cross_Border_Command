@@ -4,6 +4,7 @@ import {
   Card, CardBody, CardHeader, Row, Col,
   Button, Input, Label, Form, FormFeedback,
   Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
+  Dropdown, DropdownToggle, DropdownMenu, DropdownItem,
 } from 'reactstrap';
 import api from '../../api';
 import MasterPlaceholder from '../MasterPlaceholder';
@@ -92,6 +93,35 @@ function MasterPageInner({
     for (const f of cfg.fields) if (f.ref) set.add(f.ref);
     return [...set];
   }, [cfg]);
+
+  // Group fields by section header (so each section becomes a tinted card in the modal).
+  // A field with `sec` starts a new group; subsequent non-sec fields belong to it.
+  const sectionedFields = useMemo(() => {
+    const groups: { sec: string | null; fields: FieldDef[] }[] = [];
+    let current: { sec: string | null; fields: FieldDef[] } = { sec: null, fields: [] };
+    groups.push(current);
+    for (const f of cfg.fields) {
+      if (f.sec) {
+        current = { sec: f.sec, fields: [] };
+        groups.push(current);
+      } else {
+        current.fields.push(f);
+      }
+    }
+    if (groups[0].sec == null && groups[0].fields.length === 0) groups.shift();
+    return groups;
+  }, [cfg]);
+
+  // Shrink the modal + widen each field when the form only has a handful of inputs.
+  // ≤ 4 fields → default (500px) with fields stacked, 5–9 → lg (800px), 10+ → xl (1140px).
+  const nonSecFieldCount = useMemo(
+    () => cfg.fields.filter(f => !f.sec).length,
+    [cfg]
+  );
+  const modalSize: 'lg' | 'xl' | undefined =
+    nonSecFieldCount <= 4 ? undefined : nonSecFieldCount <= 9 ? 'lg' : 'xl';
+  const defaultFieldSpan: number =
+    modalSize === undefined ? 12 : modalSize === 'lg' ? 6 : 4;
 
   const labelFieldForRef = (refSlug: string, fallback?: string): string => {
     const f = cfg.fields.find(ff => ff.ref === refSlug);
@@ -542,6 +572,222 @@ function MasterPageInner({
           overflow: hidden;
           border: 0;
         }
+        .master-modal .modal-body {
+          background:
+            radial-gradient(circle at 0% 0%, rgba(99,102,241,0.05) 0%, transparent 40%),
+            radial-gradient(circle at 100% 100%, rgba(14,165,233,0.04) 0%, transparent 40%),
+            var(--vz-card-bg);
+        }
+        .master-modal label {
+          font-size: 11.5px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          margin-bottom: 6px;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          color: var(--vz-heading-color, var(--vz-body-color));
+        }
+        .master-modal label .req-star {
+          color: #f06548;
+          font-weight: 700;
+          margin-left: 1px;
+        }
+
+        /* Prefix-icon input groups */
+        .master-field { position: relative; }
+        .master-field .form-control,
+        .master-field .form-select {
+          padding-left: 36px !important;
+        }
+        .master-field-icon {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 15px;
+          color: var(--vz-secondary-color);
+          pointer-events: none;
+          z-index: 3;
+          line-height: 1;
+          transition: color .18s ease, transform .18s ease;
+        }
+        .master-field.ta .master-field-icon {
+          top: 12px;
+          transform: none;
+        }
+        .master-field:has(.form-control:focus) .master-field-icon,
+        .master-field:has(.form-select:focus) .master-field-icon {
+          color: #6366f1;
+        }
+        .master-field:has(.form-control:focus) .master-field-icon:not(.ta),
+        .master-field:has(.form-select:focus) .master-field-icon {
+          transform: translateY(-50%) scale(1.08);
+        }
+
+        .master-modal .form-control,
+        .master-modal .form-select {
+          font-size: 13px;
+          padding: 7px 12px;
+          height: 38px;
+          border-radius: 10px;
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+          transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+        }
+
+        /* Custom MasterSelect — replaces native <select> dropdowns */
+        .master-field.sel .master-select-wrap { width: 100%; }
+        .master-select-toggle {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          width: 100%;
+          height: 38px;
+          padding: 7px 12px 7px 36px;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 10px;
+          background: var(--vz-card-bg);
+          color: var(--vz-heading-color, var(--vz-body-color));
+          font-size: 13px;
+          font-weight: 500;
+          text-align: left;
+          cursor: pointer;
+          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+          transition: border-color .18s ease, box-shadow .18s ease;
+        }
+        .master-select-toggle:hover:not(:disabled) {
+          border-color: rgba(99,102,241,0.55);
+          box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+        }
+        .master-select-wrap.show .master-select-toggle {
+          border-color: #6366f1 !important;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12) !important;
+        }
+        .master-select-wrap.invalid .master-select-toggle {
+          border-color: #f06548 !important;
+          box-shadow: 0 0 0 3px rgba(240,101,72,0.15) !important;
+        }
+        .master-select-toggle:disabled {
+          background: var(--vz-secondary-bg);
+          color: var(--vz-secondary-color);
+          cursor: not-allowed;
+          opacity: 0.85;
+          box-shadow: none;
+        }
+        .master-select-placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.65;
+          font-weight: 400;
+          flex-grow: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .master-select-value {
+          color: var(--vz-heading-color, var(--vz-body-color));
+          flex-grow: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .master-select-chev {
+          font-size: 18px;
+          color: var(--vz-secondary-color);
+          margin-left: 8px;
+          flex-shrink: 0;
+          transition: transform .2s ease, color .18s ease;
+        }
+        .master-select-wrap.show .master-select-chev {
+          color: #6366f1;
+          transform: rotate(180deg);
+        }
+        .master-modal .master-select-menu.dropdown-menu,
+        div.master-select-menu.dropdown-menu {
+          width: 100%;
+          min-width: 100% !important;
+          border-radius: 10px !important;
+          padding: 6px !important;
+          box-shadow: 0 14px 30px rgba(18,38,63,0.14), 0 2px 8px rgba(18,38,63,0.06) !important;
+          border: 1px solid var(--vz-border-color) !important;
+          margin-top: 6px !important;
+          max-height: 280px;
+          overflow-y: auto;
+          background-color: #ffffff !important;
+          background-image: none !important;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          opacity: 1 !important;
+          filter: none !important;
+          z-index: 2000 !important;
+        }
+        html[data-bs-theme="dark"] .master-modal .master-select-menu.dropdown-menu,
+        html[data-layout-mode="dark"] .master-modal .master-select-menu.dropdown-menu,
+        [data-bs-theme="dark"] div.master-select-menu.dropdown-menu,
+        [data-layout-mode="dark"] div.master-select-menu.dropdown-menu {
+          background-color: #2a2f34 !important;
+          border-color: rgba(255,255,255,0.08) !important;
+        }
+        .master-select-item {
+          background-color: transparent !important;
+        }
+        .master-select-item {
+          padding: 8px 12px !important;
+          border-radius: 6px !important;
+          font-size: 13px !important;
+          color: var(--vz-body-color) !important;
+          transition: background .15s ease, color .15s ease;
+          margin-bottom: 1px;
+        }
+        .master-select-item:hover,
+        .master-select-item:focus {
+          background: var(--vz-secondary-bg) !important;
+          color: var(--vz-heading-color, var(--vz-body-color)) !important;
+        }
+        .master-select-item.active {
+          background: rgba(99,102,241,0.10) !important;
+          color: #6366f1 !important;
+          font-weight: 600;
+        }
+        .master-select-empty {
+          padding: 10px 12px;
+          font-size: 12px;
+          color: var(--vz-secondary-color);
+          text-align: center;
+        }
+        .master-modal textarea.form-control {
+          height: auto;
+          min-height: 72px;
+        }
+        .master-modal .form-control:hover:not(:disabled):not([readonly]):not(.is-invalid),
+        .master-modal .form-select:hover:not(:disabled):not(.is-invalid) {
+          border-color: rgba(99,102,241,0.55);
+          box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+        }
+        .master-modal .form-control:focus:not(.is-invalid),
+        .master-modal .form-select:focus:not(.is-invalid) {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+        }
+        .master-modal .form-control.is-invalid,
+        .master-modal .form-select.is-invalid {
+          border-color: #f06548;
+          box-shadow: 0 0 0 3px rgba(240,101,72,0.15);
+        }
+        .master-modal .form-control:disabled,
+        .master-modal .form-control[readonly],
+        .master-modal .form-select:disabled {
+          background: var(--vz-secondary-bg);
+          color: var(--vz-secondary-color);
+          cursor: not-allowed;
+          box-shadow: none;
+        }
+        .master-modal .form-control::placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.65;
+        }
+
         .master-modal-cancel {
           background: transparent;
           border: 1.5px solid var(--vz-border-color);
@@ -556,32 +802,15 @@ function MasterPageInner({
           border-color: transparent;
           color: var(--vz-heading-color, var(--vz-body-color));
         }
-        .master-modal-save {
-          background: linear-gradient(135deg, #7c5cfc 0%, #a993fd 100%);
-          color: #fff;
-          border: 0;
-          font-weight: 600;
-          padding: 8px 22px;
-          border-radius: 999px;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          box-shadow: 0 6px 18px rgba(124,92,252,0.28);
-          transition: all .2s ease;
-        }
-        .master-modal-save:hover:not(:disabled) {
-          background: linear-gradient(135deg, #6b4fe8 0%, #9879f7 100%);
-          box-shadow: 0 8px 22px rgba(124,92,252,0.42);
-          transform: translateY(-1px);
-        }
-        .master-modal-save:disabled { opacity: .7; cursor: not-allowed; }
       `}</style>
       <Modal
         isOpen={modalOpen}
-        toggle={() => setModalOpen(false)}
-        size="xl"
+        toggle={() => { /* explicit Cancel only — outside click & Esc disabled */ }}
+        size={modalSize}
         centered
         modalClassName="master-modal"
+        backdrop="static"
+        keyboard={false}
       >
         <div
           className="position-relative overflow-hidden"
@@ -608,21 +837,45 @@ function MasterPageInner({
               </h4>
               <small className="text-muted" style={{ fontSize: 12 }}>{cfg.desc}</small>
             </div>
-            <button
-              type="button"
-              className="btn-close flex-shrink-0"
-              onClick={() => setModalOpen(false)}
-              aria-label="Close"
-            />
           </div>
         </div>
         <Form onSubmit={handleSave}>
-          <ModalBody className="p-4 align-items-center">
-            <Row className="g-3">
-              {cfg.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError))}
-            </Row>
+          <ModalBody className="p-4">
+            {sectionedFields.map((group, gIdx) => {
+              const p = SECTION_PALETTES[gIdx % SECTION_PALETTES.length];
+              return (
+                <div key={gIdx} className={gIdx > 0 ? 'mt-4 pt-1' : ''}>
+                  {group.sec && (
+                    <div className="d-flex align-items-center gap-2 mb-3">
+                      <span
+                        className="flex-shrink-0"
+                        style={{ width: 4, height: 20, background: p.grad, borderRadius: 2 }}
+                      />
+                      <h6
+                        className="mb-0 fw-bold"
+                        style={{
+                          color: p.color,
+                          fontSize: 12,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.1em',
+                        }}
+                      >
+                        {group.sec}
+                      </h6>
+                      <div
+                        className="flex-grow-1"
+                        style={{ height: 1, background: 'var(--vz-border-color)' }}
+                      />
+                    </div>
+                  )}
+                  <Row className="g-3">
+                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan))}
+                  </Row>
+                </div>
+              );
+            })}
           </ModalBody>
-          <ModalFooter className="px-4 pb-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+          <ModalFooter className="px-4 pb-3 justify-content-center gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
             <button type="button" className="master-modal-cancel" onClick={() => setModalOpen(false)}>
               <i className="ri-close-line align-middle me-1"></i>
               {viewOnly ? 'Close' : 'Cancel'}
@@ -632,7 +885,9 @@ function MasterPageInner({
                 {saving
                   ? <Spinner size="sm" className="label-icon align-middle me-2" />
                   : <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
-                {saving ? 'Saving...' : 'Save Record'}
+                {saving
+                  ? (editingId != null ? 'Updating...' : 'Saving...')
+                  : (editingId != null ? 'Update Record' : 'Save Record')}
               </Button>
             )}
           </ModalFooter>
@@ -651,6 +906,16 @@ function MasterPageInner({
     </>
   );
 }
+
+/* ── Section palette — colors a section card in the Add/Edit modal ── */
+const SECTION_PALETTES: { color: string; grad: string; tint: string; border: string; shadow: string }[] = [
+  { color: '#6366f1', grad: 'linear-gradient(135deg, #6366f1, #8b5cf6)', tint: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.03))', border: 'rgba(99,102,241,0.22)', shadow: 'rgba(99,102,241,0.35)' },
+  { color: '#0ea5e9', grad: 'linear-gradient(135deg, #0ea5e9, #38bdf8)', tint: 'linear-gradient(135deg, rgba(14,165,233,0.08), rgba(56,189,248,0.03))', border: 'rgba(14,165,233,0.22)', shadow: 'rgba(14,165,233,0.35)' },
+  { color: '#d97a08', grad: 'linear-gradient(135deg, #f59e0b, #f7b84b)', tint: 'linear-gradient(135deg, rgba(245,158,11,0.10), rgba(247,184,75,0.03))', border: 'rgba(245,158,11,0.24)', shadow: 'rgba(245,158,11,0.35)' },
+  { color: '#10b981', grad: 'linear-gradient(135deg, #10b981, #14c9b1)', tint: 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(20,201,177,0.03))', border: 'rgba(16,185,129,0.22)', shadow: 'rgba(16,185,129,0.35)' },
+  { color: '#8b5cf6', grad: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', tint: 'linear-gradient(135deg, rgba(139,92,246,0.08), rgba(167,139,250,0.03))', border: 'rgba(139,92,246,0.22)', shadow: 'rgba(139,92,246,0.35)' },
+  { color: '#db2777', grad: 'linear-gradient(135deg, #ec4899, #f9a8d4)', tint: 'linear-gradient(135deg, rgba(236,72,153,0.08), rgba(249,168,212,0.03))', border: 'rgba(236,72,153,0.22)', shadow: 'rgba(236,72,153,0.35)' },
+];
 
 /* ── "What you are doing here" — gradient step tiles ── */
 const STEP_PALETTES: { grad: string; tint: string; border: string; accent: string }[] = [
@@ -812,6 +1077,97 @@ function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
   );
 }
 
+function iconForField(f: FieldDef): string {
+  const n = (f.n || '').toLowerCase();
+  if (f.ref) return 'ri-links-line';
+  if (f.t === 'email' || n.includes('email')) return 'ri-mail-line';
+  if (n.includes('phone') || n.includes('mobile') || n.includes('whatsapp')) return 'ri-phone-line';
+  if (n === 'name' || n.endsWith('_name') || n.includes('title') || n.includes('holder')) return 'ri-user-3-line';
+  if (n.includes('address')) return 'ri-map-pin-line';
+  if (n === 'city' || n === 'taluka' || n === 'district') return 'ri-map-2-line';
+  if (n.includes('state') || n.includes('country') || n.includes('region')) return 'ri-earth-line';
+  if (n.includes('pincode') || n.includes('postal') || n.includes('zip')) return 'ri-mail-send-line';
+  if (n.includes('website') || n.includes('url') || n === 'domain') return 'ri-global-line';
+  if (n.includes('gst') || n.includes('pan') || n === 'iec' || n === 'cin' || n.includes('tax')) return 'ri-file-list-3-line';
+  if (n.includes('bank') || n.includes('account_number')) return 'ri-bank-line';
+  if (n.includes('ifsc') || n.includes('swift') || n.includes('short_code') || (n.includes('code') && !n.includes('country'))) return 'ri-qr-code-line';
+  if (n.includes('price') || n.includes('amount') || n.includes('fee') || n.includes('cost') || n.includes('rate') || n.includes('salary')) return 'ri-money-rupee-circle-line';
+  if (n === 'status') return 'ri-pulse-line';
+  if (n.includes('description') || n.includes('note') || n.includes('detail') || n.includes('remark')) return 'ri-file-text-line';
+  if (n.includes('logo') || n.includes('image') || n.includes('icon') || n.includes('photo')) return 'ri-image-line';
+  if (n.includes('quantity') || n === 'qty' || n.includes('count')) return 'ri-hashtag';
+  if (n.includes('currency')) return 'ri-coins-line';
+  if (n.includes('weight')) return 'ri-scales-line';
+  if (n.includes('color') || n.includes('colour')) return 'ri-palette-line';
+  if (n.includes('category') || n.includes('type')) return 'ri-price-tag-3-line';
+  if (n === 'slug') return 'ri-link';
+  if (f.t === 'textarea') return 'ri-align-left';
+  if (f.t === 'number') return 'ri-hashtag';
+  if (f.t === 'date' || n.includes('date') || n.endsWith('_at')) return 'ri-calendar-line';
+  if (f.t === 'select') return 'ri-list-check-2';
+  return 'ri-edit-box-line';
+}
+
+/* ── Custom Select (matches ClientForm's SelectDD look) ─────────────── */
+function MasterSelect({
+  name,
+  defaultValue,
+  options,
+  placeholder = 'Select…',
+  disabled,
+  invalid,
+  onChange,
+}: {
+  name: string;
+  defaultValue?: string;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+  invalid?: boolean;
+  onChange?: () => void;
+}) {
+  const [value, setValue] = useState<string>(defaultValue ?? '');
+  const [open, setOpen] = useState(false);
+  useEffect(() => { setValue(defaultValue ?? ''); }, [defaultValue]);
+  const selected = options.find(o => o.value === value);
+  return (
+    <>
+      <Dropdown
+        isOpen={open && !disabled}
+        toggle={() => { if (!disabled) setOpen(v => !v); }}
+        className={`master-select-wrap${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}`}
+      >
+        <DropdownToggle
+          tag="button"
+          type="button"
+          disabled={disabled}
+          className="master-select-toggle"
+        >
+          <span className={selected ? 'master-select-value' : 'master-select-placeholder'}>
+            {selected ? selected.label : placeholder}
+          </span>
+          <i className="ri-arrow-down-s-line master-select-chev" />
+        </DropdownToggle>
+        <DropdownMenu className="master-select-menu">
+          {options.length === 0 ? (
+            <div className="master-select-empty">No options</div>
+          ) : options.map(opt => (
+            <DropdownItem
+              key={opt.value}
+              active={opt.value === value}
+              onClick={() => { setValue(opt.value); onChange?.(); }}
+              className="master-select-item"
+            >
+              {opt.label}
+            </DropdownItem>
+          ))}
+        </DropdownMenu>
+      </Dropdown>
+      <input type="hidden" name={name} value={value} />
+    </>
+  );
+}
+
 function renderField(
   f: FieldDef,
   i: number,
@@ -821,6 +1177,7 @@ function renderField(
   labelFieldForRef: (refSlug: string, fallback?: string) => string,
   fieldErrors: Record<string, string> = {},
   clearFieldError: (name: string) => void = () => {},
+  defaultSpan: number = 4,
 ): React.ReactNode {
   if (f.sec) {
     return (
@@ -835,43 +1192,52 @@ function renderField(
     );
   }
 
-  const span = f.full ? 12 : f.t === 'textarea' ? 12 : 4;
+  const span = f.full ? 12 : f.t === 'textarea' ? 12 : defaultSpan;
   const defaultVal = editing?.[f.n] ?? '';
   const err = fieldErrors[f.n];
   const onFieldChange = () => clearFieldError(f.n);
+  const icon = iconForField(f);
+  const isTextarea = f.t === 'textarea';
+  const isSelect = !!(f.ref || f.t === 'select');
 
   let input: React.ReactNode;
   if (f.ref) {
     const rows = refData[f.ref] || [];
     const labelField = f.refL || labelFieldForRef(f.ref);
+    const options = rows.map((r: any) => ({
+      value: String(r.id),
+      label: String(r[labelField] ?? r.id),
+    }));
     input = (
-      <Input type="select" name={f.n} defaultValue={defaultVal} disabled={viewOnly} invalid={!!err} onChange={onFieldChange}>
-        <option value="">Select {f.l}…</option>
-        {rows.map((r: any) => (
-          <option key={r.id} value={r.id}>{r[labelField] ?? r.id}</option>
-        ))}
-      </Input>
-    );
-  } else if (f.t === 'select') {
-    input = (
-      <Input
-        type="select"
+      <MasterSelect
         name={f.n}
-        defaultValue={defaultVal || (f.opts?.[0] ?? '')}
+        defaultValue={defaultVal == null ? '' : String(defaultVal)}
+        options={options}
+        placeholder={`Select ${f.l}…`}
         disabled={viewOnly}
         invalid={!!err}
         onChange={onFieldChange}
-      >
-        {!f.r && <option value="">Select…</option>}
-        {(f.opts || []).map(o => <option key={o} value={o}>{o}</option>)}
-      </Input>
+      />
+    );
+  } else if (f.t === 'select') {
+    const options = (f.opts || []).map(o => ({ value: o, label: o }));
+    input = (
+      <MasterSelect
+        name={f.n}
+        defaultValue={defaultVal || (f.r ? (f.opts?.[0] ?? '') : '')}
+        options={options}
+        placeholder="Select…"
+        disabled={viewOnly}
+        invalid={!!err}
+        onChange={onFieldChange}
+      />
     );
   } else if (f.t === 'textarea') {
     input = (
       <Input
         type="textarea"
         name={f.n}
-        rows={2}
+        rows={3}
         placeholder={f.p}
         defaultValue={defaultVal}
         disabled={viewOnly}
@@ -896,10 +1262,13 @@ function renderField(
   return (
     <Col md={span} key={f.n || `f-${i}`}>
       <Label>
-        {f.l} {f.r && <span className="text-danger">*</span>}
+        {f.l}{f.r && <span className="req-star">*</span>}
       </Label>
-      {input}
-      {err && <FormFeedback style={{ display: 'block', fontSize: 11.5 }}>{err}</FormFeedback>}
+      <div className={`master-field${isTextarea ? ' ta' : ''}${isSelect ? ' sel' : ''}`}>
+        <i className={`${icon} master-field-icon${isTextarea ? ' ta' : ''}`} />
+        {input}
+      </div>
+      {err && <FormFeedback style={{ display: 'block', fontSize: 11.5, marginTop: 4 }}>{err}</FormFeedback>}
     </Col>
   );
 }
