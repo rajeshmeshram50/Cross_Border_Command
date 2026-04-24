@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardBody, Col, Row, Input, Spinner, Alert, Form, InputGroup, InputGroupText } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { MasterSelect, MasterFormStyles } from './master/masterFormKit';
 
 interface Props { onBack: () => void; editId?: number; }
 interface ModuleOption { id: number; name: string; slug: string; icon: string; }
@@ -123,6 +124,7 @@ export default function AddPlan({ onBack, editId }: Props) {
 
   return (
     <>
+      <MasterFormStyles />
       {/* ── Page Header ── */}
       <Row>
         <Col xs={12}>
@@ -288,11 +290,16 @@ export default function AddPlan({ onBack, editId }: Props) {
                         <i className="ri-calendar-schedule-line" style={{ color: '#0ea5e9' }} />
                         Billing Period <span className="text-danger">*</span>
                       </label>
-                      <Input bsSize="sm" className="stylish-input" type="select" value={form.period} onChange={e => set('period', e.target.value)}>
-                        <option value="month">Monthly</option>
-                        <option value="quarter">Quarterly</option>
-                        <option value="year">Yearly</option>
-                      </Input>
+                      <MasterSelect
+                        value={form.period}
+                        options={[
+                          { value: 'month',   label: 'Monthly' },
+                          { value: 'quarter', label: 'Quarterly' },
+                          { value: 'year',    label: 'Yearly' },
+                        ]}
+                        placeholder="Select billing period"
+                        onChange={val => set('period', val)}
+                      />
                     </Col>
                     <Col md={4}>
                       <label className="stylish-label">
@@ -306,10 +313,15 @@ export default function AddPlan({ onBack, editId }: Props) {
                         <i className="ri-toggle-line" style={{ color: '#10b981' }} />
                         Status
                       </label>
-                      <Input bsSize="sm" className="stylish-input" type="select" value={form.status} onChange={e => set('status', e.target.value)}>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                      </Input>
+                      <MasterSelect
+                        value={form.status}
+                        options={[
+                          { value: 'active',   label: 'Active' },
+                          { value: 'inactive', label: 'Inactive' },
+                        ]}
+                        placeholder="Select status"
+                        onChange={val => set('status', val)}
+                      />
                     </Col>
                     <Col md={4}>
                       <label className="stylish-label">
@@ -447,13 +459,18 @@ export default function AddPlan({ onBack, editId }: Props) {
                         <i className="ri-customer-service-2-line" style={{ color: '#f59e0b' }} />
                         Support Level
                       </label>
-                      <Input bsSize="sm" className="stylish-input" type="select" value={form.support_level} onChange={e => set('support_level', e.target.value)}>
-                        <option value="Email">Email</option>
-                        <option value="Chat">Email + Chat</option>
-                        <option value="Priority">Priority</option>
-                        <option value="Dedicated">Dedicated</option>
-                        <option value="Enterprise SLA">Enterprise SLA</option>
-                      </Input>
+                      <MasterSelect
+                        value={form.support_level}
+                        options={[
+                          { value: 'Email',          label: 'Email' },
+                          { value: 'Chat',           label: 'Email + Chat' },
+                          { value: 'Priority',       label: 'Priority' },
+                          { value: 'Dedicated',      label: 'Dedicated' },
+                          { value: 'Enterprise SLA', label: 'Enterprise SLA' },
+                        ]}
+                        placeholder="Select support level"
+                        onChange={val => set('support_level', val)}
+                      />
                     </Col>
                     <Col md={4}>
                       <label className="stylish-label">
