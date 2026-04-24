@@ -1271,6 +1271,33 @@ tbody tr:nth-child(10) {
   border-color: rgba(124, 92, 252, 0.40) !important;
 }
 
+/* Blurred backdrop for Record Payment / View Payment modals — uses
+   Bootstrap's own .modal-backdrop element, which is a dedicated
+   fullscreen overlay. We force its opacity to 1 (override Bootstrap's
+   animated --bs-backdrop-opacity) and apply the same blur recipe
+   DeleteConfirmModal's .dcm-overlay uses. */
+body:has(.cbc-payment-modal.show) .modal-backdrop,
+body:has(.cbc-view-payment.show) .modal-backdrop,
+body:has(.cbc-payment-modal.show) .modal-backdrop.show,
+body:has(.cbc-view-payment.show) .modal-backdrop.show {
+  --bs-backdrop-opacity: 1;
+  --bs-backdrop-bg: transparent;
+  opacity: 1 !important;
+  background-color: rgba(15, 23, 42, 0.50) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+  backdrop-filter: blur(14px) saturate(130%);
+}
+[data-bs-theme="dark"] body:has(.cbc-payment-modal.show) .modal-backdrop,
+[data-bs-theme="dark"] body:has(.cbc-view-payment.show) .modal-backdrop,
+[data-bs-theme="dark"] body:has(.cbc-payment-modal.show) .modal-backdrop.show,
+[data-bs-theme="dark"] body:has(.cbc-view-payment.show) .modal-backdrop.show,
+[data-layout-mode="dark"] body:has(.cbc-payment-modal.show) .modal-backdrop,
+[data-layout-mode="dark"] body:has(.cbc-view-payment.show) .modal-backdrop,
+[data-layout-mode="dark"] body:has(.cbc-payment-modal.show) .modal-backdrop.show,
+[data-layout-mode="dark"] body:has(.cbc-view-payment.show) .modal-backdrop.show {
+  background-color: rgba(3, 6, 12, 0.60) !important;
+}
+
 /* ── View Payment modal ── */
 .cbc-view-payment .modal-content { border-radius: 18px; overflow: hidden; }
 .pmt-modal-header { background: var(--vz-secondary-bg); }
@@ -1445,6 +1472,167 @@ tbody tr:nth-child(10) {
 [data-layout-mode="dark"] .cbc-view-payment .pmt-modal-header {
   background: linear-gradient(180deg, rgba(124, 92, 252, 0.05), transparent);
   border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Dark-mode glossy treatment for the Record Payment modal
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Modal surface — rich charcoal with subtle violet wash + inset highlight */
+[data-bs-theme="dark"] .cbc-payment-modal .modal-content,
+[data-layout-mode="dark"] .cbc-payment-modal .modal-content {
+  background:
+    radial-gradient(ellipse at top left, rgba(124, 92, 252, 0.08) 0%, transparent 45%),
+    radial-gradient(ellipse at bottom right, rgba(10, 179, 156, 0.05) 0%, transparent 50%),
+    linear-gradient(180deg, #1a2030 0%, #151a24 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.60),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Hero strip — deeper violet-to-pink gradient with top highlight + glow */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-hero,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero {
+  background:
+    linear-gradient(135deg, rgba(124, 92, 252, 0.22) 0%, rgba(236, 72, 153, 0.10) 50%, rgba(124, 92, 252, 0.06) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%),
+    #1a2030;
+  border-top: 2px solid #a78bfa;
+  border-bottom: 1px solid rgba(124, 92, 252, 0.30);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 4px 16px rgba(124, 92, 252, 0.12);
+}
+
+/* Hero icon chip — brighter glow */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-hero-icon,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero-icon {
+  background: linear-gradient(135deg, #8b6cff 0%, #c4b5fd 100%);
+  box-shadow:
+    0 6px 16px rgba(124, 92, 252, 0.50),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Hero title/sub — brighter */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-hero-title,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero-title {
+  color: rgba(255, 255, 255, 0.96);
+  text-shadow: 0 0 14px rgba(124, 92, 252, 0.25);
+}
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-hero-sub,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero-sub {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+/* NEW PAYMENT pill — glow */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-hero-pill,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero-pill {
+  background: linear-gradient(135deg, #8b6cff 0%, #c4b5fd 100%);
+  box-shadow:
+    0 4px 12px rgba(124, 92, 252, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* Section banner icon chips — glow tinted by variant */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-banner-icon,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-banner-icon {
+  box-shadow: 0 0 10px var(--reg-banner-shadow, rgba(124, 92, 252, 0.35));
+}
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-banner-title,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-banner-title {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* Inputs & selects — glass surface with inset highlight */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-control,
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-select,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-control,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-select {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0.015) 100%),
+    rgba(20, 26, 38, 0.80);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.20);
+}
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-control:hover,
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-select:hover,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-control:hover,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-select:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-control:focus,
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-select:focus,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-control:focus,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-select:focus {
+  border-color: rgba(167, 139, 250, 0.75);
+  box-shadow:
+    0 0 0 3px rgba(124, 92, 252, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(180deg, rgba(124, 92, 252, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%),
+    rgba(20, 26, 38, 0.90);
+}
+
+/* Labels pop slightly brighter in dark */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-label,
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form label,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-label,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form label {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* Prefix icon — brighter violet in dark */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-field-icon,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-field-icon {
+  color: rgba(196, 181, 253, 0.80);
+}
+
+/* Help text softer */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-text,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-text {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* Modal body gets the same subtle violet wash as the content surface
+   (overrides Reactstrap's default white body) */
+[data-bs-theme="dark"] .cbc-payment-modal .modal-body,
+[data-layout-mode="dark"] .cbc-payment-modal .modal-body {
+  background: transparent;
+}
+
+/* Footer — glass divider with violet wash */
+[data-bs-theme="dark"] .cbc-payment-modal .modal-footer,
+[data-layout-mode="dark"] .cbc-payment-modal .modal-footer {
+  background: linear-gradient(180deg, transparent 0%, rgba(124, 92, 252, 0.06) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* Premium submit button — richer glow */
+[data-bs-theme="dark"] .cbc-payment-modal .modal-footer .btn.btn-primary,
+[data-layout-mode="dark"] .cbc-payment-modal .modal-footer .btn.btn-primary {
+  background: linear-gradient(135deg, #8b6cff 0%, #7c5cfc 50%, #6366f1 100%) !important;
+  box-shadow:
+    0 6px 18px rgba(124, 92, 252, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+[data-bs-theme="dark"] .cbc-payment-modal .modal-footer .btn.btn-primary:hover:not(:disabled),
+[data-layout-mode="dark"] .cbc-payment-modal .modal-footer .btn.btn-primary:hover:not(:disabled) {
+  box-shadow:
+    0 10px 26px rgba(124, 92, 252, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+}
+
+/* Textarea gets the same glass treatment */
+[data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form textarea.form-control,
+[data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form textarea.form-control {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0.01) 100%),
+    rgba(20, 26, 38, 0.80);
 }
 
 .pmt-small-caps {
