@@ -880,19 +880,29 @@ tbody tr:nth-child(10) {
 }
 .pmt-kpi-icon i { font-size: 20px; color: #fff; }
 
-/* Export button — pill with secondary outline */
-.pmt-btn-export {
-  background: #fff;
-  color: var(--vz-secondary);
-  border: 1px solid var(--vz-secondary);
-  font-weight: 600;
+/* Export button — teal/green outline, signals "download data"
+   Uses .btn.pmt-btn-export to outrank Bootstrap's default .btn-secondary */
+.btn.pmt-btn-export {
+  background-color: rgba(10, 179, 156, 0.10) !important;
+  color: #0ab39c !important;
+  border: 1px solid rgba(10, 179, 156, 0.50) !important;
+  font-weight: 600 !important;
   transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+  background-image: none !important;
 }
-.pmt-btn-export:not(:disabled):hover {
-  background: var(--vz-secondary);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(135, 138, 153, 0.35);
+.btn.pmt-btn-export:not(:disabled):hover {
+  background-color: #0ab39c !important;
+  background-image: linear-gradient(135deg, #0ab39c, #14c9b1) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  box-shadow: 0 6px 16px rgba(10, 179, 156, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
   transform: translateY(-1px);
+}
+[data-bs-theme="dark"] .btn.pmt-btn-export,
+[data-layout-mode="dark"] .btn.pmt-btn-export {
+  background-color: rgba(10, 179, 156, 0.16) !important;
+  border-color: rgba(10, 179, 156, 0.60) !important;
+  color: #2dd4bf !important;
 }
 
 /* Row action button (view / PDF / reminder / delete) */
@@ -914,6 +924,49 @@ tbody tr:nth-child(10) {
 /* Status badge dot inside the table column */
 .pmt-status-dot { width: 6px; height: 6px; }
 
+/* Ghost Close button used in View Payment modal footer */
+.btn.pmt-btn-ghost {
+  background-color: transparent !important;
+  color: var(--vz-body-color) !important;
+  border: 1px solid var(--vz-border-color) !important;
+  font-size: 13px !important;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.btn.pmt-btn-ghost:hover {
+  background-color: rgba(15, 23, 42, 0.04) !important;
+  border-color: rgba(15, 23, 42, 0.15) !important;
+  color: var(--vz-heading-color, #0f172a) !important;
+}
+[data-bs-theme="dark"] .btn.pmt-btn-ghost,
+[data-layout-mode="dark"] .btn.pmt-btn-ghost {
+  color: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+[data-bs-theme="dark"] .btn.pmt-btn-ghost:hover,
+[data-layout-mode="dark"] .btn.pmt-btn-ghost:hover {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  color: #fff !important;
+}
+
+/* Method column badge — readable in both light and dark mode
+   Uses .badge.pmt-method-badge to outrank Bootstrap's default `.badge { color: #fff }` */
+.badge.pmt-method-badge {
+  background-color: rgba(124, 92, 252, 0.12) !important;
+  color: #6b4dff !important;
+  border: 1px solid rgba(124, 92, 252, 0.28) !important;
+  padding: 4px 9px !important;
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em;
+}
+[data-bs-theme="dark"] .badge.pmt-method-badge,
+[data-layout-mode="dark"] .badge.pmt-method-badge {
+  background-color: rgba(124, 92, 252, 0.20) !important;
+  color: #c4b5fd !important;
+  border-color: rgba(124, 92, 252, 0.40) !important;
+}
+
 /* ── View Payment modal ── */
 .cbc-view-payment .modal-content { border-radius: 18px; overflow: hidden; }
 .pmt-modal-header { background: var(--vz-secondary-bg); }
@@ -921,22 +974,136 @@ tbody tr:nth-child(10) {
 .pmt-modal-icon i { font-size: 18px; }
 .pmt-modal-body-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 
-.pmt-view-summary {
-  background: var(--vz-secondary-bg);
-  border: 1px solid var(--vz-border-color);
+/* Invoice number pill — right side of the View Payment modal header */
+.pmt-invoice-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(124, 92, 252, 0.10);
+  border: 1px solid rgba(124, 92, 252, 0.30);
+  color: #6b4dff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-family: var(--font-mono, 'DM Mono'), monospace;
+  white-space: nowrap;
 }
+.pmt-invoice-pill i { font-size: 12px; opacity: 0.7; }
+[data-bs-theme="dark"] .pmt-invoice-pill,
+[data-layout-mode="dark"] .pmt-invoice-pill {
+  background: rgba(124, 92, 252, 0.18);
+  border-color: rgba(124, 92, 252, 0.45);
+  color: #c4b5fd;
+}
+
+/* Compact hero — status-tinted left accent + total + pill (single-line inline) */
+.pmt-view-hero {
+  position: relative;
+  border-radius: 10px;
+  border: 1px solid var(--vz-border-color);
+  background: linear-gradient(135deg, rgba(10, 179, 156, 0.06) 0%, rgba(10, 179, 156, 0) 55%), var(--vz-secondary-bg);
+  padding: 8px 14px 8px 18px;
+  overflow: hidden;
+}
+.pmt-hero-sep { color: var(--vz-secondary-color); opacity: 0.5; font-weight: 700; }
+.pmt-view-hero[data-status="pending"]  { background: linear-gradient(135deg, rgba(247, 184, 75, 0.08) 0%, transparent 55%), var(--vz-secondary-bg); }
+.pmt-view-hero[data-status="failed"]   { background: linear-gradient(135deg, rgba(240, 101, 72, 0.08) 0%, transparent 55%), var(--vz-secondary-bg); }
+.pmt-view-hero[data-status="refunded"] { background: linear-gradient(135deg, rgba(41, 156, 219, 0.08) 0%, transparent 55%), var(--vz-secondary-bg); }
+.pmt-view-hero::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: #0ab39c;
+}
+.pmt-view-hero[data-status="pending"]::before  { background: #f7b84b; }
+.pmt-view-hero[data-status="failed"]::before   { background: #f06548; }
+.pmt-view-hero[data-status="refunded"]::before { background: #299cdb; }
+
 .pmt-small-caps {
   color: var(--vz-secondary-color);
   font-size: 10px;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 .pmt-total-value {
-  font-size: 22px;
+  font-size: 18px;
   color: var(--vz-heading-color, var(--vz-body-color));
-  line-height: 1.2;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
-.pmt-client-line { font-size: 12px; margin-top: 2px; }
+.pmt-client-line { font-size: 12px; margin-top: 0; }
 .pmt-status-pill { font-size: 10px; padding: 4px 10px; }
+
+/* Grouped info card — 2×2 grid */
+.pmt-view-group {
+  border-radius: 12px;
+  border: 1px solid var(--vz-border-color);
+  background: var(--vz-card-bg);
+  overflow: hidden;
+}
+.pmt-view-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  background: var(--vz-secondary-bg);
+  border-bottom: 1px solid var(--vz-border-color);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+}
+.pmt-view-group-head i { font-size: 12px; color: #7c5cfc; }
+.pmt-view-group-body { padding: 4px 14px; }
+
+.pmt-view-kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  font-size: 13px;
+  border-bottom: 1px dashed var(--vz-border-color);
+  min-height: 28px;
+}
+.pmt-view-kv:last-child { border-bottom: none; }
+.pmt-view-kv .k { color: var(--vz-secondary-color); font-weight: 500; font-size: 12px; }
+.pmt-view-kv .v {
+  color: var(--vz-heading-color, var(--vz-body-color));
+  font-weight: 600;
+  text-align: right;
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pmt-view-receipt-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.pmt-view-receipt-row .k { color: var(--vz-secondary-color); font-size: 12px; }
+.pmt-view-receipt-row .v {
+  color: var(--vz-heading-color, var(--vz-body-color));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pmt-view-receipt-total {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--vz-border-color);
+}
+.pmt-view-receipt-total .k { color: var(--vz-heading-color, var(--vz-body-color)); font-weight: 700; font-size: 13px; }
+.pmt-view-receipt-total .v { color: #0ab39c; font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
+
 .pmt-view-notes {
   background: var(--vz-secondary-bg);
   border: 1px solid var(--vz-border-color);
