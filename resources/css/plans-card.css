@@ -1,0 +1,823 @@
+/* ═══════════════════════════════════════════════════════════════
+   Plans page — pricing card system
+   Imported from resources/js/pages/Plans.tsx
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ───────── Page surface (container behind the swiper) ───────── */
+.plans-surface {
+  background: #eef1f7;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+  padding: 20px;
+}
+[data-bs-theme="dark"] .plans-surface {
+  /* Match the Velzon top header bg exactly — falls back to slate dark */
+  background: var(--vz-header-bg, #1a1d23);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Swiper layout — breathing space so hover-lift and shadows aren't clipped */
+.plans-swiper {
+  padding-top: 24px !important;
+  padding-bottom: 44px !important;
+}
+.plans-swiper-outer {
+  position: relative;
+  padding: 0 56px;
+}
+
+/* ───────── Centered-slides focus mode ─────────
+   Active slide has NO transform so text renders pixel-perfect HD;
+   only non-active slides get scaled to indicate focus. */
+.plans-swiper-center .swiper-wrapper { align-items: stretch; }
+.plans-swiper-center .swiper-slide {
+  width: 320px;
+  max-width: 85vw;
+  height: auto;
+  transform: scale(0.92);
+  opacity: 0.88;
+  transition: transform .28s cubic-bezier(0.25, 0.8, 0.3, 1), opacity .28s ease-out;
+  will-change: transform, opacity;
+}
+.plans-swiper-center .swiper-slide-active {
+  transform: none;
+  opacity: 1;
+  z-index: 2;
+}
+@media (min-width: 768px)  { .plans-swiper-center .swiper-slide { width: 340px; } }
+@media (min-width: 1200px) { .plans-swiper-center .swiper-slide { width: 360px; } }
+
+/* Swiper navigation buttons */
+.plans-nav-btn {
+  position: absolute;
+  top: calc(50% - 24px);
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid var(--vz-border-color);
+  background: var(--vz-card-bg, #fff);
+  color: var(--vz-primary);
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.10);
+  transition: background .2s, color .2s, box-shadow .2s, transform .2s;
+  outline: none;
+}
+.plans-nav-btn:hover:not(:disabled) {
+  background: var(--vz-primary);
+  color: #fff;
+  border-color: var(--vz-primary);
+  box-shadow: 0 6px 24px rgba(64, 81, 137, 0.35);
+  transform: translateY(-50%) scale(1.1);
+}
+.plans-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.plans-nav-prev { left: 0; }
+.plans-nav-next { right: 0; }
+[data-layout-mode="dark"] .plans-nav-btn,
+[data-bs-theme="dark"] .plans-nav-btn {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Keyframes
+   ═══════════════════════════════════════════════════════════════ */
+@keyframes plan-shine-sweep {
+  0%   { transform: translateX(-120%) skewX(-20deg); opacity: 0; }
+  8%   { opacity: 1; }
+  35%  { transform: translateX(320%)  skewX(-20deg); opacity: 0; }
+  100% { transform: translateX(320%)  skewX(-20deg); opacity: 0; }
+}
+@keyframes planlist-mesh {
+  0%, 100% { background-position: 0% 0%; }
+  50%      { background-position: 100% 100%; }
+}
+@keyframes planlist-pulse-dot {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.25); }
+}
+@keyframes planlist-float-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(10px, -6px) scale(1.05); }
+  66%      { transform: translate(-8px,  4px) scale(0.96); }
+}
+@keyframes planlist-tick-in {
+  0%   { opacity: 0; transform: scale(0.4); }
+  60%  { transform: scale(1.12); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.planlist-tick { animation: planlist-tick-in .35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* Animated border (conic-gradient sweep) */
+@property --plan-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes plan-border-spin { to { --plan-angle: 360deg; } }
+
+.plan-card-animated { position: relative; }
+.plan-card-animated::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background:
+    conic-gradient(
+      from var(--plan-angle),
+      transparent 0deg,
+      var(--card-accent, #7c5cfc) 40deg,
+      rgba(255, 255, 255, 0.95) 80deg,
+      var(--card-accent, #7c5cfc) 120deg,
+      transparent 200deg,
+      transparent 360deg
+    );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: plan-border-spin 3.5s linear infinite;
+  pointer-events: none;
+  z-index: 5;
+  opacity: 0.9;
+}
+[data-bs-theme="dark"]   .plan-card-animated::before,
+[data-layout-mode="dark"].plan-card-animated::before {
+  opacity: 1;
+  background:
+    conic-gradient(
+      from var(--plan-angle),
+      transparent 0deg,
+      var(--card-accent, #7c5cfc) 30deg,
+      #ffffff 80deg,
+      var(--card-accent, #7c5cfc) 130deg,
+      transparent 210deg,
+      transparent 360deg
+    );
+}
+.plan-card-animated:hover::before { animation-play-state: paused; }
+
+/* Pulsing accent glow for the focal (centered) card */
+@keyframes plan-pulse-glow {
+  0%, 100% {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.10) inset,
+      0 4px 10px rgba(0, 0, 0, 0.50),
+      0 14px 32px -10px color-mix(in srgb, var(--card-accent) 55%, transparent),
+      0 26px 48px -16px color-mix(in srgb, var(--card-accent) 38%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.14) inset,
+      0 4px 10px rgba(0, 0, 0, 0.50),
+      0 18px 40px -8px  color-mix(in srgb, var(--card-accent) 75%, transparent),
+      0 32px 60px -14px color-mix(in srgb, var(--card-accent) 50%, transparent);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Card surface — light mode (fresh accent gradient)
+   ═══════════════════════════════════════════════════════════════ */
+.plan-card-v2 {
+  --card-accent: #7c5cfc;
+  --accent-price: #0f172a;
+  position: relative;
+  width: 100%;
+  height: 560px;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+  border-radius: 20px;
+  padding: 22px 22px 18px;
+  overflow: hidden;
+  text-align: center;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card-accent) 14%, #ffffff) 0%, #ffffff 55%);
+  color: var(--vz-body-color);
+  border: 1px solid color-mix(in srgb, var(--card-accent) 32%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 10px 22px -6px  color-mix(in srgb, var(--card-accent) 28%, transparent),
+    0 22px 38px -14px color-mix(in srgb, var(--card-accent) 20%, transparent);
+  transition: transform .28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow .28s ease, border-color .28s ease;
+  padding-top: 20px !important;
+  /* Crisp HD text rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+.plan-card-v2:hover {
+  transform: translateY(-6px);
+  border-color: color-mix(in srgb, var(--card-accent) 60%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 2px 4px rgba(15, 23, 42, 0.06),
+    0 16px 32px -6px  color-mix(in srgb, var(--card-accent) 42%, transparent),
+    0 28px 50px -12px color-mix(in srgb, var(--card-accent) 30%, transparent);
+}
+
+/* ───── Card surface — dark mode (deep classy black + sheen) ───── */
+[data-bs-theme="dark"]   .plan-card-v2,
+[data-layout-mode="dark"].plan-card-v2 {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 18%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card-accent) 16%, transparent) 0%, transparent 38%),
+    radial-gradient(ellipse at top, color-mix(in srgb, var(--card-accent) 10%, transparent) 0%, transparent 50%),
+    #0f1216;
+  border-color: color-mix(in srgb, var(--card-accent) 50%, transparent);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.10) inset,
+    0 4px 10px rgba(0, 0, 0, 0.50),
+    0 14px 32px -10px color-mix(in srgb, var(--card-accent) 55%, transparent),
+    0 26px 48px -16px color-mix(in srgb, var(--card-accent) 38%, transparent);
+  --accent-price: #fff;
+}
+[data-bs-theme="dark"]   .plan-card-v2:hover,
+[data-layout-mode="dark"].plan-card-v2:hover {
+  border-color: color-mix(in srgb, var(--card-accent) 78%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.16) inset,
+    0 6px 14px rgba(0, 0, 0, 0.55),
+    0 22px 44px -8px  color-mix(in srgb, var(--card-accent) 75%, transparent),
+    0 36px 60px -14px color-mix(in srgb, var(--card-accent) 50%, transparent);
+}
+
+/* Pulsing glow only on the centered/active card */
+[data-bs-theme="dark"]   .plans-swiper-center .swiper-slide-active .plan-card-v2,
+[data-layout-mode="dark"].plans-swiper-center .swiper-slide-active .plan-card-v2 {
+  animation: plan-pulse-glow 3.4s ease-in-out infinite;
+}
+
+/* ───── Featured card — green accent ───── */
+.plan-card-v2.is-featured {
+  --card-accent: #10b981;
+  --accent-price: #10b981;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0) 28%),
+    linear-gradient(180deg, rgba(16, 185, 129, 0.16) 0%, #ffffff 55%);
+  border-color: rgba(16, 185, 129, 0.45);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 10px 22px -6px  rgba(16, 185, 129, 0.32),
+    0 22px 38px -14px rgba(16, 185, 129, 0.22);
+}
+.plan-card-v2.is-featured:hover {
+  border-color: rgba(16, 185, 129, 0.72);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 2px 4px rgba(15, 23, 42, 0.06),
+    0 16px 32px -6px  rgba(16, 185, 129, 0.50),
+    0 28px 50px -12px rgba(16, 185, 129, 0.34);
+}
+[data-bs-theme="dark"]   .plan-card-v2.is-featured,
+[data-layout-mode="dark"].plan-card-v2.is-featured {
+  background:
+    linear-gradient(180deg, rgba(16, 185, 129, 0.18) 0%, transparent 35%),
+    #0f1216;
+  border-color: rgba(16, 185, 129, 0.65);
+  --accent-price: #34d399;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.10) inset,
+    0 4px 10px rgba(0, 0, 0, 0.50),
+    0 14px 32px -10px rgba(16, 185, 129, 0.55),
+    0 26px 48px -16px rgba(16, 185, 129, 0.38);
+}
+[data-bs-theme="dark"]   .plan-card-v2.is-featured:hover,
+[data-layout-mode="dark"].plan-card-v2.is-featured:hover {
+  border-color: rgba(16, 185, 129, 0.85);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.14) inset,
+    0 6px 14px rgba(0, 0, 0, 0.55),
+    0 18px 38px -8px  rgba(16, 185, 129, 0.70),
+    0 32px 56px -14px rgba(16, 185, 129, 0.48);
+}
+
+/* ───── Floating icon chip at top-center ───── */
+.plan-icon-chip {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--card-accent) 14%, transparent);
+  border: 2px solid color-mix(in srgb, var(--card-accent) 40%, transparent);
+  z-index: 3;
+  transition: transform .3s ease, box-shadow .3s ease;
+}
+.plan-icon-chip i { font-size: 22px; color: var(--card-accent); }
+[data-bs-theme="dark"]   .plan-icon-chip,
+[data-layout-mode="dark"].plan-icon-chip {
+  background: color-mix(in srgb, var(--card-accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--card-accent) 55%, transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--card-accent) 35%, transparent);
+}
+.plan-card-v2:hover .plan-icon-chip { transform: translateX(-50%) scale(1.08); }
+
+/* ───── Plan-name pill (uppercase, small) ───── */
+.plan-name-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-accent) 14%, transparent);
+  color: var(--card-accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--card-accent) 28%, transparent);
+}
+[data-bs-theme="dark"]   .plan-card-v2 .plan-name-pill,
+[data-layout-mode="dark"].plan-card-v2 .plan-name-pill {
+  background: color-mix(in srgb, var(--card-accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--card-accent) 45%, transparent);
+  color: color-mix(in srgb, var(--card-accent) 70%, #fff);
+}
+
+/* Status / Popular badge pill */
+.plan-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-accent) 15%, transparent);
+  color: var(--card-accent);
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--card-accent) 28%, transparent);
+}
+[data-bs-theme="dark"]   .plan-card-v2 .plan-badge-pill,
+[data-layout-mode="dark"].plan-card-v2 .plan-badge-pill {
+  background: color-mix(in srgb, var(--card-accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--card-accent) 42%, transparent);
+  color: color-mix(in srgb, var(--card-accent) 60%, #fff);
+}
+
+/* Subtitle */
+.plan-subtitle {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--vz-secondary-color);
+  margin: 2px 0 14px;
+  font-weight: 500;
+}
+[data-bs-theme="dark"]   .plan-card-v2 .plan-subtitle,
+[data-layout-mode="dark"].plan-card-v2 .plan-subtitle { color: rgba(255, 255, 255, 0.86); }
+
+/* ───── Price ───── */
+.plan-price {
+  font-size: 2.4rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: var(--accent-price);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.plan-price .cur { font-size: 1rem; font-weight: 500; opacity: 0.65; }
+
+.plan-price-meta {
+  font-size: 9.5px;
+  line-height: 1.3;
+  color: var(--vz-secondary-color);
+  text-transform: capitalize;
+  font-weight: 600;
+  padding-bottom: 4px;
+}
+[data-bs-theme="dark"]   .plan-card-v2 .plan-price-meta,
+[data-layout-mode="dark"].plan-card-v2 .plan-price-meta { color: rgba(255, 255, 255, 0.55); }
+
+/* Divider */
+.plan-divider {
+  border: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--vz-border-color), transparent);
+  margin: 14px 0 12px;
+}
+[data-bs-theme="dark"]   .plan-divider,
+[data-layout-mode="dark"].plan-divider {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.10), transparent);
+}
+
+/* ───── Tick list ───── */
+.plan-ticks {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  flex: 1 1 0;
+  min-height: 0;
+}
+.plan-ticks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--vz-body-color);
+  font-weight: 500;
+}
+.plan-ticks li strong {
+  font-weight: 700;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  margin-right: 2px;
+}
+[data-bs-theme="dark"]   .plan-card-v2 .plan-ticks li,
+[data-layout-mode="dark"].plan-card-v2 .plan-ticks li { color: #ffffff; }
+[data-bs-theme="dark"]   .plan-card-v2 .plan-ticks li strong,
+[data-layout-mode="dark"].plan-card-v2 .plan-ticks li strong { color: #fff; }
+
+.plan-ticks li > i.ri-check-line,
+.plan-ticks li > i.ri-checkbox-circle-fill {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0ab39c;
+  flex-shrink: 0;
+}
+
+/* Tick list scrollbar */
+.plan-ticks::-webkit-scrollbar       { width: 4px; }
+.plan-ticks::-webkit-scrollbar-track { background: transparent; }
+.plan-ticks::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--card-accent) 25%, transparent);
+  border-radius: 4px;
+}
+
+/* ───── CTA button — violet pill with icon chip on the left ───── */
+.plan-cta {
+  flex: 1;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 20px 8px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease;
+  background: linear-gradient(135deg, #7c5cfc 0%, #6366f1 100%);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(124, 92, 252, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+.plan-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(124, 92, 252, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.30);
+}
+.plan-cta-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  flex-shrink: 0;
+  transition: transform .18s ease, background .18s ease;
+}
+.plan-cta:hover .plan-cta-icon { background: rgba(255, 255, 255, 0.32); transform: rotate(12deg); }
+.plan-cta .plan-cta-label { flex: 1; text-align: center; padding-right: 4px; }
+
+/* Limited-time offer tag below CTA for featured cards */
+.plan-limited-tag {
+  text-align: center;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #10b981;
+  margin-top: 8px;
+  opacity: 0.85;
+}
+
+/* ───── Plan title ───── */
+.plan-title {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  margin: 0;
+  line-height: 1.1;
+}
+[data-bs-theme="dark"]   .plan-card-v2 .plan-title,
+[data-layout-mode="dark"].plan-card-v2 .plan-title { color: #fff; }
+
+.plan-price-period {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--vz-secondary-color);
+  letter-spacing: 0;
+  text-transform: lowercase;
+  margin-left: 2px;
+}
+[data-bs-theme="dark"]   .plan-card-v2 .plan-price-period,
+[data-layout-mode="dark"].plan-card-v2 .plan-price-period { color: rgba(255, 255, 255, 0.55); }
+
+/* ───── 2×2 stat boxes ───── */
+.plan-stat-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card-accent)  6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--card-accent) 14%, transparent);
+  transition: transform .18s ease, border-color .18s ease;
+}
+.plan-stat-box:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--card-accent) 32%, transparent);
+}
+[data-bs-theme="dark"]   .plan-stat-box,
+[data-layout-mode="dark"].plan-stat-box {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+[data-bs-theme="dark"]   .plan-stat-box:hover,
+[data-layout-mode="dark"].plan-stat-box:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: color-mix(in srgb, var(--card-accent) 45%, transparent);
+}
+.plan-stat-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--card-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--card-accent) 22%, transparent);
+  color: var(--card-accent);
+  flex-shrink: 0;
+}
+[data-bs-theme="dark"]   .plan-stat-icon,
+[data-layout-mode="dark"].plan-stat-icon {
+  background: color-mix(in srgb, var(--card-accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--card-accent) 40%, transparent);
+  color: color-mix(in srgb, var(--card-accent) 65%, #fff);
+}
+.plan-stat-icon i { font-size: 15px; }
+
+.plan-stat-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+  line-height: 1;
+}
+[data-bs-theme="dark"]   .plan-stat-label,
+[data-layout-mode="dark"].plan-stat-label { color: rgba(255, 255, 255, 0.84); }
+
+.plan-stat-value {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  margin-top: 4px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+[data-bs-theme="dark"]   .plan-stat-value,
+[data-layout-mode="dark"].plan-stat-value { color: #fff; }
+
+/* ───── Included Modules section header ───── */
+.plan-modules-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.plan-modules-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+}
+[data-bs-theme="dark"]   .plan-modules-title,
+[data-layout-mode="dark"].plan-modules-title { color: rgba(255, 255, 255, 0.86); }
+.plan-modules-title i { font-size: 13px; color: var(--card-accent); }
+
+.plan-modules-count-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--card-accent), color-mix(in srgb, var(--card-accent) 70%, #fff));
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  border: none;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--card-accent) 45%, transparent);
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.plan-modules-count-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--card-accent) 60%, transparent);
+}
+
+/* Delete button */
+.plan-delete-btn {
+  width: 40px; height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: transparent;
+  color: #f06548;
+  border: 1.5px solid rgba(240, 101, 72, 0.45);
+  cursor: pointer;
+  transition: all .18s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.plan-delete-btn:hover:not(:disabled) {
+  background: #f06548;
+  color: #fff;
+  border-color: #f06548;
+}
+.plan-card-v2.is-featured .plan-delete-btn {
+  color: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+.plan-card-v2.is-featured .plan-delete-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.65);
+}
+
+/* "View all modules" link button */
+.plan-view-all {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.72;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.plan-view-all:hover { opacity: 1; text-decoration: underline; }
+
+/* ───── Legacy stat-box variant (driven by inline --stat-c CSS var) ───── */
+.planlist-stat {
+  --stat-c: #7c5cfc;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--stat-c) 12%, transparent) 0%,
+      color-mix(in srgb, var(--stat-c)  4%, transparent) 55%,
+      transparent 100%),
+    var(--vz-card-bg);
+  border: 1px solid color-mix(in srgb, var(--stat-c) 28%, transparent);
+  box-shadow:
+    0 2px 6px color-mix(in srgb, var(--stat-c) 14%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.planlist-stat:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--stat-c) 50%, transparent);
+  box-shadow:
+    0 6px 14px color-mix(in srgb, var(--stat-c) 24%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.60);
+}
+[data-bs-theme="dark"]   .planlist-stat,
+[data-layout-mode="dark"].planlist-stat {
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--stat-c) 26%, transparent) 0%,
+      color-mix(in srgb, var(--stat-c) 10%, transparent) 55%,
+      transparent 100%),
+    #1f2935;
+  border: 1px solid color-mix(in srgb, var(--stat-c) 40%, transparent);
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+[data-bs-theme="dark"]   .planlist-stat:hover,
+[data-layout-mode="dark"].planlist-stat:hover {
+  border-color: color-mix(in srgb, var(--stat-c) 60%, transparent);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    0 0 0 1px color-mix(in srgb, var(--stat-c) 35%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* ───── Slim custom scrollbar for modules list ───── */
+.plan-modules-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 92, 252, 0.25) transparent;
+}
+.plan-modules-scroll::-webkit-scrollbar       { width: 4px; }
+.plan-modules-scroll::-webkit-scrollbar-track { background: transparent; }
+.plan-modules-scroll::-webkit-scrollbar-thumb {
+  background: rgba(124, 92, 252, 0.22);
+  border-radius: 4px;
+  transition: background .2s ease;
+}
+.plan-modules-scroll::-webkit-scrollbar-thumb:hover { background: rgba(124, 92, 252, 0.45); }
+.plan-modules-scroll.plan-scroll-dark { scrollbar-color: rgba(247, 184, 75, 0.30) transparent; }
+.plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb       { background: rgba(247, 184, 75, 0.28); }
+.plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb:hover { background: rgba(247, 184, 75, 0.50); }
+
+/* ═══════════════════════════════════════════════════════════════
+   Compact Delete Confirmation (SweetAlert) Popup
+   ═══════════════════════════════════════════════════════════════ */
+.swal2-container.swal2-backdrop-show {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.plans-swal-popup {
+  border-radius: 16px !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25), 0 8px 20px rgba(15, 23, 42, 0.12) !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+}
+.plans-swal-icon {
+  width: 56px !important;
+  height: 56px !important;
+  margin: 0 auto 0.6em !important;
+  border-width: 2px !important;
+}
+.plans-swal-icon .swal2-icon-content { font-size: 2rem !important; }
+.plans-swal-title {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+  margin: 0 0 0.4em !important;
+  padding: 0 !important;
+}
+.plans-swal-html {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  margin: 0 0 0.6em !important;
+}
+.plans-swal-actions {
+  gap: 8px !important;
+  margin-top: 0.8em !important;
+  width: 100%;
+  padding: 0 4px;
+}
+.plans-swal-confirm,
+.plans-swal-cancel {
+  border: none !important;
+  border-radius: 999px !important;
+  padding: 8px 18px !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+  cursor: pointer !important;
+  transition: all .18s ease !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+.plans-swal-confirm {
+  background: linear-gradient(135deg, #f06548, #ef4444) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(240, 101, 72, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+}
+.plans-swal-confirm:hover {
+  box-shadow: 0 8px 20px rgba(240, 101, 72, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.30) !important;
+  transform: translateY(-1px) !important;
+}
+.plans-swal-cancel {
+  background: var(--vz-secondary-bg, #f3f4f6) !important;
+  color: var(--vz-body-color, #374151) !important;
+  border: 1px solid var(--vz-border-color, #e5e7eb) !important;
+}
+.plans-swal-cancel:hover { background: var(--vz-border-color, #e5e7eb) !important; }
