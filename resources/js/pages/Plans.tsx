@@ -153,6 +153,22 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
                 (swiper.params.navigation as any).nextEl = nextRef.current;
               }
             }}
+            onSwiper={swiper => {
+              // Re-bind nav AFTER both prev/next refs are attached (next button
+              // renders AFTER the Swiper, so its ref isn't set during onBeforeInit).
+              // A microtask delay guarantees both refs exist before re-init.
+              setTimeout(() => {
+                if (typeof swiper.params.navigation === 'object' && swiper.params.navigation) {
+                  (swiper.params.navigation as any).prevEl = prevRef.current;
+                  (swiper.params.navigation as any).nextEl = nextRef.current;
+                }
+                if (swiper.navigation) {
+                  swiper.navigation.destroy();
+                  swiper.navigation.init();
+                  swiper.navigation.update();
+                }
+              }, 0);
+            }}
             navigation={{ prevEl: prevRef.current, nextEl: nextRef.current }}
             pagination={{ clickable: true, dynamicBullets: true }}
             loop={plans.length > 1}
