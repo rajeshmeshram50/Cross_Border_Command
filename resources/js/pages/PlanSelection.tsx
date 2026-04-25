@@ -61,18 +61,85 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
 
   const handlePay = async () => {
     if (!selectedPlan) return;
-    setPaymentStep('processing');
     setProcessing(true);
-    await new Promise(r => setTimeout(r, 1000));
+
+    let orderRes;
     try {
-      const res = await api.post('/subscription/subscribe', { plan_id: selectedPlan.id, payment_method: paymentMethod, billing_cycle: billingCycle }, { timeout: 60000 });
-      setTxnResult(res.data);
-      setPaymentStep('success');
-      toast.success('Payment Successful', `${selectedPlan.name} plan activated!`);
+      orderRes = await api.post('/subscription/create-order', {
+        plan_id: selectedPlan.id,
+        payment_method: paymentMethod,
+        billing_cycle: billingCycle,
+      });
     } catch (err: any) {
-      toast.error('Payment Failed', err.response?.data?.message || 'Something went wrong');
+      toast.error('Could not start payment', err.response?.data?.message || 'Something went wrong');
+      setProcessing(false);
+      return;
+    }
+
+    // Free plan — already activated server-side
+    if (orderRes.data.free) {
+      setTxnResult(orderRes.data);
+      setPaymentStep('success');
+      setProcessing(false);
+      toast.success('Plan Activated', `${selectedPlan.name} plan activated!`);
+      return;
+    }
+
+    const Razorpay = (window as any).Razorpay;
+    if (!Razorpay) {
+      toast.error('Payment unavailable', 'Razorpay checkout failed to load');
+      setProcessing(false);
+      return;
+    }
+
+    const rzp = new Razorpay({
+      key: orderRes.data.key,
+      amount: orderRes.data.amount,
+      currency: orderRes.data.currency,
+      order_id: orderRes.data.order_id,
+      name: orderRes.data.org_name || 'Cross Border Command',
+      description: `${orderRes.data.plan_name} Plan (${orderRes.data.billing_cycle}ly)`,
+      prefill: orderRes.data.prefill,
+      theme: { color: '#405189' },
+      method: paymentMethod === 'net_banking'
+        ? { netbanking: true, card: false, upi: false, wallet: false }
+        : paymentMethod === 'card'
+          ? { card: true, netbanking: false, upi: false, wallet: false }
+          : { upi: true, card: false, netbanking: false, wallet: false },
+      handler: async (response: any) => {
+        setPaymentStep('processing');
+        try {
+          const verify = await api.post('/subscription/verify-payment', {
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+          });
+          setTxnResult(verify.data);
+          setPaymentStep('success');
+          toast.success('Payment Successful', `${selectedPlan.name} plan activated!`);
+        } catch (err: any) {
+          toast.error('Verification Failed', err.response?.data?.message || 'Could not verify payment');
+          setPaymentStep('select');
+        } finally {
+          setProcessing(false);
+        }
+      },
+      modal: {
+        ondismiss: () => {
+          setProcessing(false);
+          setPaymentStep('select');
+          toast.error('Payment Cancelled', 'You closed the payment window');
+        },
+      },
+    });
+
+    rzp.on('payment.failed', (resp: any) => {
+      toast.error('Payment Failed', resp.error?.description || 'Try a different payment method');
+      setProcessing(false);
       setPaymentStep('select');
-    } finally { setProcessing(false); }
+    });
+
+    rzp.open();
   };
 
   const total = selectedPlan ? getPrice(selectedPlan, billingCycle) : 0;

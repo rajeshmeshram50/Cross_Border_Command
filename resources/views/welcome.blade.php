@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     @viteReactRefresh
     @vite(['resources/css/app.css', 'resources/js/app.tsx'])
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 </head>
 <body>
     <div id="app"></div>
