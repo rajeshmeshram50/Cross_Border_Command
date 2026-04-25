@@ -3,6 +3,21 @@
    Imported from resources/js/pages/Plans.tsx
    ═══════════════════════════════════════════════════════════════ */
 
+/* ───────── Current-plan pill (used by PlanSelection page) ─────────
+   Light, GPU-only animation — transform + opacity, no box-shadow. */
+@keyframes cp-current-dot-pulse {
+  0%, 100% { transform: scale(1);    opacity: 0.65; }
+  50%      { transform: scale(1.30); opacity: 1; }
+}
+.cp-current-dot {
+  animation: cp-current-dot-pulse 1.6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+/* Pause the pulse while Swiper is mid-transition so the slide motion
+   gets all the GPU time. */
+.swiper-transitioning ~ * .cp-current-dot,
+.swiper:has(.swiper-wrapper.swiper-transitioning) .cp-current-dot { animation-play-state: paused; }
+
 /* ───────── Page surface (container behind the swiper) ───────── */
 .plans-surface {
   background: #eef1f7;
@@ -56,13 +71,18 @@
   width: min(82vw, 300px);
   max-width: calc(100vw - 32px);
   height: auto;
-  transform: scale(0.92);
+  /* translate3d forces a dedicated GPU layer so each slide's paint is
+     isolated and the swiper transition stays smooth even when the active
+     card has its own running animations. */
+  transform: scale(0.92) translate3d(0, 0, 0);
   opacity: 0.88;
-  transition: transform .28s cubic-bezier(0.25, 0.8, 0.3, 1), opacity .28s ease-out;
+  transition: transform .26s cubic-bezier(0.25, 0.8, 0.3, 1), opacity .26s ease-out;
   will-change: transform, opacity;
+  /* Paint isolation — a slide's internal repaints don't invalidate siblings */
+  contain: layout paint style;
 }
 .plans-swiper-center .swiper-slide-active {
-  transform: none;
+  transform: translate3d(0, 0, 0);
   opacity: 1;
   z-index: 2;
 }
@@ -276,10 +296,16 @@
     0 36px 60px -14px color-mix(in srgb, var(--card-accent) 50%, transparent);
 }
 
-/* Pulsing glow only on the centered/active card */
+/* Pulsing glow only on the centered/active card. Pause it while Swiper
+   is animating between slides so the box-shadow keyframe doesn't fight
+   the slide transition for paint cycles (causes scroll jank). */
 [data-bs-theme="dark"]   .plans-swiper-center .swiper-slide-active .plan-card-v2,
 [data-layout-mode="dark"].plans-swiper-center .swiper-slide-active .plan-card-v2 {
   animation: plan-pulse-glow 3.4s ease-in-out infinite;
+}
+.plans-swiper-center.swiper-transitioning .swiper-slide-active .plan-card-v2,
+.plans-swiper-center .swiper-wrapper.swiper-transitioning .swiper-slide-active .plan-card-v2 {
+  animation-play-state: paused !important;
 }
 
 /* ───── Featured card — green accent ───── */

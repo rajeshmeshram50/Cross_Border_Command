@@ -152,44 +152,10 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
 
   return (
     <div className="plans-surface">
-      {/* ── Compact Page Header ── */}
-      {hasPlan && (
-        <style>{`
-          @keyframes cp-dot-pulse {
-            0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(10,179,156,0.55); }
-            50%      { transform: scale(1.25); box-shadow: 0 0 0 5px rgba(10,179,156,0); }
-          }
-          @keyframes cp-blink {
-            0%, 100% {
-              box-shadow: 0 0 0 0 rgba(10,179,156,0), 0 2px 6px rgba(10,179,156,0.35);
-              filter: brightness(1);
-            }
-            50% {
-              box-shadow: 0 0 0 4px rgba(10,179,156,0.22), 0 4px 14px rgba(10,179,156,0.40);
-              filter: brightness(1.08);
-            }
-          }
-          @keyframes cp-sweep {
-            0%   { transform: translateX(-140%); }
-            60%  { transform: translateX(140%); }
-            100% { transform: translateX(140%); }
-          }
-          .cp-current-pill {
-            position: relative;
-            overflow: hidden;
-            animation: cp-blink 1.8s ease-in-out infinite;
-          }
-          .cp-current-pill::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(110deg, transparent 40%, rgba(255,255,255,0.45) 50%, transparent 60%);
-            transform: translateX(-140%);
-            animation: cp-sweep 2.6s ease-in-out infinite;
-            pointer-events: none;
-          }
-        `}</style>
-      )}
+      {/* All cp-current-pill styles now live in resources/css/plans-card.css —
+          inline <style> injection was causing extra style-recalc work on
+          every parent re-render and the cp-sweep infinite animation was
+          competing with the swiper for paint cycles. */}
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-0">
         <div className="d-flex align-items-center gap-2 flex-shrink-1 min-w-0">
           <div
@@ -220,11 +186,10 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                 title={`Valid until ${user?.plan?.expires_at}`}
               >
                 <span
-                  className="rounded-circle"
+                  className="rounded-circle cp-current-dot"
                   style={{
                     width: 6, height: 6,
                     background: '#0ab39c',
-                    animation: 'cp-dot-pulse 1.4s ease-in-out infinite',
                     flexShrink: 0,
                   }}
                 />
@@ -359,13 +324,13 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
             loop={plans.length > 1}
             autoplay={{ delay: 3500, disableOnInteraction: true, pauseOnMouseEnter: true }}
             speed={450}
+            /* Centered-slides focus mode — active card scales up to crisp 1.0
+               (no transform = pixel-perfect HD text) and side cards shrink. */
             grabCursor={true}
             centeredSlides={true}
             slidesPerView="auto"
             spaceBetween={24}
             watchSlidesProgress={true}
-            observer={true}
-            observeParents={true}
             className="plans-swiper plans-swiper-center pb-5"
           >
           {plans.map(p => {
@@ -380,7 +345,16 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
             ];
             return (
               <SwiperSlide key={p.id}>
-                <Card className={`plan-card-v2 ${p.is_featured ? 'is-featured' : ''}`}>
+                <Card
+                  className={`w-100 mb-0 position-relative d-flex flex-column plan-card-animated plan-card-v2 ${p.is_featured ? 'is-featured' : ''}`}
+                  style={{
+                    height: 560,
+                    borderRadius: 20,
+                    padding: '22px 22px 18px',
+                    overflow: 'hidden',
+                    textAlign: 'center',
+                  }}
+                >
                   {/* ── Header: Title + Price + Subtitle ── */}
                   <div className="text-center">
                     <div className="d-flex align-items-center justify-content-center gap-2 mb-2">
