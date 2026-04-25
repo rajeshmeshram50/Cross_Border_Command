@@ -94,20 +94,26 @@ class PermissionController extends Controller
             }
 
             $myPerms = Permission::where('user_id', $authUser->id)->get()->keyBy('module_id');
+            $fields = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
 
             foreach ($request->permissions as $perm) {
                 $myPerm = $myPerms->get($perm['module_id']);
+
+                // No permission row at all for this module → client_admin cannot
+                // grant ANY of the seven flags. Previously only checked 4 flags,
+                // letting export/import/approve slip through and crash later when
+                // the second loop tried to access $myPerm->$field on null.
                 if (!$myPerm) {
-                    if (($perm['can_view'] ?? false) || ($perm['can_add'] ?? false) ||
-                        ($perm['can_edit'] ?? false) || ($perm['can_delete'] ?? false)) {
-                        return response()->json([
-                            'message' => 'You cannot grant permissions for modules you don\'t have access to',
-                        ], 422);
+                    foreach ($fields as $field) {
+                        if ($perm[$field] ?? false) {
+                            return response()->json([
+                                'message' => 'You cannot grant permissions for modules you don\'t have access to',
+                            ], 422);
+                        }
                     }
                     continue;
                 }
 
-                $fields = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
                 foreach ($fields as $field) {
                     if (($perm[$field] ?? false) && !$myPerm->$field) {
                         return response()->json([
