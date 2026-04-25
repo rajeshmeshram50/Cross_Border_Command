@@ -700,18 +700,19 @@ export default function Payments() {
       <Modal
         isOpen={addModal}
         toggle={() => { setAddModal(false); resetPaymentForm(); }}
-        size="lg"
         centered
         scrollable
         className="cbc-payment-modal"
         contentClassName="border-0 shadow-lg"
       >
-        {/* ── Hero header — icon chip + title + "New Payment" pill + close X ── */}
+        {/* ── Hero header — icon chip + title + subtitle + "New Payment" pill + close X ── */}
         <div className="pmt-reg-hero">
           <span className="pmt-reg-hero-icon"><i className="ri-secure-payment-line" /></span>
           <div className="flex-grow-1 min-w-0">
             <h5 className="pmt-reg-hero-title">Record New Payment</h5>
-          
+            <p className="pmt-reg-hero-sub mb-0">
+              Capture client payment, billing period and reference details for the receipt
+            </p>
           </div>
           <span className="pmt-reg-hero-pill">
             <i className="ri-circle-fill" />New Payment

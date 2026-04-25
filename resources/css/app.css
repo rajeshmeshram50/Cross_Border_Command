@@ -1022,18 +1022,9 @@ tbody tr:nth-child(10) {
   margin: 0 !important;
 }
 
-/* Section label — minimal inline header (no banner / no box) */
-.pmt-reg-banner {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin: 14px 0 8px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-}
-.pmt-reg-banner:first-child { margin-top: 0; }
+/* Section banner — hidden in the new Add-Company-style layout
+   (kept in the markup but visually removed, fields flow flat). */
+.pmt-reg-banner { display: none !important; }
 .pmt-reg-banner-icon {
   width: 16px;
   height: 16px;
@@ -1085,38 +1076,38 @@ tbody tr:nth-child(10) {
   --reg-banner-shadow: rgba(245, 158, 11, 0.35);
 }
 
-/* Registration-style fields — label above input, clean white input (compact) */
+/* Registration-style fields — label above input, clean look (Add-Company style) */
 .pmt-reg-form .form-label,
 .pmt-reg-form label {
   display: block;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--vz-body-color);
-  margin: 0 0 3px 0 !important;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  margin: 0 0 7px 0 !important;
   letter-spacing: 0;
   text-transform: none;
   white-space: normal;
-  line-height: 1.25;
+  line-height: 1.3;
 }
-.pmt-reg-form label .text-danger { color: #ec4899 !important; margin-left: 2px; font-weight: 500; }
+.pmt-reg-form label .text-danger { color: #ec4899 !important; margin-left: 2px; font-weight: 700; }
 .pmt-reg-form .form-control,
 .pmt-reg-form .form-select {
-  font-size: 11.5px;
-  font-weight: 400;
-  padding: 2px 9px;
-  height: 26px;
-  min-height: 26px;
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 9px 13px;
+  height: 42px;
+  min-height: 42px;
   background: #fff;
   border: 1px solid var(--vz-border-color);
-  border-radius: 4px;
-  color: var(--vz-body-color);
+  border-radius: 9px;
+  color: var(--vz-heading-color, var(--vz-body-color));
   transition: border-color .15s ease, box-shadow .15s ease;
 }
 .pmt-reg-form .form-control::placeholder,
 .pmt-reg-form .form-select option[value=""] {
-  color: rgba(15, 23, 42, 0.40);
-  font-weight: 300;
-  font-size: 10px;
+  color: rgba(15, 23, 42, 0.42);
+  font-weight: 400;
+  font-size: 13px;
   font-style: normal;
 }
 [data-bs-theme="dark"] .pmt-reg-form .form-control::placeholder,
@@ -1146,17 +1137,17 @@ tbody tr:nth-child(10) {
 .pmt-reg-field { position: relative; }
 .pmt-reg-field-icon {
   position: absolute;
-  left: 8px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
-  color: rgba(124, 92, 252, 0.60);
-  font-size: 11px;
+  color: rgba(124, 92, 252, 0.65);
+  font-size: 15px;
   pointer-events: none;
   z-index: 2;
 }
 .pmt-reg-form .pmt-reg-field .form-control,
 .pmt-reg-form .pmt-reg-field .form-select {
-  padding-left: 25px;
+  padding-left: 36px;
 }
 [data-bs-theme="dark"] .pmt-reg-field-icon,
 [data-layout-mode="dark"] .pmt-reg-field-icon {
@@ -1165,24 +1156,30 @@ tbody tr:nth-child(10) {
 .pmt-reg-form .form-control:focus,
 .pmt-reg-form .form-select:focus {
   border-color: #7c5cfc;
-  box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.14);
+  box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.18);
   background: #fff;
 }
 .pmt-reg-form textarea.form-control {
   height: auto;
-  min-height: 38px;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  min-height: 84px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.5;
 }
 
-/* Tighter row gutters inside the form */
-.pmt-reg-form .row.g-3 { --bs-gutter-y: 0.35rem; --bs-gutter-x: 0.6rem; }
-.pmt-reg-form .row.g-2 { --bs-gutter-y: 0.3rem; --bs-gutter-x: 0.5rem; }
-.pmt-reg-form .mb-3 { margin-bottom: 0.35rem !important; }
-.pmt-reg-form .mb-4 { margin-bottom: 0.5rem !important; }
+/* Comfortable row gutters inside the form (Add-Company style) */
+.pmt-reg-form .row.g-3 { --bs-gutter-y: 1rem;   --bs-gutter-x: 1rem; }
+.pmt-reg-form .row.g-2 { --bs-gutter-y: 0.85rem; --bs-gutter-x: 0.85rem; }
+.pmt-reg-form .mb-3 { margin-bottom: 1rem !important; }
+.pmt-reg-form .mb-4 { margin-bottom: 1.4rem !important; }
 
-/* Help text — tighter */
-.pmt-reg-form .form-text { font-size: 10px; color: var(--vz-secondary-color); margin-top: 2px; line-height: 1.3; }
+/* Help text */
+.pmt-reg-form .form-text {
+  font-size: 11.5px;
+  color: var(--vz-secondary-color);
+  margin-top: 5px;
+  line-height: 1.4;
+}
 
 /* AUTO / FROM PLAN chips inside labels */
 .pmt-chip {
@@ -1732,40 +1729,50 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
   min-height: 0;
   overflow: hidden;
 }
-/* Wider than default .modal-lg (800px) — near-full-width so 4-column rows really breathe
-   We override Bootstrap's `--bs-modal-width` variable AND `max-width` with !important
-   because Reactstrap's size="lg" pins .modal-lg { --bs-modal-width: 800px } */
+/* ╔═══════════════════════════════════════════════════════════════╗
+   ║ Payment-modal width — TWEAK the bold numbers to resize popup   ║
+   ║                                                                ║
+   ║  • Mobile  (<992px) ........  95vw  (line ~1748)               ║
+   ║  • Desktop (≥992px) ........  1100px cap, 85vw (line ~1758)    ║
+   ║  • Wide    (≥1400px) .......  1200px cap, 80vw (line ~1769)    ║
+   ║                                                                ║
+   ║  Want it smaller?  reduce the px caps (e.g. 1100 → 950).       ║
+   ║  Want it bigger?   raise the px caps  (e.g. 1100 → 1400).      ║
+   ╚═══════════════════════════════════════════════════════════════╝ */
 .cbc-payment-modal .modal-dialog,
-.cbc-payment-modal.modal .modal-dialog,
-.modal.cbc-payment-modal .modal-dialog {
-  --bs-modal-width: 100%;
-}
-@media (min-width: 768px) {
-  .cbc-payment-modal .modal-dialog,
-  .cbc-payment-modal.modal .modal-dialog {
-    --bs-modal-width: 94vw;
-    max-width: 94vw !important;
-  }
+.cbc-payment-modal .modal-dialog.modal-lg,
+.modal.cbc-payment-modal .modal-dialog,
+.modal-dialog.cbc-payment-modal,
+body .cbc-payment-modal .modal-dialog,
+body .modal.cbc-payment-modal .modal-dialog {
+  --bs-modal-width: 95vw !important;
+  max-width: 95vw !important;
+  width: 95vw !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 @media (min-width: 992px) {
   .cbc-payment-modal .modal-dialog,
-  .cbc-payment-modal.modal .modal-dialog {
-    --bs-modal-width: min(92vw, 1450px);
-    max-width: min(92vw, 1450px) !important;
+  .cbc-payment-modal .modal-dialog.modal-lg,
+  .modal.cbc-payment-modal .modal-dialog,
+  .modal-dialog.cbc-payment-modal,
+  body .cbc-payment-modal .modal-dialog,
+  body .modal.cbc-payment-modal .modal-dialog {
+    --bs-modal-width: min(85vw, 1100px) !important;
+    max-width: min(85vw, 1100px) !important;
+    width: min(85vw, 1100px) !important;
   }
 }
 @media (min-width: 1400px) {
   .cbc-payment-modal .modal-dialog,
-  .cbc-payment-modal.modal .modal-dialog {
-    --bs-modal-width: min(90vw, 1700px);
-    max-width: min(90vw, 1700px) !important;
-  }
-}
-@media (min-width: 1800px) {
-  .cbc-payment-modal .modal-dialog,
-  .cbc-payment-modal.modal .modal-dialog {
-    --bs-modal-width: 1850px;
-    max-width: 1850px !important;
+  .cbc-payment-modal .modal-dialog.modal-lg,
+  .modal.cbc-payment-modal .modal-dialog,
+  .modal-dialog.cbc-payment-modal,
+  body .cbc-payment-modal .modal-dialog,
+  body .modal.cbc-payment-modal .modal-dialog {
+    --bs-modal-width: min(80vw, 1200px) !important;
+    max-width: min(80vw, 1200px) !important;
+    width: min(80vw, 1200px) !important;
   }
 }
 
