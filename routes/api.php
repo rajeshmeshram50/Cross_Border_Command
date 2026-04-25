@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PermissionController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\RazorpayWebhookController;
 use App\Http\Controllers\Api\SubscriptionController;
 use Illuminate\Support\Facades\Route;
 
@@ -20,6 +21,7 @@ Route::post('/google-login', [AuthController::class, 'googleLogin']);
 Route::post('/forgot-password/send-otp', [ForgotPasswordController::class, 'sendOtp']);
 Route::post('/forgot-password/verify-otp', [ForgotPasswordController::class, 'verifyOtp']);
 Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPassword']);
+Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
 
 // Protected
 Route::middleware('auth:sanctum')->group(function () {
@@ -57,10 +59,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put   ('/master/{slug}/{id}',    [MasterController::class, 'update']);
     Route::delete('/master/{slug}/{id}',    [MasterController::class, 'destroy']);
 
-    // Subscription (client buy plan)
+    // Subscription (client buy plan via Razorpay)
     Route::get('/subscription/plans', [SubscriptionController::class, 'plans']);
     Route::get('/subscription/status', [SubscriptionController::class, 'status']);
-    Route::post('/subscription/subscribe', [SubscriptionController::class, 'subscribe']);
+    Route::post('/subscription/create-order', [SubscriptionController::class, 'createOrder']);
+    Route::post('/subscription/verify-payment', [SubscriptionController::class, 'verifyPayment']);
 
     // Payments
     Route::get('/payments/stats', [PaymentController::class, 'stats']);
