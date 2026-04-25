@@ -10,6 +10,9 @@
   border-radius: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
   padding: 20px;
+  /* Prevent the swiper's overflow leaking out and forcing horizontal scroll */
+  overflow: hidden;
+  max-width: 100%;
 }
 [data-bs-theme="dark"] .plans-surface {
   /* Match the Velzon top header bg exactly — falls back to slate dark */
@@ -21,10 +24,27 @@
 .plans-swiper {
   padding-top: 24px !important;
   padding-bottom: 44px !important;
+  /* Prevent horizontal overflow leaking to the page */
+  overflow: hidden;
 }
 .plans-swiper-outer {
   position: relative;
   padding: 0 56px;
+}
+/* On mobile/small screens, free up the side gutters that hold the nav arrows
+   and let the swiper use the full width. The arrows hide there.
+   Cards get a slightly shorter height so the page doesn't force scroll. */
+@media (max-width: 767.98px) {
+  .plans-swiper-outer { padding: 0 8px; }
+  .plans-nav-btn { display: none !important; }
+  .plans-surface { padding: 12px !important; }
+  .plan-card-v2 { height: 520px; padding: 18px 16px 14px; }
+}
+/* Very narrow phones — even more compact */
+@media (max-width: 380px) {
+  .plan-card-v2 { height: 500px; }
+  .plan-title { font-size: 17px !important; }
+  .plan-price { font-size: 2rem !important; }
 }
 
 /* ───────── Centered-slides focus mode ─────────
@@ -32,8 +52,9 @@
    only non-active slides get scaled to indicate focus. */
 .plans-swiper-center .swiper-wrapper { align-items: stretch; }
 .plans-swiper-center .swiper-slide {
-  width: 320px;
-  max-width: 85vw;
+  /* Mobile-first — never exceed the viewport, leave room for peeks on each side */
+  width: min(82vw, 300px);
+  max-width: calc(100vw - 32px);
   height: auto;
   transform: scale(0.92);
   opacity: 0.88;
@@ -45,6 +66,7 @@
   opacity: 1;
   z-index: 2;
 }
+@media (min-width: 576px)  { .plans-swiper-center .swiper-slide { width: 320px; } }
 @media (min-width: 768px)  { .plans-swiper-center .swiper-slide { width: 340px; } }
 @media (min-width: 1200px) { .plans-swiper-center .swiper-slide { width: 360px; } }
 
@@ -192,12 +214,12 @@
   --accent-price: #0f172a;
   position: relative;
   width: 100%;
-  height: 560px;
+  height: 540px;
   display: flex;
   flex-direction: column;
   margin-bottom: 0;
-  border-radius: 20px;
-  padding: 22px 22px 18px;
+  border-radius: 18px;
+  padding: 20px 18px 16px;
   overflow: hidden;
   text-align: center;
   background:
