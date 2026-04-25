@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Card, CardBody, CardHeader, Col, Row, Input, Label,
   Spinner, Form, FormFeedback,
@@ -134,10 +134,54 @@ export default function BranchForm({ onBack, editId }: Props) {
   const [ddCountry,    setDdCountry]    = useState(false);
   const [ddUserStatus, setDdUserStatus] = useState(false);
 
+  // Geography lookups for the cascading Country -> State dropdowns. Sourced
+  // from the master tables seeded by GeographySeeder so every form picks from
+  // the same canonical dataset.
+  const [countries, setCountries] = useState<Array<{ id: number; name: string; iso_code: string; status: string }>>([]);
+  const [statesAll, setStatesAll] = useState<Array<{ id: number; country_id: string; name: string; status: string }>>([]);
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/master/countries').catch(() => ({ data: [] })),
+      api.get('/master/states').catch(() => ({ data: [] })),
+    ]).then(([countryRes, stateRes]) => {
+      setCountries(Array.isArray(countryRes.data) ? countryRes.data.filter((c: any) => c.status === 'Active') : []);
+      setStatesAll(Array.isArray(stateRes.data) ? stateRes.data.filter((s: any) => s.status === 'Active') : []);
+    });
+  }, []);
+
   const set = useCallback((key: keyof FormState, val: string) => {
     setForm(f => (f[key] === val ? f : { ...f, [key]: val }));
     setValidationErrors(e => { if (!e[key]) return e; const n = { ...e }; delete n[key]; return n; });
   }, []);
+
+  // Country options from the canonical master list.
+  const countryOptions = useMemo(
+    () => countries.map(c => ({ label: c.name, value: c.name })),
+    [countries]
+  );
+
+  // State options filtered by the currently-selected country. The form stores
+  // country/state by NAME (not id), so we resolve back to the id and then
+  // keep only the states that match.
+  const stateOptions = useMemo(() => {
+    if (!form.country || countries.length === 0) return [];
+    const selected = countries.find(c => c.name === form.country);
+    if (!selected) return [];
+    return statesAll
+      .filter(s => Number(s.country_id) === selected.id)
+      .map(s => ({ label: s.name, value: s.name }));
+  }, [form.country, countries, statesAll]);
+
+  // When the country changes, drop a previously-picked state that doesn't
+  // belong to the new country.
+  useEffect(() => {
+    if (!form.state) return;
+    if (stateOptions.length === 0) return;
+    if (!stateOptions.some(o => o.value === form.state)) {
+      setForm(f => ({ ...f, state: '' }));
+    }
+  }, [form.country, stateOptions, form.state]);
 
   const touch = useCallback((key: string) => {
     touchedRef.current[key] = true;
@@ -788,6 +832,8 @@ export default function BranchForm({ onBack, editId }: Props) {
             </Row>
 
             {/* ══ C: Address ══ */}
+            {/* Order: Street -> Country -> State -> City -> District -> Taluka -> Pincode.
+                Country drives the State dropdown (cascading from master data). */}
             <SectionHeader icon="ri-map-pin-line" title="Address Details" badge="C" />
             <Row className="g-2 mb-3">
               <Col xs={12}>
@@ -795,6 +841,24 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Input style={css.textarea} type="textarea" rows={1} value={form.address}
                   onChange={e => set('address', e.target.value)}
                   placeholder="Plot No, Street, Landmark..." />
+              </Col>
+              <Col md={4}>
+                <Lbl>Country</Lbl>
+                <SelectDD
+                  isOpen={ddCountry} toggle={() => setDdCountry(o => !o)}
+                  value={form.country} placeholder="Select country" fieldKey="country"
+                  options={countryOptions}
+                />
+              </Col>
+              <Col md={4}>
+                <Lbl>State</Lbl>
+                <SelectDD
+                  isOpen={ddState} toggle={() => setDdState(o => !o)}
+                  value={form.state}
+                  placeholder={form.country ? (stateOptions.length ? 'Select state' : 'No states for this country') : 'Pick a country first'}
+                  fieldKey="state"
+                  options={stateOptions}
+                />
               </Col>
               <Col md={4}>
                 <Lbl>City</Lbl>
@@ -816,27 +880,6 @@ export default function BranchForm({ onBack, editId }: Props) {
                   onChange={e => set('pincode', e.target.value)} onBlur={() => touch('pincode')}
                   placeholder="400001" />
                 <FormFeedback style={css.formFeedback}>{fieldError('pincode')}</FormFeedback>
-              </Col>
-              <Col md={4}>
-                <Lbl>State</Lbl>
-                <SelectDD
-                  isOpen={ddState} toggle={() => setDdState(o => !o)}
-                  value={form.state} placeholder="Select state" fieldKey="state"
-                  options={['Maharashtra','Delhi','Karnataka','Tamil Nadu','Gujarat','Telangana','West Bengal']
-                    .map(s => ({ label: s, value: s }))}
-                />
-              </Col>
-              <Col md={4}>
-                <Lbl>Country</Lbl>
-                <SelectDD
-                  isOpen={ddCountry} toggle={() => setDdCountry(o => !o)}
-                  value={form.country} fieldKey="country"
-                  options={[
-                    { label: '🇮🇳 India', value: 'India' },
-                    { label: '🇺🇸 USA',   value: 'USA' },
-                    { label: '🇬🇧 UK',    value: 'UK' },
-                  ]}
-                />
               </Col>
             </Row>
 
