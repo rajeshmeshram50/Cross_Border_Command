@@ -49,9 +49,16 @@ class MasterDataSeeder extends Seeder
             array_splice($order, $aIdx, 0, ['asset_categories']);
         }
 
+        // countries + states are owned by GeographySeeder (full ISO dataset).
+        // Skip them here so we don't wipe + re-seed with the older small sample.
+        $ownedByGeographySeeder = ['countries', 'states'];
+
         // Walk masters in dependency-safe order so ref columns (e.g. states -> countries)
         // always find the referenced row already present.
         foreach ($order as $slug) {
+            if (in_array($slug, $ownedByGeographySeeder, true)) {
+                continue;
+            }
             $modelClass = $MODELS[$slug];
             $table = (new $modelClass)->getTable();
 

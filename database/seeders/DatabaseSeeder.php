@@ -31,7 +31,12 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Seed every master table with 10+ admin-created rows (idempotent).
+        // Geography first — owns master_countries (249 ISO countries) and
+        // master_states (subdivisions for major trade partners). Runs before
+        // MasterDataSeeder so state_codes can resolve Indian state names.
+        $this->call(GeographySeeder::class);
+
+        // Seed every other master table with 10+ admin-created rows (idempotent).
         $this->call(MasterDataSeeder::class);
     }
 }
