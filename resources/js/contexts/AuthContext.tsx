@@ -6,6 +6,7 @@ interface AuthCtx {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  googleLogin: (idToken: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -14,6 +15,7 @@ const Ctx = createContext<AuthCtx>({
   user: null,
   loading: false,
   login: async () => ({ success: false }),
+  googleLogin: async () => ({ success: false }),
   logout: async () => {},
   refresh: async () => {},
 });
@@ -109,6 +111,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const googleLogin = async (idToken: string) => {
+    setLoading(true);
+    try {
+      const res = await api.post('/google-login', { id_token: idToken });
+      const { token, user: userData } = res.data;
+      localStorage.setItem('cbc_token', token);
+      writeCachedUser(userData);
+      setUser(userData);
+      return { success: true };
+    } catch (err: any) {
+      const msg = err.response?.data?.message
+        || err.response?.data?.errors?.id_token?.[0]
+        || 'Google sign-in failed';
+      return { success: false, error: msg };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = async () => {
     try {
       await api.post('/logout');
@@ -118,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  return <Ctx.Provider value={{ user, loading, login, logout, refresh }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, loading, login, googleLogin, logout, refresh }}>{children}</Ctx.Provider>;
 }
 
 export const useAuth = () => useContext(Ctx);
