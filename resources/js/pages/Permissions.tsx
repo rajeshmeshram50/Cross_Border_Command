@@ -92,7 +92,29 @@ export default function Permissions() {
     if (!selectedUserId) { toast.warning('Select User', 'Please select a user first'); return; }
     setSaving(true);
     try {
-      const permissions = extractLeafPermissions(modules, matrix);
+      // Strip flags the auth user cannot grant. Orphan perms (left over from a
+      // previous client_admin who had broader access) would otherwise cause a
+      // 422 even though their checkboxes are disabled in the UI. For client_admin
+      // we mask each flag against `myPerms`; super_admin (myPerms === null)
+      // sends the matrix as-is.
+      const raw = extractLeafPermissions(modules, matrix);
+      const moduleSlugById = new Map(modules.map(m => [m.id, m.slug]));
+      const permissions = myPerms === null
+        ? raw
+        : raw.map(p => {
+            const slug = moduleSlugById.get(p.module_id);
+            const grantable = (slug && myPerms[slug]) || ({} as Record<PermKey, boolean>);
+            return {
+              module_id: p.module_id,
+              can_view:    p.can_view    && !!grantable.can_view,
+              can_add:     p.can_add     && !!grantable.can_add,
+              can_edit:    p.can_edit    && !!grantable.can_edit,
+              can_delete:  p.can_delete  && !!grantable.can_delete,
+              can_export:  p.can_export  && !!grantable.can_export,
+              can_import:  p.can_import  && !!grantable.can_import,
+              can_approve: p.can_approve && !!grantable.can_approve,
+            };
+          });
       const res = await api.post(`/permissions/user/${selectedUserId}`, { permissions });
       toast.success('Permissions Saved', `${res.data.saved_count} module permissions saved successfully`);
       loadUserPermissions(selectedUserId);

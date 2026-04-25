@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Module;
+use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -132,6 +134,7 @@ class MasterController extends Controller
 
     public function list(Request $request, string $slug)
     {
+        $this->authorizeMaster($request, $slug, 'can_view');
         $modelClass = $this->resolveModel($slug);
         $q = $modelClass::query()->with(self::OWNERSHIP_WITH)->orderByDesc('id');
         $this->applyScope($q, $request->user());
@@ -153,6 +156,7 @@ class MasterController extends Controller
 
     public function show(Request $request, string $slug, $id)
     {
+        $this->authorizeMaster($request, $slug, 'can_view');
         $modelClass = $this->resolveModel($slug);
         $q = $modelClass::query()->with(self::OWNERSHIP_WITH);
         $this->applyScope($q, $request->user());
@@ -162,6 +166,7 @@ class MasterController extends Controller
 
     public function store(Request $request, string $slug)
     {
+        $this->authorizeMaster($request, $slug, 'can_add');
         $modelClass = $this->resolveModel($slug);
         $data = $this->validatePayload($request, $slug, null);
         $user = $request->user();
@@ -180,6 +185,7 @@ class MasterController extends Controller
 
     public function update(Request $request, string $slug, $id)
     {
+        $this->authorizeMaster($request, $slug, 'can_edit');
         $modelClass = $this->resolveModel($slug);
         $q = $modelClass::query()->with(self::OWNERSHIP_WITH);
         $this->applyScope($q, $request->user());
@@ -192,6 +198,7 @@ class MasterController extends Controller
 
     public function destroy(Request $request, string $slug, $id)
     {
+        $this->authorizeMaster($request, $slug, 'can_delete');
         $modelClass = $this->resolveModel($slug);
         $q = $modelClass::query();
         $this->applyScope($q, $request->user());
@@ -201,6 +208,47 @@ class MasterController extends Controller
     }
 
     /* ---------------- helpers ---------------- */
+
+    /**
+     * Enforce a granular permission (can_view / can_add / can_edit / can_delete /
+     * can_export / can_import / can_approve) for the master identified by $slug.
+     *
+     * Module slugs in the modules table are prefixed with `master.`, matching
+     * what AuthController::formatUser() returns to the frontend (see the
+     * `master.` keys used by Sidebar/MasterPlaceholder/MasterPage). Super
+     * admins always pass; everyone else needs an explicit row in `permissions`
+     * with the requested column = true.
+     */
+    private function authorizeMaster(Request $request, string $slug, string $perm): void
+    {
+        $user = $request->user();
+        if (!$user) {
+            abort(401, 'Authentication required');
+        }
+        if ($user->isSuperAdmin()) {
+            return;
+        }
+
+        $allowed = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
+        if (!in_array($perm, $allowed, true)) {
+            abort(500, "Invalid permission flag: {$perm}");
+        }
+
+        $moduleSlug = "master.{$slug}";
+        $moduleId = Module::where('slug', $moduleSlug)->value('id');
+        if (!$moduleId) {
+            abort(403, "No module registered for {$moduleSlug}");
+        }
+
+        $hasPerm = Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where($perm, true)
+            ->exists();
+
+        if (!$hasPerm) {
+            abort(403, "You do not have permission to perform this action ({$perm}).");
+        }
+    }
 
     private function resolveModel(string $slug): string
     {

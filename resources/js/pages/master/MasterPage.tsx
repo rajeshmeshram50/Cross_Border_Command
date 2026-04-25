@@ -43,6 +43,22 @@ function MasterPageInner({
   const [refData, setRefData] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(false);
 
+  // Module-level capabilities for the current master, resolved against the
+  // permission map returned by /me. Module slugs in the DB are prefixed with
+  // `master.` (e.g. `master.countries`), matching MasterPlaceholder + Sidebar.
+  // Super admins bypass the granular permission table entirely.
+  const isSuperAdmin = user?.user_type === 'super_admin';
+  const fullSlug = `master.${cfg.slug}`;
+  const modulePerm = user?.permissions?.[fullSlug];
+  const caps = useMemo(() => ({
+    view:   isSuperAdmin || !!modulePerm?.can_view,
+    add:    isSuperAdmin || !!modulePerm?.can_add,
+    edit:   isSuperAdmin || !!modulePerm?.can_edit,
+    delete: isSuperAdmin || !!modulePerm?.can_delete,
+    export: isSuperAdmin || !!modulePerm?.can_export,
+    import: isSuperAdmin || !!modulePerm?.can_import,
+  }), [isSuperAdmin, modulePerm?.can_view, modulePerm?.can_add, modulePerm?.can_edit, modulePerm?.can_delete, modulePerm?.can_export, modulePerm?.can_import]);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
@@ -425,17 +441,23 @@ function MasterPageInner({
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
       enableGlobalFilter: false,
-      cell: (info: any) => (
-        <div className="d-flex gap-1 justify-content-center">
-          <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openEdit(info.row.original, true)} />
-          <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => openEdit(info.row.original)} />
-          <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  onClick={() => handleDeleteClick(info.row.original)} />
-        </div>
-      ),
+      cell: (info: any) => {
+        // Hide actions the current user is not allowed to perform on this master.
+        // If none are allowed, render an em-dash so the column still aligns.
+        const showAny = caps.view || caps.edit || caps.delete;
+        return (
+          <div className="d-flex gap-1 justify-content-center">
+            {caps.view   && <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openEdit(info.row.original, true)} />}
+            {caps.edit   && <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => openEdit(info.row.original)} />}
+            {caps.delete && <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  onClick={() => handleDeleteClick(info.row.original)} />}
+            {!showAny && <span className="text-muted">—</span>}
+          </div>
+        );
+      },
     });
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, ownershipCols, refData]);
+  }, [cfg, ownershipCols, refData, caps]);
 
   const renderOwnership = (key: string, row: any): React.ReactNode => {
     if (key === '__client') {
@@ -469,6 +491,36 @@ function MasterPageInner({
   };
 
   const singular = cfg.titleSingular || cfg.title;
+
+  // Guard direct-URL navigation: users without can_view should not see records,
+  // even if the API didn't 403 yet. The sidebar already filters by can_view,
+  // but a deep link or stale tab can land here without it.
+  if (!caps.view) {
+    return (
+      <Row>
+        <Col xs={12}>
+          <Card className="shadow-sm" style={{ borderRadius: 16 }}>
+            <CardBody className="text-center py-5">
+              <div
+                className="mx-auto mb-3 d-flex align-items-center justify-content-center rounded-circle bg-danger-subtle text-danger"
+                style={{ width: 80, height: 80 }}
+              >
+                <i className="ri-lock-2-line fs-32"></i>
+              </div>
+              <h4 className="fw-bold mb-2">Access Denied</h4>
+              <p className="text-muted mb-4" style={{ maxWidth: 460, marginInline: 'auto' }}>
+                You don't have permission to view <strong>{cfg.title}</strong>.
+                Please contact your administrator if you need access.
+              </p>
+              <Button color="light" onClick={() => navigate('/master')}>
+                <i className="ri-arrow-left-line me-1"></i>Back to Master
+              </Button>
+            </CardBody>
+          </Card>
+        </Col>
+      </Row>
+    );
+  }
 
   return (
     <>
@@ -522,14 +574,16 @@ function MasterPageInner({
                   </div>
                 </Col>
                 <Col md={6} sm={12} className="d-flex justify-content-md-end">
-                  <Button
-                    color="secondary"
-                    className="btn-label waves-effect waves-light rounded-pill"
-                    onClick={openAdd}
-                  >
-                    <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                    Add New
-                  </Button>
+                  {caps.add && (
+                    <Button
+                      color="secondary"
+                      className="btn-label waves-effect waves-light rounded-pill"
+                      onClick={openAdd}
+                    >
+                      <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                      Add New
+                    </Button>
+                  )}
                 </Col>
               </Row>
 
