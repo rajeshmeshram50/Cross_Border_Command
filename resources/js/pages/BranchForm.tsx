@@ -38,33 +38,124 @@ const FIELD_LABELS: Record<string, string> = {
   max_users: 'Max Users',
   user_name: 'User Full Name',
   user_email: 'User Email',
+  user_phone: 'User Phone',
   user_password: 'Password',
   user_password_confirmation: 'Confirm Password',
 };
 
 function validateBranchForm(form: FormState, isEdit: boolean): Record<string, string> {
   const e: Record<string, string> = {};
-  if (!form.name?.trim()) e.name = 'Branch name is required';
-  else if (form.name.length < 2) e.name = 'Minimum 2 characters';
-  if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email format';
-  if (form.phone && !/^[+\d\s\-()]{7,15}$/.test(form.phone)) e.phone = 'Invalid phone number';
-  if (form.pincode && !/^\d{6}$/.test(form.pincode)) e.pincode = 'Must be 6 digits';
+
+  // ── Branch name ──
+  if (!form.name?.trim()) {
+    e.name = 'Branch name is required';
+  } else if (form.name.trim().length < 2) {
+    e.name = 'Branch name must be at least 2 characters';
+  } else if (form.name.trim().length > 100) {
+    e.name = 'Branch name cannot exceed 100 characters';
+  }
+
+  // ── Branch email ──
+  if (form.email) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      e.email = 'Enter a valid email like: branch@company.com';
+    } else if (form.email.length > 100) {
+      e.email = 'Email is too long (max 100 characters)';
+    }
+  }
+
+  // ── Branch phone ── (10 digits, with optional +91)
+  if (form.phone) {
+    const digits = form.phone.replace(/\D/g, '');
+    if (digits.length < 10) {
+      e.phone = 'Phone must contain at least 10 digits';
+    } else if (digits.length > 13) {
+      e.phone = `Phone has ${digits.length} digits — max 13 (with country code)`;
+    } else if (!/^[+\d\s\-()]+$/.test(form.phone)) {
+      e.phone = 'Phone may only contain digits, spaces, +, -, ( and )';
+    }
+  }
+
+  // ── Pincode ── (Indian PIN = 6 digits)
+  if (form.pincode) {
+    if (!/^\d{6}$/.test(form.pincode)) {
+      e.pincode = `Pincode must be exactly 6 digits (you entered ${form.pincode.length})`;
+    } else if (/^0/.test(form.pincode)) {
+      e.pincode = 'Pincode cannot start with 0';
+    }
+  }
+
+  // ── India-specific tax IDs ──
   if (form.country === 'India') {
-    if (form.gst_number && !/^[0-9A-Z]{15}$/.test(form.gst_number)) e.gst_number = '15 alphanumeric characters';
-    if (form.pan_number && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan_number)) e.pan_number = 'Invalid PAN format';
+    if (form.gst_number) {
+      if (form.gst_number.length !== 15) {
+        e.gst_number = `GSTIN must be exactly 15 characters (you entered ${form.gst_number.length})`;
+      } else if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(form.gst_number)) {
+        e.gst_number = 'Invalid GSTIN format. Example: 27AADCI6120M1ZH';
+      }
+    }
+    if (form.pan_number) {
+      if (form.pan_number.length !== 10) {
+        e.pan_number = `PAN must be exactly 10 characters (you entered ${form.pan_number.length})`;
+      } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan_number)) {
+        e.pan_number = 'Invalid PAN format. Example: AADCI6120M (5 letters + 4 digits + 1 letter)';
+      }
+    }
   }
-  if (form.max_users && parseInt(form.max_users) < 0) e.max_users = 'Cannot be negative';
+
+  // ── Max users ──
+  if (form.max_users) {
+    const n = parseInt(form.max_users);
+    if (isNaN(n)) {
+      e.max_users = 'Max users must be a number';
+    } else if (n < 0) {
+      e.max_users = 'Max users cannot be negative';
+    } else if (n > 10000) {
+      e.max_users = 'Max users seems too high (limit 10,000)';
+    }
+  }
+
+  // ── Branch admin user fields (only when creating a new branch) ──
   if (!isEdit) {
-    if (!form.user_name?.trim()) e.user_name = 'User name is required';
-    if (!form.user_email?.trim()) e.user_email = 'Email is required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.user_email)) e.user_email = 'Invalid email format';
-    if (!form.user_password) e.user_password = 'Password is required';
-    else if (form.user_password.length < 6) e.user_password = 'Minimum 6 characters';
+    if (!form.user_name?.trim()) {
+      e.user_name = 'Admin user name is required';
+    } else if (form.user_name.trim().length < 2) {
+      e.user_name = 'Admin name must be at least 2 characters';
+    }
+
+    if (!form.user_email?.trim()) {
+      e.user_email = 'Admin email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.user_email)) {
+      e.user_email = 'Enter a valid email like: admin@company.com';
+    } else if (form.email && form.user_email.toLowerCase() === form.email.toLowerCase()) {
+      e.user_email = 'Admin email should differ from the branch email';
+    }
+
+    if (!form.user_password) {
+      e.user_password = 'Password is required';
+    } else if (form.user_password.length < 6) {
+      e.user_password = `Password must be at least 6 characters (you entered ${form.user_password.length})`;
+    } else if (form.user_password.length > 64) {
+      e.user_password = 'Password cannot exceed 64 characters';
+    } else if (!/[A-Za-z]/.test(form.user_password) || !/\d/.test(form.user_password)) {
+      e.user_password = 'Password must contain at least one letter and one digit';
+    }
+
+    if (form.user_phone) {
+      const ud = form.user_phone.replace(/\D/g, '');
+      if (ud.length < 10 || ud.length > 13) {
+        e.user_phone = 'Admin phone must be 10–13 digits';
+      }
+    }
   } else if (form.user_password && form.user_password.length < 6) {
-    e.user_password = 'Minimum 6 characters';
+    e.user_password = 'New password must be at least 6 characters';
   }
-  if (form.user_password && form.user_password !== form.user_password_confirmation)
+
+  // ── Password confirmation ──
+  if (form.user_password && form.user_password !== form.user_password_confirmation) {
     e.user_password_confirmation = 'Passwords do not match';
+  }
+
   return e;
 }
 
@@ -271,16 +362,29 @@ export default function BranchForm({ onBack, editId }: Props) {
       }
       setTimeout(() => onBack(), 1200);
     } catch (err: any) {
-      if (err.response?.status === 422) {
-        const svErrs = err.response.data.errors || {};
+      const status = err.response?.status;
+      const data = err.response?.data || {};
+      const svErrs = data.errors || {};
+      const hasFieldErrors = Object.keys(svErrs).length > 0;
+
+      if (status === 422 && hasFieldErrors) {
+        // Field-level validation errors from server
         setServerErrors(svErrs);
         const keys = Object.keys(svErrs);
         const missing = keys.slice(0, 3).map(k => FIELD_LABELS[k] || k).join(', ');
         const more = keys.length > 3 ? ` +${keys.length - 3} more` : '';
         toast.error('Fix these fields', `${missing}${more}`);
         focusFirstError(svErrs);
+      } else if (status === 422 || status === 403 || status === 409) {
+        // Business-rule rejection (plan limit, permission, conflict) — surface
+        // the message under a `general` key so the banner at the top displays it.
+        const msg = data.message || 'Request was rejected by the server.';
+        setServerErrors({ general: [msg] });
+        toast.error('Cannot save', msg);
+        // Scroll the user back to the top of the form so they see the banner
+        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
       } else {
-        toast.error('Error', err.response?.data?.message || 'Something went wrong');
+        toast.error('Error', data.message || 'Something went wrong');
       }
     } finally { setSaving(false); }
   };
@@ -645,15 +749,134 @@ export default function BranchForm({ onBack, editId }: Props) {
         </Col>
       </Row>
 
-      {serverErrors.general && (
-        <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(240,101,72,0.10), rgba(255,158,124,0.05))', border: '1px solid rgba(240,101,72,0.28)', color: '#f06548' }}>
-          <span
-            className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-            style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#f06548,#ff9e7c)', boxShadow: '0 3px 8px rgba(240,101,72,0.3)' }}
+      {serverErrors.general && (() => {
+        const msg = serverErrors.general[0] || '';
+        const isPlanLimit = /plan|limit|upgrade|allowed/i.test(msg);
+        return (
+          <div
+            style={{
+              ...css.alert,
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              padding: '14px 16px',
+              gap: 10,
+              background: isPlanLimit
+                ? 'linear-gradient(135deg, rgba(247,184,75,0.12), rgba(245,158,11,0.05))'
+                : 'linear-gradient(135deg, rgba(240,101,72,0.10), rgba(255,158,124,0.05))',
+              border: isPlanLimit ? '1px solid rgba(245,158,11,0.35)' : '1px solid rgba(240,101,72,0.30)',
+              borderLeft: isPlanLimit ? '4px solid #f59e0b' : '4px solid #f06548',
+              color: 'inherit',
+            }}
           >
-            <i className="ri-error-warning-line" style={{ color: '#fff', fontSize: 13 }} />
-          </span>
-          <span>{serverErrors.general[0]}</span>
+            <div className="d-flex align-items-start gap-2">
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                style={{
+                  width: 32,
+                  height: 32,
+                  background: isPlanLimit
+                    ? 'linear-gradient(135deg,#f59e0b,#fbbf24)'
+                    : 'linear-gradient(135deg,#f06548,#ff9e7c)',
+                  boxShadow: isPlanLimit
+                    ? '0 3px 10px rgba(245,158,11,0.35)'
+                    : '0 3px 10px rgba(240,101,72,0.35)',
+                }}
+              >
+                <i
+                  className={isPlanLimit ? 'ri-vip-crown-line' : 'ri-error-warning-line'}
+                  style={{ color: '#fff', fontSize: 16 }}
+                />
+              </span>
+              <div className="flex-grow-1 min-w-0">
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: isPlanLimit ? '#d97a08' : '#f06548', marginBottom: 2 }}>
+                  {isPlanLimit ? 'Plan limit reached' : 'Cannot save branch'}
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--vz-body-color)', lineHeight: 1.5 }}>
+                  {msg}
+                </div>
+              </div>
+            </div>
+            {isPlanLimit && (
+              <div className="d-flex flex-wrap gap-2 ps-md-5">
+                <button
+                  type="button"
+                  className="btn btn-sm rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                  onClick={() => { try { window.location.href = '/plans'; } catch {} }}
+                  style={{
+                    background: 'linear-gradient(135deg,#f59e0b,#fbbf24)',
+                    color: '#fff',
+                    border: 'none',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    boxShadow: '0 4px 12px rgba(245,158,11,0.32)',
+                  }}
+                >
+                  <i className="ri-arrow-up-circle-line" />
+                  Upgrade Plan
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm rounded-pill px-3"
+                  onClick={() => onBack()}
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--vz-body-color)',
+                    border: '1px solid var(--vz-border-color)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  Back to Branches
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Server-side validation summary — lists EVERY field that failed
+          so the user can see exactly what's wrong instead of hunting. */}
+      {Object.keys(serverErrors).filter(k => k !== 'general').length > 0 && (
+        <div
+          style={{
+            ...css.alert,
+            flexDirection: 'column',
+            alignItems: 'stretch',
+            background: 'linear-gradient(135deg, rgba(240,101,72,0.08), rgba(255,158,124,0.04))',
+            border: '1px solid rgba(240,101,72,0.30)',
+            borderLeft: '4px solid #f06548',
+            color: 'inherit',
+          }}
+        >
+          <div className="d-flex align-items-center gap-2 mb-2">
+            <span
+              className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+              style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#f06548,#ff9e7c)', boxShadow: '0 3px 8px rgba(240,101,72,0.3)' }}
+            >
+              <i className="ri-error-warning-line" style={{ color: '#fff', fontSize: 13 }} />
+            </span>
+            <strong style={{ color: '#f06548', fontSize: 13.5 }}>
+              Please fix the following {Object.keys(serverErrors).filter(k => k !== 'general').length} field{Object.keys(serverErrors).filter(k => k !== 'general').length === 1 ? '' : 's'}:
+            </strong>
+          </div>
+          <ul className="mb-0 ps-4" style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+            {Object.entries(serverErrors)
+              .filter(([k]) => k !== 'general')
+              .map(([key, msgs]) => (
+                <li key={key}>
+                  <button
+                    type="button"
+                    onClick={() => focusFirstError({ [key]: '' })}
+                    className="btn btn-link p-0 align-baseline text-decoration-none"
+                    style={{ color: '#f06548', fontWeight: 600 }}
+                  >
+                    {FIELD_LABELS[key] || key}
+                  </button>
+                  <span className="text-muted"> — </span>
+                  <span>{Array.isArray(msgs) ? msgs[0] : String(msgs)}</span>
+                </li>
+              ))}
+          </ul>
         </div>
       )}
 
