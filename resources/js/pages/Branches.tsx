@@ -61,10 +61,10 @@ export default function Branches({ onNavigate }: Props) {
 
   // ── Stats ──
   const stats = useMemo(() => {
-    const total    = branches.length;
-    const active   = branches.filter(b => b.status === 'active').length;
+    const total = branches.length;
+    const active = branches.filter(b => b.status === 'active').length;
     const inactive = branches.filter(b => b.status !== 'active').length;
-    const users    = branches.reduce((s, b) => s + (b.users_count ?? 0), 0);
+    const users = branches.reduce((s, b) => s + (b.users_count ?? 0), 0);
     return { total, active, inactive, users };
   }, [branches]);
 
@@ -145,10 +145,10 @@ export default function Branches({ onNavigate }: Props) {
         const el = e.currentTarget as HTMLButtonElement;
         const tint =
           color === 'primary' ? '#40518918' :
-          color === 'danger'  ? '#f0654818' :
-          color === 'success' ? '#0ab39c18' :
-          color === 'info'    ? '#299cdb18' :
-          color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)';
+            color === 'danger' ? '#f0654818' :
+              color === 'success' ? '#0ab39c18' :
+                color === 'info' ? '#299cdb18' :
+                  color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)';
         el.style.background = tint;
         el.style.borderColor = `var(--vz-${color})`;
         el.style.color = `var(--vz-${color})`;
@@ -233,23 +233,46 @@ export default function Branches({ onNavigate }: Props) {
       accessorKey: 'contact_person',
       cell: (info: any) => {
         const b: Branch = info.row.original;
-        if (!b.contact_person && !b.email && !b.phone) return <span className="text-muted">—</span>;
+        return b.contact_person
+          ? <span className="fw-semibold fs-13" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{b.contact_person}</span>
+          : <span className="text-muted">—</span>;
+      },
+    },
+    {
+      header: 'Email',
+      accessorKey: 'email',
+      cell: (info: any) => {
+        const b: Branch = info.row.original;
+        if (!b.email) return <span className="text-muted">—</span>;
         return (
-          <div>
-            {b.contact_person && <div className="fw-medium fs-13">{b.contact_person}</div>}
-            {b.email && (
-              <a href={`mailto:${b.email}`} className="text-body text-decoration-none d-inline-flex align-items-center gap-1">
-                <i className="ri-mail-line text-muted fs-12" />
-                <span className="fs-12">{b.email}</span>
-              </a>
-            )}
-            {b.phone && (
-              <div className="d-inline-flex align-items-center gap-1 text-muted fs-12 ms-2">
-                <i className="ri-phone-line fs-12" />
-                <span className="font-monospace">{b.phone}</span>
-              </div>
-            )}
-          </div>
+          <a
+            href={`mailto:${b.email}`}
+            className="d-inline-flex align-items-center gap-1 text-decoration-none"
+            style={{ fontSize: 12.5, color: 'var(--vz-body-color)', maxWidth: '100%' }}
+            title={b.email}
+          >
+            <i className="ri-mail-line flex-shrink-0" style={{ fontSize: 14, color: '#7c5cfc' }} />
+            <span className="text-truncate" style={{ minWidth: 0 }}>{b.email}</span>
+          </a>
+        );
+      },
+    },
+    {
+      header: 'Phone',
+      accessorKey: 'phone',
+      cell: (info: any) => {
+        const b: Branch = info.row.original;
+        if (!b.phone) return <span className="text-muted">—</span>;
+        return (
+          <a
+            href={`tel:${b.phone}`}
+            className="d-inline-flex align-items-center gap-1 text-decoration-none"
+            style={{ fontSize: 12.5, color: 'var(--vz-body-color)' }}
+            title={b.phone}
+          >
+            <i className="ri-phone-line flex-shrink-0" style={{ fontSize: 14, color: '#0ab39c' }} />
+            <span className="font-monospace">{b.phone}</span>
+          </a>
         );
       },
     },
@@ -293,11 +316,11 @@ export default function Branches({ onNavigate }: Props) {
         const b: Branch = info.row.original;
         return (
           <div className="d-flex gap-1 justify-content-center">
-            <ActionBtn title="View"        icon="ri-eye-line"         color="primary" onClick={() => onNavigate('branch-view',  { branchId: b.id })} />
-            <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"    onClick={() => onNavigate('branch-form',  { editId:   b.id })} />
-            <ActionBtn title="Delete"      icon="ri-delete-bin-line"  color="danger"  disabled={deleting === b.id} onClick={() => openDeleteModal(b)} />
-            <ActionBtn title="Users"       icon="ri-team-line"        color="primary" onClick={() => onNavigate('branch-users', { branchId: b.id, branchName: b.name })} />
-            <ActionBtn title="Permissions" icon="ri-shield-check-line" color="success" onClick={() => onNavigate('permissions',  { branchId: b.id, branchName: b.name })} />
+            <ActionBtn title="View" icon="ri-eye-line" color="primary" onClick={() => onNavigate('branch-view', { branchId: b.id })} />
+            <ActionBtn title="Edit" icon="ri-pencil-line" color="info" onClick={() => onNavigate('branch-form', { editId: b.id })} />
+            <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger" disabled={deleting === b.id} onClick={() => openDeleteModal(b)} />
+            <ActionBtn title="Users" icon="ri-team-line" color="primary" onClick={() => onNavigate('branch-users', { branchId: b.id, branchName: b.name })} />
+            <ActionBtn title="Permissions" icon="ri-shield-check-line" color="success" onClick={() => onNavigate('permissions', { branchId: b.id, branchName: b.name })} />
           </div>
         );
       },
@@ -307,10 +330,10 @@ export default function Branches({ onNavigate }: Props) {
 
   // ── KPI cards definition ──
   const KPI_CARDS = [
-    { label: 'Total Branches',    value: stats.total,    icon: 'ri-git-branch-line',        gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
-    { label: 'Active Branches',   value: stats.active,   icon: 'ri-checkbox-circle-fill',   gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-    { label: 'Inactive Branches', value: stats.inactive, icon: 'ri-close-circle-fill',      gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
-    { label: 'Total Users',       value: stats.users,    icon: 'ri-team-fill',              gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)' },
+    { label: 'Total Branches', value: stats.total, icon: 'ri-git-branch-line', gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
+    { label: 'Active Branches', value: stats.active, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+    { label: 'Inactive Branches', value: stats.inactive, icon: 'ri-close-circle-fill', gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
+    { label: 'Total Users', value: stats.users, icon: 'ri-team-fill', gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)' },
   ];
 
   return (
