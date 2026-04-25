@@ -35,6 +35,7 @@ class User extends Authenticatable
         'login_count',
         'device_token',
         'login_source',
+        'google_id',
     ];
 
     protected $hidden = [

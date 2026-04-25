@@ -48,6 +48,70 @@ class AuthController extends Controller
         ]);
     }
 
+    public function googleLogin(Request $request)
+    {
+        $request->validate([
+            'id_token' => 'required|string',
+        ]);
+
+        $clientId = config('services.google.client_id');
+        if (! $clientId) {
+            return response()->json(['message' => 'Google sign-in is not configured.'], 500);
+        }
+
+        $client = new \Google_Client(['client_id' => $clientId]);
+
+        try {
+            $payload = $client->verifyIdToken($request->id_token);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Invalid Google token.'], 401);
+        }
+
+        if (! $payload || empty($payload['email'])) {
+            return response()->json(['message' => 'Invalid Google token.'], 401);
+        }
+
+        if (empty($payload['email_verified'])) {
+            return response()->json(['message' => 'Google email is not verified.'], 401);
+        }
+
+        $email = strtolower($payload['email']);
+        $googleId = $payload['sub'];
+
+        $user = User::with(['client', 'branch'])->where('email', $email)->first();
+
+        if (! $user) {
+            return response()->json([
+                'message' => 'Account not found. Please contact your administrator.',
+            ], 404);
+        }
+
+        if ($user->status !== 'active') {
+            return response()->json([
+                'message' => 'Your account is not active. Contact administrator.',
+            ], 403);
+        }
+
+        $updates = [
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+            'login_count' => ($user->login_count ?? 0) + 1,
+            'login_source' => 'web',
+        ];
+        if (empty($user->google_id)) {
+            $updates['google_id'] = $googleId;
+        }
+        $user->update($updates);
+
+        $user->tokens()->delete();
+        $token = $user->createToken('cbc-token')->plainTextToken;
+
+        return response()->json([
+            'token' => $token,
+            'user' => $this->formatUser($user),
+        ]);
+    }
+
     public function me(Request $request)
     {
         $user = $request->user()->load(['client', 'branch']);
