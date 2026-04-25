@@ -171,8 +171,8 @@ const RightSidebar = (props: any) => {
                     <OffcanvasHeader className="d-flex align-items-center bg-primary bg-gradient p-3 offcanvas-header-dark" toggle={toggleLeftCanvas}>
                         <span className="m-0 me-2 text-white">Theme Customizer</span>
                     </OffcanvasHeader>
-                    <OffcanvasBody className="p-0">
-                        <SimpleBar className="h-100">
+                    <OffcanvasBody className="p-0 overflow-hidden">
+                        <SimpleBar className="h-100 customizer-scroll">
                             <div className="p-4">
                                 <h6 className="mb-0 fw-bold text-uppercase">Layout</h6>
                                 <p className="text-muted">Choose your layout</p>

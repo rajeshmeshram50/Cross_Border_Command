@@ -218,6 +218,19 @@
   height: 100%;
 }
 
+// Theme Customizer offcanvas: suppress horizontal scroll so the body
+// never shifts left when inner content is a couple pixels wider than
+// the offcanvas (caused by SimpleBar enabling horizontal scroll by default).
+.customizer-scroll {
+  .simplebar-content-wrapper,
+  .simplebar-content {
+    overflow-x: hidden !important;
+  }
+  .simplebar-track.simplebar-horizontal {
+    display: none !important;
+  }
+}
+
 @each $color, $value in $theme-colors {
   [data-simplebar-track="#{$color}"]{
     .simplebar-scrollbar:before{

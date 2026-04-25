@@ -191,6 +191,11 @@
         border-radius: $dropdown-border-radius;
         display: none;
 
+        &.show {
+            display: block;
+            height: auto !important;
+        }
+
         .menu-dropdown {
             top: 0;
             left: 100%;
