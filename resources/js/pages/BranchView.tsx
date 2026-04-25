@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, CardBody, Col, Row, Button, Spinner } from 'reactstrap';
+import { Card, CardBody, Col, Row, Button, Spinner, Progress } from 'reactstrap';
 import api from '../api';
 
 interface Props {
@@ -8,12 +8,6 @@ interface Props {
   onNavigate: (page: string, data?: any) => void;
 }
 
-/**
- * BranchView — single-view page for a branch, designed to mirror ClientView.
- *   - Back pill + page title + Edit Profile action
- *   - Hero banner (gradient) with branch avatar, name, status, key stats
- *   - Detail cards: Overview (contact), Address, Location tags
- */
 export default function BranchView({ branchId, onBack, onNavigate }: Props) {
   const [branch, setBranch] = useState<any>(null);
   const [branchUser, setBranchUser] = useState<any>(null);
@@ -36,8 +30,58 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
     </div>
   );
 
+  // Profile completeness
+  const completionFields = [
+    branch.name, branch.branch_type, branch.code, branch.industry,
+    branch.contact_person, branch.email, branch.phone,
+    branch.address, branch.city, branch.state, branch.country, branch.pincode,
+    branch.description, branchUser,
+  ];
+  const filled = completionFields.filter(Boolean).length;
+  const completionPct = Math.round((filled / completionFields.length) * 100);
+
   const location = [branch.city, branch.state, branch.country].filter(Boolean).join(', ');
   const initials = `${branch.name.charAt(0)}${branch.name.split(' ')[1]?.charAt(0) || ''}`.toUpperCase();
+
+  // ── Shared style tokens (mirrors ClientView / Profile palette) ──
+  const cardStyle: React.CSSProperties = {
+    borderRadius: 20,
+    border: '1px solid var(--vz-border-color)',
+    boxShadow: '0 4px 24px rgba(64,81,137,0.08), 0 1px 2px rgba(64,81,137,0.04)',
+    background: 'linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%)',
+    overflow: 'hidden',
+    transition: 'transform .18s ease, box-shadow .18s ease',
+  };
+  const onCardEnter = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = e.currentTarget as HTMLDivElement;
+    el.style.transform = 'translateY(-2px)';
+    el.style.boxShadow = '0 10px 32px rgba(64,81,137,0.12), 0 2px 4px rgba(64,81,137,0.06)';
+  };
+  const onCardLeave = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = e.currentTarget as HTMLDivElement;
+    el.style.transform = 'translateY(0)';
+    el.style.boxShadow = '0 4px 24px rgba(64,81,137,0.08), 0 1px 2px rgba(64,81,137,0.04)';
+  };
+
+  const GRAD_PRIMARY = 'linear-gradient(135deg, #405189 0%, #6691e7 100%)';
+  const GRAD_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
+  const GRAD_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
+  const GRAD_WARNING = 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)';
+  const GRAD_INFO    = 'linear-gradient(135deg, #299cdb 0%, #5fc8ff 100%)';
+  const GRAD_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
+
+  const SectionHeader = ({ title, gradient, icon, action }: { title: string; gradient: string; icon: string; action?: React.ReactNode }) => (
+    <div className="d-flex align-items-center gap-2 mb-3">
+      <span
+        className="d-inline-flex align-items-center justify-content-center rounded-3"
+        style={{ width: 36, height: 36, background: gradient, boxShadow: '0 4px 10px rgba(64,81,137,0.2)' }}
+      >
+        <i className={icon} style={{ color: '#fff', fontSize: 16 }} />
+      </span>
+      <h5 className="card-title mb-0 flex-grow-1">{title}</h5>
+      {action}
+    </div>
+  );
 
   return (
     <>
@@ -69,8 +113,8 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
         </Col>
       </Row>
 
-      {/* ── Hero banner (gradient cover) ── */}
-      <Card className="overflow-hidden mb-3 border-0" style={{ borderRadius: 20 }}>
+      {/* ── Hero banner ── */}
+      <Card className="overflow-hidden mb-0 border-0" style={{ borderRadius: 20 }}>
         <div
           className="position-relative overflow-hidden"
           style={{
@@ -153,207 +197,355 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
 
             <Col xs="auto">
               <div className="d-flex align-items-center gap-3">
-                <HeroStat label="Users"       value={branch.users_count ?? 0} />
-                <HeroStat label="Departments" value={branch.departments_count ?? 0} />
+                <div
+                  className="text-center px-3 py-2"
+                  style={{
+                    background: 'rgba(255,255,255,0.12)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: 14,
+                    backdropFilter: 'blur(6px)',
+                    minWidth: 92,
+                  }}
+                >
+                  <h3 className="text-white mb-0 fw-bold lh-1">{branch.users_count ?? 0}</h3>
+                  <p className="fs-12 mb-0 mt-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em' }}>Users</p>
+                </div>
+                <div
+                  className="text-center px-3 py-2"
+                  style={{
+                    background: 'rgba(255,255,255,0.12)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: 14,
+                    backdropFilter: 'blur(6px)',
+                    minWidth: 92,
+                  }}
+                >
+                  <h3 className="text-white mb-0 fw-bold lh-1">{branch.departments_count ?? 0}</h3>
+                  <p className="fs-12 mb-0 mt-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em' }}>Departments</p>
+                </div>
               </div>
             </Col>
           </Row>
         </div>
       </Card>
 
-      {/* ── Detail cards ── */}
-      <Row className="g-3">
-        {/* Contact card */}
-        <Col lg={6}>
-          <SectionCard
-            icon="ri-contacts-book-line"
-            label="Contact"
-            color="#405189"
-            manageLabel="Manage"
-            onManage={() => onNavigate('branch-form', { editId: branchId })}
-          >
-            {(branch.contact_person || branch.email || branch.phone) ? (
-              <div className="d-flex flex-column gap-1" style={{ fontSize: 13 }}>
-                {branch.contact_person && (
-                  <div className="d-flex align-items-center gap-2">
-                    <i className="ri-user-3-line text-muted" />
-                    <span className="fw-medium" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                      {branch.contact_person}
+      {/* ── ROW 1 — Complete Profile (narrow) + About (wide) ── */}
+      <Row className="mt-1 g-3 align-items-stretch">
+        <Col xxl={4} lg={5}>
+          <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
+            <CardBody>
+              <SectionHeader
+                title="Complete Branch Profile"
+                gradient={GRAD_DANGER}
+                icon="ri-git-branch-line"
+                action={(
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-soft-secondary rounded-circle"
+                    onClick={() => onNavigate('branch-form', { editId: branchId })}
+                  >
+                    <i className="ri-edit-box-line align-bottom"></i>
+                  </button>
+                )}
+              />
+              <Progress
+                value={completionPct}
+                color="danger"
+                className="animated-progess custom-progress progress-label"
+              >
+                <div className="label">{completionPct}%</div>
+              </Progress>
+              <p className="text-muted fs-12 mb-0 mt-3">
+                {completionPct < 100
+                  ? `Add the missing details to complete this branch profile.`
+                  : `All branch details are filled in.`}
+              </p>
+            </CardBody>
+          </Card>
+        </Col>
+
+        <Col xxl={8} lg={7}>
+          <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
+            <CardBody>
+              <SectionHeader title="About" gradient={GRAD_PRIMARY} icon="ri-information-line" />
+              <p className="text-muted mb-3">
+                <strong>{branch.name}</strong> is a {branch.is_main ? 'main' : ''} {branch.branch_type || 'branch'}
+                {branch.industry && <> operating in the <strong>{branch.industry}</strong> sector</>}
+                {location && <> based in <strong>{location}</strong></>}.
+                Manage contact details, branch user, address and operations from this page.
+              </p>
+
+              <Row className="g-3">
+                <Col xs={12} md={4}>
+                  <div className="d-flex align-items-center p-3 h-100" style={{ borderRadius: 14, background: 'linear-gradient(135deg, rgba(64,81,137,0.06), rgba(102,145,231,0.04))', border: '1px solid var(--vz-border-color)' }}>
+                    <div className="flex-shrink-0 me-3">
+                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ width: 40, height: 40, background: GRAD_PRIMARY, boxShadow: '0 4px 10px rgba(64,81,137,0.25)' }}>
+                        <i className="ri-git-branch-line" style={{ color: '#fff', fontSize: 18 }}></i>
+                      </span>
+                    </div>
+                    <div className="flex-grow-1 overflow-hidden">
+                      <p className="mb-1 fs-12 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.05em' }}>Branch Type</p>
+                      <h6 className="text-truncate mb-0">{branch.branch_type || '—'}</h6>
+                    </div>
+                  </div>
+                </Col>
+                <Col xs={12} md={4}>
+                  <div className="d-flex align-items-center p-3 h-100" style={{ borderRadius: 14, background: 'linear-gradient(135deg, rgba(41,156,219,0.06), rgba(95,200,255,0.04))', border: '1px solid var(--vz-border-color)' }}>
+                    <div className="flex-shrink-0 me-3">
+                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ width: 40, height: 40, background: GRAD_INFO, boxShadow: '0 4px 10px rgba(41,156,219,0.25)' }}>
+                        <i className="ri-hashtag" style={{ color: '#fff', fontSize: 18 }}></i>
+                      </span>
+                    </div>
+                    <div className="flex-grow-1 overflow-hidden">
+                      <p className="mb-1 fs-12 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.05em' }}>Branch Code</p>
+                      <h6 className="text-truncate mb-0 font-monospace">{branch.code || '—'}</h6>
+                    </div>
+                  </div>
+                </Col>
+                <Col xs={12} md={4}>
+                  <div className="d-flex align-items-center p-3 h-100" style={{ borderRadius: 14, background: 'linear-gradient(135deg, rgba(247,184,75,0.08), rgba(255,212,122,0.04))', border: '1px solid var(--vz-border-color)' }}>
+                    <div className="flex-shrink-0 me-3">
+                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ width: 40, height: 40, background: GRAD_WARNING, boxShadow: '0 4px 10px rgba(247,184,75,0.3)' }}>
+                        <i className="ri-briefcase-line" style={{ color: '#fff', fontSize: 18 }}></i>
+                      </span>
+                    </div>
+                    <div className="flex-grow-1 overflow-hidden">
+                      <p className="mb-1 fs-12 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.05em' }}>Industry</p>
+                      <h6 className="text-truncate mb-0">{branch.industry || '—'}</h6>
+                    </div>
+                  </div>
+                </Col>
+              </Row>
+            </CardBody>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* ── ROW 2 — Info + Contact + Address ── */}
+      <Row className="g-3 mt-0 align-items-stretch">
+        <Col xxl={4} lg={4} md={6}>
+          <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
+            <CardBody>
+              <SectionHeader title="Info" gradient={GRAD_PRIMARY} icon="ri-information-line" />
+              <div className="table-responsive">
+                <table className="table table-borderless mb-0">
+                  <tbody>
+                    <tr>
+                      <th className="ps-0 text-nowrap" scope="row">Name :</th>
+                      <td className="text-muted">{branch.name}</td>
+                    </tr>
+                    {branch.branch_type && (
+                      <tr>
+                        <th className="ps-0 text-nowrap" scope="row">Type :</th>
+                        <td className="text-muted">{branch.branch_type}</td>
+                      </tr>
+                    )}
+                    {branch.code && (
+                      <tr>
+                        <th className="ps-0 text-nowrap" scope="row">Code :</th>
+                        <td className="text-muted font-monospace">{branch.code}</td>
+                      </tr>
+                    )}
+                    {branch.industry && (
+                      <tr>
+                        <th className="ps-0 text-nowrap" scope="row">Industry :</th>
+                        <td className="text-muted">{branch.industry}</td>
+                      </tr>
+                    )}
+                    {location && (
+                      <tr>
+                        <th className="ps-0 text-nowrap" scope="row">Location :</th>
+                        <td className="text-muted">{location}</td>
+                      </tr>
+                    )}
+                    {branch.created_at && (
+                      <tr>
+                        <th className="ps-0 text-nowrap" scope="row">Created :</th>
+                        <td className="text-muted">
+                          {new Date(branch.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardBody>
+          </Card>
+        </Col>
+
+        <Col xxl={4} lg={4} md={6}>
+          <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
+            <CardBody>
+              <SectionHeader
+                title="Contact"
+                gradient={GRAD_SUCCESS}
+                icon="ri-contacts-book-line"
+                action={(
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-soft-primary rounded-pill"
+                    onClick={() => onNavigate('branch-form', { editId: branchId })}
+                  >
+                    Manage
+                  </button>
+                )}
+              />
+              {(branch.contact_person || branch.email || branch.phone) ? (
+                <div className="table-responsive">
+                  <table className="table table-borderless mb-0">
+                    <tbody>
+                      {branch.contact_person && (
+                        <tr>
+                          <th className="ps-0 text-nowrap" scope="row">Contact :</th>
+                          <td className="text-muted">{branch.contact_person}</td>
+                        </tr>
+                      )}
+                      {branch.email && (
+                        <tr>
+                          <th className="ps-0 text-nowrap" scope="row">E-mail :</th>
+                          <td className="text-muted">
+                            <a href={`mailto:${branch.email}`} className="text-muted text-decoration-none">{branch.email}</a>
+                          </td>
+                        </tr>
+                      )}
+                      {branch.phone && (
+                        <tr>
+                          <th className="ps-0 text-nowrap" scope="row">Phone :</th>
+                          <td className="text-muted font-monospace">
+                            <a href={`tel:${branch.phone}`} className="text-muted text-decoration-none">{branch.phone}</a>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <i className="ri-contacts-book-line text-muted" style={{ fontSize: 26 }}></i>
+                  <p className="text-muted mb-0 mt-2">No contact info</p>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </Col>
+
+        <Col xxl={4} lg={4} md={12}>
+          <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
+            <CardBody>
+              <SectionHeader title="Address" gradient={GRAD_INFO} icon="ri-map-pin-line" />
+              {(branch.address || branch.city || branch.state) ? (
+                <div className="table-responsive">
+                  <table className="table table-borderless mb-0">
+                    <tbody>
+                      {branch.address && (
+                        <tr>
+                          <th className="ps-0 text-nowrap" scope="row">Street :</th>
+                          <td className="text-muted">{branch.address}</td>
+                        </tr>
+                      )}
+                      {branch.city && (
+                        <tr>
+                          <th className="ps-0 text-nowrap" scope="row">City :</th>
+                          <td className="text-muted">{branch.city}</td>
+                        </tr>
+                      )}
+                      {branch.state && (
+                        <tr>
+                          <th className="ps-0 text-nowrap" scope="row">State :</th>
+                          <td className="text-muted">{branch.state}</td>
+                        </tr>
+                      )}
+                      {branch.country && (
+                        <tr>
+                          <th className="ps-0 text-nowrap" scope="row">Country :</th>
+                          <td className="text-muted">{branch.country}</td>
+                        </tr>
+                      )}
+                      {branch.pincode && (
+                        <tr>
+                          <th className="ps-0" scope="row">Pincode :</th>
+                          <td className="text-muted font-monospace">{branch.pincode}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <i className="ri-map-pin-line text-muted" style={{ fontSize: 26 }}></i>
+                  <p className="text-muted mb-0 mt-2">No address added</p>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* ── ROW 3 — Branch User + Description ── */}
+      <Row className="mb-3 g-3 mt-0 align-items-stretch">
+        <Col xxl={4} lg={5} md={12}>
+          <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
+            <CardBody>
+              <SectionHeader
+                title="Branch User"
+                gradient={GRAD_PURPLE}
+                icon="ri-user-3-line"
+                action={(
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-soft-primary rounded-pill"
+                    onClick={() => onNavigate('branch-users', { branchId, branchName: branch.name })}
+                  >
+                    Manage
+                  </button>
+                )}
+              />
+              {branchUser ? (
+                <div className="d-flex align-items-center p-3" style={{ borderRadius: 14, background: 'linear-gradient(135deg, rgba(106,90,205,0.05), rgba(167,139,250,0.03))', border: '1px solid var(--vz-border-color)' }}>
+                  <div className="flex-shrink-0">
+                    <span
+                      className="d-inline-flex align-items-center justify-content-center rounded-circle text-white fw-bold"
+                      style={{ width: 42, height: 42, background: GRAD_PURPLE, fontSize: 16, boxShadow: '0 4px 10px rgba(106,90,205,0.25)' }}
+                    >
+                      {branchUser.name?.charAt(0)?.toUpperCase() || 'U'}
                     </span>
                   </div>
-                )}
-                {branch.email && (
-                  <div className="d-flex align-items-center gap-2">
-                    <i className="ri-mail-line text-muted" />
-                    <a href={`mailto:${branch.email}`} className="text-body text-decoration-none">{branch.email}</a>
+                  <div className="flex-grow-1 ms-3 overflow-hidden">
+                    <h6 className="mb-1 text-truncate">{branchUser.name}</h6>
+                    <p className="text-muted mb-0 text-truncate fs-12">{branchUser.email}</p>
                   </div>
-                )}
-                {branch.phone && (
-                  <div className="d-flex align-items-center gap-2">
-                    <i className="ri-phone-line text-muted" />
-                    <a href={`tel:${branch.phone}`} className="text-body text-decoration-none font-monospace">{branch.phone}</a>
-                  </div>
-                )}
-              </div>
-            ) : <EmptyState icon="ri-contacts-book-line" text="No contact info" />}
-          </SectionCard>
+                  <span className={`badge rounded-pill bg-${branchUser.status === 'active' ? 'success' : 'danger'}-subtle text-${branchUser.status === 'active' ? 'success' : 'danger'} text-uppercase`}>
+                    {branchUser.status}
+                  </span>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <i className="ri-user-3-line text-muted" style={{ fontSize: 26 }}></i>
+                  <p className="text-muted mb-0 mt-2">No branch user assigned</p>
+                </div>
+              )}
+            </CardBody>
+          </Card>
         </Col>
 
-        {/* Branch User card */}
-        <Col lg={6}>
-          <SectionCard
-            icon="ri-user-3-line"
-            label="Branch User"
-            color="#405189"
-            manageLabel="Manage"
-            onManage={() => onNavigate('branch-users', { branchId, branchName: branch.name })}
-          >
-            {branchUser ? (
-              <div
-                className="d-flex align-items-center gap-2 p-2 rounded-2"
-                style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)' }}
-              >
-                <div
-                  className="rounded-2 d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                  style={{ width: 32, height: 32, fontSize: 12, background: 'linear-gradient(135deg,#405189,#6691e7)' }}
-                >
-                  {branchUser.name?.charAt(0)?.toUpperCase() || 'U'}
+        <Col xxl={8} lg={7} md={12}>
+          <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
+            <CardBody>
+              <SectionHeader title="Description" gradient={GRAD_WARNING} icon="ri-file-text-line" />
+              {branch.description ? (
+                <p className="mb-0" style={{ color: 'var(--vz-body-color)', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                  {branch.description}
+                </p>
+              ) : (
+                <div className="text-center py-4">
+                  <i className="ri-file-text-line text-muted" style={{ fontSize: 26 }}></i>
+                  <p className="text-muted mb-0 mt-2">No description added</p>
                 </div>
-                <div className="flex-grow-1 min-w-0">
-                  <div className="text-truncate fw-semibold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 12 }}>{branchUser.name}</div>
-                  <div className="text-truncate" style={{ color: 'var(--vz-secondary-color)', fontSize: 10.5 }}>{branchUser.email}</div>
-                </div>
-                <span
-                  className={`badge rounded-pill border text-uppercase fw-semibold px-2 py-1 d-inline-flex align-items-center gap-1 border-${branchUser.status === 'active' ? 'success' : 'danger'} text-${branchUser.status === 'active' ? 'success' : 'danger'}`}
-                  style={{ fontSize: 9 }}
-                >
-                  <span className={`bg-${branchUser.status === 'active' ? 'success' : 'danger'} rounded-circle`} style={{ width: 5, height: 5 }} />
-                  {branchUser.status}
-                </span>
-              </div>
-            ) : <EmptyState icon="ri-user-3-line" text="No branch user assigned" />}
-          </SectionCard>
+              )}
+            </CardBody>
+          </Card>
         </Col>
-
-        {/* Address card */}
-        <Col lg={12}>
-          <SectionCard icon="ri-map-pin-2-line" label="Address" color="#405189">
-            {(branch.address || branch.city || branch.state || branch.country || branch.pincode) ? (
-              <div className="d-flex flex-column gap-1" style={{ fontSize: 13, color: 'var(--vz-body-color)' }}>
-                {branch.address && <div>{branch.address}</div>}
-                <div className="d-flex gap-2 flex-wrap">
-                  {branch.city    && <Chip icon="ri-building-line"   text={branch.city} />}
-                  {branch.state   && <Chip icon="ri-map-2-line"      text={branch.state} />}
-                  {branch.country && <Chip icon="ri-earth-line"      text={branch.country} />}
-                  {branch.pincode && <Chip icon="ri-hashtag"         text={branch.pincode} mono />}
-                </div>
-              </div>
-            ) : <EmptyState icon="ri-map-pin-2-line" text="No address on file" />}
-          </SectionCard>
-        </Col>
-
-        {/* Description */}
-        {branch.description && (
-          <Col lg={12}>
-            <SectionCard icon="ri-file-text-line" label="Description" color="#405189">
-              <p className="mb-0" style={{ color: 'var(--vz-body-color)', fontSize: 13, lineHeight: 1.55 }}>
-                {branch.description}
-              </p>
-            </SectionCard>
-          </Col>
-        )}
       </Row>
     </>
-  );
-}
-
-/* ──────────────── Helpers ──────────────── */
-
-function HeroStat({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div
-      className="text-center px-3 py-2"
-      style={{
-        background: 'rgba(255,255,255,0.12)',
-        border: '1px solid rgba(255,255,255,0.2)',
-        borderRadius: 14,
-        backdropFilter: 'blur(6px)',
-        minWidth: 92,
-      }}
-    >
-      <h3 className="text-white mb-0 fw-bold lh-1">{value}</h3>
-      <p className="fs-12 mb-0 mt-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em' }}>
-        {label}
-      </p>
-    </div>
-  );
-}
-
-function SectionCard({
-  icon, label, color, manageLabel, onManage, children,
-}: {
-  icon: string;
-  label: string;
-  color: string;
-  manageLabel?: string;
-  onManage?: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="h-100 border-0 shadow-sm" style={{ borderRadius: 14 }}>
-      <CardBody>
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <div className="d-flex align-items-center gap-2">
-            <span
-              className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0"
-              style={{ width: 32, height: 32, background: `${color}18`, color }}
-            >
-              <i className={icon} style={{ fontSize: 15 }} />
-            </span>
-            <span className="fw-bold text-uppercase" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 12, letterSpacing: '0.04em' }}>
-              {label}
-            </span>
-          </div>
-          {manageLabel && onManage && (
-            <button
-              type="button"
-              onClick={onManage}
-              className="btn btn-sm btn-link text-primary p-0 text-decoration-none fw-semibold"
-              style={{ fontSize: 12 }}
-            >
-              {manageLabel} <i className="ri-arrow-right-line align-bottom" />
-            </button>
-          )}
-        </div>
-        {children}
-      </CardBody>
-    </Card>
-  );
-}
-
-function Chip({ icon, text, mono }: { icon: string; text: string; mono?: boolean }) {
-  return (
-    <span
-      className="d-inline-flex align-items-center gap-1 px-2 py-1 rounded-2"
-      style={{
-        background: 'var(--vz-secondary-bg)',
-        border: '1px solid var(--vz-border-color)',
-        color: 'var(--vz-body-color)',
-        fontSize: 12,
-        fontFamily: mono ? 'monospace' : undefined,
-      }}
-    >
-      <i className={icon} style={{ color: 'var(--vz-secondary-color)' }} />
-      {text}
-    </span>
-  );
-}
-
-function EmptyState({ icon, text }: { icon: string; text: string }) {
-  return (
-    <div className="text-center py-3">
-      <i className={icon} style={{ fontSize: 24, color: 'var(--vz-secondary-color)' }} />
-      <div className="text-muted mt-2 fs-12">{text}</div>
-    </div>
   );
 }
