@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Database\QueryException;
 use App\Mail\WelcomeCredentialsMail;
 
 class BranchController extends Controller
@@ -105,14 +107,15 @@ class BranchController extends Controller
 
             // Branch user login credentials
             'user_name' => 'required|string|max:255',
-            'user_email' => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
+            'user_email' => ['required', 'email', Rule::unique('users', 'email')],
             'user_phone' => 'nullable|string|max:20',
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'required|string|min:6',
             'user_status' => 'nullable|in:active,inactive,pending',
         ]);
 
-        return DB::transaction(function () use ($request, $clientId, $user) {
+        try {
+            return DB::transaction(function () use ($request, $clientId, $user) {
             // If setting as main, unset existing main branch
             if ($request->boolean('is_main')) {
                 Branch::where('client_id', $clientId)
@@ -187,7 +190,15 @@ class BranchController extends Controller
                 'branch' => $branch,
                 'branch_user' => $branchUser->only(['id', 'name', 'email', 'user_type', 'status']),
             ], 201);
-        });
+            });
+        } catch (QueryException $e) {
+            if ($this->isUniqueEmailViolation($e)) {
+                throw ValidationException::withMessages([
+                    'user_email' => ['This email is already registered. Please use a different email.'],
+                ]);
+            }
+            throw $e;
+        }
     }
 
     public function show(Branch $branch, Request $request)
@@ -249,14 +260,15 @@ class BranchController extends Controller
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
             'user_name' => 'nullable|string|max:255',
-            'user_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($branchUser?->id)->whereNull('deleted_at')],
+            'user_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($branchUser?->id)],
             'user_phone' => 'nullable|string|max:20',
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'nullable|string|min:6',
             'user_status' => 'nullable|in:active,inactive,pending',
         ]);
 
-        return DB::transaction(function () use ($request, $branch, $branchUser) {
+        try {
+            return DB::transaction(function () use ($request, $branch, $branchUser) {
             // If setting as main, unset existing main
             if ($request->boolean('is_main') && !$branch->is_main) {
                 Branch::where('client_id', $branch->client_id)
@@ -296,7 +308,21 @@ class BranchController extends Controller
                 'message' => 'Branch updated successfully',
                 'branch' => $branch,
             ]);
-        });
+            });
+        } catch (QueryException $e) {
+            if ($this->isUniqueEmailViolation($e)) {
+                throw ValidationException::withMessages([
+                    'user_email' => ['This email is already registered. Please use a different email.'],
+                ]);
+            }
+            throw $e;
+        }
+    }
+
+    private function isUniqueEmailViolation(QueryException $e): bool
+    {
+        return $e->getCode() === '23505'
+            && str_contains($e->getMessage(), 'users_email_unique');
     }
 
     public function destroy(Branch $branch, Request $request)
