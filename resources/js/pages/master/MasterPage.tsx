@@ -530,22 +530,25 @@ function MasterPageInner({
           && row?.created_by
           && row?.created_by !== user?.id
           && creatorRank > myRank;
-        const blockTooltip = blockedByRank
-          ? (() => {
-              const who = row?.creator_user_type === 'super_admin'   ? 'Super Admin'
-                        : row?.creator_user_type === 'client_admin'  ? 'Client Admin'
-                        : row?.creator_user_type === 'client_user'   ? 'Client user'
-                        : row?.creator_user_type === 'branch_user'   ? 'Branch user'
-                        : 'a higher-privileged user';
-              return `Cannot delete — created by ${who}`;
-            })()
-          : 'Delete';
+        const whoLabel = row?.creator_user_type === 'super_admin'   ? 'Super Admin'
+                       : row?.creator_user_type === 'client_admin'  ? 'Client Admin'
+                       : row?.creator_user_type === 'client_user'   ? 'Client user'
+                       : row?.creator_user_type === 'branch_user'   ? 'Branch user'
+                       : 'a higher-privileged user';
+        const editTooltip   = blockedByRank ? `Cannot edit — created by ${whoLabel}`   : 'Edit';
+        const deleteTooltip = blockedByRank ? `Cannot delete — created by ${whoLabel}` : 'Delete';
         return (
           <div className="d-flex gap-1 justify-content-center">
             {caps.view   && <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openEdit(info.row.original, true)} />}
-            {caps.edit   && <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => openEdit(info.row.original)} />}
+            {caps.edit   && <ActionBtn
+              title={editTooltip}
+              icon="ri-pencil-line"
+              color="info"
+              disabled={blockedByRank}
+              onClick={() => openEdit(info.row.original)}
+            />}
             {caps.delete && <ActionBtn
-              title={blockTooltip}
+              title={deleteTooltip}
               icon="ri-delete-bin-line"
               color="danger"
               disabled={blockedByRank}

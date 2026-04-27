@@ -191,6 +191,41 @@ class MasterController extends Controller
         $q = $modelClass::query()->with(self::OWNERSHIP_WITH);
         $this->applyScope($q, $request->user());
         $row = $q->findOrFail($id);
+
+        /* ── Hierarchical edit rule (mirrors destroy()) ───────────────
+         *  super_admin always passes. Lower-ranked users may not edit
+         *  records created by users above them in the hierarchy.
+         *  Rule: creator's role-rank must be <= current user's role-rank.
+         *  super_admin = 3, client_* = 2, branch_user = 1.
+         */
+        $user = $request->user();
+        if ($user && $user->user_type !== 'super_admin' && $row->created_by) {
+            $creator = User::find($row->created_by);
+            if ($creator && $creator->id !== $user->id) {
+                $rank = function (?string $type): int {
+                    return match ($type) {
+                        'super_admin'  => 3,
+                        'client_admin' => 2,
+                        'client_user'  => 2,
+                        'branch_user'  => 1,
+                        default        => 0,
+                    };
+                };
+                if ($rank($creator->user_type) > $rank($user->user_type)) {
+                    $byWhom = match ($creator->user_type) {
+                        'super_admin'  => 'a Super Admin',
+                        'client_admin' => 'a Client Admin',
+                        'client_user'  => 'a Client user',
+                        'branch_user'  => 'a Branch user',
+                        default        => 'a higher-privileged user',
+                    };
+                    return response()->json([
+                        'message' => "You cannot edit this record — it was created by {$byWhom}.",
+                    ], 403);
+                }
+            }
+        }
+
         $data = $this->validatePayload($request, $slug, $id);
         $row->update($data);
         $row->load(self::OWNERSHIP_WITH);
