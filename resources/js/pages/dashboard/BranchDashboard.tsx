@@ -121,9 +121,14 @@ export default function BranchDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/dashboard/client-stats').then(res => setData(res.data))
-      .catch(() => {}).finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    api.get('/dashboard/client-stats', {
+      params: selectedBranchId ? { branch_id: selectedBranchId } : {},
+    })
+      .then(res => setData(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [selectedBranchId]);
 
   if (loading) return <ShimmerDashboard />;
   if (!data) return null;

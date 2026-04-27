@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row } from 'reactstrap';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 
 const COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
@@ -117,13 +118,19 @@ const cardHeaderStyle: React.CSSProperties = {
 
 export default function ClientDashboard() {
   const { user } = useAuth();
+  const { selectedBranchId } = useBranchSwitcher();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/dashboard/client-stats').then(res => setData(res.data))
-      .catch(() => {}).finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    api.get('/dashboard/client-stats', {
+      params: selectedBranchId ? { branch_id: selectedBranchId } : {},
+    })
+      .then(res => setData(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [selectedBranchId]);
 
   if (loading) return <ShimmerDashboard />;
   if (!data) return null;
