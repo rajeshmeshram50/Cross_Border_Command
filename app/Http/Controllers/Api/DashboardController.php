@@ -156,17 +156,35 @@ class DashboardController extends Controller
             return response()->json(['message' => 'No client associated'], 422);
         }
 
+        // Resolve & validate branch_id filter (always scoped within this user's client)
+        $branchId = $request->integer('branch_id') ?: null;
+        if ($branchId && !Branch::where('client_id', $clientId)->where('id', $branchId)->exists()) {
+            $branchId = null; // ignore stale / cross-client ids
+        }
+        // Sub-branch users (non-main) are always locked to their own branch
+        if ($user->user_type === 'branch_user') {
+            $userBranch = Branch::find($user->branch_id);
+            if ($userBranch && !$userBranch->is_main) {
+                $branchId = $user->branch_id;
+            }
+        }
+
         $client = Client::with('plan')->find($clientId);
 
         // Branches
-        $totalBranches = Branch::where('client_id', $clientId)->count();
-        $activeBranches = Branch::where('client_id', $clientId)->where('status', 'active')->count();
+        $totalBranches = $branchId ? 1 : Branch::where('client_id', $clientId)->count();
+        $activeBranches = $branchId
+            ? Branch::where('client_id', $clientId)->where('id', $branchId)->where('status', 'active')->count()
+            : Branch::where('client_id', $clientId)->where('status', 'active')->count();
 
-        // Users
-        $totalUsers = User::where('client_id', $clientId)->count();
-        $activeUsers = User::where('client_id', $clientId)->where('status', 'active')->count();
+        // Users — scoped by branch when filter active
+        $usersBase = fn() => User::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
+        $totalUsers = $usersBase()->count();
+        $activeUsers = $usersBase()->where('status', 'active')->count();
 
-        // Payments
+        // Payments are subscription-level (per client, not per branch). Show client-level
+        // counts even when filtering, so a branch user still sees plan/payment status.
         $totalPayments = Payment::where('client_id', $clientId)->count();
         $successPayments = Payment::where('client_id', $clientId)->where('status', 'success')->count();
         $pendingPayments = Payment::where('client_id', $clientId)->where('status', 'pending')->count();
@@ -185,8 +203,9 @@ class DashboardController extends Controller
             ->limit(5)
             ->get(['id', 'plan_id', 'total', 'status', 'method', 'invoice_number', 'valid_from', 'valid_until', 'created_at']);
 
-        // Branches list
+        // Branches list — full list when no filter, single-branch when filtered
         $branches = Branch::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('id', $branchId))
             ->withCount('users')
             ->orderByDesc('is_main')
             ->orderBy('name')
@@ -207,8 +226,9 @@ class DashboardController extends Controller
             ];
         }
 
-        // User role breakdown
+        // User role breakdown — scoped to branch when filtered
         $userRoles = User::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('branch_id', $branchId))
             ->select('user_type', DB::raw('count(*) as count'))
             ->groupBy('user_type')
             ->get()
@@ -243,6 +263,9 @@ class DashboardController extends Controller
             'recent_payments' => $recentPayments,
             'payment_trend' => $paymentTrend,
             'user_roles' => $userRoles,
+            'filter' => [
+                'branch_id' => $branchId,
+            ],
         ]);
     }
 }

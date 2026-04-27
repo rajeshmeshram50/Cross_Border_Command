@@ -12,6 +12,7 @@ import SearchOption from '../Components/Common/SearchOption';
 import FullScreenDropdown from '../Components/Common/FullScreenDropdown';
 import ProfileDropdown from '../Components/Common/ProfileDropdown';
 import LightDark from '../Components/Common/LightDark';
+import BranchSwitcher from '../../components/BranchSwitcher';
 
 import { changeSidebarVisibility } from '../slices/thunks';
 import { useSelector, useDispatch } from "react-redux";
@@ -130,6 +131,11 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                                     </Form>
                                 </DropdownMenu>
                             </Dropdown>
+
+                            {/* Branch Switcher (visible to main-branch users & client admins) */}
+                            <div className="ms-1 header-item d-flex align-items-center">
+                                <BranchSwitcher />
+                            </div>
 
                             {/* FullScreenDropdown */}
                             <FullScreenDropdown />
