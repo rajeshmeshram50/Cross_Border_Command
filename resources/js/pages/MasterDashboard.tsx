@@ -1,9 +1,12 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Row, Col } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { MASTER_GROUPS } from '../constants';
 import type { MenuChild, MenuGroup } from '../types';
+import api from '../api';
+
+type CountEntry = { active: number; inactive: number; total: number };
 
 const SUPER_ADMIN_ONLY_MASTERS = new Set<string>(['master.organization_types']);
 
@@ -131,10 +134,86 @@ export default function MasterDashboard() {
       .filter(g => g.children.length > 0);
   }, [groups, q, hasSearch]);
 
+  // Per-master active/inactive/total record counts. Each leaf's count is
+  // streamed into state the moment its API call resolves — so the UI fills
+  // in progressively instead of waiting for all 50 endpoints to finish.
+  const [counts, setCounts] = useState<Record<string, CountEntry>>({});
+  const [pending, setPending] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const allLeaves = groups.flatMap(g => g.children);
+    if (allLeaves.length === 0) {
+      setCounts({});
+      setPending(new Set());
+      return;
+    }
+
+    let cancelled = false;
+    setCounts({});
+    setPending(new Set(allLeaves.map(l => l.id)));
+
+    // Bounded concurrency pool: firing 50 requests at once just queues them
+    // behind the browser's per-host limit (~6) and starves head-of-line
+    // responses. 6 workers gets the first counts on screen far sooner.
+    const POOL = 6;
+    const queue = [...allLeaves];
+
+    const worker = async () => {
+      while (queue.length > 0) {
+        if (cancelled) return;
+        const leaf = queue.shift();
+        if (!leaf) return;
+        try {
+          const slug = leaf.id.replace('master.', '');
+          const res = await api.get(`/master/${slug}`);
+          const records: any[] = Array.isArray(res.data)
+            ? res.data
+            : (res.data?.data || []);
+          let active = 0, inactive = 0;
+          for (const r of records) {
+            const s = String(r?.status ?? '').toLowerCase().trim();
+            const isActive =
+              s === 'active' || s === '1' || s === 'true' || s === 'yes' || s === 'enabled';
+            if (isActive) active++;
+            else inactive++;
+          }
+          if (cancelled) return;
+          setCounts(prev => ({ ...prev, [leaf.id]: { active, inactive, total: records.length } }));
+        } catch {
+          if (cancelled) return;
+          // On failure, record a zero entry so the card stops showing "loading".
+          setCounts(prev => ({ ...prev, [leaf.id]: { active: 0, inactive: 0, total: 0 } }));
+        } finally {
+          if (!cancelled) {
+            setPending(prev => {
+              if (!prev.has(leaf.id)) return prev;
+              const next = new Set(prev);
+              next.delete(leaf.id);
+              return next;
+            });
+          }
+        }
+      }
+    };
+
+    const workers = Array.from({ length: Math.min(POOL, allLeaves.length) }, () => worker());
+    Promise.all(workers);
+
+    return () => { cancelled = true; };
+  }, [groups]);
+
+  const isLoadingCounts = pending.size > 0;
+
   const totals = useMemo(() => {
     const total = groups.reduce((s, g) => s + g.children.length, 0);
-    return { total, active: total, inactive: 0, records: 0 };
-  }, [groups]);
+    let active = 0, inactive = 0, records = 0;
+    for (const k in counts) {
+      active   += counts[k].active;
+      inactive += counts[k].inactive;
+      records  += counts[k].total;
+    }
+    return { total, active, inactive, records };
+  }, [groups, counts]);
 
   const toggle = (id: string) => setClosedGroups(prev => {
     const next = new Set(prev);
@@ -167,6 +246,7 @@ export default function MasterDashboard() {
       /* Force white card surface in light theme; auto-flip in dark theme */
       .master-surface { background: #ffffff; }
       [data-bs-theme="dark"] .master-surface { background: #1c2531; }
+      @keyframes mc-spin { to { transform: rotate(360deg); } }
     `}</style>
     <div>
       {/* ── Page Header ── */}
@@ -189,7 +269,22 @@ export default function MasterDashboard() {
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: sc.gradient }} />
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                 <div>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>{sc.label}</p>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {sc.label}
+                    {/* Total Masters (i===0) is known instantly; the others depend on async counts. */}
+                    {isLoadingCounts && i !== 0 && (
+                      <span
+                        aria-label="loading"
+                        style={{
+                          width: 10, height: 10, borderRadius: '50%',
+                          border: '1.5px solid var(--vz-secondary-color)',
+                          borderTopColor: 'transparent',
+                          animation: 'mc-spin 0.7s linear infinite',
+                          display: 'inline-block',
+                        }}
+                      />
+                    )}
+                  </p>
                   <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>
                     {statValues[i].toLocaleString()}
                   </div>
@@ -304,7 +399,13 @@ export default function MasterDashboard() {
               <Row className="g-3" style={{ marginTop: 10 }}>
                 {group.children.map(leaf => (
                   <Col key={leaf.id} xl={3} lg={4} md={6}>
-                    <MasterCard leaf={leaf} s={s} onClick={() => goTo(leaf)} />
+                    <MasterCard
+                      leaf={leaf}
+                      s={s}
+                      onClick={() => goTo(leaf)}
+                      count={counts[leaf.id]}
+                      loading={pending.has(leaf.id)}
+                    />
                   </Col>
                 ))}
               </Row>
@@ -318,7 +419,17 @@ export default function MasterDashboard() {
 }
 
 /* ── MasterCard ─────────────────────────────────────────────── */
-function MasterCard({ leaf, s, onClick }: { leaf: MenuChild; s: CategoryStyle; onClick: () => void }) {
+function MasterCard({ leaf, s, onClick, count, loading }: { leaf: MenuChild; s: CategoryStyle; onClick: () => void; count?: CountEntry; loading?: boolean }) {
+  const activeCount = count?.active ?? 0;
+  const inactiveCount = count?.inactive ?? 0;
+  const totalCount = count?.total ?? 0;
+  // Card-level "Active/Inactive" badge in the header reflects whether this
+  // master has any active records (when at least one record exists).
+  const headerStatus: 'active' | 'inactive' | 'empty' | 'loading' =
+    loading && !count ? 'loading'
+    : totalCount === 0 ? 'empty'
+    : activeCount > 0 ? 'active'
+    : 'inactive';
   return (
     <div
       onClick={onClick}
@@ -353,11 +464,22 @@ function MasterCard({ leaf, s, onClick }: { leaf: MenuChild; s: CategoryStyle; o
             {leaf.label}
           </h6>
         </div>
-        {/* Active badge */}
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#0ab39c18', color: '#0ab39c', border: '1px solid #0ab39c30', borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap' }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#0ab39c' }} />
-          Active
-        </span>
+        {/* Header status badge — shows the master's overall record state */}
+        {(() => {
+          const cfg = headerStatus === 'active'
+            ? { bg: '#0ab39c18', fg: '#0ab39c', dot: '#0ab39c', text: 'Active' }
+            : headerStatus === 'inactive'
+              ? { bg: '#f0654818', fg: '#f06548', dot: '#f06548', text: 'Inactive' }
+              : headerStatus === 'loading'
+                ? { bg: 'var(--vz-secondary-bg)', fg: 'var(--vz-secondary-color)', dot: 'var(--vz-secondary-color)', text: 'Loading' }
+                : { bg: 'var(--vz-secondary-bg)', fg: 'var(--vz-secondary-color)', dot: 'var(--vz-secondary-color)', text: 'Empty' };
+          return (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: cfg.bg, color: cfg.fg, border: `1px solid ${cfg.fg}30`, borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap' }}>
+              <span style={{ width: 5, height: 5, borderRadius: '50%', background: cfg.dot }} />
+              {cfg.text}
+            </span>
+          );
+        })()}
       </div>
 
       {/* Row 2: Description */}
@@ -370,11 +492,15 @@ function MasterCard({ leaf, s, onClick }: { leaf: MenuChild; s: CategoryStyle; o
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
             <span style={{ color: 'var(--vz-secondary-color)' }}>Active</span>
-            <span style={{ background: '#0ab39c18', color: '#0ab39c', borderRadius: 20, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>0</span>
+            <span style={{ background: '#0ab39c18', color: '#0ab39c', borderRadius: 20, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
+              {loading && !count ? '…' : activeCount}
+            </span>
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
             <span style={{ color: 'var(--vz-secondary-color)' }}>Inactive</span>
-            <span style={{ background: '#f0654818', color: '#f06548', borderRadius: 20, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>0</span>
+            <span style={{ background: '#f0654818', color: '#f06548', borderRadius: 20, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
+              {loading && !count ? '…' : inactiveCount}
+            </span>
           </span>
         </div>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: s.color + '15', color: s.color, border: `1px solid ${s.color}30`, borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 700 }}>

@@ -42,6 +42,44 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
 
   return (
     <>
+      {/* Compact info-table + dark-mode-friendly card surfaces.
+          Labels shrink to their own content width so the value sits right
+          next to the label instead of being pushed to the far right by
+          auto column-sizing. All colors use Velzon CSS vars so the cards
+          look correct in both light and dark themes. */}
+      <style>{`
+        .cv-info-table { font-size: 13px; line-height: 1.4; }
+        .cv-info-table th,
+        .cv-info-table td {
+          padding: 6px 0;
+          vertical-align: baseline;
+          border: none;
+          background: transparent !important;
+        }
+        .cv-info-table th {
+          width: 1%;
+          white-space: nowrap;
+          padding-right: 14px !important;
+          font-weight: 600;
+          color: var(--vz-heading-color, var(--vz-body-color)) !important;
+        }
+        .cv-info-table td {
+          padding-left: 0 !important;
+          word-break: break-word;
+          color: var(--vz-secondary-color);
+        }
+        /* Dark mode tweaks — the card-bg adapts via var(--vz-card-bg),
+           but boost the value text contrast so it reads cleanly on dark. */
+        [data-bs-theme="dark"] .cv-info-table td,
+        [data-layout-mode="dark"] .cv-info-table td {
+          color: rgba(255, 255, 255, 0.78);
+        }
+        [data-bs-theme="dark"] .cv-info-table th,
+        [data-layout-mode="dark"] .cv-info-table th {
+          color: rgba(255, 255, 255, 0.94) !important;
+        }
+      `}</style>
+
       {/* ── Page title + back button + Edit Profile ── */}
       <Row>
         <Col xs={12}>
@@ -172,24 +210,24 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
 
       {/* ── Overview content ── */}
       {(() => {
-              // Shared card style — 20px radius, soft shadow, subtle border
+              // Shared card style — 20px radius, soft shadow, theme-aware background
               const cardStyle: React.CSSProperties = {
                 borderRadius: 20,
                 border: '1px solid var(--vz-border-color)',
-                boxShadow: '0 4px 24px rgba(64,81,137,0.08), 0 1px 2px rgba(64,81,137,0.04)',
-                background: 'linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%)',
+                boxShadow: '0 4px 24px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)',
+                background: 'var(--vz-card-bg)',
                 overflow: 'hidden',
                 transition: 'transform .18s ease, box-shadow .18s ease',
               };
               const onCardEnter = (e: React.MouseEvent<HTMLDivElement>) => {
                 const el = e.currentTarget as HTMLDivElement;
                 el.style.transform = 'translateY(-2px)';
-                el.style.boxShadow = '0 10px 32px rgba(64,81,137,0.12), 0 2px 4px rgba(64,81,137,0.06)';
+                el.style.boxShadow = '0 10px 32px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.05)';
               };
               const onCardLeave = (e: React.MouseEvent<HTMLDivElement>) => {
                 const el = e.currentTarget as HTMLDivElement;
                 el.style.transform = 'translateY(0)';
-                el.style.boxShadow = '0 4px 24px rgba(64,81,137,0.08), 0 1px 2px rgba(64,81,137,0.04)';
+                el.style.boxShadow = '0 4px 24px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04)';
               };
               // Gradient palettes used to accent section headers
               const GRAD_PRIMARY = 'linear-gradient(135deg, #405189 0%, #6691e7 100%)';
@@ -215,7 +253,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
               return (
               <>
                 {/* ── ROW 1 — Complete Your Profile (narrow) + About (wide) ── */}
-                <Row className="mt-1 g-3 align-items-stretch">
+                <Row className="mt-2 g-2 align-items-stretch">
                   <Col xxl={4} lg={5}>
                     <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
                       <CardBody>
@@ -304,13 +342,13 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                 </Row>
 
                 {/* ── ROW 2 — Info + Plan & Billing + Address ── */}
-                <Row className="g-3 mt-0 align-items-stretch">
+                <Row className="g-2 mt-2 align-items-stretch">
                   <Col xxl={4} lg={4} md={6}>
                     <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
                       <CardBody>
                         <SectionHeader title="Info" gradient={GRAD_PRIMARY} icon="ri-information-line" />
                         <div className="table-responsive">
-                          <table className="table table-borderless mb-0">
+                          <table className="table table-borderless mb-0 cv-info-table">
                             <tbody>
                               <tr>
                                 <th className="ps-0 text-nowrap" scope="row">Full Name :</th>
@@ -368,7 +406,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                           )}
                         />
                         <div className="table-responsive">
-                          <table className="table table-borderless mb-0">
+                          <table className="table table-borderless mb-0 cv-info-table">
                             <tbody>
                               <tr>
                                 <th className="ps-0 text-nowrap" scope="row">Plan :</th>
@@ -405,7 +443,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                         <SectionHeader title="Address" gradient={GRAD_INFO} icon="ri-map-pin-line" />
                         {(client.address || client.city || client.state) ? (
                           <div className="table-responsive">
-                            <table className="table table-borderless mb-0">
+                            <table className="table table-borderless mb-0 cv-info-table">
                               <tbody>
                                 {client.address && (
                                   <tr>
@@ -452,7 +490,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                 </Row>
 
                 {/* ── ROW 3 — Brand Colors + Client Admin + Legal & Tax ── */}
-                <Row className="mb-3 g-3 mt-0 align-items-stretch">
+                <Row className="mb-3 g-2 mt-2 align-items-stretch">
                   <Col xxl={4} lg={4} md={6}>
                     <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
                       <CardBody>
@@ -541,7 +579,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                         <SectionHeader title="Legal & Tax" gradient={GRAD_DANGER} icon="ri-file-text-line" />
                         {(client.gst_number || client.pan_number) ? (
                           <div className="table-responsive">
-                            <table className="table table-borderless mb-0">
+                            <table className="table table-borderless mb-0 cv-info-table">
                               <tbody>
                                 {client.gst_number && (
                                   <tr>

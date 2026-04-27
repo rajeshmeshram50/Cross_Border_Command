@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Module;
 use App\Models\Permission;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -129,7 +130,7 @@ class MasterController extends Controller
     private const OWNERSHIP_WITH = [
         'client:id,org_name',
         'branch:id,name',
-        'creator:id,name',
+        'creator:id,name,user_type',
     ];
 
     public function list(Request $request, string $slug)
@@ -203,6 +204,47 @@ class MasterController extends Controller
         $q = $modelClass::query();
         $this->applyScope($q, $request->user());
         $row = $q->findOrFail($id);
+
+        /* ── Hierarchical delete rule ──────────────────────────────────
+         *  super_admin   : may delete any record (highest privilege).
+         *  client_admin  : may delete records created by self or by any
+         *  client_user     branch under their client. CANNOT delete
+         *                  records created by a super_admin.
+         *  branch_user   : may delete records created by self only.
+         *                  CANNOT delete records created by super_admin
+         *                  or client_admin / client_user.
+         *
+         *  Rule = creator's role-rank must be <= current user's role-rank.
+         *  super_admin = 3, client_* = 2, branch_user = 1.
+         */
+        $user = $request->user();
+        if ($user && $user->user_type !== 'super_admin' && $row->created_by) {
+            $creator = User::find($row->created_by);
+            if ($creator && $creator->id !== $user->id) {
+                $rank = function (?string $type): int {
+                    return match ($type) {
+                        'super_admin'  => 3,
+                        'client_admin' => 2,
+                        'client_user'  => 2,
+                        'branch_user'  => 1,
+                        default        => 0,
+                    };
+                };
+                if ($rank($creator->user_type) > $rank($user->user_type)) {
+                    $byWhom = match ($creator->user_type) {
+                        'super_admin'  => 'a Super Admin',
+                        'client_admin' => 'a Client Admin',
+                        'client_user'  => 'a Client user',
+                        'branch_user'  => 'a Branch user',
+                        default        => 'a higher-privileged user',
+                    };
+                    return response()->json([
+                        'message' => "You cannot delete this record — it was created by {$byWhom}.",
+                    ], 403);
+                }
+            }
+        }
+
         $row->delete();
         return response()->json(['message' => 'Deleted']);
     }
@@ -265,9 +307,10 @@ class MasterController extends Controller
     private function withOwnership($row): array
     {
         $arr = $row->toArray();
-        $arr['client_name']  = $row->client?->org_name;
-        $arr['branch_name']  = $row->branch?->name;
-        $arr['creator_name'] = $row->creator?->name;
+        $arr['client_name']       = $row->client?->org_name;
+        $arr['branch_name']       = $row->branch?->name;
+        $arr['creator_name']      = $row->creator?->name;
+        $arr['creator_user_type'] = $row->creator?->user_type;
         return $arr;
     }
 

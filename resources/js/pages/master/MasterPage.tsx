@@ -220,12 +220,24 @@ function MasterPageInner({
       className="btn p-0 d-inline-flex align-items-center justify-content-center"
       style={{
         width: 30, height: 30, borderRadius: 8,
-        background: 'var(--vz-secondary-bg)',
-        border: '1px solid var(--vz-border-color)',
-        color: 'var(--vz-secondary-color)',
+        // Disabled gets a clearly different surface: hatched grey with a
+        // strike-through cursor and faded icon so it's obvious it's locked.
+        background: disabled
+          ? 'repeating-linear-gradient(45deg, rgba(15,23,42,0.04), rgba(15,23,42,0.04) 4px, transparent 4px, transparent 8px), var(--vz-secondary-bg)'
+          : 'var(--vz-secondary-bg)',
+        border: disabled
+          ? '1px dashed var(--vz-border-color)'
+          : '1px solid var(--vz-border-color)',
+        color: disabled
+          ? 'rgba(120, 120, 120, 0.5)'
+          : 'var(--vz-secondary-color)',
+        opacity: disabled ? 0.6 : 1,
+        cursor: disabled ? 'not-allowed' : 'pointer',
         transition: 'all .15s ease',
+        position: 'relative',
       }}
       onMouseEnter={e => {
+        if (disabled) return;
         const el = e.currentTarget as HTMLButtonElement;
         const tint =
           color === 'primary' ? '#40518918' :
@@ -238,6 +250,7 @@ function MasterPageInner({
         el.style.color = `var(--vz-${color})`;
       }}
       onMouseLeave={e => {
+        if (disabled) return;
         const el = e.currentTarget as HTMLButtonElement;
         el.style.background = 'var(--vz-secondary-bg)';
         el.style.borderColor = 'var(--vz-border-color)';
@@ -246,6 +259,27 @@ function MasterPageInner({
       onClick={onClick}
     >
       <i className={`${icon} fs-14`} />
+      {/* Tiny lock badge in the bottom-right corner when disabled */}
+      {disabled && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            bottom: -3, right: -3,
+            width: 13, height: 13,
+            borderRadius: '50%',
+            background: 'var(--vz-secondary-color)',
+            color: 'var(--vz-secondary-bg)',
+            fontSize: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1.5px solid var(--vz-card-bg)',
+          }}
+        >
+          <i className="ri-lock-fill" />
+        </span>
+      )}
     </button>
   );
 
@@ -263,6 +297,10 @@ function MasterPageInner({
         errs[f.n] = 'Please enter a valid email address';
       } else if (f.t === 'number' && isNaN(Number(raw))) {
         errs[f.n] = 'Must be a valid number';
+      } else if (f.n === 'gstin' && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(raw.toUpperCase())) {
+        errs[f.n] = 'Invalid GSTIN — must be 15 characters (e.g. 27AADCI6120M1ZH)';
+      } else if (f.n === 'ifsc_code' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(raw.toUpperCase())) {
+        errs[f.n] = 'Invalid IFSC — must be 11 characters (e.g. HDFC0000350)';
       }
     }
     return errs;
@@ -376,8 +414,33 @@ function MasterPageInner({
       return <span className="text-muted">—</span>;
     }
 
-    if (typeof raw === 'string' && /^[A-Z0-9]{6,}$/.test(raw.replace(/\s|-/g, ''))) {
-      return <code className="text-body">{raw}</code>;
+    // Identifier-style fields (GSTIN, PAN, etc.) render in a consistent
+    // monospace style regardless of letter case so the column looks uniform.
+    if (
+      fieldName === 'gstin' ||
+      fieldName === 'pan' ||
+      fieldName === 'tan' ||
+      fieldName === 'cin' ||
+      fieldName === 'ifsc_code' ||
+      fieldName === 'swift_code'
+    ) {
+      return (
+        <code
+          className="text-body"
+          style={{
+            fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+            fontSize: '0.8125rem',
+            letterSpacing: '0.02em',
+            textTransform: 'uppercase',
+          }}
+        >
+          {String(raw).toUpperCase()}
+        </code>
+      );
+    }
+
+    if (typeof raw === 'string' && /^[A-Z0-9]{6,}$/i.test(raw.replace(/\s|-/g, ''))) {
+      return <code className="text-body" style={{ fontSize: '0.8125rem' }}>{raw}</code>;
     }
 
     return <span className="text-body">{String(raw)}</span>;
@@ -445,11 +508,49 @@ function MasterPageInner({
         // Hide actions the current user is not allowed to perform on this master.
         // If none are allowed, render an em-dash so the column still aligns.
         const showAny = caps.view || caps.edit || caps.delete;
+        const row = info.row.original;
+        // ── Hierarchical delete rule (mirrors backend MasterController::destroy) ──
+        // super_admin (rank 3) > client_admin/client_user (rank 2) > branch_user (1).
+        // A user can only delete records created by users at the SAME or LOWER rank.
+        const rank = (t?: string): number => {
+          switch (t) {
+            case 'super_admin':  return 3;
+            case 'client_admin':
+            case 'client_user':  return 2;
+            case 'branch_user':  return 1;
+            default:             return 0;
+          }
+        };
+        const myRank = rank(user?.user_type);
+        const creatorRank = rank(row?.creator_user_type);
+        // Block delete only when the creator is strictly higher-ranked AND
+        // it's not the user's own record. Super admin always passes.
+        const blockedByRank =
+          user?.user_type !== 'super_admin'
+          && row?.created_by
+          && row?.created_by !== user?.id
+          && creatorRank > myRank;
+        const blockTooltip = blockedByRank
+          ? (() => {
+              const who = row?.creator_user_type === 'super_admin'   ? 'Super Admin'
+                        : row?.creator_user_type === 'client_admin'  ? 'Client Admin'
+                        : row?.creator_user_type === 'client_user'   ? 'Client user'
+                        : row?.creator_user_type === 'branch_user'   ? 'Branch user'
+                        : 'a higher-privileged user';
+              return `Cannot delete — created by ${who}`;
+            })()
+          : 'Delete';
         return (
           <div className="d-flex gap-1 justify-content-center">
             {caps.view   && <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openEdit(info.row.original, true)} />}
             {caps.edit   && <ActionBtn title="Edit"   icon="ri-pencil-line"     color="info"    onClick={() => openEdit(info.row.original)} />}
-            {caps.delete && <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger"  onClick={() => handleDeleteClick(info.row.original)} />}
+            {caps.delete && <ActionBtn
+              title={blockTooltip}
+              icon="ri-delete-bin-line"
+              color="danger"
+              disabled={blockedByRank}
+              onClick={() => handleDeleteClick(info.row.original)}
+            />}
             {!showAny && <span className="text-muted">—</span>}
           </div>
         );

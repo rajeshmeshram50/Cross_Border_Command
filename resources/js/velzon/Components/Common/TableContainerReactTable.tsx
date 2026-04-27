@@ -224,7 +224,7 @@ const TableContainer = ({
 
       <Row className="align-items-center mt-2 g-3 text-center text-sm-start">
         <div className="col-sm">
-          <div className="text-muted">Showing<span className="fw-semibold ms-1">{getState().pagination.pageSize}</span> of <span className="fw-semibold">{data.length}</span> Results
+          <div className="text-muted">Showing<span className="fw-semibold ms-1">{getRowModel().rows.length}</span> of <span className="fw-semibold">{data.length}</span> Results
           </div>
         </div>
         <div className="col-sm-auto">
@@ -232,11 +232,37 @@ const TableContainer = ({
             <li className={!getCanPreviousPage() ? "page-item disabled" : "page-item"}>
               <Link to="#" className="page-link" onClick={previousPage}><i className="ri-arrow-left-s-line"></i></Link>
             </li>
-            {getPageOptions().map((item: any, key: number) => {
-              const isActive = getState().pagination.pageIndex === item;
-              return (
-                <React.Fragment key={key}>
-                  <li className="page-item">
+            {(() => {
+              // Windowed pagination: keeps the bar at ~9 items regardless of
+              // total page count. Shows first, last, current ± 1, and inserts
+              // an ellipsis ("…") wherever there's a gap. With ≤7 pages we
+              // render every number (no ellipsis needed).
+              const total = getPageOptions().length;
+              const current = getState().pagination.pageIndex;
+              const siblings = 1;
+              const items: Array<number | 'ellipsis-l' | 'ellipsis-r'> = [];
+              if (total <= 7) {
+                for (let i = 0; i < total; i++) items.push(i);
+              } else {
+                const left = Math.max(current - siblings, 1);
+                const right = Math.min(current + siblings, total - 2);
+                items.push(0);
+                if (left > 1) items.push('ellipsis-l');
+                for (let i = left; i <= right; i++) items.push(i);
+                if (right < total - 2) items.push('ellipsis-r');
+                items.push(total - 1);
+              }
+              return items.map((item, key) => {
+                if (item === 'ellipsis-l' || item === 'ellipsis-r') {
+                  return (
+                    <li key={`${item}-${key}`} className="page-item disabled">
+                      <span className="page-link" style={{ cursor: 'default' }}>…</span>
+                    </li>
+                  );
+                }
+                const isActive = current === item;
+                return (
+                  <li key={item} className="page-item">
                     <Link
                       to="#"
                       className={isActive ? "page-link active" : "page-link"}
@@ -246,9 +272,9 @@ const TableContainer = ({
                       {item + 1}
                     </Link>
                   </li>
-                </React.Fragment>
-              );
-            })}
+                );
+              });
+            })()}
             <li className={!getCanNextPage() ? "page-item disabled" : "page-item"}>
               <Link to="#" className="page-link" onClick={nextPage}><i className="ri-arrow-right-s-line"></i></Link>
             </li>
