@@ -102,10 +102,10 @@ const leafDescription = (leaf: MenuChild) =>
   LEAF_DESCRIPTIONS[leaf.id] || `Manage ${leaf.label.toLowerCase()} records`;
 
 const STAT_CARDS = [
-  { label: 'Total Masters', icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
-  { label: 'Active',        icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-  { label: 'Inactive',      icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
-  { label: 'Total Records', icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg,#f7b84b,#f1963b)' },
+  { label: 'Total Masters',    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
+  { label: 'Active Records',   icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+  { label: 'Inactive Records', icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
+  { label: 'Total Records',    icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg,#f7b84b,#f1963b)' },
 ];
 
 export default function MasterDashboard() {
