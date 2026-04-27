@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { MASTER_GROUPS } from '../constants';
 import type { MenuChild, MenuGroup } from '../types';
 import api from '../api';
+import { getMasterConfig, masterEndpoint } from './master/masterConfigs';
 
 type CountEntry = { active: number; inactive: number; total: number };
 
@@ -102,10 +103,10 @@ const leafDescription = (leaf: MenuChild) =>
   LEAF_DESCRIPTIONS[leaf.id] || `Manage ${leaf.label.toLowerCase()} records`;
 
 const STAT_CARDS = [
-  { label: 'Total Masters', icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
-  { label: 'Active',        icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-  { label: 'Inactive',      icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
-  { label: 'Total Records', icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg,#f7b84b,#f1963b)' },
+  { label: 'Total Masters',    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
+  { label: 'Active Records',   icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+  { label: 'Inactive Records', icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
+  { label: 'Total Records',    icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg,#f7b84b,#f1963b)' },
 ];
 
 export default function MasterDashboard() {
@@ -165,7 +166,12 @@ export default function MasterDashboard() {
         if (!leaf) return;
         try {
           const slug = leaf.id.replace('master.', '');
-          const res = await api.get(`/master/${slug}`);
+          // Some masters (e.g. organization_types) have their own dedicated
+          // controller and override `endpoint` in masterConfigs. Fall back to
+          // the generic /master/{slug} only when no override exists.
+          const cfg = getMasterConfig(slug);
+          const url = cfg ? masterEndpoint(cfg) : `/master/${slug}`;
+          const res = await api.get(url);
           const records: any[] = Array.isArray(res.data)
             ? res.data
             : (res.data?.data || []);
