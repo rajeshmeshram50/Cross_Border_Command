@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Card, CardBody, Col, Row, Badge, Alert } from 'reactstrap';
+import { Card, CardBody, Col, Row } from 'reactstrap';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -165,6 +165,111 @@ export default function BranchDashboard() {
         .bd-list-row + .bd-list-row { border-top: 1px solid #f1f3f9; }
         [data-bs-theme="dark"] .bd-list-row + .bd-list-row,
         [data-layout-mode="dark"] .bd-list-row + .bd-list-row { border-top-color: rgba(255,255,255,0.06); }
+
+        /* ── Plan status pill (mirrors ClientDashboard) ── */
+        @keyframes bd-dot-core-pulse {
+          0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 var(--bd-dot-color), 0 0 8px 1px var(--bd-dot-color); }
+          50%      { transform: scale(1.15); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bd-dot-color) 35%, transparent), 0 0 14px 2px var(--bd-dot-color); }
+        }
+        @keyframes bd-dot-ripple {
+          0%   { transform: translate(-50%, -50%) scale(1);   opacity: 0.55; }
+          100% { transform: translate(-50%, -50%) scale(2.8); opacity: 0;    }
+        }
+        @keyframes bd-plan-blink {
+          0%, 100% {
+            box-shadow:
+              0 0 0 0 var(--bd-plan-ring),
+              0 1px 4px var(--bd-plan-shadow),
+              0 4px 14px var(--bd-plan-shadow),
+              0 8px 28px var(--bd-plan-glow);
+            filter: brightness(1);
+          }
+          50% {
+            box-shadow:
+              0 0 0 4px var(--bd-plan-ring-soft),
+              0 2px 8px var(--bd-plan-shadow),
+              0 6px 22px var(--bd-plan-shadow),
+              0 14px 42px var(--bd-plan-glow);
+            filter: brightness(1.08);
+          }
+        }
+        @keyframes bd-plan-sweep {
+          0%   { transform: translateX(-140%); }
+          60%  { transform: translateX(140%); }
+          100% { transform: translateX(140%); }
+        }
+        @keyframes bd-plan-vibrate {
+          0%, 88%, 100% { transform: translate(0, 0) rotate(0); }
+          89% { transform: translate(-1px, 0) rotate(-0.4deg); }
+          90% { transform: translate( 1px, 0) rotate( 0.4deg); }
+          91% { transform: translate(-1px, 1px) rotate(-0.3deg); }
+          92% { transform: translate( 1px,-1px) rotate( 0.3deg); }
+          93% { transform: translate(-1px, 0) rotate(-0.2deg); }
+          94% { transform: translate( 1px, 0) rotate( 0.2deg); }
+          95% { transform: translate(0, 0) rotate(0); }
+        }
+        .bd-plan-pill {
+          position: relative;
+          overflow: hidden;
+          animation:
+            bd-plan-blink 1.8s ease-in-out infinite,
+            bd-plan-vibrate 4.5s ease-in-out infinite;
+        }
+        .bd-plan-pill.bd-plan-pill-calm {
+          animation: none;
+        }
+        .bd-plan-pill::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(110deg, transparent 40%, rgba(255,255,255,0.55) 50%, transparent 60%);
+          transform: translateX(-140%);
+          animation: bd-plan-sweep 2.6s ease-in-out infinite;
+          pointer-events: none;
+        }
+        .bd-plan-pill.bd-plan-pill-calm::after {
+          display: none;
+        }
+        /* Dark-mode adjustments — stronger tint, tamer halo, brighter text. */
+        [data-bs-theme="dark"] .bd-plan-pill,
+        [data-layout-mode="dark"] .bd-plan-pill {
+          background-image: linear-gradient(135deg,
+            color-mix(in srgb, currentColor 22%, transparent) 0%,
+            color-mix(in srgb, currentColor 14%, transparent) 100%) !important;
+          filter: brightness(1.08);
+        }
+        [data-bs-theme="dark"] .bd-plan-pill .bd-plan-dot-ripple,
+        [data-layout-mode="dark"] .bd-plan-pill .bd-plan-dot-ripple {
+          opacity: 0.7;
+        }
+        .bd-plan-dot-wrap {
+          position: relative;
+          display: inline-block;
+          width: 11px;
+          height: 11px;
+          flex-shrink: 0;
+        }
+        .bd-plan-dot-core {
+          position: absolute;
+          inset: 0;
+          border-radius: 50%;
+          background: var(--bd-dot-color);
+          animation: bd-dot-core-pulse 1.4s ease-in-out infinite;
+        }
+        .bd-plan-dot-ripple {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 11px;
+          height: 11px;
+          border-radius: 50%;
+          background: var(--bd-dot-color);
+          transform: translate(-50%, -50%) scale(1);
+          opacity: 0.5;
+          animation: bd-dot-ripple 1.6s ease-out infinite;
+          pointer-events: none;
+        }
+        .bd-plan-dot-ripple-2 { animation-delay: 0.8s; }
       `}</style>
       {/* Page Title */}
       <Row className="mb-2">
@@ -184,29 +289,49 @@ export default function BranchDashboard() {
         </Col>
       </Row>
 
-      {/* Plan banner */}
-      {plan.status === 'expired' ? (
-        <Alert color="danger" className="d-flex align-items-center" style={{ borderRadius: 14, border: '1px solid #f8d5d0' }}>
-          <i className="ri-error-warning-line me-2 fs-4"></i>
-          <div className="flex-grow-1">
-            <strong>Plan Expired — Access Restricted</strong>
-            <div className="fs-13">Contact your admin to renew the {plan.name} plan.</div>
+      {/* Plan status pill (mirrors ClientDashboard) */}
+      {(() => {
+        const isExpired = plan.status === 'expired';
+        const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
+        const isAlert = isExpired || isWarn;
+        const color = isExpired ? '#1a7927' : isWarn ? '#0c5a29' : '#0c695d';
+        const label = isExpired ? 'EXPIRED' : isWarn ? 'EXPIRES SOON' : 'CURRENT';
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <span
+              className={`bd-plan-pill d-inline-flex align-items-center gap-2 rounded-pill ${isAlert ? '' : 'bd-plan-pill-calm'}`}
+              style={{
+                background: `linear-gradient(135deg, ${color}1f 0%, ${color}12 100%)`,
+                color,
+                border: `1px solid ${color}`,
+                fontSize: 12.5,
+                fontWeight: 500,
+                letterSpacing: '0.03em',
+                padding: '5px 13px',
+                ['--bd-plan-ring' as any]: `${color}00`,
+                ['--bd-plan-ring-soft' as any]: `${color}33`,
+                ['--bd-plan-shadow' as any]: `${color}66`,
+                ['--bd-plan-glow' as any]: `${color}33`,
+                ['--bd-dot-color' as any]: color,
+              }}
+              title={isExpired ? `Expired ${plan.expires_at ?? ''}` : `Valid until ${plan.expires_at ?? ''}`}
+            >
+              <span className="bd-plan-dot-wrap">
+                <span className="bd-plan-dot-ripple" />
+                <span className="bd-plan-dot-ripple bd-plan-dot-ripple-2" />
+                <span className="bd-plan-dot-core" />
+              </span>
+              {label}: {plan.name?.toUpperCase()}
+              {isWarn && plan.days_remaining !== null && (
+                <span className="ms-1" style={{ opacity: 0.9 }}>· {plan.days_remaining}d</span>
+              )}
+              {plan.expires_at && (
+                <span className="ms-1" style={{ opacity: 0.8 }}>· {plan.expires_at}</span>
+              )}
+            </span>
           </div>
-        </Alert>
-      ) : (
-        <Alert color="primary" className="d-flex align-items-center" style={{ borderRadius: 14, border: '1px solid #c5caf0' }}>
-          <i className="ri-shield-check-line me-2 fs-4"></i>
-          <div className="flex-grow-1">
-            <strong>{plan.name} Plan</strong>
-            <div className="fs-13">
-              {plan.days_remaining !== null ? `${plan.days_remaining} days remaining` : 'Active'}
-            </div>
-          </div>
-          {plan.days_remaining !== null && plan.days_remaining <= 30 && (
-            <Badge color="warning">{plan.days_remaining}d left</Badge>
-          )}
-        </Alert>
-      )}
+        );
+      })()}
 
       {/* KPI Cards */}
       <Row className="g-3 mb-3">

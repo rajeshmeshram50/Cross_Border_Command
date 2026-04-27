@@ -148,13 +148,60 @@ export default function ClientDashboard() {
           0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 var(--cd-plan-color); }
           50%      { transform: scale(1.25); box-shadow: 0 0 0 5px transparent; }
         }
+        /* ── Highlighted status dot (radar-ping effect) ── */
+        @keyframes cd-dot-core-pulse {
+          0%, 100% { transform: scale(1);    box-shadow: 0 0 0 0 var(--cd-dot-color), 0 0 8px 1px var(--cd-dot-color); }
+          50%      { transform: scale(1.15); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cd-dot-color) 35%, transparent), 0 0 14px 2px var(--cd-dot-color); }
+        }
+        @keyframes cd-dot-ripple {
+          0%   { transform: translate(-50%, -50%) scale(1);   opacity: 0.55; }
+          100% { transform: translate(-50%, -50%) scale(2.8); opacity: 0;    }
+        }
+        .cd-plan-dot-wrap {
+          position: relative;
+          display: inline-block;
+          width: 11px;
+          height: 11px;
+          flex-shrink: 0;
+        }
+        .cd-plan-dot-core {
+          position: absolute;
+          inset: 0;
+          border-radius: 50%;
+          background: var(--cd-dot-color);
+          animation: cd-dot-core-pulse 1.4s ease-in-out infinite;
+        }
+        .cd-plan-dot-ripple {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          width: 11px;
+          height: 11px;
+          border-radius: 50%;
+          background: var(--cd-dot-color);
+          transform: translate(-50%, -50%) scale(1);
+          opacity: 0.5;
+          animation: cd-dot-ripple 1.6s ease-out infinite;
+          pointer-events: none;
+        }
+        .cd-plan-dot-ripple-2 {
+          animation-delay: 0.8s;
+        }
         @keyframes cd-plan-blink {
           0%, 100% {
-            box-shadow: 0 0 0 0 var(--cd-plan-ring), 0 2px 6px var(--cd-plan-shadow);
+            box-shadow:
+              0 0 0 0 var(--cd-plan-ring),
+              0 1px 4px var(--cd-plan-shadow),
+              0 4px 14px var(--cd-plan-shadow),
+              0 8px 28px var(--cd-plan-glow);
             filter: brightness(1);
           }
           50% {
-            box-shadow: 0 0 0 4px var(--cd-plan-ring-soft), 0 4px 14px var(--cd-plan-shadow);
+            box-shadow:
+              0 0 0 4px var(--cd-plan-ring-soft),
+              0 2px 8px var(--cd-plan-shadow),
+              0 6px 22px var(--cd-plan-shadow),
+              0 14px 42px var(--cd-plan-glow);
             filter: brightness(1.08);
           }
         }
@@ -163,10 +210,34 @@ export default function ClientDashboard() {
           60%  { transform: translateX(140%); }
           100% { transform: translateX(140%); }
         }
+        @keyframes cd-plan-vibrate {
+          0%, 88%, 100% { transform: translate(0, 0) rotate(0); }
+          89% { transform: translate(-1px, 0) rotate(-0.4deg); }
+          90% { transform: translate( 1px, 0) rotate( 0.4deg); }
+          91% { transform: translate(-1px, 1px) rotate(-0.3deg); }
+          92% { transform: translate( 1px,-1px) rotate( 0.3deg); }
+          93% { transform: translate(-1px, 0) rotate(-0.2deg); }
+          94% { transform: translate( 1px, 0) rotate( 0.2deg); }
+          95% { transform: translate(0, 0) rotate(0); }
+        }
         .cd-plan-pill {
           position: relative;
           overflow: hidden;
-          animation: cd-plan-blink 1.8s ease-in-out infinite;
+          animation:
+            cd-plan-blink 1.8s ease-in-out infinite,
+            cd-plan-vibrate 4.5s ease-in-out infinite;
+        }
+        /* Dark-mode adjustments — stronger tint, brighter text. */
+        [data-bs-theme="dark"] .cd-plan-pill,
+        [data-layout-mode="dark"] .cd-plan-pill {
+          background-image: linear-gradient(135deg,
+            color-mix(in srgb, currentColor 22%, transparent) 0%,
+            color-mix(in srgb, currentColor 14%, transparent) 100%) !important;
+          filter: brightness(1.08);
+        }
+        [data-bs-theme="dark"] .cd-plan-pill .cd-plan-dot-ripple,
+        [data-layout-mode="dark"] .cd-plan-pill .cd-plan-dot-ripple {
+          opacity: 0.7;
         }
         .cd-plan-pill::after {
           content: '';
@@ -221,7 +292,7 @@ export default function ClientDashboard() {
               {(() => {
                 const isExpired = plan.status === 'expired';
                 const isWarn = !isExpired && plan.days_remaining !== null && plan.days_remaining <= 30;
-                const color = isExpired ? '#f06548' : isWarn ? '#f7b84b' : '#0ab39c';
+                const color = isExpired ? '#00fb43' : isWarn ? '#057154' : '#096e60';
                 const label = isExpired ? 'EXPIRED' : isWarn ? 'EXPIRES SOON' : 'CURRENT';
                 return (
                   <span
@@ -238,19 +309,21 @@ export default function ClientDashboard() {
                       ['--cd-plan-color' as any]: `${color}66`,
                       ['--cd-plan-ring' as any]: `${color}00`,
                       ['--cd-plan-ring-soft' as any]: `${color}33`,
-                      ['--cd-plan-shadow' as any]: `${color}55`,
+                      ['--cd-plan-shadow' as any]: `${color}66`,
+                      ['--cd-plan-glow' as any]: `${color}33`,
                     }}
                     title={isExpired ? `Expired ${plan.expires_at}` : `Valid until ${plan.expires_at}`}
                   >
                     <span
-                      className="rounded-circle"
+                      className="cd-plan-dot-wrap"
                       style={{
-                        width: 8, height: 8,
-                        background: color,
-                        animation: 'cd-plan-dot 1.4s ease-in-out infinite',
-                        flexShrink: 0,
+                        ['--cd-dot-color' as any]: color,
                       }}
-                    />
+                    >
+                      <span className="cd-plan-dot-ripple" />
+                      <span className="cd-plan-dot-ripple cd-plan-dot-ripple-2" />
+                      <span className="cd-plan-dot-core" />
+                    </span>
                     {label}: {plan.name?.toUpperCase()}
                     {isWarn && plan.days_remaining !== null && (
                       <span className="ms-1" style={{ opacity: 0.9 }}>· {plan.days_remaining}d</span>
