@@ -18,25 +18,65 @@ const Ctx = createContext<BranchSwitcherCtx>({
   isMainBranchUser: false, canSwitch: false, setBranch: () => {}, loading: false,
 });
 
-const STORAGE_KEY = 'cbc_selected_branch_id';
+// Storage key is scoped per-user so logging in as a different user on the same
+// browser does not inherit the previous user's selection.
+function storageKey(userId?: number): string | null {
+  return userId ? `cbc_selected_branch_id_${userId}` : null;
+}
 
-function readSaved(): number | null | undefined {
-  if (typeof window === 'undefined') return undefined;
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw === null) return undefined;            // never saved
-  if (raw === 'null' || raw === '') return null; // "All Branches" was explicitly chosen
+function readSaved(userId?: number): number | null | undefined {
+  const key = storageKey(userId);
+  if (!key || typeof window === 'undefined') return undefined;
+  const raw = localStorage.getItem(key);
+  if (raw === null) return undefined;
+  if (raw === 'null' || raw === '') return null;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-function writeSaved(id: number | null) {
-  try { localStorage.setItem(STORAGE_KEY, id === null ? 'null' : String(id)); } catch {}
+function writeSaved(userId: number, id: number | null) {
+  const key = storageKey(userId);
+  if (!key) return;
+  try { localStorage.setItem(key, id === null ? 'null' : String(id)); } catch {}
+}
+
+// Compute the safest initial selection given user + (maybe loaded) branches.
+function computeInitial(
+  userType: string | undefined,
+  userBranchId: number | null | undefined,
+  userId: number | undefined,
+  loadedBranches: Branch[],
+): number | null {
+  if (!userId) return null;
+
+  // Sub-branch users (non-main) are ALWAYS locked to their own branch — never
+  // honour saved state. Backend enforces too, but we keep UI consistent.
+  if (userType === 'branch_user') {
+    const myBranch = loadedBranches.find(b => b.id === userBranchId);
+    if (myBranch && !myBranch.is_main) return userBranchId ?? null;
+    // Branches not loaded yet OR is main — fall through to saved/default
+  }
+
+  const saved = readSaved(userId);
+  if (saved !== undefined) {
+    if (saved === null) return null;
+    // Validate saved id belongs to this user's branch list (when loaded)
+    if (loadedBranches.length === 0 || loadedBranches.some(b => b.id === saved)) {
+      return saved;
+    }
+  }
+
+  // No valid saved — sensible default
+  if (userType === 'branch_user' && userBranchId) return userBranchId;
+  return null; // client_admin default
 }
 
 export function BranchSwitcherProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [selectedBranchId, setSelectedBranchIdState] = useState<number | null>(null);
+  const [selectedBranchId, setSelectedBranchIdState] = useState<number | null>(
+    () => computeInitial(user?.user_type, user?.branch_id, user?.id, [])
+  );
   const [loading, setLoading] = useState(false);
 
   const isBranchUser = user?.user_type === 'branch_user';
@@ -44,50 +84,45 @@ export function BranchSwitcherProvider({ children }: { children: ReactNode }) {
 
   const userBranch = branches.find(b => b.id === user?.branch_id);
   const isMainBranchUser = !!(isBranchUser && userBranch?.is_main);
-
-  // Main branch user + client admin can switch. Sub-branch user is locked.
   const canSwitch = isMainBranchUser || isClientAdmin;
 
+  // Reset + reload branches whenever the active user changes.
   useEffect(() => {
+    // Hard reset to prevent the previous user's selection bleeding into the new
+    // user's session before /branches comes back.
+    setSelectedBranchIdState(computeInitial(user?.user_type, user?.branch_id, user?.id, []));
+    setBranches([]);
+
     if (!user || user.user_type === 'super_admin') return;
 
+    const controller = new AbortController();
     setLoading(true);
-    api.get('/branches', { params: { per_page: 100 } })
+    api.get('/branches', { params: { per_page: 100 }, signal: controller.signal })
       .then(res => {
         const data: Branch[] = res.data.data || [];
         setBranches(data);
-
-        const myBranch = data.find(b => b.id === user.branch_id);
-        const isMain = !!(user.user_type === 'branch_user' && myBranch?.is_main);
-
-        const saved = readSaved();
-        let initial: number | null;
-
-        if (saved !== undefined && (saved === null || data.some(b => b.id === saved))) {
-          // Use saved value if still valid for this user's branch list
-          initial = saved;
-        } else if (user.user_type === 'branch_user') {
-          // Both main and sub-branch users default to their own branch
-          initial = user.branch_id ?? null;
-        } else {
-          // Client admin defaults to "All Branches"
-          initial = null;
-        }
-
-        // Sub-branch user (non-main) is always locked to their own branch
-        if (user.user_type === 'branch_user' && !isMain) {
-          initial = user.branch_id ?? null;
-        }
-
-        setSelectedBranchIdState(initial);
+        // Recompute now that we know the actual branch list (validates saved id,
+        // applies sub-branch lock, etc.)
+        setSelectedBranchIdState(computeInitial(user.user_type, user.branch_id, user.id, data));
       })
-      .catch(() => {})
+      .catch(err => {
+        if (err?.name !== 'CanceledError' && err?.code !== 'ERR_CANCELED') {
+          console.warn('[BranchSwitcher] failed to load branches', err);
+        }
+      })
       .finally(() => setLoading(false));
+
+    return () => controller.abort();
   }, [user?.id]);
 
   const setBranch = (id: number | null) => {
+    if (!user?.id) return;
+    // Sub-branch user (non-main) cannot switch — silently ignore
+    if (isBranchUser && !isMainBranchUser) return;
+    // Validate id is in our branches list (or null)
+    if (id !== null && !branches.some(b => b.id === id)) return;
     setSelectedBranchIdState(id);
-    writeSaved(id);
+    writeSaved(user.id, id);
   };
 
   const selectedBranch = selectedBranchId ? branches.find(b => b.id === selectedBranchId) || null : null;

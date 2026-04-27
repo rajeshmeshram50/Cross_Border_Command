@@ -64,6 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/subscription/status', [SubscriptionController::class, 'status']);
     Route::post('/subscription/create-order', [SubscriptionController::class, 'createOrder']);
     Route::post('/subscription/verify-payment', [SubscriptionController::class, 'verifyPayment']);
+    Route::post('/subscription/cancel-order', [SubscriptionController::class, 'cancelOrder']);
 
     // Payments
     Route::get('/payments/stats', [PaymentController::class, 'stats']);

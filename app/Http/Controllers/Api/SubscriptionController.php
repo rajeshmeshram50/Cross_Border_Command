@@ -130,6 +130,44 @@ class SubscriptionController extends Controller
     }
 
     /**
+     * Step 2b — User cancelled the Razorpay modal OR Razorpay reported failure.
+     * Marks the pending Payment as 'failed' so it shows up in the Payments list
+     * (otherwise it stays 'pending' forever and "failed payments" never appear).
+     */
+    public function cancelOrder(Request $request)
+    {
+        $request->validate([
+            'razorpay_order_id' => 'required|string',
+            'reason' => 'nullable|string|max:255',
+        ]);
+
+        $payment = Payment::where('order_id', $request->razorpay_order_id)->first();
+        if (!$payment) {
+            return response()->json(['ok' => true]); // no-op if not found
+        }
+
+        $user = $request->user();
+        if ($payment->client_id !== $user->client_id) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        // Idempotent — never overwrite a finalised state
+        if (in_array($payment->status, ['success', 'refunded', 'failed'])) {
+            return response()->json(['ok' => true, 'status' => $payment->status]);
+        }
+
+        $payment->update([
+            'status' => 'failed',
+            'gateway_response' => array_merge($payment->gateway_response ?? [], [
+                'cancelled_at' => now()->toIso8601String(),
+                'cancel_reason' => $request->reason ?? 'user_cancelled',
+            ]),
+        ]);
+
+        return response()->json(['ok' => true, 'status' => 'failed']);
+    }
+
+    /**
      * Step 2 — Verify Razorpay signature, mark Payment success, activate plan.
      */
     public function verifyPayment(Request $request, RazorpayService $razorpay)

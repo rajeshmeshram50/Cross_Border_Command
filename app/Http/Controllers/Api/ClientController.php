@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\Rule;
 use App\Mail\WelcomeCredentialsMail;
 
 class ClientController extends Controller
@@ -102,7 +103,7 @@ class ClientController extends Controller
 
             // Client Admin credentials
             'admin_name' => 'required|string|max:255',
-            'admin_email' => 'required|email|unique:users,email',
+            'admin_email' => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
             'admin_phone' => 'nullable|string|max:20',
             'admin_designation' => 'nullable|string|max:100',
             'admin_password' => 'required|string|min:6',
@@ -132,7 +133,13 @@ class ClientController extends Controller
                 'gst_number' => $request->gst_number,
                 'pan_number' => $request->pan_number,
                 'plan_id' => $request->plan_id,
-                'plan_type' => $request->plan_type ?? 'free',
+                // New clients always start as 'free' regardless of what the form sends.
+                // Activating a paid plan happens via SubscriptionController::createOrder
+                // → Razorpay checkout → verifyPayment → activatePlan(), which atomically
+                // flips plan_type to 'paid' and grants module permissions. Allowing the
+                // create form to set plan_type='paid' directly would bypass payment and
+                // leave the client_admin with no permissions until they re-subscribe.
+                'plan_type' => 'free',
                 'status' => $request->status ?? 'inactive',
                 'plan_expires_at' => $request->plan_expires_at,
                 'primary_color' => $request->primary_color ?? '#4F46E5',
@@ -237,7 +244,7 @@ class ClientController extends Controller
             'secondary_color' => 'nullable|string|max:7',
             'notes' => 'nullable|string',
             'admin_name' => 'nullable|string|max:255',
-            'admin_email' => 'nullable|email|unique:users,email,' . ($adminUser?->id ?? 'NULL'),
+            'admin_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($adminUser?->id)->whereNull('deleted_at')],
             'admin_phone' => 'nullable|string|max:20',
             'admin_designation' => 'nullable|string|max:100',
             'admin_password' => 'nullable|string|min:6',
@@ -245,13 +252,21 @@ class ClientController extends Controller
         ]);
 
         return DB::transaction(function () use ($request, $client, $adminUser) {
-            $client->update($request->only([
+            // plan_type cannot be flipped to 'paid' from this admin form — only
+            // SubscriptionController::activatePlan() (called after a real payment)
+            // is allowed to transition free → paid. Letting an admin save it here
+            // would bypass billing.
+            $payload = $request->only([
                 'org_name', 'email', 'phone', 'website',
                 'address', 'city', 'state', 'district', 'taluka', 'pincode', 'country',
                 'org_type', 'sports', 'industry', 'gst_number', 'pan_number',
                 'plan_id', 'plan_type', 'status', 'plan_expires_at',
                 'primary_color', 'secondary_color', 'notes',
-            ]));
+            ]);
+            if (isset($payload['plan_type']) && $payload['plan_type'] === 'paid' && $client->plan_type !== 'paid') {
+                unset($payload['plan_type']);
+            }
+            $client->update($payload);
 
             // Update client admin if provided
             if ($adminUser && $request->admin_name) {

@@ -37,7 +37,17 @@ function MasterPageInner({
   cfg: MasterConfig;
   navigate: ReturnType<typeof useNavigate>;
 }) {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
+
+  // Refresh user perms on every master page mount. Without this, a branch user
+  // whose client admin just changed their permissions in another tab still uses
+  // the stale `permissions` map cached in localStorage — so the Add button might
+  // appear (or stay hidden) even after the change. Backend authorizeMaster() is
+  // the source of truth, but matching the UI to current perms avoids confusion.
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.slug]);
   const toast = useToast();
   const [records, setRecords] = useState<any[]>([]);
   const [refData, setRefData] = useState<Record<string, any[]>>({});

@@ -95,6 +95,7 @@ export default function AddPlan({ onBack, editId }: Props) {
       if (isEdit) {
         await api.put(`/plans/${editId}`, payload);
         toast.success('Plan Updated', `"${form.name}" updated successfully`);
+        setTimeout(() => onBack(), 1000);
       } else {
         await api.post('/plans', payload);
         toast.success('Plan Created', `"${form.name}" created successfully`);

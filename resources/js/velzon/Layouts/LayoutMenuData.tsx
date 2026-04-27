@@ -68,8 +68,18 @@ const Navdata = () => {
 
   const menuItems: any[] = [];
 
+  // Determine if this branch user is the MAIN branch user. Sub-branch users
+  // never see the Permissions menu even though "branch_user" is in its roles
+  // list — only main-branch users can manage perms for their own branch.
+  const isMainBranchUser = user?.user_type === 'branch_user' && user.is_main_branch === true;
+
   for (const m of MENU_ITEMS) {
     if (!user || !m.roles.includes(user.user_type)) continue;
+
+    // Permissions menu visible only to: super_admin, client_admin, OR main-branch user
+    if (m.id === 'permissions' && user.user_type === 'branch_user' && !isMainBranchUser) {
+      continue;
+    }
 
     // Section header
     if (m.section) {

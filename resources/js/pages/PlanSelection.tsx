@@ -126,6 +126,12 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
       },
       modal: {
         ondismiss: () => {
+          // Tell backend to mark this pending payment as failed so it shows up
+          // in the Payments list. Without this the row stays 'pending' forever.
+          api.post('/subscription/cancel-order', {
+            razorpay_order_id: orderRes.data.order_id,
+            reason: 'user_cancelled',
+          }).catch(() => { /* best-effort, ignore */ });
           setProcessing(false);
           setPaymentStep('select');
           toast.error('Payment Cancelled', 'You closed the payment window');
@@ -134,6 +140,10 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
     });
 
     rzp.on('payment.failed', (resp: any) => {
+      api.post('/subscription/cancel-order', {
+        razorpay_order_id: orderRes.data.order_id,
+        reason: resp.error?.description || resp.error?.code || 'payment_failed',
+      }).catch(() => { /* best-effort, ignore */ });
       toast.error('Payment Failed', resp.error?.description || 'Try a different payment method');
       setProcessing(false);
       setPaymentStep('select');

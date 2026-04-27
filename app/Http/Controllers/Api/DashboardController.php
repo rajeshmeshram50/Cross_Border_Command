@@ -161,21 +161,28 @@ class DashboardController extends Controller
         if ($branchId && !Branch::where('client_id', $clientId)->where('id', $branchId)->exists()) {
             $branchId = null; // ignore stale / cross-client ids
         }
-        // Sub-branch users (non-main) are always locked to their own branch
+        // Sub-branch users (non-main) are always server-locked to their own branch.
+        // If their branch_id is missing or invalid (data integrity issue), force a
+        // sentinel value so no rows match — never silently widen the scope.
         if ($user->user_type === 'branch_user') {
-            $userBranch = Branch::find($user->branch_id);
-            if ($userBranch && !$userBranch->is_main) {
+            $userBranch = $user->branch_id
+                ? Branch::where('client_id', $clientId)->find($user->branch_id)
+                : null;
+            if (!$userBranch) {
+                $branchId = -1; // matches nothing → empty result is safer than leaked data
+            } elseif (!$userBranch->is_main) {
                 $branchId = $user->branch_id;
             }
+            // Main branch user: $branchId stays as caller-supplied (already validated above)
         }
 
         $client = Client::with('plan')->find($clientId);
 
-        // Branches
-        $totalBranches = $branchId ? 1 : Branch::where('client_id', $clientId)->count();
-        $activeBranches = $branchId
-            ? Branch::where('client_id', $clientId)->where('id', $branchId)->where('status', 'active')->count()
-            : Branch::where('client_id', $clientId)->where('status', 'active')->count();
+        // Branches — always count via the actual query so a non-existent / sentinel id (-1) returns 0
+        $branchesBase = fn() => Branch::where('client_id', $clientId)
+            ->when($branchId, fn($q) => $q->where('id', $branchId));
+        $totalBranches = $branchesBase()->count();
+        $activeBranches = $branchesBase()->where('status', 'active')->count();
 
         // Users — scoped by branch when filter active
         $usersBase = fn() => User::where('client_id', $clientId)

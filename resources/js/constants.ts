@@ -137,8 +137,8 @@ export const MENU_ITEMS: MenuItem[] = [
     groups: MASTER_GROUPS,
   },
 
-  { id: '', section: 'ACCESS CONTROL', label: '', icon: '', roles: ['super_admin', 'client_admin'] },
-  { id: 'permissions', icon: 'ShieldCheck', label: 'Permissions', roles: ['super_admin', 'client_admin'] },
+  { id: '', section: 'ACCESS CONTROL', label: '', icon: '', roles: ['super_admin', 'client_admin', 'branch_user'] },
+  { id: 'permissions', icon: 'ShieldCheck', label: 'Permissions', roles: ['super_admin', 'client_admin', 'branch_user'] },
 
   { id: '', section: 'SYSTEM', label: '', icon: '', roles: ['super_admin', 'client_admin', 'branch_user'] },
   { id: 'settings', icon: 'Settings', label: 'Settings', roles: ['super_admin'] },

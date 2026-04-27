@@ -11,6 +11,16 @@ const methodLabels: Record<string, string> = {
   net_banking: 'Net Banking', wallet: 'Wallet', cash: 'Cash', cheque: 'Cheque',
 };
 
+// Indian-format currency helper — under ₹1L shows real rupees with comma
+// grouping; ₹1L-99L as "1.20L"; crores as "1.50Cr". Avoids the previous
+// /1000 round which displayed "₹0K" for sub-₹500 amounts.
+function formatINRCompact(n: number): string {
+  const v = Math.max(0, Number(n) || 0);
+  if (v < 100000) return v.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  if (v < 10000000) return (v / 100000).toFixed(2) + 'L';
+  return (v / 10000000).toFixed(2) + 'Cr';
+}
+
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -121,13 +131,20 @@ export default function BranchDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
     api.get('/dashboard/client-stats', {
       params: selectedBranchId ? { branch_id: selectedBranchId } : {},
+      signal: controller.signal,
     })
       .then(res => setData(res.data))
-      .catch(() => {})
+      .catch(err => {
+        if (err?.name !== 'CanceledError' && err?.code !== 'ERR_CANCELED') {
+          // swallow other errors silently — keep current data on screen
+        }
+      })
       .finally(() => setLoading(false));
+    return () => controller.abort();
   }, [selectedBranchId]);
 
   if (loading) return <ShimmerDashboard />;
@@ -221,7 +238,7 @@ export default function BranchDashboard() {
             changeText="branch staff" />
         </Col>
         <Col md={3} xs={6}>
-          <KpiCard label="Total Paid" value={<>₹<AnimatedNumber value={Math.round(counts.total_paid / 1000)} suffix="K" /></>}
+          <KpiCard label="Total Paid" value={<>₹{formatINRCompact(counts.total_paid)}</>}
             iconClass="ri-money-rupee-circle-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
             trend="up" change={`${counts.success_payments}`} changeText="payments" />
         </Col>

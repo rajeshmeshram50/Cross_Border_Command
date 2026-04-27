@@ -32,6 +32,18 @@ class AuthController extends Controller
             ]);
         }
 
+        if ($user->client_id && $user->client && $user->client->status !== 'active') {
+            throw ValidationException::withMessages([
+                'email' => ['Your organization is ' . $user->client->status . '. Contact administrator.'],
+            ]);
+        }
+
+        if ($user->branch_id && $user->branch && $user->branch->status !== 'active') {
+            throw ValidationException::withMessages([
+                'email' => ['Your branch is not active. Contact administrator.'],
+            ]);
+        }
+
         $user->update([
             'last_login_at' => now(),
             'last_login_ip' => $request->ip(),
@@ -89,6 +101,18 @@ class AuthController extends Controller
         if ($user->status !== 'active') {
             return response()->json([
                 'message' => 'Your account is not active. Contact administrator.',
+            ], 403);
+        }
+
+        if ($user->client_id && $user->client && $user->client->status !== 'active') {
+            return response()->json([
+                'message' => 'Your organization is ' . $user->client->status . '. Contact administrator.',
+            ], 403);
+        }
+
+        if ($user->branch_id && $user->branch && $user->branch->status !== 'active') {
+            return response()->json([
+                'message' => 'Your branch is not active. Contact administrator.',
             ], 403);
         }
 
@@ -197,6 +221,7 @@ class AuthController extends Controller
             'branch_id' => $user->branch_id,
             'client_name' => $user->client?->org_name,
             'branch_name' => $user->branch?->name,
+            'is_main_branch' => (bool) ($user->branch?->is_main),
             'status' => $user->status,
             'designation' => $user->designation,
             'phone' => $user->phone,

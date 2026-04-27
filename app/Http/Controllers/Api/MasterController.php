@@ -449,6 +449,7 @@ class MasterController extends Controller
         $uFields = $schema['uFields'] ?? [];
         $modelClass = $this->resolveModel($slug);
         $table = (new $modelClass)->getTable();
+        $isComposite = count($uFields) > 1;
 
         $rules = [];
         foreach ($fields as $f) {
@@ -471,7 +472,12 @@ class MasterController extends Controller
             if (!empty($f['opts']) && empty($f['ref'])) {
                 $r[] = Rule::in($f['opts']);
             }
-            if (in_array($f['n'], $uFields, true)) {
+            // Single-field uniqueness — applied per-field. Composite uniqueness
+            // (uFields with more than one column) is enforced AFTER this loop so
+            // the unique check matches the ROW combination instead of each field
+            // independently. Without that, picking a value once would block any
+            // other row from using it even with a different second column.
+            if (!$isComposite && in_array($f['n'], $uFields, true)) {
                 $rule = Rule::unique($table, $f['n']);
                 if ($id) $rule = $rule->ignore($id);
                 $r[] = $rule;
@@ -480,6 +486,24 @@ class MasterController extends Controller
         }
 
         $validated = $request->validate($rules);
+
+        // Composite uniqueness — match the COMBINATION of all uFields
+        if ($isComposite) {
+            $first = $uFields[0];
+            $rule = Rule::unique($table, $first);
+            foreach (array_slice($uFields, 1) as $other) {
+                $rule = $rule->where(function ($q) use ($other, $validated) {
+                    $q->where($other, $validated[$other] ?? null);
+                });
+            }
+            if ($id) {
+                $rule = $rule->ignore($id);
+            }
+            $request->validate([$first => [$rule]], [
+                "{$first}.unique" => 'A record with this combination of ' . implode(' + ', $uFields) . ' already exists.',
+            ]);
+        }
+
         // Strip empty strings on nullable fields so DB gets NULL
         foreach ($validated as $k => $v) {
             if ($v === '') $validated[$k] = null;

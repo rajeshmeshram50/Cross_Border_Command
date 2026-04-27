@@ -22,7 +22,8 @@ const Ctx = createContext<AuthCtx>({
 
 // Bump this when the shape of `cbc_user` changes in a way that stale caches break.
 // When the stored version differs, we invalidate the cache and force a /me refresh.
-const USER_SCHEMA_VERSION = 2;
+// v3 — added `is_main_branch` flag (used for Permissions menu gating).
+const USER_SCHEMA_VERSION = 3;
 
 function readCachedUser(): AuthUser | null {
   try {
@@ -135,6 +136,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api.post('/logout');
     } catch { /* ignore */ }
     localStorage.removeItem('cbc_token');
+    // Clear any per-user state (branch selection etc.) for the user that just logged out
+    if (user?.id) {
+      try { localStorage.removeItem(`cbc_selected_branch_id_${user.id}`); } catch {}
+    }
     writeCachedUser(null);
     setUser(null);
   };

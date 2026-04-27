@@ -118,6 +118,10 @@ export default function Permissions() {
       const res = await api.post(`/permissions/user/${selectedUserId}`, { permissions });
       toast.success('Permissions Saved', `${res.data.saved_count} module permissions saved successfully`);
       loadUserPermissions(selectedUserId);
+      // Refetch the manageable users list too — branch/status may have changed
+      // since the page mounted, and the picker would otherwise show stale data
+      // (e.g. a branch user whose branch was just deactivated).
+      api.get('/permissions/users').then(r => setUsers(r.data || [])).catch(() => {});
     } catch (err: any) {
       toast.error('Save Failed', err.response?.data?.message || 'Failed to save permissions');
     } finally {

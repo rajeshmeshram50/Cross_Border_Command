@@ -382,15 +382,22 @@ export default function PermissionMatrix({
           </td>
           <td className="text-center py-2">
             <TriStateCheckbox
-              on={rowOn}
+              on={mod.is_default ? rowTotal : rowOn}
               total={rowTotal}
-              disabled={rowAllowedCount === 0}
+              disabled={rowAllowedCount === 0 || mod.is_default}
               onToggle={() => toggleRow(mod.id)}
-              title={rowAllOn ? 'Clear all permissions for this row' : 'Grant all permissions for this row'}
+              title={mod.is_default
+                ? 'Default module — automatically granted to every user'
+                : (rowAllOn ? 'Clear all permissions for this row' : 'Grant all permissions for this row')}
             />
           </td>
           {PERMS.map(p => {
-            const disabled = !isPermAllowed(mod.slug, p.key);
+            // Default modules (Dashboard, Profile) are auto-granted to every user
+            // by SubscriptionController.activatePlan(). Lock the checkboxes so they
+            // appear checked and read-only — toggling them off would be misleading
+            // since the next plan activation re-grants them.
+            const disabled = mod.is_default || !isPermAllowed(mod.slug, p.key);
+            const checked = mod.is_default ? true : !!rowPerms[p.key];
             return (
               <td key={p.key} className="text-center py-2">
                 <div className="form-check d-flex justify-content-center m-0">
@@ -398,9 +405,10 @@ export default function PermissionMatrix({
                     type="checkbox"
                     className="form-check-input"
                     style={{ width: '0.95rem', height: '0.95rem', cursor: disabled ? 'not-allowed' : 'pointer' }}
-                    checked={!!rowPerms[p.key]}
+                    checked={checked}
                     onChange={() => toggle(mod.id, p.key)}
                     disabled={disabled}
+                    title={mod.is_default ? 'Default module — automatically granted' : undefined}
                   />
                 </div>
               </td>
@@ -540,5 +548,16 @@ export function extractLeafPermissions(
     childrenMap.get(key)!.push(m);
   });
   const isLeaf = (m: PermModule) => !childrenMap.has(m.id);
-  return modules.filter(isLeaf).map(m => ({ module_id: m.id, ...(matrix[m.id] || emptyPerms()) }));
+  return modules.filter(isLeaf).map(m => {
+    // Default modules (Dashboard, Profile) are always-on. Force every flag true so
+    // the saved row matches what the UI shows as locked-checked.
+    if (m.is_default) {
+      return {
+        module_id: m.id,
+        can_view: true, can_add: true, can_edit: true, can_delete: true,
+        can_export: true, can_import: true, can_approve: true,
+      };
+    }
+    return { module_id: m.id, ...(matrix[m.id] || emptyPerms()) };
+  });
 }

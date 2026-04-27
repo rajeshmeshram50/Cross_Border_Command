@@ -20,22 +20,17 @@ export default function BranchSwitcher() {
 
   if (!user || user.user_type === 'super_admin') return null;
 
-  // Only main branch user gets the dropdown — everyone else sees nothing or static label
-  if (!isMainBranchUser) {
-    // Normal branch user — show their branch name (no dropdown)
-    if (user.user_type === 'branch_user') {
-      return (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-[12px] font-medium text-text">
-          <Building2 size={13} className="text-primary" />
-          <span className="max-w-[160px] truncate">{user.branch_name || 'My Branch'}</span>
-        </div>
-      );
-    }
-    // Client admin — no switcher at all
-    return null;
+  // Sub-branch user (non-main) — locked to their own branch, no dropdown
+  if (user.user_type === 'branch_user' && !isMainBranchUser) {
+    return (
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-[12px] font-medium text-text">
+        <Building2 size={13} className="text-primary" />
+        <span className="max-w-[160px] truncate">{user.branch_name || 'My Branch'}</span>
+      </div>
+    );
   }
 
-  // Main branch user — dropdown
+  // Main branch user OR client admin — full dropdown
   const displayName = selectedBranch ? selectedBranch.name : 'All Branches';
 
   return (

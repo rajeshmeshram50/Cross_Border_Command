@@ -20,6 +20,7 @@ export interface AuthUser {
   branch_id?: number;
   client_name?: string;
   branch_name?: string;
+  is_main_branch?: boolean;
   status: string;
   designation?: string;
   phone?: string;
