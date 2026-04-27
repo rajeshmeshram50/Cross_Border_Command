@@ -266,7 +266,21 @@ class ClientController extends Controller
             if (isset($payload['plan_type']) && $payload['plan_type'] === 'paid' && $client->plan_type !== 'paid') {
                 unset($payload['plan_type']);
             }
+
+            // Detect status transition from active → non-active. Existing user
+            // sessions (Sanctum tokens) need to be revoked otherwise the login
+            // guard only protects FRESH logins; users already logged in keep
+            // working. Without this, admin can mark a client inactive and the
+            // branch users continue accessing data with their existing tokens.
+            $statusBecomingInactive = isset($payload['status'])
+                && $client->status === 'active'
+                && $payload['status'] !== 'active';
+
             $client->update($payload);
+
+            if ($statusBecomingInactive) {
+                $this->revokeAllUserTokensForClient($client->id);
+            }
 
             // Update client admin if provided
             if ($adminUser && $request->admin_name) {
@@ -298,6 +312,12 @@ class ClientController extends Controller
     public function destroy(Client $client)
     {
         DB::transaction(function () use ($client) {
+            // Revoke any live Sanctum tokens BEFORE soft-deleting users — once
+            // soft-deleted, `User::tokens()->delete()` would still work but the
+            // intent is clearer here and ensures no in-flight request can ride
+            // on a stale token after the row is gone.
+            $this->revokeAllUserTokensForClient($client->id);
+
             // Soft delete related users
             User::where('client_id', $client->id)->delete();
             // Soft delete branches
@@ -307,5 +327,22 @@ class ClientController extends Controller
         });
 
         return response()->json(['message' => 'Client deleted successfully']);
+    }
+
+    /**
+     * Revoke every Sanctum personal access token for every user (any role)
+     * under this client. Used when the client is deactivated/suspended/deleted
+     * so existing sessions are killed alongside the new-login guard. Returns
+     * the count of revoked tokens (informational only).
+     */
+    private function revokeAllUserTokensForClient(int $clientId): int
+    {
+        $userIds = User::where('client_id', $clientId)->pluck('id');
+        if ($userIds->isEmpty()) return 0;
+
+        return DB::table('personal_access_tokens')
+            ->where('tokenable_type', User::class)
+            ->whereIn('tokenable_id', $userIds)
+            ->delete();
     }
 }

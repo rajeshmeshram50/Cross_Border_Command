@@ -277,6 +277,14 @@ class BranchController extends Controller
                     ->update(['is_main' => false]);
             }
 
+            // Detect status transition from active → inactive. Existing user
+            // sessions need to be revoked otherwise the login guard only blocks
+            // FRESH logins; users already logged in keep working with their
+            // existing Sanctum tokens.
+            $statusBecomingInactive = $request->filled('status')
+                && $branch->status === 'active'
+                && $request->input('status') !== 'active';
+
             $branch->update($request->only([
                 'name', 'code', 'email', 'phone', 'website', 'contact_person',
                 'branch_type', 'industry', 'description',
@@ -284,6 +292,10 @@ class BranchController extends Controller
                 'address', 'city', 'district', 'taluka', 'state', 'pincode', 'country',
                 'is_main', 'max_users', 'established_at', 'status', 'notes',
             ]));
+
+            if ($statusBecomingInactive) {
+                $this->revokeAllUserTokensForBranch($branch->id);
+            }
 
             // Update branch user if provided
             if ($branchUser && $request->user_name) {
@@ -338,10 +350,28 @@ class BranchController extends Controller
         }
 
         DB::transaction(function () use ($branch) {
+            // Revoke any live tokens for users in this branch before soft-deleting
+            $this->revokeAllUserTokensForBranch($branch->id);
             $branch->users()->delete();
             $branch->delete();
         });
 
         return response()->json(['message' => 'Branch deleted successfully']);
+    }
+
+    /**
+     * Revoke every Sanctum personal access token for every user in this branch.
+     * Called when the branch is deactivated or deleted so existing sessions are
+     * killed alongside the new-login guard.
+     */
+    private function revokeAllUserTokensForBranch(int $branchId): int
+    {
+        $userIds = User::where('branch_id', $branchId)->pluck('id');
+        if ($userIds->isEmpty()) return 0;
+
+        return DB::table('personal_access_tokens')
+            ->where('tokenable_type', User::class)
+            ->whereIn('tokenable_id', $userIds)
+            ->delete();
     }
 }
