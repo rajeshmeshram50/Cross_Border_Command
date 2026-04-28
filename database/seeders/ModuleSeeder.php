@@ -20,8 +20,9 @@ class ModuleSeeder extends Seeder
             ['name' => 'Payments',    'slug' => 'payments',    'icon' => 'IndianRupee', 'sort_order' => 6,  'is_default' => false, 'description' => 'Payment transactions'],
             ['name' => 'Permissions', 'slug' => 'permissions', 'icon' => 'ShieldCheck', 'sort_order' => 7,  'is_default' => false, 'description' => 'Access control'],
             ['name' => 'Master',      'slug' => 'master',      'icon' => 'Database',    'sort_order' => 8,  'is_default' => false, 'description' => 'Master data control center'],
-            ['name' => 'Settings',    'slug' => 'settings',    'icon' => 'Settings',    'sort_order' => 9,  'is_default' => false, 'description' => 'System settings'],
-            ['name' => 'Profile',     'slug' => 'profile',     'icon' => 'UserCircle',  'sort_order' => 10, 'is_default' => true],
+            ['name' => 'HR',          'slug' => 'hr',          'icon' => 'Users',       'sort_order' => 9,  'is_default' => false, 'description' => 'Human resources, payroll, attendance & policies'],
+            ['name' => 'Settings',    'slug' => 'settings',    'icon' => 'Settings',    'sort_order' => 10, 'is_default' => false, 'description' => 'System settings'],
+            ['name' => 'Profile',     'slug' => 'profile',     'icon' => 'UserCircle',  'sort_order' => 11, 'is_default' => true],
         ];
 
         foreach ($topLevel as $mod) {
@@ -129,6 +130,86 @@ class ModuleSeeder extends Seeder
                     ['slug' => $item['slug']],
                     $item + [
                         'parent_id'  => $catIds[$catSlug],
+                        'sort_order' => $i + 1,
+                        'is_active'  => true,
+                        'is_default' => false,
+                    ]
+                );
+            }
+        }
+
+        // ── HR module tree ────────────────────────────────────────────────
+        // Mirrors the IDIMS HR menu: 1 root → 6 category groups → 24 leaves.
+        // Slugs use `hr.` prefix so they don't collide with anything else.
+        $hr = Module::where('slug', 'hr')->first();
+
+        $hrCategories = [
+            ['name' => 'HRMS Command',     'slug' => 'hr.command',    'icon' => 'LayoutDashboard', 'description' => 'HRMS overview & performance improvement plans'],
+            ['name' => 'HR Core',          'slug' => 'hr.core',       'icon' => 'Users',           'description' => 'Employees, departments, designations, roles & KPIs'],
+            ['name' => 'HR Operations',    'slug' => 'hr.operations', 'icon' => 'Workflow',        'description' => 'Recruitment, onboarding & exit'],
+            ['name' => 'Time & Pay Inputs','slug' => 'hr.time_pay',   'icon' => 'IndianRupee',     'description' => 'Payroll, attendance, leave & expenses'],
+            ['name' => 'Document & Evidence','slug' => 'hr.documents','icon' => 'FileText',        'description' => 'Policies, templates, document masters'],
+            ['name' => 'AI Intelligence',  'slug' => 'hr.ai',         'icon' => 'Brain',           'description' => 'HR reports & AI-driven master data'],
+        ];
+
+        $hrCatIds = [];
+        foreach ($hrCategories as $i => $cat) {
+            $row = Module::updateOrCreate(
+                ['slug' => $cat['slug']],
+                $cat + ['parent_id' => $hr->id, 'sort_order' => $i + 1, 'is_active' => true, 'is_default' => false]
+            );
+            $hrCatIds[$cat['slug']] = $row->id;
+        }
+
+        $hrLeaves = [
+            'hr.command' => [
+                ['name' => 'HRMS Overview', 'slug' => 'hr.overview', 'icon' => 'LayoutGrid',     'description' => 'Headcount, joinings, exits & headline KPIs'],
+                ['name' => 'PIP',           'slug' => 'hr.pip',      'icon' => 'ClipboardCheck', 'description' => 'Performance improvement plans'],
+            ],
+            'hr.core' => [
+                ['name' => 'Employee',    'slug' => 'hr.employee',    'icon' => 'User',         'description' => 'Employee master with personal & job data'],
+                ['name' => 'Department',  'slug' => 'hr.department',  'icon' => 'Building2',    'description' => 'Department setup for employee assignment'],
+                ['name' => 'Designation', 'slug' => 'hr.designation', 'icon' => 'BadgeCheck',   'description' => 'Job titles used in offer letters & HR docs'],
+                ['name' => 'Role',        'slug' => 'hr.role',        'icon' => 'UserCog',      'description' => 'Functional roles for module-level access'],
+                ['name' => "KPI's",       'slug' => 'hr.kpis',        'icon' => 'TrendingUp',   'description' => 'Goal-setting & performance metrics'],
+            ],
+            'hr.operations' => [
+                ['name' => 'Recruitment',         'slug' => 'hr.recruitment', 'icon' => 'UserPlus',  'description' => 'Job posts, candidates & interviews'],
+                ['name' => 'Employee Onboarding', 'slug' => 'hr.onboarding',  'icon' => 'UserCheck', 'description' => 'New-hire workflow & documentation'],
+                ['name' => 'Exit Management',     'slug' => 'hr.exit',        'icon' => 'LogOut',    'description' => 'Resignations, F&F, exit checklist'],
+            ],
+            'hr.time_pay' => [
+                ['name' => 'Payroll',            'slug' => 'hr.payroll',            'icon' => 'IndianRupee',  'description' => 'Salary processing, payslips, statutory'],
+                ['name' => 'Calculation Master', 'slug' => 'hr.calculation_master', 'icon' => 'Calculator',   'description' => 'Pay heads, formulas, tax slabs'],
+                ['name' => 'Attendance',         'slug' => 'hr.attendance',         'icon' => 'CalendarCheck','description' => 'Daily attendance & shift tracking'],
+                ['name' => 'Leave',              'slug' => 'hr.leave',              'icon' => 'CalendarOff',  'description' => 'Leave requests, balance & policy'],
+                ['name' => 'Expense Management', 'slug' => 'hr.expense',            'icon' => 'Receipt',      'description' => 'Reimbursable expenses & approvals'],
+            ],
+            'hr.documents' => [
+                ['name' => 'Dashboard',           'slug' => 'hr.doc_dashboard',  'icon' => 'LayoutGrid',     'description' => 'Document analytics & broadcast status'],
+                ['name' => 'Templates',           'slug' => 'hr.templates',      'icon' => 'FileText',       'description' => 'Letter, contract & policy templates'],
+                ['name' => 'Policies',            'slug' => 'hr.policies',       'icon' => 'BookOpen',       'description' => 'Company policy library'],
+                ['name' => 'Broadcast Centre',    'slug' => 'hr.broadcast',      'icon' => 'Megaphone',      'description' => 'Push policies/notices to employees'],
+                // The "MASTERS" sub-section in the HR Document column — flattened
+                // here as direct leaves under hr.documents because the modules
+                // table is 3-level deep. Slugs include `master` for clarity.
+                ['name' => 'Document Category',       'slug' => 'hr.doc_category',  'icon' => 'FolderOpen',  'description' => 'Document category master'],
+                ['name' => 'Document Types',          'slug' => 'hr.doc_types',     'icon' => 'FileBadge',   'description' => 'Document type definitions'],
+                ['name' => 'Doc Generation Rules',    'slug' => 'hr.doc_gen_rules', 'icon' => 'Settings2',   'description' => 'Auto-generation rule sets'],
+                ['name' => 'Custom Fields',           'slug' => 'hr.custom_fields', 'icon' => 'PlusSquare',  'description' => 'Custom data fields for HR documents'],
+            ],
+            'hr.ai' => [
+                ['name' => 'HR Reports', 'slug' => 'hr.reports',   'icon' => 'BarChart3',    'description' => 'Standard & custom HR analytics reports'],
+                ['name' => 'AI Master',  'slug' => 'hr.ai_master', 'icon' => 'Sparkles',     'description' => 'AI configuration & training data'],
+            ],
+        ];
+
+        foreach ($hrLeaves as $catSlug => $items) {
+            foreach ($items as $i => $item) {
+                Module::updateOrCreate(
+                    ['slug' => $item['slug']],
+                    $item + [
+                        'parent_id'  => $hrCatIds[$catSlug],
                         'sort_order' => $i + 1,
                         'is_active'  => true,
                         'is_default' => false,

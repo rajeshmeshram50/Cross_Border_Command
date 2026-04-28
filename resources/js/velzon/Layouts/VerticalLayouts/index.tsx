@@ -1,9 +1,10 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import PropTypes from "prop-types";
 import { Link } from "react-router-dom";
 import { Collapse } from 'reactstrap';
 // Import Data
 import navdata from "../LayoutMenuData";
+import { subscribeMenu } from "../menuState";
 //i18n
 import { withTranslation } from "react-i18next";
 import withRouter from "../../Components/Common/withRouter";
@@ -11,6 +12,13 @@ import { useSelector } from "react-redux";
 import { createSelector } from 'reselect';
 
 const VerticalLayout = (props : any) => {
+    // Re-render this layout whenever any sidebar menu item is toggled. The
+    // open/closed state lives in a module-level Set (see ../menuState.ts);
+    // navdata() reads from it on every call, so bumping `_tick` here re-runs
+    // navdata and the sidebar reflects the new open/closed state.
+    const [, setTick] = useState(0);
+    useEffect(() => subscribeMenu(() => setTick((t) => t + 1)), []);
+
     const navData = navdata().props.children;
     const path = props.router.location.pathname;
 
