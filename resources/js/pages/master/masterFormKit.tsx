@@ -2,15 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 
-/**
- * Custom dropdown matching the master-modal style:
- *   - clean white menu with soft shadow, 10px radius
- *   - subtle hover tint + indigo-wash for the active item
- *   - chevron rotates on open and tints indigo on focus
- *
- * Supports both uncontrolled (defaultValue) and controlled (value + onChange)
- * usage — the hidden <input name> stays in sync either way so FormData works.
- */
+
 export function MasterSelect({
   name,
   value,

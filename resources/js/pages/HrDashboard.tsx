@@ -21,12 +21,10 @@ const LEAF_ICONS: Record<string, string> = {
 const leafIcon = (name?: string) => (name && LEAF_ICONS[name]) || 'ri-file-list-3-line';
 
 const CATEGORY_STYLES: Record<string, { color: string; gradient: string; icon: string }> = {
-  'hr.command':    { color: '#405189', gradient: 'linear-gradient(135deg,#405189,#6691e7)', icon: 'ri-dashboard-3-line' },
-  'hr.core':       { color: '#0ab39c', gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)', icon: 'ri-team-line' },
-  'hr.operations': { color: '#f7b84b', gradient: 'linear-gradient(135deg,#f7b84b,#fad07e)', icon: 'ri-briefcase-line' },
-  'hr.time_pay':   { color: '#7c5cfc', gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)', icon: 'ri-time-line' },
-  'hr.documents':  { color: '#299cdb', gradient: 'linear-gradient(135deg,#299cdb,#63bcec)', icon: 'ri-file-list-3-line' },
-  'hr.ai':         { color: '#e83e8c', gradient: 'linear-gradient(135deg,#e83e8c,#ef79b0)', icon: 'ri-sparkling-line' },
+  'hr.command':   { color: '#405189', gradient: 'linear-gradient(135deg,#405189,#6691e7)', icon: 'ri-dashboard-3-line' },
+  'hr.core':      { color: '#0ab39c', gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)', icon: 'ri-team-line' },
+  'hr.time_pay':  { color: '#7c5cfc', gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)', icon: 'ri-time-line' },
+  'hr.documents': { color: '#299cdb', gradient: 'linear-gradient(135deg,#299cdb,#63bcec)', icon: 'ri-file-list-3-line' },
 };
 
 export default function HrDashboard() {
