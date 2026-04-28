@@ -159,7 +159,13 @@ function MasterPageInner({
   };
 
   const resolveRefLabel = (refSlug: string, refLabel: string | undefined, value: any): string => {
-    const rows = refData[refSlug] || [];
+    if (value == null || value === '') return '';
+    // Self-references resolve from the live `records` list. refData is loaded
+    // once on mount and not re-fetched after add/edit/delete, so it can drift
+    // out of sync with the master's own data — e.g. a brand-new parent row
+    // created seconds ago wouldn't be in refData yet, so the column would show
+    // the raw id instead of the name.
+    const rows = refSlug === cfg.slug ? records : (refData[refSlug] || []);
     const row = rows.find(r => String(r.id) === String(value));
     if (!row) return String(value ?? '');
     const lf = refLabel || labelFieldForRef(refSlug);
@@ -196,6 +202,28 @@ function MasterPageInner({
   }, [cfg.slug, refSlugs.join('|')]);
 
   const editing = editingId != null ? records.find(r => r.id === editingId) : null;
+
+  // Records scoped to the *exact* tenant tuple (client_id, branch_id) the
+  // current user would stamp onto a new row. Used by `autogen` so number
+  // sequences (e.g. DEPT-001, DEPT-002) restart per client/branch instead of
+  // running globally across the visible rows. List view, KPIs and search
+  // continue to use `records` / `filteredRecords` so users still see every
+  // shared row they're permitted to view.
+  const tenantScopedRecords = useMemo(() => {
+    if (!user) return [];
+    const eq = (a: any, b: any) => String(a ?? '') === String(b ?? '');
+    if (user.user_type === 'super_admin') {
+      // Super-admin adds default to (null, null) — the "global" pool.
+      return records.filter(r => r.client_id == null && r.branch_id == null);
+    }
+    if (user.user_type === 'client_admin') {
+      return records.filter(r => eq(r.client_id, user.client_id) && r.branch_id == null);
+    }
+    if (user.user_type === 'branch_user') {
+      return records.filter(r => eq(r.client_id, user.client_id) && eq(r.branch_id, user.branch_id));
+    }
+    return records;
+  }, [records, user]);
 
   // Filter rows by search input across all column accessors + ownership fields
   const filteredRecords = useMemo(() => {
@@ -571,7 +599,7 @@ function MasterPageInner({
     });
     return cols;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, ownershipCols, refData, caps]);
+  }, [cfg, ownershipCols, refData, caps, records]);
 
   const renderOwnership = (key: string, row: any): React.ReactNode => {
     if (key === '__client') {
@@ -667,6 +695,54 @@ function MasterPageInner({
 
       {/* "What you are doing here" — gradient card with colored step chips */}
       <WhatYouDoHere cfg={cfg} />
+
+      {/* KPI strip — only when the master config opts in via `kpis` */}
+      {cfg.kpis && cfg.kpis.length > 0 && (
+        <Row className="g-2 mb-3 align-items-stretch">
+          {cfg.kpis.map(k => {
+            const value = k.compute(records);
+            return (
+              <Col key={k.label} xl={2} md={4} sm={6} xs={12}>
+                <div
+                  style={{
+                    borderRadius: 12,
+                    border: '1px solid var(--vz-border-color)',
+                    background: '#ffffff',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                    padding: '14px 16px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    height: '100%',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div>
+                      <p style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 6px' }}>
+                        {k.label}
+                      </p>
+                      <h3 style={{ fontSize: 22, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                        {value.toLocaleString()}
+                      </h3>
+                    </div>
+                    <div
+                      style={{
+                        width: 38, height: 38, borderRadius: 10,
+                        background: k.gradient,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                        boxShadow: '0 4px 10px rgba(0,0,0,0.10)',
+                      }}
+                    >
+                      <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
+                    </div>
+                  </div>
+                </div>
+              </Col>
+            );
+          })}
+        </Row>
+      )}
 
       {/* Main card — search + Add New row, then table */}
       <Row>
@@ -806,7 +882,7 @@ function MasterPageInner({
                     </div>
                   )}
                   <Row className="g-3">
-                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan))}
+                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords))}
                   </Row>
                 </div>
               );
@@ -1070,6 +1146,7 @@ function renderField(
   fieldErrors: Record<string, string> = {},
   clearFieldError: (name: string) => void = () => {},
   defaultSpan: number = 4,
+  allRecords: any[] = [],
 ): React.ReactNode {
   if (f.sec) {
     return (
@@ -1085,10 +1162,16 @@ function renderField(
   }
 
   const span = f.full ? 12 : f.t === 'textarea' ? 12 : defaultSpan;
-  const defaultVal = editing?.[f.n] ?? '';
+  // Auto-generated fields are locked in BOTH add and edit flows: on add the
+  // value is computed from existing records, on edit we keep whatever was
+  // saved. Either way the input is rendered read-only so users can't override
+  // the auto-managed value.
+  const isAutogen = !!f.autogen && !viewOnly;
+  const autogenVal = (isAutogen && editing == null) ? f.autogen!(allRecords) : '';
+  const defaultVal = (isAutogen && editing == null) ? autogenVal : (editing?.[f.n] ?? '');
   const err = fieldErrors[f.n];
   const onFieldChange = () => clearFieldError(f.n);
-  const icon = iconForField(f);
+  const icon = isAutogen ? 'ri-magic-line' : iconForField(f);
   const isTextarea = f.t === 'textarea';
   const isSelect = !!(f.ref || f.t === 'select');
 
@@ -1096,29 +1179,40 @@ function renderField(
   if (f.ref) {
     const rows = refData[f.ref] || [];
     const labelField = f.refL || labelFieldForRef(f.ref);
-    const options = rows.map((r: any) => ({
+    // Self-references: hide the row being edited so a department can't pick
+    // itself as its own parent (which would create a cycle).
+    const refRows = (f.ref === undefined || editing == null)
+      ? rows
+      : rows.filter((r: any) => String(r.id) !== String(editing.id));
+    let options = refRows.map((r: any) => ({
       value: String(r.id),
       label: String(r[labelField] ?? r.id),
     }));
+    if (f.noneLabel) {
+      options = [{ value: '', label: f.noneLabel }, ...options];
+    }
     input = (
       <MasterSelect
         name={f.n}
         defaultValue={defaultVal == null ? '' : String(defaultVal)}
         options={options}
-        placeholder={`Select ${f.l}…`}
+        placeholder={f.noneLabel || `Select ${f.l}…`}
         disabled={viewOnly}
         invalid={!!err}
         onChange={onFieldChange}
       />
     );
   } else if (f.t === 'select') {
-    const options = normalizeOpts(f.opts);
+    let options = normalizeOpts(f.opts);
+    if (f.noneLabel) {
+      options = [{ value: '', label: f.noneLabel }, ...options];
+    }
     input = (
       <MasterSelect
         name={f.n}
         defaultValue={defaultVal || (f.r ? (options[0]?.value ?? '') : '')}
         options={options}
-        placeholder="Select…"
+        placeholder={f.noneLabel || 'Select…'}
         disabled={viewOnly}
         invalid={!!err}
         onChange={onFieldChange}
@@ -1154,8 +1248,12 @@ function renderField(
         type={f.t === 'email' ? 'email' : f.t === 'number' ? 'number' : 'text'}
         name={f.n}
         placeholder={f.p}
+        // `key` forces a remount when the auto-generated value changes between
+        // opens of the Add modal so React picks up the new defaultValue.
+        key={isAutogen ? autogenVal : undefined}
         defaultValue={defaultVal}
         disabled={viewOnly}
+        readOnly={isAutogen}
         invalid={!!err}
         onInput={onFieldChange}
       />
@@ -1164,8 +1262,26 @@ function renderField(
 
   return (
     <Col md={span} key={f.n || `f-${i}`}>
-      <Label>
-        {f.l}{f.r && <span className="req-star">*</span>}
+      <Label className="d-flex align-items-center gap-2">
+        <span>{f.l}{f.r && <span className="req-star">*</span>}</span>
+        {isAutogen && (
+          <span
+            className="badge rounded-pill text-uppercase fw-semibold"
+            style={{
+              fontSize: 9.5,
+              letterSpacing: '0.06em',
+              padding: '3px 8px',
+              background: 'linear-gradient(135deg,#7c5cfc,#a993fd)',
+              color: '#fff',
+              boxShadow: '0 2px 6px rgba(124,92,252,0.30)',
+            }}
+            title={editing == null
+              ? 'Auto-generated — increments from the highest existing code'
+              : 'Auto-generated — locked once a record is created'}
+          >
+            <i className="ri-magic-line" style={{ fontSize: 10, marginRight: 3 }} />Auto
+          </span>
+        )}
       </Label>
       <div className={`master-field${isTextarea ? ' ta' : ''}${isSelect ? ' sel' : ''}`}>
         <i className={`${icon} master-field-icon${isTextarea ? ' ta' : ''}`} />

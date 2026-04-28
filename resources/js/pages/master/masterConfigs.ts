@@ -13,10 +13,27 @@ export type FieldDef = {
   opts?: FieldOption[];     // select options — string or { value, label } for distinct display/payload
   ref?: string;             // ref to another master key (dropdown from that master's data)
   refL?: string;            // label field on the referenced master
+  // For optional selects/refs: prepend an explicit empty-value option with this
+  // label (e.g. "— None (Root Department) —") so users can clear a previously
+  // chosen value. Also doubles as the placeholder when nothing is selected.
+  noneLabel?: string;
+  // Auto-generated value for the Add flow. Receives the live records list and
+  // returns the next value (e.g. "DEPT-003"). The field renders read-only when
+  // adding so users can't override it; existing records keep their saved value.
+  autogen?: (records: any[]) => string;
   sec?: string;             // section divider (no input, header only)
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
+
+// Optional KPI strip rendered above the search bar on a master page.
+// `compute` receives the full record array and returns the KPI value.
+export type KpiDef = {
+  label: string;
+  icon: string;        // remix icon class
+  gradient: string;    // CSS linear-gradient for the icon tile + top accent stripe
+  compute: (records: any[]) => number;
+};
 
 export type MasterConfig = {
   key: string;
@@ -35,6 +52,7 @@ export type MasterConfig = {
   uFields?: string[];
   data: any[];
   wtd: WtdStep[];
+  kpis?: KpiDef[];
 };
 
 /** Turn opts (string | {value,label}) into uniform {value,label} pairs for rendering. */
@@ -136,31 +154,72 @@ const C: Record<string, MasterConfig> = {
   },
 
   departments: {
-    key: 'departments', slug: 'departments', title: 'Departments', titleSingular: 'Department',
+    key: 'departments', slug: 'departments', title: 'Department Master', titleSingular: 'Department',
     icon: 'ri-building-line', iconColor: 'primary', iconBg: 'primary',
-    desc: 'Organizational units — assign staff & route approvals',
+    desc: 'Manage all departments, structure, ownership, and readiness for HR operations',
     cat: 'Identity & Entity',
     fields: [
-      { n: 'name', l: 'Department Name', t: 'text', r: true, p: 'e.g. Sales, HR, Accounts' },
-      { n: 'description', l: 'Description', t: 'textarea', p: 'Brief description', full: true },
+      { n: 'name', l: 'Department Name', t: 'text', r: true, p: 'e.g. Software Development' },
+      { n: 'code', l: 'Department Code', t: 'text', r: true, p: 'e.g. DEPT-001',
+        autogen: (records: any[]) => {
+          const max = records.reduce((m: number, r: any) => {
+            const match = /^DEPT-(\d+)$/i.exec(String(r.code || '').trim());
+            const n = match ? parseInt(match[1], 10) : 0;
+            return n > m ? n : m;
+          }, 0);
+          return `DEPT-${String(max + 1).padStart(3, '0')}`;
+        } },
+      // Self-reference: parent_id points to another department row (refL = 'name').
+      // noneLabel prepends a "Root Department" entry so a department can be set as top-level.
+      { n: 'parent_id', l: 'Parent Department', t: 'select', ref: 'departments', refL: 'name',
+        noneLabel: '— None (Root Department) —' },
+      // Display "Name — Designation" in the dropdown but persist only the name as the value.
+      { n: 'head', l: 'Department Head', t: 'select', noneLabel: '— Select Employee —', opts: [
+        { value: 'Gaurav Jagtap',   label: 'Gaurav Jagtap — Software Developer' },
+        { value: 'Atharv Patekar',  label: 'Atharv Patekar — QA Engineer' },
+        { value: 'Parth Lakare',    label: 'Parth Lakare — Business Analyst' },
+        { value: 'Sonal Pawar',     label: 'Sonal Pawar — HR Executive' },
+        { value: 'Nisha Kapoor',    label: 'Nisha Kapoor — Finance Manager' },
+        { value: 'Kiran Patel',     label: 'Kiran Patel — Sales Lead' },
+        { value: 'Manoj Gawade',    label: 'Manoj Gawade — Logistics Manager' },
+        { value: 'Durgesh Urkude',  label: 'Durgesh Urkude — Sales Manager' },
+        { value: 'Ankit Bhosale',   label: 'Ankit Bhosale — Purchase Manager' },
+        { value: 'Priti Shende',    label: 'Priti Shende — Accounts Manager' },
+        { value: 'Sandeep Kadu',    label: 'Sandeep Kadu — Logistics Manager' },
+        { value: 'Rohit Nagpure',   label: 'Rohit Nagpure — Sales Executive' },
+      ] },
+      { n: 'email', l: 'Department Email', t: 'email', p: 'e.g. sd@enterprise.com' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
-    cols: ['name', 'description', 'status'],
-    colL: ['Department Name', 'Description', 'Status'],
-    uFields: ['name'],
-    data: [
-      { id: 1, name: 'Sales', description: 'Revenue generation, client relations', status: 'Active' },
-      { id: 2, name: 'HR', description: 'Recruitment, employee records', status: 'Active' },
-      { id: 3, name: 'Accounts', description: 'Financial transactions, ledgers', status: 'Active' },
-      { id: 4, name: 'Logistics', description: 'Transportation, shipment coordination', status: 'Active' },
-      { id: 5, name: 'Purchase', description: 'Procurement, vendor management', status: 'Active' },
-      { id: 6, name: 'IT', description: 'Infrastructure, system maintenance', status: 'Active' },
-      { id: 7, name: 'Legal', description: 'Documentation, contract review', status: 'Active' },
-    ],
+    cols: ['code', 'name', 'parent_id', 'head', 'status'],
+    colL: ['Code', 'Department Name', 'Parent Dept', 'Head', 'Status'],
+    uFields: ['code'],
+    data: [],
     wtd: [
       { icon: 'ri-building-line', title: 'Name Your Department', desc: 'e.g. Sales, HR, Accounts' },
-      { icon: 'ri-file-text-line', title: 'Add Description', desc: 'What this department handles' },
+      { icon: 'ri-hashtag', title: 'Assign Code', desc: 'Unique code like DEPT-001' },
+      { icon: 'ri-user-star-line', title: 'Pick a Head', desc: 'The person owning the department' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Department available for assignment' },
+    ],
+    kpis: [
+      { label: 'Total Depts', icon: 'ri-building-line',
+        gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)',
+        compute: rs => rs.length },
+      { label: 'Active', icon: 'ri-checkbox-circle-line',
+        gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+        compute: rs => rs.filter(r => String(r.status).toLowerCase() === 'active').length },
+      { label: 'Head Assigned', icon: 'ri-user-star-line',
+        gradient: 'linear-gradient(135deg,#405189,#6691e7)',
+        compute: rs => rs.filter(r => r.head && String(r.head).trim() !== '').length },
+      { label: 'No Head', icon: 'ri-user-unfollow-line',
+        gradient: 'linear-gradient(135deg,#f06548,#f4907b)',
+        compute: rs => rs.filter(r => !r.head || String(r.head).trim() === '').length },
+      { label: 'Missing Config', icon: 'ri-error-warning-line',
+        gradient: 'linear-gradient(135deg,#f7b84b,#fcd07a)',
+        compute: rs => rs.filter(r => !r.email || String(r.email).trim() === '').length },
+      { label: 'Inactive', icon: 'ri-forbid-line',
+        gradient: 'linear-gradient(135deg,#878a99,#b9bcc6)',
+        compute: rs => rs.filter(r => String(r.status).toLowerCase() === 'inactive').length },
     ],
   },
 

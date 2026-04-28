@@ -73,7 +73,7 @@ class MasterController extends Controller
     private const SCHEMAS = [
         'company' => ['fields' => [['n' => 'company_name', 't' => 'text', 'r' => true], ['n' => 'short_code', 't' => 'text', 'r' => true], ['n' => 'gstin', 't' => 'text', 'r' => true], ['n' => 'pan', 't' => 'text', 'r' => true], ['n' => 'cin', 't' => 'text'], ['n' => 'iec', 't' => 'text'], ['n' => 'email', 't' => 'email'], ['n' => 'mobile', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'state', 't' => 'text'], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['company_name', 'gstin', 'pan']],
         'bank_accounts' => ['fields' => [['n' => 'bank_name', 't' => 'text', 'r' => true], ['n' => 'account_holder', 't' => 'text', 'r' => true], ['n' => 'account_number', 't' => 'text', 'r' => true], ['n' => 'ifsc_code', 't' => 'text', 'r' => true], ['n' => 'branch_name', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'swift_code', 't' => 'text', 'r' => true], ['n' => 'ad_code', 't' => 'text', 'r' => true], ['n' => 'is_primary', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['account_number', 'ifsc_code']],
-        'departments' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
+        'departments' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'parent_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'head', 't' => 'select'], ['n' => 'email', 't' => 'email'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code'], 'tenantScoped' => true],
         'roles' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'designations' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'countries' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'iso_code', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
@@ -447,9 +447,40 @@ class MasterController extends Controller
         $schema = self::SCHEMAS[$slug] ?? ['fields' => [], 'uFields' => []];
         $fields = $schema['fields'] ?? [];
         $uFields = $schema['uFields'] ?? [];
+        $tenantScoped = !empty($schema['tenantScoped']);
         $modelClass = $this->resolveModel($slug);
         $table = (new $modelClass)->getTable();
         $isComposite = count($uFields) > 1;
+
+        // For tenant-scoped masters, uniqueness is checked WITHIN the
+        // (client_id, branch_id) tuple the row will live under so different
+        // tenants can independently use the same value (e.g. each client
+        // starts numbering at DEPT-001). Determine that tuple now: on update
+        // we keep the existing row's tuple, on create we use the same logic
+        // as resolveOwnership() so the unique check matches what will be
+        // stamped during store().
+        $tenantClientId = null;
+        $tenantBranchId = null;
+        if ($tenantScoped) {
+            if ($id !== null) {
+                $existing = $modelClass::find($id);
+                $tenantClientId = $existing?->client_id;
+                $tenantBranchId = $existing?->branch_id;
+            } else {
+                [$tenantClientId, $tenantBranchId] = $this->resolveOwnership($request, $request->user());
+            }
+        }
+        $applyTenantScope = function ($rule) use ($tenantScoped, $tenantClientId, $tenantBranchId) {
+            if (!$tenantScoped) return $rule;
+            return $rule->where(function ($q) use ($tenantClientId, $tenantBranchId) {
+                $tenantClientId === null
+                    ? $q->whereNull('client_id')
+                    : $q->where('client_id', $tenantClientId);
+                $tenantBranchId === null
+                    ? $q->whereNull('branch_id')
+                    : $q->where('branch_id', $tenantBranchId);
+            });
+        };
 
         $rules = [];
         foreach ($fields as $f) {
@@ -478,7 +509,7 @@ class MasterController extends Controller
             // independently. Without that, picking a value once would block any
             // other row from using it even with a different second column.
             if (!$isComposite && in_array($f['n'], $uFields, true)) {
-                $rule = Rule::unique($table, $f['n']);
+                $rule = $applyTenantScope(Rule::unique($table, $f['n']));
                 if ($id) $rule = $rule->ignore($id);
                 $r[] = $rule;
             }
@@ -490,7 +521,7 @@ class MasterController extends Controller
         // Composite uniqueness — match the COMBINATION of all uFields
         if ($isComposite) {
             $first = $uFields[0];
-            $rule = Rule::unique($table, $first);
+            $rule = $applyTenantScope(Rule::unique($table, $first));
             foreach (array_slice($uFields, 1) as $other) {
                 $rule = $rule->where(function ($q) use ($other, $validated) {
                     $q->where($other, $validated[$other] ?? null);
