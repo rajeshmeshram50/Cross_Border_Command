@@ -44,11 +44,13 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
   const initials = `${branch.name.charAt(0)}${branch.name.split(' ')[1]?.charAt(0) || ''}`.toUpperCase();
 
   // ── Shared style tokens (mirrors ClientView / Profile palette) ──
+  // Background uses var(--vz-card-bg) so the surface flips automatically
+  // when the user switches between light and dark themes.
   const cardStyle: React.CSSProperties = {
     borderRadius: 20,
     border: '1px solid var(--vz-border-color)',
     boxShadow: '0 4px 24px rgba(64,81,137,0.08), 0 1px 2px rgba(64,81,137,0.04)',
-    background: 'linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%)',
+    background: 'var(--vz-card-bg)',
     overflow: 'hidden',
     transition: 'transform .18s ease, box-shadow .18s ease',
   };
@@ -71,7 +73,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
   const GRAD_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
 
   const SectionHeader = ({ title, gradient, icon, action }: { title: string; gradient: string; icon: string; action?: React.ReactNode }) => (
-    <div className="d-flex align-items-center gap-2 mb-3">
+    <div className="d-flex align-items-center gap-2 mb-2">
       <span
         className="d-inline-flex align-items-center justify-content-center rounded-3"
         style={{ width: 36, height: 36, background: gradient, boxShadow: '0 4px 10px rgba(64,81,137,0.2)' }}
@@ -85,6 +87,39 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
 
   return (
     <>
+      {/* Compact info-table — mirrors ClientView so card spacing & label/value
+          density stay consistent across both profile views. */}
+      <style>{`
+        .bv-info-table { font-size: 13px; line-height: 1.4; }
+        .bv-info-table th,
+        .bv-info-table td {
+          padding: 6px 0;
+          vertical-align: baseline;
+          border: none;
+          background: transparent !important;
+        }
+        .bv-info-table th {
+          width: 1%;
+          white-space: nowrap;
+          padding-right: 14px !important;
+          font-weight: 600;
+          color: var(--vz-heading-color, var(--vz-body-color)) !important;
+        }
+        .bv-info-table td {
+          padding-left: 0 !important;
+          word-break: break-word;
+          color: var(--vz-secondary-color);
+        }
+        [data-bs-theme="dark"] .bv-info-table td,
+        [data-layout-mode="dark"] .bv-info-table td {
+          color: rgba(255, 255, 255, 0.78);
+        }
+        [data-bs-theme="dark"] .bv-info-table th,
+        [data-layout-mode="dark"] .bv-info-table th {
+          color: rgba(255, 255, 255, 0.94) !important;
+        }
+      `}</style>
+
       {/* ── Page title + back + Edit ── */}
       <Row>
         <Col xs={12}>
@@ -230,7 +265,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
       </Card>
 
       {/* ── ROW 1 — Complete Profile (narrow) + About (wide) ── */}
-      <Row className="mt-1 g-3 align-items-stretch">
+      <Row className="mt-2 g-2 align-items-stretch">
         <Col xxl={4} lg={5}>
           <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
             <CardBody>
@@ -322,13 +357,13 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
       </Row>
 
       {/* ── ROW 2 — Info + Contact + Address ── */}
-      <Row className="g-3 mt-0 align-items-stretch">
+      <Row className="g-2 mt-2 align-items-stretch">
         <Col xxl={4} lg={4} md={6}>
           <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
             <CardBody>
               <SectionHeader title="Info" gradient={GRAD_PRIMARY} icon="ri-information-line" />
               <div className="table-responsive">
-                <table className="table table-borderless mb-0">
+                <table className="table table-borderless mb-0 bv-info-table">
                   <tbody>
                     <tr>
                       <th className="ps-0 text-nowrap" scope="row">Name :</th>
@@ -392,7 +427,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
               />
               {(branch.contact_person || branch.email || branch.phone) ? (
                 <div className="table-responsive">
-                  <table className="table table-borderless mb-0">
+                  <table className="table table-borderless mb-0 bv-info-table">
                     <tbody>
                       {branch.contact_person && (
                         <tr>
@@ -435,7 +470,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
               <SectionHeader title="Address" gradient={GRAD_INFO} icon="ri-map-pin-line" />
               {(branch.address || branch.city || branch.state) ? (
                 <div className="table-responsive">
-                  <table className="table table-borderless mb-0">
+                  <table className="table table-borderless mb-0 bv-info-table">
                     <tbody>
                       {branch.address && (
                         <tr>
@@ -482,7 +517,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
       </Row>
 
       {/* ── ROW 3 — Branch User + Description ── */}
-      <Row className="mb-3 g-3 mt-0 align-items-stretch">
+      <Row className="mb-3 g-2 mt-2 align-items-stretch">
         <Col xxl={4} lg={5} md={12}>
           <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
             <CardBody>

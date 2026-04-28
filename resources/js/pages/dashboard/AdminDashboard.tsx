@@ -184,7 +184,7 @@ export default function AdminDashboard() {
               <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Welcome back! Here's what's happening today.</p>
             </div>
             <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
-              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>Velzon</a></li>
+              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>IGC</a></li>
               <li className="breadcrumb-item active">Dashboard</li>
             </ol>
           </div>
