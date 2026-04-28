@@ -370,7 +370,7 @@ export default function Payments() {
             <h4 className="mb-sm-0">Revenue & Payments</h4>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Velzon</a></li>
+                <li className="breadcrumb-item"><a href="#">IGC</a></li>
                 <li className="breadcrumb-item active">Payments</li>
               </ol>
             </div>

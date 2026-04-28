@@ -8,13 +8,13 @@ import { ShimmerDashboard } from '../../components/ui/Shimmer';
 
 const COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
 
-// Indian-format currency: under ₹1L shows the actual rounded rupees with comma
-// grouping (₹85,000), then ₹1L–99L as "1.20L", then crores as "1.50Cr". Avoids
-// the previous bug where a hard / 1000 round shipped "₹0K" for sub-₹500 amounts
-// and "₹143K" for ₹142,761 — both confusing on a Total Paid card.
+// Indian-format currency: under ₹1L shows real rupees with comma grouping and
+// up to 2 decimals so paise survive (₹1.18, ₹85,000), ₹1L–99L as "1.20L",
+// crores as "1.50Cr". Stripping decimals would have rendered a ₹1.18 total as
+// "₹1" on the Total Paid card.
 function formatINRCompact(n: number): string {
   const v = Math.max(0, Number(n) || 0);
-  if (v < 100000) return v.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  if (v < 100000) return v.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   if (v < 10000000) return (v / 100000).toFixed(2) + 'L';
   return (v / 10000000).toFixed(2) + 'Cr';
 }

@@ -12,11 +12,11 @@ const methodLabels: Record<string, string> = {
 };
 
 // Indian-format currency helper — under ₹1L shows real rupees with comma
-// grouping; ₹1L-99L as "1.20L"; crores as "1.50Cr". Avoids the previous
-// /1000 round which displayed "₹0K" for sub-₹500 amounts.
+// grouping and up to 2 decimals (so ₹1.18 doesn't collapse to ₹1); ₹1L-99L
+// as "1.20L"; crores as "1.50Cr".
 function formatINRCompact(n: number): string {
   const v = Math.max(0, Number(n) || 0);
-  if (v < 100000) return v.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  if (v < 100000) return v.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
   if (v < 10000000) return (v / 100000).toFixed(2) + 'L';
   return (v / 10000000).toFixed(2) + 'Cr';
 }
