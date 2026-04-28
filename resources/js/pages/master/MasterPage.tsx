@@ -918,7 +918,9 @@ function MasterPageInner({
         }
       `}</style>
       {/* Page title — designations gets the rich [icon|title+subtitle][Add] strip;
+          departments is rendered headerless (goes straight into KPI/table);
           all other masters keep the original [back][title][breadcrumb] layout. */}
+      {cfg.slug !== 'departments' && (
       <Row>
         <Col xs={12}>
           {cfg.slug === 'designations' ? (
@@ -1013,10 +1015,11 @@ function MasterPageInner({
           )}
         </Col>
       </Row>
+      )}
 
       {/* "What you are doing here" — hidden on the designations master so the
           page goes straight from the title strip into the KPI/table card. */}
-      {cfg.slug !== 'designations' && <WhatYouDoHere cfg={cfg} />}
+      {cfg.slug !== 'designations' && <WhatYouDoHere cfg={cfg} onAdd={openAdd} canAdd={caps.add} />}
 
       {/* KPI strip — only when the master config opts in via `kpis` */}
       {cfg.kpis && cfg.kpis.length > 0 && (
@@ -1105,9 +1108,10 @@ function MasterPageInner({
                       setDeptFilter={setDsnDeptFilter}
                     />
                   )}
-                  {/* Add button — shown here for non-designation masters; for
-                      designations the button now lives in the page title strip. */}
-                  {cfg.slug !== 'designations' && caps.add && (
+                  {/* Add button — shown here for most masters; designations puts
+                      it in the page title strip, departments puts it in the
+                      "What you are doing here" header row. */}
+                  {cfg.slug !== 'designations' && cfg.slug !== 'departments' && caps.add && (
                     <Button
                       color="secondary"
                       className="btn-label waves-effect waves-light rounded-pill"
@@ -1354,10 +1358,65 @@ const STEP_PALETTES: { grad: string; tint: string; border: string; accent: strin
   { grad: 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)', tint: 'linear-gradient(135deg, rgba(240,101,72,0.08), rgba(255,158,124,0.04))', border: 'rgba(240,101,72,0.22)', accent: '#f06548' },
 ];
 
-function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
+function WhatYouDoHere({ cfg, onAdd, canAdd }: { cfg: MasterConfig; onAdd?: () => void; canAdd?: boolean }) {
   const steps = cfg.wtd || [];
   const singular = cfg.titleSingular || cfg.title;
   const [open, setOpen] = useState(false);
+  // Departments collapses the body — only the heading + Add button row is shown.
+  const isDepartments = cfg.slug === 'departments';
+
+  // Heading content reused by both the collapsible (default) and static
+  // (departments) variants so the title styling stays in sync.
+  const heading = (
+    <div className="d-flex align-items-center gap-3">
+      <span
+        className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+        style={{
+          width: 40, height: 40,
+          background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
+          boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
+        }}
+      >
+        <i className="ri-lightbulb-flash-line" style={{ color: '#fff', fontSize: 18 }}></i>
+      </span>
+      <div>
+        <div className="fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 15 }}>
+          {cfg.title} — What you are doing here
+        </div>
+        <small className="text-muted">Quick 4-step guide to set up a {singular} record</small>
+      </div>
+    </div>
+  );
+
+  if (isDepartments) {
+    return (
+      <Card
+        className="border shadow-sm mb-3 overflow-hidden"
+        style={{
+          background: 'var(--vz-card-bg)',
+          borderColor: 'var(--vz-border-color)',
+          borderRadius: 16,
+        }}
+      >
+        <div
+          className="d-flex align-items-center justify-content-between flex-wrap gap-2 px-3 py-3"
+          style={{ background: 'transparent' }}
+        >
+          {heading}
+          {canAdd && onAdd && (
+            <Button
+              color="secondary"
+              className="btn-label waves-effect waves-light rounded-pill"
+              onClick={onAdd}
+            >
+              <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+              Add {singular}
+            </Button>
+          )}
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card
@@ -1380,24 +1439,7 @@ function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
           userSelect: 'none',
         }}
       >
-        <div className="d-flex align-items-center gap-3">
-          <span
-            className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-            style={{
-              width: 40, height: 40,
-              background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-              boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
-            }}
-          >
-            <i className="ri-lightbulb-flash-line" style={{ color: '#fff', fontSize: 18 }}></i>
-          </span>
-          <div>
-            <div className="fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 15 }}>
-              {cfg.title} — What you are doing here
-            </div>
-            <small className="text-muted">Quick 4-step guide to set up a {singular} record</small>
-          </div>
-        </div>
+        {heading}
         <span
           className="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary-subtle text-primary flex-shrink-0"
           style={{
