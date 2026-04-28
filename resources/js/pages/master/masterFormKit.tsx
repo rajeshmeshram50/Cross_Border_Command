@@ -358,19 +358,43 @@ export const MASTER_MODAL_CSS = `
       var(--vz-card-bg);
   }
   .master-modal label {
-    font-size: 11.5px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     margin-bottom: 6px;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    color: var(--vz-heading-color, var(--vz-body-color));
+    color: #405189;
+  }
+  [data-bs-theme="dark"] .master-modal label,
+  [data-layout-mode="dark"] .master-modal label {
+    color: #8aa1d9;
   }
   .master-modal label .req-star {
     color: #f06548;
     font-weight: 700;
     margin-left: 1px;
+  }
+  /* Subtle blue tint on input backgrounds to match the branded modal header. */
+  .master-modal .master-field .form-control,
+  .master-modal .master-field .form-select {
+    background: color-mix(in srgb, #6691e7 5%, var(--vz-card-bg)) !important;
+    border-color: color-mix(in srgb, #6691e7 20%, var(--vz-border-color)) !important;
+    transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  }
+  .master-modal .master-field .form-control:focus,
+  .master-modal .master-field .form-select:focus {
+    background: var(--vz-card-bg) !important;
+    border-color: #6691e7 !important;
+    box-shadow: 0 0 0 3px rgba(102,145,231,0.18) !important;
+  }
+  [data-bs-theme="dark"] .master-modal .master-field .form-control,
+  [data-bs-theme="dark"] .master-modal .master-field .form-select,
+  [data-layout-mode="dark"] .master-modal .master-field .form-control,
+  [data-layout-mode="dark"] .master-modal .master-field .form-select {
+    background: color-mix(in srgb, #6691e7 12%, var(--vz-card-bg)) !important;
   }
 
   /* Prefix-icon input groups */
@@ -402,6 +426,21 @@ export const MASTER_MODAL_CSS = `
   .master-field:has(.form-control:focus) .master-field-icon:not(.ta),
   .master-field:has(.form-select:focus) .master-field-icon {
     transform: translateY(-50%) scale(1.08);
+  }
+
+  /* Auto-generated fields (e.g. Designation Code) — visually flagged so the
+     user understands they can't edit it; the server fills it on save. */
+  .master-field .form-control.master-field-auto {
+    background: color-mix(in srgb, var(--vz-warning-rgb, 247, 184, 75) 12%, var(--vz-card-bg)) !important;
+    color: var(--vz-warning, #f7b84b) !important;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: not-allowed;
+  }
+  [data-bs-theme="dark"] .master-field .form-control.master-field-auto,
+  [data-layout-mode="dark"] .master-field .form-control.master-field-auto {
+    background: color-mix(in srgb, var(--vz-warning, #f7b84b) 18%, var(--vz-card-bg)) !important;
+    color: #ffd47a !important;
   }
 
   /* Custom MasterSelect — replaces native <select> dropdowns */

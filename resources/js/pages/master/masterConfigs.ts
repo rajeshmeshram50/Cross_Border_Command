@@ -13,7 +13,10 @@ export type FieldDef = {
   opts?: FieldOption[];     // select options — string or { value, label } for distinct display/payload
   ref?: string;             // ref to another master key (dropdown from that master's data)
   refL?: string;            // label field on the referenced master
+  refLFmt?: string;         // composite label template, e.g. "{name} ({level})" — overrides refL
   sec?: string;             // section divider (no input, header only)
+  auto?: boolean;           // server-generated value (e.g. auto-numbered code); rendered read-only
+  hint?: string;            // small italic helper text shown next to the label
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
@@ -194,21 +197,42 @@ const C: Record<string, MasterConfig> = {
     desc: 'Job titles shown on letters, profiles & HR records',
     cat: 'Identity & Entity',
     fields: [
-      { n: 'name', l: 'Designation Name', t: 'text', r: true, p: 'e.g. Software Developer' },
-      { n: 'description', l: 'Description', t: 'textarea', p: 'Optional', full: true },
+      { n: 'name', l: 'Designation Name', t: 'text', r: true, p: 'e.g., Senior Software Engineer' },
+      { n: 'code', l: 'Designation Code', t: 'text', auto: true, hint: '(auto-generated)', p: 'DGN-XXX' },
+      { n: 'department_id', l: 'Department', t: 'select', ref: 'departments', refL: 'name', p: '— All Departments —' },
+      { n: 'level', l: 'Designation Level', t: 'select', r: true, p: '— Select Designation Level —', opts: ['Director / CEO', 'Head of Department (HOD)', 'Team Leader', 'Executive', 'Employee', 'Intern / Trainee'] },
+      { n: 'reports_to_id', l: 'Reports To', t: 'select', ref: 'designations', refL: 'name', refLFmt: '{name} ({level})', p: '— None (Top Level) —' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
-    cols: ['name', 'description', 'status'],
-    colL: ['Designation Name', 'Description', 'Status'],
-    uFields: ['name'],
+    cols: ['code', 'name', 'department_id', 'level', 'reports_to_id', 'status'],
+    colL: ['Code', 'Designation Name', 'Department', 'Designation Level', 'Reports To', 'Status'],
+    uFields: ['name', 'code'],
+    // Seed list — used as the Reports-To fallback when no records exist yet,
+    // and as starter data so the dropdown is never empty during onboarding.
     data: [
-      { id: 1, name: 'Software Developer', description: 'Full-stack development', status: 'Active' },
-      { id: 2, name: 'Operations Manager', description: 'Manages operations', status: 'Active' },
-      { id: 3, name: 'HR Executive', description: 'HR operations', status: 'Active' },
+      { id: 1,  name: 'CEO',                       code: 'DGN-001', level: 'Director / CEO',           status: 'Active' },
+      { id: 2,  name: 'VP Engineering',            code: 'DGN-002', level: 'Director / CEO',           status: 'Active' },
+      { id: 3,  name: 'IT Department Head',        code: 'DGN-003', level: 'Head of Department (HOD)', status: 'Active' },
+      { id: 4,  name: 'HR Manager',                code: 'DGN-004', level: 'Head of Department (HOD)', status: 'Active' },
+      { id: 5,  name: 'Finance Head',              code: 'DGN-005', level: 'Head of Department (HOD)', status: 'Active' },
+      { id: 6,  name: 'QA Testing Lead',           code: 'DGN-006', level: 'Team Leader',              status: 'Active' },
+      { id: 7,  name: 'Business Analyst Lead',     code: 'DGN-007', level: 'Team Leader',              status: 'Active' },
+      { id: 8,  name: 'Senior Software Engineer',  code: 'DGN-008', level: 'Executive',                status: 'Active' },
+      { id: 9,  name: 'Senior QA Engineer',        code: 'DGN-009', level: 'Executive',                status: 'Active' },
+      { id: 10, name: 'Sr. Business Analyst',      code: 'DGN-010', level: 'Executive',                status: 'Active' },
+      { id: 11, name: 'HR Executive',              code: 'DGN-011', level: 'Executive',                status: 'Active' },
+      { id: 12, name: 'Finance Analyst',           code: 'DGN-012', level: 'Executive',                status: 'Active' },
+      { id: 13, name: 'Software Engineer',         code: 'DGN-013', level: 'Employee',                 status: 'Active' },
+      { id: 14, name: 'QA Engineer',               code: 'DGN-014', level: 'Employee',                 status: 'Active' },
+      { id: 15, name: 'Business Analyst',          code: 'DGN-015', level: 'Employee',                 status: 'Active' },
+      { id: 16, name: 'HR Associate',              code: 'DGN-016', level: 'Employee',                 status: 'Active' },
+      { id: 17, name: 'Finance Associate',         code: 'DGN-017', level: 'Employee',                 status: 'Active' },
+      { id: 18, name: 'Software Intern',           code: 'DGN-018', level: 'Intern / Trainee',         status: 'Active' },
+      { id: 19, name: 'HR Intern',                 code: 'DGN-019', level: 'Intern / Trainee',         status: 'Active' },
     ],
     wtd: [
       { icon: 'ri-briefcase-4-line', title: 'Add Designation Title', desc: 'e.g. Operations Manager' },
-      { icon: 'ri-file-text-line', title: 'Appears On HR Docs', desc: 'Letters, profiles, records' },
+      { icon: 'ri-stack-line', title: 'Pick Level & Reporting', desc: 'Hierarchy + manager link' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Designation available for staff' },
     ],
   },

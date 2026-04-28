@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card, CardBody, CardHeader, Row, Col,
@@ -74,6 +74,10 @@ function MasterPageInner({
   const [viewOnly, setViewOnly] = useState(false);
   const [saving, setSaving] = useState(false);
   const [searchInput, setSearchInput] = useState('');
+  // Designation-master-specific filter state. Only used when cfg.slug === 'designations'.
+  const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
+  const [dsnLevelFilter, setDsnLevelFilter] = useState<string>('all');
+  const [dsnDeptFilter, setDsnDeptFilter] = useState<string>('all');
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
@@ -166,6 +170,23 @@ function MasterPageInner({
     return String(row[lf] ?? value);
   };
 
+  // Refetches every referenced master's rows. Used both on initial mount AND
+  // every time the form modal opens — that way a department added in another
+  // master shows up in this master's Department dropdown without a page reload.
+  const fetchRefs = useCallback(async () => {
+    if (refSlugs.length === 0) return;
+    const pairs = await Promise.all(refSlugs.map(s => {
+      const refCfg = getMasterConfig(s);
+      const url = refCfg ? masterEndpoint(refCfg) : `/master/${s}`;
+      return api.get(url)
+        .then(r => [s, Array.isArray(r.data) ? r.data : []] as const)
+        .catch(() => [s, [] as any[]] as const);
+    }));
+    const next: Record<string, any[]> = {};
+    for (const [k, v] of pairs) next[k] = v;
+    setRefData(next);
+  }, [refSlugs.join('|')]);
+
   // Load records whenever cfg changes
   useEffect(() => {
     let aborted = false;
@@ -179,16 +200,7 @@ function MasterPageInner({
       if (!aborted) setRecords(Array.isArray(r.data) ? r.data : []);
     }).catch(() => { if (!aborted) setRecords([]); });
 
-    const loadRefs = Promise.all(refSlugs.map(s => {
-      const refCfg = getMasterConfig(s);
-      const url = refCfg ? masterEndpoint(refCfg) : `/master/${s}`;
-      return api.get(url).then(r => [s, Array.isArray(r.data) ? r.data : []] as const).catch(() => [s, [] as any[]] as const);
-    })).then(pairs => {
-      if (aborted) return;
-      const next: Record<string, any[]> = {};
-      for (const [k, v] of pairs) next[k] = v;
-      setRefData(next);
-    });
+    const loadRefs = fetchRefs();
 
     Promise.all([loadRecords, loadRefs]).finally(() => { if (!aborted) setLoading(false); });
 
@@ -200,12 +212,25 @@ function MasterPageInner({
   // Filter rows by search input across all column accessors + ownership fields
   const filteredRecords = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
-    if (!q) return records;
+    const isDsn = cfg.slug === 'designations';
     const searchableKeys = [
       ...cfg.cols,
       'client_name', 'branch_name', 'creator_name',
     ];
     return records.filter(row => {
+      // Designation-master extra filters: Status / Level / Dept dropdowns.
+      if (isDsn) {
+        if (dsnStatusFilter !== 'all') {
+          if (String(row.status ?? '').toLowerCase() !== dsnStatusFilter.toLowerCase()) return false;
+        }
+        if (dsnLevelFilter !== 'all') {
+          if (String(row.level ?? '') !== dsnLevelFilter) return false;
+        }
+        if (dsnDeptFilter !== 'all') {
+          if (String(row.department_id ?? '') !== String(dsnDeptFilter)) return false;
+        }
+      }
+      if (!q) return true;
       for (const key of searchableKeys) {
         const f = cfg.fields.find(ff => ff.n === key);
         const val = f?.ref ? resolveRefLabel(f.ref, f.refL, row[key]) : row[key];
@@ -214,10 +239,42 @@ function MasterPageInner({
       return false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, searchInput, cfg, refData]);
+  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter]);
 
-  const openAdd = () => { setFieldErrors({}); setEditingId(null); setViewOnly(false); setModalOpen(true); };
-  const openEdit = (row: any, readonly = false) => { setFieldErrors({}); setEditingId(row.id); setViewOnly(readonly); setModalOpen(true); };
+  // Effective ref-data passed to renderField. For self-referential refs (e.g.
+  // Designation's "Reports To" → Designations) we want the dropdown to reflect
+  // the user's *current* records (so a freshly-added designation appears as a
+  // valid manager immediately). When the master has no rows yet, fall back to
+  // the seed data so the dropdown is never empty during onboarding.
+  const effectiveRefData = useMemo(() => {
+    const next: Record<string, any[]> = { ...refData };
+    const selfList = records.length > 0 ? records : (cfg.data || []);
+    if (selfList.length > 0) next[cfg.slug] = selfList;
+    // Also seed any other ref this config points at when its API came back empty.
+    for (const f of cfg.fields) {
+      if (f.ref && (!next[f.ref] || next[f.ref].length === 0)) {
+        const refCfg = getMasterConfig(f.ref);
+        if (refCfg?.data?.length) next[f.ref] = refCfg.data;
+      }
+    }
+    return next;
+  }, [refData, records, cfg]);
+
+  const openAdd = () => {
+    setFieldErrors({});
+    setEditingId(null);
+    setViewOnly(false);
+    setModalOpen(true);
+    // Refresh referenced masters so dropdowns reflect anything added elsewhere.
+    fetchRefs();
+  };
+  const openEdit = (row: any, readonly = false) => {
+    setFieldErrors({});
+    setEditingId(row.id);
+    setViewOnly(readonly);
+    setModalOpen(true);
+    fetchRefs();
+  };
 
   // Clients-page style compact action button
   const ActionBtn = ({
@@ -297,6 +354,8 @@ function MasterPageInner({
     const errs: Record<string, string> = {};
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
+      // Auto-generated fields are filled by the server, never the user.
+      if (f.auto) continue;
       const raw = String(fd.get(f.n) ?? '').trim();
       if (f.r && !raw) {
         errs[f.n] = `${f.l} is required`;
@@ -407,11 +466,39 @@ function MasterPageInner({
 
     if (fieldName === 'status') {
       const active = String(raw).toLowerCase() === 'active';
-      const color = active ? 'success' : 'danger';
+      const tone = active
+        ? { bg: '#d6f6ee', fg: '#0a8a78', border: '#0ab39c', text: 'Active' }
+        : { bg: '#fdd9d4', fg: '#b6423a', border: '#f06548', text: raw || 'Inactive' };
       return (
-        <span className={`badge rounded-pill border border-${color} text-${color} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
-          <span className={`bg-${color} rounded-circle`} style={{ width: 6, height: 6 }} />
-          {active ? 'Active' : (raw || 'Inactive')}
+        <span
+          className="d-inline-block rounded-pill text-uppercase"
+          style={{
+            background: tone.bg,
+            color: tone.fg,
+            border: `1px solid ${tone.border}55`,
+            padding: '3px 11px',
+            fontSize: '0.7rem',
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            lineHeight: 1.3,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {tone.text}
+        </span>
+      );
+    }
+
+    // Reports-To column: show the manager's name with a colored bullet (matches
+    // reference design "● CEO" / "● VP Engineering"). Falls through to the
+    // generic ref renderer if not a designations master.
+    if (fieldName === 'reports_to_id' && f?.ref === 'designations') {
+      const label = resolveRefLabel(f.ref, f.refL, raw);
+      if (!label) return <span className="text-muted">—</span>;
+      return (
+        <span className="d-inline-flex align-items-center gap-1">
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6691e7', display: 'inline-block' }} />
+          <span className="text-body">{label}</span>
         </span>
       );
     }
@@ -422,6 +509,85 @@ function MasterPageInner({
 
     if (raw === undefined || raw === null || raw === '') {
       return <span className="text-muted">—</span>;
+    }
+
+    // "code"-type identifiers (DGN-001, INMAA, USD, FOB, etc.) — amber chip,
+    // typography matched 1:1 with the Designation Level chip.
+    if (fieldName === 'code') {
+      return (
+        <span
+          className="rounded-pill d-inline-block"
+          style={{
+            background: '#fff4d8',
+            color: '#b97a00',
+            border: '1px solid #f7b84b55',
+            padding: '2px 8px',
+            fontSize: '10.5px',
+            fontWeight: 500,
+            lineHeight: 1.3,
+            letterSpacing: '0.02em',
+            fontVariantNumeric: 'tabular-nums',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {String(raw).toUpperCase()}
+        </span>
+      );
+    }
+
+    // Designation Level — chip styled exactly like the hierarchy strip chips
+    // (icon + bold text, fixed bg/fg/border per tier) plus a 5-star rating.
+    if (fieldName === 'level') {
+      const v = String(raw);
+      const TOTAL_STARS = 5;
+      const tone =
+        /director|ceo/i.test(v)        ? { bg: '#fff4d8', fg: '#b97a00', border: '#f7b84b', star: '#f7b84b', icon: 'ri-vip-crown-fill',  rank: 5, short: 'Director / CEO' } :
+        /head|hod/i.test(v)            ? { bg: '#ece6ff', fg: '#5b3fd1', border: '#7c5cfc', star: '#7c5cfc', icon: 'ri-medal-2-fill',    rank: 4, short: 'Head of Department' } :
+        /lead|team/i.test(v)           ? { bg: '#dff0ff', fg: '#1e7ec5', border: '#299cdb', star: '#299cdb', icon: 'ri-team-fill',       rank: 3, short: 'Team Leader' } :
+        /executive|senior/i.test(v)    ? { bg: '#d6f6ee', fg: '#0a8a78', border: '#0ab39c', star: '#0ab39c', icon: 'ri-user-star-fill',  rank: 2, short: 'Executive' } :
+        /employee|mid|junior/i.test(v) ? { bg: '#dff5e8', fg: '#1f8f4d', border: '#28c76f', star: '#28c76f', icon: 'ri-user-3-fill',     rank: 1, short: 'Employee' } :
+        /intern|trainee/i.test(v)      ? { bg: '#f0f1f5', fg: '#5b6478', border: '#878a99', star: '#878a99', icon: 'ri-book-open-fill',  rank: 1, short: 'Intern / Trainee' } :
+                                         { bg: '#f0f1f5', fg: '#5b6478', border: '#878a99', star: '#878a99', icon: 'ri-circle-line',         rank: 0, short: v };
+      return (
+        <div
+          className="text-center w-100 d-flex flex-column align-items-center justify-content-center"
+          style={{ gap: 4 }}
+          title={`${tone.rank} of ${TOTAL_STARS} hierarchy rank`}
+        >
+          <span
+            className="d-inline-block rounded-pill"
+            style={{
+              /* identical to .dsn-hier-chip — same bg, fg, border, font, padding */
+              background: tone.bg,
+              color: tone.fg,
+              border: `1px solid ${tone.border}55`,
+              padding: '2px 8px',
+              fontSize: '10.5px',
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              lineHeight: 1.3,
+            }}
+          >
+            {tone.short}
+          </span>
+          <span className="d-inline-flex align-items-center justify-content-center" style={{ gap: 1 }}>
+            {Array.from({ length: TOTAL_STARS }).map((_, i) => {
+              const filled = i < tone.rank;
+              return (
+                <i
+                  key={i}
+                  className={filled ? 'ri-star-fill' : 'ri-star-line'}
+                  style={{
+                    fontSize: 10,
+                    color: filled ? tone.star : 'color-mix(in srgb, var(--vz-secondary-color) 35%, transparent)',
+                    lineHeight: 1,
+                  }}
+                />
+              );
+            })}
+          </span>
+        </div>
+      );
     }
 
     // Identifier-style fields (GSTIN, PAN, etc.) render in a consistent
@@ -449,7 +615,10 @@ function MasterPageInner({
       );
     }
 
-    if (typeof raw === 'string' && /^[A-Z0-9]{6,}$/i.test(raw.replace(/\s|-/g, ''))) {
+    // Strict identifier heuristic — only render as monospace `<code>` when the
+    // value is ALL UPPERCASE alphanumerics (e.g. "INMAA", "USD", "FOB"). This
+    // avoids false positives on plain words like "developer" or "soft tech".
+    if (typeof raw === 'string' && /^[A-Z0-9]{2,}$/.test(raw.replace(/\s|-/g, ''))) {
       return <code className="text-body" style={{ fontSize: '0.8125rem' }}>{raw}</code>;
     }
 
@@ -465,7 +634,11 @@ function MasterPageInner({
         accessorKey: '__index',
         cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
       },
-      {
+    ];
+    // Icon column — hidden on designations (the level rating already gives a
+    // strong visual cue, so the duplicate badge column wastes horizontal space).
+    if (cfg.slug !== 'designations') {
+      cols.push({
         header: 'Icon',
         accessorKey: '__icon',
         enableGlobalFilter: false,
@@ -476,11 +649,19 @@ function MasterPageInner({
             </span>
           </div>
         ),
-      },
-    ];
+      });
+    }
     cfg.cols.forEach((colName, idx) => {
+      // Centered columns — ones whose cells render visually-centered content
+      // (the level rating tile, status pill, etc. read better with a centered
+      // header so the column reads as a single visual unit).
+      const isCentered = colName === 'level';
       cols.push({
-        header: cfg.colL[idx] || colName,
+        header: () => (
+          <div className={isCentered ? 'text-center' : undefined}>
+            {cfg.colL[idx] || colName}
+          </div>
+        ),
         // Accessor: resolve ref labels upfront so TableContainer's global filter can search them.
         accessorFn: (row: any) => {
           const f = cfg.fields.find(ff => ff.n === colName);
@@ -490,7 +671,9 @@ function MasterPageInner({
         id: `col_${colName}`,
         cell: (info: any) => {
           const row = info.row.original;
-          if (idx === 0 && colName !== 'status') {
+          // First-column bold rule — but skip for "code" (it has its own pill
+          // renderer in formatCell) and "status" (its own status badge).
+          if (idx === 0 && colName !== 'status' && colName !== 'code') {
             const f = cfg.fields.find(ff => ff.n === colName);
             const val = f?.ref ? resolveRefLabel(f.ref, f.refL, row[colName]) || '—' : row[colName] ?? '—';
             return <b>{val}</b>;
@@ -509,6 +692,46 @@ function MasterPageInner({
           o.key === '__creator' ? row.creator_name : '',
         cell: (info: any) => renderOwnership(o.key, info.row.original),
       });
+    });
+    // Designation-master-only: Employees column. Reads row.employees_count when
+    // the backend supplies it (later); falls back to "0 emp" so the column is
+    // never empty.
+    if (cfg.slug === 'designations') {
+      cols.push({
+        header: () => <div className="text-center">Employees</div>,
+        id: '__employees',
+        accessorFn: (row: any) => Number(row.employees_count ?? 0),
+        cell: (info: any) => {
+          const n = Number(info.row.original?.employees_count ?? 0);
+          return (
+            <div className="text-center" style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', fontVariantNumeric: 'tabular-nums' }}>
+              {n.toLocaleString()}
+            </div>
+          );
+        },
+      });
+    }
+    // Created Date column — every Eloquent master row carries a created_at
+    // timestamp, so the column is added globally. Renders as "12-Jan-2026".
+    cols.push({
+      header: 'Created Date',
+      id: '__created_at',
+      accessorFn: (row: any) => row.created_at ?? '',
+      cell: (info: any) => {
+        const raw = info.row.original?.created_at;
+        if (!raw) return <span className="text-muted">—</span>;
+        const d = new Date(raw);
+        if (isNaN(d.getTime())) return <span className="text-muted">—</span>;
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mmm = months[d.getMonth()];
+        const yyyy = d.getFullYear();
+        return (
+          <span className="text-muted" style={{ fontVariantNumeric: 'tabular-nums', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
+            {dd}-{mmm}-{yyyy}
+          </span>
+        );
+      },
     });
     cols.push({
       header: () => <div className="text-center">Actions</div>,
@@ -638,44 +861,151 @@ function MasterPageInner({
 
   return (
     <>
-      {/* Page title box — back button + title + breadcrumb */}
+      {/* Theme-aware strip + premium dark-mode polish for the designations page. */}
+      <style>{`
+        .dsn-page-strip {
+          background: #ffffff;
+          border: 1px solid color-mix(in srgb, var(--vz-border-color) 70%, transparent);
+          box-shadow: 0 6px 22px rgba(64,81,137,0.10), 0 2px 6px rgba(64,81,137,0.05);
+        }
+        [data-bs-theme="dark"] .dsn-page-strip,
+        [data-layout-mode="dark"] .dsn-page-strip {
+          background: linear-gradient(135deg,
+            color-mix(in srgb, var(--vz-card-bg) 88%, #ffffff) 0%,
+            var(--vz-card-bg) 100%);
+          border: 1px solid color-mix(in srgb, var(--vz-border-color) 50%, #ffffff);
+          box-shadow:
+            0 8px 26px rgba(0,0,0,0.28),
+            0 2px 6px rgba(0,0,0,0.18),
+            inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+        /* Premium dark-mode adjustments for the table card too. */
+        [data-bs-theme="dark"] .master-page-card,
+        [data-layout-mode="dark"] .master-page-card {
+          background: linear-gradient(180deg,
+            color-mix(in srgb, var(--vz-card-bg) 94%, #ffffff) 0%,
+            var(--vz-card-bg) 100%);
+          border: 1px solid color-mix(in srgb, var(--vz-border-color) 50%, #ffffff);
+          box-shadow: 0 8px 30px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.03);
+        }
+      `}</style>
+      {/* Page title — designations gets the rich [icon|title+subtitle][Add] strip;
+          all other masters keep the original [back][title][breadcrumb] layout. */}
       <Row>
         <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <div className="d-flex align-items-center gap-2">
-              <button
-                className={`btn btn-soft-${cfg.iconColor} btn-icon rounded-circle`}
-                style={{ width: 36, height: 36 }}
-                onClick={() => navigate('/master')}
-                title="Back to master"
-              >
-                <i className="ri-arrow-left-line fs-16"></i>
-              </button>
-              <h4 className="mb-sm-0">{cfg.title}</h4>
+          {cfg.slug === 'designations' ? (
+            <div
+              className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"
+              style={{
+                padding: '16px 20px',
+                borderRadius: 14,
+              }}
+            >
+              <div className="d-flex align-items-center gap-3 min-w-0">
+                <span
+                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                  style={{
+                    width: 46, height: 46,
+                    background: 'color-mix(in srgb, #405189 12%, #ffffff)',
+                    border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                  }}
+                >
+                  <i className={cfg.icon} style={{ color: '#405189', fontSize: 21 }} />
+                </span>
+                <div className="min-w-0">
+                  <h4 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, #2b3245)', letterSpacing: '0.01em' }}>
+                    {cfg.title}
+                  </h4>
+                  <p className="mb-0 text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+                    Manage all job roles, hierarchy levels, and role structure for employees
+                  </p>
+                </div>
+              </div>
+              <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => navigate('/master')}
+                  title="Back to Masters"
+                  className="d-inline-flex align-items-center gap-1 rounded-pill"
+                  style={{
+                    padding: '8px 16px',
+                    background: 'color-mix(in srgb, #405189 8%, #ffffff)',
+                    color: '#405189',
+                    border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'background 0.18s ease, transform 0.18s ease',
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
+                >
+                  <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
+                  Back to Masters
+                </button>
+                {caps.add && (
+                  <Button
+                    color="secondary"
+                    className="btn-label waves-effect waves-light rounded-pill border-0"
+                    onClick={openAdd}
+                    style={{
+                      background: 'linear-gradient(120deg, #405189 0%, #6691e7 100%)',
+                      color: '#fff',
+                      boxShadow: '0 4px 12px rgba(64,81,137,0.28)',
+                    }}
+                  >
+                    <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                    Add {singular}
+                  </Button>
+                )}
+              </div>
             </div>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item">
-                  <a href="#" onClick={(e) => { e.preventDefault(); navigate('/master'); }}>Master</a>
-                </li>
-                <li className="breadcrumb-item active">{cfg.title}</li>
-              </ol>
+          ) : (
+            <div className="page-title-box d-sm-flex align-items-center justify-content-between">
+              <div className="d-flex align-items-center gap-2">
+                <button
+                  className={`btn btn-soft-${cfg.iconColor} btn-icon rounded-circle`}
+                  style={{ width: 36, height: 36 }}
+                  onClick={() => navigate('/master')}
+                  title="Back to master"
+                >
+                  <i className="ri-arrow-left-line fs-16"></i>
+                </button>
+                <h4 className="mb-sm-0">{cfg.title}</h4>
+              </div>
+              <div className="page-title-right">
+                <ol className="breadcrumb m-0">
+                  <li className="breadcrumb-item">
+                    <a href="#" onClick={(e) => { e.preventDefault(); navigate('/master'); }}>Master</a>
+                  </li>
+                  <li className="breadcrumb-item active">{cfg.title}</li>
+                </ol>
+              </div>
             </div>
-          </div>
+          )}
         </Col>
       </Row>
 
-      {/* "What you are doing here" — gradient card with colored step chips */}
-      <WhatYouDoHere cfg={cfg} />
+      {/* "What you are doing here" — hidden on the designations master so the
+          page goes straight from the title strip into the KPI/table card. */}
+      {cfg.slug !== 'designations' && <WhatYouDoHere cfg={cfg} />}
 
       {/* Main card — search + Add New row, then table */}
       <Row>
         <Col xs={12}>
-          <Card className="shadow-sm" style={{ borderRadius: 16 }}>
+          <Card className={`shadow-sm ${cfg.slug === 'designations' ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
             <CardBody>
-              {/* Search bar + Add New in one row (Add Client style) */}
+              {/* Designations-only: KPI strip + hierarchy chips. */}
+              {cfg.slug === 'designations' && (
+                <DesignationExtras
+                  records={records}
+                  filteredCount={filteredRecords.length}
+                />
+              )}
+
+              {/* Search bar (left) + (designation filters + Add New on the right). */}
               <Row className="g-2 align-items-center mb-3">
-                <Col md={6} sm={12}>
+                <Col md={cfg.slug === 'designations' ? 3 : 6} sm={12}>
                   <div className="search-box">
                     <Input
                       type="text"
@@ -687,15 +1017,28 @@ function MasterPageInner({
                     <i className="ri-search-line search-icon"></i>
                   </div>
                 </Col>
-                <Col md={6} sm={12} className="d-flex justify-content-md-end">
-                  {caps.add && (
+                <Col md={cfg.slug === 'designations' ? 9 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
+                  {cfg.slug === 'designations' && (
+                    <DesignationInlineFilters
+                      refData={refData}
+                      statusFilter={dsnStatusFilter}
+                      setStatusFilter={setDsnStatusFilter}
+                      levelFilter={dsnLevelFilter}
+                      setLevelFilter={setDsnLevelFilter}
+                      deptFilter={dsnDeptFilter}
+                      setDeptFilter={setDsnDeptFilter}
+                    />
+                  )}
+                  {/* Add button — shown here for non-designation masters; for
+                      designations the button now lives in the page title strip. */}
+                  {cfg.slug !== 'designations' && caps.add && (
                     <Button
                       color="secondary"
                       className="btn-label waves-effect waves-light rounded-pill"
                       onClick={openAdd}
                     >
                       <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                      Add New
+                      Add {singular}
                     </Button>
                   )}
                 </Col>
@@ -749,31 +1092,71 @@ function MasterPageInner({
         backdrop="static"
         keyboard={false}
       >
+        {/* Header — solid brand gradient strip with title, subtitle and close X. */}
         <div
           className="position-relative overflow-hidden"
           style={{
-            background: 'linear-gradient(135deg, rgba(124,92,252,0.10) 0%, rgba(169,147,253,0.05) 60%, var(--vz-card-bg) 100%)',
-            padding: '22px 26px',
-            borderBottom: '1px solid var(--vz-border-color)',
+            background: 'linear-gradient(120deg, #405189 0%, #4a63a8 50%, #6691e7 100%)',
+            padding: '20px 24px',
           }}
         >
+          {/* Decorative bubbles */}
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute', top: -30, right: -10, width: 110, height: 110, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(255,255,255,0.18) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute', bottom: -40, right: 60, width: 140, height: 140, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(102,145,231,0.35) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
           <div className="d-flex align-items-center gap-3 position-relative">
             <span
-              className="d-inline-flex align-items-center justify-content-center rounded-3"
+              className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
               style={{
-                width: 48, height: 48,
-                background: 'linear-gradient(135deg, rgb(64, 81, 137) 0%, rgb(102, 145, 231) 100%)',
-                boxShadow: '0 6px 16px rgba(124,92,252,0.32)',
+                width: 44, height: 44,
+                background: 'rgba(255,255,255,0.18)',
+                border: '1px solid rgba(255,255,255,0.25)',
+                backdropFilter: 'blur(6px)',
               }}
             >
-              <i className={`${cfg.icon}`} style={{ color: '#fff', fontSize: 22 }}></i>
+              <i className={`${cfg.icon}`} style={{ color: '#fff', fontSize: 20 }}></i>
             </span>
             <div className="flex-grow-1 min-w-0">
-              <h4 className="mb-0 fw-bold" style={{ color: 'rgb(64, 81, 137)', fontWeight: 900 }}>
+              <h4 className="mb-0 fw-bold" style={{ color: '#fff', fontWeight: 800, letterSpacing: '0.01em' }}>
                 {viewOnly ? `View ${singular}` : editingId != null ? `Edit ${singular}` : `Add ${singular}`}
               </h4>
-              <small className="text-muted" style={{ fontSize: 12 }}>{cfg.desc}</small>
+              <small style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12 }}>
+                {viewOnly ? `Viewing details for this ${singular.toLowerCase()}` :
+                 editingId != null ? `Update the details of this ${singular.toLowerCase()}` :
+                 `Fill in the details to register a new ${singular.toLowerCase()}`}
+              </small>
             </div>
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+              aria-label="Close"
+              style={{
+                width: 32, height: 32,
+                background: 'rgba(255,255,255,0.18)',
+                border: '1px solid rgba(255,255,255,0.25)',
+                color: '#fff',
+                cursor: 'pointer',
+                transition: 'background 0.18s ease, transform 0.18s ease',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.30)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)'; }}
+            >
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
           </div>
         </div>
         <Form onSubmit={handleSave}>
@@ -806,42 +1189,58 @@ function MasterPageInner({
                     </div>
                   )}
                   <Row className="g-3">
-                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan))}
+                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, effectiveRefData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan))}
                   </Row>
                 </div>
               );
             })}
           </ModalBody>
-          <ModalFooter className="px-4 pb-3 justify-content-center gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-            <button type="button" className="master-modal-cancel" onClick={() => setModalOpen(false)}>
-              <i className="ri-close-line align-middle me-1"></i>
-              {viewOnly ? 'Close' : 'Cancel'}
-            </button>
-            {!viewOnly && (
-              <Button
-                color="secondary"
-                type="submit"
-                disabled={saving}
-                className={
-                  saving
-                    ? 'rounded-pill d-inline-flex align-items-center justify-content-center gap-2'
-                    : 'btn-label waves-effect waves-light rounded-pill'
-                }
-                style={{ minWidth: 160 }}
-              >
-                {saving ? (
-                  <>
-                    <Spinner size="sm" />
-                    <span>{editingId != null ? 'Updating...' : 'Saving...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                    {editingId != null ? 'Update Record' : 'Save Record'}
-                  </>
-                )}
-              </Button>
-            )}
+          <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+            {/* "Fields marked * are required" hint on the left */}
+            <span className="d-inline-flex align-items-center gap-1 text-muted" style={{ fontSize: 12 }}>
+              {!viewOnly && (
+                <>
+                  <i className="ri-information-line" style={{ fontSize: 13, color: '#6691e7' }} />
+                  Fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required
+                </>
+              )}
+            </span>
+            {/* Action buttons on the right */}
+            <div className="d-flex align-items-center gap-2">
+              <button type="button" className="master-modal-cancel" onClick={() => setModalOpen(false)}>
+                <i className="ri-close-line align-middle me-1"></i>
+                {viewOnly ? 'Close' : 'Cancel'}
+              </button>
+              {!viewOnly && (
+                <Button
+                  type="submit"
+                  disabled={saving}
+                  className={
+                    saving
+                      ? 'rounded-pill d-inline-flex align-items-center justify-content-center gap-2 border-0'
+                      : 'btn-label waves-effect waves-light rounded-pill border-0'
+                  }
+                  style={{
+                    minWidth: 170,
+                    background: 'linear-gradient(120deg, #405189 0%, #6691e7 100%)',
+                    color: '#fff',
+                    boxShadow: '0 4px 12px rgba(64,81,137,0.3)',
+                  }}
+                >
+                  {saving ? (
+                    <>
+                      <Spinner size="sm" />
+                      <span>{editingId != null ? 'Updating...' : 'Saving...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                      {editingId != null ? `Update ${singular}` : `Save ${singular}`}
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
           </ModalFooter>
         </Form>
       </Modal>
@@ -905,16 +1304,16 @@ function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
           userSelect: 'none',
         }}
       >
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex align-items-center gap-3">
           <span
-            className="d-inline-flex align-items-center justify-content-center rounded-3"
+            className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
             style={{
-              width: 36, height: 36,
+              width: 40, height: 40,
               background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
               boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
             }}
           >
-            <i className="ri-lightbulb-flash-line" style={{ color: '#fff', fontSize: 16 }}></i>
+            <i className="ri-lightbulb-flash-line" style={{ color: '#fff', fontSize: 18 }}></i>
           </span>
           <div>
             <div className="fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 15 }}>
@@ -1029,6 +1428,321 @@ function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
   );
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * Designation-master extras: top hierarchy chip strip + Status/Level/Dept
+ * filter dropdowns. Renders only inside the Designations master.
+ * ────────────────────────────────────────────────────────────────────────── */
+function DesignationExtras({
+  records,
+  filteredCount,
+}: {
+  records: any[];
+  filteredCount: number;
+}) {
+  // Hierarchy tiers — same order/colors as the reference design.
+  const TIERS: { label: string; short: string; icon: string; bg: string; fg: string; border: string }[] = [
+    { label: 'Director / CEO',           short: 'Director / CEO', icon: 'ri-vip-crown-fill',  bg: '#fff4d8', fg: '#b97a00', border: '#f7b84b' },
+    { label: 'Head of Department (HOD)', short: 'HOD',            icon: 'ri-medal-2-fill',    bg: '#ece6ff', fg: '#5b3fd1', border: '#7c5cfc' },
+    { label: 'Team Leader',              short: 'Team Leader',    icon: 'ri-team-fill',       bg: '#dff0ff', fg: '#1e7ec5', border: '#299cdb' },
+    { label: 'Executive',                short: 'Executive',      icon: 'ri-user-star-fill',  bg: '#d6f6ee', fg: '#0a8a78', border: '#0ab39c' },
+    { label: 'Employee',                 short: 'Employee',       icon: 'ri-user-3-fill',     bg: '#dff5e8', fg: '#1f8f4d', border: '#28c76f' },
+    { label: 'Intern / Trainee',         short: 'Intern',         icon: 'ri-book-open-fill',  bg: '#f0f1f5', fg: '#5b6478', border: '#878a99' },
+  ];
+
+  // KPI counts derived from the current records (not the filtered list — the
+  // top KPIs always reflect the full dataset so users can see overall totals).
+  const total = records.length;
+  const tierCounts = TIERS.map(t => ({
+    ...t,
+    count: records.filter(r => String(r.level ?? '') === t.label).length,
+  }));
+
+  return (
+    <div className="dsn-extras mb-3">
+      <style>{`
+        /* KPI strip — compact, responsive: 7 → 4 → 3 → 2 columns */
+        .dsn-extras .dsn-kpis {
+          display: grid;
+          grid-template-columns: repeat(7, minmax(0, 1fr));
+          gap: 8px;
+          margin-bottom: 12px;
+        }
+        @media (max-width: 1399px) {
+          .dsn-extras .dsn-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        }
+        @media (max-width: 991px) {
+          .dsn-extras .dsn-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+        @media (max-width: 575px) {
+          .dsn-extras .dsn-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+        }
+        /* New layout: [Icon tile]  |  [Number on top, Label below] */
+        .dsn-extras .dsn-kpi {
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 10px;
+          padding: 12px 14px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+        .dsn-extras .dsn-kpi:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+        }
+        .dsn-extras .dsn-kpi-icon {
+          width: 38px;
+          height: 38px;
+          border-radius: 9px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          font-size: 17px;
+        }
+        .dsn-extras .dsn-kpi-text {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+          line-height: 1.2;
+        }
+        .dsn-extras .dsn-kpi-num {
+          font-size: 19px;
+          font-weight: 700;
+          line-height: 1.1;
+          color: var(--kpi-deep, var(--vz-heading-color, var(--vz-body-color)));
+          font-variant-numeric: tabular-nums;
+        }
+        [data-bs-theme="dark"] .dsn-extras .dsn-kpi-num,
+        [data-layout-mode="dark"] .dsn-extras .dsn-kpi-num {
+          color: var(--kpi-bright, rgba(255,255,255,0.95)) !important;
+        }
+        .dsn-extras .dsn-kpi-label {
+          font-size: 10.5px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--vz-secondary-color);
+          line-height: 1.2;
+          margin-top: 2px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        /* Dark-mode polish — brighter strip + subtle glow + bolder borders so
+           the KPI cards and hierarchy chips POP against the dark canvas. */
+        [data-bs-theme="dark"] .dsn-extras .dsn-kpi,
+        [data-layout-mode="dark"] .dsn-extras .dsn-kpi {
+          background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
+          border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
+        }
+        [data-bs-theme="dark"] .dsn-extras .dsn-kpi-label,
+        [data-layout-mode="dark"] .dsn-extras .dsn-kpi-label {
+          color: rgba(255, 255, 255, 0.78);
+        }
+        [data-bs-theme="dark"] .dsn-extras .dsn-kpi-icon,
+        [data-layout-mode="dark"] .dsn-extras .dsn-kpi-icon {
+          filter: brightness(1.1) saturate(1.1);
+          box-shadow: 0 0 0 1px rgba(255,255,255,0.05) inset;
+        }
+        [data-bs-theme="dark"] .dsn-extras .dsn-hier-row,
+        [data-layout-mode="dark"] .dsn-extras .dsn-hier-row {
+          background: color-mix(in srgb, var(--vz-card-bg) 90%, #ffffff);
+          border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
+        }
+        [data-bs-theme="dark"] .dsn-extras .dsn-hier-chip,
+        [data-layout-mode="dark"] .dsn-extras .dsn-hier-chip {
+          filter: brightness(1.05) saturate(1.1);
+          box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset;
+        }
+      `}</style>
+
+      <style>{`
+        .dsn-extras .dsn-hier-row {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
+          padding: 10px 12px;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 12px;
+          background: var(--vz-card-bg);
+          margin-bottom: 12px;
+        }
+        @media (max-width: 575px) {
+          .dsn-extras .dsn-hier-row { padding: 8px 10px; gap: 5px; }
+        }
+        .dsn-extras .dsn-hier-label {
+          font-size: 10.5px;
+          font-weight: 700;
+          letter-spacing: 0.08em;
+          color: var(--vz-secondary-color);
+          text-transform: uppercase;
+          margin-right: 4px;
+        }
+        .dsn-extras .dsn-hier-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 2px 8px;
+          border-radius: 999px;
+          font-size: 10.5px;
+          font-weight: 500;
+          line-height: 1.3;
+          white-space: nowrap;
+        }
+        @media (max-width: 575px) {
+          .dsn-extras .dsn-hier-chip { font-size: 9.5px; padding: 2px 6px; }
+          .dsn-extras .dsn-hier-arrow { display: none; }
+        }
+        .dsn-extras .dsn-hier-arrow {
+          color: var(--vz-secondary-color);
+          opacity: 0.55;
+          font-size: 12px;
+        }
+        .dsn-extras .dsn-hier-tail {
+          margin-left: auto;
+          font-size: 11px;
+          color: var(--vz-secondary-color);
+          font-style: italic;
+        }
+      `}</style>
+
+      {/* Hierarchy chip strip — sits ABOVE the KPI cards (per request). */}
+      <div className="dsn-hier-row">
+        <span className="dsn-hier-label">Hierarchy</span>
+        {TIERS.map((t, i) => (
+          <span key={t.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span
+              className="dsn-hier-chip"
+              style={{ background: t.bg, color: t.fg, border: `1px solid ${t.border}55` }}
+            >
+              <i className={t.icon} style={{ fontSize: 13 }} />
+              {t.label}
+            </span>
+            {i < TIERS.length - 1 && <i className="ri-arrow-right-s-line dsn-hier-arrow" />}
+          </span>
+        ))}
+      </div>
+
+      {/* KPI cards — [Icon tile] [Number / Label]. Sits BELOW the hierarchy strip.
+          Each card carries its tier's BRIGHT brand color via a CSS var so the
+          numbers stay vivid in BOTH themes (dark mode picks up the brighter
+          shade automatically — see the dark-mode CSS below). */}
+      <div className="dsn-kpis">
+        <div
+          className="dsn-kpi"
+          title="Total designations"
+          style={{ ['--kpi-bright' as any]: '#6691e7', ['--kpi-deep' as any]: '#405189' }}
+        >
+          <span className="dsn-kpi-icon" style={{ background: '#e9edf6', color: '#405189' }}>
+            <i className="ri-database-2-fill" />
+          </span>
+          <div className="dsn-kpi-text">
+            <span className="dsn-kpi-num">{total}</span>
+            <span className="dsn-kpi-label">Total</span>
+          </div>
+        </div>
+        {tierCounts.map(t => (
+          <div
+            className="dsn-kpi"
+            key={t.label}
+            title={`${t.label} designations`}
+            style={{ ['--kpi-bright' as any]: t.border, ['--kpi-deep' as any]: t.fg }}
+          >
+            <span className="dsn-kpi-icon" style={{ background: t.bg, color: t.fg }}>
+              <i className={t.icon} />
+            </span>
+            <div className="dsn-kpi-text">
+              <span className="dsn-kpi-num">{t.count}</span>
+              <span className="dsn-kpi-label">{t.short}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Inline Status / Level / Dept filters — sits between the search box and the
+ * Add New button on the Designations master. */
+function DesignationInlineFilters({
+  refData,
+  statusFilter, setStatusFilter,
+  levelFilter,  setLevelFilter,
+  deptFilter,   setDeptFilter,
+}: {
+  refData: Record<string, any[]>;
+  statusFilter: string;
+  setStatusFilter: (v: string) => void;
+  levelFilter: string;
+  setLevelFilter: (v: string) => void;
+  deptFilter: string;
+  setDeptFilter: (v: string) => void;
+}) {
+  const LEVELS = ['Director / CEO', 'Head of Department (HOD)', 'Team Leader', 'Executive', 'Employee', 'Intern / Trainee'];
+  const departments = refData['departments'] || [];
+  return (
+    <div className="dsn-inline-filters d-flex align-items-center flex-wrap" style={{ gap: 12 }}>
+      <style>{`
+        .dsn-inline-filters .dsn-il-group { display: flex; align-items: center; gap: 6px; }
+        .dsn-inline-filters .dsn-il-label {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--vz-secondary-color);
+        }
+        .dsn-inline-filters .form-select-sm { min-width: 120px; }
+      `}</style>
+      <div className="dsn-il-group">
+        <span className="dsn-il-label">Status</span>
+        <div style={{ minWidth: 130 }}>
+          <MasterSelect
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v || 'all')}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'Active', label: 'Active' },
+              { value: 'Inactive', label: 'Inactive' },
+            ]}
+            placeholder="All"
+          />
+        </div>
+      </div>
+      <div className="dsn-il-group">
+        <span className="dsn-il-label">Level</span>
+        <div style={{ minWidth: 160 }}>
+          <MasterSelect
+            value={levelFilter}
+            onChange={(v) => setLevelFilter(v || 'all')}
+            options={[
+              { value: 'all', label: 'All Levels' },
+              ...LEVELS.map(l => ({ value: l, label: l })),
+            ]}
+            placeholder="All Levels"
+          />
+        </div>
+      </div>
+      <div className="dsn-il-group">
+        <span className="dsn-il-label">Department</span>
+        <div style={{ minWidth: 160 }}>
+          <MasterSelect
+            value={deptFilter}
+            onChange={(v) => setDeptFilter(v || 'all')}
+            options={[
+              { value: 'all', label: 'All Departments' },
+              ...departments.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
+            ]}
+            placeholder="All Departments"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function iconForField(f: FieldDef): string {
   const n = (f.n || '').toLowerCase();
   if (f.ref) return 'ri-links-line';
@@ -1096,16 +1810,27 @@ function renderField(
   if (f.ref) {
     const rows = refData[f.ref] || [];
     const labelField = f.refL || labelFieldForRef(f.ref);
+    // refLFmt lets a config render a composite label like "{name} ({level})"
+    // — useful for the Reports To picker which needs "Sr. Eng (Executive)".
+    const buildLabel = (r: any): string => {
+      if (f.refLFmt) {
+        return f.refLFmt.replace(/\{(\w+)\}/g, (_m, k) => {
+          const v = r[k];
+          return v == null || v === '' ? '' : String(v);
+        }).replace(/\s*\(\)\s*/g, '').trim() || String(r[labelField] ?? r.id);
+      }
+      return String(r[labelField] ?? r.id);
+    };
     const options = rows.map((r: any) => ({
       value: String(r.id),
-      label: String(r[labelField] ?? r.id),
+      label: buildLabel(r),
     }));
     input = (
       <MasterSelect
         name={f.n}
         defaultValue={defaultVal == null ? '' : String(defaultVal)}
         options={options}
-        placeholder={`Select ${f.l}…`}
+        placeholder={f.p || `Select ${f.l}…`}
         disabled={viewOnly}
         invalid={!!err}
         onChange={onFieldChange}
@@ -1118,7 +1843,7 @@ function renderField(
         name={f.n}
         defaultValue={defaultVal || (f.r ? (options[0]?.value ?? '') : '')}
         options={options}
-        placeholder="Select…"
+        placeholder={f.p || 'Select…'}
         disabled={viewOnly}
         invalid={!!err}
         onChange={onFieldChange}
@@ -1153,11 +1878,13 @@ function renderField(
       <Input
         type={f.t === 'email' ? 'email' : f.t === 'number' ? 'number' : 'text'}
         name={f.n}
-        placeholder={f.p}
+        placeholder={f.auto ? (defaultVal ? '' : 'Will be assigned on save') : f.p}
         defaultValue={defaultVal}
-        disabled={viewOnly}
+        disabled={viewOnly || f.auto}
+        readOnly={f.auto}
         invalid={!!err}
         onInput={onFieldChange}
+        className={f.auto ? 'master-field-auto' : undefined}
       />
     );
   }
@@ -1166,6 +1893,11 @@ function renderField(
     <Col md={span} key={f.n || `f-${i}`}>
       <Label>
         {f.l}{f.r && <span className="req-star">*</span>}
+        {f.hint && (
+          <span className="ms-1 fw-normal" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontStyle: 'italic' }}>
+            {f.hint}
+          </span>
+        )}
       </Label>
       <div className={`master-field${isTextarea ? ' ta' : ''}${isSelect ? ' sel' : ''}`}>
         <i className={`${icon} master-field-icon${isTextarea ? ' ta' : ''}`} />
