@@ -13,6 +13,7 @@ export type FieldDef = {
   opts?: FieldOption[];     // select options — string or { value, label } for distinct display/payload
   ref?: string;             // ref to another master key (dropdown from that master's data)
   refL?: string;            // label field on the referenced master
+  refLFmt?: string;         // composite label template, e.g. "{name} ({level})" — overrides refL
   sec?: string;             // section divider (no input, header only)
   auto?: boolean;           // server-generated value (e.g. auto-numbered code); rendered read-only
   hint?: string;            // small italic helper text shown next to the label

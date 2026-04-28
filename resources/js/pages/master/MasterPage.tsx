@@ -1893,6 +1893,20 @@ function renderField(
   if (f.ref) {
     const rows = refData[f.ref] || [];
     const labelField = f.refL || labelFieldForRef(f.ref);
+    // refLFmt lets a config render a composite label like "{name} ({level})"
+    // — e.g. for the Reports To picker. Falls back to the single labelField.
+    const buildLabel = (r: any): string => {
+      if (f.refLFmt) {
+        return f.refLFmt
+          .replace(/\{(\w+)\}/g, (_m: string, k: string) => {
+            const v = r[k];
+            return v == null || v === '' ? '' : String(v);
+          })
+          .replace(/\s*\(\)\s*/g, '')
+          .trim() || String(r[labelField] ?? r.id);
+      }
+      return String(r[labelField] ?? r.id);
+    };
     // Self-references: hide the row being edited so a department can't pick
     // itself as its own parent (which would create a cycle).
     const refRows = (f.ref === undefined || editing == null)
