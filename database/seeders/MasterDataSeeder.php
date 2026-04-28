@@ -146,16 +146,16 @@ class MasterDataSeeder extends Seeder
 
             case 'departments':
                 return [
-                    ['name' => 'Sales',            'description' => 'Revenue generation, client relations, order management',                'status' => 'Active'],
-                    ['name' => 'Human Resources',  'description' => 'Recruitment, employee records, payroll, compliance',                      'status' => 'Active'],
-                    ['name' => 'Accounts',         'description' => 'Financial transactions, ledgers, GST, audit',                             'status' => 'Active'],
-                    ['name' => 'Logistics',        'description' => 'Transportation, shipment coordination, freight management',               'status' => 'Active'],
-                    ['name' => 'Purchase',         'description' => 'Procurement, vendor management, purchase orders',                          'status' => 'Active'],
-                    ['name' => 'IT',               'description' => 'Infrastructure, system maintenance, application support',                  'status' => 'Active'],
-                    ['name' => 'Legal',            'description' => 'Contract review, compliance, documentation',                               'status' => 'Active'],
-                    ['name' => 'Warehouse',        'description' => 'Inventory storage, stock management, goods receipt',                       'status' => 'Active'],
-                    ['name' => 'Quality Control',  'description' => 'Product inspection, quality assurance, testing',                            'status' => 'Active'],
-                    ['name' => 'Export-Import',    'description' => 'Customs clearance, shipping documents, trade compliance',                   'status' => 'Active'],
+                    ['name' => 'Sales',            'code' => 'DEPT-001', 'head' => 'Durgesh Urkude', 'email' => 'sales@enterprise.com',     'description' => 'Revenue generation, client relations, order management',         'status' => 'Active'],
+                    ['name' => 'Human Resources',  'code' => 'DEPT-002', 'head' => 'Sonal Pawar',    'email' => 'hr@enterprise.com',        'description' => 'Recruitment, employee records, payroll, compliance',             'status' => 'Active'],
+                    ['name' => 'Accounts',         'code' => 'DEPT-003', 'head' => 'Priti Shende',   'email' => 'accounts@enterprise.com',  'description' => 'Financial transactions, ledgers, GST, audit',                    'status' => 'Active'],
+                    ['name' => 'Logistics',        'code' => 'DEPT-004', 'head' => 'Sandeep Kadu',   'email' => 'logistics@enterprise.com', 'description' => 'Transportation, shipment coordination, freight management',      'status' => 'Active'],
+                    ['name' => 'Purchase',         'code' => 'DEPT-005', 'head' => 'Ankit Bhosale',  'email' => 'purchase@enterprise.com',  'description' => 'Procurement, vendor management, purchase orders',                'status' => 'Active'],
+                    ['name' => 'IT',               'code' => 'DEPT-006', 'head' => 'Gaurav Jagtap',  'email' => 'it@enterprise.com',        'description' => 'Infrastructure, system maintenance, application support',        'status' => 'Active'],
+                    ['name' => 'Legal',            'code' => 'DEPT-007', 'head' => null,             'email' => null,                       'description' => 'Contract review, compliance, documentation',                     'status' => 'Active'],
+                    ['name' => 'Warehouse',        'code' => 'DEPT-008', 'head' => 'Manoj Gawade',   'email' => 'warehouse@enterprise.com', 'description' => 'Inventory storage, stock management, goods receipt',             'status' => 'Active'],
+                    ['name' => 'Quality Control',  'code' => 'DEPT-009', 'head' => 'Atharv Patekar', 'email' => null,                       'description' => 'Product inspection, quality assurance, testing',                  'status' => 'Active'],
+                    ['name' => 'Export-Import',    'code' => 'DEPT-010', 'head' => 'Kiran Patel',    'email' => 'exim@enterprise.com',      'description' => 'Customs clearance, shipping documents, trade compliance',        'status' => 'Active'],
                 ];
 
             case 'roles':
