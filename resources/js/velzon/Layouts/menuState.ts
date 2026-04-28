@@ -24,6 +24,12 @@ export const toggleMenu = (id: string): void => {
   listeners.forEach((l) => l());
 };
 
+export const closeAllMenus = (): void => {
+  if (openIds.size === 0) return;
+  openIds = new Set();
+  listeners.forEach((l) => l());
+};
+
 export const subscribeMenu = (cb: () => void): (() => void) => {
   listeners.add(cb);
   return () => { listeners.delete(cb); };

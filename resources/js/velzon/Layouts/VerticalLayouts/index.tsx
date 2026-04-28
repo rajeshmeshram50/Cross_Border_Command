@@ -1,10 +1,18 @@
 import React, { useEffect, useCallback, useState } from 'react';
 import PropTypes from "prop-types";
 import { Link } from "react-router-dom";
-import { Collapse } from 'reactstrap';
 // Import Data
 import navdata from "../LayoutMenuData";
-import { subscribeMenu } from "../menuState";
+import { closeAllMenus, subscribeMenu } from "../menuState";
+
+// We deliberately omit Bootstrap's `.collapse` class on these dropdowns and
+// only render them when open. Reactstrap's <Collapse> doesn't add `.show`
+// until its height transition finishes, and in this build keeping `.collapse`
+// on the wrapper kept the menu hidden even with `.show` present. Mounting only
+// when open guarantees correct behaviour without any CSS games — closed
+// dropdowns simply aren't in the DOM, and Velzon's existing
+// `.menu-dropdown.show` rules drive the open state.
+const dropdownClass = () => "menu-dropdown show";
 //i18n
 import { withTranslation } from "react-i18next";
 import withRouter from "../../Components/Common/withRouter";
@@ -18,6 +26,16 @@ const VerticalLayout = (props : any) => {
     // navdata and the sidebar reflects the new open/closed state.
     const [, setTick] = useState(0);
     useEffect(() => subscribeMenu(() => setTick((t) => t + 1)), []);
+
+    // Close any open dropdown when the user clicks outside the sidebar.
+    useEffect(() => {
+        const handleOutside = (e: MouseEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (target && !target.closest("#navbar-nav")) closeAllMenus();
+        };
+        document.addEventListener("mousedown", handleOutside);
+        return () => document.removeEventListener("mousedown", handleOutside);
+    }, []);
 
     const navData = navdata().props.children;
     const path = props.router.location.pathname;
@@ -170,7 +188,6 @@ const VerticalLayout = (props : any) => {
                                             onClick={item.click}
                                             className="nav-link menu-link"
                                             to={item.link ? item.link : "/#"}
-                                            data-bs-toggle="collapse"
                                             aria-expanded={item.stateVariables}
                                         >
                                             <i className={item.icon}></i>
@@ -179,9 +196,9 @@ const VerticalLayout = (props : any) => {
                                                 <span className={"badge badge-pill bg-" + item.badgeColor} data-key="t-new">{item.badgeName}</span>
                                                 : null}
                                         </Link>
-                                        <Collapse
-                                            className="menu-dropdown"
-                                            isOpen={item.stateVariables}
+                                        {item.stateVariables && (
+                                        <div
+                                            className={dropdownClass()}
                                             id={item.id}>
                                             <ul className="nav nav-sm flex-column">
                                                 {/* subItems  */}
@@ -205,7 +222,6 @@ const VerticalLayout = (props : any) => {
                                                                     onClick={subItem.click}
                                                                     className="nav-link"
                                                                     to="/#"
-                                                                    data-bs-toggle="collapse"
                                                                     aria-expanded={subItem.stateVariables}
                                                                 >
                                                                     {props.t(subItem.label)}
@@ -213,7 +229,8 @@ const VerticalLayout = (props : any) => {
                                                                         <span className={"badge badge-pill bg-" + subItem.badgeColor} data-key="t-new">{subItem.badgeName}</span>
                                                                         : null}
                                                                 </Link>
-                                                                <Collapse className="menu-dropdown" isOpen={subItem.stateVariables} id={subItem.id}>
+                                                                {subItem.stateVariables && (
+                                                                <div className={dropdownClass()} id={subItem.id}>
                                                                     <ul className="nav nav-sm flex-column">
                                                                         {/* child subItems  */}
                                                                         {subItem.childItems && (
@@ -228,10 +245,11 @@ const VerticalLayout = (props : any) => {
                                                                                             </Link>
                                                                                         </li>
                                                                                         : <li className="nav-item">
-                                                                                            <Link to="/#" className="nav-link" onClick={childItem.click} data-bs-toggle="collapse" aria-expanded={childItem.stateVariables}>
+                                                                                            <Link to="/#" className="nav-link" onClick={childItem.click} aria-expanded={childItem.stateVariables}>
                                                                                                 {props.t(childItem.label)}
                                                                                             </Link>
-                                                                                            <Collapse className="menu-dropdown" isOpen={childItem.stateVariables} id={childItem.id}>
+                                                                                            {childItem.stateVariables && (
+                                                                                            <div className={dropdownClass()} id={childItem.id}>
                                                                                                 <ul className="nav nav-sm flex-column">
                                                                                                     {childItem.childItems.map((subChildItem : any, key : number) => (
                                                                                                         <li className="nav-item" key={key}>
@@ -239,14 +257,16 @@ const VerticalLayout = (props : any) => {
                                                                                                         </li>
                                                                                                     ))}
                                                                                                 </ul>
-                                                                                            </Collapse>
+                                                                                            </div>
+                                                                                            )}
                                                                                         </li>
                                                                                     }
                                                                                 </React.Fragment>
                                                                             ))
                                                                         )}
                                                                     </ul>
-                                                                </Collapse>
+                                                                </div>
+                                                                )}
                                                             </li>
                                                         )}
                                                     </React.Fragment>
@@ -254,7 +274,8 @@ const VerticalLayout = (props : any) => {
                                                 )}
                                             </ul>
 
-                                        </Collapse>
+                                        </div>
+                                        )}
                                     </li>
                                 ) : (
                                     <li className="nav-item">
