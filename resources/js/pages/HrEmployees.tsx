@@ -780,13 +780,6 @@ export default function HrEmployees() {
           .emp-stepper-label.is-done { color: #0ab39c; }
           .emp-stepper-line { flex: 1; height: 2px; background: #e5e7eb; margin: 0 6px; align-self: flex-start; margin-top: 16px; transition: background .2s ease; }
           .emp-stepper-line.is-done { background: #0ab39c; }
-          .emp-select-arrow {
-            appearance: none; -webkit-appearance: none; -moz-appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 11px center;
-            padding-right: 32px;
-          }
         `}</style>
 
         <ModalBody className="p-0" style={{ background: 'var(--vz-secondary-bg, #f7f8fc)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden' }}>
@@ -1028,22 +1021,11 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">State<span className="req">*</span></label>
-                      <select className="emp-input emp-select-arrow" value={ePermState} onChange={e => setEPermState(e.target.value)} disabled={eSameAsCurrent}>
-                        <option value="">Select state</option>
-                        <option>Maharashtra</option>
-                        <option>Karnataka</option>
-                        <option>Delhi</option>
-                        <option>Tamil Nadu</option>
-                        <option>Gujarat</option>
-                      </select>
+                      <MasterSelect value={ePermState} onChange={setEPermState} placeholder="Select state" options={STATE_OPTIONS} disabled={eSameAsCurrent} />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Country<span className="req">*</span></label>
-                      <select className="emp-input emp-select-arrow" value={ePermCountry} onChange={e => setEPermCountry(e.target.value)} disabled={eSameAsCurrent}>
-                        <option>India</option>
-                        <option>United States</option>
-                        <option>United Kingdom</option>
-                      </select>
+                      <MasterSelect value={ePermCountry} onChange={setEPermCountry} options={COUNTRY_OPTIONS} disabled={eSameAsCurrent} />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Pincode<span className="req">*</span></label>
