@@ -1,0 +1,576 @@
+/* =====================================================================
+   Master page styles
+   Extracted from resources/js/pages/master/MasterPage.tsx
+   Used by: Designations, Roles, KPIs, and other master modules
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   1. Page strip + table card — premium dark-mode glass treatment
+   --------------------------------------------------------------------- */
+.dsn-page-strip {
+  background: #ffffff;
+  border: 1px solid color-mix(in srgb, var(--vz-border-color) 70%, transparent);
+  box-shadow: 0 6px 22px rgba(64,81,137,0.10), 0 2px 6px rgba(64,81,137,0.05);
+}
+/* Premium dark-mode glass strip — multi-stop gradient + colored glow +
+   crisp top sheen. Reads like the Plans page panels. */
+[data-bs-theme="dark"] .dsn-page-strip,
+[data-layout-mode="dark"] .dsn-page-strip {
+  position: relative;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(102,145,231,0.16) 0%, transparent 55%),
+    radial-gradient(120% 140% at 100% 100%, rgba(124,92,252,0.14) 0%, transparent 55%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--vz-card-bg) 80%, #ffffff) 0%,
+      color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
+  border: 1px solid color-mix(in srgb, #6691e7 22%, var(--vz-border-color));
+  box-shadow:
+    0 12px 32px rgba(0,0,0,0.36),
+    0 2px 6px rgba(0,0,0,0.20),
+    0 0 0 1px rgba(255,255,255,0.03),
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    inset 0 -1px 0 rgba(0,0,0,0.20);
+}
+/* Premium dark-mode glass for the table card — same glossy treatment. */
+[data-bs-theme="dark"] .master-page-card,
+[data-layout-mode="dark"] .master-page-card {
+  background:
+    radial-gradient(140% 160% at 0% 0%, rgba(102,145,231,0.10) 0%, transparent 55%),
+    radial-gradient(140% 160% at 100% 100%, rgba(124,92,252,0.08) 0%, transparent 55%),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff) 0%,
+      var(--vz-card-bg) 100%);
+  border: 1px solid color-mix(in srgb, #6691e7 16%, var(--vz-border-color));
+  box-shadow:
+    0 14px 36px rgba(0,0,0,0.32),
+    0 2px 6px rgba(0,0,0,0.18),
+    0 0 0 1px rgba(255,255,255,0.02),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    inset 0 -1px 0 rgba(0,0,0,0.18);
+}
+/* Premium dark-mode KPI cards — glossy gradient + inset highlight. */
+[data-bs-theme="dark"] .dsn-extras .dsn-kpi,
+[data-layout-mode="dark"] .dsn-extras .dsn-kpi,
+[data-bs-theme="dark"] .role-extras .role-kpi,
+[data-layout-mode="dark"] .role-extras .role-kpi {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--vz-card-bg) 78%, #ffffff) 0%,
+    color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
+  border: 1px solid color-mix(in srgb, #ffffff 9%, transparent);
+  box-shadow:
+    0 4px 14px rgba(0,0,0,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    inset 0 -1px 0 rgba(0,0,0,0.20);
+}
+[data-bs-theme="dark"] .dsn-extras .dsn-kpi:hover,
+[data-layout-mode="dark"] .dsn-extras .dsn-kpi:hover,
+[data-bs-theme="dark"] .role-extras .role-kpi:hover,
+[data-layout-mode="dark"] .role-extras .role-kpi:hover {
+  border-color: color-mix(in srgb, #6691e7 30%, transparent);
+  box-shadow:
+    0 10px 26px rgba(0,0,0,0.36),
+    0 0 0 1px rgba(102,145,231,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.10);
+}
+/* Hierarchy chip strip — glossy track with depth. */
+[data-bs-theme="dark"] .dsn-extras .dsn-hier-row,
+[data-layout-mode="dark"] .dsn-extras .dsn-hier-row {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--vz-card-bg) 80%, #ffffff) 0%,
+    color-mix(in srgb, var(--vz-card-bg) 96%, #ffffff) 100%);
+  border-color: color-mix(in srgb, #ffffff 9%, transparent);
+  box-shadow:
+    0 4px 14px rgba(0,0,0,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+/* ---------------------------------------------------------------------
+   2. Master table — sticky header + scrollbar styling
+   --------------------------------------------------------------------- */
+.master-scroll-wrap {
+  max-height: 445px;
+  overflow-y: auto;
+}
+.master-scroll-wrap thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.master-scroll-wrap::-webkit-scrollbar { width: 8px; }
+.master-scroll-wrap::-webkit-scrollbar-track { background: transparent; }
+.master-scroll-wrap::-webkit-scrollbar-thumb { background: var(--vz-border-color); border-radius: 8px; }
+.master-scroll-wrap::-webkit-scrollbar-thumb:hover { background: var(--vz-secondary-color); }
+
+/* ---------------------------------------------------------------------
+   3. Designations — KPI strip (compact, responsive)
+   --------------------------------------------------------------------- */
+/* KPI strip — 7 → 4 → 3 → 2 columns */
+.dsn-extras .dsn-kpis {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+@media (max-width: 1399px) {
+  .dsn-extras .dsn-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 991px) {
+  .dsn-extras .dsn-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 575px) {
+  .dsn-extras .dsn-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+}
+/* Layout: top accent strip + [Label/Number on LEFT][Icon tile on RIGHT]
+   Matches the Department Master reference design. */
+.dsn-extras .dsn-kpi {
+  position: relative;
+  background: var(--vz-card-bg);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  overflow: hidden;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.dsn-extras .dsn-kpi::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--kpi-accent, transparent);
+}
+.dsn-extras .dsn-kpi:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(0,0,0,0.07);
+}
+.dsn-extras .dsn-kpi-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+  flex: 1;
+}
+.dsn-extras .dsn-kpi-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+.dsn-extras .dsn-kpi-num {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--kpi-deep, var(--vz-heading-color, var(--vz-body-color)));
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+[data-bs-theme="dark"] .dsn-extras .dsn-kpi-num,
+[data-layout-mode="dark"] .dsn-extras .dsn-kpi-num {
+  color: var(--kpi-bright, rgba(255,255,255,0.95)) !important;
+}
+.dsn-extras .dsn-kpi-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Dark-mode polish — brighter strip + subtle glow + bolder borders so
+   the KPI cards and hierarchy chips POP against the dark canvas. */
+[data-bs-theme="dark"] .dsn-extras .dsn-kpi,
+[data-layout-mode="dark"] .dsn-extras .dsn-kpi {
+  background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
+  border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
+}
+[data-bs-theme="dark"] .dsn-extras .dsn-kpi-label,
+[data-layout-mode="dark"] .dsn-extras .dsn-kpi-label {
+  color: rgba(255, 255, 255, 0.78);
+}
+[data-bs-theme="dark"] .dsn-extras .dsn-kpi-icon,
+[data-layout-mode="dark"] .dsn-extras .dsn-kpi-icon {
+  filter: brightness(1.1) saturate(1.1);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.05) inset;
+}
+[data-bs-theme="dark"] .dsn-extras .dsn-hier-row,
+[data-layout-mode="dark"] .dsn-extras .dsn-hier-row {
+  background: color-mix(in srgb, var(--vz-card-bg) 90%, #ffffff);
+  border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
+}
+[data-bs-theme="dark"] .dsn-extras .dsn-hier-chip,
+[data-layout-mode="dark"] .dsn-extras .dsn-hier-chip {
+  filter: brightness(1.05) saturate(1.1);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset;
+}
+
+/* ---------------------------------------------------------------------
+   4. Designations — Hierarchy chip strip
+   --------------------------------------------------------------------- */
+.dsn-extras .dsn-hier-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--vz-border-color);
+  border-radius: 12px;
+  background: var(--vz-card-bg);
+  margin-bottom: 12px;
+}
+@media (max-width: 575px) {
+  .dsn-extras .dsn-hier-row { padding: 8px 10px; gap: 5px; }
+}
+.dsn-extras .dsn-hier-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--vz-secondary-color);
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+.dsn-extras .dsn-hier-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+@media (max-width: 575px) {
+  .dsn-extras .dsn-hier-chip { font-size: 9.5px; padding: 2px 6px; }
+  .dsn-extras .dsn-hier-arrow { display: none; }
+}
+.dsn-extras .dsn-hier-arrow {
+  color: var(--vz-secondary-color);
+  opacity: 0.55;
+  font-size: 12px;
+}
+.dsn-extras .dsn-hier-tail {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--vz-secondary-color);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------
+   5. Designations — inline filter group
+   --------------------------------------------------------------------- */
+.dsn-inline-filters .dsn-il-group { display: flex; align-items: center; gap: 6px; }
+.dsn-inline-filters .dsn-il-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+}
+.dsn-inline-filters .form-select-sm { min-width: 120px; }
+
+/* ---------------------------------------------------------------------
+   6. Roles — KPI cards + segmented filter tabs
+   --------------------------------------------------------------------- */
+.role-extras .role-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+@media (max-width: 1399px) { .role-extras .role-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 575px)  { .role-extras .role-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } }
+.role-extras .role-kpi {
+  position: relative;
+  background: var(--vz-card-bg);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  overflow: hidden;
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.role-extras .role-kpi::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--kpi-accent, transparent);
+}
+.role-extras .role-kpi:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(64,81,137,0.10);
+}
+.role-extras .role-kpi-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 17px;
+  position: relative;
+  z-index: 1;
+}
+.role-extras .role-kpi-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; flex: 1; }
+.role-extras .role-kpi-num {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--kpi-deep, var(--vz-heading-color, var(--vz-body-color)));
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+[data-bs-theme="dark"] .role-extras .role-kpi-num,
+[data-layout-mode="dark"] .role-extras .role-kpi-num {
+  color: var(--kpi-bright, rgba(255,255,255,0.95)) !important;
+}
+.role-extras .role-kpi-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-bs-theme="dark"] .role-extras .role-kpi-label,
+[data-layout-mode="dark"] .role-extras .role-kpi-label { color: rgba(255,255,255,0.78); }
+[data-bs-theme="dark"] .role-extras .role-kpi,
+[data-layout-mode="dark"] .role-extras .role-kpi {
+  background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
+  border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
+}
+/* Filter tabs — refined segmented control: subtle cream track with
+   depth, white "lifted" active pill with crisp elevation + thin ring. */
+.role-extras .role-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 12px;
+  padding: 4px;
+  background: color-mix(in srgb, var(--vz-body-color) 8%, var(--vz-card-bg));
+  border: 1px solid color-mix(in srgb, var(--vz-body-color) 6%, transparent);
+  border-radius: 999px;
+  flex-wrap: wrap;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
+}
+[data-bs-theme="dark"] .role-extras .role-tabs,
+[data-layout-mode="dark"] .role-extras .role-tabs {
+  background: color-mix(in srgb, #ffffff 6%, var(--vz-card-bg));
+  border-color: color-mix(in srgb, #ffffff 8%, transparent);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.20);
+}
+.role-extras .role-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--vz-secondary-color);
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+  white-space: nowrap;
+}
+.role-extras .role-tab:hover:not(.active) {
+  color: var(--vz-heading-color, var(--vz-body-color));
+  background: color-mix(in srgb, var(--vz-body-color) 4%, transparent);
+}
+.role-extras .role-tab.active,
+.role-extras button.role-tab.active {
+  /* Premium indigo gradient with a slow, gentle halo breath —
+     attention without harsh flicker. Text stays crisp. */
+  background: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #818cf8 100%);
+  color: #ffffff !important;
+  font-weight: 600;
+  border-color: #4338ca;
+  animation: role-tab-breathe 3s ease-in-out infinite;
+}
+.role-extras .role-tab.active > span:not(.role-tab-count),
+.role-extras button.role-tab.active > span:not(.role-tab-count) {
+  color: #ffffff !important;
+}
+@keyframes role-tab-breathe {
+  0%, 100% {
+    box-shadow:
+      0 6px 18px rgba(99,102,241,0.45),
+      0 2px 5px rgba(99,102,241,0.28),
+      0 0 0 2px rgba(99,102,241,0.10),
+      inset 0 1px 0 rgba(255,255,255,0.24),
+      inset 0 -1px 0 rgba(0,0,0,0.10);
+  }
+  50% {
+    box-shadow:
+      0 8px 22px rgba(99,102,241,0.55),
+      0 2px 6px rgba(99,102,241,0.32),
+      0 0 0 6px rgba(99,102,241,0.18),
+      inset 0 1px 0 rgba(255,255,255,0.30),
+      inset 0 -1px 0 rgba(0,0,0,0.10);
+  }
+}
+[data-bs-theme="dark"] .role-extras .role-tab.active,
+[data-layout-mode="dark"] .role-extras .role-tab.active {
+  background: linear-gradient(135deg, #3450b0 0%, #4267e7 50%, #6691e7 100%);
+  color: #ffffff !important;
+  border-color: #6691e7;
+  box-shadow:
+    0 6px 18px rgba(64,103,231,0.55),
+    0 2px 6px rgba(0,0,0,0.30),
+    inset 0 1px 0 rgba(255,255,255,0.22),
+    inset 0 -1px 0 rgba(0,0,0,0.20);
+}
+.role-extras .role-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  padding: 0 7px;
+  height: 17px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--vz-body-color) 12%, transparent);
+  color: var(--vz-secondary-color);
+  font-variant-numeric: tabular-nums;
+}
+.role-extras .role-tab.active .role-tab-count {
+  background: rgba(255,255,255,0.95);
+  color: #4338ca;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+}
+
+/* ---------------------------------------------------------------------
+   7. Roles — inline filter group
+   --------------------------------------------------------------------- */
+.role-inline-filters .role-il-group { display: flex; align-items: center; gap: 6px; }
+.role-inline-filters .role-il-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+}
+.role-inline-filters .role-il-tail {
+  font-size: 11.5px;
+  color: var(--vz-secondary-color);
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+/* ---------------------------------------------------------------------
+   8. KPIs — KPI cards
+   --------------------------------------------------------------------- */
+.kpi-extras .kpi-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+@media (max-width: 1199px) { .kpi-extras .kpi-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 575px)  { .kpi-extras .kpi-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } }
+.kpi-extras .kpi-card {
+  position: relative;
+  background: var(--vz-card-bg);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  overflow: hidden;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.kpi-extras .kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--kpi-accent, transparent);
+}
+.kpi-extras .kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(0,0,0,0.07);
+}
+.kpi-extras .kpi-card-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+  flex: 1;
+}
+.kpi-extras .kpi-card-icon {
+  width: 36px; height: 36px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.kpi-extras .kpi-card-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kpi-extras .kpi-card-num {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--kpi-deep, var(--vz-heading-color, var(--vz-body-color)));
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+[data-bs-theme="dark"] .kpi-extras .kpi-card-num,
+[data-layout-mode="dark"] .kpi-extras .kpi-card-num {
+  color: var(--kpi-bright, rgba(255,255,255,0.95)) !important;
+}
+[data-bs-theme="dark"] .kpi-extras .kpi-card-label,
+[data-layout-mode="dark"] .kpi-extras .kpi-card-label { color: rgba(255,255,255,0.78); }
+[data-bs-theme="dark"] .kpi-extras .kpi-card,
+[data-layout-mode="dark"] .kpi-extras .kpi-card {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--vz-card-bg) 78%, #ffffff) 0%,
+    color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
+  border-color: color-mix(in srgb, #ffffff 9%, transparent);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+[data-bs-theme="dark"] .kpi-extras .kpi-card-sub,
+[data-layout-mode="dark"] .kpi-extras .kpi-card-sub { color: rgba(255,255,255,0.65); }
+
+/* ---------------------------------------------------------------------
+   9. KPIs — inline filter group
+   --------------------------------------------------------------------- */
+.kpi-inline-filters .kpi-il-group { display: flex; align-items: center; gap: 6px; }
+.kpi-inline-filters .kpi-il-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+}
