@@ -476,6 +476,24 @@ function MasterPageInner({
     }
     setFieldErrors({});
 
+    // Auto-capitalize the first letter of text/textarea values across every
+    // master form. Skips identifier-style fields (codes / GSTIN / PAN / etc.)
+    // and email, which have their own casing rules.
+    const SKIP_CAPITALIZE = new Set([
+      'code', 'iso_code', 'state_code', 'short_code',
+      'gstin', 'pan', 'tan', 'cin', 'iec',
+      'ifsc_code', 'swift_code', 'ad_code',
+      'email', 'website', 'url', 'domain', 'phone', 'mobile', 'whatsapp',
+      'pincode', 'postal_code', 'zip',
+    ]);
+    const capitalizeFirst = (s: string): string => {
+      if (!s) return s;
+      // Find first letter (skip leading whitespace/punctuation) and uppercase it.
+      const idx = s.search(/[a-zA-Z]/);
+      if (idx === -1) return s;
+      return s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
+    };
+
     const payload: Record<string, any> = {};
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
@@ -483,7 +501,10 @@ function MasterPageInner({
       if (f.t === 'number') {
         payload[f.n] = raw == null || raw === '' ? null : Number(raw);
       } else {
-        const s = String(raw ?? '').trim();
+        let s = String(raw ?? '').trim();
+        if (s !== '' && (f.t === 'text' || f.t === 'textarea') && !SKIP_CAPITALIZE.has(f.n)) {
+          s = capitalizeFirst(s);
+        }
         payload[f.n] = s === '' ? null : s;
       }
     }
@@ -1034,10 +1055,33 @@ function MasterPageInner({
         : row.client_name
         ? `Client: ${row.client_name}`
         : null;
+      // Pick a tone based on the creator's user_type so super-admin / client /
+      // branch users each show a distinct pill color.
+      const userType = String(row.creator_user_type ?? '').toLowerCase();
+      const tone =
+        userType === 'super_admin' ? { bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6' } :
+        userType === 'client_admin' || userType === 'client_user' ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6' } :
+        userType === 'branch_user' ? { bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6' } :
+        { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8' };
       return (
-        <div>
-          <div className="text-body fw-medium">{name}</div>
-          {scope && <div className="text-muted fs-11">{scope}</div>}
+        <div className="d-flex flex-column align-items-start" style={{ gap: 3 }}>
+          <span
+            className="rounded-pill d-inline-block"
+            style={{
+              background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
+              color: tone.fg,
+              border: `1px solid ${tone.border}66`,
+              padding: '2px 10px',
+              fontSize: '10.5px',
+              fontWeight: 600,
+              lineHeight: 1.3,
+              whiteSpace: 'nowrap',
+              boxShadow: `inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -1px 0 ${tone.border}24, 0 1px 3px ${tone.border}24`,
+            }}
+          >
+            {name}
+          </span>
+          {scope && <span className="text-muted" style={{ fontSize: 10.5 }}>{scope}</span>}
         </div>
       );
     }
@@ -2999,6 +3043,33 @@ function renderField(
       />
     );
   } else {
+    // Auto-capitalize the first alphabetic character on text inputs as the
+    // user types — only the first letter, rest of the casing is preserved
+    // exactly as typed. Skipped for email/number, code-style, and contact
+    // fields (handled by SKIP_AUTOCAP_FIELDS below).
+    const SKIP_AUTOCAP_FIELDS = new Set([
+      'code', 'iso_code', 'state_code', 'short_code',
+      'gstin', 'pan', 'tan', 'cin', 'iec',
+      'ifsc_code', 'swift_code', 'ad_code',
+      'email', 'website', 'url', 'domain', 'phone', 'mobile', 'whatsapp',
+      'pincode', 'postal_code', 'zip',
+    ]);
+    const shouldAutoCap = f.t === 'text' && !isAutogen && !SKIP_AUTOCAP_FIELDS.has(f.n);
+
+    const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
+      if (shouldAutoCap) {
+        const target = e.currentTarget;
+        const v = target.value;
+        const idx = v.search(/[a-zA-Z]/);
+        if (idx !== -1 && v[idx] !== v[idx].toUpperCase()) {
+          const cursor = target.selectionStart;
+          target.value = v.slice(0, idx) + v[idx].toUpperCase() + v.slice(idx + 1);
+          if (cursor != null) target.setSelectionRange(cursor, cursor);
+        }
+      }
+      onFieldChange();
+    };
+
     input = (
       <Input
         type={f.t === 'email' ? 'email' : f.t === 'number' ? 'number' : 'text'}
@@ -3011,7 +3082,7 @@ function renderField(
         disabled={viewOnly}
         readOnly={isAutogen}
         invalid={!!err}
-        onInput={onFieldChange}
+        onInput={handleInput}
         className={f.auto ? 'master-field-auto' : undefined}
       />
     );

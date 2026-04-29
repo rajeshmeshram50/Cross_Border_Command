@@ -25,20 +25,6 @@ class Kpis extends Model
         'created_by',
     ];
 
-    /**
-     * Auto-generate the KPI code (KPI-01, KPI-02, …) on create
-     * if the caller didn't supply one.
-     */
-    protected static function booted(): void
-    {
-        static::creating(function (self $row) {
-            if (empty($row->code)) {
-                $next = (int) static::max('id') + 1;
-                $row->code = 'KPI-' . str_pad((string) $next, 2, '0', STR_PAD_LEFT);
-            }
-        });
-    }
-
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
