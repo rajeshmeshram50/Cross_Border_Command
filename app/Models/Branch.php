@@ -26,6 +26,8 @@ class Branch extends Model
         'pan_number',
         'registration_number',
         'logo',
+        'primary_color',
+        'secondary_color',
         'address',
         'city',
         'district',

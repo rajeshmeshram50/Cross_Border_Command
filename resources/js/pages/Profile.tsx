@@ -5,7 +5,7 @@ import { useToast } from '../contexts/ToastContext';
 import api from '../api';
 
 export default function Profile() {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const toast = useToast();
   const [changingPw, setChangingPw] = useState(false);
   const [currentPw, setCurrentPw] = useState('');
@@ -13,7 +13,51 @@ export default function Profile() {
   const [confirmPw, setConfirmPw] = useState('');
   const [showAllPerms, setShowAllPerms] = useState(false);
 
+  // ── Branding section (logo + colors) — tenant users only ──
+  const [brandPrimary,   setBrandPrimary]   = useState<string>('#4F46E5');
+  const [brandSecondary, setBrandSecondary] = useState<string>('#10B981');
+  const [brandLogoFile,  setBrandLogoFile]  = useState<File | null>(null);
+  const [brandLogoPreview, setBrandLogoPreview] = useState<string | null>(null);
+  const [savingBrand, setSavingBrand] = useState(false);
+
   if (!user) return null;
+
+  // Initialize the branding form from the current /me values once we know
+  // them. Re-syncs whenever the user object changes (e.g. after refresh()).
+  if (brandPrimary === '#4F46E5' && user.primary_color) setBrandPrimary(user.primary_color);
+  if (brandSecondary === '#10B981' && user.secondary_color) setBrandSecondary(user.secondary_color);
+  if (brandLogoPreview === null && (user.branch_logo || user.client_logo)) {
+    setBrandLogoPreview(user.branch_logo || user.client_logo || null);
+  }
+
+  const handleBrandLogoChange = (file: File | null) => {
+    setBrandLogoFile(file);
+    if (file) {
+      const r = new FileReader();
+      r.onload = ev => setBrandLogoPreview(ev.target?.result as string);
+      r.readAsDataURL(file);
+    } else {
+      setBrandLogoPreview(user.branch_logo || user.client_logo || null);
+    }
+  };
+
+  const handleSaveBranding = async () => {
+    setSavingBrand(true);
+    try {
+      const fd = new FormData();
+      if (brandPrimary)   fd.append('primary_color', brandPrimary);
+      if (brandSecondary) fd.append('secondary_color', brandSecondary);
+      if (brandLogoFile)  fd.append('logo', brandLogoFile);
+      await api.post('/me/branding', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await refresh();
+      setBrandLogoFile(null);
+      toast.success('Branding Saved', 'Your logo and colors are live across the app');
+    } catch (err: any) {
+      toast.error('Save Failed', err.response?.data?.message || 'Could not save branding');
+    } finally {
+      setSavingBrand(false);
+    }
+  };
 
   const roleLabels: Record<string, string> = {
     super_admin: 'Super Administrator',
@@ -703,6 +747,97 @@ export default function Profile() {
       ) : (
         <Row className="mt-3 g-3">
           <Col xs={12}>{changePasswordCard}</Col>
+        </Row>
+      )}
+
+      {/* ── Branding (tenant users only) ── */}
+      {!isSuperAdmin && (
+        <Row className="mt-3">
+          <Col xs={12}>
+            <Card className="mb-0" style={cardStyle}>
+              <CardBody>
+                <SectionHeader
+                  title={isBranchUser ? 'Branch Branding' : 'Organization Branding'}
+                  gradient={GRAD_INFO}
+                  icon="ri-palette-line"
+                  action={
+                    <span className="badge rounded-pill fw-semibold fs-11 px-2 py-1" style={{ background: 'rgba(41,156,219,0.12)', color: '#299cdb' }}>
+                      Live preview
+                    </span>
+                  }
+                />
+                <p className="text-muted fs-12 mb-3">
+                  {isBranchUser
+                    ? 'These colors and logo apply to your branch when its users sign in. Leave blank to inherit from the parent client.'
+                    : 'Your client-wide brand. Sidebar + topbar background uses Primary; active menu items use Secondary. Branches can override these for their own users.'}
+                </p>
+
+                <Row className="g-3 align-items-start">
+                  {/* Logo upload */}
+                  <Col md={4}>
+                    <Label className="fs-12 fw-semibold mb-2">Logo</Label>
+                    <div className="d-flex align-items-center gap-3 p-2 rounded-3" style={{ background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)' }}>
+                      <div
+                        className="d-flex align-items-center justify-content-center flex-shrink-0"
+                        style={{ width: 56, height: 56, borderRadius: 10, background: '#fff', border: '1px solid var(--vz-border-color)', overflow: 'hidden' }}
+                      >
+                        {brandLogoPreview ? (
+                          <img src={brandLogoPreview} alt="logo preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                        ) : (
+                          <i className="ri-image-line" style={{ fontSize: 22, color: 'var(--vz-secondary-color)' }} />
+                        )}
+                      </div>
+                      <div className="flex-grow-1 min-w-0">
+                        <Input type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" style={{ fontSize: 12 }}
+                          onChange={e => handleBrandLogoChange(e.target.files?.[0] || null)} />
+                        <small className="text-muted d-block mt-1" style={{ fontSize: 10.5 }}>PNG, JPG, SVG — max 2MB</small>
+                      </div>
+                    </div>
+                  </Col>
+
+                  {/* Primary color */}
+                  <Col md={4}>
+                    <Label className="fs-12 fw-semibold mb-2">Primary Color</Label>
+                    <div className="d-flex gap-2 align-items-center">
+                      <Input type="color" value={brandPrimary} onChange={e => setBrandPrimary(e.target.value)}
+                        style={{ width: 44, height: 38, padding: 2, borderRadius: 6, cursor: 'pointer' }} />
+                      <Input value={brandPrimary} onChange={e => setBrandPrimary(e.target.value)}
+                        style={{ fontFamily: 'monospace', fontSize: 13 }} placeholder="#4F46E5" />
+                    </div>
+                    <small className="text-muted d-block mt-1" style={{ fontSize: 10.5 }}>Sidebar + topbar background</small>
+                  </Col>
+
+                  {/* Secondary color */}
+                  <Col md={4}>
+                    <Label className="fs-12 fw-semibold mb-2">Secondary Color</Label>
+                    <div className="d-flex gap-2 align-items-center">
+                      <Input type="color" value={brandSecondary} onChange={e => setBrandSecondary(e.target.value)}
+                        style={{ width: 44, height: 38, padding: 2, borderRadius: 6, cursor: 'pointer' }} />
+                      <Input value={brandSecondary} onChange={e => setBrandSecondary(e.target.value)}
+                        style={{ fontFamily: 'monospace', fontSize: 13 }} placeholder="#10B981" />
+                    </div>
+                    <small className="text-muted d-block mt-1" style={{ fontSize: 10.5 }}>Active menu accent</small>
+                  </Col>
+                </Row>
+
+                {/* Live mini-preview row */}
+                <div className="mt-3 p-3 rounded-3 d-flex align-items-center gap-3 flex-wrap"
+                     style={{ background: brandPrimary, border: '1px solid var(--vz-border-color)' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', opacity: 0.85, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Preview</span>
+                  <span className="px-2 py-1 rounded-2" style={{ background: 'rgba(255,255,255,0.18)', color: '#fff', fontSize: 12, fontWeight: 600 }}>Topbar / Sidebar</span>
+                  <span className="px-2 py-1 rounded-2" style={{ background: brandSecondary, color: '#fff', fontSize: 12, fontWeight: 700 }}>Active Menu</span>
+                </div>
+
+                <div className="d-flex justify-content-end mt-3">
+                  <button type="button" onClick={handleSaveBranding} disabled={savingBrand}
+                    className="btn btn-primary d-inline-flex align-items-center gap-2"
+                    style={{ background: GRAD_INFO, border: 'none', borderRadius: 10, padding: '8px 18px', fontWeight: 600, fontSize: 13, boxShadow: '0 4px 12px rgba(41,156,219,0.28)' }}>
+                    {savingBrand ? <><Spinner size="sm" /> Saving…</> : <><i className="ri-save-line" /> Save Branding</>}
+                  </button>
+                </div>
+              </CardBody>
+            </Card>
+          </Col>
         </Row>
       )}
 
