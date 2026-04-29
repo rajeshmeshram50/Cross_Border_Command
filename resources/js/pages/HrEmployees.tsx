@@ -1,18 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody, Spinner } from 'reactstrap';
+import { useMemo, useState } from 'react';
+import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
+import { useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
-import api from '../api';
 import { useToast } from '../contexts/ToastContext';
-import PermissionMatrix, {
-  extractLeafPermissions,
-  emptyPerms,
-  type PermKey,
-  type PermModule,
-} from '../components/PermissionMatrix';
-
-// Slugs hidden from the per-employee permission matrix (admin-only / tenant-level
-// modules that don't apply to an individual employee). Mirrors ClientPermissions.
-const HIDDEN_PERM_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions', 'master.organization_types']);
 
 // ── Evidence Vault — mock document catalogue (per-employee view) ────────────
 type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
@@ -317,6 +307,41 @@ export default function HrEmployees() {
   const [onbDate, setOnbDate] = useState('');
   const [onbExpiry, setOnbExpiry] = useState<ExpiryDays>(15);
 
+  // Onboarding form — inline validation. Mirrors the pattern used by the
+  // master/client forms: per-field error map cleared as the user fixes the
+  // field, with a summary toast on submit if anything is still invalid.
+  const toast = useToast();
+  type OnbErrors = { name?: string; email?: string; dept?: string; date?: string };
+  const [onbErrors, setOnbErrors] = useState<OnbErrors>({});
+  const clearOnbError = (key: keyof OnbErrors) => {
+    setOnbErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+  const validateOnboarding = (): OnbErrors => {
+    const errs: OnbErrors = {};
+    if (!onbName.trim())  errs.name  = 'Employee name is required';
+    if (!onbEmail.trim()) errs.email = 'Email address is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(onbEmail.trim())) errs.email = 'Please enter a valid email address';
+    if (!onbDept)         errs.dept  = 'Please select a department';
+    if (!onbDate)         errs.date  = 'Please pick the expected joining date';
+    return errs;
+  };
+  const handleGenerateOnboarding = () => {
+    const errs = validateOnboarding();
+    if (Object.keys(errs).length > 0) {
+      setOnbErrors(errs);
+      toast.error('Please fix the highlighted fields', `${Object.keys(errs).length} field${Object.keys(errs).length === 1 ? '' : 's'} need${Object.keys(errs).length === 1 ? 's' : ''} attention.`);
+      return;
+    }
+    // TODO: wire to backend — generate signed onboarding link for {onbName, onbEmail, onbDept, onbDate, onbExpiry}
+    toast.success('Onboarding link generated', `A ${onbExpiry}-day link will be sent to ${onbEmail}.`);
+    closeOnboard();
+  };
+
   const closeOnboard = () => {
     setOnboardOpen(false);
     setOnbName('');
@@ -324,6 +349,7 @@ export default function HrEmployees() {
     setOnbDept('');
     setOnbDate('');
     setOnbExpiry(15);
+    setOnbErrors({});
   };
 
   // Triggered from the disabled-tab person icon — pre-fills the onboarding link
@@ -430,28 +456,80 @@ export default function HrEmployees() {
     setALaptopAssigned('No'); setALaptopAssetId(''); setAMobileDevice(''); setAOtherAssets('');
     setAAccessCard(''); setASecurityLevel('Level 1 — Basic'); setAVpnAccess('Not Required');
     setAIssueDate(''); setAIssuedBy(''); setANotes('');
+    setAssignErrors({});
     setAssignOpen(true);
   };
-  const closeAssign = () => { setAssignOpen(false); setAssignEmp(null); };
-
-  // Manage Permissions modal (opened by the per-row Permissions/lock icon).
-  // Mirrors the ClientPermissions page — same matrix, just rendered inside a
-  // modal scoped to an individual employee.
-  const toast = useToast();
-  const [permsOpen, setPermsOpen]     = useState(false);
-  const [permsEmp, setPermsEmp]       = useState<EmployeeRow | null>(null);
-  const [permsModules, setPermsModules]     = useState<PermModule[]>([]);
-  const [permsMatrix, setPermsMatrix]       = useState<Record<number, Record<PermKey, boolean>>>({});
-  const [permsLoading, setPermsLoading]     = useState(false);
-  const [permsSaving, setPermsSaving]       = useState(false);
-
-  const openPermissions = (row: EmployeeRow) => {
-    setPermsEmp(row);
-    setPermsModules([]);
-    setPermsMatrix({});
-    setPermsOpen(true);
+  // Assign Assets — validation state. Pattern matches the master/onboarding
+  // forms: per-field error map, cleared as the user fixes each field, with a
+  // toast on submit if anything is still invalid.
+  type AssignErrors = {
+    laptopAssetId?: string;
+    mobileDevice?: string;
+    accessCard?: string;
+    issueDate?: string;
+    issuedBy?: string;
   };
-  const closePermissions = () => { setPermsOpen(false); setPermsEmp(null); };
+  const [assignErrors, setAssignErrors] = useState<AssignErrors>({});
+  const clearAssignError = (key: keyof AssignErrors) => {
+    setAssignErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+  const validateAssign = (): { errors: AssignErrors; firstTab?: 'it' | 'security' | 'hr' } => {
+    const errs: AssignErrors = {};
+    // IT Assets — Asset ID is required when a laptop is assigned.
+    if (aLaptopAssigned === 'Yes' && !aLaptopAssetId.trim()) {
+      errs.laptopAssetId = 'Laptop Asset ID is required when a laptop is assigned';
+    }
+    if (aMobileDevice.trim() && aMobileDevice.trim().length < 2) {
+      errs.mobileDevice = 'Please enter a valid device name';
+    }
+    // Security — access card format check (only if filled).
+    if (aAccessCard.trim() && !/^[A-Za-z0-9-]{4,}$/.test(aAccessCard.trim())) {
+      errs.accessCard = 'Access card must be at least 4 alphanumeric characters';
+    }
+    // HR Record — issue date and issuer are mandatory for any assignment.
+    if (!aIssueDate)         errs.issueDate = 'Issue date is required';
+    if (!aIssuedBy.trim())   errs.issuedBy  = 'Issued by is required';
+
+    let firstTab: 'it' | 'security' | 'hr' | undefined;
+    if (errs.laptopAssetId || errs.mobileDevice) firstTab = 'it';
+    else if (errs.accessCard)                    firstTab = 'security';
+    else if (errs.issueDate || errs.issuedBy)    firstTab = 'hr';
+    return { errors: errs, firstTab };
+  };
+  const handleSaveAssign = () => {
+    const { errors, firstTab } = validateAssign();
+    if (Object.keys(errors).length > 0) {
+      setAssignErrors(errors);
+      if (firstTab && firstTab !== assignTab) setAssignTab(firstTab);
+      toast.error(
+        'Please fix the highlighted fields',
+        `${Object.keys(errors).length} field${Object.keys(errors).length === 1 ? '' : 's'} need${Object.keys(errors).length === 1 ? 's' : ''} attention.`
+      );
+      return;
+    }
+    // TODO: wire to backend — POST asset assignment for assignEmp
+    toast.success('Assets saved', `Asset assignment recorded for ${assignEmp?.name || 'this employee'}.`);
+    closeAssign();
+  };
+
+  const closeAssign = () => {
+    setAssignOpen(false);
+    setAssignEmp(null);
+    setAssignErrors({});
+  };
+
+  // Manage Permissions — opens a dedicated page (not a modal) so the matrix
+  // gets full screen real estate. The route reads the row from navigation
+  // state; falling back to just the id if landed on directly.
+  const navigate = useNavigate();
+  const openPermissions = (row: EmployeeRow) => {
+    navigate(`/hr/employees/${encodeURIComponent(row.id)}/permissions`, { state: { employee: row } });
+  };
 
   // Evidence Vault modal (opened by the per-row Documents/PDF icon)
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -464,69 +542,21 @@ export default function HrEmployees() {
   };
   const closeVault = () => { setVaultOpen(false); setVaultEmp(null); };
 
-  // Fetch modules (and the employee's existing permissions where the EMP id
-  // aligns with a real user_id on the backend) every time the modal opens.
-  useEffect(() => {
-    if (!permsOpen || !permsEmp) return;
-    let cancelled = false;
-    setPermsLoading(true);
-    (async () => {
-      try {
-        const modRes = await api.get('/modules');
-        const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_PERM_SLUGS.has(m.slug));
-        const m: Record<number, Record<PermKey, boolean>> = {};
-        mods.forEach(mod => { m[mod.id] = emptyPerms(); });
+  // Toggle confirmation — clicking the per-row enable/disable switch first
+  // pops a confirm modal; on Confirm the row's local toggle commits.
+  const [togglePending, setTogglePending] = useState<{
+    employee: EmployeeRow;
+    next: boolean;          // the state the user is asking to switch to
+    commit: () => void;     // callback into the ToggleSwitch's local setter
+  } | null>(null);
 
-        // Best-effort: try to load existing permissions if the employee id is a
-        // numeric user_id on the backend. EMP-codes are mock here; if the call
-        // 404s we just keep an empty matrix.
-        const numericId = Number(String(permsEmp.id).replace(/\D/g, ''));
-        if (numericId > 0) {
-          try {
-            const permRes = await api.get(`/permissions/user/${numericId}`);
-            const perms = permRes.data?.permissions || [];
-            perms.forEach((p: any) => {
-              if (m[p.module_id]) {
-                m[p.module_id] = {
-                  can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
-                  can_delete: !!p.can_delete, can_export: !!p.can_export,
-                  can_import: !!p.can_import, can_approve: !!p.can_approve,
-                };
-              }
-            });
-          } catch { /* employee may not be a real user yet — empty matrix is fine */ }
-        }
-
-        if (!cancelled) {
-          setPermsModules(mods);
-          setPermsMatrix(m);
-        }
-      } finally {
-        if (!cancelled) setPermsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [permsOpen, permsEmp]);
-
-  const handleSavePermissions = async () => {
-    if (!permsEmp) return;
-    const numericId = Number(String(permsEmp.id).replace(/\D/g, ''));
-    if (!numericId) {
-      // No real user_id available (mock-only employee) — surface and bail.
-      toast.error('Cannot save', `${permsEmp.name} is not linked to a backend user yet.`);
-      return;
-    }
-    setPermsSaving(true);
-    try {
-      const permissions = extractLeafPermissions(permsModules, permsMatrix);
-      const res = await api.post(`/permissions/user/${numericId}`, { permissions });
-      toast.success('Saved', `${res.data?.saved_count || permissions.length} permissions updated for ${permsEmp.name}`);
-      closePermissions();
-    } catch (err: any) {
-      toast.error('Error', err.response?.data?.message || 'Failed to save permissions');
-    } finally {
-      setPermsSaving(false);
-    }
+  const requestToggle = (employee: EmployeeRow, next: boolean, commit: () => void) => {
+    setTogglePending({ employee, next, commit });
+  };
+  const cancelToggle  = () => setTogglePending(null);
+  const confirmToggle = () => {
+    togglePending?.commit();
+    setTogglePending(null);
   };
   // Step 4 — Compensation
   const [eEnablePayroll, setEEnablePayroll]      = useState(true);
@@ -683,12 +713,7 @@ export default function HrEmployees() {
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee </h5>
-                    <span
-                      className="badge rounded-pill border border-success text-success text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1"
-                    >
-                      <span className="bg-success rounded-circle" style={{ width: 6, height: 6 }} />
-                      {counts.total} employees · {counts.active} active
-                    </span>
+                    
                   </div>
                   <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
                     Employee directory, profiles, and employment records
@@ -821,29 +846,31 @@ export default function HrEmployees() {
                   <i className="ri-search-line search-icon"></i>
                 </div>
               </Col>
-              <Col md={6} sm={12} className="d-flex justify-content-md-end gap-2 flex-wrap align-items-center">
+              <Col md={6} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
                 <div className="d-flex align-items-center gap-2">
                   <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
-                  <select
-                    className="form-select form-select-sm"
-                    value={statusFilter}
-                    onChange={e => setStatusFilter(e.target.value as 'Active' | 'All')}
-                    style={{ minWidth: 110, fontSize: 13 }}
-                  >
-                    <option>Active</option>
-                    <option>All</option>
-                  </select>
+                  <div style={{ minWidth: 130 }}>
+                    <MasterSelect
+                      value={statusFilter}
+                      onChange={(v) => setStatusFilter((v as 'Active' | 'All') || 'Active')}
+                      options={[
+                        { value: 'Active', label: 'Active' },
+                        { value: 'All',    label: 'All' },
+                      ]}
+                      placeholder="Status"
+                    />
+                  </div>
                 </div>
                 <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Dept</span>
-                  <select
-                    className="form-select form-select-sm"
-                    value={deptFilter}
-                    onChange={e => setDeptFilter(e.target.value)}
-                    style={{ minWidth: 150, fontSize: 13 }}
-                  >
-                    {departments.map(d => <option key={d}>{d}</option>)}
-                  </select>
+                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
+                  <div style={{ minWidth: 170 }}>
+                    <MasterSelect
+                      value={deptFilter}
+                      onChange={setDeptFilter}
+                      options={departments.map(d => ({ value: d, label: d }))}
+                      placeholder="All Depts"
+                    />
+                  </div>
                 </div>
               </Col>
             </Row>
@@ -906,7 +933,19 @@ export default function HrEmployees() {
                               </div>
                             </td>
                             <td>
-                              <span className="fw-medium text-primary font-monospace fs-13">{e.id}</span>
+                              <span
+                                className="d-inline-flex align-items-center fw-bold font-monospace"
+                                style={{
+                                  fontSize: 12,
+                                  padding: '4px 10px',
+                                  borderRadius: 999,
+                                  background: '#ece6ff',
+                                  color: '#5a3fd1',
+                                  letterSpacing: '0.02em',
+                                }}
+                              >
+                                {e.id}
+                              </span>
                             </td>
                             <td className="fs-13">{e.department}</td>
                             <td className="fs-13">{e.designation}</td>
@@ -944,15 +983,74 @@ export default function HrEmployees() {
                             </td>
                             <td className="fs-13">{e.manager}</td>
                             <td>
-                              <div className="d-flex align-items-center gap-2">
-                                <div className="progress flex-grow-1" style={{ height: 5, minWidth: 80, maxWidth: 110, background: 'var(--vz-secondary-bg)', borderRadius: 999 }}>
+                              {(() => {
+                                // Tier-based colour pair (dark → light). Bar uses a horizontal
+                                // gradient between the two with a diagonal stripe overlay, and a
+                                // circular badge with the percent floats above the fill end.
+                                const p = e.profile;
+                                const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
+                                          : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
+                                          : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
+                                          :           { dark: '#f06548', light: '#fda192' };
+                                // Clamp badge position so it never spills past the track ends.
+                                const badgeLeft = Math.max(11, Math.min(89, p));
+                                return (
                                   <div
-                                    className="progress-bar bg-success"
-                                    style={{ width: `${e.profile}%`, borderRadius: 999 }}
-                                  />
-                                </div>
-                                <span className="fw-bold text-success" style={{ fontSize: 12, minWidth: 32 }}>{e.profile}%</span>
-                              </div>
+                                    style={{ position: 'relative', width: 120, paddingTop: 30 }}
+                                    title={`Profile ${p}% complete`}
+                                  >
+                                    {/* Floating badge + downward pointer */}
+                                    <div
+                                      style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: `${badgeLeft}%`,
+                                        transform: 'translateX(-50%)',
+                                        textAlign: 'center',
+                                      }}
+                                    >
+                                      <div
+                                        className="d-flex align-items-center justify-content-center fw-bold"
+                                        style={{
+                                          width: 26, height: 26, borderRadius: '50%',
+                                          background: `linear-gradient(135deg, ${TIER.dark}, ${TIER.light})`,
+                                          color: '#fff', fontSize: 9.5,
+                                          boxShadow: `0 4px 10px ${TIER.dark}55`,
+                                        }}
+                                      >
+                                        {p}%
+                                      </div>
+                                      <div
+                                        style={{
+                                          width: 0, height: 0, margin: '0 auto',
+                                          borderLeft: '4px solid transparent',
+                                          borderRight: '4px solid transparent',
+                                          borderTop: `5px solid ${TIER.dark}`,
+                                        }}
+                                      />
+                                    </div>
+
+                                    {/* Track + striped fill */}
+                                    <div
+                                      style={{
+                                        width: '100%', height: 8,
+                                        borderRadius: 999,
+                                        background: '#e5e7eb',
+                                        overflow: 'hidden',
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          width: `${p}%`, height: '100%',
+                                          borderRadius: 999,
+                                          background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.28) 0 4px, transparent 4px 8px), linear-gradient(90deg, ${TIER.dark}, ${TIER.light})`,
+                                          transition: 'width .25s ease',
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td>
                               {(() => {
@@ -993,7 +1091,10 @@ export default function HrEmployees() {
                                 {tab === 'active' && (
                                   <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} />
                                 )}
-                                <ToggleSwitch initial={e.enabled} />
+                                <ToggleSwitch
+                                  initial={e.enabled}
+                                  onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
+                                />
                               </div>
                             </td>
                           </tr>
@@ -1022,12 +1123,17 @@ export default function HrEmployees() {
         centered
         size="md"
         contentClassName="onb-modal-content border-0"
+        backdrop="static"
+        keyboard={false}
       >
         <style>{`
           .onb-modal-content { border-radius: 24px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
           .onb-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px; font-size: 14px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; height: 50px; }
           .onb-input::placeholder { color: #9ca3af; font-weight: 400; }
           .onb-input:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
+          .onb-input.is-invalid { border-color: #f06548 !important; box-shadow: 0 0 0 3px rgba(240,101,72,0.15) !important; }
+          .onb-error { display: flex; align-items: center; gap: 4px; color: #f06548; font-size: 12px; margin-top: 6px; }
+          .onb-error i { font-size: 13px; }
           [data-bs-theme="dark"] .onb-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
           [data-bs-theme="dark"] .onb-input::placeholder { color: var(--vz-secondary-color); }
           .onb-label { font-size: 12px; font-weight: 700; color: #374151; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; display: block; }
@@ -1044,7 +1150,7 @@ export default function HrEmployees() {
           .onb-close-btn:hover { background: #f3f4f6; color: #1f2937; }
         `}</style>
 
-        <ModalBody className="p-0" style={{ background: '#fff' }}>
+        <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
           {/* Header */}
           <div className="d-flex align-items-start justify-content-between" style={{ padding: '24px 28px 18px' }}>
             <div className="d-flex align-items-center gap-3">
@@ -1087,41 +1193,55 @@ export default function HrEmployees() {
                 <input
                   id="onb-name"
                   type="text"
-                  className="onb-input"
+                  className={`onb-input${onbErrors.name ? ' is-invalid' : ''}`}
                   placeholder="Full name"
                   value={onbName}
-                  onChange={e => setOnbName(e.target.value)}
+                  onChange={e => { setOnbName(e.target.value); clearOnbError('name'); }}
                 />
+                {onbErrors.name && (
+                  <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.name}</div>
+                )}
               </Col>
               <Col md={6}>
                 <label className="onb-label" htmlFor="onb-email">Email Address<span className="onb-req">*</span></label>
                 <input
                   id="onb-email"
                   type="email"
-                  className="onb-input"
+                  className={`onb-input${onbErrors.email ? ' is-invalid' : ''}`}
                   placeholder="name@company.com"
                   value={onbEmail}
-                  onChange={e => setOnbEmail(e.target.value)}
+                  onChange={e => { setOnbEmail(e.target.value); clearOnbError('email'); }}
                 />
+                {onbErrors.email && (
+                  <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.email}</div>
+                )}
               </Col>
               <Col md={6}>
                 <label className="onb-label">Department<span className="onb-req">*</span></label>
                 <MasterSelect
                   value={onbDept}
-                  onChange={setOnbDept}
+                  onChange={(v) => { setOnbDept(v); clearOnbError('dept'); }}
                   placeholder="Select department"
                   options={departments
                     .filter(d => d !== 'All Depts')
                     .map(d => ({ value: d, label: d }))}
+                  invalid={!!onbErrors.dept}
                 />
+                {onbErrors.dept && (
+                  <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.dept}</div>
+                )}
               </Col>
               <Col md={6}>
                 <label className="onb-label">Expected Joining Date<span className="onb-req">*</span></label>
                 <MasterDatePicker
                   value={onbDate}
-                  onChange={setOnbDate}
+                  onChange={(v) => { setOnbDate(v); clearOnbError('date'); }}
                   placeholder="dd-mm-yyyy"
+                  invalid={!!onbErrors.date}
                 />
+                {onbErrors.date && (
+                  <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.date}</div>
+                )}
               </Col>
             </Row>
 
@@ -1152,15 +1272,263 @@ export default function HrEmployees() {
             <button
               type="button"
               className="onb-submit-btn w-100 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-              onClick={() => {
-                // TODO: wire to backend — generate signed onboarding link
-                closeOnboard();
-              }}
+              onClick={handleGenerateOnboarding}
             >
               <i className="ri-link" style={{ fontSize: 18 }} />
               Generate Onboarding Link
             </button>
           </div>
+        </ModalBody>
+      </Modal>
+
+      {/* ── Confirm Status Change (per-row toggle) ── */}
+      <Modal
+        isOpen={!!togglePending}
+        toggle={cancelToggle}
+        centered
+        size="md"
+        contentClassName="toggle-confirm-content border-0"
+        backdrop="static"
+        keyboard={false}
+      >
+        <style>{`
+          .toggle-confirm-content { border-radius: 20px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
+        `}</style>
+        <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
+          {(() => {
+            if (!togglePending) return null;
+            const enabling = togglePending.next;
+            const emp = togglePending.employee;
+            const tone = enabling
+              ? {
+                  // Tones for the "enable" path — teal/green family.
+                  headerGrad: 'linear-gradient(135deg,#d6f4e3 0%, #c1eed8 100%)',
+                  iconBg:     '#0ab39c',
+                  iconShadow: '0 8px 22px rgba(10,179,156,0.35)',
+                  iconGlyph:  'ri-shield-check-line',
+                  title:      'Enable Employee',
+                  subtitle:   'Restore platform access for this employee',
+                  bannerBg:   '#ecfaf3',
+                  bannerBd:   '#bce8d2',
+                  bannerFg:   '#0a8a78',
+                  bannerIcon: 'ri-information-line',
+                  bannerText: "They'll regain access immediately and reappear under the Active tab.",
+                  ctaLabel:   'Yes, Enable',
+                  ctaIcon:    'ri-check-line',
+                  ctaBg:      'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                  ctaShadow:  '0 8px 18px rgba(10,179,156,0.30)',
+                }
+              : {
+                  // Tones for the "disable" path — amber/warning family.
+                  headerGrad: 'linear-gradient(135deg,#fff4dd 0%, #ffe8c2 100%)',
+                  iconBg:     '#f59e0b',
+                  iconShadow: '0 8px 22px rgba(245,158,11,0.35)',
+                  iconGlyph:  'ri-error-warning-line',
+                  title:      'Disable Employee',
+                  subtitle:   'Suspend platform access for this employee',
+                  bannerBg:   '#fff7e6',
+                  bannerBd:   '#fbcf8a',
+                  bannerFg:   '#a4661c',
+                  bannerIcon: 'ri-alert-line',
+                  bannerText: "They'll lose platform access immediately and move to the Disabled tab. You can re-enable them anytime.",
+                  ctaLabel:   'Yes, Disable',
+                  ctaIcon:    'ri-forbid-2-line',
+                  ctaBg:      'linear-gradient(135deg,#f59e0b,#fbbf24)',
+                  ctaShadow:  '0 8px 18px rgba(245,158,11,0.30)',
+                };
+            return (
+              <>
+                {/* Tinted header band with the action icon and close button */}
+                <div
+                  style={{
+                    background: tone.headerGrad,
+                    padding: '24px 24px 36px',
+                    position: 'relative',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={cancelToggle}
+                    aria-label="Close"
+                    className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                    style={{
+                      position: 'absolute', top: 14, right: 14,
+                      width: 30, height: 30, borderRadius: 10,
+                      background: 'rgba(255,255,255,0.65)',
+                      border: '1px solid rgba(0,0,0,0.06)',
+                      color: '#374151',
+                    }}
+                  >
+                    <i className="ri-close-line" style={{ fontSize: 17 }} />
+                  </button>
+                  <div className="text-center">
+                    <div
+                      className="d-inline-flex align-items-center justify-content-center mx-auto"
+                      style={{
+                        width: 64, height: 64, borderRadius: 18,
+                        background: tone.iconBg,
+                        boxShadow: tone.iconShadow,
+                      }}
+                    >
+                      <i className={tone.iconGlyph} style={{ color: '#fff', fontSize: 30 }} />
+                    </div>
+                    <h5 className="fw-bold mb-1 mt-3" style={{ fontSize: 18, letterSpacing: '-0.01em', color: '#1f2937' }}>
+                      {tone.title}
+                    </h5>
+                    <div className="text-muted" style={{ fontSize: 13 }}>
+                      {tone.subtitle}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Employee identity card — needs an explicit stacking context
+                    (position + z-index) so it paints over the header band, whose
+                    position:relative (set for the X button) creates its own context. */}
+                <div style={{ padding: '0 24px', marginTop: -22, position: 'relative', zIndex: 2 }}>
+                  <div
+                    className="d-flex align-items-center gap-3"
+                    style={{
+                      background: '#fff',
+                      border: '1px solid #eef0f4',
+                      borderRadius: 14,
+                      padding: '14px 16px',
+                      boxShadow: '0 6px 14px rgba(18,38,63,0.06)',
+                    }}
+                  >
+                    <div
+                      className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                      style={{
+                        width: 42, height: 42, fontSize: 14,
+                        background: `linear-gradient(135deg, ${emp.accent}, ${emp.accent}cc)`,
+                        boxShadow: `0 2px 6px ${emp.accent}40`,
+                      }}
+                    >
+                      {emp.initials}
+                    </div>
+                    <div className="min-w-0 flex-grow-1">
+                      <div className="fw-bold text-truncate" style={{ fontSize: 14 }}>{emp.name}</div>
+                      <div className="text-muted text-truncate" style={{ fontSize: 12 }}>
+                        {emp.designation} · {emp.department}
+                      </div>
+                    </div>
+                    <span
+                      className="d-inline-flex align-items-center fw-semibold font-monospace flex-shrink-0"
+                      style={{
+                        fontSize: 11,
+                        padding: '4px 10px',
+                        borderRadius: 999,
+                        background: '#ece6ff',
+                        color: '#5a3fd1',
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      {emp.id}
+                    </span>
+                  </div>
+                </div>
+
+                {/* State transition strip (Active → Disabled visual) */}
+                <div className="d-flex align-items-center justify-content-center gap-2" style={{ padding: '18px 24px 4px' }}>
+                  <span
+                    className="d-inline-flex align-items-center fw-semibold"
+                    style={{
+                      fontSize: 11.5,
+                      padding: '5px 12px',
+                      borderRadius: 999,
+                      background: enabling ? '#eef2f6' : '#d6f4e3',
+                      color:      enabling ? '#5b6478' : '#108548',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: enabling ? '#878a99' : '#10b981',
+                        marginRight: 6,
+                      }}
+                    />
+                    {enabling ? 'Disabled' : 'Active'}
+                  </span>
+                  <i className="ri-arrow-right-line" style={{ color: '#9ca3af', fontSize: 18 }} />
+                  <span
+                    className="d-inline-flex align-items-center fw-semibold"
+                    style={{
+                      fontSize: 11.5,
+                      padding: '5px 12px',
+                      borderRadius: 999,
+                      background: enabling ? '#d6f4e3' : '#fde8c4',
+                      color:      enabling ? '#108548' : '#a4661c',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: enabling ? '#10b981' : '#f59e0b',
+                        marginRight: 6,
+                      }}
+                    />
+                    {enabling ? 'Active' : 'Disabled'}
+                  </span>
+                </div>
+
+                {/* Info banner explaining the consequence */}
+                <div style={{ padding: '14px 24px 0' }}>
+                  <div
+                    className="d-flex align-items-start gap-2"
+                    style={{
+                      background: tone.bannerBg,
+                      border: `1px solid ${tone.bannerBd}`,
+                      borderRadius: 12,
+                      padding: '10px 12px',
+                      color: tone.bannerFg,
+                      fontSize: 12.5,
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <i className={tone.bannerIcon} style={{ fontSize: 16, lineHeight: 1, marginTop: 2 }} />
+                    <span>{tone.bannerText}</span>
+                  </div>
+                </div>
+
+                {/* Footer with full-width action buttons */}
+                <div
+                  className="d-flex align-items-center gap-2"
+                  style={{ padding: '18px 24px 22px' }}
+                >
+                  <button
+                    type="button"
+                    onClick={cancelToggle}
+                    className="btn fw-semibold rounded-pill flex-grow-1"
+                    style={{
+                      fontSize: 13.5,
+                      background: '#fff',
+                      color: '#374151',
+                      border: '1px solid #e5e7eb',
+                      padding: '10px 18px',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmToggle}
+                    autoFocus
+                    className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold rounded-pill flex-grow-1"
+                    style={{
+                      fontSize: 13.5,
+                      color: '#fff',
+                      border: 'none',
+                      background: tone.ctaBg,
+                      boxShadow: tone.ctaShadow,
+                      padding: '10px 18px',
+                    }}
+                  >
+                    <i className={tone.ctaIcon} style={{ fontSize: 16 }} />
+                    {tone.ctaLabel}
+                  </button>
+                </div>
+              </>
+            );
+          })()}
         </ModalBody>
       </Modal>
 
@@ -1173,6 +1541,8 @@ export default function HrEmployees() {
         contentClassName="border-0"
         modalClassName="emp-modal-wide"
         scrollable
+        backdrop="static"
+        keyboard={false}
       >
         <style>{`
           .emp-modal-wide .modal-dialog { max-width: min(1020px, 92vw); }
@@ -2015,70 +2385,59 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
-      {/* ── Assign Assets modal (per-row Workstation icon) ── */}
+      {/* ── Assign Assets modal (per-row Workstation icon) — master-form style ── */}
       <Modal
         isOpen={assignOpen}
         toggle={closeAssign}
         centered
         size="lg"
-        contentClassName="assign-modal-content border-0"
+        contentClassName="border-0"
+        modalClassName="master-modal"
+        backdrop="static"
+        keyboard={false}
       >
         <style>{`
-          .assign-modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
+          .assign-tabs { display: flex; gap: 24px; padding: 0 24px; border-bottom: 1px solid var(--vz-border-color); }
           .assign-tab-btn {
-            background: transparent; border: none; color: rgba(255,255,255,0.78);
-            padding: 12px 18px; font-size: 13px; font-weight: 600;
+            background: transparent; border: none; padding: 12px 0; cursor: pointer;
             display: inline-flex; align-items: center; gap: 6px;
-            border-top-left-radius: 12px; border-top-right-radius: 12px;
-            transition: background .18s ease, color .18s ease;
-            cursor: pointer;
+            font-size: 13px; font-weight: 600; color: var(--vz-secondary-color);
+            border-bottom: 2px solid transparent;
+            transition: color .15s ease, border-color .15s ease;
           }
-          .assign-tab-btn:hover { color: #fff; background: rgba(255,255,255,0.10); }
-          .assign-tab-btn.is-active {
-            background: linear-gradient(180deg, rgba(255,255,255,0.20), rgba(255,255,255,0.05));
-            color: #fff;
-            box-shadow: inset 0 -2px 0 rgba(255,255,255,0.55);
-          }
-          .assign-input {
-            background: #fff; border: 1px solid #fde3c0; border-radius: 12px;
-            padding: 12px 14px 12px 40px; font-size: 14px; color: #1f2937;
-            transition: border-color .15s ease, box-shadow .15s ease;
-            width: 100%; height: 46px;
-          }
-          .assign-input::placeholder { color: #b8a37b; font-weight: 400; }
-          .assign-input:focus { outline: none; border-color: #fb923c; box-shadow: 0 0 0 3px rgba(251,146,60,0.18); }
-          .assign-textarea { padding-top: 12px; padding-bottom: 12px; height: auto; min-height: 84px; resize: vertical; }
-          .assign-input-wrap { position: relative; }
-          .assign-input-icon {
-            position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
-            color: #c47826; font-size: 16px; pointer-events: none;
-          }
-          .assign-input-wrap.ta .assign-input-icon { top: 14px; transform: none; }
-          .assign-label {
-            font-size: 11px; font-weight: 700; color: #b97a00; letter-spacing: 0.06em;
-            text-transform: uppercase; margin-bottom: 8px; display: inline-flex;
-            align-items: center; gap: 6px;
-          }
-          .assign-label .assign-label-icon { color: #c47826; font-size: 13px; }
+          .assign-tab-btn:hover { color: #6366f1; }
+          .assign-tab-btn.is-active { color: #6366f1; border-bottom-color: #6366f1; }
           .assign-section-title {
             display: inline-flex; align-items: center; gap: 10px;
-            font-size: 13.5px; font-weight: 700; color: #b97a00;
-            letter-spacing: 0.04em; text-transform: uppercase;
+            font-size: 13.5px; font-weight: 700;
+            color: var(--vz-heading-color, var(--vz-body-color));
+            letter-spacing: 0.02em;
           }
-          .assign-section-title .assign-section-icon {
-            width: 36px; height: 36px; border-radius: 10px;
-            background: #fef3c7; color: #c47826;
-            display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
-            box-shadow: 0 2px 6px rgba(196,120,38,0.12);
+          .assign-section-title i { color: #6366f1; font-size: 16px; }
+          .assign-error {
+            display: flex; align-items: center; gap: 4px;
+            color: #f06548; font-size: 12px; margin-top: 6px;
           }
+          .assign-error i { font-size: 13px; }
+          .assign-save-btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 22px; border-radius: 999px;
+            font-size: 13.5px; font-weight: 600; color: #fff;
+            border: none;
+            background: linear-gradient(135deg, #4f46e5 0%, #6366f1 50%, #7c5cfc 100%);
+            box-shadow: 0 8px 18px rgba(99,102,241,0.30);
+            transition: transform .15s ease, box-shadow .15s ease;
+          }
+          .assign-save-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(99,102,241,0.38); }
         `}</style>
 
-        <ModalBody className="p-0" style={{ background: '#fffaf0' }}>
-          {/* Header */}
+        <ModalBody className="p-0">
+          {/* Header — indigo/violet gradient with white icon & text. Mirrors the
+              "Add Department" recipe shared by the user. */}
           <div
             style={{
-              padding: '22px 26px 0',
-              background: 'linear-gradient(120deg,#f97316 0%,#fb923c 60%,#fdba74 100%)',
+              padding: '22px 26px',
+              background: 'linear-gradient(120deg, #5b3fd1 0%, #6366f1 55%, #7c5cfc 100%)',
               color: '#fff',
               position: 'relative',
               overflow: 'hidden',
@@ -2086,29 +2445,31 @@ export default function HrEmployees() {
           >
             {/* Decorative bubble (top-right) */}
             <div style={{
-              position: 'absolute', top: -40, right: -30, width: 180, height: 180,
+              position: 'absolute', top: -50, right: -40, width: 220, height: 220,
               borderRadius: '50%', background: 'rgba(255,255,255,0.10)',
             }} />
-            <div className="d-flex align-items-start justify-content-between gap-3" style={{ position: 'relative' }}>
-              <div className="d-flex align-items-center gap-3">
-                <div
-                  className="d-flex align-items-center justify-content-center flex-shrink-0"
+            <div className="d-flex align-items-center justify-content-between gap-3" style={{ position: 'relative' }}>
+              <div className="d-flex align-items-center gap-3 min-w-0">
+                <span
+                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
                   style={{
-                    width: 46, height: 46, borderRadius: 12,
+                    width: 46, height: 46,
                     background: 'rgba(255,255,255,0.22)',
+                    border: '1px solid rgba(255,255,255,0.30)',
                   }}
                 >
-                  <i className="ri-computer-line" style={{ fontSize: 22 }} />
-                </div>
-                <div>
+                  <i className="ri-computer-line" style={{ color: '#fff', fontSize: 21 }} />
+                </span>
+                <div className="min-w-0">
                   <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 19, letterSpacing: '-0.01em' }}>
                     Assign Assets
                   </h5>
-                  <div className="d-inline-flex align-items-center gap-2" style={{ fontSize: 13, color: 'rgba(255,255,255,0.95)' }}>
-                    <span className="bg-success rounded-circle" style={{ width: 8, height: 8 }} />
-                    <span className="fw-semibold">{assignEmp?.name || '—'}</span>
-                    <span style={{ opacity: 0.65 }}>·</span>
-                    <span style={{ opacity: 0.92 }}>{assignEmp?.id || ''}</span>
+                  <div className="text-truncate" style={{ fontSize: 13, color: 'rgba(255,255,255,0.92)' }}>
+                    {assignEmp ? (
+                      <>
+                        {assignEmp.name} · <span className="font-monospace">{assignEmp.id}</span> · {assignEmp.department}
+                      </>
+                    ) : 'Fill in the details to assign assets to this employee'}
                   </div>
                 </div>
               </div>
@@ -2116,85 +2477,105 @@ export default function HrEmployees() {
                 type="button"
                 onClick={closeAssign}
                 aria-label="Close"
-                className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                className="btn p-0 d-inline-flex align-items-center justify-content-center flex-shrink-0"
                 style={{
-                  width: 32, height: 32, borderRadius: 10,
-                  background: 'rgba(255,255,255,0.20)', border: 'none', color: '#fff',
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.22)',
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  color: '#fff',
                 }}
               >
                 <i className="ri-close-line" style={{ fontSize: 18 }} />
               </button>
             </div>
+          </div>
 
-            {/* Tabs */}
-            <div className="d-flex gap-1 mt-3" style={{ position: 'relative' }}>
-              {[
-                { key: 'it'       as const, label: 'IT Assets',  icon: 'ri-computer-line' },
-                { key: 'security' as const, label: 'Security',   icon: 'ri-lock-2-line' },
-                { key: 'hr'       as const, label: 'HR Record',  icon: 'ri-file-text-line' },
-              ].map(t => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => setAssignTab(t.key)}
-                  className={`assign-tab-btn${assignTab === t.key ? ' is-active' : ''}`}
-                >
-                  <i className={t.icon} style={{ fontSize: 15 }} /> {t.label}
-                </button>
-              ))}
-            </div>
+          {/* Tabs */}
+          <div className="assign-tabs">
+            {[
+              { key: 'it'       as const, label: 'IT Assets', icon: 'ri-computer-line' },
+              { key: 'security' as const, label: 'Security',  icon: 'ri-lock-2-line' },
+              { key: 'hr'       as const, label: 'HR Record', icon: 'ri-file-text-line' },
+            ].map(t => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setAssignTab(t.key)}
+                className={`assign-tab-btn${assignTab === t.key ? ' is-active' : ''}`}
+              >
+                <i className={t.icon} style={{ fontSize: 15 }} /> {t.label}
+              </button>
+            ))}
           </div>
 
           {/* Body */}
-          <div style={{ padding: '22px 26px 6px' }}>
+          <div style={{ padding: '20px 24px 8px' }}>
             {assignTab === 'it' && (
               <>
                 <div className="assign-section-title mb-3">
-                  <span className="assign-section-icon"><i className="ri-computer-line" /></span>
-                  Assets &amp; Security
+                  <i className="ri-computer-line" /> Assets &amp; Security
                 </div>
                 <Row className="g-3">
                   <Col md={4}>
-                    <label className="assign-label"><i className="ri-computer-line assign-label-icon" />Laptop Assigned</label>
-                    <div className="assign-input-wrap">
-                      <i className="ri-computer-line assign-input-icon" />
-                      <select
-                        className="assign-input"
-                        value={aLaptopAssigned}
-                        onChange={e => setALaptopAssigned(e.target.value)}
-                        style={{
-                          appearance: 'none',
-                          paddingRight: 36,
-                          backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23c47826\' stroke-width=\'2.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'/%3E%3C/svg%3E")',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'right 12px center',
-                        }}
-                      >
-                        <option>Yes</option>
-                        <option>No</option>
-                        <option>Pending</option>
-                      </select>
-                    </div>
+                    <label htmlFor="a-laptop">Laptop Assigned</label>
+                    <MasterSelect
+                      value={aLaptopAssigned}
+                      onChange={setALaptopAssigned}
+                      options={[
+                        { value: 'Yes', label: 'Yes' },
+                        { value: 'No', label: 'No' },
+                        { value: 'Pending', label: 'Pending' },
+                      ]}
+                    />
                   </Col>
                   <Col md={4}>
-                    <label className="assign-label"><i className="ri-hashtag assign-label-icon" />Laptop Asset ID</label>
-                    <div className="assign-input-wrap">
-                      <i className="ri-hashtag assign-input-icon" />
-                      <input className="assign-input" type="text" placeholder="e.g. LAP-0042" value={aLaptopAssetId} onChange={e => setALaptopAssetId(e.target.value)} />
+                    <label htmlFor="a-laptop-id">
+                      Laptop Asset ID
+                      {aLaptopAssigned === 'Yes' && <span className="req-star">*</span>}
+                    </label>
+                    <div className="master-field">
+                      <i className="ri-hashtag master-field-icon" />
+                      <Input
+                        id="a-laptop-id"
+                        type="text"
+                        placeholder="e.g. LAP-0042"
+                        value={aLaptopAssetId}
+                        onChange={e => { setALaptopAssetId(e.target.value); clearAssignError('laptopAssetId'); }}
+                        invalid={!!assignErrors.laptopAssetId}
+                      />
                     </div>
+                    {assignErrors.laptopAssetId && (
+                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.laptopAssetId}</div>
+                    )}
                   </Col>
                   <Col md={4}>
-                    <label className="assign-label"><i className="ri-smartphone-line assign-label-icon" />Mobile Device</label>
-                    <div className="assign-input-wrap">
-                      <i className="ri-smartphone-line assign-input-icon" />
-                      <input className="assign-input" type="text" placeholder="e.g. iPhone 15" value={aMobileDevice} onChange={e => setAMobileDevice(e.target.value)} />
+                    <label htmlFor="a-mobile">Mobile Device</label>
+                    <div className="master-field">
+                      <i className="ri-smartphone-line master-field-icon" />
+                      <Input
+                        id="a-mobile"
+                        type="text"
+                        placeholder="e.g. iPhone 15"
+                        value={aMobileDevice}
+                        onChange={e => { setAMobileDevice(e.target.value); clearAssignError('mobileDevice'); }}
+                        invalid={!!assignErrors.mobileDevice}
+                      />
                     </div>
+                    {assignErrors.mobileDevice && (
+                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.mobileDevice}</div>
+                    )}
                   </Col>
                   <Col md={12}>
-                    <label className="assign-label"><i className="ri-archive-line assign-label-icon" />Other Assets</label>
-                    <div className="assign-input-wrap">
-                      <i className="ri-archive-line assign-input-icon" />
-                      <input className="assign-input" type="text" placeholder="e.g. Monitor, Keyboard, Headset" value={aOtherAssets} onChange={e => setAOtherAssets(e.target.value)} />
+                    <label htmlFor="a-other">Other Assets</label>
+                    <div className="master-field">
+                      <i className="ri-archive-line master-field-icon" />
+                      <Input
+                        id="a-other"
+                        type="text"
+                        placeholder="e.g. Monitor, Keyboard, Headset"
+                        value={aOtherAssets}
+                        onChange={e => setAOtherAssets(e.target.value)}
+                      />
                     </div>
                   </Col>
                 </Row>
@@ -2204,62 +2585,51 @@ export default function HrEmployees() {
             {assignTab === 'security' && (
               <>
                 <div className="assign-section-title mb-3">
-                  <span className="assign-section-icon"><i className="ri-lock-2-line" /></span>
-                  Security &amp; Access
+                  <i className="ri-lock-2-line" /> Security &amp; Access
                 </div>
                 <Row className="g-3">
                   <Col md={6}>
-                    <label className="assign-label"><i className="ri-bank-card-line assign-label-icon" />Access Card</label>
-                    <div className="assign-input-wrap">
-                      <i className="ri-bank-card-line assign-input-icon" />
-                      <input className="assign-input" type="text" placeholder="e.g. AC-8821" value={aAccessCard} onChange={e => setAAccessCard(e.target.value)} />
+                    <label htmlFor="a-card">Access Card</label>
+                    <div className="master-field">
+                      <i className="ri-bank-card-line master-field-icon" />
+                      <Input
+                        id="a-card"
+                        type="text"
+                        placeholder="e.g. AC-8821"
+                        value={aAccessCard}
+                        onChange={e => { setAAccessCard(e.target.value); clearAssignError('accessCard'); }}
+                        invalid={!!assignErrors.accessCard}
+                      />
                     </div>
+                    {assignErrors.accessCard && (
+                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.accessCard}</div>
+                    )}
                   </Col>
                   <Col md={6}>
-                    <label className="assign-label"><i className="ri-shield-check-line assign-label-icon" />Security Level</label>
-                    <div className="assign-input-wrap">
-                      <i className="ri-shield-check-line assign-input-icon" />
-                      <select
-                        className="assign-input"
-                        value={aSecurityLevel}
-                        onChange={e => setASecurityLevel(e.target.value)}
-                        style={{
-                          appearance: 'none',
-                          paddingRight: 36,
-                          backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23c47826\' stroke-width=\'2.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'/%3E%3C/svg%3E")',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'right 12px center',
-                        }}
-                      >
-                        <option>Level 1 — Basic</option>
-                        <option>Level 2 — Standard</option>
-                        <option>Level 3 — Privileged</option>
-                        <option>Level 4 — Admin</option>
-                      </select>
-                    </div>
+                    <label>Security Level</label>
+                    <MasterSelect
+                      value={aSecurityLevel}
+                      onChange={setASecurityLevel}
+                      options={[
+                        { value: 'Level 1 — Basic', label: 'Level 1 — Basic' },
+                        { value: 'Level 2 — Standard', label: 'Level 2 — Standard' },
+                        { value: 'Level 3 — Privileged', label: 'Level 3 — Privileged' },
+                        { value: 'Level 4 — Admin', label: 'Level 4 — Admin' },
+                      ]}
+                    />
                   </Col>
                   <Col md={12}>
-                    <label className="assign-label"><i className="ri-global-line assign-label-icon" />VPN / Remote Access</label>
-                    <div className="assign-input-wrap">
-                      <i className="ri-global-line assign-input-icon" />
-                      <select
-                        className="assign-input"
-                        value={aVpnAccess}
-                        onChange={e => setAVpnAccess(e.target.value)}
-                        style={{
-                          appearance: 'none',
-                          paddingRight: 36,
-                          backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23c47826\' stroke-width=\'2.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'/%3E%3C/svg%3E")',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundPosition: 'right 12px center',
-                        }}
-                      >
-                        <option>Not Required</option>
-                        <option>Standard VPN</option>
-                        <option>Privileged VPN</option>
-                        <option>Always-On VPN</option>
-                      </select>
-                    </div>
+                    <label>VPN / Remote Access</label>
+                    <MasterSelect
+                      value={aVpnAccess}
+                      onChange={setAVpnAccess}
+                      options={[
+                        { value: 'Not Required', label: 'Not Required' },
+                        { value: 'Standard VPN', label: 'Standard VPN' },
+                        { value: 'Privileged VPN', label: 'Privileged VPN' },
+                        { value: 'Always-On VPN', label: 'Always-On VPN' },
+                      ]}
+                    />
                   </Col>
                 </Row>
               </>
@@ -2268,248 +2638,74 @@ export default function HrEmployees() {
             {assignTab === 'hr' && (
               <>
                 <div className="assign-section-title mb-3">
-                  <span className="assign-section-icon"><i className="ri-file-text-line" /></span>
-                  HR Record Notes
+                  <i className="ri-file-text-line" /> HR Record Notes
                 </div>
                 <Row className="g-3">
                   <Col md={6}>
-                    <label className="assign-label"><i className="ri-calendar-line assign-label-icon" />Issue Date</label>
-                    <div className="assign-input-wrap">
-                      <i className="ri-calendar-line assign-input-icon" />
-                      <input className="assign-input" type="date" placeholder="dd-mm-yyyy" value={aIssueDate} onChange={e => setAIssueDate(e.target.value)} />
-                    </div>
+                    <label>Issue Date<span className="req-star">*</span></label>
+                    <MasterDatePicker
+                      value={aIssueDate}
+                      onChange={(v) => { setAIssueDate(v); clearAssignError('issueDate'); }}
+                      placeholder="dd-mm-yyyy"
+                      invalid={!!assignErrors.issueDate}
+                    />
+                    {assignErrors.issueDate && (
+                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.issueDate}</div>
+                    )}
                   </Col>
                   <Col md={6}>
-                    <label className="assign-label"><i className="ri-user-line assign-label-icon" />Issued By</label>
-                    <div className="assign-input-wrap">
-                      <i className="ri-user-line assign-input-icon" />
-                      <input className="assign-input" type="text" placeholder="Manager name" value={aIssuedBy} onChange={e => setAIssuedBy(e.target.value)} />
+                    <label htmlFor="a-issued-by">Issued By<span className="req-star">*</span></label>
+                    <div className="master-field">
+                      <i className="ri-user-line master-field-icon" />
+                      <Input
+                        id="a-issued-by"
+                        type="text"
+                        placeholder="Manager name"
+                        value={aIssuedBy}
+                        onChange={e => { setAIssuedBy(e.target.value); clearAssignError('issuedBy'); }}
+                        invalid={!!assignErrors.issuedBy}
+                      />
                     </div>
+                    {assignErrors.issuedBy && (
+                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.issuedBy}</div>
+                    )}
                   </Col>
                   <Col md={12}>
-                    <label className="assign-label"><i className="ri-chat-3-line assign-label-icon" />Notes</label>
-                    <div className="assign-input-wrap ta">
-                      <i className="ri-chat-3-line assign-input-icon" />
-                      <textarea
-                        className="assign-input assign-textarea"
+                    <label htmlFor="a-notes">Notes</label>
+                    <div className="master-field ta">
+                      <i className="ri-chat-3-line master-field-icon" />
+                      <Input
+                        id="a-notes"
+                        type="textarea"
+                        rows={3}
                         placeholder="Additional notes about asset assignment…"
                         value={aNotes}
                         onChange={e => setANotes(e.target.value)}
-                        rows={3}
                       />
                     </div>
                   </Col>
                 </Row>
               </>
             )}
-
-            {/* Assigning-to banner */}
-            <div
-              className="d-flex align-items-center gap-2 mt-3"
-              style={{
-                padding: '12px 16px', borderRadius: 12,
-                background: 'linear-gradient(135deg,#fff4dd,#ffe8c2)',
-                border: '1px solid #fbcf8a',
-                color: '#b97a00',
-                fontSize: 13,
-              }}
-            >
-              <span
-                className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                style={{ width: 18, height: 18, background: '#f59e0b' }}
-              >
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />
-              </span>
-              <span>Assigning assets to <strong style={{ color: '#1f2937' }}>{assignEmp?.name || '—'}</strong></span>
-            </div>
           </div>
 
-          {/* Footer */}
-          <div
-            className="d-flex align-items-center justify-content-end gap-2"
-            style={{ padding: '16px 26px 22px' }}
-          >
-            <button
-              type="button"
-              onClick={closeAssign}
-              className="btn fw-semibold rounded-pill px-4"
-              style={{
-                fontSize: 14,
-                background: '#fff',
-                color: '#374151',
-                border: '1px solid #e5e7eb',
-                padding: '10px 22px',
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                // TODO: wire to backend — save asset assignment for assignEmp
-                closeAssign();
-              }}
-              className="btn d-inline-flex align-items-center gap-2 fw-semibold rounded-pill"
-              style={{
-                fontSize: 14,
-                color: '#fff',
-                border: 'none',
-                background: 'linear-gradient(135deg,#f97316,#fb923c)',
-                boxShadow: '0 8px 18px rgba(249,115,22,0.32)',
-                padding: '10px 22px',
-              }}
-            >
-              <i className="ri-check-line" style={{ fontSize: 16 }} />
-              Save Assets
-            </button>
-          </div>
-        </ModalBody>
-      </Modal>
-
-      {/* ── Manage Permissions modal (per-row Permissions / lock icon) ── */}
-      <Modal
-        isOpen={permsOpen}
-        toggle={closePermissions}
-        centered
-        size="xl"
-        contentClassName="perms-modal-content border-0"
-        modalClassName="perms-modal-wide"
-        scrollable
-      >
-        <style>{`
-          .perms-modal-wide .modal-dialog { max-width: min(1200px, 94vw); }
-          .perms-modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
-          .perms-modal-content .modal-body { padding: 0; }
-        `}</style>
-
-        <ModalBody style={{ background: 'var(--vz-secondary-bg, #f7f8fc)' }}>
-          {/* Header — gradient warning/amber to echo the lock action colour. */}
-          <div
-            style={{
-              padding: '20px 24px',
-              background: 'linear-gradient(120deg,#f7b84b 0%,#f59e0b 60%,#fbbf24 100%)',
-              color: '#fff',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <div style={{
-              position: 'absolute', top: -40, right: -30, width: 180, height: 180,
-              borderRadius: '50%', background: 'rgba(255,255,255,0.10)',
-            }} />
-            <div className="d-flex align-items-center justify-content-between gap-3" style={{ position: 'relative' }}>
-              <div className="d-flex align-items-center gap-3">
-                <div
-                  className="d-flex align-items-center justify-content-center flex-shrink-0"
-                  style={{
-                    width: 46, height: 46, borderRadius: 12,
-                    background: 'rgba(255,255,255,0.22)',
-                  }}
-                >
-                  <i className="ri-shield-keyhole-line" style={{ fontSize: 22 }} />
-                </div>
-                <div>
-                  <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 19, letterSpacing: '-0.01em' }}>
-                    Manage Permissions
-                  </h5>
-                  <div className="d-inline-flex align-items-center gap-2" style={{ fontSize: 13, color: 'rgba(255,255,255,0.95)' }}>
-                    {permsEmp && (
-                      <>
-                        <span
-                          className="rounded-circle d-inline-flex align-items-center justify-content-center fw-bold"
-                          style={{
-                            width: 20, height: 20,
-                            background: 'rgba(255,255,255,0.30)',
-                            color: '#fff',
-                            fontSize: 10,
-                          }}
-                        >
-                          {permsEmp.initials}
-                        </span>
-                        <span className="fw-semibold">{permsEmp.name}</span>
-                        <span style={{ opacity: 0.65 }}>·</span>
-                        <span style={{ opacity: 0.92 }}>{permsEmp.id}</span>
-                        <span style={{ opacity: 0.65 }}>·</span>
-                        <span style={{ opacity: 0.92 }}>{permsEmp.email}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closePermissions}
-                aria-label="Close"
-                className="btn p-0 d-inline-flex align-items-center justify-content-center"
-                style={{
-                  width: 32, height: 32, borderRadius: 10,
-                  background: 'rgba(255,255,255,0.20)', border: 'none', color: '#fff',
-                }}
-              >
-                <i className="ri-close-line" style={{ fontSize: 18 }} />
-              </button>
-            </div>
-          </div>
-
-          {/* Body — same PermissionMatrix component used by ClientPermissions. */}
-          <div style={{ padding: '16px 16px 0' }}>
-            {permsLoading ? (
-              <div className="text-center py-5">
-                <Spinner color="warning" />
-                <div className="text-muted mt-2" style={{ fontSize: 13 }}>Loading permissions…</div>
-              </div>
-            ) : (
-              <Card className="border shadow-sm mb-0">
-                <PermissionMatrix
-                  modules={permsModules}
-                  matrix={permsMatrix}
-                  onChange={setPermsMatrix}
-                  grantableBy={null}
-                />
-              </Card>
-            )}
-          </div>
-
-          {/* Footer */}
+          {/* Footer — required-fields hint on the left, action buttons on the right */}
           <div
             className="d-flex align-items-center justify-content-between gap-2 flex-wrap"
-            style={{
-              padding: '14px 24px',
-              background: '#fff',
-              borderTop: '1px solid var(--vz-border-color)',
-              marginTop: 16,
-            }}
+            style={{ padding: '14px 24px 18px', borderTop: '1px solid var(--vz-border-color)' }}
           >
-            <span className="text-muted" style={{ fontSize: 13 }}>
-              <i className="ri-edit-box-line me-1 text-warning" />
-              Editing: <strong className="text-body">{permsEmp?.name || '—'}</strong>
+            <span className="d-inline-flex align-items-center gap-1 text-muted" style={{ fontSize: 12.5 }}>
+              <i className="ri-information-line" style={{ fontSize: 14 }} />
+              Fields marked <span style={{ color: '#f06548', fontWeight: 700, margin: '0 2px' }}>*</span> are required
             </span>
             <div className="d-flex align-items-center gap-2">
-              <button
-                type="button"
-                onClick={closePermissions}
-                className="btn fw-semibold rounded-pill px-4"
-                style={{
-                  fontSize: 13.5,
-                  background: '#fff',
-                  color: '#374151',
-                  border: '1px solid #e5e7eb',
-                  padding: '9px 20px',
-                }}
-              >
-                Cancel
-              </button>
-              <Button
-                color="success"
-                className="btn-label waves-effect waves-light rounded-pill"
-                onClick={handleSavePermissions}
-                disabled={permsSaving || permsLoading}
-              >
-                {permsSaving
-                  ? <Spinner size="sm" className="label-icon align-middle me-2" />
-                  : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
-                {permsSaving ? 'Saving…' : 'Save Permissions'}
+              <Button onClick={closeAssign} className="master-modal-cancel d-inline-flex align-items-center gap-1">
+                <i className="ri-close-line" style={{ fontSize: 15 }} /> Cancel
               </Button>
+              <button type="button" onClick={handleSaveAssign} className="assign-save-btn">
+                <i className="ri-save-line" style={{ fontSize: 16 }} />
+                Save Assets
+              </button>
             </div>
           </div>
         </ModalBody>
@@ -2542,6 +2738,8 @@ export default function HrEmployees() {
             contentClassName="vault-modal-content border-0"
             modalClassName="vault-modal-wide"
             scrollable
+            backdrop="static"
+            keyboard={false}
           >
             <style>{`
               .vault-modal-wide .modal-dialog { max-width: min(1080px, 94vw); }
@@ -2629,7 +2827,7 @@ export default function HrEmployees() {
               .vault-action-download:hover { box-shadow: 0 6px 14px rgba(124,92,252,0.35); }
             `}</style>
 
-            <ModalBody className="p-0" style={{ background: '#fff' }}>
+            <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
               {/* Header — indigo gradient with status ring */}
               <div
                 style={{
@@ -2872,12 +3070,26 @@ function ActionBtn({
 }
 
 // Local toggle — simple, controlled per row. Bound only to mock state for now.
-function ToggleSwitch({ initial }: { initial: boolean }) {
+// `onRequestToggle` lets the parent gate the change behind a confirmation: it
+// receives the desired next state and a `commit` callback that flips the local
+// state when (and only when) the parent says so.
+function ToggleSwitch({
+  initial,
+  onRequestToggle,
+}: {
+  initial: boolean;
+  onRequestToggle?: (next: boolean, commit: () => void) => void;
+}) {
   const [on, setOn] = useState(initial);
+  const commit = () => setOn(v => !v);
+  const handleClick = () => {
+    if (onRequestToggle) onRequestToggle(!on, commit);
+    else commit();
+  };
   return (
     <button
       type="button"
-      onClick={() => setOn(v => !v)}
+      onClick={handleClick}
       aria-pressed={on}
       className="btn p-0 border-0 d-inline-flex align-items-center"
       style={{

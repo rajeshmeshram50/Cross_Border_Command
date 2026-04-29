@@ -40,6 +40,7 @@ import MasterDashboard from '../pages/MasterDashboard';
 import MasterPage from '../pages/master/MasterPage';
 import HrDashboard from '../pages/HrDashboard';
 import HrEmployees from '../pages/HrEmployees';
+import EmployeePermissions from '../pages/EmployeePermissions';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -69,6 +70,8 @@ const getPagePath = (page: string, data?: any): string => {
     case 'branch-users': return '/branches/users';
     case 'client-users': return '/clients/users';
     case 'employees': return '/employees';
+    case 'hr-employees': return '/hr/employees';
+    case 'employee-permissions': return `/hr/employees/${data?.employeeId}/permissions`;
     case 'plans': return '/plans';
     case 'add-plan': return data?.editId ? `/plans/${data.editId}/edit` : '/plans/new';
     case 'my-plan': return '/my-plan';
@@ -138,6 +141,17 @@ function AddPlanWrapper() {
   const { id } = useParams();
   const navigateFn = useNavigateContext().navigate;
   return <AddPlan onBack={() => navigateFn('plans')} editId={id ? Number(id) : undefined} />;
+}
+
+function EmployeePermissionsWrapper() {
+  const { id } = useParams();
+  const location = useLocation();
+  const navigateFn = useNavigateContext().navigate;
+  // Employee row is passed via navigation state when entering from the HR
+  // employees table. If the user lands on this URL directly, the page falls
+  // back to showing just the ID.
+  const stateEmp = (location.state as any)?.employee;
+  return <EmployeePermissions employeeId={String(id)} employee={stateEmp} onBack={() => navigateFn('hr-employees')} />;
 }
 
 /* ── Auth Pages (Login / Forgot Password / OTP / Reset) ── */
@@ -277,6 +291,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/employees" element={<HrEmployees />} />
+              <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </VelzonShell>
