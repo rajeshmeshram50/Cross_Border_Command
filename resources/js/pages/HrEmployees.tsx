@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
@@ -135,17 +135,20 @@ const PRIMARY_ROLE_OPTIONS = Array.from(new Set([
   'Accounts Manager','Scrum Master','Data Analyst','UI/UX Designer','Coordinator','Engineer',
   'CEO','Lead','Sr. Software Engineer','Developer','Design Head',
 ])).map(r => ({ value: r, label: r }));
+// Ancillary role list — multi-select supports any combination of these.
 const ANCILLARY_ROLE_OPTIONS = [
-  '','Training Coordinator','Project Coordinator','Security Analyst','Mentor','Brand Consultant',
+  'Training Coordinator','Project Coordinator','Security Analyst','Mentor','Brand Consultant',
   'Test Automation Lead','Board Member',
-].map(r => ({ value: r, label: r || '— None —' }));
+].map(r => ({ value: r, label: r }));
 const WORK_TYPE_OPTIONS = ['Full Time','Part Time','Contract','Intern','Consultant'].map(w => ({ value: w, label: w }));
-const LEGAL_ENTITY_OPTIONS = [
-  'Enterprise India Pvt. Ltd.','Enterprise Global Holdings','Enterprise Solutions LLP',
-].map(e => ({ value: e, label: e }));
-const LOCATION_OPTIONS = [
-  'Pune HQ','Mumbai Office','Bengaluru Office','Delhi Office','Hyderabad Office','Remote',
-].map(l => ({ value: l, label: l }));
+// Legal entity options + each entity's registered office. Picking a legal
+// entity in Step 2 auto-populates the read-only Location input from this map.
+const LEGAL_ENTITY_TO_LOCATION: Record<string, string> = {
+  'Enterprise India Pvt. Ltd.': 'Pune HQ',
+  'Enterprise Global Holdings': 'Singapore Office',
+  'Enterprise Solutions LLP':   'Mumbai Office',
+};
+const LEGAL_ENTITY_OPTIONS = Object.keys(LEGAL_ENTITY_TO_LOCATION).map(e => ({ value: e, label: e }));
 // Sentinel values used by the dropdowns to flag "open the custom field below".
 const CUSTOM_PROBATION_VALUE = '__custom_probation__';
 const CUSTOM_NOTICE_VALUE    = '__custom_notice__';
@@ -165,7 +168,7 @@ const LEAVE_PLAN_OPTIONS    = ['Leave Policy','Standard Leave','Senior Leave Pol
 const HOLIDAY_LIST_OPTIONS  = ['Holiday Calendar','India Holidays 2026','Global Holidays 2026'].map(v => ({ value: v, label: v }));
 const SHIFT_OPTIONS         = ['General Shift','Morning Shift','Evening Shift','Night Shift','Flexible'].map(v => ({ value: v, label: v }));
 const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Only','Rotational'].map(v => ({ value: v, label: v }));
-const TIME_TRACKING_OPTIONS = ['Attendance Capture','Biometric','Web Check-in','GPS Tracking'].map(v => ({ value: v, label: v }));
+const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
 const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
 const OVERTIME_OPTIONS      = ['Not applicable','Hourly Pay','Compensation Off','Time and a Half'].map(v => ({ value: v, label: v }));
 const EXPENSE_POLICY_OPTIONS= ['Select policy','Standard Expense Policy','Manager Approval','No Expenses'].map((v, i) => ({ value: i === 0 ? '' : v, label: v }));
@@ -279,6 +282,12 @@ const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { bg: string; fg: stri
   'Pending':     { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
 };
 
+// Reporting-manager options — derived from the active employee directory so
+// the dropdown reads "{Name} ({Designation})" and stays in sync with mock data.
+const REPORTING_MANAGER_OPTIONS = EMPLOYEES
+  .filter(e => e.enabled)
+  .map(e => ({ value: e.name, label: `${e.name} (${e.designation})` }));
+
 // Reuse the Clients KPI card recipe — gradient strip on top + 44×44 icon box,
 // 11px uppercase label, 26px value. Keep gradients distinct per status so the
 // 6 tiles read at a glance.
@@ -375,6 +384,9 @@ export default function HrEmployees() {
   const [eMiddleName, setEMiddleName]     = useState('');
   const [eLastName, setELastName]         = useState('');
   const [eDisplayName, setEDisplayName]   = useState('');
+  // Tracks whether the user has manually edited Display Name. Until they do,
+  // typing in First/Last Name auto-fills it as "First Last".
+  const [eDisplayNameTouched, setEDisplayNameTouched] = useState(false);
   const [eActualName, setEActualName]     = useState('');
   const [eGender, setEGender]             = useState('');
   const [eDob, setEDob]                   = useState('');
@@ -384,7 +396,7 @@ export default function HrEmployees() {
   const [eMobile, setEMobile]             = useState('');
   const [eEmpId, setEEmpId]               = useState('');
   const [eStatus, setEStatus]             = useState('Active');
-  // Step 1 — Address (current + permanent)
+  // Step 1 — Address (current + permanent).
   const [eCurAddr1, setECurAddr1]   = useState('');
   const [eCurAddr2, setECurAddr2]   = useState('');
   const [eCurCity, setECurCity]     = useState('');
@@ -403,7 +415,7 @@ export default function HrEmployees() {
   const [eDept, setEDept]                        = useState('');
   const [eDesignation, setEDesignation]          = useState('');
   const [ePrimaryRole, setEPrimaryRole]          = useState('');
-  const [eAncillaryRole, setEAncillaryRole]      = useState('');
+  const [eAncillaryRole, setEAncillaryRole]      = useState<string[]>([]);
   const [eWorkType, setEWorkType]                = useState('Full Time');
   const [eLegalEntity, setELegalEntity]          = useState('');
   const [eLocation, setELocation]                = useState('');
@@ -420,7 +432,7 @@ export default function HrEmployees() {
   const [eShift, setEShift]                      = useState('General Shift');
   const [eWeeklyOff, setEWeeklyOff]              = useState('Week Off Policy');
   const [eAttendanceNumber, setEAttendanceNumber]= useState('');
-  const [eTimeTracking, setETimeTracking]        = useState('Attendance Capture');
+  const [eTimeTracking, setETimeTracking]        = useState('Manual');
   const [ePenalizationPolicy, setEPenalizationPolicy] = useState('Tracking Policy');
   const [eOvertime, setEOvertime]                = useState('Not applicable');
   const [eExpensePolicy, setEExpensePolicy]      = useState('');
@@ -574,7 +586,7 @@ export default function HrEmployees() {
     setEmpStep(1);
     setEWorkCountry('India');
     setEFirstName(''); setEMiddleName(''); setELastName('');
-    setEDisplayName(''); setEActualName('');
+    setEDisplayName(''); setEDisplayNameTouched(false); setEActualName('');
     setEGender(''); setEDob(''); setENationality('Indian');
     setEWorkEmail(''); setEMobile('');
     setEEmpId(''); setEStatus('Active');
@@ -583,7 +595,7 @@ export default function HrEmployees() {
     setEPermAddr1(''); setEPermAddr2(''); setEPermCity(''); setEPermState(''); setEPermCountry('India'); setEPermPin('');
     // Step 2
     setEJoinDate(''); setEDept(''); setEDesignation('');
-    setEPrimaryRole(''); setEAncillaryRole(''); setEWorkType('Full Time');
+    setEPrimaryRole(''); setEAncillaryRole([]); setEWorkType('Full Time');
     setELegalEntity(''); setELocation(''); setEReportingMgr('');
     setEProbationPolicy('Default Probation Policy'); setENoticePeriod('Default Notice Period');
     setECustomProbation(''); setECustomNotice('');
@@ -591,7 +603,7 @@ export default function HrEmployees() {
     setELeavePlan('Leave Policy'); setEHolidayList('Holiday Calendar');
     setEAttendanceTracking(true); setEShift('General Shift');
     setEWeeklyOff('Week Off Policy'); setEAttendanceNumber('');
-    setETimeTracking('Attendance Capture'); setEPenalizationPolicy('Tracking Policy');
+    setETimeTracking('Manual'); setEPenalizationPolicy('Tracking Policy');
     setEOvertime('Not applicable'); setEExpensePolicy('');
     setELaptopAssigned('No'); setELaptopAssetId(''); setEMobileDevice(''); setEOtherAssets('');
     setEAadharFile(null); setEPanFile(null); setEPhotoFile(null);
@@ -619,6 +631,10 @@ export default function HrEmployees() {
     setEFirstName(parts[0] || '');
     setELastName(parts.slice(1).join(' ') || '');
     setEDisplayName(row.name);
+    // In edit mode the display name is already populated from the row, so
+    // treat it as user-touched to avoid the auto-fill clobbering it on first
+    // First-name/Last-name edit.
+    setEDisplayNameTouched(true);
     setEActualName(row.name);
     setEWorkEmail(row.email);
     setEEmpId(row.id);
@@ -627,7 +643,7 @@ export default function HrEmployees() {
     setEDept(row.department);
     setEDesignation(row.designation);
     setEPrimaryRole(row.primaryRole);
-    setEAncillaryRole(row.ancillaryRole || '');
+    setEAncillaryRole(row.ancillaryRole ? [row.ancillaryRole] : []);
     setEReportingMgr(row.manager);
     setEmpOpen(true);
   };
@@ -731,7 +747,7 @@ export default function HrEmployees() {
                     fontWeight: 600,
                   }}
                 >
-                  <i className="ri-user-add-line align-bottom me-1"></i>Onboarding
+                  <i className="ri-user-add-line align-bottom me-1"></i>Onboarding Link
                 </Button>
                 <Button
                   onClick={openAddEmployee}
@@ -767,7 +783,7 @@ export default function HrEmployees() {
                           {k.label}
                         </p>
                         <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                          {(counts as any)[k.key].toLocaleString()}
+                          <AnimatedNumber value={(counts as any)[k.key]} />
                         </h3>
                       </div>
                       <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
@@ -882,7 +898,8 @@ export default function HrEmployees() {
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th scope="col" className="ps-3">Employee</th>
+                        <th scope="col" className="ps-3 text-center" style={{ width: 56 }}>#</th>
+                        <th scope="col">Employee</th>
                         <th scope="col">Employee ID</th>
                         <th scope="col">Department</th>
                         <th scope="col">Designation</th>
@@ -897,17 +914,18 @@ export default function HrEmployees() {
                     <tbody>
                       {filtered.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="text-center py-5 text-muted">
+                          <td colSpan={11} className="text-center py-5 text-muted">
                             <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                             No employees match your filters
                           </td>
                         </tr>
-                      ) : filtered.map(e => {
+                      ) : filtered.map((e, idx) => {
                         const primary = tone(e.primaryRole);
                         const ancillary = e.ancillaryRole ? tone(e.ancillaryRole) : null;
                         return (
                           <tr key={e.id}>
-                            <td className="ps-3">
+                            <td className="ps-3 text-center text-muted fs-13">{idx + 1}</td>
+                            <td>
                               <div className="d-flex align-items-center gap-2">
                                 <div
                                   className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -1545,7 +1563,7 @@ export default function HrEmployees() {
         keyboard={false}
       >
         <style>{`
-          .emp-modal-wide .modal-dialog { max-width: min(1020px, 92vw); }
+          .emp-modal-wide .modal-dialog { max-width: min(1280px, 95vw); }
           .emp-modal-wide .modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
           .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
           .emp-input::placeholder { color: #9ca3af; }
@@ -1566,9 +1584,9 @@ export default function HrEmployees() {
           }
           [data-bs-theme="dark"] .emp-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
           .emp-section + .emp-section { margin-top: 14px; }
-          .emp-section-title { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color)); margin-bottom: 14px; }
+          .emp-section-title { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color)); margin-bottom: 14px; }
           .emp-section-title i { color: #7c5cfc; font-size: 16px; }
-          .emp-subsection-title { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #0ab39c; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 10px; }
+          .emp-subsection-title { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #0ab39c; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 10px; }
           .emp-subsection-title i { font-size: 13px; }
           .emp-stepper-circle {
             width: 32px; height: 32px; border-radius: 50%;
@@ -1694,7 +1712,17 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">First Name<span className="req">*</span></label>
-                      <input className="emp-input" type="text" placeholder="e.g. Aarav" value={eFirstName} onChange={e => setEFirstName(e.target.value)} />
+                      <input
+                        className="emp-input"
+                        type="text"
+                        placeholder="e.g. Aarav"
+                        value={eFirstName}
+                        onChange={e => {
+                          const v = e.target.value;
+                          setEFirstName(v);
+                          if (!eDisplayNameTouched) setEDisplayName(`${v} ${eLastName}`.trim());
+                        }}
+                      />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Middle Name</label>
@@ -1702,18 +1730,34 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Last Name<span className="req">*</span></label>
-                      <input className="emp-input" type="text" placeholder="e.g. Kale" value={eLastName} onChange={e => setELastName(e.target.value)} />
+                      <input
+                        className="emp-input"
+                        type="text"
+                        placeholder="e.g. Kale"
+                        value={eLastName}
+                        onChange={e => {
+                          const v = e.target.value;
+                          setELastName(v);
+                          if (!eDisplayNameTouched) setEDisplayName(`${eFirstName} ${v}`.trim());
+                        }}
+                      />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Display Name<span className="req">*</span></label>
-                      <input className="emp-input" type="text" placeholder="e.g. Aarav Kale" value={eDisplayName} onChange={e => setEDisplayName(e.target.value)} />
+                      <input
+                        className="emp-input"
+                        type="text"
+                        placeholder="e.g. Aarav Kale (auto-filled)"
+                        value={eDisplayName}
+                        onChange={e => { setEDisplayName(e.target.value); setEDisplayNameTouched(true); }}
+                      />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Employee Actual Name<span className="req">*</span></label>
                       <input className="emp-input" type="text" placeholder="Full legal name as per records" value={eActualName} onChange={e => setEActualName(e.target.value)} />
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Gender</label>
+                      <label className="emp-label">Gender<span className="req">*</span></label>
                       <MasterSelect value={eGender} onChange={setEGender} placeholder="Select gender" options={GENDER_OPTIONS} />
                     </Col>
                     <Col md={4}>
@@ -1734,7 +1778,7 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     <Col md={4}>
-                      <label className="emp-label">Work Email<span className="req">*</span></label>
+                      <label className="emp-label">Personal Email<span className="req">*</span></label>
                       <input className="emp-input" type="email" placeholder="name@enterprise.com" value={eWorkEmail} onChange={e => setEWorkEmail(e.target.value)} />
                     </Col>
                     <Col md={4}>
@@ -1747,10 +1791,6 @@ export default function HrEmployees() {
                         Employee ID<span className="hint">(auto-assigned)</span>
                       </label>
                       <input className="emp-input is-readonly" type="text" value={eEmpId} readOnly placeholder="Auto-assigned on save" />
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Employee Status</label>
-                      <MasterSelect value={eStatus} onChange={setEStatus} options={EMP_STATUS_OPTIONS} />
                     </Col>
                   </Row>
                 </div>
@@ -1774,19 +1814,19 @@ export default function HrEmployees() {
                       <label className="emp-label">Address Line 2</label>
                       <input className="emp-input" type="text" placeholder="Area, Locality (optional)" value={eCurAddr2} onChange={e => setECurAddr2(e.target.value)} />
                     </Col>
-                    <Col md={4}>
+                    <Col md={3}>
                       <label className="emp-label">City<span className="req">*</span></label>
                       <input className="emp-input" type="text" placeholder="e.g. Pune" value={eCurCity} onChange={e => setECurCity(e.target.value)} />
                     </Col>
-                    <Col md={4}>
+                    <Col md={3}>
                       <label className="emp-label">State<span className="req">*</span></label>
                       <MasterSelect value={eCurState} onChange={setECurState} placeholder="Select state" options={STATE_OPTIONS} />
                     </Col>
-                    <Col md={4}>
+                    <Col md={3}>
                       <label className="emp-label">Country<span className="req">*</span></label>
                       <MasterSelect value={eCurCountry} onChange={setECurCountry} options={COUNTRY_OPTIONS} />
                     </Col>
-                    <Col md={4}>
+                    <Col md={3}>
                       <label className="emp-label">Pincode<span className="req">*</span></label>
                       <input className="emp-input" type="text" placeholder="6-digit pincode" value={eCurPin} onChange={e => setECurPin(e.target.value)} />
                     </Col>
@@ -1816,19 +1856,19 @@ export default function HrEmployees() {
                       <label className="emp-label">Address Line 2</label>
                       <input className="emp-input" type="text" placeholder="Area, Locality (optional)" value={ePermAddr2} onChange={e => setEPermAddr2(e.target.value)} disabled={eSameAsCurrent} />
                     </Col>
-                    <Col md={4}>
+                    <Col md={3}>
                       <label className="emp-label">City<span className="req">*</span></label>
                       <input className="emp-input" type="text" placeholder="e.g. Pune" value={ePermCity} onChange={e => setEPermCity(e.target.value)} disabled={eSameAsCurrent} />
                     </Col>
-                    <Col md={4}>
+                    <Col md={3}>
                       <label className="emp-label">State<span className="req">*</span></label>
                       <MasterSelect value={ePermState} onChange={setEPermState} placeholder="Select state" options={STATE_OPTIONS} disabled={eSameAsCurrent} />
                     </Col>
-                    <Col md={4}>
+                    <Col md={3}>
                       <label className="emp-label">Country<span className="req">*</span></label>
                       <MasterSelect value={ePermCountry} onChange={setEPermCountry} options={COUNTRY_OPTIONS} disabled={eSameAsCurrent} />
                     </Col>
-                    <Col md={4}>
+                    <Col md={3}>
                       <label className="emp-label">Pincode<span className="req">*</span></label>
                       <input className="emp-input" type="text" placeholder="6-digit pincode" value={ePermPin} onChange={e => setEPermPin(e.target.value)} disabled={eSameAsCurrent} />
                     </Col>
@@ -1862,8 +1902,13 @@ export default function HrEmployees() {
                       <MasterSelect value={ePrimaryRole} onChange={setEPrimaryRole} placeholder="Select role" options={PRIMARY_ROLE_OPTIONS} />
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Ancillary Role</label>
-                      <MasterSelect value={eAncillaryRole} onChange={setEAncillaryRole} placeholder="— None —" options={ANCILLARY_ROLE_OPTIONS} />
+                      <label className="emp-label">Ancillary Role <span className="hint">(select multiple)</span></label>
+                      <MultiSelectChips
+                        value={eAncillaryRole}
+                        onChange={setEAncillaryRole}
+                        options={ANCILLARY_ROLE_OPTIONS}
+                        placeholder="Select one or more roles"
+                      />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Work Type<span className="req">*</span></label>
@@ -1880,15 +1925,37 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={4}>
                       <label className="emp-label">Legal Entity<span className="req">*</span></label>
-                      <MasterSelect value={eLegalEntity} onChange={setELegalEntity} placeholder="Select entity" options={LEGAL_ENTITY_OPTIONS} />
+                      <MasterSelect
+                        value={eLegalEntity}
+                        onChange={(v) => {
+                          setELegalEntity(v);
+                          setELocation(LEGAL_ENTITY_TO_LOCATION[v] || '');
+                        }}
+                        placeholder="Select entity"
+                        options={LEGAL_ENTITY_OPTIONS}
+                      />
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Location<span className="req">*</span></label>
-                      <MasterSelect value={eLocation} onChange={setELocation} placeholder="Select location" options={LOCATION_OPTIONS} />
+                      <label className="emp-label">
+                        Location<span className="req">*</span>
+                        <span className="hint">(auto-fetched)</span>
+                      </label>
+                      <input
+                        className="emp-input is-readonly"
+                        type="text"
+                        value={eLocation}
+                        readOnly
+                        placeholder="Select a legal entity first"
+                      />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Reporting Manager</label>
-                      <input className="emp-input" type="text" placeholder="Enter manager name" value={eReportingMgr} onChange={e => setEReportingMgr(e.target.value)} />
+                      <MasterSelect
+                        value={eReportingMgr}
+                        onChange={setEReportingMgr}
+                        placeholder="Select manager"
+                        options={REPORTING_MANAGER_OPTIONS}
+                      />
                     </Col>
                   </Row>
                 </div>
@@ -2045,12 +2112,15 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     {[
-                      { label: 'Aadhar Card', required: true,  file: eAadharFile, set: setEAadharFile },
-                      { label: 'Pan Card',    required: true,  file: ePanFile,    set: setEPanFile },
-                      { label: 'Photo ID',    required: false, file: ePhotoFile,  set: setEPhotoFile },
+                      { label: 'Aadhar Card',         required: true,  file: eAadharFile, set: setEAadharFile, accept: '.pdf,.jpg,.jpeg,.png',                hint: '' as string },
+                      { label: 'Pan Card',            required: true,  file: ePanFile,    set: setEPanFile,    accept: '.pdf,.jpg,.jpeg,.png',                hint: '' as string },
+                      { label: 'Passport Size Photo', required: false, file: ePhotoFile,  set: setEPhotoFile,  accept: 'image/jpeg,image/png,.jpg,.jpeg,.png', hint: '(format .jpg, .png)' },
                     ].map(d => (
                       <Col md={4} key={d.label}>
-                        <label className="emp-label">{d.label}{d.required && <span className="req">*</span>}</label>
+                        <label className="emp-label">
+                          {d.label}{d.required && <span className="req">*</span>}
+                          {d.hint && <span className="hint">{d.hint}</span>}
+                        </label>
                         <label
                           className="d-flex align-items-center justify-content-center gap-2"
                           style={{
@@ -2068,6 +2138,7 @@ export default function HrEmployees() {
                           {d.file ? d.file.name : 'Choose file'}
                           <input
                             type="file"
+                            accept={d.accept}
                             style={{ display: 'none' }}
                             onChange={e => d.set(e.target.files?.[0] || null)}
                           />
@@ -3067,6 +3138,186 @@ function ActionBtn({
       <i className={`${icon} fs-14`} />
     </button>
   );
+}
+
+// Animated KPI counter — same recipe as the admin / client / branch dashboards
+// so the HR Employee KPIs count up on first paint instead of snapping to value.
+// Multi-select chips — toggle-style dropdown that shows the selected values
+// as removable pills inside the toggle, and a checkbox list when opened.
+// Used by the Ancillary Role field in Step 2 of the Add/Edit Employee form.
+function MultiSelectChips({
+  value,
+  onChange,
+  options,
+  placeholder = 'Select…',
+  disabled,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click / ESC.
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const toggleVal = (v: string) => {
+    if (value.includes(v)) onChange(value.filter(x => x !== v));
+    else onChange([...value, v]);
+  };
+  const remove = (v: string) => onChange(value.filter(x => x !== v));
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
+      <style>{`
+        .mschips-toggle {
+          width: 100%; min-height: 38px;
+          padding: 5px 36px 5px 10px;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 10px;
+          background: var(--vz-card-bg);
+          font-size: 13px;
+          color: var(--vz-heading-color, var(--vz-body-color));
+          cursor: pointer;
+          display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+          position: relative;
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .mschips-toggle:hover:not(.is-disabled) { border-color: rgba(99,102,241,0.55); }
+        .mschips-toggle.is-open { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+        .mschips-toggle.is-disabled { background: var(--vz-secondary-bg); cursor: not-allowed; opacity: 0.85; }
+        .mschips-placeholder { color: var(--vz-secondary-color); opacity: 0.65; font-weight: 400; padding: 3px 0; }
+        .mschips-chev { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--vz-secondary-color); font-size: 16px; pointer-events: none; transition: transform .2s ease; }
+        .mschips-toggle.is-open .mschips-chev { transform: translateY(-50%) rotate(180deg); color: #6366f1; }
+        .mschips-chip {
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 3px 8px; border-radius: 999px;
+          background: rgba(99,102,241,0.10);
+          color: #6366f1;
+          font-size: 12px; font-weight: 600;
+        }
+        .mschips-chip-x {
+          border: none; background: transparent; padding: 0;
+          color: #6366f1; cursor: pointer; line-height: 1;
+          display: inline-flex; align-items: center;
+        }
+        .mschips-chip-x:hover { color: #f06548; }
+        .mschips-menu {
+          position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 1500;
+          background-color: #ffffff !important;
+          background-image: none !important;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          opacity: 1 !important;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 10px;
+          box-shadow: 0 14px 30px rgba(18,38,63,0.18), 0 2px 8px rgba(18,38,63,0.06);
+          padding: 6px;
+          max-height: 220px; overflow-y: auto;
+        }
+        [data-bs-theme="dark"] .mschips-menu,
+        [data-layout-mode="dark"] .mschips-menu {
+          background-color: #2a2f34 !important;
+          border-color: rgba(255,255,255,0.08);
+        }
+        .mschips-item {
+          display: flex; align-items: center; gap: 8px;
+          padding: 7px 10px; border-radius: 6px;
+          font-size: 13px; cursor: pointer;
+          transition: background .15s ease;
+        }
+        .mschips-item:hover { background: var(--vz-secondary-bg); }
+        .mschips-item.is-on { background: rgba(99,102,241,0.10); color: #6366f1; font-weight: 600; }
+        .mschips-check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--vz-border-color); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .mschips-item.is-on .mschips-check { background: #6366f1; border-color: #6366f1; color: #fff; }
+      `}</style>
+
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled}
+        onClick={() => { if (!disabled) setOpen(o => !o); }}
+        className={`mschips-toggle${open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`}
+      >
+        {value.length === 0 && <span className="mschips-placeholder">{placeholder}</span>}
+        {value.map(v => {
+          const opt = options.find(o => o.value === v);
+          return (
+            <span key={v} className="mschips-chip">
+              {opt?.label || v}
+              {!disabled && (
+                <button
+                  type="button"
+                  className="mschips-chip-x"
+                  onClick={(e) => { e.stopPropagation(); remove(v); }}
+                  aria-label={`Remove ${opt?.label || v}`}
+                >
+                  <i className="ri-close-line" style={{ fontSize: 14 }} />
+                </button>
+              )}
+            </span>
+          );
+        })}
+        <i className="ri-arrow-down-s-line mschips-chev" />
+      </div>
+
+      {open && !disabled && (
+        <div className="mschips-menu">
+          {options.length === 0 ? (
+            <div className="px-3 py-2 text-muted" style={{ fontSize: 12 }}>No options</div>
+          ) : options.map(opt => {
+            const on = value.includes(opt.value);
+            return (
+              <div
+                key={opt.value}
+                className={`mschips-item${on ? ' is-on' : ''}`}
+                onClick={() => toggleVal(opt.value)}
+              >
+                <span className="mschips-check">
+                  {on && <i className="ri-check-line" style={{ fontSize: 12 }} />}
+                </span>
+                {opt.label}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    let start = 0;
+    const end = value;
+    if (!end) { setDisplay(0); return; }
+    const duration = 1200;
+    const step = Math.max(1, Math.floor(end / 60));
+    const interval = duration / (end / step || 1);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= end) { setDisplay(end); clearInterval(timer); }
+      else setDisplay(start);
+    }, interval);
+    return () => clearInterval(timer);
+  }, [value]);
+  return <>{prefix}{display.toLocaleString()}{suffix}</>;
 }
 
 // Local toggle — simple, controlled per row. Bound only to mock state for now.
