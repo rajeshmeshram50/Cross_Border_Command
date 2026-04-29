@@ -23,7 +23,8 @@ const Ctx = createContext<AuthCtx>({
 // Bump this when the shape of `cbc_user` changes in a way that stale caches break.
 // When the stored version differs, we invalidate the cache and force a /me refresh.
 // v3 — added `is_main_branch` flag (used for Permissions menu gating).
-const USER_SCHEMA_VERSION = 3;
+// v4 — added `client_logo` / `branch_logo` URLs (sidebar dynamic branding).
+const USER_SCHEMA_VERSION = 4;
 
 function readCachedUser(): AuthUser | null {
   try {

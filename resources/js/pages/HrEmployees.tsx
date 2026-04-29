@@ -1,6 +1,92 @@
-import { useMemo, useState } from 'react';
-import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
+import { useEffect, useMemo, useState } from 'react';
+import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
+import api from '../api';
+import { useToast } from '../contexts/ToastContext';
+import PermissionMatrix, {
+  extractLeafPermissions,
+  emptyPerms,
+  type PermKey,
+  type PermModule,
+} from '../components/PermissionMatrix';
+
+// Slugs hidden from the per-employee permission matrix (admin-only / tenant-level
+// modules that don't apply to an individual employee). Mirrors ClientPermissions.
+const HIDDEN_PERM_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions', 'master.organization_types']);
+
+// ── Evidence Vault — mock document catalogue (per-employee view) ────────────
+type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
+interface VaultDoc {
+  id: string;
+  name: string;
+  desc: string;
+  icon: string;
+  tint: string;        // background tint for the icon tile
+  fg: string;          // glyph colour
+  category?: string;   // small category pill (only shown on employee tab)
+  status: VaultStatus;
+}
+interface VaultSection { title: string; docs: VaultDoc[] }
+
+const VAULT_EMPLOYEE_DOCS: VaultSection[] = [
+  {
+    title: 'Identity Documents',
+    docs: [
+      { id: 'aadhaar', name: 'Aadhaar Card',  desc: 'Government issued 12-digit unique identity', icon: 'ri-id-card-line',     tint: '#dceefe', fg: '#0c63b0', category: 'Identity', status: 'Verified' },
+      { id: 'pan',     name: 'PAN Card',      desc: 'Permanent Account Number for taxation',      icon: 'ri-bank-card-line',   tint: '#fdf3d6', fg: '#a06f00', category: 'Identity', status: 'Verified' },
+      { id: 'p_photo', name: 'Passport Photo',desc: 'Recent passport-size photograph',            icon: 'ri-image-line',       tint: '#fdd9ea', fg: '#a02960', category: 'Identity', status: 'Uploaded' },
+      { id: 'p_copy',  name: 'Passport Copy', desc: 'Govt issued travel document (if applicable)',icon: 'ri-passport-line',    tint: '#dceefe', fg: '#0c63b0', category: 'Identity', status: 'Pending'  },
+    ],
+  },
+  {
+    title: 'Address Proof',
+    docs: [
+      { id: 'cur_addr',  name: 'Current Address Proof',   desc: 'Utility bill or bank statement (last 3 months)', icon: 'ri-home-4-line',  tint: '#fde8c4', fg: '#a4661c', category: 'Address', status: 'Uploaded' },
+      { id: 'perm_addr', name: 'Permanent Address Proof', desc: 'Aadhaar / Voter ID — permanent address proof',   icon: 'ri-map-pin-line', tint: '#d6f4e3', fg: '#108548', category: 'Address', status: 'Verified' },
+    ],
+  },
+  {
+    title: 'Education Documents',
+    docs: [
+      { id: 'edu_10',  name: '10th Marksheet',     desc: 'Secondary school certification',         icon: 'ri-graduation-cap-line', tint: '#d6f4e3', fg: '#108548', category: 'Education', status: 'Verified' },
+      { id: 'edu_12',  name: '12th Marksheet',     desc: 'Higher secondary certification',         icon: 'ri-graduation-cap-line', tint: '#d6f4e3', fg: '#108548', category: 'Education', status: 'Verified' },
+      { id: 'edu_deg', name: 'Graduation Degree',  desc: 'Bachelor’s degree certificate',     icon: 'ri-medal-2-line',        tint: '#fdf3d6', fg: '#a06f00', category: 'Education', status: 'Uploaded' },
+      { id: 'edu_pg',  name: 'Post Graduation',    desc: 'Master’s or postgraduate diploma',  icon: 'ri-award-line',          tint: '#dceefe', fg: '#0c63b0', category: 'Education', status: 'Pending'  },
+    ],
+  },
+  {
+    title: 'Employment History',
+    docs: [
+      { id: 'rel_letter', name: 'Relieving Letter',  desc: 'Final relieving from previous employer', icon: 'ri-mail-send-line',    tint: '#fde8c4', fg: '#a4661c', category: 'Employment', status: 'Verified' },
+      { id: 'exp_cert',   name: 'Experience Letter', desc: 'Past employment experience certificate', icon: 'ri-briefcase-line',    tint: '#d3f0ee', fg: '#0a716a', category: 'Employment', status: 'Verified' },
+      { id: 'pay_slip',   name: 'Last 3 Pay Slips',  desc: 'Most recent salary slips for reference', icon: 'ri-money-dollar-circle-line', tint: '#d6f4e3', fg: '#108548', category: 'Employment', status: 'Uploaded' },
+    ],
+  },
+];
+
+const VAULT_ORG_DOCS: VaultSection[] = [
+  {
+    title: 'Signed Company Documents',
+    docs: [
+      { id: 'nda',        name: 'NDA',                       desc: 'Non-Disclosure Agreement — active during and post tenure', icon: 'ri-lock-line',          tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
+      { id: 'emp_agree',  name: 'Employment Agreement',      desc: 'Appointment letter & employment terms and conditions',     icon: 'ri-file-list-3-line',   tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
+      { id: 'coc',        name: 'Code of Conduct Policy',    desc: 'Acknowledgement of company ethical standards and behavior',icon: 'ri-book-2-line',        tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
+      { id: 'it_sec',     name: 'IT Security & Acceptable Use', desc: 'IT asset usage, data access, and acceptable use policy',icon: 'ri-computer-line',      tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
+      { id: 'leave_pol',  name: 'Leave & Attendance Policy', desc: 'Leave entitlements, attendance rules, and WFH policy',     icon: 'ri-calendar-2-line',    tint: '#dceefe', fg: '#0c63b0', status: 'Sent' },
+      { id: 'conf',       name: 'Confidentiality Agreement', desc: 'Confidential business information protection agreement',   icon: 'ri-shield-check-line',  tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
+      { id: 'gratuity',   name: 'Gratuity & Benefit Policy', desc: 'Gratuity eligibility, PF, and other employee benefit terms',icon: 'ri-gift-line',          tint: '#fde8c4', fg: '#a4661c', status: 'Not Generated' },
+    ],
+  },
+];
+
+const VAULT_STATUS_TONE: Record<VaultStatus, { bg: string; fg: string; dot: string }> = {
+  'Verified':      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
+  'Uploaded':      { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
+  'Pending':       { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
+  'Signed':        { bg: '#ece6ff', fg: '#5b3fd1', dot: '#7c5cfc' },
+  'Sent':          { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
+  'Not Generated': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
+};
 
 // Shared option lists for the master-style dropdowns used in the onboarding /
 // employee modals. Kept module-scoped so they're created once.
@@ -191,12 +277,13 @@ const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
 };
 const tone = (role: string) => ROLE_TONES[role] || { bg: '#eef2f6', fg: '#475569' };
 
-// Onboarding-status pill recipe — green for completed, warning for in-progress
-// pending stays muted grey since nothing has happened yet.
-const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { border: string; fg: string }> = {
-  'Completed':   { border: '#0ab39c', fg: '#0a8a78' },
-  'In Progress': { border: '#f7b84b', fg: '#b97a00' },
-  'Pending':     { border: '#878a99', fg: '#5b6478' },
+// Onboarding-status pill recipe — soft tinted background + bold dot accent.
+// Each tone carries a light background, a darker foreground for the label,
+// and a dot colour that pops a notch above the foreground for emphasis.
+const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { bg: string; fg: string; dot: string }> = {
+  'Completed':   { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
+  'In Progress': { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
+  'Pending':     { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
 };
 
 // Reuse the Clients KPI card recipe — gradient strip on top + 44×44 icon box,
@@ -234,6 +321,18 @@ export default function HrEmployees() {
     setOnbDept('');
     setOnbDate('');
     setOnbExpiry(15);
+  };
+
+  // Triggered from the disabled-tab person icon — pre-fills the onboarding link
+  // modal with the row's data so the recruiter can issue a fresh signed link
+  // without retyping the basics.
+  const openOnboardingForEmployee = (row: EmployeeRow) => {
+    setOnbName(row.name);
+    setOnbEmail(row.email);
+    setOnbDept(row.department);
+    setOnbDate('');
+    setOnbExpiry(15);
+    setOnboardOpen(true);
   };
 
   // Add / Edit employee modal state
@@ -301,6 +400,129 @@ export default function HrEmployees() {
   const [eAadharFile, setEAadharFile]            = useState<File | null>(null);
   const [ePanFile, setEPanFile]                  = useState<File | null>(null);
   const [ePhotoFile, setEPhotoFile]              = useState<File | null>(null);
+
+  // Assign Assets modal (opened by the per-row Workstation icon)
+  const [assignOpen, setAssignOpen]   = useState(false);
+  const [assignEmp, setAssignEmp]     = useState<EmployeeRow | null>(null);
+  const [assignTab, setAssignTab]     = useState<'it' | 'security' | 'hr'>('it');
+  // IT Assets fields
+  const [aLaptopAssigned, setALaptopAssigned] = useState('No');
+  const [aLaptopAssetId, setALaptopAssetId]   = useState('');
+  const [aMobileDevice, setAMobileDevice]     = useState('');
+  const [aOtherAssets, setAOtherAssets]       = useState('');
+  // Security fields
+  const [aAccessCard, setAAccessCard]     = useState('');
+  const [aSecurityLevel, setASecurityLevel] = useState('Level 1 — Basic');
+  const [aVpnAccess, setAVpnAccess]       = useState('Not Required');
+  // HR Record fields
+  const [aIssueDate, setAIssueDate] = useState('');
+  const [aIssuedBy, setAIssuedBy]   = useState('');
+  const [aNotes, setANotes]         = useState('');
+
+  const openAssignAssets = (row: EmployeeRow) => {
+    setAssignEmp(row);
+    setAssignTab('it');
+    setALaptopAssigned('No'); setALaptopAssetId(''); setAMobileDevice(''); setAOtherAssets('');
+    setAAccessCard(''); setASecurityLevel('Level 1 — Basic'); setAVpnAccess('Not Required');
+    setAIssueDate(''); setAIssuedBy(''); setANotes('');
+    setAssignOpen(true);
+  };
+  const closeAssign = () => { setAssignOpen(false); setAssignEmp(null); };
+
+  // Manage Permissions modal (opened by the per-row Permissions/lock icon).
+  // Mirrors the ClientPermissions page — same matrix, just rendered inside a
+  // modal scoped to an individual employee.
+  const toast = useToast();
+  const [permsOpen, setPermsOpen]     = useState(false);
+  const [permsEmp, setPermsEmp]       = useState<EmployeeRow | null>(null);
+  const [permsModules, setPermsModules]     = useState<PermModule[]>([]);
+  const [permsMatrix, setPermsMatrix]       = useState<Record<number, Record<PermKey, boolean>>>({});
+  const [permsLoading, setPermsLoading]     = useState(false);
+  const [permsSaving, setPermsSaving]       = useState(false);
+
+  const openPermissions = (row: EmployeeRow) => {
+    setPermsEmp(row);
+    setPermsModules([]);
+    setPermsMatrix({});
+    setPermsOpen(true);
+  };
+  const closePermissions = () => { setPermsOpen(false); setPermsEmp(null); };
+
+  // Evidence Vault modal (opened by the per-row Documents/PDF icon)
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [vaultEmp, setVaultEmp]   = useState<EmployeeRow | null>(null);
+  const [vaultTab, setVaultTab]   = useState<'employee' | 'organizational'>('employee');
+  const openVault = (row: EmployeeRow) => {
+    setVaultEmp(row);
+    setVaultTab('employee');
+    setVaultOpen(true);
+  };
+  const closeVault = () => { setVaultOpen(false); setVaultEmp(null); };
+
+  // Fetch modules (and the employee's existing permissions where the EMP id
+  // aligns with a real user_id on the backend) every time the modal opens.
+  useEffect(() => {
+    if (!permsOpen || !permsEmp) return;
+    let cancelled = false;
+    setPermsLoading(true);
+    (async () => {
+      try {
+        const modRes = await api.get('/modules');
+        const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_PERM_SLUGS.has(m.slug));
+        const m: Record<number, Record<PermKey, boolean>> = {};
+        mods.forEach(mod => { m[mod.id] = emptyPerms(); });
+
+        // Best-effort: try to load existing permissions if the employee id is a
+        // numeric user_id on the backend. EMP-codes are mock here; if the call
+        // 404s we just keep an empty matrix.
+        const numericId = Number(String(permsEmp.id).replace(/\D/g, ''));
+        if (numericId > 0) {
+          try {
+            const permRes = await api.get(`/permissions/user/${numericId}`);
+            const perms = permRes.data?.permissions || [];
+            perms.forEach((p: any) => {
+              if (m[p.module_id]) {
+                m[p.module_id] = {
+                  can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
+                  can_delete: !!p.can_delete, can_export: !!p.can_export,
+                  can_import: !!p.can_import, can_approve: !!p.can_approve,
+                };
+              }
+            });
+          } catch { /* employee may not be a real user yet — empty matrix is fine */ }
+        }
+
+        if (!cancelled) {
+          setPermsModules(mods);
+          setPermsMatrix(m);
+        }
+      } finally {
+        if (!cancelled) setPermsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [permsOpen, permsEmp]);
+
+  const handleSavePermissions = async () => {
+    if (!permsEmp) return;
+    const numericId = Number(String(permsEmp.id).replace(/\D/g, ''));
+    if (!numericId) {
+      // No real user_id available (mock-only employee) — surface and bail.
+      toast.error('Cannot save', `${permsEmp.name} is not linked to a backend user yet.`);
+      return;
+    }
+    setPermsSaving(true);
+    try {
+      const permissions = extractLeafPermissions(permsModules, permsMatrix);
+      const res = await api.post(`/permissions/user/${numericId}`, { permissions });
+      toast.success('Saved', `${res.data?.saved_count || permissions.length} permissions updated for ${permsEmp.name}`);
+      closePermissions();
+    } catch (err: any) {
+      toast.error('Error', err.response?.data?.message || 'Failed to save permissions');
+    } finally {
+      setPermsSaving(false);
+    }
+  };
   // Step 4 — Compensation
   const [eEnablePayroll, setEEnablePayroll]      = useState(true);
   const [ePayGroup, setEPayGroup]                = useState('Default pay group');
@@ -455,7 +677,7 @@ export default function HrEmployees() {
                 </span>
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee Directory</h5>
+                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee </h5>
                     <span
                       className="badge rounded-pill border border-success text-success text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1"
                     >
@@ -732,9 +954,21 @@ export default function HrEmployees() {
                                 const ob = ONBOARDING_TONES[e.onboarding];
                                 return (
                                   <span
-                                    className="badge rounded-pill text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center"
-                                    style={{ background: 'transparent', border: `1px solid ${ob.border}`, color: ob.fg }}
+                                    className="rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
+                                    style={{
+                                      background: ob.bg,
+                                      color: ob.fg,
+                                      fontSize: 11.5,
+                                      padding: '4px 10px',
+                                      border: 'none',
+                                    }}
                                   >
+                                    <span
+                                      style={{
+                                        width: 6, height: 6, borderRadius: '50%',
+                                        background: ob.dot, flexShrink: 0,
+                                      }}
+                                    />
                                     {e.onboarding}
                                   </span>
                                 );
@@ -743,9 +977,17 @@ export default function HrEmployees() {
                             <td className="pe-3">
                               <div className="d-flex gap-1 justify-content-center align-items-center">
                                 <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"      onClick={() => openEditEmployee(e)} />
-                                <ActionBtn title="Workstation" icon="ri-computer-line"    color="primary"   onClick={() => {}} />
-                                <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => {}} />
-                                <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => {}} />
+                                {tab === 'disabled' ? (
+                                  // Disabled employees swap the Documents action for an Onboarding
+                                  // shortcut — clicking it opens the onboarding-link modal pre-filled
+                                  // with this employee's name, email, and department.
+                                  <ActionBtn title="Send Onboarding" icon="ri-user-add-line" color="info" onClick={() => openOnboardingForEmployee(e)} />
+                                ) : null}
+                                <ActionBtn title="Workstation" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} />
+                                <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} />
+                                {tab === 'active' && (
+                                  <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} />
+                                )}
                                 <ToggleSwitch initial={e.enabled} />
                               </div>
                             </td>
@@ -1077,7 +1319,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">First Name<span className="req">*</span></label>
-                      <input className="emp-input" type="text" value={eFirstName} onChange={e => setEFirstName(e.target.value)} />
+                      <input className="emp-input" type="text" placeholder="e.g. Aarav" value={eFirstName} onChange={e => setEFirstName(e.target.value)} />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Middle Name</label>
@@ -1085,15 +1327,15 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Last Name<span className="req">*</span></label>
-                      <input className="emp-input" type="text" value={eLastName} onChange={e => setELastName(e.target.value)} />
+                      <input className="emp-input" type="text" placeholder="e.g. Kale" value={eLastName} onChange={e => setELastName(e.target.value)} />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Display Name<span className="req">*</span></label>
-                      <input className="emp-input" type="text" value={eDisplayName} onChange={e => setEDisplayName(e.target.value)} />
+                      <input className="emp-input" type="text" placeholder="e.g. Aarav Kale" value={eDisplayName} onChange={e => setEDisplayName(e.target.value)} />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Employee Actual Name<span className="req">*</span></label>
-                      <input className="emp-input" type="text" value={eActualName} onChange={e => setEActualName(e.target.value)} />
+                      <input className="emp-input" type="text" placeholder="Full legal name as per records" value={eActualName} onChange={e => setEActualName(e.target.value)} />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Gender</label>
@@ -1118,11 +1360,11 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={4}>
                       <label className="emp-label">Work Email<span className="req">*</span></label>
-                      <input className="emp-input" type="email" value={eWorkEmail} onChange={e => setEWorkEmail(e.target.value)} />
+                      <input className="emp-input" type="email" placeholder="name@enterprise.com" value={eWorkEmail} onChange={e => setEWorkEmail(e.target.value)} />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Mobile Number<span className="req">*</span></label>
-                      <input className="emp-input" type="tel" value={eMobile} onChange={e => setEMobile(e.target.value)} />
+                      <input className="emp-input" type="tel" placeholder="10-digit mobile number" value={eMobile} onChange={e => setEMobile(e.target.value)} />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Number Series</label>
@@ -1331,15 +1573,18 @@ export default function HrEmployees() {
                           className="btn p-0 border-0 d-inline-flex align-items-center"
                           style={{
                             width: 36, height: 20, borderRadius: 999,
-                            background: eAttendanceTracking ? '#7c5cfc' : '#cbd0d8',
+                            background: eAttendanceTracking ? '#0ab39c' : '#e5e7eb',
                             position: 'relative',
+                            transition: 'background .15s ease',
                           }}
                         >
                           <span
                             style={{
                               width: 14, height: 14, borderRadius: '50%',
-                              background: '#fff', position: 'absolute', top: 2,
-                              left: eAttendanceTracking ? 19 : 2, transition: 'left .15s ease',
+                              background: '#fff',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                              position: 'absolute', top: 3,
+                              left: eAttendanceTracking ? 19 : 3, transition: 'left .15s ease',
                             }}
                           />
                         </button>
@@ -1465,15 +1710,18 @@ export default function HrEmployees() {
                       className="btn p-0 border-0 d-inline-flex align-items-center"
                       style={{
                         width: 36, height: 20, borderRadius: 999,
-                        background: eEnablePayroll ? '#0ab39c' : '#cbd0d8',
+                        background: eEnablePayroll ? '#0ab39c' : '#e5e7eb',
                         position: 'relative',
+                        transition: 'background .15s ease',
                       }}
                     >
                       <span
                         style={{
                           width: 14, height: 14, borderRadius: '50%',
-                          background: '#fff', position: 'absolute', top: 2,
-                          left: eEnablePayroll ? 19 : 2, transition: 'left .15s ease',
+                          background: '#fff',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                          position: 'absolute', top: 3,
+                          left: eEnablePayroll ? 19 : 3, transition: 'left .15s ease',
                         }}
                       />
                     </button>
@@ -1601,16 +1849,19 @@ export default function HrEmployees() {
                         onClick={() => setEDetailedBreakup(v => !v)}
                         className="btn p-0 border-0 d-inline-flex align-items-center"
                         style={{
-                          width: 32, height: 18, borderRadius: 999,
-                          background: eDetailedBreakup ? '#7c5cfc' : '#cbd0d8',
+                          width: 36, height: 20, borderRadius: 999,
+                          background: eDetailedBreakup ? '#0ab39c' : '#e5e7eb',
                           position: 'relative',
+                          transition: 'background .15s ease',
                         }}
                       >
                         <span
                           style={{
-                            width: 12, height: 12, borderRadius: '50%',
-                            background: '#fff', position: 'absolute', top: 3,
-                            left: eDetailedBreakup ? 17 : 3, transition: 'left .15s ease',
+                            width: 14, height: 14, borderRadius: '50%',
+                            background: '#fff',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                            position: 'absolute', top: 3,
+                            left: eDetailedBreakup ? 19 : 3, transition: 'left .15s ease',
                           }}
                         />
                       </button>
@@ -1741,6 +1992,824 @@ export default function HrEmployees() {
           </div>
         </ModalBody>
       </Modal>
+
+      {/* ── Assign Assets modal (per-row Workstation icon) ── */}
+      <Modal
+        isOpen={assignOpen}
+        toggle={closeAssign}
+        centered
+        size="lg"
+        contentClassName="assign-modal-content border-0"
+      >
+        <style>{`
+          .assign-modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
+          .assign-tab-btn {
+            background: transparent; border: none; color: rgba(255,255,255,0.78);
+            padding: 12px 18px; font-size: 13px; font-weight: 600;
+            display: inline-flex; align-items: center; gap: 6px;
+            border-top-left-radius: 12px; border-top-right-radius: 12px;
+            transition: background .18s ease, color .18s ease;
+            cursor: pointer;
+          }
+          .assign-tab-btn:hover { color: #fff; background: rgba(255,255,255,0.10); }
+          .assign-tab-btn.is-active {
+            background: linear-gradient(180deg, rgba(255,255,255,0.20), rgba(255,255,255,0.05));
+            color: #fff;
+            box-shadow: inset 0 -2px 0 rgba(255,255,255,0.55);
+          }
+          .assign-input {
+            background: #fff; border: 1px solid #fde3c0; border-radius: 12px;
+            padding: 12px 14px 12px 40px; font-size: 14px; color: #1f2937;
+            transition: border-color .15s ease, box-shadow .15s ease;
+            width: 100%; height: 46px;
+          }
+          .assign-input::placeholder { color: #b8a37b; font-weight: 400; }
+          .assign-input:focus { outline: none; border-color: #fb923c; box-shadow: 0 0 0 3px rgba(251,146,60,0.18); }
+          .assign-textarea { padding-top: 12px; padding-bottom: 12px; height: auto; min-height: 84px; resize: vertical; }
+          .assign-input-wrap { position: relative; }
+          .assign-input-icon {
+            position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+            color: #c47826; font-size: 16px; pointer-events: none;
+          }
+          .assign-input-wrap.ta .assign-input-icon { top: 14px; transform: none; }
+          .assign-label {
+            font-size: 11px; font-weight: 700; color: #b97a00; letter-spacing: 0.06em;
+            text-transform: uppercase; margin-bottom: 8px; display: inline-flex;
+            align-items: center; gap: 6px;
+          }
+          .assign-label .assign-label-icon { color: #c47826; font-size: 13px; }
+          .assign-section-title {
+            display: inline-flex; align-items: center; gap: 10px;
+            font-size: 13.5px; font-weight: 700; color: #b97a00;
+            letter-spacing: 0.04em; text-transform: uppercase;
+          }
+          .assign-section-title .assign-section-icon {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: #fef3c7; color: #c47826;
+            display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
+            box-shadow: 0 2px 6px rgba(196,120,38,0.12);
+          }
+        `}</style>
+
+        <ModalBody className="p-0" style={{ background: '#fffaf0' }}>
+          {/* Header */}
+          <div
+            style={{
+              padding: '22px 26px 0',
+              background: 'linear-gradient(120deg,#f97316 0%,#fb923c 60%,#fdba74 100%)',
+              color: '#fff',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Decorative bubble (top-right) */}
+            <div style={{
+              position: 'absolute', top: -40, right: -30, width: 180, height: 180,
+              borderRadius: '50%', background: 'rgba(255,255,255,0.10)',
+            }} />
+            <div className="d-flex align-items-start justify-content-between gap-3" style={{ position: 'relative' }}>
+              <div className="d-flex align-items-center gap-3">
+                <div
+                  className="d-flex align-items-center justify-content-center flex-shrink-0"
+                  style={{
+                    width: 46, height: 46, borderRadius: 12,
+                    background: 'rgba(255,255,255,0.22)',
+                  }}
+                >
+                  <i className="ri-computer-line" style={{ fontSize: 22 }} />
+                </div>
+                <div>
+                  <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 19, letterSpacing: '-0.01em' }}>
+                    Assign Assets
+                  </h5>
+                  <div className="d-inline-flex align-items-center gap-2" style={{ fontSize: 13, color: 'rgba(255,255,255,0.95)' }}>
+                    <span className="bg-success rounded-circle" style={{ width: 8, height: 8 }} />
+                    <span className="fw-semibold">{assignEmp?.name || '—'}</span>
+                    <span style={{ opacity: 0.65 }}>·</span>
+                    <span style={{ opacity: 0.92 }}>{assignEmp?.id || ''}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeAssign}
+                aria-label="Close"
+                className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                style={{
+                  width: 32, height: 32, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.20)', border: 'none', color: '#fff',
+                }}
+              >
+                <i className="ri-close-line" style={{ fontSize: 18 }} />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="d-flex gap-1 mt-3" style={{ position: 'relative' }}>
+              {[
+                { key: 'it'       as const, label: 'IT Assets',  icon: 'ri-computer-line' },
+                { key: 'security' as const, label: 'Security',   icon: 'ri-lock-2-line' },
+                { key: 'hr'       as const, label: 'HR Record',  icon: 'ri-file-text-line' },
+              ].map(t => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setAssignTab(t.key)}
+                  className={`assign-tab-btn${assignTab === t.key ? ' is-active' : ''}`}
+                >
+                  <i className={t.icon} style={{ fontSize: 15 }} /> {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Body */}
+          <div style={{ padding: '22px 26px 6px' }}>
+            {assignTab === 'it' && (
+              <>
+                <div className="assign-section-title mb-3">
+                  <span className="assign-section-icon"><i className="ri-computer-line" /></span>
+                  Assets &amp; Security
+                </div>
+                <Row className="g-3">
+                  <Col md={4}>
+                    <label className="assign-label"><i className="ri-computer-line assign-label-icon" />Laptop Assigned</label>
+                    <div className="assign-input-wrap">
+                      <i className="ri-computer-line assign-input-icon" />
+                      <select
+                        className="assign-input"
+                        value={aLaptopAssigned}
+                        onChange={e => setALaptopAssigned(e.target.value)}
+                        style={{
+                          appearance: 'none',
+                          paddingRight: 36,
+                          backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23c47826\' stroke-width=\'2.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'/%3E%3C/svg%3E")',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'right 12px center',
+                        }}
+                      >
+                        <option>Yes</option>
+                        <option>No</option>
+                        <option>Pending</option>
+                      </select>
+                    </div>
+                  </Col>
+                  <Col md={4}>
+                    <label className="assign-label"><i className="ri-hashtag assign-label-icon" />Laptop Asset ID</label>
+                    <div className="assign-input-wrap">
+                      <i className="ri-hashtag assign-input-icon" />
+                      <input className="assign-input" type="text" placeholder="e.g. LAP-0042" value={aLaptopAssetId} onChange={e => setALaptopAssetId(e.target.value)} />
+                    </div>
+                  </Col>
+                  <Col md={4}>
+                    <label className="assign-label"><i className="ri-smartphone-line assign-label-icon" />Mobile Device</label>
+                    <div className="assign-input-wrap">
+                      <i className="ri-smartphone-line assign-input-icon" />
+                      <input className="assign-input" type="text" placeholder="e.g. iPhone 15" value={aMobileDevice} onChange={e => setAMobileDevice(e.target.value)} />
+                    </div>
+                  </Col>
+                  <Col md={12}>
+                    <label className="assign-label"><i className="ri-archive-line assign-label-icon" />Other Assets</label>
+                    <div className="assign-input-wrap">
+                      <i className="ri-archive-line assign-input-icon" />
+                      <input className="assign-input" type="text" placeholder="e.g. Monitor, Keyboard, Headset" value={aOtherAssets} onChange={e => setAOtherAssets(e.target.value)} />
+                    </div>
+                  </Col>
+                </Row>
+              </>
+            )}
+
+            {assignTab === 'security' && (
+              <>
+                <div className="assign-section-title mb-3">
+                  <span className="assign-section-icon"><i className="ri-lock-2-line" /></span>
+                  Security &amp; Access
+                </div>
+                <Row className="g-3">
+                  <Col md={6}>
+                    <label className="assign-label"><i className="ri-bank-card-line assign-label-icon" />Access Card</label>
+                    <div className="assign-input-wrap">
+                      <i className="ri-bank-card-line assign-input-icon" />
+                      <input className="assign-input" type="text" placeholder="e.g. AC-8821" value={aAccessCard} onChange={e => setAAccessCard(e.target.value)} />
+                    </div>
+                  </Col>
+                  <Col md={6}>
+                    <label className="assign-label"><i className="ri-shield-check-line assign-label-icon" />Security Level</label>
+                    <div className="assign-input-wrap">
+                      <i className="ri-shield-check-line assign-input-icon" />
+                      <select
+                        className="assign-input"
+                        value={aSecurityLevel}
+                        onChange={e => setASecurityLevel(e.target.value)}
+                        style={{
+                          appearance: 'none',
+                          paddingRight: 36,
+                          backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23c47826\' stroke-width=\'2.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'/%3E%3C/svg%3E")',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'right 12px center',
+                        }}
+                      >
+                        <option>Level 1 — Basic</option>
+                        <option>Level 2 — Standard</option>
+                        <option>Level 3 — Privileged</option>
+                        <option>Level 4 — Admin</option>
+                      </select>
+                    </div>
+                  </Col>
+                  <Col md={12}>
+                    <label className="assign-label"><i className="ri-global-line assign-label-icon" />VPN / Remote Access</label>
+                    <div className="assign-input-wrap">
+                      <i className="ri-global-line assign-input-icon" />
+                      <select
+                        className="assign-input"
+                        value={aVpnAccess}
+                        onChange={e => setAVpnAccess(e.target.value)}
+                        style={{
+                          appearance: 'none',
+                          paddingRight: 36,
+                          backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23c47826\' stroke-width=\'2.5\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpolyline points=\'6 9 12 15 18 9\'/%3E%3C/svg%3E")',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'right 12px center',
+                        }}
+                      >
+                        <option>Not Required</option>
+                        <option>Standard VPN</option>
+                        <option>Privileged VPN</option>
+                        <option>Always-On VPN</option>
+                      </select>
+                    </div>
+                  </Col>
+                </Row>
+              </>
+            )}
+
+            {assignTab === 'hr' && (
+              <>
+                <div className="assign-section-title mb-3">
+                  <span className="assign-section-icon"><i className="ri-file-text-line" /></span>
+                  HR Record Notes
+                </div>
+                <Row className="g-3">
+                  <Col md={6}>
+                    <label className="assign-label"><i className="ri-calendar-line assign-label-icon" />Issue Date</label>
+                    <div className="assign-input-wrap">
+                      <i className="ri-calendar-line assign-input-icon" />
+                      <input className="assign-input" type="date" placeholder="dd-mm-yyyy" value={aIssueDate} onChange={e => setAIssueDate(e.target.value)} />
+                    </div>
+                  </Col>
+                  <Col md={6}>
+                    <label className="assign-label"><i className="ri-user-line assign-label-icon" />Issued By</label>
+                    <div className="assign-input-wrap">
+                      <i className="ri-user-line assign-input-icon" />
+                      <input className="assign-input" type="text" placeholder="Manager name" value={aIssuedBy} onChange={e => setAIssuedBy(e.target.value)} />
+                    </div>
+                  </Col>
+                  <Col md={12}>
+                    <label className="assign-label"><i className="ri-chat-3-line assign-label-icon" />Notes</label>
+                    <div className="assign-input-wrap ta">
+                      <i className="ri-chat-3-line assign-input-icon" />
+                      <textarea
+                        className="assign-input assign-textarea"
+                        placeholder="Additional notes about asset assignment…"
+                        value={aNotes}
+                        onChange={e => setANotes(e.target.value)}
+                        rows={3}
+                      />
+                    </div>
+                  </Col>
+                </Row>
+              </>
+            )}
+
+            {/* Assigning-to banner */}
+            <div
+              className="d-flex align-items-center gap-2 mt-3"
+              style={{
+                padding: '12px 16px', borderRadius: 12,
+                background: 'linear-gradient(135deg,#fff4dd,#ffe8c2)',
+                border: '1px solid #fbcf8a',
+                color: '#b97a00',
+                fontSize: 13,
+              }}
+            >
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                style={{ width: 18, height: 18, background: '#f59e0b' }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />
+              </span>
+              <span>Assigning assets to <strong style={{ color: '#1f2937' }}>{assignEmp?.name || '—'}</strong></span>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div
+            className="d-flex align-items-center justify-content-end gap-2"
+            style={{ padding: '16px 26px 22px' }}
+          >
+            <button
+              type="button"
+              onClick={closeAssign}
+              className="btn fw-semibold rounded-pill px-4"
+              style={{
+                fontSize: 14,
+                background: '#fff',
+                color: '#374151',
+                border: '1px solid #e5e7eb',
+                padding: '10px 22px',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // TODO: wire to backend — save asset assignment for assignEmp
+                closeAssign();
+              }}
+              className="btn d-inline-flex align-items-center gap-2 fw-semibold rounded-pill"
+              style={{
+                fontSize: 14,
+                color: '#fff',
+                border: 'none',
+                background: 'linear-gradient(135deg,#f97316,#fb923c)',
+                boxShadow: '0 8px 18px rgba(249,115,22,0.32)',
+                padding: '10px 22px',
+              }}
+            >
+              <i className="ri-check-line" style={{ fontSize: 16 }} />
+              Save Assets
+            </button>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* ── Manage Permissions modal (per-row Permissions / lock icon) ── */}
+      <Modal
+        isOpen={permsOpen}
+        toggle={closePermissions}
+        centered
+        size="xl"
+        contentClassName="perms-modal-content border-0"
+        modalClassName="perms-modal-wide"
+        scrollable
+      >
+        <style>{`
+          .perms-modal-wide .modal-dialog { max-width: min(1200px, 94vw); }
+          .perms-modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
+          .perms-modal-content .modal-body { padding: 0; }
+        `}</style>
+
+        <ModalBody style={{ background: 'var(--vz-secondary-bg, #f7f8fc)' }}>
+          {/* Header — gradient warning/amber to echo the lock action colour. */}
+          <div
+            style={{
+              padding: '20px 24px',
+              background: 'linear-gradient(120deg,#f7b84b 0%,#f59e0b 60%,#fbbf24 100%)',
+              color: '#fff',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{
+              position: 'absolute', top: -40, right: -30, width: 180, height: 180,
+              borderRadius: '50%', background: 'rgba(255,255,255,0.10)',
+            }} />
+            <div className="d-flex align-items-center justify-content-between gap-3" style={{ position: 'relative' }}>
+              <div className="d-flex align-items-center gap-3">
+                <div
+                  className="d-flex align-items-center justify-content-center flex-shrink-0"
+                  style={{
+                    width: 46, height: 46, borderRadius: 12,
+                    background: 'rgba(255,255,255,0.22)',
+                  }}
+                >
+                  <i className="ri-shield-keyhole-line" style={{ fontSize: 22 }} />
+                </div>
+                <div>
+                  <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 19, letterSpacing: '-0.01em' }}>
+                    Manage Permissions
+                  </h5>
+                  <div className="d-inline-flex align-items-center gap-2" style={{ fontSize: 13, color: 'rgba(255,255,255,0.95)' }}>
+                    {permsEmp && (
+                      <>
+                        <span
+                          className="rounded-circle d-inline-flex align-items-center justify-content-center fw-bold"
+                          style={{
+                            width: 20, height: 20,
+                            background: 'rgba(255,255,255,0.30)',
+                            color: '#fff',
+                            fontSize: 10,
+                          }}
+                        >
+                          {permsEmp.initials}
+                        </span>
+                        <span className="fw-semibold">{permsEmp.name}</span>
+                        <span style={{ opacity: 0.65 }}>·</span>
+                        <span style={{ opacity: 0.92 }}>{permsEmp.id}</span>
+                        <span style={{ opacity: 0.65 }}>·</span>
+                        <span style={{ opacity: 0.92 }}>{permsEmp.email}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closePermissions}
+                aria-label="Close"
+                className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                style={{
+                  width: 32, height: 32, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.20)', border: 'none', color: '#fff',
+                }}
+              >
+                <i className="ri-close-line" style={{ fontSize: 18 }} />
+              </button>
+            </div>
+          </div>
+
+          {/* Body — same PermissionMatrix component used by ClientPermissions. */}
+          <div style={{ padding: '16px 16px 0' }}>
+            {permsLoading ? (
+              <div className="text-center py-5">
+                <Spinner color="warning" />
+                <div className="text-muted mt-2" style={{ fontSize: 13 }}>Loading permissions…</div>
+              </div>
+            ) : (
+              <Card className="border shadow-sm mb-0">
+                <PermissionMatrix
+                  modules={permsModules}
+                  matrix={permsMatrix}
+                  onChange={setPermsMatrix}
+                  grantableBy={null}
+                />
+              </Card>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div
+            className="d-flex align-items-center justify-content-between gap-2 flex-wrap"
+            style={{
+              padding: '14px 24px',
+              background: '#fff',
+              borderTop: '1px solid var(--vz-border-color)',
+              marginTop: 16,
+            }}
+          >
+            <span className="text-muted" style={{ fontSize: 13 }}>
+              <i className="ri-edit-box-line me-1 text-warning" />
+              Editing: <strong className="text-body">{permsEmp?.name || '—'}</strong>
+            </span>
+            <div className="d-flex align-items-center gap-2">
+              <button
+                type="button"
+                onClick={closePermissions}
+                className="btn fw-semibold rounded-pill px-4"
+                style={{
+                  fontSize: 13.5,
+                  background: '#fff',
+                  color: '#374151',
+                  border: '1px solid #e5e7eb',
+                  padding: '9px 20px',
+                }}
+              >
+                Cancel
+              </button>
+              <Button
+                color="success"
+                className="btn-label waves-effect waves-light rounded-pill"
+                onClick={handleSavePermissions}
+                disabled={permsSaving || permsLoading}
+              >
+                {permsSaving
+                  ? <Spinner size="sm" className="label-icon align-middle me-2" />
+                  : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
+                {permsSaving ? 'Saving…' : 'Save Permissions'}
+              </Button>
+            </div>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* ── Evidence Vault modal (per-row Documents / PDF icon) ── */}
+      {(() => {
+        // Pre-compute KPIs across the catalogue so the strip stays in sync if
+        // the mock data ever changes (no manual counting required).
+        const allDocs = [...VAULT_EMPLOYEE_DOCS, ...VAULT_ORG_DOCS].flatMap(s => s.docs);
+        const counts = {
+          total:    allDocs.length,
+          verified: allDocs.filter(d => d.status === 'Verified').length,
+          signed:   allDocs.filter(d => d.status === 'Signed' || d.status === 'Sent').length,
+          pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length,
+          notGen:   allDocs.filter(d => d.status === 'Not Generated').length,
+        };
+        const empCount = VAULT_EMPLOYEE_DOCS.flatMap(s => s.docs).length;
+        const orgCount = VAULT_ORG_DOCS.flatMap(s => s.docs).length;
+        // Mock vault completion percent = (verified + signed) / total.
+        const completion = counts.total ? Math.round(((counts.verified + counts.signed) / counts.total) * 100) : 0;
+        const sections = vaultTab === 'employee' ? VAULT_EMPLOYEE_DOCS : VAULT_ORG_DOCS;
+
+        return (
+          <Modal
+            isOpen={vaultOpen}
+            toggle={closeVault}
+            centered
+            size="lg"
+            contentClassName="vault-modal-content border-0"
+            modalClassName="vault-modal-wide"
+            scrollable
+          >
+            <style>{`
+              .vault-modal-wide .modal-dialog { max-width: min(1080px, 94vw); }
+              .vault-modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
+              .vault-pill {
+                display: inline-flex; align-items: center; padding: 4px 12px;
+                border-radius: 999px; font-size: 11.5px; font-weight: 600;
+                background: rgba(255,255,255,0.18); color: #fff;
+              }
+              .vault-kpi-card {
+                background: #ffffff;
+                border-radius: 16px;
+                padding: 20px 20px 16px;
+                box-shadow: 0 2px 20px rgba(0,0,0,0.06);
+                border: 1px solid var(--vz-border-color);
+                position: relative;
+                overflow: hidden;
+                height: 100%;
+              }
+              [data-bs-theme="dark"] .vault-kpi-card { background: #1c2531; }
+              .vault-kpi-card .vault-kpi-strip { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+              .vault-kpi-card .vault-kpi-icon {
+                width: 46px; height: 46px; border-radius: 12px;
+                display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+              }
+              .vault-kpi-card .vault-kpi-icon i { color: #fff; font-size: 20px; }
+              .vault-kpi-card .vault-kpi-label {
+                font-size: 11px; font-weight: 700;
+                color: var(--vz-secondary-color);
+                letter-spacing: 0.06em; text-transform: uppercase;
+                margin: 0 0 10px;
+              }
+              .vault-kpi-card .vault-kpi-num {
+                font-size: 28px; font-weight: 800; line-height: 1; margin: 0;
+                color: var(--vz-heading-color, var(--vz-body-color));
+              }
+              .vault-tab-btn {
+                background: transparent; border: none; padding: 12px 18px;
+                font-size: 13.5px; font-weight: 600; color: var(--vz-secondary-color);
+                display: inline-flex; align-items: center; gap: 6px;
+                border-bottom: 2px solid transparent;
+                transition: color .15s ease, border-color .15s ease;
+              }
+              .vault-tab-btn:hover { color: #5a3fd1; }
+              .vault-tab-btn.is-active { color: #5a3fd1; border-bottom-color: #7c5cfc; }
+              .vault-tab-count {
+                display: inline-flex; align-items: center; justify-content: center;
+                min-width: 22px; height: 18px; padding: 0 6px;
+                border-radius: 999px; background: var(--vz-light); color: var(--vz-secondary-color);
+                font-size: 10.5px; font-weight: 700;
+              }
+              .vault-tab-btn.is-active .vault-tab-count { background: #ece6ff; color: #5a3fd1; }
+              .vault-doc-row {
+                display: flex; align-items: center; gap: 14px; padding: 14px 4px;
+                border-bottom: 1px solid var(--vz-border-color);
+              }
+              .vault-doc-row:last-child { border-bottom: none; }
+              .vault-doc-icon {
+                width: 40px; height: 40px; border-radius: 10px;
+                display: inline-flex; align-items: center; justify-content: center;
+                font-size: 20px; flex-shrink: 0;
+              }
+              .vault-doc-meta { min-width: 0; flex: 1; }
+              .vault-doc-name { font-size: 14px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color)); }
+              .vault-doc-desc { font-size: 12px; color: var(--vz-secondary-color); margin-top: 2px; }
+              .vault-status-pill {
+                display: inline-flex; align-items: center; gap: 6px;
+                padding: 4px 10px; border-radius: 999px;
+                font-size: 11px; font-weight: 600;
+              }
+              .vault-status-dot { width: 6px; height: 6px; border-radius: 50%; }
+              .vault-action-view {
+                display: inline-flex; align-items: center; gap: 5px;
+                padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+                background: #fff; color: #374151; border: 1px solid #e5e7eb;
+                transition: border-color .15s ease, color .15s ease;
+              }
+              .vault-action-view:hover { color: #5a3fd1; border-color: #c4b5fd; }
+              .vault-action-download {
+                display: inline-flex; align-items: center; gap: 5px;
+                padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+                background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border: none;
+                box-shadow: 0 4px 10px rgba(124,92,252,0.25);
+              }
+              .vault-action-download:hover { box-shadow: 0 6px 14px rgba(124,92,252,0.35); }
+            `}</style>
+
+            <ModalBody className="p-0" style={{ background: '#fff' }}>
+              {/* Header — indigo gradient with status ring */}
+              <div
+                style={{
+                  padding: '22px 26px',
+                  background: 'linear-gradient(120deg,#5e4dd6 0%,#7c5cfc 60%,#9b7dff 100%)',
+                  color: '#fff',
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
+              >
+                <div style={{
+                  position: 'absolute', top: -50, right: -40, width: 220, height: 220,
+                  borderRadius: '50%', background: 'rgba(255,255,255,0.08)',
+                }} />
+                <div className="d-flex align-items-start justify-content-between gap-3" style={{ position: 'relative' }}>
+                  <div className="d-flex align-items-start gap-3 min-w-0">
+                    <div
+                      className="d-flex align-items-center justify-content-center flex-shrink-0"
+                      style={{
+                        width: 48, height: 48, borderRadius: 12,
+                        background: 'rgba(255,255,255,0.22)',
+                      }}
+                    >
+                      <i className="ri-folder-shield-2-line" style={{ fontSize: 22 }} />
+                    </div>
+                    <div className="min-w-0">
+                      <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 20, letterSpacing: '-0.01em' }}>
+                        Evidence Vault
+                      </h5>
+                      <div className="mb-2" style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.88)' }}>
+                        Centralized document repository for onboarding, signed organizational, and exit documents
+                      </div>
+                      {vaultEmp && (
+                        <div className="d-flex flex-wrap gap-2">
+                          <span className="vault-pill">{vaultEmp.id}</span>
+                          <span className="vault-pill">{vaultEmp.name}</span>
+                          <span className="vault-pill">{vaultEmp.department}</span>
+                          <span className="vault-pill">{vaultEmp.designation}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="d-flex align-items-start gap-3 flex-shrink-0">
+                    {/* Status ring */}
+                    <div className="text-center">
+                      <div
+                        style={{
+                          width: 64, height: 64, borderRadius: '50%',
+                          background: `conic-gradient(#10b981 ${completion * 3.6}deg, rgba(255,255,255,0.20) 0)`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        <div
+                          className="d-flex align-items-center justify-content-center fw-bold"
+                          style={{
+                            width: 50, height: 50, borderRadius: '50%',
+                            background: '#5b3fd1', color: '#fff', fontSize: 14,
+                          }}
+                        >
+                          {completion}%
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.85)', marginTop: 6 }}>
+                        VAULT STATUS
+                      </div>
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.85)' }}>
+                        {completion}% Complete
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeVault}
+                      aria-label="Close"
+                      className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                      style={{
+                        width: 32, height: 32, borderRadius: 10,
+                        background: 'rgba(255,255,255,0.20)', border: 'none', color: '#fff',
+                      }}
+                    >
+                      <i className="ri-close-line" style={{ fontSize: 18 }} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPI strip — dashboard-style cards (gradient top + gradient icon tile) */}
+              <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                <Row className="g-3 align-items-stretch">
+                  {[
+                    { key: 'total',    label: 'Total Docs',     value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+                    { key: 'verified', label: 'Verified',       value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+                    { key: 'signed',   label: 'Signed',         value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
+                    { key: 'pending',  label: 'Pending',        value: counts.pending,  icon: 'ri-time-line',             gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
+                    { key: 'notgen',   label: 'Not Generated',  value: counts.notGen,   icon: 'ri-close-circle-line',     gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+                  ].map(k => (
+                    <Col key={k.key} xl md={4} sm={6} xs={12}>
+                      <div className="vault-kpi-card">
+                        <div className="vault-kpi-strip" style={{ background: k.gradient }} />
+                        <div className="d-flex align-items-start justify-content-between">
+                          <div className="min-w-0">
+                            <p className="vault-kpi-label">{k.label}</p>
+                            <h3 className="vault-kpi-num">{k.value.toLocaleString()}</h3>
+                          </div>
+                          <div className="vault-kpi-icon" style={{ background: k.gradient }}>
+                            <i className={k.icon} />
+                          </div>
+                        </div>
+                      </div>
+                    </Col>
+                  ))}
+                </Row>
+              </div>
+
+              {/* Tabs */}
+              <div className="d-flex" style={{ padding: '0 24px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                <button
+                  type="button"
+                  className={`vault-tab-btn${vaultTab === 'employee' ? ' is-active' : ''}`}
+                  onClick={() => setVaultTab('employee')}
+                >
+                  <i className="ri-user-line" /> Employee Documents
+                  <span className="vault-tab-count">{empCount}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`vault-tab-btn${vaultTab === 'organizational' ? ' is-active' : ''}`}
+                  onClick={() => setVaultTab('organizational')}
+                >
+                  <i className="ri-building-line" /> Organizational Documents
+                  <span className="vault-tab-count">{orgCount}</span>
+                </button>
+              </div>
+
+              {/* Section list */}
+              <div style={{ padding: '8px 24px 22px' }}>
+                {sections.map(section => (
+                  <div key={section.title} style={{ paddingTop: 16 }}>
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <div>
+                        <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                          {section.title}
+                        </div>
+                        <div className="text-muted" style={{ fontSize: 11.5 }}>
+                          {section.docs.length} document{section.docs.length === 1 ? '' : 's'} in this category
+                        </div>
+                      </div>
+                      <span
+                        className="d-inline-flex align-items-center"
+                        style={{
+                          padding: '4px 12px', borderRadius: 999,
+                          background: '#f5f0ff', color: '#5a3fd1',
+                          fontSize: 11.5, fontWeight: 600,
+                        }}
+                      >
+                        {section.docs.length} docs
+                      </span>
+                    </div>
+                    <div>
+                      {section.docs.map(doc => {
+                        const tone = VAULT_STATUS_TONE[doc.status];
+                        return (
+                          <div key={doc.id} className="vault-doc-row flex-wrap">
+                            <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
+                              <i className={doc.icon} />
+                            </div>
+                            <div className="vault-doc-meta">
+                              <div className="vault-doc-name">{doc.name}</div>
+                              <div className="vault-doc-desc">{doc.desc}</div>
+                            </div>
+                            {doc.category && (
+                              <span
+                                className="d-inline-flex align-items-center"
+                                style={{
+                                  padding: '4px 10px', borderRadius: 999,
+                                  background: '#eef2f6', color: '#475569',
+                                  fontSize: 11, fontWeight: 600,
+                                }}
+                              >
+                                {doc.category}
+                              </span>
+                            )}
+                            <span className="vault-status-pill" style={{ background: tone.bg, color: tone.fg }}>
+                              <span className="vault-status-dot" style={{ background: tone.dot }} />
+                              {doc.status}
+                            </span>
+                            <button type="button" className="vault-action-view" onClick={() => { /* TODO: view doc */ }}>
+                              <i className="ri-eye-line" /> View
+                            </button>
+                            <button type="button" className="vault-action-download" onClick={() => { /* TODO: download doc */ }}>
+                              <i className="ri-download-2-line" /> Download
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ModalBody>
+          </Modal>
+        );
+      })()}
     </>
   );
 }
@@ -1793,10 +2862,11 @@ function ToggleSwitch({ initial }: { initial: boolean }) {
         width: 36,
         height: 20,
         borderRadius: 999,
-        background: on ? 'var(--vz-success)' : 'var(--vz-secondary-bg)',
-        border: '1px solid var(--vz-border-color)',
+        background: on ? '#0ab39c' : '#e5e7eb',
+        border: 'none',
         position: 'relative',
         marginLeft: 4,
+        transition: 'background .15s ease',
       }}
     >
       <span
@@ -1804,10 +2874,10 @@ function ToggleSwitch({ initial }: { initial: boolean }) {
           width: 14, height: 14,
           borderRadius: '50%',
           background: '#fff',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
           position: 'absolute',
-          top: 2,
-          left: on ? 19 : 2,
+          top: 3,
+          left: on ? 19 : 3,
           transition: 'left .15s ease',
         }}
       />
