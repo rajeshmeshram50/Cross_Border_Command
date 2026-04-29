@@ -41,6 +41,7 @@ import MasterPage from '../pages/master/MasterPage';
 import HrDashboard from '../pages/HrDashboard';
 import HrEmployees from '../pages/HrEmployees';
 import EmployeePermissions from '../pages/EmployeePermissions';
+import EmployeeProfile from '../pages/EmployeeProfile';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -72,6 +73,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'employees': return '/employees';
     case 'hr-employees': return '/hr/employees';
     case 'employee-permissions': return `/hr/employees/${data?.employeeId}/permissions`;
+    case 'employee-profile':     return `/hr/employees/${data?.employeeId}/profile`;
     case 'plans': return '/plans';
     case 'add-plan': return data?.editId ? `/plans/${data.editId}/edit` : '/plans/new';
     case 'my-plan': return '/my-plan';
@@ -152,6 +154,14 @@ function EmployeePermissionsWrapper() {
   // back to showing just the ID.
   const stateEmp = (location.state as any)?.employee;
   return <EmployeePermissions employeeId={String(id)} employee={stateEmp} onBack={() => navigateFn('hr-employees')} />;
+}
+
+function EmployeeProfileWrapper() {
+  const { id } = useParams();
+  const location = useLocation();
+  const navigateFn = useNavigateContext().navigate;
+  const stateEmp = (location.state as any)?.employee;
+  return <EmployeeProfile employeeId={String(id)} employee={stateEmp} onBack={() => navigateFn('hr-employees')} />;
 }
 
 /* ── Auth Pages (Login / Forgot Password / OTP / Reset) ── */
@@ -292,6 +302,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/employees" element={<HrEmployees />} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
+              <Route path="/hr/employees/:id/profile" element={<EmployeeProfileWrapper />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </VelzonShell>
