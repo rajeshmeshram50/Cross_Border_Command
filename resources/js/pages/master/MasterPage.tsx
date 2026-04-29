@@ -2438,31 +2438,35 @@ function RolesExtras({
           color: var(--vz-heading-color, var(--vz-body-color));
           background: color-mix(in srgb, var(--vz-body-color) 4%, transparent);
         }
-        .role-extras .role-tab.active {
-          /* Premium indigo-to-violet gradient with a bold blink halo. */
-          background: linear-gradient(135deg, #4338ca 0%, #6366f1 45%, #8b5cf6 100%);
+        .role-extras .role-tab.active,
+        .role-extras button.role-tab.active {
+          /* Premium indigo gradient with a slow, gentle halo breath —
+             attention without harsh flicker. Text stays crisp. */
+          background: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #818cf8 100%);
           color: #ffffff !important;
-          font-weight: 700;
+          font-weight: 600;
           border-color: #4338ca;
-          animation: role-tab-blink 1.2s ease-in-out infinite;
+          animation: role-tab-breathe 3s ease-in-out infinite;
         }
-        @keyframes role-tab-blink {
+        .role-extras .role-tab.active > span:not(.role-tab-count),
+        .role-extras button.role-tab.active > span:not(.role-tab-count) {
+          color: #ffffff !important;
+        }
+        @keyframes role-tab-breathe {
           0%, 100% {
-            filter: brightness(1);
             box-shadow:
-              0 6px 16px rgba(99,102,241,0.42),
-              0 2px 4px rgba(99,102,241,0.22),
-              0 0 0 0 rgba(139,92,246,0.0),
-              inset 0 1px 0 rgba(255,255,255,0.22),
+              0 6px 18px rgba(99,102,241,0.45),
+              0 2px 5px rgba(99,102,241,0.28),
+              0 0 0 2px rgba(99,102,241,0.10),
+              inset 0 1px 0 rgba(255,255,255,0.24),
               inset 0 -1px 0 rgba(0,0,0,0.10);
           }
           50% {
-            filter: brightness(1.10);
             box-shadow:
-              0 10px 26px rgba(99,102,241,0.65),
-              0 3px 8px rgba(99,102,241,0.40),
-              0 0 0 8px rgba(139,92,246,0.32),
-              inset 0 1px 0 rgba(255,255,255,0.36),
+              0 8px 22px rgba(99,102,241,0.55),
+              0 2px 6px rgba(99,102,241,0.32),
+              0 0 0 6px rgba(99,102,241,0.18),
+              inset 0 1px 0 rgba(255,255,255,0.30),
               inset 0 -1px 0 rgba(0,0,0,0.10);
           }
         }
@@ -2540,9 +2544,10 @@ function RolesExtras({
               type="button"
               className={`role-tab${active ? ' active' : ''}`}
               onClick={() => setActiveTab(t.key)}
+              style={active ? { color: '#ffffff' } : undefined}
             >
               <i className={t.icon} style={{ fontSize: 13, color: active ? '#ffffff' : t.bright }} />
-              {t.label}
+              <span style={active ? { color: '#ffffff' } : undefined}>{t.label}</span>
               <span className="role-tab-count">{t.count}</span>
             </button>
           );
