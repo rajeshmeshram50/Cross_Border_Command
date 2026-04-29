@@ -223,6 +223,12 @@ class AuthController extends Controller
             'branch_name' => $user->branch?->name,
             'client_logo' => $user->client?->logo,
             'branch_logo' => $user->branch?->logo,
+            // Effective tenant theme colors — branch values win over client values,
+            // null when neither is set so the frontend falls back to app defaults.
+            // Only valid 7-char hex strings (#RRGGBB) are surfaced; anything else
+            // is dropped so we never inject malformed CSS into :root.
+            'primary_color' => $this->pickHexColor($user->branch?->primary_color, $user->client?->primary_color),
+            'secondary_color' => $this->pickHexColor($user->branch?->secondary_color, $user->client?->secondary_color),
             'is_main_branch' => (bool) ($user->branch?->is_main),
             'status' => $user->status,
             'designation' => $user->designation,
@@ -231,5 +237,92 @@ class AuthController extends Controller
             'permissions' => $permissions,
             'plan' => $planInfo,
         ];
+    }
+
+    /**
+     * Pick the first non-empty value that looks like a 7-char hex color.
+     * Anything else (whitespace, malformed, named colors, etc.) is rejected
+     * so the frontend never injects invalid CSS into document.documentElement.
+     */
+    private function pickHexColor(?string ...$candidates): ?string
+    {
+        foreach ($candidates as $c) {
+            $c = trim((string) $c);
+            if ($c !== '' && preg_match('/^#[0-9a-fA-F]{6}$/', $c)) {
+                return $c;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Self-serve tenant branding update — tenant users (client_admin, branch_user)
+     * can edit their own logo + primary/secondary colors from their Profile page
+     * without going through the super-admin client form. Authorization is
+     * scope-driven:
+     *   client_admin → updates the row in `clients`
+     *   branch_user  → updates the row in `branches`
+     *   super_admin  → no tenant attached, returns 403
+     * Returns the freshly-formatted user so the SPA can swap state and the
+     * theme effect repaints automatically.
+     */
+    public function updateBranding(\Illuminate\Http\Request $request)
+    {
+        $request->validate([
+            'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
+            'primary_color' => 'nullable|string|max:7',
+            'secondary_color' => 'nullable|string|max:7',
+        ]);
+
+        $user = $request->user();
+
+        // Client admin → patch the client row
+        if ($user->user_type === 'client_admin' && $user->client_id) {
+            $client = $user->client;
+            if (!$client) return response()->json(['message' => 'Client not found'], 404);
+
+            $payload = [];
+            if ($request->filled('primary_color'))   $payload['primary_color']   = $request->input('primary_color');
+            if ($request->filled('secondary_color')) $payload['secondary_color'] = $request->input('secondary_color');
+            if ($payload) $client->update($payload);
+
+            if ($request->hasFile('logo')) {
+                if ($client->logo && str_starts_with($client->logo, '/storage/')) {
+                    \Illuminate\Support\Facades\Storage::disk('public')
+                        ->delete(substr($client->logo, strlen('/storage/')));
+                }
+                $client->update([
+                    'logo' => '/storage/' . $request->file('logo')->store('clients/logos', 'public'),
+                ]);
+            }
+        }
+        // Branch user → patch the branch row
+        elseif ($user->user_type === 'branch_user' && $user->branch_id) {
+            $branch = $user->branch;
+            if (!$branch) return response()->json(['message' => 'Branch not found'], 404);
+
+            $payload = [];
+            if ($request->filled('primary_color'))   $payload['primary_color']   = $request->input('primary_color');
+            if ($request->filled('secondary_color')) $payload['secondary_color'] = $request->input('secondary_color');
+            if ($payload) $branch->update($payload);
+
+            if ($request->hasFile('logo')) {
+                if ($branch->logo && str_starts_with($branch->logo, '/storage/')) {
+                    \Illuminate\Support\Facades\Storage::disk('public')
+                        ->delete(substr($branch->logo, strlen('/storage/')));
+                }
+                $branch->update([
+                    'logo' => '/storage/' . $request->file('logo')->store('branches/logos', 'public'),
+                ]);
+            }
+        }
+        else {
+            return response()->json(['message' => 'No tenant branding to update for this account'], 403);
+        }
+
+        return response()->json([
+            'message' => 'Branding updated',
+            'user' => $this->formatUser($user->fresh(['client', 'branch'])),
+        ]);
     }
 }

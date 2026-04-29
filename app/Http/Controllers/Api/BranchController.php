@@ -106,6 +106,8 @@ class BranchController extends Controller
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
+            'primary_color' => 'nullable|string|max:7',
+            'secondary_color' => 'nullable|string|max:7',
 
             // Branch user login credentials
             'user_name' => 'required|string|max:255',
@@ -151,6 +153,8 @@ class BranchController extends Controller
                 'established_at' => $request->established_at,
                 'status' => $request->status ?? 'active',
                 'notes' => $request->notes,
+                'primary_color' => $request->primary_color,
+                'secondary_color' => $request->secondary_color,
                 'created_by' => $user->id,
             ]);
 
@@ -270,6 +274,8 @@ class BranchController extends Controller
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
+            'primary_color' => 'nullable|string|max:7',
+            'secondary_color' => 'nullable|string|max:7',
             'user_name' => 'nullable|string|max:255',
             'user_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($branchUser?->id)->whereNull('deleted_at')],
             'user_phone' => 'nullable|string|max:20',
@@ -302,6 +308,7 @@ class BranchController extends Controller
                 'gst_number', 'pan_number', 'registration_number',
                 'address', 'city', 'district', 'taluka', 'state', 'pincode', 'country',
                 'is_main', 'max_users', 'established_at', 'status', 'notes',
+                'primary_color', 'secondary_color',
             ]));
 
             if ($request->hasFile('logo')) {
