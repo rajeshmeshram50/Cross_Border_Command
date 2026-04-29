@@ -13,6 +13,7 @@ import FullScreenDropdown from '../Components/Common/FullScreenDropdown';
 import ProfileDropdown from '../Components/Common/ProfileDropdown';
 import LightDark from '../Components/Common/LightDark';
 import BranchSwitcher from '../../components/BranchSwitcher';
+import { useAuth } from '../../contexts/AuthContext';
 
 import { changeSidebarVisibility } from '../slices/thunks';
 import { useSelector, useDispatch } from "react-redux";
@@ -20,6 +21,18 @@ import { createSelector } from 'reselect';
 
 const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
     const dispatch : any = useDispatch();
+    // Tenant brand-color toggle. The button only appears when the logged-in
+    // user actually has tenant colors (otherwise toggling is a no-op).
+    const { user, tenantThemeEnabled, toggleTenantTheme } = useAuth();
+    const hasTenantColors = !!(user?.primary_color || user?.secondary_color);
+    // Header's `horizontal-logo` block shows the brand mark in horizontal /
+    // twocolumn layouts (where the sidebar is hidden / collapsed). Use the
+    // same fallback chain as Sidebar.tsx so a tenant's logo replaces the
+    // static IGC defaults whenever it's available.
+    const tenantLogo = user?.branch_logo || user?.client_logo || null;
+    const headerLogoSm    = tenantLogo || logoSm;
+    const headerLogoDark  = tenantLogo || logoDark;
+    const headerLogoLight = tenantLogo || logoLight;
 
 
     const selectDashboardData = createSelector(
@@ -79,21 +92,21 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
                             <div className="navbar-brand-box horizontal-logo align-self-center">
                                 <Link to="/" className="logo logo-dark">
                                     <span className="logo-sm">
-                                        <img src={logoSm} alt="" style={{ height: '50px', width: 'auto' }} />
+                                        <img src={headerLogoSm} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
                                     </span>
                                     <span className="logo-lg">
-                                        <img src={logoDark} alt="" style={{ height: '50px', width: 'auto' }} />
+                                        <img src={headerLogoDark} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
                                     </span>
                                 </Link>
 
                                 <Link to="/" className="logo logo-light">
                                     <span className="logo-sm">
-                                        <img src={logoSm} alt="" style={{ height: '50px', width: 'auto' }} />
+                                        <img src={headerLogoSm} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
                                     </span>
                                     <span className="logo-lg">
-                                        <img src={logoLight} alt="" style={{ height: '50px', width: 'auto' }} />
+                                        <img src={headerLogoLight} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
                                     </span>
-                                </Link> 
+                                </Link>
                             </div>
 
                             <button
@@ -139,6 +152,48 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
 
                             {/* FullScreenDropdown */}
                             <FullScreenDropdown />
+
+                            {/* Tenant brand-color toggle — labeled pill, always visible when tenant has colors */}
+                            {hasTenantColors && (
+                                <div className="ms-2 me-1 header-item d-flex align-items-center">
+                                    <button
+                                        type="button"
+                                        onClick={toggleTenantTheme}
+                                        title={tenantThemeEnabled ? 'Click to switch to default theme' : 'Click to switch to brand theme'}
+                                        aria-pressed={tenantThemeEnabled}
+                                        className="btn btn-sm d-inline-flex align-items-center gap-2"
+                                        style={{
+                                            border: '1px solid rgba(255,255,255,0.35)',
+                                            background: tenantThemeEnabled ? 'rgba(255,255,255,0.12)' : 'transparent',
+                                            color: 'inherit',
+                                            borderRadius: 999,
+                                            padding: '4px 10px',
+                                            fontSize: 12,
+                                            fontWeight: 600,
+                                            lineHeight: 1.2,
+                                            whiteSpace: 'nowrap',
+                                        }}
+                                    >
+                                        {/* Color swatches show what the brand looks like */}
+                                        <span className="d-inline-flex" style={{ gap: 2 }}>
+                                            <span style={{
+                                                width: 10, height: 10, borderRadius: '50%',
+                                                background: user?.primary_color || '#cbd5e1',
+                                                border: '1px solid rgba(255,255,255,0.6)',
+                                                display: 'inline-block',
+                                            }} />
+                                            <span style={{
+                                                width: 10, height: 10, borderRadius: '50%',
+                                                background: user?.secondary_color || '#cbd5e1',
+                                                border: '1px solid rgba(255,255,255,0.6)',
+                                                display: 'inline-block',
+                                            }} />
+                                        </span>
+                                        <span>{tenantThemeEnabled ? 'Brand' : 'Default'}</span>
+                                        <i className={`bx ${tenantThemeEnabled ? 'bx-toggle-right' : 'bx-toggle-left'}`} style={{ fontSize: 18 }} />
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Dark/Light Mode set */}
                             <LightDark

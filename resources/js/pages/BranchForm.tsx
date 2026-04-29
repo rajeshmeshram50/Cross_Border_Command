@@ -20,6 +20,7 @@ const empty = {
   state: '', country: 'India',
   is_main: 'false', max_users: '0',
   established_at: '', status: 'active', notes: '',
+  primary_color: '#4F46E5', secondary_color: '#10B981',
   user_name: '', user_email: '', user_phone: '',
   user_designation: '', user_password: '', user_password_confirmation: '',
   user_status: 'active',
@@ -327,6 +328,8 @@ export default function BranchForm({ onBack, editId }: Props) {
         max_users: String(b.max_users ?? 0),
         established_at: b.established_at || '', status: b.status || 'active',
         notes: b.notes || '',
+        primary_color: b.primary_color || '#4F46E5',
+        secondary_color: b.secondary_color || '#10B981',
         user_name: u?.name || '', user_email: u?.email || '',
         user_phone: u?.phone || '', user_designation: u?.designation || '',
         user_password: '', user_password_confirmation: '',
@@ -1052,6 +1055,22 @@ export default function BranchForm({ onBack, editId }: Props) {
                   <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" onChange={e => handleLogoChange(e.target.files?.[0] || null)} />
                 </div>
                 <small style={css.small}>PNG, JPG, SVG — Max 2MB. Falls back to client logo if blank.</small>
+              </Col>
+              <Col md={6}>
+                <Lbl>Primary Color</Lbl>
+                <div className="d-flex gap-2">
+                  <Input type="color" value={form.primary_color} onChange={e => set('primary_color', e.target.value)}
+                    style={{ width: 36, height: 32, padding: '2px', borderRadius: '5px', cursor: 'pointer' }} />
+                  <Input style={{ ...css.input, fontFamily: 'monospace', fontSize: '12px' }} value={form.primary_color} onChange={e => set('primary_color', e.target.value)} />
+                </div>
+              </Col>
+              <Col md={6}>
+                <Lbl>Secondary Color</Lbl>
+                <div className="d-flex gap-2">
+                  <Input type="color" value={form.secondary_color} onChange={e => set('secondary_color', e.target.value)}
+                    style={{ width: 36, height: 32, padding: '2px', borderRadius: '5px', cursor: 'pointer' }} />
+                  <Input style={{ ...css.input, fontFamily: 'monospace', fontSize: '12px' }} value={form.secondary_color} onChange={e => set('secondary_color', e.target.value)} />
+                </div>
               </Col>
             </Row>
 

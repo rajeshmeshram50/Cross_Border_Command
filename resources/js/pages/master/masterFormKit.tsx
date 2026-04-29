@@ -31,6 +31,20 @@ export function MasterSelect({
   const [search, setSearch] = useState('');
   // Reset the search filter each time the menu closes so the next open is fresh.
   useEffect(() => { if (!open) setSearch(''); }, [open]);
+  // Auto-flip — when the menu would extend below the viewport (or sit close to
+  // the bottom edge of a parent modal), open upward instead so it doesn't hide
+  // action buttons below the field.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [dropDir, setDropDir] = useState<'up' | 'down'>('down');
+  useEffect(() => {
+    if (!open || !wrapRef.current) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    // Estimated menu height: search row (~40) + 4 visible items (~32 each) + chrome.
+    const ESTIMATED_HEIGHT = 220;
+    setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
+  }, [open]);
   const selected = options.find(o => o.value === currentValue);
   const showSearch = options.length > 4;
   const filtered = search.trim()
@@ -45,6 +59,8 @@ export function MasterSelect({
       <Dropdown
         isOpen={open && !disabled}
         toggle={() => { if (!disabled) setOpen(v => !v); }}
+        direction={dropDir}
+        innerRef={wrapRef}
         className={`master-select-wrap${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}`}
       >
         <DropdownToggle
@@ -200,8 +216,38 @@ export function MasterDatePicker({
   const firstDow = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-  const prev = () => setViewDate(new Date(year, month - 1, 1));
-  const next = () => setViewDate(new Date(year, month + 1, 1));
+  // The popup has three drill-down views: day grid (default), month grid,
+  // and year grid. Clicking the title in the header walks `days → months →
+  // years`; picking a value walks back down the chain.
+  const [view, setView] = useState<'days' | 'months' | 'years'>('days');
+  // Reset to the day grid every time the popup re-opens so the user always
+  // starts on the familiar day picker.
+  useEffect(() => { if (open) setView('days'); }, [open]);
+
+  // Year grid spans 12 years anchored on the current view year.
+  const yearBlockStart = Math.floor(year / 12) * 12;
+  const monthLabelsShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const prev = () => {
+    if (view === 'days')        setViewDate(new Date(year, month - 1, 1));
+    else if (view === 'months') setViewDate(new Date(year - 1, month, 1));
+    else                        setViewDate(new Date(year - 12, month, 1));
+  };
+  const next = () => {
+    if (view === 'days')        setViewDate(new Date(year, month + 1, 1));
+    else if (view === 'months') setViewDate(new Date(year + 1, month, 1));
+    else                        setViewDate(new Date(year + 12, month, 1));
+  };
+
+  // Title click: walks one level up in the drill-down (days → months → years),
+  // and stops at the year grid (no level above it).
+  const onTitleClick = () => {
+    setView(v => (v === 'days' ? 'months' : v === 'months' ? 'years' : v));
+  };
+  const titleLabel =
+    view === 'days'   ? viewDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+    : view === 'months' ? String(year)
+    :                     `${yearBlockStart} - ${yearBlockStart + 11}`;
 
   const sameDay = (a: Date | null, b: Date | null) =>
     !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -258,53 +304,118 @@ export function MasterDatePicker({
             opacity: 1,
           }}
         >
-          {/* Header: month nav */}
+          {/* Header: nav + title (title is clickable to drill up: days → months → years) */}
           <div className="d-flex align-items-center justify-content-between mb-1">
-            <button type="button" onClick={prev} className="master-datepicker-nav">
+            <button type="button" onClick={prev} className="master-datepicker-nav" title={view === 'days' ? 'Previous month' : view === 'months' ? 'Previous year' : 'Previous 12 years'}>
               <i className="ri-arrow-left-s-line" style={{ fontSize: 13 }} />
             </button>
-            <div className="master-datepicker-title">
-              {viewDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
-            </div>
-            <button type="button" onClick={next} className="master-datepicker-nav">
+            <button
+              type="button"
+              onClick={onTitleClick}
+              className={`master-datepicker-title-btn${view !== 'years' ? ' is-clickable' : ''}`}
+              disabled={view === 'years'}
+              title={view === 'days' ? 'Pick month' : view === 'months' ? 'Pick year' : ''}
+            >
+              {titleLabel}
+              {view !== 'years' && <i className="ri-arrow-down-s-line" style={{ fontSize: 13, marginLeft: 2 }} />}
+            </button>
+            <button type="button" onClick={next} className="master-datepicker-nav" title={view === 'days' ? 'Next month' : view === 'months' ? 'Next year' : 'Next 12 years'}>
               <i className="ri-arrow-right-s-line" style={{ fontSize: 13 }} />
             </button>
           </div>
 
-          {/* Weekday labels */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 2 }}>
-            {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
-              <div key={d} className="master-datepicker-dow">{d}</div>
-            ))}
-          </div>
+          {view === 'days' && (
+            <>
+              {/* Weekday labels */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 2 }}>
+                {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                  <div key={d} className="master-datepicker-dow">{d}</div>
+                ))}
+              </div>
 
-          {/* Day grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
-            {Array.from({ length: firstDow }).map((_, i) => <div key={`blank-${i}`} />)}
-            {Array.from({ length: daysInMonth }).map((_, i) => {
-              const day = i + 1;
-              const d = new Date(year, month, day);
-              const isToday = sameDay(today, d);
-              const isSelected = sameDay(selected, d);
-              const isDisabled = minD ? d < new Date(minD.getFullYear(), minD.getMonth(), minD.getDate()) : false;
-              const cls = [
-                'master-datepicker-day',
-                isSelected && 'is-selected',
-                isToday && !isSelected && 'is-today',
-              ].filter(Boolean).join(' ');
-              return (
-                <button
-                  key={day}
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => { commit(fmt(d)); setOpen(false); }}
-                  className={cls}
-                >
-                  {day}
-                </button>
-              );
-            })}
-          </div>
+              {/* Day grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+                {Array.from({ length: firstDow }).map((_, i) => <div key={`blank-${i}`} />)}
+                {Array.from({ length: daysInMonth }).map((_, i) => {
+                  const day = i + 1;
+                  const d = new Date(year, month, day);
+                  const isToday = sameDay(today, d);
+                  const isSelected = sameDay(selected, d);
+                  const isDisabled = minD ? d < new Date(minD.getFullYear(), minD.getMonth(), minD.getDate()) : false;
+                  const cls = [
+                    'master-datepicker-day',
+                    isSelected && 'is-selected',
+                    isToday && !isSelected && 'is-today',
+                  ].filter(Boolean).join(' ');
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => { commit(fmt(d)); setOpen(false); }}
+                      className={cls}
+                    >
+                      {day}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {view === 'months' && (
+            // Month grid — 4 columns × 3 rows. Picking a month drops back to
+            // the day grid for that month so the user can pick the date.
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, padding: '4px 0' }}>
+              {monthLabelsShort.map((m, i) => {
+                const isCurrentView = i === month;
+                const isSelectedMonth =
+                  !!selected && selected.getFullYear() === year && selected.getMonth() === i;
+                const cls = [
+                  'master-datepicker-cell',
+                  isSelectedMonth && 'is-selected',
+                  !isSelectedMonth && isCurrentView && 'is-today',
+                ].filter(Boolean).join(' ');
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => { setViewDate(new Date(year, i, 1)); setView('days'); }}
+                    className={cls}
+                  >
+                    {m}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {view === 'years' && (
+            // Year grid — 12 years per page, anchored on a 12-year block.
+            // Picking a year drops back to the month grid for that year.
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4, padding: '4px 0' }}>
+              {Array.from({ length: 12 }).map((_, i) => {
+                const y = yearBlockStart + i;
+                const isCurrentView = y === year;
+                const isSelectedYear = !!selected && selected.getFullYear() === y;
+                const cls = [
+                  'master-datepicker-cell',
+                  isSelectedYear && 'is-selected',
+                  !isSelectedYear && isCurrentView && 'is-today',
+                ].filter(Boolean).join(' ');
+                return (
+                  <button
+                    key={y}
+                    type="button"
+                    onClick={() => { setViewDate(new Date(y, month, 1)); setView('months'); }}
+                    className={cls}
+                  >
+                    {y}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Footer */}
           <div className="master-datepicker-footer">
@@ -802,6 +913,63 @@ export const MASTER_MODAL_CSS = `
     font-weight: 700;
     font-size: 12px;
     color: var(--vz-heading-color, var(--vz-body-color));
+  }
+  /* Title button — clickable when drilling up (days → months → years). */
+  .master-datepicker-title-btn {
+    background: transparent;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    display: inline-flex;
+    align-items: center;
+    cursor: default;
+    transition: background .15s ease, color .15s ease;
+  }
+  .master-datepicker-title-btn.is-clickable {
+    cursor: pointer;
+  }
+  .master-datepicker-title-btn.is-clickable:hover {
+    background: rgba(99,102,241,0.10);
+    color: #6366f1;
+  }
+  .master-datepicker-title-btn:disabled {
+    cursor: default;
+  }
+  /* Month / year cells — same visual language as the day cells but a touch
+     larger (4-col grid instead of 7-col), so labels like "January" or 4-digit
+     years fit comfortably. */
+  .master-datepicker-cell {
+    height: 34px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background .15s ease, color .15s ease;
+  }
+  .master-datepicker-cell:hover:not(.is-selected) {
+    background: rgba(99,102,241,0.10);
+    color: #6366f1;
+  }
+  .master-datepicker-cell.is-today {
+    background: rgba(99,102,241,0.12);
+    color: #6366f1;
+    font-weight: 700;
+  }
+  .master-datepicker-cell.is-selected {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 3px 8px rgba(99,102,241,0.30);
   }
   .master-datepicker-dow {
     font-size: 9.5px;
