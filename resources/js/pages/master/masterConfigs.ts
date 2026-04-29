@@ -6,7 +6,7 @@ export type FieldOption = string | { value: string; label: string };
 export type FieldDef = {
   n: string;                // field name (row key)
   l: string;                // label
-  t: 'text' | 'number' | 'email' | 'date' | 'textarea' | 'select';
+  t: 'text' | 'number' | 'email' | 'date' | 'textarea' | 'select' | 'file';
   r?: boolean;              // required
   p?: string;               // placeholder
   full?: boolean;           // span full row
@@ -19,6 +19,10 @@ export type FieldDef = {
   hint?: string;            // small italic helper text shown next to the label
   autogen?: (rows: any[]) => string; // optional client-side preview of an auto-generated value
   noneLabel?: string;       // explicit "none/empty" option label for ref dropdowns (e.g. "— None (Top Level) —")
+  accept?: string;          // file input accept attribute, e.g. ".pdf,.jpg,.jpeg,.png"
+  maxMb?: number;           // file input max size in MB (rendered as hint, validated client-side)
+  optionalLabel?: string;   // small uppercase tag next to label, e.g. "OPTIONAL" or "MANDATORY"
+  icon?: string;            // remix icon class to render before the label (used by file fields)
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
@@ -1016,20 +1020,42 @@ const C: Record<string, MasterConfig> = {
     cat: 'Operations & Support',
     fields: [
       { n: 'asset_name', l: 'Asset Name', t: 'text', r: true, p: 'e.g. HP Laptop 15s' },
-      { n: 'asset_number', l: 'Asset Number', t: 'text', r: true, p: 'e.g. A-L-32' },
-      { n: 'asset_type_id', l: 'Asset Category', t: 'select', r: true, ref: 'asset_categories', refL: 'name' },
-      { n: 'assign_date', l: 'Assigned Date', t: 'date' },
+      { n: 'code', l: 'Asset ID', t: 'text', auto: true, hint: '(auto-generated)', p: 'AST-XXXX',
+        autogen: (records: any[]) => {
+          const max = records.reduce((m: number, r: any) => {
+            const match = /^AST-(\d+)$/i.exec(String(r.code || '').trim());
+            const n = match ? parseInt(match[1], 10) : 0;
+            return n > m ? n : m;
+          }, 0);
+          return `AST-${String(max + 1).padStart(4, '0')}`;
+        } },
+      { n: 'asset_type_id', l: 'Asset Category', t: 'select', r: true, ref: 'asset_categories', refL: 'name', p: '— Select —' },
+      { n: 'description', l: 'Asset Description', t: 'textarea', full: true, p: 'Describe the asset — model, specs, condition…' },
+      { n: 'vendor_id', l: 'Vendor', t: 'select', ref: 'vendor_directory', refL: 'vendor_company_name', p: '— Select —' },
+      { n: 'purchase_date', l: 'Purchase Date', t: 'date' },
+      { n: 'warranty_expiry_date', l: 'Warranty Expiry Date', t: 'date' },
+      { sec: 'Documents & Attachments', n: '', l: '', t: 'text' },
+      { n: 'invoice_file', l: 'Invoice', t: 'file', r: true, accept: '.pdf,.jpg,.jpeg,.png', maxMb: 10, icon: 'ri-file-text-line', optionalLabel: 'MANDATORY' },
+      { n: 'warranty_card_file', l: 'Warranty Card', t: 'file', accept: '.pdf,.jpg,.jpeg,.png', maxMb: 10, icon: 'ri-file-shield-2-line', optionalLabel: 'OPTIONAL' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive', 'Under Repair', 'Disposed'] },
     ],
-    cols: ['asset_name', 'asset_number', 'asset_type_id', 'assign_date', 'status'],
-    colL: ['Asset Name', 'Asset Number', 'Category', 'Assign Date', 'Status'],
-    uFields: ['asset_number'],
-    data: [{ id: 1, asset_name: 'HP Laptop 15s', asset_number: 'A-L-32', asset_type_id: 1, assign_date: '2026-03-28', status: 'Active' }],
+    cols: ['asset_name', 'code', 'asset_type_id', 'vendor_id', 'purchase_date', 'warranty_expiry_date', 'status'],
+    colL: ['Asset Name', 'Asset ID', 'Category', 'Vendor', 'Purchase Date', 'Warranty Expiry', 'Status'],
+    uFields: ['asset_name'],
+    data: [{ id: 1, asset_name: 'HP Laptop 15s', code: 'AST-0001', asset_type_id: 1, purchase_date: '2026-03-28', status: 'Active' }],
+    kpis: [
+      { label: 'Total Assets',     icon: 'ri-briefcase-4-line',   gradient: 'linear-gradient(135deg,#405189 0%,#6691e7 100%)', compute: r => r.length },
+      { label: 'Active',           icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
+      { label: 'Under Repair',     icon: 'ri-tools-line',         gradient: 'linear-gradient(135deg,#f7b84b 0%,#f6c85a 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'under repair').length },
+      { label: 'Disposed',         icon: 'ri-delete-bin-6-line',  gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'disposed').length },
+      { label: 'With Warranty',    icon: 'ri-shield-check-line',  gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a993fd 100%)', compute: r => r.filter((x:any) => !!x.warranty_expiry_date).length },
+      { label: 'Categories Used',  icon: 'ri-price-tag-3-line',   gradient: 'linear-gradient(135deg,#3577f1 0%,#6da7ff 100%)', compute: r => new Set(r.map((x:any) => x.asset_type_id).filter(Boolean)).size },
+    ],
     wtd: [
       { icon: 'ri-briefcase-4-line', title: 'Name the Asset', desc: 'e.g. HP Laptop 15s, Office Chair' },
-      { icon: 'ri-hashtag', title: 'Assign Asset Number', desc: 'Unique ID — e.g. A-L-32' },
       { icon: 'ri-price-tag-3-line', title: 'Select Asset Category', desc: 'Links to depreciation & useful life' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status', desc: 'Active / Under Repair / Disposed' },
+      { icon: 'ri-store-2-line', title: 'Vendor & Purchase Date', desc: 'Where and when it was bought' },
+      { icon: 'ri-file-shield-2-line', title: 'Attach Invoice & Warranty', desc: 'PDF/JPG/PNG — Max 10MB each' },
     ],
   },
 

@@ -574,3 +574,204 @@
   text-transform: uppercase;
   color: var(--vz-secondary-color);
 }
+
+/* ---------------------------------------------------------------------
+   10. MasterFileInput — custom-styled file picker
+   Neutral, understated — same frame as MasterSelect/MasterDatePicker.
+   Quiet "Choose File" chip on the left, filename on the right.
+   --------------------------------------------------------------------- */
+.master-file-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
+  background: var(--vz-card-bg);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  overflow: hidden;
+}
+.master-file-input:hover:not(.disabled) {
+  border-color: color-mix(in srgb, var(--vz-body-color) 25%, var(--vz-border-color));
+}
+.master-file-input:focus-visible,
+.master-file-input:focus-within {
+  outline: none;
+  border-color: color-mix(in srgb, var(--vz-body-color) 35%, var(--vz-border-color));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--vz-body-color) 10%, transparent);
+}
+.master-file-input.invalid {
+  border-color: var(--vz-danger, #f06548);
+  box-shadow: 0 0 0 2px rgba(240,101,72,0.12);
+}
+.master-file-input.disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--vz-body-color) 4%, var(--vz-card-bg));
+}
+
+/* "Choose File" chip — greyish glossy: subtle gradient + top sheen +
+   inset bottom shadow + soft drop shadow. Theme-aware via color-mix
+   so light and dark both get a polished gunmetal look. */
+.master-file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--vz-body-color) 4%, var(--vz-card-bg)) 0%,
+    color-mix(in srgb, var(--vz-body-color) 12%, var(--vz-card-bg)) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--vz-body-color) 14%, var(--vz-border-color));
+  color: var(--vz-body-color);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.55),
+    inset 0 -1px 0 rgba(0,0,0,0.04),
+    0 1px 2px rgba(0,0,0,0.05);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.master-file-input:hover:not(.disabled) .master-file-btn {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--vz-body-color) 6%, var(--vz-card-bg)) 0%,
+    color-mix(in srgb, var(--vz-body-color) 16%, var(--vz-card-bg)) 100%
+  );
+  border-color: color-mix(in srgb, var(--vz-body-color) 22%, var(--vz-border-color));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.65),
+    inset 0 -1px 0 rgba(0,0,0,0.06),
+    0 2px 4px rgba(0,0,0,0.08);
+}
+.master-file-input:active:not(.disabled) .master-file-btn {
+  transform: translateY(0.5px);
+  box-shadow:
+    inset 0 1px 2px rgba(0,0,0,0.10),
+    0 1px 1px rgba(0,0,0,0.04);
+}
+.master-file-btn i {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--vz-secondary-color);
+}
+
+/* Filename + size text */
+.master-file-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--vz-body-color);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.master-file-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+.master-file-name.is-empty {
+  color: var(--vz-secondary-color);
+  font-weight: 400;
+}
+.master-file-size {
+  color: var(--vz-secondary-color);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* Clear (×) button — neutral, only visible when a file is selected */
+.master-file-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--vz-secondary-color);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.master-file-clear:hover {
+  background: color-mix(in srgb, var(--vz-body-color) 10%, transparent);
+  color: var(--vz-body-color);
+}
+.master-file-clear i {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Hint text below the input (.pdf,.jpg,.jpeg,.png · Max 10MB) */
+.master-file-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--vz-secondary-color);
+  letter-spacing: 0.02em;
+}
+
+/* Dark-mode polish — keeps the neutral tone */
+[data-bs-theme="dark"] .master-file-input,
+[data-layout-mode="dark"] .master-file-input {
+  background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
+  border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
+}
+/* Dark-mode glossy gunmetal — deeper gradient, brighter top sheen so the
+   chip reads as a polished metal pill against the dark canvas. */
+[data-bs-theme="dark"] .master-file-btn,
+[data-layout-mode="dark"] .master-file-btn {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #ffffff 12%, var(--vz-card-bg)) 0%,
+    color-mix(in srgb, #ffffff 4%, var(--vz-card-bg)) 100%
+  );
+  border-color: color-mix(in srgb, #ffffff 16%, transparent);
+  color: rgba(255,255,255,0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    inset 0 -1px 0 rgba(0,0,0,0.20),
+    0 2px 4px rgba(0,0,0,0.30);
+}
+[data-bs-theme="dark"] .master-file-input:hover:not(.disabled) .master-file-btn,
+[data-layout-mode="dark"] .master-file-input:hover:not(.disabled) .master-file-btn {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #ffffff 16%, var(--vz-card-bg)) 0%,
+    color-mix(in srgb, #ffffff 6%, var(--vz-card-bg)) 100%
+  );
+  border-color: color-mix(in srgb, #ffffff 22%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.14),
+    inset 0 -1px 0 rgba(0,0,0,0.22),
+    0 4px 8px rgba(0,0,0,0.36);
+}
+[data-bs-theme="dark"] .master-file-btn i,
+[data-layout-mode="dark"] .master-file-btn i {
+  color: rgba(255,255,255,0.65);
+}
+[data-bs-theme="dark"] .master-file-clear,
+[data-layout-mode="dark"] .master-file-clear {
+  color: rgba(255,255,255,0.55);
+}
+[data-bs-theme="dark"] .master-file-clear:hover,
+[data-layout-mode="dark"] .master-file-clear:hover {
+  background: color-mix(in srgb, #ffffff 10%, transparent);
+  color: rgba(255,255,255,0.9);
+}

@@ -55,12 +55,11 @@ export function MasterSelect({
     onChange?.(val);
   };
   return (
-    <>
+    <div ref={wrapRef}>
       <Dropdown
         isOpen={open && !disabled}
         toggle={() => { if (!disabled) setOpen(v => !v); }}
         direction={dropDir}
-        innerRef={wrapRef}
         className={`master-select-wrap${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}`}
       >
         <DropdownToggle
@@ -112,7 +111,7 @@ export function MasterSelect({
         </DropdownMenu>
       </Dropdown>
       {name !== undefined && <input type="hidden" name={name} value={currentValue} />}
-    </>
+    </div>
   );
 }
 
@@ -439,6 +438,107 @@ export function MasterDatePicker({
       )}
 
       {name !== undefined && <input type="hidden" name={name} value={currentValue} />}
+    </div>
+  );
+}
+
+/**
+ * Custom file input — replaces the native <input type="file"> (which renders
+ * an ugly browser-default "Choose File / No file chosen" pair). Looks and
+ * feels like the rest of the master-modal form: bordered pill-shaped frame
+ * with a gradient "Choose File" button on the left, filename + size on the
+ * right, and a clear (×) button once a file is selected.
+ */
+export function MasterFileInput({
+  name,
+  accept,
+  required,
+  disabled,
+  invalid,
+  onChange,
+}: {
+  name?: string;
+  accept?: string;
+  required?: boolean;
+  disabled?: boolean;
+  invalid?: boolean;
+  onChange?: (file: File | null) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    setFile(f);
+    onChange?.(f);
+  };
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (inputRef.current) inputRef.current.value = '';
+    setFile(null);
+    onChange?.(null);
+  };
+
+  const handleClick = () => {
+    if (!disabled) inputRef.current?.click();
+  };
+
+  return (
+    <div
+      className={`master-file-input${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}${file ? ' has-file' : ''}`}
+      onClick={handleClick}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
+    >
+      <span className="master-file-btn">
+        <i className="ri-attachment-2" />
+        <span>Choose File</span>
+      </span>
+      <span className={`master-file-name${file ? '' : ' is-empty'}`}>
+        {file ? (
+          <>
+            <span className="master-file-name-text">{file.name}</span>
+            <span className="master-file-size">· {formatSize(file.size)}</span>
+          </>
+        ) : (
+          'No file chosen'
+        )}
+      </span>
+      {file && !disabled && (
+        <button
+          type="button"
+          className="master-file-clear"
+          onClick={handleClear}
+          aria-label="Clear file"
+          title="Clear"
+        >
+          <i className="ri-close-line" />
+        </button>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        name={name}
+        accept={accept}
+        required={required}
+        disabled={disabled}
+        onChange={handleChange}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 }

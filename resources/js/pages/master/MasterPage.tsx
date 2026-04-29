@@ -18,7 +18,7 @@ import {
   type FieldDef,
   type MasterConfig,
 } from './masterConfigs';
-import { MasterSelect, MasterDatePicker, MasterFormStyles } from './masterFormKit';
+import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles } from './masterFormKit';
 import '../../../css/master.css';
 
 export default function MasterPage() {
@@ -95,6 +95,10 @@ function MasterPageInner({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Audit history modal — shown when a row's history (clock) button is clicked.
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditTarget, setAuditTarget] = useState<any | null>(null);
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const clearFieldError = (name: string) => {
@@ -445,6 +449,18 @@ function MasterPageInner({
       if (f.sec || !f.n) continue;
       // Auto-generated fields are filled by the server, never the user.
       if (f.auto) continue;
+      // File inputs: required check uses File.size; skip the rest of validation.
+      if (f.t === 'file') {
+        const v = fd.get(f.n);
+        const file = v instanceof File ? v : null;
+        const hasFile = !!file && file.size > 0;
+        if (f.r && !hasFile) {
+          errs[f.n] = `${f.l} is required`;
+        } else if (hasFile && f.maxMb && file!.size > f.maxMb * 1024 * 1024) {
+          errs[f.n] = `${f.l} must be under ${f.maxMb}MB`;
+        }
+        continue;
+      }
       const raw = String(fd.get(f.n) ?? '').trim();
       if (f.r && !raw) {
         errs[f.n] = `${f.l} is required`;
@@ -498,6 +514,14 @@ function MasterPageInner({
     const payload: Record<string, any> = {};
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
+      // File fields are not yet wired to backend storage — skip them in the
+      // JSON payload so the request stays a plain JSON POST/PUT.
+      if (f.t === 'file') continue;
+      // Auto-generated fields (code/AST-XXXX/ROL-XX) are filled by the
+      // server's creating-hook on insert and preserved as-is on update —
+      // skip them so the backend stays the single source of truth and
+      // the frontend's preview value never overrides the canonical code.
+      if (f.auto) continue;
       const raw = fd.get(f.n);
       if (f.t === 'number') {
         payload[f.n] = raw == null || raw === '' ? null : Number(raw);
@@ -573,6 +597,17 @@ function MasterPageInner({
   const formatCell = (fieldName: string, row: any): React.ReactNode => {
     const f = cfg.fields.find(ff => ff.n === fieldName);
     const raw = row[fieldName];
+
+    // Date fields render as "28-Mar-2026" — applied to every column whose
+    // FieldDef declares t: 'date' (purchase_date, warranty_expiry_date, etc.)
+    if (f?.t === 'date') {
+      if (raw == null || raw === '') return <span className="text-muted">—</span>;
+      const d = new Date(String(raw));
+      if (isNaN(d.getTime())) return <span>{String(raw)}</span>;
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const dd = String(d.getDate()).padStart(2, '0');
+      return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{`${dd}-${months[d.getMonth()]}-${d.getFullYear()}`}</span>;
+    }
 
     if (fieldName === 'status') {
       const active = String(raw).toLowerCase() === 'active';
@@ -841,7 +876,7 @@ function MasterPageInner({
     // Icon column — hidden on rich masters (designations / roles / kpis /
     // departments) since the colored type/level/priority/code pills already
     // give a strong visual cue.
-    if (cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'departments') {
+    if (cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'assets' && cfg.slug !== 'departments') {
       cols.push({
         header: 'Icon',
         accessorKey: '__icon',
@@ -1022,6 +1057,12 @@ function MasterPageInner({
               disabled={blockedByRank}
               onClick={() => handleDeleteClick(info.row.original)}
             />}
+            <ActionBtn
+              title="Audit History"
+              icon="ri-history-line"
+              color="secondary"
+              onClick={() => { setAuditTarget(info.row.original); setAuditOpen(true); }}
+            />
             {!showAny && <span className="text-muted">—</span>}
           </div>
         );
@@ -1125,7 +1166,7 @@ function MasterPageInner({
       {cfg.slug !== 'departments' && (
       <Row>
         <Col xs={12}>
-          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? (
+          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets') ? (
             <div
               className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"
               style={{
@@ -1149,6 +1190,7 @@ function MasterPageInner({
                   <h4 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, #2b3245)', letterSpacing: '0.01em' }}>
                     {cfg.slug === 'roles' ? 'Role Master'
                       : cfg.slug === 'kpis' ? 'KPI Master'
+                      : cfg.slug === 'assets' ? 'Asset Master'
                       : cfg.title}
                   </h4>
                   <p className="mb-0 text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
@@ -1156,6 +1198,8 @@ function MasterPageInner({
                       ? 'Manage all employee roles, role types, and role structure for workforce assignment'
                       : cfg.slug === 'kpis'
                       ? 'Define performance targets, role assignments and tracking criteria for KPIs'
+                      : cfg.slug === 'assets'
+                      ? 'Track company equipment, vendors, warranties and depreciation across the organisation'
                       : 'Manage all job roles, hierarchy levels, and role structure for employees'}
                   </p>
                 </div>
@@ -1239,7 +1283,7 @@ function MasterPageInner({
 
       {/* "What you are doing here" — hidden on designations & roles since the
           rich title strip already carries the subtitle context. */}
-      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && <WhatYouDoHere cfg={cfg} onAdd={openAdd} canAdd={caps.add} />}
+      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && <WhatYouDoHere cfg={cfg} onAdd={openAdd} canAdd={caps.add} />}
 
       {/* KPI strip — only when the master config opts in via `kpis` */}
       {cfg.kpis && cfg.kpis.length > 0 && (
@@ -1292,7 +1336,7 @@ function MasterPageInner({
       {/* Main card — search + Add New row, then table */}
       <Row>
         <Col xs={12}>
-          <Card className={`shadow-sm ${(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
+          <Card className={`shadow-sm ${(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets') ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
             <CardBody>
               {/* Designations-only: KPI strip + hierarchy chips. */}
               {cfg.slug === 'designations' && (
@@ -1316,7 +1360,7 @@ function MasterPageInner({
 
               {/* Search bar (left) + filters/Add button on the right. */}
               <Row className="g-2 align-items-center mb-3">
-                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'departments') ? 4 : 6} sm={12}>
+                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'departments') ? 4 : 6} sm={12}>
                   <div className="search-box">
                     <Input
                       type="text"
@@ -1328,7 +1372,7 @@ function MasterPageInner({
                     <i className="ri-search-line search-icon"></i>
                   </div>
                 </Col>
-                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'departments') ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
+                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'departments') ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
                   {cfg.slug === 'designations' && (
                     <DesignationInlineFilters
                       refData={refData}
@@ -1373,7 +1417,7 @@ function MasterPageInner({
                   )}
                   {/* Add button — shown here for non-rich masters; designations,
                       roles, kpis & departments host their Add button elsewhere. */}
-                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'departments' && caps.add && (
+                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'assets' && cfg.slug !== 'departments' && caps.add && (
                     <Button
                       color="secondary"
                       className="btn-label waves-effect waves-light rounded-pill"
@@ -1612,7 +1656,261 @@ function MasterPageInner({
         onConfirm={confirmDelete}
         loading={deleting}
       />
+
+      <AuditHistoryModal
+        open={auditOpen}
+        onClose={() => { setAuditOpen(false); setAuditTarget(null); }}
+        masterTitle={cfg.title}
+        record={auditTarget}
+        primaryLabel={auditTarget ? deleteLabel(auditTarget) : ''}
+      />
     </>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────
+ * Audit History modal — opens from the row's "clock" action button.
+ * Shows a compact event timeline for that record. Today the entries are
+ * synthesized from the record's own created_at / updated_at fields (and
+ * the creator/branch/client metadata the API already returns); a real
+ * activity_logs feed can be wired later from the existing backend table.
+ * ──────────────────────────────────────────────────────────────────── */
+function AuditHistoryModal({
+  open,
+  onClose,
+  masterTitle,
+  record,
+  primaryLabel,
+}: {
+  open: boolean;
+  onClose: () => void;
+  masterTitle: string;
+  record: any | null;
+  primaryLabel: string;
+}) {
+  type Event = {
+    kind: 'created' | 'updated';
+    icon: string;
+    color: string;
+    title: string;
+    user: string;
+    at: string;
+  };
+
+  const events: Event[] = useMemo(() => {
+    if (!record) return [];
+    const list: Event[] = [];
+    const fmt = (raw: any): string => {
+      if (!raw) return '—';
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return String(raw);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return `${pad(d.getDate())}-${months[d.getMonth()]}-${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    const userLabel = record.creator_name || 'System';
+
+    list.push({
+      kind: 'created',
+      icon: 'ri-add-line',
+      color: '#10b981',
+      title: 'Created',
+      user: userLabel,
+      at: fmt(record.created_at),
+    });
+
+    if (record.updated_at && record.updated_at !== record.created_at) {
+      list.push({
+        kind: 'updated',
+        icon: 'ri-edit-2-line',
+        color: '#6366f1',
+        title: 'Updated',
+        user: userLabel,
+        at: fmt(record.updated_at),
+      });
+    }
+
+    return list;
+  }, [record]);
+
+  return (
+    <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" contentClassName="audit-modal">
+      <div className="audit-modal-header">
+        <div className="d-flex align-items-start justify-content-between gap-3">
+          <div className="d-flex align-items-center gap-3 min-w-0">
+            <span className="audit-modal-icon">
+              <i className="ri-history-line" />
+            </span>
+            <div className="min-w-0">
+              <h5 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', letterSpacing: '0.01em' }}>
+                Audit History — {masterTitle}
+              </h5>
+              <small className="text-muted" style={{ fontSize: 12 }}>
+                {record ? `Record #${record.id}${primaryLabel ? ` · ${primaryLabel}` : ''}` : ''}
+              </small>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="audit-modal-close"
+          >
+            <i className="ri-close-line" />
+          </button>
+        </div>
+      </div>
+      <ModalBody style={{ padding: '14px 22px 22px' }}>
+        {events.length === 0 ? (
+          <div className="text-muted text-center py-4" style={{ fontSize: 13 }}>
+            No history available for this record.
+          </div>
+        ) : (
+          <div className="audit-timeline">
+            {events.map((e, idx) => (
+              <div key={idx} className="audit-event">
+                <span
+                  className="audit-event-dot"
+                  style={{
+                    background: `color-mix(in srgb, ${e.color} 14%, var(--vz-card-bg))`,
+                    border: `1px solid color-mix(in srgb, ${e.color} 30%, transparent)`,
+                    color: e.color,
+                  }}
+                >
+                  <i className={e.icon} />
+                </span>
+                <div className="flex-grow-1 min-w-0">
+                  <span className="audit-event-title" style={{ color: e.color }}>{e.title}</span>
+                  <div className="audit-event-meta">
+                    <span className="audit-event-meta-label">{e.title} by:</span>
+                    <span className="audit-event-meta-user">
+                      <i className="ri-user-3-line" />{e.user}
+                    </span>
+                    <span className="audit-event-meta-sep">·</span>
+                    <span className="audit-event-meta-time">
+                      <i className="ri-time-line" />{e.at}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </ModalBody>
+      <style>{`
+        .audit-modal {
+          border-radius: 16px !important;
+          overflow: hidden;
+          border: 0;
+          box-shadow: 0 24px 60px rgba(0,0,0,0.18);
+        }
+        .audit-modal-header {
+          padding: 18px 22px 14px;
+          background: linear-gradient(180deg,
+            color-mix(in srgb, var(--vz-body-color) 3%, var(--vz-card-bg)) 0%,
+            var(--vz-card-bg) 100%);
+          border-bottom: 1px solid var(--vz-border-color);
+        }
+        .audit-modal-icon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 38px; height: 38px;
+          border-radius: 10px;
+          flex-shrink: 0;
+          background: linear-gradient(135deg, #405189 0%, #6691e7 100%);
+          color: #ffffff;
+          box-shadow: 0 4px 10px rgba(64,81,137,0.28), inset 0 1px 0 rgba(255,255,255,0.18);
+        }
+        .audit-modal-icon i { font-size: 17px; line-height: 1; }
+        .audit-modal-close {
+          width: 30px; height: 30px;
+          border-radius: 8px;
+          border: 1px solid var(--vz-border-color);
+          background: var(--vz-card-bg);
+          color: var(--vz-secondary-color);
+          cursor: pointer;
+          flex-shrink: 0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          transition: background 0.15s ease, color 0.15s ease;
+        }
+        .audit-modal-close:hover {
+          background: color-mix(in srgb, var(--vz-body-color) 8%, transparent);
+          color: var(--vz-body-color);
+        }
+        .audit-modal-close i { font-size: 15px; line-height: 1; }
+        /* Timeline — vertical rail behind the icon dots */
+        .audit-timeline {
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .audit-timeline::before {
+          content: '';
+          position: absolute;
+          top: 18px; bottom: 18px;
+          left: 17px;
+          width: 2px;
+          background: linear-gradient(180deg,
+            color-mix(in srgb, var(--vz-body-color) 14%, transparent) 0%,
+            transparent 100%);
+        }
+        .audit-event {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          position: relative;
+        }
+        .audit-event-dot {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px; height: 36px;
+          border-radius: 50%;
+          flex-shrink: 0;
+          z-index: 1;
+        }
+        .audit-event-dot i { font-size: 16px; line-height: 1; }
+        .audit-event-title {
+          font-size: 14px;
+          font-weight: 700;
+          letter-spacing: 0.01em;
+          display: block;
+        }
+        .audit-event-meta {
+          margin-top: 4px;
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 6px;
+          font-size: 12px;
+          color: var(--vz-secondary-color);
+        }
+        .audit-event-meta-label {
+          font-weight: 600;
+          color: var(--vz-secondary-color);
+        }
+        .audit-event-meta-user {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          color: var(--vz-body-color);
+          font-weight: 500;
+        }
+        .audit-event-meta-user i { font-size: 12.5px; opacity: 0.75; }
+        .audit-event-meta-sep { opacity: 0.45; }
+        .audit-event-meta-time {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-variant-numeric: tabular-nums;
+        }
+        .audit-event-meta-time i { font-size: 12px; opacity: 0.7; }
+      `}</style>
+    </Modal>
   );
 }
 
@@ -2493,6 +2791,28 @@ function renderField(
         onChange={onFieldChange}
       />
     );
+  } else if (f.t === 'file') {
+    // Custom-styled file picker — replaces the native browser input. Actual
+    // upload to backend storage is not wired yet; the picker is purely UI for
+    // now (submit skips files).
+    const hintParts: string[] = [];
+    if (f.accept) hintParts.push(f.accept);
+    if (f.maxMb) hintParts.push(`Max ${f.maxMb}MB`);
+    input = (
+      <>
+        <MasterFileInput
+          name={f.n}
+          accept={f.accept}
+          required={f.r}
+          disabled={viewOnly}
+          invalid={!!err}
+          onChange={() => onFieldChange()}
+        />
+        {hintParts.length > 0 && (
+          <small className="master-file-hint">{hintParts.join(' · ')}</small>
+        )}
+      </>
+    );
   } else {
     // Auto-capitalize the first alphabetic character on text inputs as the
     // user types — only the first letter, rest of the casing is preserved
@@ -2539,10 +2859,29 @@ function renderField(
     );
   }
 
+  // Optional uppercase tag after the label — used by file fields to show
+  // "MANDATORY" (red) vs "OPTIONAL" (muted) so users immediately know which
+  // attachments are required.
+  const optTag = f.optionalLabel;
+  const isMandatoryTag = !!optTag && /mandator/i.test(optTag);
+
   return (
     <Col md={span} key={f.n || `f-${i}`}>
       <Label className="d-flex align-items-center gap-2">
+        {f.icon && <i className={f.icon} style={{ fontSize: 13, color: 'var(--vz-secondary-color)' }} />}
         <span>{f.l}{f.r && <span className="req-star">*</span>}</span>
+        {optTag && (
+          <span
+            className="text-uppercase fw-semibold"
+            style={{
+              fontSize: 9.5,
+              letterSpacing: '0.06em',
+              color: isMandatoryTag ? 'var(--vz-danger, #f06548)' : 'var(--vz-secondary-color)',
+            }}
+          >
+            {optTag}
+          </span>
+        )}
         {isAutogen && (
           <span
             className="badge rounded-pill text-uppercase fw-semibold"
@@ -2562,10 +2901,14 @@ function renderField(
           </span>
         )}
       </Label>
-      <div className={`master-field${isTextarea ? ' ta' : ''}${isSelect ? ' sel' : ''}`}>
-        <i className={`${icon} master-field-icon${isTextarea ? ' ta' : ''}`} />
-        {input}
-      </div>
+      {f.t === 'file' ? (
+        <div>{input}</div>
+      ) : (
+        <div className={`master-field${isTextarea ? ' ta' : ''}${isSelect ? ' sel' : ''}`}>
+          <i className={`${icon} master-field-icon${isTextarea ? ' ta' : ''}`} />
+          {input}
+        </div>
+      )}
       {err && <FormFeedback style={{ display: 'block', fontSize: 11.5, marginTop: 4 }}>{err}</FormFeedback>}
     </Col>
   );
