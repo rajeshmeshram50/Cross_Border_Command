@@ -861,113 +861,244 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {/* ── Tab: Job Details ── */}
       {tab === 'job' && (
         <>
-          <Row className="g-3 mb-3">
-            <Col xs={12}>
-              <Card className="mb-0" style={cardStyle}>
+          {/* Quick-fact strip — at-a-glance employment summary in 4 mini tiles */}
+          <Row className="g-3 mb-3 align-items-stretch">
+            <Col md={3} sm={6} xs={12}>
+              <SectionCard gradient={GRAD_PURPLE} className="h-100">
+                <CardBody className="d-flex align-items-center gap-3">
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 44, height: 44, background: GRAD_PURPLE, boxShadow: '0 6px 14px rgba(106,90,205,0.30)' }}>
+                    <i className="ri-hashtag" style={{ color: '#fff', fontSize: 20 }} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="mb-1 fs-11 text-uppercase fw-bold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em' }}>Employee No.</p>
+                    <h6 className="mb-0 font-monospace" style={{ color: '#5a3fd1' }}>{employeeId}</h6>
+                  </div>
+                </CardBody>
+              </SectionCard>
+            </Col>
+            <Col md={3} sm={6} xs={12}>
+              <SectionCard gradient={GRAD_INFO} className="h-100">
+                <CardBody className="d-flex align-items-center gap-3">
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 44, height: 44, background: GRAD_INFO, boxShadow: '0 6px 14px rgba(41,156,219,0.30)' }}>
+                    <i className="ri-calendar-line" style={{ color: '#fff', fontSize: 20 }} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="mb-1 fs-11 text-uppercase fw-bold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em' }}>Joined</p>
+                    <h6 className="mb-0">03 Nov 2023</h6>
+                  </div>
+                </CardBody>
+              </SectionCard>
+            </Col>
+            <Col md={3} sm={6} xs={12}>
+              <SectionCard gradient={GRAD_SUCCESS} className="h-100">
+                <CardBody className="d-flex align-items-center gap-3">
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 44, height: 44, background: GRAD_SUCCESS, boxShadow: '0 6px 14px rgba(10,179,156,0.30)' }}>
+                    <i className="ri-checkbox-circle-line" style={{ color: '#fff', fontSize: 20 }} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="mb-1 fs-11 text-uppercase fw-bold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em' }}>Status</p>
+                    <h6 className="mb-0" style={{ color: '#108548' }}>{employee?.enabled === false ? 'Disabled' : 'Active'}</h6>
+                  </div>
+                </CardBody>
+              </SectionCard>
+            </Col>
+            <Col md={3} sm={6} xs={12}>
+              <SectionCard gradient={GRAD_WARNING} className="h-100">
+                <CardBody className="d-flex align-items-center gap-3">
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 44, height: 44, background: GRAD_WARNING, boxShadow: '0 6px 14px rgba(247,184,75,0.30)' }}>
+                    <i className="ri-time-line" style={{ color: '#fff', fontSize: 20 }} />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="mb-1 fs-11 text-uppercase fw-bold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em' }}>Worker Type</p>
+                    <h6 className="mb-0">Full-time</h6>
+                  </div>
+                </CardBody>
+              </SectionCard>
+            </Col>
+          </Row>
+
+          {/* Row 1 — Employment Details + Organisational Structure side-by-side */}
+          <Row className="g-3 mb-3 align-items-stretch">
+            <Col xl={6}>
+              <Card className="ep-section-card mb-0 h-100" style={cardStyle}>
                 <CardBody>
-                  <SectionHeader title="Employment Details" gradient={GRAD_PURPLE} icon="ri-briefcase-line" />
+                  <SectionHeader title="Employment Details" subtitle="Job titles and worker classification" gradient={GRAD_PURPLE} icon="ri-briefcase-line" />
                   <Row>
-                    <Field label="Employee Number"      value={<span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '2px 8px', borderRadius: 6 }}>{employeeId}</span>} span={3} />
-                    <Field label="Joining Date"         value="2023-11-03" span={3} />
-                    <Field label="Job Title (Primary)"  value={employee?.designation} span={3} />
-                    <Field label="Job Title (Secondary)" value={ancillaryList[0] || null} span={3} />
-                    <Field label="Employment Status"    value={employee?.enabled === false ? 'Disabled' : 'Active'} span={3} />
-                    <Field label="Worker Type"          value="Full-time" span={3} />
-                    <Field label="Time Type"            value="Full Time" span={3} />
-                    <Field label="" value=" " span={3} />
+                    <Field accent="#6a5acd" label="Job Title (Primary)"   value={employee?.designation}                                       span={6} />
+                    <Field accent="#6a5acd" label="Job Title (Secondary)" value={ancillaryList[0] || null}                                    span={6} />
+                    <Field accent="#6a5acd" label="Worker Type"           value="Full-time"                                                   span={6} />
+                    <Field accent="#6a5acd" label="Time Type"             value="Full Time"                                                   span={6} />
+                    <Field accent="#6a5acd" label="Employment Status"     value={
+                      <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} />
+                        {employee?.enabled === false ? 'Disabled' : 'Active'}
+                      </span>
+                    } span={6} />
+                    <Field accent="#6a5acd" label="Joining Date"          value="03 Nov 2023"                                                 span={6} />
+                  </Row>
+                </CardBody>
+              </Card>
+            </Col>
+            <Col xl={6}>
+              <Card className="ep-section-card mb-0 h-100" style={cardStyle}>
+                <CardBody>
+                  <SectionHeader title="Organisational Structure" subtitle="Reporting line and tenant context" gradient={GRAD_INFO} icon="ri-building-2-line" />
+                  <Row>
+                    <Field accent="#299cdb" label="Legal Entity"      value="Inorbvict Healthcare India Pvt. Ltd." span={12} />
+                    <Field accent="#299cdb" label="Department"        value={employee?.department}                  span={6} />
+                    <Field accent="#299cdb" label="Location"          value="Pune, Maharashtra"                     span={6} />
+                    <Field accent="#299cdb" label="Reporting Manager" value={
+                      <span className="d-inline-flex align-items-center gap-2">
+                        <span
+                          className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                          style={{ width: 24, height: 24, fontSize: 10, background: GRAD_INFO, boxShadow: '0 2px 6px rgba(41,156,219,0.30)' }}
+                        >
+                          {employee?.manager ? employee.manager.split(' ').map(p => p[0]).slice(0,2).join('').toUpperCase() : '—'}
+                        </span>
+                        {employee?.manager}
+                      </span>
+                    } span={12} />
                   </Row>
                 </CardBody>
               </Card>
             </Col>
           </Row>
 
-          <Row className="g-3 mb-3">
-            <Col xs={12}>
-              <Card className="mb-0" style={cardStyle}>
-                <CardBody>
-                  <SectionHeader title="Organisational Structure" gradient={GRAD_INFO} icon="ri-building-2-line" />
-                  <Row>
-                    <Field label="Legal Entity"      value="Inorbvict Healthcare India Pvt. Ltd." span={3} />
-                    <Field label="Department"        value={employee?.department} span={3} />
-                    <Field label="Location"          value="Pune, Maharashtra" span={3} />
-                    <Field label="Reporting Manager" value={employee?.manager} span={3} />
-                  </Row>
-                </CardBody>
-              </Card>
-            </Col>
-          </Row>
-
+          {/* Row 2 — Role & Positioning + Employment Terms + Attendance & Time */}
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl={4}>
-              <Card className="h-100 mb-0" style={cardStyle}>
+              <Card className="ep-section-card mb-0 h-100" style={cardStyle}>
                 <CardBody>
-                  <SectionHeader title="Role & Positioning" gradient={GRAD_WARNING} icon="ri-user-star-line" />
+                  <SectionHeader title="Role & Positioning" subtitle="What they do day to day" gradient={GRAD_WARNING} icon="ri-user-star-line" />
                   <Row>
-                    <Field
+                    <Field accent="#f7b84b"
                       label="Primary Role"
-                      value={employee?.primaryRole && <span className="d-inline-flex align-items-center fw-semibold" style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 999, background: '#fde8c4', color: '#a4661c' }}>{employee.primaryRole}</span>}
+                      value={employee?.primaryRole && (
+                        <span className="d-inline-flex align-items-center fw-semibold" style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, background: '#fde8c4', color: '#a4661c', border: '1px solid rgba(247,184,75,0.30)' }}>
+                          {employee.primaryRole}
+                        </span>
+                      )}
+                      span={12}
                     />
-                    <Field
+                    <Field accent="#f7b84b"
                       label="Ancillary Role"
                       value={ancillaryList.length > 0 ? (
                         <div className="d-flex flex-wrap gap-1">
-                          {ancillaryList.map(r => (<span key={r} className="d-inline-flex align-items-center fw-semibold" style={{ fontSize: 11.5, padding: '4px 10px', borderRadius: 999, background: '#ece6ff', color: '#5a3fd1' }}>{r}</span>))}
+                          {ancillaryList.map(r => (
+                            <span key={r} className="d-inline-flex align-items-center fw-semibold" style={{ fontSize: 11.5, padding: '4px 12px', borderRadius: 999, background: '#ece6ff', color: '#5a3fd1', border: '1px solid rgba(106,90,205,0.30)' }}>
+                              {r}
+                            </span>
+                          ))}
                         </div>
                       ) : null}
+                      span={12}
                     />
-                    <Field label="Employee Level" value="L3 — Mid" />
+                    <Field accent="#f7b84b" label="Employee Level" value={
+                      <span className="d-inline-flex align-items-center gap-1 fw-bold" style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, background: 'linear-gradient(135deg, rgba(247,184,75,0.18), rgba(255,212,122,0.06))', color: '#a4661c', border: '1px solid rgba(247,184,75,0.30)' }}>
+                        <i className="ri-medal-line" /> L3 — Mid
+                      </span>
+                    } span={12} />
                   </Row>
                 </CardBody>
               </Card>
             </Col>
             <Col xl={4}>
-              <Card className="h-100 mb-0" style={cardStyle}>
+              <Card className="ep-section-card mb-0 h-100" style={cardStyle}>
                 <CardBody>
-                  <SectionHeader title="Employment Terms" gradient={GRAD_SUCCESS} icon="ri-file-list-3-line" />
+                  <SectionHeader title="Employment Terms" subtitle="Probation and contract" gradient={GRAD_SUCCESS} icon="ri-file-list-3-line" />
                   <Row>
-                    <Field label="Probation Policy"   value="Default Probation Policy" />
-                    <Field label="Probation Duration" value="3 Months" />
-                    <Field label="Notice Period"      value="2 Months" />
-                    <Field label="Contract Status"    value="Permanent" />
+                    <Field accent="#0ab39c" label="Probation Policy"   value="Default Probation Policy" span={12} />
+                    <Field accent="#0ab39c" label="Probation Duration" value="3 Months"                 span={6} />
+                    <Field accent="#0ab39c" label="Notice Period"      value="2 Months"                 span={6} />
+                    <Field accent="#0ab39c" label="Contract Status"    value={
+                      <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
+                        <i className="ri-shield-check-line" /> Permanent
+                      </span>
+                    } span={12} />
                   </Row>
                 </CardBody>
               </Card>
             </Col>
             <Col xl={4}>
-              <Card className="h-100 mb-0" style={cardStyle}>
+              <Card className="ep-section-card mb-0 h-100" style={cardStyle}>
                 <CardBody>
-                  <SectionHeader title="Attendance & Time" gradient={GRAD_INFO} icon="ri-time-line" />
+                  <SectionHeader title="Attendance & Time" subtitle="Shift and tracking config" gradient={GRAD_INFO} icon="ri-time-line" />
                   <Row>
-                    <Field label="Shift"           value="Morning Shift" />
-                    <Field label="Weekly Off"      value="Sat & Sun" />
-                    <Field label="Leave Plan"      value="Default Leave Plan" />
-                    <Field label="Holiday Calendar" value="Maharashtra 2026" />
-                    <Field label="Time Tracking"   value="Enabled" />
-                    <Field label="Attendance No."  value={<span className="font-monospace">{employeeId}</span>} />
+                    <Field accent="#299cdb" label="Shift"            value="Morning Shift"        span={6} />
+                    <Field accent="#299cdb" label="Weekly Off"       value="Sat & Sun"            span={6} />
+                    <Field accent="#299cdb" label="Leave Plan"       value="Default Leave Plan"   span={6} />
+                    <Field accent="#299cdb" label="Holiday Calendar" value="Maharashtra 2026"     span={6} />
+                    <Field accent="#299cdb" label="Time Tracking"    value={
+                      <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} />
+                        Enabled
+                      </span>
+                    } span={6} />
+                    <Field accent="#299cdb" label="Attendance No."   value={<span className="font-monospace" style={{ background: '#dceefe', color: '#0c63b0', padding: '3px 10px', borderRadius: 6, fontSize: 12 }}>{employeeId}</span>} span={6} />
                   </Row>
                 </CardBody>
               </Card>
             </Col>
           </Row>
 
+          {/* Row 3 — Asset Details with grouped sub-sections (IT / Accessories / Issuance) */}
           <Row className="g-3 mb-3">
             <Col xs={12}>
-              <Card className="mb-0" style={cardStyle}>
+              <Card className="ep-section-card mb-0" style={cardStyle}>
                 <CardBody>
-                  <SectionHeader title="Asset Details" gradient={GRAD_WARNING} icon="ri-computer-line" />
-                  <Row>
-                    <Field label="Laptop Assigned" value="Yes" span={3} />
-                    <Field label="Laptop Asset ID" value={<span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '2px 8px', borderRadius: 6 }}>LAP-0042</span>} span={3} />
-                    <Field label="Laptop Type"     value="Dell Latitude 5510" span={3} />
-                    <Field label="Mobile Device"   value={null} span={3} />
-                    <Field label="Monitor"         value='24" Dell Monitor' span={3} />
-                    <Field label="Keyboard"        value="Logitech K380" span={3} />
-                    <Field label="Mouse"           value="Logitech MX" span={3} />
-                    <Field label="Headset"         value={null} span={3} />
-                    <Field label="Other Assets"    value="Access Card, Desk" span={3} />
-                    <Field label="Asset Issued Date" value="2023-11-03" span={3} />
-                    <Field label="Acknowledgment"  value="Signed" span={3} />
-                    <Field label="Return Required" value="No" span={3} />
+                  <SectionHeader title="Asset Details" subtitle="IT equipment, accessories and acknowledgment" gradient={GRAD_WARNING} icon="ri-computer-line" />
+
+                  <Row className="g-4">
+                    {/* IT Equipment column */}
+                    <Col md={4}>
+                      <div className="px-3 py-2 mb-3 d-inline-flex align-items-center gap-2" style={{ borderRadius: 999, background: 'linear-gradient(135deg, rgba(64,81,137,0.10), rgba(102,145,231,0.04))', border: '1px solid rgba(64,81,137,0.22)', fontSize: 11, fontWeight: 700, color: '#405189', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                        <i className="ri-computer-fill" /> IT Equipment
+                      </div>
+                      <Row>
+                        <Field accent="#405189" label="Laptop Assigned" value={
+                          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
+                            <i className="ri-check-line" /> Yes
+                          </span>
+                        } span={12} />
+                        <Field accent="#405189" label="Laptop Asset ID" value={<span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '3px 10px', borderRadius: 6, fontSize: 12 }}>LAP-0042</span>} span={12} />
+                        <Field accent="#405189" label="Laptop Type"     value="Dell Latitude 5510" span={12} />
+                        <Field accent="#405189" label="Mobile Device"   value={null}               span={12} />
+                      </Row>
+                    </Col>
+
+                    {/* Accessories column */}
+                    <Col md={4}>
+                      <div className="px-3 py-2 mb-3 d-inline-flex align-items-center gap-2" style={{ borderRadius: 999, background: 'linear-gradient(135deg, rgba(41,156,219,0.12), rgba(95,200,255,0.04))', border: '1px solid rgba(41,156,219,0.26)', fontSize: 11, fontWeight: 700, color: '#0c63b0', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                        <i className="ri-keyboard-fill" /> Accessories
+                      </div>
+                      <Row>
+                        <Field accent="#299cdb" label="Monitor"     value='24" Dell Monitor' span={12} />
+                        <Field accent="#299cdb" label="Keyboard"    value="Logitech K380"    span={12} />
+                        <Field accent="#299cdb" label="Mouse"       value="Logitech MX"      span={12} />
+                        <Field accent="#299cdb" label="Headset"     value={null}             span={12} />
+                      </Row>
+                    </Col>
+
+                    {/* Issuance column */}
+                    <Col md={4}>
+                      <div className="px-3 py-2 mb-3 d-inline-flex align-items-center gap-2" style={{ borderRadius: 999, background: 'linear-gradient(135deg, rgba(10,179,156,0.12), rgba(48,213,181,0.04))', border: '1px solid rgba(10,179,156,0.25)', fontSize: 11, fontWeight: 700, color: '#0a8a78', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                        <i className="ri-shield-check-fill" /> Issuance
+                      </div>
+                      <Row>
+                        <Field accent="#0ab39c" label="Other Assets"     value="Access Card, Desk" span={12} />
+                        <Field accent="#0ab39c" label="Asset Issued Date" value="03 Nov 2023"      span={12} />
+                        <Field accent="#0ab39c" label="Acknowledgment"   value={
+                          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
+                            <i className="ri-check-double-line" /> Signed
+                          </span>
+                        } span={12} />
+                        <Field accent="#0ab39c" label="Return Required"  value={
+                          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 999, background: '#fde8c4', color: '#a4661c' }}>
+                            <i className="ri-close-line" /> No
+                          </span>
+                        } span={12} />
+                      </Row>
+                    </Col>
                   </Row>
                 </CardBody>
               </Card>
