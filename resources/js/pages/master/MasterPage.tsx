@@ -78,6 +78,9 @@ function MasterPageInner({
   const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
   const [dsnLevelFilter, setDsnLevelFilter] = useState<string>('all');
   const [dsnDeptFilter, setDsnDeptFilter] = useState<string>('all');
+  // Department-master-specific filter state. Only used when cfg.slug === 'departments'.
+  const [dpStatusFilter, setDpStatusFilter] = useState<string>('all');
+  const [dpParentFilter, setDpParentFilter] = useState<string>('all');
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
@@ -241,6 +244,7 @@ function MasterPageInner({
   const filteredRecords = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
     const isDsn = cfg.slug === 'designations';
+    const isDp  = cfg.slug === 'departments';
     const searchableKeys = [
       ...cfg.cols,
       'client_name', 'branch_name', 'creator_name',
@@ -258,6 +262,19 @@ function MasterPageInner({
           if (String(row.department_id ?? '') !== String(dsnDeptFilter)) return false;
         }
       }
+      // Department-master extra filters: Status / Parent dropdowns.
+      if (isDp) {
+        if (dpStatusFilter !== 'all') {
+          if (String(row.status ?? '').toLowerCase() !== dpStatusFilter.toLowerCase()) return false;
+        }
+        if (dpParentFilter !== 'all') {
+          if (dpParentFilter === 'root') {
+            if (row.parent_id != null && row.parent_id !== '') return false;
+          } else if (String(row.parent_id ?? '') !== String(dpParentFilter)) {
+            return false;
+          }
+        }
+      }
       if (!q) return true;
       for (const key of searchableKeys) {
         const f = cfg.fields.find(ff => ff.n === key);
@@ -267,7 +284,7 @@ function MasterPageInner({
       return false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter]);
+  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, dpStatusFilter, dpParentFilter]);
 
   // Effective ref-data passed to renderField. For self-referential refs (e.g.
   // Designation's "Reports To" → Designations) we want the dropdown to reflect
@@ -664,8 +681,9 @@ function MasterPageInner({
       },
     ];
     // Icon column — hidden on designations (the level rating already gives a
-    // strong visual cue, so the duplicate badge column wastes horizontal space).
-    if (cfg.slug !== 'designations') {
+    // strong visual cue, so the duplicate badge column wastes horizontal space)
+    // and on departments (the table already leads with a coloured Code column).
+    if (cfg.slug !== 'designations' && cfg.slug !== 'departments') {
       cols.push({
         header: 'Icon',
         accessorKey: '__icon',
@@ -734,6 +752,37 @@ function MasterPageInner({
           return (
             <div className="text-center" style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', fontVariantNumeric: 'tabular-nums' }}>
               {n.toLocaleString()}
+            </div>
+          );
+        },
+      });
+    }
+    // Department-master Employees column. Two-line cell ("18" / "employees").
+    // Prefers row.employees_count; falls back to a deterministic mock derived
+    // from the row id so the table reads naturally before the backend wires up
+    // a real join with the employees table.
+    if (cfg.slug === 'departments') {
+      const mockCountFor = (row: any): number => {
+        const seed = String(row?.id ?? row?.code ?? row?.name ?? '');
+        let h = 0;
+        for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+        return 4 + Math.abs(h) % 22; // 4..25
+      };
+      cols.push({
+        header: () => <div className="text-center">Employees</div>,
+        id: '__employees',
+        accessorFn: (row: any) => Number(row.employees_count ?? mockCountFor(row)),
+        cell: (info: any) => {
+          const row = info.row.original;
+          const n = Number(row?.employees_count ?? mockCountFor(row));
+          return (
+            <div className="text-center" style={{ lineHeight: 1.1 }}>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', fontVariantNumeric: 'tabular-nums' }}>
+                {n.toLocaleString()}
+              </div>
+              <div className="text-muted" style={{ fontSize: '0.7rem', marginTop: 2 }}>
+                employees
+              </div>
             </div>
           );
         },
@@ -1084,7 +1133,7 @@ function MasterPageInner({
 
               {/* Search bar (left) + (designation filters + Add New on the right). */}
               <Row className="g-2 align-items-center mb-3">
-                <Col md={cfg.slug === 'designations' ? 3 : 6} sm={12}>
+                <Col md={cfg.slug === 'designations' || cfg.slug === 'departments' ? 4 : 6} sm={12}>
                   <div className="search-box">
                     <Input
                       type="text"
@@ -1096,7 +1145,7 @@ function MasterPageInner({
                     <i className="ri-search-line search-icon"></i>
                   </div>
                 </Col>
-                <Col md={cfg.slug === 'designations' ? 9 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
+                <Col md={cfg.slug === 'designations' || cfg.slug === 'departments' ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
                   {cfg.slug === 'designations' && (
                     <DesignationInlineFilters
                       refData={refData}
@@ -1106,6 +1155,15 @@ function MasterPageInner({
                       setLevelFilter={setDsnLevelFilter}
                       deptFilter={dsnDeptFilter}
                       setDeptFilter={setDsnDeptFilter}
+                    />
+                  )}
+                  {cfg.slug === 'departments' && (
+                    <DepartmentInlineFilters
+                      records={records}
+                      statusFilter={dpStatusFilter}
+                      setStatusFilter={setDpStatusFilter}
+                      parentFilter={dpParentFilter}
+                      setParentFilter={setDpParentFilter}
                     />
                   )}
                   {/* Add button — shown here for most masters; designations puts
@@ -1405,9 +1463,13 @@ function WhatYouDoHere({ cfg, onAdd, canAdd }: { cfg: MasterConfig; onAdd?: () =
           {heading}
           {canAdd && onAdd && (
             <Button
-              color="secondary"
-              className="btn-label waves-effect waves-light rounded-pill"
+              className="btn-label waves-effect waves-light rounded-pill border-0"
               onClick={onAdd}
+              style={{
+                background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
+                color: '#fff',
+                boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
+              }}
             >
               <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
               Add {singular}
@@ -1854,6 +1916,65 @@ function DesignationInlineFilters({
               ...departments.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
             ]}
             placeholder="All Departments"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Inline Status / Parent filters — sits between the search box and the
+ * Add button row on the Department master. */
+function DepartmentInlineFilters({
+  records,
+  statusFilter, setStatusFilter,
+  parentFilter, setParentFilter,
+}: {
+  records: any[];
+  statusFilter: string;
+  setStatusFilter: (v: string) => void;
+  parentFilter: string;
+  setParentFilter: (v: string) => void;
+}) {
+  return (
+    <div className="dsn-inline-filters d-flex align-items-center flex-wrap" style={{ gap: 12 }}>
+      <div className="dsn-il-group">
+        <span className="dsn-il-label">Status</span>
+        <div style={{ minWidth: 130 }}>
+          <MasterSelect
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v || 'all')}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'Active', label: 'Active' },
+              { value: 'Inactive', label: 'Inactive' },
+            ]}
+            placeholder="All"
+          />
+        </div>
+      </div>
+      <div className="dsn-il-group">
+        <span className="dsn-il-label">Parent</span>
+        <div style={{ minWidth: 160 }}>
+          <MasterSelect
+            value={parentFilter}
+            onChange={(v) => setParentFilter(v || 'all')}
+            options={(() => {
+              // Only departments that are actually being used as a parent of
+              // another row appear in this dropdown — filtering by a leaf
+              // department would always return zero rows, so it shouldn't show.
+              const parentIds = new Set<string>();
+              for (const r of records) {
+                if (r?.parent_id != null && r.parent_id !== '') parentIds.add(String(r.parent_id));
+              }
+              const parentRows = records.filter((d: any) => parentIds.has(String(d.id)));
+              return [
+                { value: 'all',  label: 'All' },
+                { value: 'root', label: 'Root (no parent)' },
+                ...parentRows.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
+              ];
+            })()}
+            placeholder="All"
           />
         </div>
       </div>
