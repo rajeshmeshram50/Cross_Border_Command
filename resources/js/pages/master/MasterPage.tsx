@@ -1532,20 +1532,31 @@ function MasterPageInner({
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+              className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
               aria-label="Close"
               style={{
-                width: 32, height: 32,
+                width: 30, height: 30,
+                borderRadius: '50%',
                 background: 'rgba(255,255,255,0.18)',
-                border: '1px solid rgba(255,255,255,0.25)',
+                border: '1px solid rgba(255,255,255,0.30)',
                 color: '#fff',
                 cursor: 'pointer',
                 transition: 'background 0.18s ease, transform 0.18s ease',
+                padding: 0,
+                lineHeight: 1,
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.30)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)'; }}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = 'rgba(255,255,255,0.32)';
+                el.style.transform = 'rotate(90deg)';
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = 'rgba(255,255,255,0.18)';
+                el.style.transform = 'rotate(0deg)';
+              }}
             >
-              <i className="ri-close-line" style={{ fontSize: 18 }} />
+              <i className="ri-close-line" style={{ fontSize: 16, lineHeight: 1 }} />
             </button>
           </div>
         </div>
@@ -1605,15 +1616,14 @@ function MasterPageInner({
                 <Button
                   type="submit"
                   disabled={saving}
-                  className={
-                    saving
-                      ? 'rounded-pill d-inline-flex align-items-center justify-content-center gap-2 border-0'
-                      : 'btn-label waves-effect waves-light rounded-pill border-0'
-                  }
+                  className="rounded-pill d-inline-flex align-items-center justify-content-center gap-2 border-0 waves-effect waves-light"
                   style={{
-                    minWidth: 170,
+                    padding: '8px 20px',
                     background: 'linear-gradient(120deg, #405189 0%, #6691e7 100%)',
                     color: '#fff',
+                    fontWeight: 600,
+                    fontSize: 14,
+                    whiteSpace: 'nowrap',
                     boxShadow: '0 4px 12px rgba(64,81,137,0.3)',
                   }}
                 >
@@ -1624,7 +1634,7 @@ function MasterPageInner({
                     </>
                   ) : (
                     <>
-                      <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                      <i className="ri-save-line" style={{ fontSize: 16 }}></i>
                       {editingId != null ? `Update ${singular}` : `Save ${singular}`}
                     </>
                   )}
@@ -2428,31 +2438,35 @@ function RolesExtras({
           color: var(--vz-heading-color, var(--vz-body-color));
           background: color-mix(in srgb, var(--vz-body-color) 4%, transparent);
         }
-        .role-extras .role-tab.active {
-          /* Premium indigo-to-violet gradient with a bold blink halo. */
-          background: linear-gradient(135deg, #4338ca 0%, #6366f1 45%, #8b5cf6 100%);
+        .role-extras .role-tab.active,
+        .role-extras button.role-tab.active {
+          /* Premium indigo gradient with a slow, gentle halo breath —
+             attention without harsh flicker. Text stays crisp. */
+          background: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #818cf8 100%);
           color: #ffffff !important;
-          font-weight: 700;
+          font-weight: 600;
           border-color: #4338ca;
-          animation: role-tab-blink 1.2s ease-in-out infinite;
+          animation: role-tab-breathe 3s ease-in-out infinite;
         }
-        @keyframes role-tab-blink {
+        .role-extras .role-tab.active > span:not(.role-tab-count),
+        .role-extras button.role-tab.active > span:not(.role-tab-count) {
+          color: #ffffff !important;
+        }
+        @keyframes role-tab-breathe {
           0%, 100% {
-            filter: brightness(1);
             box-shadow:
-              0 6px 16px rgba(99,102,241,0.42),
-              0 2px 4px rgba(99,102,241,0.22),
-              0 0 0 0 rgba(139,92,246,0.0),
-              inset 0 1px 0 rgba(255,255,255,0.22),
+              0 6px 18px rgba(99,102,241,0.45),
+              0 2px 5px rgba(99,102,241,0.28),
+              0 0 0 2px rgba(99,102,241,0.10),
+              inset 0 1px 0 rgba(255,255,255,0.24),
               inset 0 -1px 0 rgba(0,0,0,0.10);
           }
           50% {
-            filter: brightness(1.10);
             box-shadow:
-              0 10px 26px rgba(99,102,241,0.65),
-              0 3px 8px rgba(99,102,241,0.40),
-              0 0 0 8px rgba(139,92,246,0.32),
-              inset 0 1px 0 rgba(255,255,255,0.36),
+              0 8px 22px rgba(99,102,241,0.55),
+              0 2px 6px rgba(99,102,241,0.32),
+              0 0 0 6px rgba(99,102,241,0.18),
+              inset 0 1px 0 rgba(255,255,255,0.30),
               inset 0 -1px 0 rgba(0,0,0,0.10);
           }
         }
@@ -2530,9 +2544,10 @@ function RolesExtras({
               type="button"
               className={`role-tab${active ? ' active' : ''}`}
               onClick={() => setActiveTab(t.key)}
+              style={active ? { color: '#ffffff' } : undefined}
             >
               <i className={t.icon} style={{ fontSize: 13, color: active ? '#ffffff' : t.bright }} />
-              {t.label}
+              <span style={active ? { color: '#ffffff' } : undefined}>{t.label}</span>
               <span className="role-tab-count">{t.count}</span>
             </button>
           );
