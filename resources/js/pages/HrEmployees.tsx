@@ -924,9 +924,12 @@ export default function HrEmployees() {
         centered
         size="lg"
         contentClassName="border-0"
+        modalClassName="emp-modal-wide"
         scrollable
       >
         <style>{`
+          .emp-modal-wide .modal-dialog { max-width: min(960px, 92vw); }
+          .emp-modal-wide .modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
           .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
           .emp-input::placeholder { color: #9ca3af; }
           .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
