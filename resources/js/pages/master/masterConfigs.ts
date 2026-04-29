@@ -228,7 +228,7 @@ const C: Record<string, MasterConfig> = {
     fields: [
       { n: 'name', l: 'Role Name', t: 'text', r: true, p: 'e.g., Software Engineer' },
       { n: 'code', l: 'Role Code', t: 'text', auto: true, hint: '(auto-generated)', p: 'ROL-XXX' },
-      { n: 'role_type', l: 'Role Type', t: 'select', r: true, p: '— Select Type —', opts: ['Primary', 'Ancillary', 'Operational', 'Administrative', 'Functional'] },
+      { n: 'role_type', l: 'Role Type', t: 'select', r: true, p: '— Select Type —', opts: ['Primary', 'Ancillary'] },
       { n: 'department_id', l: 'Department', t: 'select', ref: 'departments', refL: 'name', p: '— All Departments —' },
       { n: 'role_category', l: 'Role Category', t: 'select', p: '— Select Category —', opts: ['Technical', 'Management', 'Operational', 'Support', 'Sales', 'Compliance', 'Finance', 'HR'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },

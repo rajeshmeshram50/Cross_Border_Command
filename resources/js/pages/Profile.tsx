@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardBody, Col, Row, Input, Label, Spinner, Form } from 'reactstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -20,15 +20,19 @@ export default function Profile() {
   const [brandLogoPreview, setBrandLogoPreview] = useState<string | null>(null);
   const [savingBrand, setSavingBrand] = useState(false);
 
-  if (!user) return null;
-
   // Initialize the branding form from the current /me values once we know
   // them. Re-syncs whenever the user object changes (e.g. after refresh()).
-  if (brandPrimary === '#4F46E5' && user.primary_color) setBrandPrimary(user.primary_color);
-  if (brandSecondary === '#10B981' && user.secondary_color) setBrandSecondary(user.secondary_color);
-  if (brandLogoPreview === null && (user.branch_logo || user.client_logo)) {
-    setBrandLogoPreview(user.branch_logo || user.client_logo || null);
-  }
+  // MUST run in useEffect — calling setState during render causes infinite loops.
+  useEffect(() => {
+    if (!user) return;
+    if (user.primary_color)   setBrandPrimary(user.primary_color);
+    if (user.secondary_color) setBrandSecondary(user.secondary_color);
+    const logo = user.branch_logo || user.client_logo || null;
+    if (logo) setBrandLogoPreview(logo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.primary_color, user?.secondary_color, user?.branch_logo, user?.client_logo]);
+
+  if (!user) return null;
 
   const handleBrandLogoChange = (file: File | null) => {
     setBrandLogoFile(file);
