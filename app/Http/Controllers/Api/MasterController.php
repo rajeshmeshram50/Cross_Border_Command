@@ -21,6 +21,7 @@ class MasterController extends Controller
         'roles' => \App\Models\Masters\Roles::class,
         'designations' => \App\Models\Masters\Designations::class,
         'kpis' => \App\Models\Masters\Kpis::class,
+        'legal_entities' => \App\Models\Masters\LegalEntities::class,
         'countries' => \App\Models\Masters\Countries::class,
         'states' => \App\Models\Masters\States::class,
         'state_codes' => \App\Models\Masters\StateCodes::class,
@@ -77,6 +78,7 @@ class MasterController extends Controller
         'roles' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'role_type', 't' => 'select', 'r' => true, 'opts' => ['Primary', 'Ancillary']], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'role_category', 't' => 'select', 'opts' => ['Technical', 'Management', 'Operational', 'Support', 'Sales', 'Compliance', 'Finance', 'HR']], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'designations' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'level', 't' => 'select', 'r' => true, 'opts' => ['Director / CEO', 'Head of Department (HOD)', 'Team Leader', 'Executive', 'Employee', 'Intern / Trainee']], ['n' => 'reports_to_id', 't' => 'select', 'ref' => 'designations'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'kpis' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'role_id', 't' => 'select', 'r' => true, 'ref' => 'roles'], ['n' => 'target_type', 't' => 'select', 'r' => true, 'opts' => ['Numeric', 'Percentage', 'Currency', 'Boolean', 'Date-based', 'Rating']], ['n' => 'priority', 't' => 'select', 'r' => true, 'opts' => ['Critical', 'High', 'Medium', 'Low']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
+        'legal_entities' => ['fields' => [['n' => 'entity_name', 't' => 'text', 'r' => true], ['n' => 'legal_name', 't' => 'text', 'r' => true], ['n' => 'cin', 't' => 'text', 'r' => true], ['n' => 'date_of_incorporation', 't' => 'date', 'r' => true], ['n' => 'type_of_business', 't' => 'select', 'r' => true, 'opts' => ['Manufacturing', 'Trading', 'Services', 'IT / ITeS', 'Healthcare', 'Construction', 'Logistics', 'Retail', 'Education', 'Hospitality', 'Agriculture', 'Other']], ['n' => 'sector', 't' => 'select', 'r' => true, 'opts' => ['Healthcare', 'IT', 'Finance', 'Manufacturing', 'Retail', 'Education', 'Real Estate', 'Logistics', 'Agriculture', 'Energy', 'Telecom', 'Hospitality', 'Other']], ['n' => 'nature_of_business', 't' => 'select', 'opts' => ['Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Proprietorship', 'OPC (One Person Company)', 'Section 8 Company', 'Trust', 'Society', 'Other']], ['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'address_line1', 't' => 'text', 'r' => true], ['n' => 'address_line2', 't' => 'text'], ['n' => 'city', 't' => 'text', 'r' => true], ['n' => 'state_id', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'zip_code', 't' => 'text', 'r' => true], ['n' => 'currency_id', 't' => 'select', 'ref' => 'currencies'], ['n' => 'financial_year', 't' => 'select', 'opts' => ['April - March', 'January - December', 'July - June']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['entity_name', 'cin']],
         'countries' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'iso_code', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'states' => ['fields' => [['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name', 'country_id']],
         'state_codes' => ['fields' => [['n' => 'state_id', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'state_code', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['state_id', 'state_code']],
@@ -180,6 +182,10 @@ class MasterController extends Controller
         $data['branch_id'] = $branchId;
 
         $row = $modelClass::create($data);
+
+        // Sync any embedded sublist payloads (e.g. legal_entities → banks).
+        $this->syncSublists($request, $slug, $row);
+
         $row->load(self::OWNERSHIP_WITH);
         return response()->json($this->withOwnership($row), 201);
     }
@@ -228,6 +234,10 @@ class MasterController extends Controller
 
         $data = $this->validatePayload($request, $slug, $id);
         $row->update($data);
+
+        // Sync any embedded sublist payloads (e.g. legal_entities → banks).
+        $this->syncSublists($request, $slug, $row);
+
         $row->load(self::OWNERSHIP_WITH);
         return response()->json($this->withOwnership($row));
     }
@@ -346,7 +356,59 @@ class MasterController extends Controller
         $arr['branch_name']       = $row->branch?->name;
         $arr['creator_name']      = $row->creator?->name;
         $arr['creator_user_type'] = $row->creator?->user_type;
+
+        // Inline sublists — return embedded child rows alongside the parent so the
+        // edit form can pre-fill them without a second roundtrip. Currently only
+        // legal_entities → banks; add additional cases here as new masters opt in.
+        if ($row instanceof \App\Models\Masters\LegalEntities) {
+            $arr['banks'] = $row->banks()->orderByDesc('is_primary')->orderBy('id')->get()->toArray();
+        }
+
         return $arr;
+    }
+
+    /**
+     * Sync any inline sublist payloads (banks, contacts, etc.) the request may
+     * carry alongside the parent record's own fields. Keeps the parent's API
+     * contract simple: the form posts everything in one JSON payload, the
+     * controller fans it out to the correct child tables transactionally.
+     */
+    private function syncSublists(Request $request, string $slug, $parent): void
+    {
+        // legal_entities → banks
+        if ($slug === 'legal_entities' && $parent instanceof \App\Models\Masters\LegalEntities) {
+            $banks = $request->input('banks');
+            if (!is_array($banks)) return;
+
+            $allowed = ['bank_name', 'branch_name', 'account_number', 'ifsc_code', 'account_type', 'is_primary'];
+            $keptIds = [];
+
+            foreach ($banks as $b) {
+                if (!is_array($b)) continue;
+                $payload = [];
+                foreach ($allowed as $k) {
+                    if (array_key_exists($k, $b)) $payload[$k] = $b[$k];
+                }
+                // Required field — skip silently if missing so the parent save still succeeds.
+                if (empty($payload['bank_name']) || empty($payload['account_number'])) continue;
+                $payload['is_primary'] = !empty($payload['is_primary']);
+
+                $existingId = $b['id'] ?? null;
+                if ($existingId) {
+                    $existing = $parent->banks()->where('id', $existingId)->first();
+                    if ($existing) {
+                        $existing->update($payload);
+                        $keptIds[] = $existing->id;
+                        continue;
+                    }
+                }
+                $created = $parent->banks()->create($payload);
+                $keptIds[] = $created->id;
+            }
+
+            // Anything not in the incoming list is removed — true sync semantics.
+            $parent->banks()->whereNotIn('id', $keptIds)->delete();
+        }
     }
 
     /**
@@ -495,6 +557,12 @@ class MasterController extends Controller
                 $r[] = 'date';
             } elseif ($f['t'] === 'textarea') {
                 $r[] = 'string';
+            } elseif (!empty($f['ref'])) {
+                // Reference IDs (foreign keys) can arrive as either strings (from
+                // <MasterSelect>'s hidden input) or integers (when echoing back a
+                // row's existing values). Accept both — Eloquent will cast to int
+                // on save anyway because the underlying column is unsignedBigInt.
+                $r[] = 'integer';
             } else {
                 $r[] = 'string';
                 $r[] = 'max:255';

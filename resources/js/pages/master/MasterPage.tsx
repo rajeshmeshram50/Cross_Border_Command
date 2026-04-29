@@ -100,6 +100,18 @@ function MasterPageInner({
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditTarget, setAuditTarget] = useState<any | null>(null);
 
+  // Sublist values keyed by field name (e.g. { banks: [{ bank_name, account_number, ... }] }).
+  // Sublists live OUTSIDE the form's FormData because each item is a multi-field card,
+  // not a single input. They're synced to local state via the sub-modal and merged into
+  // the JSON payload at save time.
+  const [sublistValues, setSublistValues] = useState<Record<string, any[]>>({});
+
+  // "Manage Banks" — legal_entities-only focused modal that lets the user view
+  // and edit just the bank accounts attached to a row, without opening the
+  // full entity edit form.
+  const [banksMgrOpen, setBanksMgrOpen] = useState(false);
+  const [banksMgrTarget, setBanksMgrTarget] = useState<any | null>(null);
+
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const clearFieldError = (name: string) => {
     setFieldErrors(prev => {
@@ -351,6 +363,7 @@ function MasterPageInner({
     setFieldErrors({});
     setEditingId(null);
     setViewOnly(false);
+    setSublistValues({});
     setModalOpen(true);
     // Refresh referenced masters so dropdowns reflect anything added elsewhere.
     fetchRefs();
@@ -359,6 +372,16 @@ function MasterPageInner({
     setFieldErrors({});
     setEditingId(row.id);
     setViewOnly(readonly);
+    // Hydrate sublist state from the row — backend returns child arrays inline
+    // (e.g. legal_entities → row.banks), so the form pre-fills with existing items.
+    const init: Record<string, any[]> = {};
+    for (const f of cfg.fields) {
+      if (f.t === 'sublist' && f.n) {
+        const v = row?.[f.n];
+        init[f.n] = Array.isArray(v) ? v : [];
+      }
+    }
+    setSublistValues(init);
     setModalOpen(true);
     fetchRefs();
   };
@@ -449,6 +472,9 @@ function MasterPageInner({
       if (f.sec || !f.n) continue;
       // Auto-generated fields are filled by the server, never the user.
       if (f.auto) continue;
+      // Sublist values aren't tied to a single FormData input — they live in
+      // their own state and are validated by the sub-modal at add/edit time.
+      if (f.t === 'sublist') continue;
       // File inputs: required check uses File.size; skip the rest of validation.
       if (f.t === 'file') {
         const v = fd.get(f.n);
@@ -522,6 +548,12 @@ function MasterPageInner({
       // skip them so the backend stays the single source of truth and
       // the frontend's preview value never overrides the canonical code.
       if (f.auto) continue;
+      // Sublist fields ride alongside the parent's own fields — emit the
+      // current array for each so the controller can sync child rows.
+      if (f.t === 'sublist') {
+        payload[f.n] = sublistValues[f.n] || [];
+        continue;
+      }
       const raw = fd.get(f.n);
       if (f.t === 'number') {
         payload[f.n] = raw == null || raw === '' ? null : Number(raw);
@@ -876,7 +908,7 @@ function MasterPageInner({
     // Icon column — hidden on rich masters (designations / roles / kpis /
     // departments) since the colored type/level/priority/code pills already
     // give a strong visual cue.
-    if (cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'assets' && cfg.slug !== 'departments') {
+    if (cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'legal_entities' && cfg.slug !== 'departments') {
       cols.push({
         header: 'Icon',
         accessorKey: '__icon',
@@ -1057,6 +1089,14 @@ function MasterPageInner({
               disabled={blockedByRank}
               onClick={() => handleDeleteClick(info.row.original)}
             />}
+            {cfg.slug === 'legal_entities' && caps.edit && (
+              <ActionBtn
+                title="Manage Bank Accounts"
+                icon="ri-bank-line"
+                color="primary"
+                onClick={() => { setBanksMgrTarget(info.row.original); setBanksMgrOpen(true); }}
+              />
+            )}
             <ActionBtn
               title="Audit History"
               icon="ri-history-line"
@@ -1166,7 +1206,7 @@ function MasterPageInner({
       {cfg.slug !== 'departments' && (
       <Row>
         <Col xs={12}>
-          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets') ? (
+          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities') ? (
             <div
               className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"
               style={{
@@ -1191,6 +1231,7 @@ function MasterPageInner({
                     {cfg.slug === 'roles' ? 'Role Master'
                       : cfg.slug === 'kpis' ? 'KPI Master'
                       : cfg.slug === 'assets' ? 'Asset Master'
+                      : cfg.slug === 'legal_entities' ? 'Legal Entities'
                       : cfg.title}
                   </h4>
                   <p className="mb-0 text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
@@ -1200,6 +1241,8 @@ function MasterPageInner({
                       ? 'Define performance targets, role assignments and tracking criteria for KPIs'
                       : cfg.slug === 'assets'
                       ? 'Track company equipment, vendors, warranties and depreciation across the organisation'
+                      : cfg.slug === 'legal_entities'
+                      ? 'Manage all legal entities — entity details, logo, bank accounts & address'
                       : 'Manage all job roles, hierarchy levels, and role structure for employees'}
                   </p>
                 </div>
@@ -1283,7 +1326,7 @@ function MasterPageInner({
 
       {/* "What you are doing here" — hidden on designations & roles since the
           rich title strip already carries the subtitle context. */}
-      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && <WhatYouDoHere cfg={cfg} onAdd={openAdd} canAdd={caps.add} />}
+      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && <WhatYouDoHere cfg={cfg} onAdd={openAdd} canAdd={caps.add} />}
 
       {/* KPI strip — only when the master config opts in via `kpis` */}
       {cfg.kpis && cfg.kpis.length > 0 && (
@@ -1336,7 +1379,7 @@ function MasterPageInner({
       {/* Main card — search + Add New row, then table */}
       <Row>
         <Col xs={12}>
-          <Card className={`shadow-sm ${(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets') ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
+          <Card className={`shadow-sm ${(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities') ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
             <CardBody>
               {/* Designations-only: KPI strip + hierarchy chips. */}
               {cfg.slug === 'designations' && (
@@ -1360,7 +1403,7 @@ function MasterPageInner({
 
               {/* Search bar (left) + filters/Add button on the right. */}
               <Row className="g-2 align-items-center mb-3">
-                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'departments') ? 4 : 6} sm={12}>
+                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities' || cfg.slug === 'departments') ? 4 : 6} sm={12}>
                   <div className="search-box">
                     <Input
                       type="text"
@@ -1372,7 +1415,7 @@ function MasterPageInner({
                     <i className="ri-search-line search-icon"></i>
                   </div>
                 </Col>
-                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'departments') ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
+                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities' || cfg.slug === 'departments') ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
                   {cfg.slug === 'designations' && (
                     <DesignationInlineFilters
                       refData={refData}
@@ -1417,7 +1460,7 @@ function MasterPageInner({
                   )}
                   {/* Add button — shown here for non-rich masters; designations,
                       roles, kpis & departments host their Add button elsewhere. */}
-                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'assets' && cfg.slug !== 'departments' && caps.add && (
+                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'legal_entities' && cfg.slug !== 'departments' && caps.add && (
                     <Button
                       color="secondary"
                       className="btn-label waves-effect waves-light rounded-pill"
@@ -1563,13 +1606,13 @@ function MasterPageInner({
           </div>
         </div>
         <Form onSubmit={handleSave}>
-          <ModalBody className="p-4">
+          <ModalBody className="px-4 py-3">
             {sectionedFields.map((group, gIdx) => {
               const p = SECTION_PALETTES[gIdx % SECTION_PALETTES.length];
               return (
-                <div key={gIdx} className={gIdx > 0 ? 'mt-4 pt-1' : ''}>
+                <div key={gIdx} className={gIdx > 0 ? 'mt-3' : ''}>
                   {group.sec && (
-                    <div className="d-flex align-items-center gap-2 mb-3">
+                    <div className="d-flex align-items-center gap-2 mb-2">
                       <span
                         className="flex-shrink-0"
                         style={{ width: 4, height: 20, background: p.grad, borderRadius: 2 }}
@@ -1591,8 +1634,8 @@ function MasterPageInner({
                       />
                     </div>
                   )}
-                  <Row className="g-3">
-                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords))}
+                  <Row className="g-2">
+                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next }))))}
                   </Row>
                 </div>
               );
@@ -1664,7 +1707,439 @@ function MasterPageInner({
         record={auditTarget}
         primaryLabel={auditTarget ? deleteLabel(auditTarget) : ''}
       />
+
+      <BanksManagerModal
+        open={banksMgrOpen}
+        onClose={() => { setBanksMgrOpen(false); setBanksMgrTarget(null); }}
+        entity={banksMgrTarget}
+        bankField={cfg.fields.find(f => f.t === 'sublist' && f.n === 'banks') || null}
+        onSaved={(updatedRow) => {
+          setRecords(prev => prev.map(r => r.id === updatedRow.id ? updatedRow : r));
+          setBanksMgrTarget(updatedRow);
+        }}
+      />
+
     </>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────
+ * Inline sublist — replaces the previous modal-over-modal approach.
+ * Renders existing items as cards plus an inline editor panel that
+ * expands below the cards when adding/editing. No nested popups, and
+ * multiple items can still be added one after another.
+ * ──────────────────────────────────────────────────────────────────── */
+function InlineSublist({
+  field,
+  value,
+  onChange,
+  viewOnly,
+}: {
+  field: FieldDef;
+  value: any[];
+  onChange: (next: any[]) => void;
+  viewOnly: boolean;
+}) {
+  // editingIdx: null = panel closed; -1 = adding new; 0+ = editing that index.
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  // Draft mirrors the in-progress item while the panel is open.
+  const [draft, setDraft] = useState<Record<string, any>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  if (!field.subFields) return null;
+
+  const fmtVal = (v: any): string => {
+    if (v == null || v === '') return '';
+    if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+    return String(v);
+  };
+  const lines = (item: any): string => {
+    const parts: string[] = [];
+    for (const fname of (field.subCardLines || [])) {
+      const v = fmtVal(item[fname]);
+      if (v !== '') parts.push(v);
+    }
+    return parts.join(' · ');
+  };
+
+  const openAdd = () => {
+    setEditingIdx(-1);
+    setDraft({});
+    setErrors({});
+  };
+  const openEdit = (idx: number) => {
+    setEditingIdx(idx);
+    // Clone item; normalise is_primary back to Yes/No string for the select.
+    const item = value[idx] || {};
+    const init: Record<string, any> = { ...item };
+    if (field.subPrimaryFlagField) {
+      const flag = item[field.subPrimaryFlagField];
+      init[field.subPrimaryFlagField] = (flag === true || flag === 'Yes' || flag === 1) ? 'Yes' : 'No';
+    }
+    setDraft(init);
+    setErrors({});
+  };
+  const closePanel = () => {
+    setEditingIdx(null);
+    setDraft({});
+    setErrors({});
+  };
+  const deleteItem = (idx: number) => {
+    onChange(value.filter((_, i) => i !== idx));
+    if (editingIdx === idx) closePanel();
+  };
+
+  const handleSubmit = () => {
+    if (!field.subFields) return;
+    const errs: Record<string, string> = {};
+    const payload: Record<string, any> = {};
+
+    for (const sf of field.subFields) {
+      const raw = draft[sf.n];
+      const str = raw == null ? '' : String(raw).trim();
+      if (sf.r && !str) errs[sf.n] = `${sf.l} is required`;
+      if (sf.n === field.subPrimaryFlagField) {
+        payload[sf.n] = str === 'Yes' || str === 'true' || str === '1' || raw === true;
+      } else if (sf.t === 'number') {
+        payload[sf.n] = str === '' ? null : Number(str);
+      } else {
+        payload[sf.n] = str === '' ? null : str;
+      }
+    }
+
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+
+    // Preserve existing id when editing so backend syncs in place.
+    if (editingIdx != null && editingIdx >= 0) {
+      const existing = value[editingIdx];
+      if (existing?.id) payload.id = existing.id;
+      const next = [...value];
+      next[editingIdx] = { ...existing, ...payload };
+      onChange(next);
+    } else {
+      onChange([...value, payload]);
+    }
+    closePanel();
+  };
+
+  const updateDraft = (name: string, val: any) => {
+    setDraft(prev => ({ ...prev, [name]: val }));
+    if (errors[name]) {
+      setErrors(prev => {
+        const n = { ...prev };
+        delete n[name];
+        return n;
+      });
+    }
+  };
+
+  return (
+    <div className="sublist-wrap">
+      {value.map((item, idx) => {
+        if (editingIdx === idx) {
+          // While being edited inline, the row collapses into a "currently editing" hint;
+          // the actual fields render in the editor panel below.
+          return (
+            <div key={idx} className="sublist-card sublist-card-editing">
+              <i className="ri-pencil-line" style={{ color: '#405189', fontSize: 14 }} />
+              <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--vz-secondary-color)' }}>
+                Editing {field.subSingular?.toLowerCase() || 'item'} #{idx + 1} below…
+              </span>
+            </div>
+          );
+        }
+        const title = item[field.subCardTitleField || ''] || `Item ${idx + 1}`;
+        const subtitle = item[field.subCardSubtitleField || ''] || '';
+        const isPrimary = !!(field.subPrimaryFlagField &&
+          (item[field.subPrimaryFlagField] === true ||
+           item[field.subPrimaryFlagField] === 'Yes' ||
+           item[field.subPrimaryFlagField] === 1));
+        return (
+          <div className="sublist-card" key={idx}>
+            <div className="d-flex align-items-start gap-3 flex-grow-1 min-w-0">
+              <span className="sublist-card-icon">
+                <i className="ri-bank-line" />
+              </span>
+              <div className="flex-grow-1 min-w-0">
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <span className="sublist-card-title">{title}</span>
+                  {isPrimary && (
+                    <span className="sublist-card-primary">
+                      <i className="ri-star-fill" />PRIMARY
+                    </span>
+                  )}
+                </div>
+                {subtitle && <div className="sublist-card-subtitle">{subtitle}</div>}
+                {lines(item) && <div className="sublist-card-lines">{lines(item)}</div>}
+              </div>
+            </div>
+            {!viewOnly && (
+              <div className="d-flex align-items-center gap-1 flex-shrink-0">
+                <button
+                  type="button"
+                  className="sublist-card-action"
+                  title={`Edit ${field.subSingular || 'item'}`}
+                  onClick={() => openEdit(idx)}
+                >
+                  <i className="ri-pencil-line" />
+                </button>
+                <button
+                  type="button"
+                  className="sublist-card-action danger"
+                  title={`Delete ${field.subSingular || 'item'}`}
+                  onClick={() => deleteItem(idx)}
+                >
+                  <i className="ri-delete-bin-line" />
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Inline editor panel — shown when adding or editing. Lives in the same
+          parent modal, no nested popup. */}
+      {!viewOnly && editingIdx != null && (
+        <div className="sublist-editor">
+          <div className="sublist-editor-head">
+            <span className="sublist-editor-title">
+              <i className={editingIdx === -1 ? 'ri-add-line' : 'ri-pencil-line'} />
+              {editingIdx === -1 ? 'Add' : 'Edit'} {field.subSingular || 'Item'}
+            </span>
+          </div>
+          <Row className="g-2">
+            {field.subFields.map((sf, sfIdx) => {
+              const err = errors[sf.n];
+              const val = draft[sf.n] ?? '';
+              if (sf.t === 'select') {
+                const options = normalizeOpts(sf.opts);
+                return (
+                  <Col md={6} key={sf.n || `sf-${sfIdx}`}>
+                    <Label className="d-flex align-items-center gap-2">
+                      <span>{sf.l}{sf.r && <span className="req-star">*</span>}</span>
+                    </Label>
+                    <div className="master-field sel">
+                      <i className="ri-list-check-2 master-field-icon" />
+                      <MasterSelect
+                        value={String(val)}
+                        options={options}
+                        placeholder={sf.p || 'Select…'}
+                        invalid={!!err}
+                        onChange={(v) => updateDraft(sf.n, v)}
+                      />
+                    </div>
+                    {err && <FormFeedback style={{ display: 'block', fontSize: 11.5, marginTop: 4 }}>{err}</FormFeedback>}
+                  </Col>
+                );
+              }
+              return (
+                <Col md={6} key={sf.n || `sf-${sfIdx}`}>
+                  <Label className="d-flex align-items-center gap-2">
+                    <span>{sf.l}{sf.r && <span className="req-star">*</span>}</span>
+                  </Label>
+                  <div className="master-field">
+                    <i className="ri-edit-box-line master-field-icon" />
+                    <Input
+                      type={sf.t === 'number' ? 'number' : 'text'}
+                      placeholder={sf.p}
+                      value={String(val)}
+                      onChange={(e) => updateDraft(sf.n, e.target.value)}
+                      invalid={!!err}
+                    />
+                  </div>
+                  {err && <FormFeedback style={{ display: 'block', fontSize: 11.5, marginTop: 4 }}>{err}</FormFeedback>}
+                </Col>
+              );
+            })}
+          </Row>
+          <div className="sublist-editor-actions">
+            <button type="button" className="sublist-editor-cancel" onClick={closePanel}>
+              <i className="ri-close-line" /> Cancel
+            </button>
+            <button type="button" className="sublist-editor-save" onClick={handleSubmit}>
+              <i className="ri-check-line" />
+              {editingIdx === -1 ? `Add ${field.subSingular || 'Item'}` : 'Update'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* +Add button — hidden while the editor panel is open to avoid the
+          accidental "two new items in flight" state. */}
+      {!viewOnly && editingIdx == null && (
+        <button
+          type="button"
+          className="sublist-add-btn"
+          onClick={openAdd}
+        >
+          <i className="ri-add-line" />
+          Add {field.subSingular || 'Item'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+
+/* ────────────────────────────────────────────────────────────────────
+ * Banks Manager modal — focused view of just the bank accounts for one
+ * legal entity. Opens from the bank-icon action button in the row. Lets
+ * the user inspect existing banks and add/edit/remove them without
+ * touching the rest of the entity form.
+ * ──────────────────────────────────────────────────────────────────── */
+function BanksManagerModal({
+  open,
+  onClose,
+  entity,
+  bankField,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  entity: any | null;
+  bankField: FieldDef | null;
+  onSaved: (updatedRow: any) => void;
+}) {
+  const toast = useToast();
+  const [banks, setBanks] = useState<any[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  // Re-hydrate every time a different entity is opened.
+  useEffect(() => {
+    if (entity) {
+      setBanks(Array.isArray(entity.banks) ? entity.banks : []);
+    } else {
+      setBanks([]);
+    }
+  }, [entity]);
+
+  // Auto-persist — every add/edit/delete in the InlineSublist immediately
+  // PUTs the full banks array back to the server. The user gets a single,
+  // consistent place ("the cards") that always reflects DB state — no extra
+  // outer "Save" button required and no chance of leaving unsaved changes.
+  const persistBanks = async (nextBanks: any[]) => {
+    if (!entity) return;
+    setSaving(true);
+    try {
+      const payload: Record<string, any> = {};
+      const fields = [
+        'entity_name', 'legal_name', 'cin', 'date_of_incorporation',
+        'type_of_business', 'sector', 'nature_of_business', 'country_id',
+        'address_line1', 'address_line2', 'city', 'state_id', 'zip_code',
+        'currency_id', 'financial_year', 'status',
+      ];
+      for (const k of fields) {
+        if (entity[k] != null) payload[k] = entity[k];
+      }
+      payload.banks = nextBanks;
+
+      const { data } = await api.put(`/master/legal_entities/${entity.id}`, payload);
+      // Re-sync from the server response so newly-created banks pick up their ids.
+      setBanks(Array.isArray(data.banks) ? data.banks : []);
+      onSaved(data);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Could not save bank details';
+      toast.error('Error', msg);
+      // Revert local state to last server-confirmed banks.
+      setBanks(Array.isArray(entity.banks) ? entity.banks : []);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!entity || !bankField) return null;
+
+  const entityLabel = entity.entity_name || entity.legal_name || `#${entity.id}`;
+
+  return (
+    <Modal isOpen={open} toggle={() => { if (!saving) onClose(); }} centered size="lg" backdrop="static">
+      <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--vz-border-color)' }}>
+        <div className="d-flex align-items-start justify-content-between gap-3">
+          <div className="d-flex align-items-center gap-3 min-w-0">
+            <span
+              className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+              style={{
+                width: 40, height: 40,
+                borderRadius: 10,
+                background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
+                color: '#ffffff',
+                boxShadow: '0 4px 10px rgba(64,81,137,0.28), inset 0 1px 0 rgba(255,255,255,0.18)',
+              }}
+            >
+              <i className="ri-bank-line" style={{ fontSize: 18 }} />
+            </span>
+            <div className="min-w-0">
+              <h5 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                Bank Accounts
+              </h5>
+              <small className="text-muted" style={{ fontSize: 12 }}>{entityLabel}</small>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { if (!saving) onClose(); }}
+            aria-label="Close"
+            disabled={saving}
+            className="d-inline-flex align-items-center justify-content-center"
+            style={{
+              width: 30, height: 30,
+              borderRadius: 8,
+              border: '1px solid var(--vz-border-color)',
+              background: 'var(--vz-card-bg)',
+              color: 'var(--vz-secondary-color)',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              flexShrink: 0,
+              opacity: saving ? 0.5 : 1,
+            }}
+          >
+            <i className="ri-close-line" style={{ fontSize: 15 }} />
+          </button>
+        </div>
+      </div>
+      <ModalBody className="px-4 py-3" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+        {bankField.subDesc && (
+          <div className="text-muted mb-3" style={{ fontSize: 12.5 }}>{bankField.subDesc}</div>
+        )}
+        <InlineSublist
+          field={bankField}
+          value={banks}
+          viewOnly={saving}
+          onChange={(next) => {
+            // Optimistic update so the new card shows immediately, then persist.
+            setBanks(next);
+            persistBanks(next);
+          }}
+        />
+      </ModalBody>
+      <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+        <small className="d-inline-flex align-items-center gap-2" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)' }}>
+          {saving ? (
+            <>
+              <Spinner size="sm" style={{ width: 12, height: 12 }} />
+              <span>Saving…</span>
+            </>
+          ) : (
+            <>
+              <i className="ri-checkbox-circle-fill" style={{ color: '#0ab39c', fontSize: 13 }} />
+              <span>{banks.length} bank account{banks.length === 1 ? '' : 's'} · changes auto-save</span>
+            </>
+          )}
+        </small>
+        <Button
+          type="button"
+          color="primary"
+          onClick={onClose}
+          disabled={saving}
+          className="d-inline-flex align-items-center gap-2"
+        >
+          <i className="ri-check-line" />
+          Done
+        </Button>
+      </ModalFooter>
+    </Modal>
   );
 }
 
@@ -2682,6 +3157,8 @@ function renderField(
   clearFieldError: (name: string) => void = () => {},
   defaultSpan: number = 4,
   allRecords: any[] = [],
+  sublistValues: Record<string, any[]> = {},
+  onSublistChange: (field: FieldDef, next: any[]) => void = () => {},
 ): React.ReactNode {
   if (f.sec) {
     return (
@@ -2692,6 +3169,25 @@ function renderField(
           </span>
           <div className="flex-grow-1" style={{ height: 1, background: 'var(--vz-border-color)' }} />
         </div>
+      </Col>
+    );
+  }
+
+  // Sublist field — renders inline cards + an inline editor panel that
+  // expands when adding/editing (no modal-on-modal stacking).
+  if (f.t === 'sublist') {
+    const items = sublistValues[f.n] || [];
+    return (
+      <Col md={12} key={f.n || `sub-${i}`}>
+        {f.subDesc && (
+          <div className="text-muted mb-2" style={{ fontSize: 12 }}>{f.subDesc}</div>
+        )}
+        <InlineSublist
+          field={f}
+          value={items}
+          viewOnly={viewOnly}
+          onChange={(next) => onSublistChange(f, next)}
+        />
       </Col>
     );
   }

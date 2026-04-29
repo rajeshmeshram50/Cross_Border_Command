@@ -561,11 +561,11 @@ export const MASTER_MODAL_CSS = `
       var(--vz-card-bg);
   }
   .master-modal label {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    margin-bottom: 6px;
+    margin-bottom: 3px;
     display: inline-flex;
     align-items: center;
     gap: 4px;

@@ -6,7 +6,7 @@ export type FieldOption = string | { value: string; label: string };
 export type FieldDef = {
   n: string;                // field name (row key)
   l: string;                // label
-  t: 'text' | 'number' | 'email' | 'date' | 'textarea' | 'select' | 'file';
+  t: 'text' | 'number' | 'email' | 'date' | 'textarea' | 'select' | 'file' | 'sublist';
   r?: boolean;              // required
   p?: string;               // placeholder
   full?: boolean;           // span full row
@@ -23,6 +23,15 @@ export type FieldDef = {
   maxMb?: number;           // file input max size in MB (rendered as hint, validated client-side)
   optionalLabel?: string;   // small uppercase tag next to label, e.g. "OPTIONAL" or "MANDATORY"
   icon?: string;            // remix icon class to render before the label (used by file fields)
+  // Sublist fields (t: 'sublist') — render a card-list of child rows inside
+  // the parent form (e.g. legal_entities → bank accounts).
+  subFields?: FieldDef[];   // fields shown in the sub-modal for each item
+  subSingular?: string;     // singular label for the sub-modal title (e.g. 'Bank Detail')
+  subDesc?: string;         // small subtitle under the sublist section header
+  subCardTitleField?: string;     // which sub-field is the card's main title (e.g. 'bank_name')
+  subCardSubtitleField?: string;  // small text under the title (e.g. 'branch_name')
+  subCardLines?: string[];        // additional lines rendered on the card (field names)
+  subPrimaryFlagField?: string;   // boolean field that marks an item as PRIMARY (e.g. 'is_primary')
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
@@ -96,6 +105,80 @@ const C: Record<string, MasterConfig> = {
       { icon: 'ri-file-list-3-line', title: 'Add Tax Info', desc: 'GSTIN, PAN, CIN, IEC for exports' },
       { icon: 'ri-global-line', title: 'Add Contact Details', desc: 'Email, mobile, website, address' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Enables use across all modules' },
+    ],
+  },
+
+  legal_entities: {
+    key: 'legal_entities', slug: 'legal_entities', title: 'Legal Entities', titleSingular: 'Legal Entity',
+    icon: 'ri-bank-line', iconColor: 'primary', iconBg: 'primary',
+    desc: 'Manage all legal entities — entity details, logo, bank accounts & address',
+    cat: 'Identity & Entity',
+    fields: [
+      // — IDENTITY ----------------------------------------------------
+      { sec: 'Identity', n: '', l: '', t: 'text' },
+      { n: 'logo_path', l: 'Logo', t: 'file', accept: '.png,.jpg,.jpeg', maxMb: 2, icon: 'ri-image-line', optionalLabel: 'OPTIONAL' },
+      { n: 'country_id', l: 'Country', t: 'select', r: true, ref: 'countries', refL: 'name', p: '— Select —' },
+      { n: 'entity_name', l: 'Entity Name', t: 'text', r: true, p: 'e.g. Inorbvict Healthcare India Pvt Ltd' },
+      { n: 'legal_name', l: 'Legal Name', t: 'text', r: true, p: 'Legal name as registered' },
+      { n: 'cin', l: 'CIN', t: 'text', r: true, p: 'e.g. U85100PN2014PTC152252' },
+      { n: 'date_of_incorporation', l: 'Date of Incorporation', t: 'date', r: true },
+      { n: 'type_of_business', l: 'Type of Business', t: 'select', r: true, p: '— Select —',
+        opts: ['Manufacturing', 'Trading', 'Services', 'IT / ITeS', 'Healthcare', 'Construction', 'Logistics', 'Retail', 'Education', 'Hospitality', 'Agriculture', 'Other'] },
+      { n: 'sector', l: 'Sector', t: 'select', r: true, p: '— Select —',
+        opts: ['Healthcare', 'IT', 'Finance', 'Manufacturing', 'Retail', 'Education', 'Real Estate', 'Logistics', 'Agriculture', 'Energy', 'Telecom', 'Hospitality', 'Other'] },
+      { n: 'nature_of_business', l: 'Nature of Business', t: 'select', p: '— Select —',
+        opts: ['Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Proprietorship', 'OPC (One Person Company)', 'Section 8 Company', 'Trust', 'Society', 'Other'] },
+      { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
+
+      // — ADDRESS -----------------------------------------------------
+      { sec: 'Address', n: '', l: '', t: 'text' },
+      { n: 'address_line1', l: 'Address Line 1', t: 'text', r: true, p: 'Office address' },
+      { n: 'address_line2', l: 'Address Line 2', t: 'text', p: 'Street, locality' },
+      { n: 'city', l: 'City', t: 'text', r: true, p: 'e.g. Pune' },
+      { n: 'state_id', l: 'State', t: 'select', r: true, ref: 'states', refL: 'name', p: '— Select —' },
+      { n: 'zip_code', l: 'Zip Code', t: 'text', r: true, p: 'e.g. 411045' },
+
+      // — FINANCIAL ---------------------------------------------------
+      { sec: 'Financial', n: '', l: '', t: 'text' },
+      { n: 'currency_id', l: 'Currency', t: 'select', ref: 'currencies', refL: 'name', p: '— Select —' },
+      { n: 'financial_year', l: 'Financial Year', t: 'select', p: '— Select —',
+        opts: ['April - March', 'January - December', 'July - June'] },
+
+      // — BANK DETAILS (sublist — saved alongside the entity) ---------
+      { sec: 'Bank Details', n: '', l: '', t: 'text' },
+      { n: 'banks', l: 'Bank Accounts', t: 'sublist',
+        subSingular: 'Bank Detail',
+        subDesc: 'Bank accounts used for payroll & expense tracking',
+        subCardTitleField: 'bank_name',
+        subCardSubtitleField: 'branch_name',
+        subCardLines: ['account_number', 'ifsc_code', 'account_type'],
+        subPrimaryFlagField: 'is_primary',
+        subFields: [
+          { n: 'bank_name', l: 'Bank Name', t: 'text', r: true, p: 'e.g. HDFC Bank' },
+          { n: 'branch_name', l: 'Branch Name', t: 'text', p: 'e.g. HINJAWADI branch' },
+          { n: 'account_number', l: 'Account Number', t: 'text', r: true, p: 'Full account number' },
+          { n: 'ifsc_code', l: 'IFSC Code', t: 'text', p: 'e.g. HDFC0000001' },
+          { n: 'account_type', l: 'Account Type', t: 'select', opts: ['Current', 'Savings'] },
+          { n: 'is_primary', l: 'Primary Account', t: 'select', opts: [{ value: 'No', label: 'No' }, { value: 'Yes', label: 'Yes' }] },
+        ],
+      },
+    ],
+    cols: ['entity_name', 'legal_name', 'cin', 'country_id', 'type_of_business', 'sector', 'status'],
+    colL: ['Entity Name', 'Legal Name', 'CIN', 'Country', 'Type of Business', 'Sector', 'Status'],
+    uFields: ['entity_name', 'cin'],
+    data: [],
+    kpis: [
+      { label: 'Total Entities',    icon: 'ri-bank-line',           gradient: 'linear-gradient(135deg,#405189 0%,#6691e7 100%)', compute: r => r.length },
+      { label: 'Active',            icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
+      { label: 'Inactive',          icon: 'ri-close-circle-line',   gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
+      { label: 'Countries Covered', icon: 'ri-global-line',         gradient: 'linear-gradient(135deg,#3577f1 0%,#6da7ff 100%)', compute: r => new Set(r.map((x:any) => x.country_id).filter(Boolean)).size },
+      { label: 'Sectors',           icon: 'ri-briefcase-4-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a993fd 100%)', compute: r => new Set(r.map((x:any) => x.sector).filter(Boolean)).size },
+    ],
+    wtd: [
+      { icon: 'ri-bank-line',         title: 'Add Legal Entity',    desc: 'CIN, type of business, sector' },
+      { icon: 'ri-image-line',        title: 'Upload Company Logo', desc: 'Used on all documents & reports' },
+      { icon: 'ri-map-pin-line',      title: 'Complete Address',    desc: 'Registered office address' },
+      { icon: 'ri-coins-line',        title: 'Set Currency & FY',   desc: 'e.g. INR · April - March' },
     ],
   },
 
