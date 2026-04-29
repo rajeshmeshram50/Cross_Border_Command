@@ -8,33 +8,33 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Roles extends Model
+class Kpis extends Model
 {
-    protected $table = 'master_roles';
+    protected $table = 'master_kpis';
 
     protected $fillable = [
         'client_id',
         'branch_id',
         'name',
         'code',
-        'role_type',
-        'department_id',
-        'role_category',
         'description',
+        'role_id',
+        'target_type',
+        'priority',
         'status',
         'created_by',
     ];
 
     /**
-     * Auto-generate the role code (ROL-01, ROL-02, …) on create when the
-     * caller doesn't supply one.
+     * Auto-generate the KPI code (KPI-01, KPI-02, …) on create
+     * if the caller didn't supply one.
      */
     protected static function booted(): void
     {
         static::creating(function (self $row) {
             if (empty($row->code)) {
                 $next = (int) static::max('id') + 1;
-                $row->code = 'ROL-' . str_pad((string) $next, 2, '0', STR_PAD_LEFT);
+                $row->code = 'KPI-' . str_pad((string) $next, 2, '0', STR_PAD_LEFT);
             }
         });
     }
@@ -54,8 +54,8 @@ class Roles extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    public function department(): BelongsTo
+    public function role(): BelongsTo
     {
-        return $this->belongsTo(Departments::class, 'department_id');
+        return $this->belongsTo(Roles::class, 'role_id');
     }
 }
