@@ -775,3 +775,215 @@
   background: color-mix(in srgb, #ffffff 10%, transparent);
   color: rgba(255,255,255,0.9);
 }
+
+/* ---------------------------------------------------------------------
+   11. Sublist (e.g. legal_entities → bank accounts)
+   Card list with title + meta + actions, plus a dashed "+Add" button.
+   --------------------------------------------------------------------- */
+.sublist-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sublist-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #6691e7 5%, var(--vz-card-bg));
+  border: 1px solid color-mix(in srgb, #6691e7 18%, var(--vz-border-color));
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.sublist-card:hover {
+  border-color: color-mix(in srgb, #6691e7 30%, var(--vz-border-color));
+  box-shadow: 0 4px 12px rgba(64,81,137,0.08);
+}
+.sublist-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px; height: 38px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #405189 0%, #6691e7 100%);
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(64,81,137,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.sublist-card-icon i { font-size: 17px; line-height: 1; }
+.sublist-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  letter-spacing: 0.005em;
+}
+.sublist-card-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1.5px 7px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: color-mix(in srgb, #6691e7 14%, var(--vz-card-bg));
+  color: #405189;
+  border: 1px solid color-mix(in srgb, #6691e7 28%, transparent);
+}
+.sublist-card-primary i { font-size: 9px; }
+.sublist-card-subtitle {
+  margin-top: 1px;
+  font-size: 12px;
+  color: var(--vz-secondary-color);
+}
+.sublist-card-lines {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vz-body-color);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+.sublist-card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--vz-border-color);
+  background: var(--vz-card-bg);
+  color: var(--vz-secondary-color);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.sublist-card-action:hover {
+  background: color-mix(in srgb, var(--vz-body-color) 6%, var(--vz-card-bg));
+  color: var(--vz-body-color);
+}
+.sublist-card-action.danger:hover {
+  background: color-mix(in srgb, #f06548 12%, var(--vz-card-bg));
+  border-color: color-mix(in srgb, #f06548 35%, var(--vz-border-color));
+  color: #f06548;
+}
+.sublist-card-action i { font-size: 14px; line-height: 1; }
+.sublist-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 9px;
+  border: 1.5px dashed color-mix(in srgb, #6691e7 35%, var(--vz-border-color));
+  background: transparent;
+  color: #405189;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.sublist-add-btn:hover {
+  background: color-mix(in srgb, #6691e7 6%, transparent);
+  border-color: #6691e7;
+}
+.sublist-add-btn i { font-size: 14px; }
+[data-bs-theme="dark"] .sublist-card-primary,
+[data-layout-mode="dark"] .sublist-card-primary {
+  color: #8aa1d9;
+}
+[data-bs-theme="dark"] .sublist-add-btn,
+[data-layout-mode="dark"] .sublist-add-btn {
+  color: #8aa1d9;
+}
+
+/* "Editing this card below…" placeholder — shows in place of the card while
+   it's being edited inline so the user knows which row is in flight. */
+.sublist-card-editing {
+  background: color-mix(in srgb, #6691e7 10%, var(--vz-card-bg));
+  border-style: dashed;
+  border-color: color-mix(in srgb, #6691e7 35%, var(--vz-border-color));
+  padding: 10px 14px;
+  font-style: italic;
+}
+.sublist-card-editing:hover {
+  box-shadow: none;
+}
+
+/* Inline editor panel — sits inside the parent modal (no nested popup). */
+.sublist-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #6691e7 4%, var(--vz-card-bg));
+  border: 1px solid color-mix(in srgb, #6691e7 25%, var(--vz-border-color));
+  box-shadow: 0 4px 14px rgba(64,81,137,0.10);
+}
+.sublist-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sublist-editor-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #405189;
+}
+.sublist-editor-title i { font-size: 14px; }
+.sublist-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, #6691e7 20%, var(--vz-border-color));
+}
+.sublist-editor-cancel,
+.sublist-editor-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.sublist-editor-cancel {
+  border: 1px solid var(--vz-border-color);
+  background: var(--vz-card-bg);
+  color: var(--vz-secondary-color);
+}
+.sublist-editor-cancel:hover {
+  background: color-mix(in srgb, var(--vz-body-color) 6%, var(--vz-card-bg));
+  color: var(--vz-body-color);
+}
+.sublist-editor-save {
+  border: 0;
+  background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(64,81,137,0.28);
+}
+.sublist-editor-save:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(64,81,137,0.36);
+}
+.sublist-editor-cancel i,
+.sublist-editor-save i { font-size: 14px; }
+[data-bs-theme="dark"] .sublist-editor,
+[data-layout-mode="dark"] .sublist-editor {
+  background: color-mix(in srgb, #6691e7 8%, var(--vz-card-bg));
+}
+[data-bs-theme="dark"] .sublist-editor-title,
+[data-layout-mode="dark"] .sublist-editor-title {
+  color: #8aa1d9;
+}
