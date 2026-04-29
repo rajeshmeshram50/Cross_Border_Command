@@ -983,7 +983,7 @@ export const MASTER_MODAL_CSS = `
     height: 26px;
     border-radius: 6px;
     font-size: 11.5px;
-    font-weight: 500;
+    font-weight: 400;
     background: transparent;
     color: var(--vz-heading-color, var(--vz-body-color));
     border: none;
