@@ -923,7 +923,11 @@ export default function HrEmployees() {
                         const primary = tone(e.primaryRole);
                         const ancillary = e.ancillaryRole ? tone(e.ancillaryRole) : null;
                         return (
-                          <tr key={e.id}>
+                          <tr
+                            key={e.id}
+                            onClick={() => navigate(`/hr/employees/${encodeURIComponent(e.id)}/profile`, { state: { employee: e } })}
+                            style={{ cursor: 'pointer' }}
+                          >
                             <td className="ps-3 text-center text-muted fs-13">{idx + 1}</td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
@@ -1095,7 +1099,7 @@ export default function HrEmployees() {
                                 );
                               })()}
                             </td>
-                            <td className="pe-3">
+                            <td className="pe-3" onClick={(ev) => ev.stopPropagation()}>
                               <div className="d-flex gap-1 justify-content-center align-items-center">
                                 <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"      onClick={() => openEditEmployee(e)} />
                                 {tab === 'disabled' ? (
@@ -1106,9 +1110,7 @@ export default function HrEmployees() {
                                 ) : null}
                                 <ActionBtn title="Workstation" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} />
                                 <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} />
-                                {tab === 'active' && (
-                                  <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} />
-                                )}
+                                <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} />
                                 <ToggleSwitch
                                   initial={e.enabled}
                                   onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
@@ -1139,12 +1141,14 @@ export default function HrEmployees() {
         isOpen={onboardOpen}
         toggle={closeOnboard}
         centered
-        size="md"
+        size="lg"
         contentClassName="onb-modal-content border-0"
+        modalClassName="onb-modal-wide"
         backdrop="static"
         keyboard={false}
       >
         <style>{`
+          .onb-modal-wide .modal-dialog { max-width: min(900px, 92vw); }
           .onb-modal-content { border-radius: 24px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
           .onb-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px; font-size: 14px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; height: 50px; }
           .onb-input::placeholder { color: #9ca3af; font-weight: 400; }
