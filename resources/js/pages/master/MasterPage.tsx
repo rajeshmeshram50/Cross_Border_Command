@@ -820,13 +820,10 @@ function MasterPageInner({
         cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
       },
     ];
-    // Icon column — hidden on designations (the level rating already gives a
-    // strong visual cue, so the duplicate badge column wastes horizontal space)
-    // and on departments (the table already leads with a coloured Code column).
-    if (cfg.slug !== 'designations' && cfg.slug !== 'departments') {
-    // Icon column — hidden on rich masters (designations / roles / kpis) since
-    // the colored type/level/priority pills already give a strong visual cue.
-    if (cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis') {
+    // Icon column — hidden on rich masters (designations / roles / kpis /
+    // departments) since the colored type/level/priority/code pills already
+    // give a strong visual cue.
+    if (cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'departments') {
       cols.push({
         header: 'Icon',
         accessorKey: '__icon',
@@ -1346,8 +1343,7 @@ function MasterPageInner({
 
               {/* Search bar (left) + filters/Add button on the right. */}
               <Row className="g-2 align-items-center mb-3">
-                <Col md={cfg.slug === 'designations' || cfg.slug === 'departments' ? 4 : 6} sm={12}>
-                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? 4 : 6} sm={12}>
+                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'departments') ? 4 : 6} sm={12}>
                   <div className="search-box">
                     <Input
                       type="text"
@@ -1359,8 +1355,7 @@ function MasterPageInner({
                     <i className="ri-search-line search-icon"></i>
                   </div>
                 </Col>
-                <Col md={cfg.slug === 'designations' || cfg.slug === 'departments' ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
-                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
+                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'departments') ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
                   {cfg.slug === 'designations' && (
                     <DesignationInlineFilters
                       refData={refData}
@@ -1381,10 +1376,6 @@ function MasterPageInner({
                       setParentFilter={setDpParentFilter}
                     />
                   )}
-                  {/* Add button — shown here for most masters; designations puts
-                      it in the page title strip, departments puts it in the
-                      "What you are doing here" header row. */}
-                  {cfg.slug !== 'designations' && cfg.slug !== 'departments' && caps.add && (
                   {cfg.slug === 'roles' && (
                     <RolesInlineFilters
                       refData={refData}
@@ -1407,9 +1398,9 @@ function MasterPageInner({
                       setPriorityFilter={setKpiPriorityFilter}
                     />
                   )}
-                  {/* Add button — shown here for non-rich masters; designations
-                      and roles get the Add button in the rich title strip. */}
-                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && caps.add && (
+                  {/* Add button — shown here for non-rich masters; designations,
+                      roles, kpis & departments host their Add button elsewhere. */}
+                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'departments' && caps.add && (
                     <Button
                       color="secondary"
                       className="btn-label waves-effect waves-light rounded-pill"

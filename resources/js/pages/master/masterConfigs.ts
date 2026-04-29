@@ -17,6 +17,8 @@ export type FieldDef = {
   sec?: string;             // section divider (no input, header only)
   auto?: boolean;           // server-generated value (e.g. auto-numbered code); rendered read-only
   hint?: string;            // small italic helper text shown next to the label
+  autogen?: (rows: any[]) => string; // optional client-side preview of an auto-generated value
+  noneLabel?: string;       // explicit "none/empty" option label for ref dropdowns (e.g. "— None (Top Level) —")
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
