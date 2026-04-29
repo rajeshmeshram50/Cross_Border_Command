@@ -1532,20 +1532,31 @@ function MasterPageInner({
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+              className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
               aria-label="Close"
               style={{
-                width: 32, height: 32,
+                width: 30, height: 30,
+                borderRadius: '50%',
                 background: 'rgba(255,255,255,0.18)',
-                border: '1px solid rgba(255,255,255,0.25)',
+                border: '1px solid rgba(255,255,255,0.30)',
                 color: '#fff',
                 cursor: 'pointer',
                 transition: 'background 0.18s ease, transform 0.18s ease',
+                padding: 0,
+                lineHeight: 1,
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.30)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)'; }}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = 'rgba(255,255,255,0.32)';
+                el.style.transform = 'rotate(90deg)';
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.background = 'rgba(255,255,255,0.18)';
+                el.style.transform = 'rotate(0deg)';
+              }}
             >
-              <i className="ri-close-line" style={{ fontSize: 18 }} />
+              <i className="ri-close-line" style={{ fontSize: 16, lineHeight: 1 }} />
             </button>
           </div>
         </div>
@@ -1605,15 +1616,14 @@ function MasterPageInner({
                 <Button
                   type="submit"
                   disabled={saving}
-                  className={
-                    saving
-                      ? 'rounded-pill d-inline-flex align-items-center justify-content-center gap-2 border-0'
-                      : 'btn-label waves-effect waves-light rounded-pill border-0'
-                  }
+                  className="rounded-pill d-inline-flex align-items-center justify-content-center gap-2 border-0 waves-effect waves-light"
                   style={{
-                    minWidth: 170,
+                    padding: '8px 20px',
                     background: 'linear-gradient(120deg, #405189 0%, #6691e7 100%)',
                     color: '#fff',
+                    fontWeight: 600,
+                    fontSize: 14,
+                    whiteSpace: 'nowrap',
                     boxShadow: '0 4px 12px rgba(64,81,137,0.3)',
                   }}
                 >
@@ -1624,7 +1634,7 @@ function MasterPageInner({
                     </>
                   ) : (
                     <>
-                      <i className="ri-save-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                      <i className="ri-save-line" style={{ fontSize: 16 }}></i>
                       {editingId != null ? `Update ${singular}` : `Save ${singular}`}
                     </>
                   )}
