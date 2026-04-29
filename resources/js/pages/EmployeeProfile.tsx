@@ -403,7 +403,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            attention. Matches the HRMS reference design. */
         .ep-fullscreen-overlay {
           position: fixed; inset: 0; z-index: 1080;
+          display: flex; flex-direction: column;
           background: var(--vz-body-bg, #f3f4f9);
+        }
+        .ep-content-pane {
+          flex: 1 1 auto;
+          min-height: 0;
           overflow-y: auto;
           padding-bottom: 32px;
         }
@@ -439,8 +444,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            panel so the navy gradient still bleeds through behind it. */
         .ep-hero-tabs {
           position: relative; z-index: 2;
-          margin-top: 24px;
-          padding: 14px 0 18px;
+          margin-top: 2px;
+          padding: 1px 0 4px;
         }
         .ep-close-btn {
           position: absolute; top: 18px; right: 22px;
@@ -742,7 +747,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       </div>
 
       {/* ── Tab content wrapper ── */}
-      <div className="px-4 pt-3">
+      <div className="ep-content-pane px-4 pt-3">
 
       {/* ── Tab: Profile Details ── */}
       {tab === 'profile' && (
@@ -2054,15 +2059,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         centered
         size="md"
         backdrop="static"
-        className="ep-reg-modal"
+        fade={false}
+        modalClassName="ep-reg-modal"
         backdropClassName="ep-reg-backdrop"
+        contentClassName="border-0"
       >
         <style>{`
           /* Lift the modal above the .ep-fullscreen-overlay (z-index 1080)
              so it isn't hidden behind the navy hero. Bootstrap defaults to
              1055/1050 which falls below the overlay. */
-          .modal.ep-reg-modal { z-index: 1090; }
-          .modal-backdrop.ep-reg-backdrop { z-index: 1085; }
+          .modal.ep-reg-modal { z-index: 2100 !important; }
+          .modal-backdrop.ep-reg-backdrop { z-index: 2095 !important; }
           .ep-reg-modal .modal-content { border: none; border-radius: 14px; overflow: hidden; }
           .ep-reg-header {
             display: flex; align-items: center; justify-content: space-between;
