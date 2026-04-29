@@ -12,6 +12,7 @@ export const MASTER_GROUPS: MenuGroup[] = [
       { id: 'master.departments',    icon: 'Building2',   label: 'Departments' },
       { id: 'master.roles',          icon: 'UserCog',     label: 'Roles' },
       { id: 'master.designations',   icon: 'BadgeCheck',  label: 'Designations' },
+      { id: 'master.kpis',           icon: 'Activity',    label: 'KPI Master' },
     ],
   },
   {

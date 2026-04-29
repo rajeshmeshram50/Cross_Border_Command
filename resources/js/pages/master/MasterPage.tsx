@@ -78,6 +78,15 @@ function MasterPageInner({
   const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
   const [dsnLevelFilter, setDsnLevelFilter] = useState<string>('all');
   const [dsnDeptFilter, setDsnDeptFilter] = useState<string>('all');
+  // Role-master-specific filter state. Only used when cfg.slug === 'roles'.
+  const [roleStatusFilter, setRoleStatusFilter] = useState<string>('all');
+  const [roleTypeFilter, setRoleTypeFilter] = useState<string>('all');
+  const [roleDeptFilter, setRoleDeptFilter] = useState<string>('all');
+  const [roleTab, setRoleTab] = useState<'all' | 'primary' | 'ancillary'>('all');
+  // KPI-master-specific filter state.
+  const [kpiRoleFilter, setKpiRoleFilter] = useState<string>('all');
+  const [kpiTargetFilter, setKpiTargetFilter] = useState<string>('all');
+  const [kpiPriorityFilter, setKpiPriorityFilter] = useState<string>('all');
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
@@ -241,6 +250,7 @@ function MasterPageInner({
   const filteredRecords = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
     const isDsn = cfg.slug === 'designations';
+    const isRole = cfg.slug === 'roles';
     const searchableKeys = [
       ...cfg.cols,
       'client_name', 'branch_name', 'creator_name',
@@ -258,6 +268,33 @@ function MasterPageInner({
           if (String(row.department_id ?? '') !== String(dsnDeptFilter)) return false;
         }
       }
+      // Role-master extra filters: tab (All/Primary/Ancillary) + Type/Status/Dept.
+      if (isRole) {
+        const rt = String(row.role_type ?? '').toLowerCase();
+        if (roleTab === 'primary' && !/primary/.test(rt)) return false;
+        if (roleTab === 'ancillary' && !/ancillary|auxiliary|operational|administrative|functional/.test(rt)) return false;
+        if (roleStatusFilter !== 'all') {
+          if (String(row.status ?? '').toLowerCase() !== roleStatusFilter.toLowerCase()) return false;
+        }
+        if (roleTypeFilter !== 'all') {
+          if (String(row.role_type ?? '') !== roleTypeFilter) return false;
+        }
+        if (roleDeptFilter !== 'all') {
+          if (String(row.department_id ?? '') !== String(roleDeptFilter)) return false;
+        }
+      }
+      // KPI-master extra filters: Role / Target Type / Priority dropdowns.
+      if (cfg.slug === 'kpis') {
+        if (kpiRoleFilter !== 'all') {
+          if (String(row.role_id ?? '') !== String(kpiRoleFilter)) return false;
+        }
+        if (kpiTargetFilter !== 'all') {
+          if (String(row.target_type ?? '') !== kpiTargetFilter) return false;
+        }
+        if (kpiPriorityFilter !== 'all') {
+          if (String(row.priority ?? '') !== kpiPriorityFilter) return false;
+        }
+      }
       if (!q) return true;
       for (const key of searchableKeys) {
         const f = cfg.fields.find(ff => ff.n === key);
@@ -267,7 +304,7 @@ function MasterPageInner({
       return false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter]);
+  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, roleStatusFilter, roleTypeFilter, roleDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter]);
 
   // Effective ref-data passed to renderField. For self-referential refs (e.g.
   // Designation's "Reports To" → Designations) we want the dropdown to reflect
@@ -315,18 +352,10 @@ function MasterPageInner({
       className="btn p-0 d-inline-flex align-items-center justify-content-center"
       style={{
         width: 30, height: 30, borderRadius: 8,
-        // Disabled gets a clearly different surface: hatched grey with a
-        // strike-through cursor and faded icon so it's obvious it's locked.
-        background: disabled
-          ? 'repeating-linear-gradient(45deg, rgba(15,23,42,0.04), rgba(15,23,42,0.04) 4px, transparent 4px, transparent 8px), var(--vz-secondary-bg)'
-          : 'var(--vz-secondary-bg)',
-        border: disabled
-          ? '1px dashed var(--vz-border-color)'
-          : '1px solid var(--vz-border-color)',
-        color: disabled
-          ? 'rgba(120, 120, 120, 0.5)'
-          : 'var(--vz-secondary-color)',
-        opacity: disabled ? 0.6 : 1,
+        background: 'var(--vz-secondary-bg)',
+        border: '1px solid var(--vz-border-color)',
+        color: 'var(--vz-secondary-color)',
+        opacity: disabled ? 0.55 : 1,
         cursor: disabled ? 'not-allowed' : 'pointer',
         transition: 'all .15s ease',
         position: 'relative',
@@ -353,27 +382,41 @@ function MasterPageInner({
       }}
       onClick={onClick}
     >
-      <i className={`${icon} fs-14`} />
-      {/* Tiny lock badge in the bottom-right corner when disabled */}
-      {disabled && (
+      {disabled ? (
+        // Custom prohibit indicator: clean circle border wrapping the icon
+        // with a diagonal slash clipped inside the circle (overflow: hidden).
         <span
           aria-hidden="true"
           style={{
-            position: 'absolute',
-            bottom: -3, right: -3,
-            width: 13, height: 13,
+            position: 'relative',
+            width: 18, height: 18,
             borderRadius: '50%',
-            background: 'var(--vz-secondary-color)',
-            color: 'var(--vz-secondary-bg)',
-            fontSize: 8,
-            display: 'flex',
+            border: '1.5px solid var(--vz-secondary-color)',
+            display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: '1.5px solid var(--vz-card-bg)',
+            color: 'var(--vz-secondary-color)',
+            opacity: 0.7,
+            overflow: 'hidden',
           }}
         >
-          <i className="ri-lock-fill" />
+          <i className={icon} style={{ fontSize: 9, lineHeight: 1 }} />
+          {/* Diagonal slash — clipped by the round wrapper so it stays inside. */}
+          <span
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: 0,
+              right: 0,
+              height: '1.5px',
+              background: 'currentColor',
+              transform: 'translateY(-50%) rotate(-45deg)',
+              transformOrigin: 'center',
+            }}
+          />
         </span>
+      ) : (
+        <i className={`${icon} fs-14`} />
       )}
     </button>
   );
@@ -495,21 +538,22 @@ function MasterPageInner({
     if (fieldName === 'status') {
       const active = String(raw).toLowerCase() === 'active';
       const tone = active
-        ? { bg: '#d6f6ee', fg: '#0a8a78', border: '#0ab39c', text: 'Active' }
-        : { bg: '#fdd9d4', fg: '#b6423a', border: '#f06548', text: raw || 'Inactive' };
+        ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e', text: 'Active' }
+        : { bg: '#fee2e2', fg: '#b91c1c', border: '#ef4444', text: raw || 'Inactive' };
       return (
         <span
           className="d-inline-block rounded-pill text-uppercase"
           style={{
-            background: tone.bg,
+            background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
             color: tone.fg,
-            border: `1px solid ${tone.border}55`,
-            padding: '3px 11px',
-            fontSize: '0.7rem',
+            border: `1px solid ${tone.border}66`,
+            padding: '1px 8px',
+            fontSize: '9.5px',
             fontWeight: 700,
-            letterSpacing: '0.06em',
+            letterSpacing: '0.05em',
             lineHeight: 1.3,
             whiteSpace: 'nowrap',
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
           }}
         >
           {tone.text}
@@ -539,26 +583,122 @@ function MasterPageInner({
       return <span className="text-muted">—</span>;
     }
 
-    // "code"-type identifiers (DGN-001, INMAA, USD, FOB, etc.) — amber chip,
-    // typography matched 1:1 with the Designation Level chip.
+    // "code"-type identifiers — bold honey-amber glossy chip.
     if (fieldName === 'code') {
       return (
         <span
           className="rounded-pill d-inline-block"
           style={{
-            background: '#fff4d8',
-            color: '#b97a00',
-            border: '1px solid #f7b84b55',
-            padding: '2px 8px',
-            fontSize: '10.5px',
-            fontWeight: 500,
+            background: 'linear-gradient(180deg, #fef3c7 0%, #fde68a 100%)',
+            color: '#92400e',
+            border: '1px solid #f59e0b99',
+            padding: '1px 7px',
+            fontSize: '9.5px',
+            fontWeight: 700,
             lineHeight: 1.3,
             letterSpacing: '0.02em',
             fontVariantNumeric: 'tabular-nums',
             whiteSpace: 'nowrap',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.85), inset 0 -1px 0 rgba(245,158,11,0.24), 0 1px 4px rgba(245,158,11,0.32), 0 0 0 2px rgba(245,158,11,0.08)',
           }}
         >
           {String(raw).toUpperCase()}
+        </span>
+      );
+    }
+
+    // KPI Target Type — colored pill matching the KPI strip palette.
+    if (fieldName === 'target_type') {
+      const v = String(raw);
+      const tone =
+        /numeric|number/i.test(v)    ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', icon: 'ri-hashtag' } :
+        /percent/i.test(v)           ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e', icon: 'ri-percent-fill' } :
+        /currency/i.test(v)          ? { bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', icon: 'ri-money-dollar-circle-fill' } :
+        /boolean|done/i.test(v)      ? { bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', icon: 'ri-check-double-fill' } :
+        /date/i.test(v)              ? { bg: '#ffedd5', fg: '#c2410c', border: '#f97316', icon: 'ri-calendar-fill' } :
+        /rating/i.test(v)            ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', icon: 'ri-star-fill' } :
+                                       { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', icon: 'ri-circle-fill' };
+      return (
+        <span
+          className="d-inline-flex align-items-center rounded-pill"
+          style={{
+            gap: 4,
+            background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
+            color: tone.fg,
+            border: `1px solid ${tone.border}80`,
+            padding: '1px 8px',
+            fontSize: '9.5px',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            lineHeight: 1.3,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
+          }}
+        >
+          <i className={tone.icon} style={{ fontSize: 9 }} />
+          {v}
+        </span>
+      );
+    }
+
+    // KPI Priority — colored pill (Critical → Low gradient of urgency).
+    if (fieldName === 'priority') {
+      const v = String(raw);
+      const tone =
+        /critical/i.test(v) ? { bg: '#fee2e2', fg: '#b91c1c', border: '#ef4444', icon: 'ri-alarm-warning-fill' } :
+        /high/i.test(v)     ? { bg: '#ffedd5', fg: '#c2410c', border: '#f97316', icon: 'ri-flag-2-fill' } :
+        /medium/i.test(v)   ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', icon: 'ri-flag-line' } :
+        /low/i.test(v)      ? { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', icon: 'ri-arrow-down-fill' } :
+                              { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', icon: 'ri-circle-fill' };
+      return (
+        <span
+          className="d-inline-flex align-items-center rounded-pill"
+          style={{
+            gap: 4,
+            background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
+            color: tone.fg,
+            border: `1px solid ${tone.border}80`,
+            padding: '1px 8px',
+            fontSize: '9.5px',
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            lineHeight: 1.3,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
+          }}
+        >
+          <i className={tone.icon} style={{ fontSize: 9 }} />
+          {v}
+        </span>
+      );
+    }
+
+    // Role Type — bold Tailwind-style palette with leading filled icon.
+    if (fieldName === 'role_type') {
+      const v = String(raw);
+      const tone =
+        /primary/i.test(v)              ? { bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', icon: 'ri-star-fill' } :
+        /ancillary|auxiliary/i.test(v)  ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', icon: 'ri-time-fill' } :
+        /operational/i.test(v)          ? { bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', icon: 'ri-settings-3-fill' } :
+        /administrative/i.test(v)       ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', icon: 'ri-briefcase-fill' } :
+        /functional/i.test(v)           ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e', icon: 'ri-shield-check-fill' } :
+                                          { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', icon: 'ri-circle-fill' };
+      return (
+        <span
+          className="d-inline-flex align-items-center rounded-pill"
+          style={{
+            gap: 4,
+            background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
+            color: tone.fg,
+            border: `1px solid ${tone.border}80`,
+            padding: '1px 8px',
+            fontSize: '9.5px',
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            lineHeight: 1.3,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
+          }}
+        >
+          <i className={tone.icon} style={{ fontSize: 9 }} />
+          {v}
         </span>
       );
     }
@@ -569,13 +709,13 @@ function MasterPageInner({
       const v = String(raw);
       const TOTAL_STARS = 5;
       const tone =
-        /director|ceo/i.test(v)        ? { bg: '#fff4d8', fg: '#b97a00', border: '#f7b84b', star: '#f7b84b', icon: 'ri-vip-crown-fill',  rank: 5, short: 'Director / CEO' } :
-        /head|hod/i.test(v)            ? { bg: '#ece6ff', fg: '#5b3fd1', border: '#7c5cfc', star: '#7c5cfc', icon: 'ri-medal-2-fill',    rank: 4, short: 'Head of Department' } :
-        /lead|team/i.test(v)           ? { bg: '#dff0ff', fg: '#1e7ec5', border: '#299cdb', star: '#299cdb', icon: 'ri-team-fill',       rank: 3, short: 'Team Leader' } :
-        /executive|senior/i.test(v)    ? { bg: '#d6f6ee', fg: '#0a8a78', border: '#0ab39c', star: '#0ab39c', icon: 'ri-user-star-fill',  rank: 2, short: 'Executive' } :
-        /employee|mid|junior/i.test(v) ? { bg: '#dff5e8', fg: '#1f8f4d', border: '#28c76f', star: '#28c76f', icon: 'ri-user-3-fill',     rank: 1, short: 'Employee' } :
-        /intern|trainee/i.test(v)      ? { bg: '#f0f1f5', fg: '#5b6478', border: '#878a99', star: '#878a99', icon: 'ri-book-open-fill',  rank: 1, short: 'Intern / Trainee' } :
-                                         { bg: '#f0f1f5', fg: '#5b6478', border: '#878a99', star: '#878a99', icon: 'ri-circle-line',         rank: 0, short: v };
+        /director|ceo/i.test(v)        ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', star: '#f59e0b', icon: 'ri-vip-crown-fill',  rank: 5, short: 'Director / CEO' } :
+        /head|hod/i.test(v)            ? { bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', star: '#8b5cf6', icon: 'ri-medal-2-fill',    rank: 4, short: 'Head of Department' } :
+        /lead|team/i.test(v)           ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', star: '#3b82f6', icon: 'ri-team-fill',       rank: 3, short: 'Team Leader' } :
+        /executive|senior/i.test(v)    ? { bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', star: '#14b8a6', icon: 'ri-user-star-fill',  rank: 2, short: 'Executive' } :
+        /employee|mid|junior/i.test(v) ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e', star: '#22c55e', icon: 'ri-user-3-fill',     rank: 1, short: 'Employee' } :
+        /intern|trainee/i.test(v)      ? { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', star: '#94a3b8', icon: 'ri-book-open-fill',  rank: 1, short: 'Intern / Trainee' } :
+                                         { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', star: '#94a3b8', icon: 'ri-circle-line',     rank: 0, short: v };
       return (
         <div
           className="text-center w-100 d-flex flex-column align-items-center justify-content-center"
@@ -585,15 +725,15 @@ function MasterPageInner({
           <span
             className="d-inline-block rounded-pill"
             style={{
-              /* identical to .dsn-hier-chip — same bg, fg, border, font, padding */
-              background: tone.bg,
+              background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
               color: tone.fg,
-              border: `1px solid ${tone.border}55`,
-              padding: '2px 8px',
-              fontSize: '10.5px',
-              fontWeight: 500,
+              border: `1px solid ${tone.border}80`,
+              padding: '1px 8px',
+              fontSize: '9.5px',
+              fontWeight: 600,
               whiteSpace: 'nowrap',
               lineHeight: 1.3,
+              boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
             }}
           >
             {tone.short}
@@ -663,9 +803,9 @@ function MasterPageInner({
         cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
       },
     ];
-    // Icon column — hidden on designations (the level rating already gives a
-    // strong visual cue, so the duplicate badge column wastes horizontal space).
-    if (cfg.slug !== 'designations') {
+    // Icon column — hidden on rich masters (designations / roles / kpis) since
+    // the colored type/level/priority pills already give a strong visual cue.
+    if (cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis') {
       cols.push({
         header: 'Icon',
         accessorKey: '__icon',
@@ -724,7 +864,7 @@ function MasterPageInner({
     // Designation-master-only: Employees column. Reads row.employees_count when
     // the backend supplies it (later); falls back to "0 emp" so the column is
     // never empty.
-    if (cfg.slug === 'designations') {
+    if (cfg.slug === 'designations' || cfg.slug === 'roles') {
       cols.push({
         header: () => <div className="text-center">Employees</div>,
         id: '__employees',
@@ -896,32 +1036,83 @@ function MasterPageInner({
           border: 1px solid color-mix(in srgb, var(--vz-border-color) 70%, transparent);
           box-shadow: 0 6px 22px rgba(64,81,137,0.10), 0 2px 6px rgba(64,81,137,0.05);
         }
+        /* Premium dark-mode glass strip — multi-stop gradient + colored glow +
+           crisp top sheen. Reads like the Plans page panels. */
         [data-bs-theme="dark"] .dsn-page-strip,
         [data-layout-mode="dark"] .dsn-page-strip {
-          background: linear-gradient(135deg,
-            color-mix(in srgb, var(--vz-card-bg) 88%, #ffffff) 0%,
-            var(--vz-card-bg) 100%);
-          border: 1px solid color-mix(in srgb, var(--vz-border-color) 50%, #ffffff);
+          position: relative;
+          background:
+            radial-gradient(120% 140% at 0% 0%, rgba(102,145,231,0.16) 0%, transparent 55%),
+            radial-gradient(120% 140% at 100% 100%, rgba(124,92,252,0.14) 0%, transparent 55%),
+            linear-gradient(180deg,
+              color-mix(in srgb, var(--vz-card-bg) 80%, #ffffff) 0%,
+              color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
+          border: 1px solid color-mix(in srgb, #6691e7 22%, var(--vz-border-color));
           box-shadow:
-            0 8px 26px rgba(0,0,0,0.28),
-            0 2px 6px rgba(0,0,0,0.18),
-            inset 0 1px 0 rgba(255,255,255,0.04);
+            0 12px 32px rgba(0,0,0,0.36),
+            0 2px 6px rgba(0,0,0,0.20),
+            0 0 0 1px rgba(255,255,255,0.03),
+            inset 0 1px 0 rgba(255,255,255,0.10),
+            inset 0 -1px 0 rgba(0,0,0,0.20);
         }
-        /* Premium dark-mode adjustments for the table card too. */
+        /* Premium dark-mode glass for the table card — same glossy treatment. */
         [data-bs-theme="dark"] .master-page-card,
         [data-layout-mode="dark"] .master-page-card {
+          background:
+            radial-gradient(140% 160% at 0% 0%, rgba(102,145,231,0.10) 0%, transparent 55%),
+            radial-gradient(140% 160% at 100% 100%, rgba(124,92,252,0.08) 0%, transparent 55%),
+            linear-gradient(180deg,
+              color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff) 0%,
+              var(--vz-card-bg) 100%);
+          border: 1px solid color-mix(in srgb, #6691e7 16%, var(--vz-border-color));
+          box-shadow:
+            0 14px 36px rgba(0,0,0,0.32),
+            0 2px 6px rgba(0,0,0,0.18),
+            0 0 0 1px rgba(255,255,255,0.02),
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            inset 0 -1px 0 rgba(0,0,0,0.18);
+        }
+        /* Premium dark-mode KPI cards — glossy gradient + inset highlight. */
+        [data-bs-theme="dark"] .dsn-extras .dsn-kpi,
+        [data-layout-mode="dark"] .dsn-extras .dsn-kpi,
+        [data-bs-theme="dark"] .role-extras .role-kpi,
+        [data-layout-mode="dark"] .role-extras .role-kpi {
           background: linear-gradient(180deg,
-            color-mix(in srgb, var(--vz-card-bg) 94%, #ffffff) 0%,
-            var(--vz-card-bg) 100%);
-          border: 1px solid color-mix(in srgb, var(--vz-border-color) 50%, #ffffff);
-          box-shadow: 0 8px 30px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.03);
+            color-mix(in srgb, var(--vz-card-bg) 78%, #ffffff) 0%,
+            color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
+          border: 1px solid color-mix(in srgb, #ffffff 9%, transparent);
+          box-shadow:
+            0 4px 14px rgba(0,0,0,0.28),
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            inset 0 -1px 0 rgba(0,0,0,0.20);
+        }
+        [data-bs-theme="dark"] .dsn-extras .dsn-kpi:hover,
+        [data-layout-mode="dark"] .dsn-extras .dsn-kpi:hover,
+        [data-bs-theme="dark"] .role-extras .role-kpi:hover,
+        [data-layout-mode="dark"] .role-extras .role-kpi:hover {
+          border-color: color-mix(in srgb, #6691e7 30%, transparent);
+          box-shadow:
+            0 10px 26px rgba(0,0,0,0.36),
+            0 0 0 1px rgba(102,145,231,0.18),
+            inset 0 1px 0 rgba(255,255,255,0.10);
+        }
+        /* Hierarchy chip strip — glossy track with depth. */
+        [data-bs-theme="dark"] .dsn-extras .dsn-hier-row,
+        [data-layout-mode="dark"] .dsn-extras .dsn-hier-row {
+          background: linear-gradient(180deg,
+            color-mix(in srgb, var(--vz-card-bg) 80%, #ffffff) 0%,
+            color-mix(in srgb, var(--vz-card-bg) 96%, #ffffff) 100%);
+          border-color: color-mix(in srgb, #ffffff 9%, transparent);
+          box-shadow:
+            0 4px 14px rgba(0,0,0,0.24),
+            inset 0 1px 0 rgba(255,255,255,0.06);
         }
       `}</style>
       {/* Page title — designations gets the rich [icon|title+subtitle][Add] strip;
           all other masters keep the original [back][title][breadcrumb] layout. */}
       <Row>
         <Col xs={12}>
-          {cfg.slug === 'designations' ? (
+          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? (
             <div
               className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"
               style={{
@@ -934,18 +1125,25 @@ function MasterPageInner({
                   className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
                   style={{
                     width: 46, height: 46,
-                    background: 'color-mix(in srgb, #405189 12%, #ffffff)',
-                    border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                    background: 'linear-gradient(135deg, #2b3a85 0%, #405189 50%, #6691e7 100%)',
+                    border: '1px solid color-mix(in srgb, #405189 35%, transparent)',
+                    boxShadow: '0 4px 12px rgba(64,81,137,0.32), inset 0 1px 0 rgba(255,255,255,0.18)',
                   }}
                 >
-                  <i className={cfg.icon} style={{ color: '#405189', fontSize: 21 }} />
+                  <i className={cfg.icon} style={{ color: '#ffffff', fontSize: 21 }} />
                 </span>
                 <div className="min-w-0">
                   <h4 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, #2b3245)', letterSpacing: '0.01em' }}>
-                    {cfg.title}
+                    {cfg.slug === 'roles' ? 'Role Master'
+                      : cfg.slug === 'kpis' ? 'KPI Master'
+                      : cfg.title}
                   </h4>
                   <p className="mb-0 text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
-                    Manage all job roles, hierarchy levels, and role structure for employees
+                    {cfg.slug === 'roles'
+                      ? 'Manage all employee roles, role types, and role structure for workforce assignment'
+                      : cfg.slug === 'kpis'
+                      ? 'Define performance targets, role assignments and tracking criteria for KPIs'
+                      : 'Manage all job roles, hierarchy levels, and role structure for employees'}
                   </p>
                 </div>
               </div>
@@ -1014,9 +1212,9 @@ function MasterPageInner({
         </Col>
       </Row>
 
-      {/* "What you are doing here" — hidden on the designations master so the
-          page goes straight from the title strip into the KPI/table card. */}
-      {cfg.slug !== 'designations' && <WhatYouDoHere cfg={cfg} />}
+      {/* "What you are doing here" — hidden on designations & roles since the
+          rich title strip already carries the subtitle context. */}
+      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && <WhatYouDoHere cfg={cfg} />}
 
       {/* KPI strip — only when the master config opts in via `kpis` */}
       {cfg.kpis && cfg.kpis.length > 0 && (
@@ -1069,7 +1267,7 @@ function MasterPageInner({
       {/* Main card — search + Add New row, then table */}
       <Row>
         <Col xs={12}>
-          <Card className={`shadow-sm ${cfg.slug === 'designations' ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
+          <Card className={`shadow-sm ${(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
             <CardBody>
               {/* Designations-only: KPI strip + hierarchy chips. */}
               {cfg.slug === 'designations' && (
@@ -1078,10 +1276,22 @@ function MasterPageInner({
                   filteredCount={filteredRecords.length}
                 />
               )}
+              {/* Roles-only: KPI strip + filter chip tabs. */}
+              {cfg.slug === 'roles' && (
+                <RolesExtras
+                  records={records}
+                  activeTab={roleTab}
+                  setActiveTab={setRoleTab}
+                />
+              )}
+              {/* KPI-master only: KPI count cards. */}
+              {cfg.slug === 'kpis' && (
+                <KpiExtras records={records} />
+              )}
 
-              {/* Search bar (left) + (designation filters + Add New on the right). */}
+              {/* Search bar (left) + filters/Add button on the right. */}
               <Row className="g-2 align-items-center mb-3">
-                <Col md={cfg.slug === 'designations' ? 3 : 6} sm={12}>
+                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? 4 : 6} sm={12}>
                   <div className="search-box">
                     <Input
                       type="text"
@@ -1093,7 +1303,7 @@ function MasterPageInner({
                     <i className="ri-search-line search-icon"></i>
                   </div>
                 </Col>
-                <Col md={cfg.slug === 'designations' ? 9 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
+                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
                   {cfg.slug === 'designations' && (
                     <DesignationInlineFilters
                       refData={refData}
@@ -1105,9 +1315,31 @@ function MasterPageInner({
                       setDeptFilter={setDsnDeptFilter}
                     />
                   )}
-                  {/* Add button — shown here for non-designation masters; for
-                      designations the button now lives in the page title strip. */}
-                  {cfg.slug !== 'designations' && caps.add && (
+                  {cfg.slug === 'roles' && (
+                    <RolesInlineFilters
+                      refData={refData}
+                      typeFilter={roleTypeFilter}
+                      setTypeFilter={setRoleTypeFilter}
+                      statusFilter={roleStatusFilter}
+                      setStatusFilter={setRoleStatusFilter}
+                      deptFilter={roleDeptFilter}
+                      setDeptFilter={setRoleDeptFilter}
+                    />
+                  )}
+                  {cfg.slug === 'kpis' && (
+                    <KpiInlineFilters
+                      refData={refData}
+                      roleFilter={kpiRoleFilter}
+                      setRoleFilter={setKpiRoleFilter}
+                      targetFilter={kpiTargetFilter}
+                      setTargetFilter={setKpiTargetFilter}
+                      priorityFilter={kpiPriorityFilter}
+                      setPriorityFilter={setKpiPriorityFilter}
+                    />
+                  )}
+                  {/* Add button — shown here for non-rich masters; designations
+                      and roles get the Add button in the rich title strip. */}
+                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && caps.add && (
                     <Button
                       color="secondary"
                       className="btn-label waves-effect waves-light rounded-pill"
@@ -1168,28 +1400,49 @@ function MasterPageInner({
         backdrop="static"
         keyboard={false}
       >
-        {/* Header — solid brand gradient strip with title, subtitle and close X. */}
+        {/* Header — rich layered gradient with brand-blue → indigo → violet flow,
+            decorative glows, and a subtle diagonal sheen for depth. */}
         <div
           className="position-relative overflow-hidden"
           style={{
-            background: 'linear-gradient(120deg, #405189 0%, #4a63a8 50%, #6691e7 100%)',
-            padding: '20px 24px',
+            background:
+              'linear-gradient(135deg, #2b3a85 0%, #405189 28%, #5562c4 55%, #6e7eee 78%, #8b6fe8 100%)',
+            padding: '22px 24px',
           }}
         >
-          {/* Decorative bubbles */}
+          {/* Top-right warm glow — adds a hint of indigo-pink sparkle */}
           <span
             aria-hidden
             style={{
-              position: 'absolute', top: -30, right: -10, width: 110, height: 110, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(255,255,255,0.18) 0%, transparent 70%)',
+              position: 'absolute', top: -50, right: -30, width: 200, height: 200, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(255,255,255,0.28) 0%, rgba(167,139,250,0.18) 35%, transparent 70%)',
               pointerEvents: 'none',
             }}
           />
+          {/* Bottom-right cyan accent — cools the bottom edge */}
           <span
             aria-hidden
             style={{
-              position: 'absolute', bottom: -40, right: 60, width: 140, height: 140, borderRadius: '50%',
-              background: 'radial-gradient(circle, rgba(102,145,231,0.35) 0%, transparent 70%)',
+              position: 'absolute', bottom: -60, right: 80, width: 180, height: 180, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(102,145,231,0.45) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+          {/* Bottom-left violet halo — depth on the title side */}
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute', bottom: -50, left: -30, width: 160, height: 160, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(139,111,232,0.32) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+          {/* Subtle diagonal sheen — top-left highlight to bottom-right shadow */}
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute', inset: 0,
+              background: 'linear-gradient(115deg, rgba(255,255,255,0.10) 0%, transparent 35%, transparent 65%, rgba(0,0,0,0.08) 100%)',
               pointerEvents: 'none',
             }}
           />
@@ -1516,13 +1769,19 @@ function DesignationExtras({
   filteredCount: number;
 }) {
   // Hierarchy tiers — same order/colors as the reference design.
-  const TIERS: { label: string; short: string; icon: string; bg: string; fg: string; border: string }[] = [
-    { label: 'Director / CEO',           short: 'Director / CEO', icon: 'ri-vip-crown-fill',  bg: '#fff4d8', fg: '#b97a00', border: '#f7b84b' },
-    { label: 'Head of Department (HOD)', short: 'HOD',            icon: 'ri-medal-2-fill',    bg: '#ece6ff', fg: '#5b3fd1', border: '#7c5cfc' },
-    { label: 'Team Leader',              short: 'Team Leader',    icon: 'ri-team-fill',       bg: '#dff0ff', fg: '#1e7ec5', border: '#299cdb' },
-    { label: 'Executive',                short: 'Executive',      icon: 'ri-user-star-fill',  bg: '#d6f6ee', fg: '#0a8a78', border: '#0ab39c' },
-    { label: 'Employee',                 short: 'Employee',       icon: 'ri-user-3-fill',     bg: '#dff5e8', fg: '#1f8f4d', border: '#28c76f' },
-    { label: 'Intern / Trainee',         short: 'Intern',         icon: 'ri-book-open-fill',  bg: '#f0f1f5', fg: '#5b6478', border: '#878a99' },
+  // Fresh Tailwind-style palette — bright + deep pair per tier, plus an
+  // accent gradient that drives the KPI icon tile + colored shadow halo.
+  const TIERS: {
+    label: string; short: string; icon: string;
+    bg: string; fg: string; border: string;
+    deep: string; bright: string; accent: string;
+  }[] = [
+    { label: 'Director / CEO',           short: 'Director / CEO', icon: 'ri-vip-crown-fill',  bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', deep: '#b45309', bright: '#f59e0b', accent: 'linear-gradient(135deg,#b45309 0%,#f59e0b 100%)' },
+    { label: 'Head of Department (HOD)', short: 'HOD',            icon: 'ri-medal-2-fill',    bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', deep: '#6d28d9', bright: '#a78bfa', accent: 'linear-gradient(135deg,#6d28d9 0%,#a78bfa 100%)' },
+    { label: 'Team Leader',              short: 'Team Leader',    icon: 'ri-team-fill',       bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', deep: '#1d4ed8', bright: '#60a5fa', accent: 'linear-gradient(135deg,#1d4ed8 0%,#60a5fa 100%)' },
+    { label: 'Executive',                short: 'Executive',      icon: 'ri-user-star-fill',  bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', deep: '#0f766e', bright: '#2dd4bf', accent: 'linear-gradient(135deg,#0f766e 0%,#2dd4bf 100%)' },
+    { label: 'Employee',                 short: 'Employee',       icon: 'ri-user-3-fill',     bg: '#dcfce7', fg: '#15803d', border: '#22c55e', deep: '#15803d', bright: '#4ade80', accent: 'linear-gradient(135deg,#15803d 0%,#4ade80 100%)' },
+    { label: 'Intern / Trainee',         short: 'Intern',         icon: 'ri-book-open-fill',  bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', deep: '#475569', bright: '#94a3b8', accent: 'linear-gradient(135deg,#475569 0%,#94a3b8 100%)' },
   ];
 
   // KPI counts derived from the current records (not the filtered list — the
@@ -1552,43 +1811,56 @@ function DesignationExtras({
         @media (max-width: 575px) {
           .dsn-extras .dsn-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
         }
-        /* New layout: [Icon tile]  |  [Number on top, Label below] */
+        /* Layout: top accent strip + [Label/Number on LEFT][Icon tile on RIGHT]
+           Matches the Department Master reference design. */
         .dsn-extras .dsn-kpi {
+          position: relative;
           background: var(--vz-card-bg);
           border: 1px solid var(--vz-border-color);
           border-radius: 10px;
-          padding: 12px 14px;
+          padding: 14px 16px;
           display: flex;
           align-items: center;
+          justify-content: space-between;
           gap: 12px;
+          overflow: hidden;
           transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+        .dsn-extras .dsn-kpi::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 3px;
+          background: var(--kpi-accent, transparent);
         }
         .dsn-extras .dsn-kpi:hover {
           transform: translateY(-2px);
-          box-shadow: 0 6px 18px rgba(0,0,0,0.06);
-        }
-        .dsn-extras .dsn-kpi-icon {
-          width: 38px;
-          height: 38px;
-          border-radius: 9px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          font-size: 17px;
+          box-shadow: 0 8px 22px rgba(0,0,0,0.07);
         }
         .dsn-extras .dsn-kpi-text {
           display: flex;
           flex-direction: column;
           min-width: 0;
           line-height: 1.2;
+          flex: 1;
+        }
+        .dsn-extras .dsn-kpi-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 9px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          font-size: 16px;
         }
         .dsn-extras .dsn-kpi-num {
-          font-size: 19px;
-          font-weight: 700;
+          font-size: 22px;
+          font-weight: 800;
           line-height: 1.1;
           color: var(--kpi-deep, var(--vz-heading-color, var(--vz-body-color)));
           font-variant-numeric: tabular-nums;
+          margin-top: 2px;
         }
         [data-bs-theme="dark"] .dsn-extras .dsn-kpi-num,
         [data-layout-mode="dark"] .dsn-extras .dsn-kpi-num {
@@ -1601,7 +1873,6 @@ function DesignationExtras({
           text-transform: uppercase;
           color: var(--vz-secondary-color);
           line-height: 1.2;
-          margin-top: 2px;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -1710,30 +1981,52 @@ function DesignationExtras({
         <div
           className="dsn-kpi"
           title="Total designations"
-          style={{ ['--kpi-bright' as any]: '#6691e7', ['--kpi-deep' as any]: '#405189' }}
+          style={{
+            ['--kpi-bright' as any]: '#6691e7',
+            ['--kpi-deep' as any]: '#3d4eb1',
+            ['--kpi-accent' as any]: 'linear-gradient(135deg,#3d4eb1 0%,#6691e7 100%)',
+          }}
         >
-          <span className="dsn-kpi-icon" style={{ background: '#e9edf6', color: '#405189' }}>
+          <div className="dsn-kpi-text">
+            <span className="dsn-kpi-label">Total</span>
+            <span className="dsn-kpi-num">{total}</span>
+          </div>
+          <span
+            className="dsn-kpi-icon"
+            style={{
+              background: 'linear-gradient(135deg, #3d4eb1 0%, #6691e7 100%)',
+              color: '#ffffff',
+              boxShadow: '0 4px 10px rgba(102,145,231,0.40), inset 0 1px 0 rgba(255,255,255,0.25)',
+            }}
+          >
             <i className="ri-database-2-fill" />
           </span>
-          <div className="dsn-kpi-text">
-            <span className="dsn-kpi-num">{total}</span>
-            <span className="dsn-kpi-label">Total</span>
-          </div>
         </div>
         {tierCounts.map(t => (
           <div
             className="dsn-kpi"
             key={t.label}
             title={`${t.label} designations`}
-            style={{ ['--kpi-bright' as any]: t.border, ['--kpi-deep' as any]: t.fg }}
+            style={{
+              ['--kpi-bright' as any]: t.bright,
+              ['--kpi-deep' as any]: t.deep,
+              ['--kpi-accent' as any]: t.accent,
+            }}
           >
-            <span className="dsn-kpi-icon" style={{ background: t.bg, color: t.fg }}>
+            <div className="dsn-kpi-text">
+              <span className="dsn-kpi-label">{t.short}</span>
+              <span className="dsn-kpi-num">{t.count}</span>
+            </div>
+            <span
+              className="dsn-kpi-icon"
+              style={{
+                background: t.accent,
+                color: '#ffffff',
+                boxShadow: `0 4px 10px ${t.bright}55, inset 0 1px 0 rgba(255,255,255,0.25)`,
+              }}
+            >
               <i className={t.icon} />
             </span>
-            <div className="dsn-kpi-text">
-              <span className="dsn-kpi-num">{t.count}</span>
-              <span className="dsn-kpi-label">{t.short}</span>
-            </div>
           </div>
         ))}
       </div>
@@ -1812,6 +2105,564 @@ function DesignationInlineFilters({
               ...departments.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
             ]}
             placeholder="All Departments"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Role-master extras: KPI strip (Total / Primary / Ancillary / Active /
+ * Assigned / Inactive) + filter chip tabs (All / Primary / Ancillary).
+ * Renders only inside the Roles master.
+ * ────────────────────────────────────────────────────────────────────────── */
+function RolesExtras({
+  records,
+  activeTab,
+  setActiveTab,
+}: {
+  records: any[];
+  activeTab: 'all' | 'primary' | 'ancillary';
+  setActiveTab: (t: 'all' | 'primary' | 'ancillary') => void;
+}) {
+  const total = records.length;
+  const primaryCount = records.filter(r => /primary/i.test(String(r.role_type ?? ''))).length;
+  const ancillaryCount = records.filter(r => /ancillary|auxiliary|operational|administrative|functional/i.test(String(r.role_type ?? ''))).length;
+  const activeCount = records.filter(r => String(r.status ?? '').toLowerCase() === 'active').length;
+  const inactiveCount = records.filter(r => String(r.status ?? '').toLowerCase() !== 'active').length;
+  const assignedCount = records.filter(r => Number(r.employees_count ?? 0) > 0).length;
+
+  // Fresh palette — paired bright + deep colors per tier, plus an accent
+  // gradient that drives the card's top strip + bg wash.
+  const KPIS = [
+    { key: 'total',     label: 'Total Roles',     icon: 'ri-shield-fill',          deep: '#3d4eb1', bright: '#6691e7', accent: 'linear-gradient(135deg,#3d4eb1 0%,#6691e7 100%)', tint: 'rgba(102,145,231,0.10)', value: total },
+    { key: 'primary',   label: 'Primary Roles',   icon: 'ri-star-fill',            deep: '#6940d8', bright: '#a78bfa', accent: 'linear-gradient(135deg,#6940d8 0%,#a78bfa 100%)', tint: 'rgba(167,139,250,0.12)', value: primaryCount },
+    { key: 'ancillary', label: 'Ancillary Roles', icon: 'ri-time-fill',            deep: '#e08a1a', bright: '#fbbf60', accent: 'linear-gradient(135deg,#e08a1a 0%,#fbbf60 100%)', tint: 'rgba(247,184,75,0.12)', value: ancillaryCount },
+    { key: 'active',    label: 'Active',          icon: 'ri-checkbox-circle-fill', deep: '#089d7a', bright: '#34d4ad', accent: 'linear-gradient(135deg,#089d7a 0%,#34d4ad 100%)', tint: 'rgba(52,212,173,0.12)', value: activeCount },
+    { key: 'assigned',  label: 'Assigned',        icon: 'ri-user-3-fill',          deep: '#1e6dd6', bright: '#5fc8ff', accent: 'linear-gradient(135deg,#1e6dd6 0%,#5fc8ff 100%)', tint: 'rgba(95,200,255,0.14)', value: assignedCount },
+    { key: 'inactive',  label: 'Inactive',        icon: 'ri-forbid-fill',          deep: '#d63a5e', bright: '#ff8b9b', accent: 'linear-gradient(135deg,#d63a5e 0%,#ff8b9b 100%)', tint: 'rgba(255,139,155,0.12)', value: inactiveCount },
+  ];
+
+  const TABS: { key: 'all' | 'primary' | 'ancillary'; label: string; count: number; icon: string; bright: string }[] = [
+    { key: 'all',       label: 'All Roles',       count: total,          icon: 'ri-shield-line',     bright: '#6691e7' },
+    { key: 'primary',   label: 'Primary Roles',   count: primaryCount,   icon: 'ri-star-fill',       bright: '#7c5cfc' },
+    { key: 'ancillary', label: 'Ancillary Roles', count: ancillaryCount, icon: 'ri-time-line',       bright: '#f7b84b' },
+  ];
+
+  return (
+    <div className="role-extras mb-3">
+      <style>{`
+        .role-extras .role-kpis {
+          display: grid;
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+          gap: 8px;
+          margin-bottom: 12px;
+        }
+        @media (max-width: 1399px) { .role-extras .role-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 575px)  { .role-extras .role-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } }
+        .role-extras .role-kpi {
+          position: relative;
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 12px;
+          padding: 14px 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          overflow: hidden;
+          transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+        }
+        .role-extras .role-kpi::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 3px;
+          background: var(--kpi-accent, transparent);
+        }
+        .role-extras .role-kpi:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 24px rgba(64,81,137,0.10);
+        }
+        .role-extras .role-kpi-icon {
+          width: 36px; height: 36px;
+          border-radius: 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          font-size: 17px;
+          position: relative;
+          z-index: 1;
+        }
+        .role-extras .role-kpi-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; flex: 1; }
+        .role-extras .role-kpi-num {
+          font-size: 22px;
+          font-weight: 800;
+          line-height: 1.1;
+          color: var(--kpi-deep, var(--vz-heading-color, var(--vz-body-color)));
+          font-variant-numeric: tabular-nums;
+          margin-top: 2px;
+        }
+        [data-bs-theme="dark"] .role-extras .role-kpi-num,
+        [data-layout-mode="dark"] .role-extras .role-kpi-num {
+          color: var(--kpi-bright, rgba(255,255,255,0.95)) !important;
+        }
+        .role-extras .role-kpi-label {
+          font-size: 10.5px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--vz-secondary-color);
+          line-height: 1.2;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        [data-bs-theme="dark"] .role-extras .role-kpi-label,
+        [data-layout-mode="dark"] .role-extras .role-kpi-label { color: rgba(255,255,255,0.78); }
+        [data-bs-theme="dark"] .role-extras .role-kpi,
+        [data-layout-mode="dark"] .role-extras .role-kpi {
+          background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
+          border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
+        }
+        /* Filter tabs — refined segmented control: subtle cream track with
+           depth, white "lifted" active pill with crisp elevation + thin ring. */
+        .role-extras .role-tabs {
+          display: inline-flex;
+          align-items: center;
+          gap: 0;
+          margin-bottom: 12px;
+          padding: 4px;
+          background: color-mix(in srgb, var(--vz-body-color) 8%, var(--vz-card-bg));
+          border: 1px solid color-mix(in srgb, var(--vz-body-color) 6%, transparent);
+          border-radius: 999px;
+          flex-wrap: wrap;
+          box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
+        }
+        [data-bs-theme="dark"] .role-extras .role-tabs,
+        [data-layout-mode="dark"] .role-extras .role-tabs {
+          background: color-mix(in srgb, #ffffff 6%, var(--vz-card-bg));
+          border-color: color-mix(in srgb, #ffffff 8%, transparent);
+          box-shadow: inset 0 1px 2px rgba(0,0,0,0.20);
+        }
+        .role-extras .role-tab {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: 7px 16px;
+          border-radius: 999px;
+          font-size: 12.5px;
+          font-weight: 500;
+          background: transparent;
+          border: 1px solid transparent;
+          color: var(--vz-secondary-color);
+          cursor: pointer;
+          transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+          white-space: nowrap;
+        }
+        .role-extras .role-tab:hover:not(.active) {
+          color: var(--vz-heading-color, var(--vz-body-color));
+          background: color-mix(in srgb, var(--vz-body-color) 4%, transparent);
+        }
+        .role-extras .role-tab.active {
+          /* Premium indigo-to-violet gradient with a bold blink halo. */
+          background: linear-gradient(135deg, #4338ca 0%, #6366f1 45%, #8b5cf6 100%);
+          color: #ffffff !important;
+          font-weight: 700;
+          border-color: #4338ca;
+          animation: role-tab-blink 1.2s ease-in-out infinite;
+        }
+        @keyframes role-tab-blink {
+          0%, 100% {
+            filter: brightness(1);
+            box-shadow:
+              0 6px 16px rgba(99,102,241,0.42),
+              0 2px 4px rgba(99,102,241,0.22),
+              0 0 0 0 rgba(139,92,246,0.0),
+              inset 0 1px 0 rgba(255,255,255,0.22),
+              inset 0 -1px 0 rgba(0,0,0,0.10);
+          }
+          50% {
+            filter: brightness(1.10);
+            box-shadow:
+              0 10px 26px rgba(99,102,241,0.65),
+              0 3px 8px rgba(99,102,241,0.40),
+              0 0 0 8px rgba(139,92,246,0.32),
+              inset 0 1px 0 rgba(255,255,255,0.36),
+              inset 0 -1px 0 rgba(0,0,0,0.10);
+          }
+        }
+        [data-bs-theme="dark"] .role-extras .role-tab.active,
+        [data-layout-mode="dark"] .role-extras .role-tab.active {
+          background: linear-gradient(135deg, #3450b0 0%, #4267e7 50%, #6691e7 100%);
+          color: #ffffff !important;
+          border-color: #6691e7;
+          box-shadow:
+            0 6px 18px rgba(64,103,231,0.55),
+            0 2px 6px rgba(0,0,0,0.30),
+            inset 0 1px 0 rgba(255,255,255,0.22),
+            inset 0 -1px 0 rgba(0,0,0,0.20);
+        }
+        .role-extras .role-tab-count {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 20px;
+          padding: 0 7px;
+          height: 17px;
+          border-radius: 999px;
+          font-size: 10.5px;
+          font-weight: 700;
+          background: color-mix(in srgb, var(--vz-body-color) 12%, transparent);
+          color: var(--vz-secondary-color);
+          font-variant-numeric: tabular-nums;
+        }
+        .role-extras .role-tab.active .role-tab-count {
+          background: rgba(255,255,255,0.95);
+          color: #4338ca;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+        }
+      `}</style>
+
+      {/* KPI cards */}
+      <div className="role-kpis">
+        {KPIS.map(k => (
+          <div
+            className="role-kpi"
+            key={k.key}
+            title={k.label}
+            style={{
+              ['--kpi-deep' as any]: k.deep,
+              ['--kpi-bright' as any]: k.bright,
+              ['--kpi-accent' as any]: k.accent,
+              ['--kpi-tint' as any]: k.tint,
+            }}
+          >
+            <div className="role-kpi-text">
+              <span className="role-kpi-label">{k.label}</span>
+              <span className="role-kpi-num">{k.value}</span>
+            </div>
+            <span
+              className="role-kpi-icon"
+              style={{
+                background: k.accent,
+                color: '#ffffff',
+                boxShadow: `0 4px 10px ${k.bright}55, inset 0 1px 0 rgba(255,255,255,0.25)`,
+              }}
+            >
+              <i className={k.icon} />
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter tabs — clean segmented control: white "lifted" active tab. */}
+      <div className="role-tabs">
+        {TABS.map(t => {
+          const active = activeTab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              className={`role-tab${active ? ' active' : ''}`}
+              onClick={() => setActiveTab(t.key)}
+            >
+              <i className={t.icon} style={{ fontSize: 13, color: active ? '#ffffff' : t.bright }} />
+              {t.label}
+              <span className="role-tab-count">{t.count}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* Inline Type / Status / Department filters for the Roles master. */
+function RolesInlineFilters({
+  refData,
+  typeFilter,   setTypeFilter,
+  statusFilter, setStatusFilter,
+  deptFilter,   setDeptFilter,
+}: {
+  refData: Record<string, any[]>;
+  typeFilter: string;
+  setTypeFilter: (v: string) => void;
+  statusFilter: string;
+  setStatusFilter: (v: string) => void;
+  deptFilter: string;
+  setDeptFilter: (v: string) => void;
+}) {
+  const TYPES = ['Primary', 'Ancillary', 'Operational', 'Administrative', 'Functional'];
+  const departments = refData['departments'] || [];
+  return (
+    <div className="role-inline-filters d-flex align-items-center flex-wrap" style={{ gap: 12 }}>
+      <style>{`
+        .role-inline-filters .role-il-group { display: flex; align-items: center; gap: 6px; }
+        .role-inline-filters .role-il-label {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--vz-secondary-color);
+        }
+        .role-inline-filters .role-il-tail {
+          font-size: 11.5px;
+          color: var(--vz-secondary-color);
+          font-weight: 600;
+          margin-left: 4px;
+        }
+      `}</style>
+      <div className="role-il-group">
+        <span className="role-il-label">Type</span>
+        <div style={{ minWidth: 140 }}>
+          <MasterSelect
+            value={typeFilter}
+            onChange={(v) => setTypeFilter(v || 'all')}
+            options={[{ value: 'all', label: 'All Types' }, ...TYPES.map(t => ({ value: t, label: t }))]}
+            placeholder="All Types"
+          />
+        </div>
+      </div>
+      <div className="role-il-group">
+        <span className="role-il-label">Status</span>
+        <div style={{ minWidth: 130 }}>
+          <MasterSelect
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v || 'all')}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'Active', label: 'Active' },
+              { value: 'Inactive', label: 'Inactive' },
+            ]}
+            placeholder="All"
+          />
+        </div>
+      </div>
+      <div className="role-il-group">
+        <span className="role-il-label">Department</span>
+        <div style={{ minWidth: 160 }}>
+          <MasterSelect
+            value={deptFilter}
+            onChange={(v) => setDeptFilter(v || 'all')}
+            options={[
+              { value: 'all', label: 'All Departments' },
+              ...departments.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
+            ]}
+            placeholder="All Departments"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * KPI-master extras: 5 KPI count cards.
+ * ────────────────────────────────────────────────────────────────────────── */
+function KpiExtras({ records }: { records: any[] }) {
+  const total = records.length;
+  const numCount       = records.filter(r => /numeric|number/i.test(String(r.target_type ?? ''))).length;
+  const currencyCount  = records.filter(r => /currency/i.test(String(r.target_type ?? ''))).length;
+  const booleanCount   = records.filter(r => /boolean|done/i.test(String(r.target_type ?? ''))).length;
+  const highCount      = records.filter(r => /high|critical/i.test(String(r.priority ?? ''))).length;
+
+  const KPIS = [
+    { key: 'total',     label: 'Total KPIs',           sub: 'All KPIs',         icon: 'ri-bar-chart-2-fill',   tag: 'ALL',  deep: '#3d4eb1', bright: '#6691e7', accent: 'linear-gradient(135deg,#3d4eb1 0%,#6691e7 100%)', value: total },
+    { key: 'numeric',   label: 'Number Target',        sub: 'Number Target',    icon: 'ri-hashtag',            tag: 'NUM',  deep: '#1d4ed8', bright: '#60a5fa', accent: 'linear-gradient(135deg,#1d4ed8 0%,#60a5fa 100%)', value: numCount },
+    { key: 'currency',  label: 'Currency Target',      sub: 'Currency Target',  icon: 'ri-money-dollar-circle-fill', tag: 'CUR', deep: '#0f766e', bright: '#2dd4bf', accent: 'linear-gradient(135deg,#0f766e 0%,#2dd4bf 100%)', value: currencyCount },
+    { key: 'boolean',   label: 'Done/Not Done Target', sub: 'Done/Not Done',    icon: 'ri-check-double-fill',  tag: 'D/N',  deep: '#6d28d9', bright: '#a78bfa', accent: 'linear-gradient(135deg,#6d28d9 0%,#a78bfa 100%)', value: booleanCount },
+    { key: 'priority',  label: 'High Priority',        sub: 'Priority Level',   icon: 'ri-alarm-warning-fill', tag: 'HIGH', deep: '#b91c1c', bright: '#ef4444', accent: 'linear-gradient(135deg,#b91c1c 0%,#ef4444 100%)', value: highCount },
+  ];
+
+  return (
+    <div className="kpi-extras mb-3">
+      <style>{`
+        .kpi-extras .kpi-cards {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 10px;
+          margin-bottom: 12px;
+        }
+        @media (max-width: 1199px) { .kpi-extras .kpi-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        @media (max-width: 575px)  { .kpi-extras .kpi-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } }
+        .kpi-extras .kpi-card {
+          position: relative;
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 10px;
+          padding: 14px 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          overflow: hidden;
+          transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+        .kpi-extras .kpi-card::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 3px;
+          background: var(--kpi-accent, transparent);
+        }
+        .kpi-extras .kpi-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 22px rgba(0,0,0,0.07);
+        }
+        .kpi-extras .kpi-card-text {
+          display: flex;
+          flex-direction: column;
+          min-width: 0;
+          line-height: 1.2;
+          flex: 1;
+        }
+        .kpi-extras .kpi-card-icon {
+          width: 36px; height: 36px;
+          border-radius: 9px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          color: #fff;
+          flex-shrink: 0;
+        }
+        .kpi-extras .kpi-card-label {
+          font-size: 10.5px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--vz-secondary-color);
+          line-height: 1.2;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .kpi-extras .kpi-card-num {
+          font-size: 22px;
+          font-weight: 800;
+          line-height: 1.1;
+          color: var(--kpi-deep, var(--vz-heading-color, var(--vz-body-color)));
+          font-variant-numeric: tabular-nums;
+          margin-top: 2px;
+        }
+        [data-bs-theme="dark"] .kpi-extras .kpi-card-num,
+        [data-layout-mode="dark"] .kpi-extras .kpi-card-num {
+          color: var(--kpi-bright, rgba(255,255,255,0.95)) !important;
+        }
+        [data-bs-theme="dark"] .kpi-extras .kpi-card-label,
+        [data-layout-mode="dark"] .kpi-extras .kpi-card-label { color: rgba(255,255,255,0.78); }
+        [data-bs-theme="dark"] .kpi-extras .kpi-card,
+        [data-layout-mode="dark"] .kpi-extras .kpi-card {
+          background: linear-gradient(180deg,
+            color-mix(in srgb, var(--vz-card-bg) 78%, #ffffff) 0%,
+            color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
+          border-color: color-mix(in srgb, #ffffff 9%, transparent);
+          box-shadow: 0 4px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+        [data-bs-theme="dark"] .kpi-extras .kpi-card-label,
+        [data-layout-mode="dark"] .kpi-extras .kpi-card-label { color: rgba(255,255,255,0.78); }
+        [data-bs-theme="dark"] .kpi-extras .kpi-card-sub,
+        [data-layout-mode="dark"] .kpi-extras .kpi-card-sub { color: rgba(255,255,255,0.65); }
+      `}</style>
+
+      <div className="kpi-cards">
+        {KPIS.map(k => (
+          <div
+            className="kpi-card"
+            key={k.key}
+            title={k.label}
+            style={{
+              ['--kpi-deep' as any]: k.deep,
+              ['--kpi-bright' as any]: k.bright,
+              ['--kpi-accent' as any]: k.accent,
+            }}
+          >
+            <div className="kpi-card-text">
+              <span className="kpi-card-label">{k.label}</span>
+              <span className="kpi-card-num">{k.value}</span>
+            </div>
+            <span
+              className="kpi-card-icon"
+              style={{
+                background: k.accent,
+                boxShadow: `0 4px 10px ${k.bright}55, inset 0 1px 0 rgba(255,255,255,0.25)`,
+              }}
+            >
+              <i className={k.icon} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Inline Role / Target / Priority filters for the KPI master. */
+function KpiInlineFilters({
+  refData,
+  roleFilter,     setRoleFilter,
+  targetFilter,   setTargetFilter,
+  priorityFilter, setPriorityFilter,
+}: {
+  refData: Record<string, any[]>;
+  roleFilter: string;
+  setRoleFilter: (v: string) => void;
+  targetFilter: string;
+  setTargetFilter: (v: string) => void;
+  priorityFilter: string;
+  setPriorityFilter: (v: string) => void;
+}) {
+  const TARGETS = ['Numeric', 'Percentage', 'Currency', 'Boolean', 'Date-based', 'Rating'];
+  const PRIORITIES = ['Critical', 'High', 'Medium', 'Low'];
+  const roles = refData['roles'] || [];
+  return (
+    <div className="kpi-inline-filters d-flex align-items-center flex-wrap" style={{ gap: 12 }}>
+      <style>{`
+        .kpi-inline-filters .kpi-il-group { display: flex; align-items: center; gap: 6px; }
+        .kpi-inline-filters .kpi-il-label {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--vz-secondary-color);
+        }
+      `}</style>
+      <div className="kpi-il-group">
+        <span className="kpi-il-label">Role</span>
+        <div style={{ minWidth: 150 }}>
+          <MasterSelect
+            value={roleFilter}
+            onChange={(v) => setRoleFilter(v || 'all')}
+            options={[
+              { value: 'all', label: 'All Roles' },
+              ...roles.map((r: any) => ({ value: String(r.id), label: String(r.name) })),
+            ]}
+            placeholder="All Roles"
+          />
+        </div>
+      </div>
+      <div className="kpi-il-group">
+        <span className="kpi-il-label">Target</span>
+        <div style={{ minWidth: 140 }}>
+          <MasterSelect
+            value={targetFilter}
+            onChange={(v) => setTargetFilter(v || 'all')}
+            options={[{ value: 'all', label: 'All Types' }, ...TARGETS.map(t => ({ value: t, label: t }))]}
+            placeholder="All Types"
+          />
+        </div>
+      </div>
+      <div className="kpi-il-group">
+        <span className="kpi-il-label">Priority</span>
+        <div style={{ minWidth: 120 }}>
+          <MasterSelect
+            value={priorityFilter}
+            onChange={(v) => setPriorityFilter(v || 'all')}
+            options={[{ value: 'all', label: 'All' }, ...PRIORITIES.map(p => ({ value: p, label: p }))]}
+            placeholder="All"
           />
         </div>
       </div>
