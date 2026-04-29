@@ -221,6 +221,8 @@ class AuthController extends Controller
             'branch_id' => $user->branch_id,
             'client_name' => $user->client?->org_name,
             'branch_name' => $user->branch?->name,
+            'client_logo' => $user->client?->logo,
+            'branch_logo' => $user->branch?->logo,
             'is_main_branch' => (bool) ($user->branch?->is_main),
             'status' => $user->status,
             'designation' => $user->designation,

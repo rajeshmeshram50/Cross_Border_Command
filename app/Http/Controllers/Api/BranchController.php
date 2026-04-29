@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\QueryException;
@@ -104,6 +105,7 @@ class BranchController extends Controller
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
+            'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
 
             // Branch user login credentials
             'user_name' => 'required|string|max:255',
@@ -151,6 +153,14 @@ class BranchController extends Controller
                 'notes' => $request->notes,
                 'created_by' => $user->id,
             ]);
+
+            // Save uploaded branch logo (if any) under storage/app/public/branch-logos.
+            // Stored value is the public URL (/storage/...) for direct SPA use.
+            if ($request->hasFile('logo')) {
+                $branch->update([
+                    'logo' => '/storage/' . $request->file('logo')->store('branches/logos', 'public'),
+                ]);
+            }
 
             // Create branch user
             $branchUser = User::create([
@@ -259,6 +269,7 @@ class BranchController extends Controller
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
+            'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'user_name' => 'nullable|string|max:255',
             'user_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($branchUser?->id)->whereNull('deleted_at')],
             'user_phone' => 'nullable|string|max:20',
@@ -292,6 +303,13 @@ class BranchController extends Controller
                 'address', 'city', 'district', 'taluka', 'state', 'pincode', 'country',
                 'is_main', 'max_users', 'established_at', 'status', 'notes',
             ]));
+
+            if ($request->hasFile('logo')) {
+                if ($branch->logo && str_starts_with($branch->logo, '/storage/')) {
+                    Storage::disk('public')->delete(substr($branch->logo, strlen('/storage/')));
+                }
+                $branch->update(['logo' => '/storage/' . $request->file('logo')->store('branches/logos', 'public')]);
+            }
 
             if ($statusBecomingInactive) {
                 $this->revokeAllUserTokensForBranch($branch->id);

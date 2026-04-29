@@ -11,8 +11,18 @@ import VerticalLayout from "./VerticalLayouts";
 import TwoColumnLayout from "./TwoColumnLayout";
 import { Container } from "reactstrap";
 import HorizontalLayout from "./HorizontalLayout";
+import { useAuth } from "../../contexts/AuthContext";
 
 const Sidebar = ({ layoutType } : any) => {
+  // Logo fallback chain — branch logo wins for branch users, then client logo
+  // (used by client_admin and as fallback for branch_user without their own
+  // logo), then the system IGC default for super admin or any client without
+  // an uploaded logo.
+  const { user } = useAuth();
+  const tenantLogo = user?.branch_logo || user?.client_logo || null;
+  const smallLogo = tenantLogo || logoSm;
+  const largeLogoDark = tenantLogo || logoDark;
+  const largeLogoLight = tenantLogo || logoLight;
 
   useEffect(() => {
     var verticalOverlay = document.getElementsByClassName("vertical-overlay");
@@ -40,19 +50,19 @@ const Sidebar = ({ layoutType } : any) => {
         <div className="navbar-brand-box">
           <Link to="/" className="logo logo-dark">
             <span className="logo-sm mb-2">
-              <img src={logoSm} alt="" style={{ height: '35px', width: 'auto' }} />
+              <img src={smallLogo} alt="" style={{ height: '35px', width: 'auto', objectFit: 'contain' }} />
             </span>
             <span className="logo-lg">
-              <img src={logoDark} alt="" style={{ height: '30px', width: 'auto' }} />
+              <img src={largeLogoDark} alt="" style={{ height: '30px', width: 'auto', objectFit: 'contain' }} />
             </span>
           </Link>
 
           <Link to="/" className="logo logo-light">
             <span className="logo-sm ">
-              <img src={logoSm} alt="" style={{ height: '53px', width: 'auto' }} />
+              <img src={smallLogo} alt="" style={{ height: '53px', width: 'auto', objectFit: 'contain' }} />
             </span>
             <span className="logo-lg">
-              <img src={logoLight} alt="" style={{ height: '55px', width: 'auto' }} />
+              <img src={largeLogoLight} alt="" style={{ height: '55px', width: 'auto', objectFit: 'contain' }} />
             </span>
           </Link>
           <button
