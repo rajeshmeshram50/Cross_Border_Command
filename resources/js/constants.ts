@@ -73,7 +73,6 @@ export const MASTER_GROUPS: MenuGroup[] = [
     children: [
       { id: 'master.assets',           icon: 'Briefcase', label: 'Assets' },
       { id: 'master.asset_categories', icon: 'Tags',      label: 'Asset Categories' },
-      { id: 'master.numbering_series', icon: 'Hash',      label: 'Numbering Series' },
     ],
   },
   {

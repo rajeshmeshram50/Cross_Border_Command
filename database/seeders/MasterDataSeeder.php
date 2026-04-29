@@ -567,20 +567,6 @@ class MasterDataSeeder extends Seeder
                     ['asset_name' => 'Honeywell Scanner CT40',  'asset_number' => 'A-EL-002', 'asset_type_id' => $catByName('Electronics'),       'assign_date' => now()->subDays(45)->format('Y-m-d'), 'status' => 'Active'],
                 ];
 
-            case 'numbering_series':
-                return [
-                    ['module' => 'Purchase Order',    'prefix' => 'PO/',     'fy_format' => 'YYYY-YY', 'next_number' => 126, 'is_locked' => 'Yes', 'status' => 'Active'],
-                    ['module' => 'Proforma Invoice',  'prefix' => 'INV/',    'fy_format' => 'YYYY-YY', 'next_number' => 89,  'is_locked' => 'Yes', 'status' => 'Active'],
-                    ['module' => 'Quotation',         'prefix' => 'QT/',     'fy_format' => 'YYYY-YY', 'next_number' => 45,  'is_locked' => 'Yes', 'status' => 'Active'],
-                    ['module' => 'Shipment',          'prefix' => 'SHP-EXP-','fy_format' => 'YYYY',    'next_number' => 1,   'is_locked' => 'No',  'status' => 'Active'],
-                    ['module' => 'GRN',               'prefix' => 'GRN/',    'fy_format' => 'YYYY-YY', 'next_number' => 300, 'is_locked' => 'Yes', 'status' => 'Active'],
-                    ['module' => 'Delivery Challan',  'prefix' => 'DC/',     'fy_format' => 'YYYY-YY', 'next_number' => 212, 'is_locked' => 'Yes', 'status' => 'Active'],
-                    ['module' => 'Payment Voucher',   'prefix' => 'PAY/',    'fy_format' => 'YYYY-YY', 'next_number' => 150, 'is_locked' => 'Yes', 'status' => 'Active'],
-                    ['module' => 'Credit Note',       'prefix' => 'CN/',     'fy_format' => 'YYYY-YY', 'next_number' => 34,  'is_locked' => 'Yes', 'status' => 'Active'],
-                    ['module' => 'Debit Note',        'prefix' => 'DN/',     'fy_format' => 'YYYY-YY', 'next_number' => 22,  'is_locked' => 'Yes', 'status' => 'Active'],
-                    ['module' => 'Goods Receipt',     'prefix' => 'RCV/',    'fy_format' => 'YYYY',    'next_number' => 101, 'is_locked' => 'No',  'status' => 'Active'],
-                ];
-
             /* ───────────── P2P MASTERS ───────────── */
 
             case 'payment_terms':
