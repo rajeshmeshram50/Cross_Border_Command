@@ -278,34 +278,79 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
         </div>
 
         {/* Meta grid — Department · Designation · Primary Role · Ancillary Role · Manager */}
-        <div style={{ padding: '14px 20px' }}>
+        <div style={{ padding: '16px 20px 18px' }}>
           <style>{`
-            .ep-meta { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 12px; }
+            .ep-meta { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 14px; }
             @media (min-width: 576px)  { .ep-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
             @media (min-width: 992px)  { .ep-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
             @media (min-width: 1200px) { .ep-meta { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
-            .ep-meta-cell { padding: 10px 12px; border-radius: 10px; background: var(--vz-secondary-bg); border: 1px solid var(--vz-border-color); min-width: 0; }
-            .ep-meta-icon { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
-            .ep-meta-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 2px; }
-            .ep-meta-value { font-size: 13px; font-weight: 600; color: var(--vz-heading-color, var(--vz-body-color)); line-height: 1.25; word-break: break-word; }
-            .ep-meta-pill { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; margin: 1px 4px 1px 0; }
+            .ep-meta-cell {
+              position: relative;
+              padding: 14px 16px 14px 22px;
+              border-radius: 14px;
+              background: var(--vz-card-bg);
+              border: 1px solid var(--vz-border-color);
+              min-width: 0;
+              overflow: hidden;
+              transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+              cursor: default;
+            }
+            /* Left accent strip — colored bar driven by --strip on the cell */
+            .ep-meta-cell::before {
+              content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+              background: var(--strip);
+              border-top-left-radius: 14px; border-bottom-left-radius: 14px;
+            }
+            /* Hover gradient overlay — soft tinted wash from the cell's own colour */
+            .ep-meta-cell::after {
+              content: ''; position: absolute; inset: 0;
+              background: var(--strip);
+              opacity: 0;
+              transition: opacity .25s ease;
+              pointer-events: none;
+              border-radius: 14px;
+            }
+            .ep-meta-cell:hover {
+              transform: translateY(-2px);
+              box-shadow: 0 12px 28px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.04);
+              border-color: transparent;
+            }
+            .ep-meta-cell:hover::after { opacity: 0.10; }
+            .ep-meta-cell > * { position: relative; z-index: 1; }
+
+            .ep-meta-icon {
+              width: 38px; height: 38px; border-radius: 10px;
+              display: inline-flex; align-items: center; justify-content: center;
+              flex-shrink: 0; font-size: 17px; color: #fff;
+              background: var(--strip);
+              box-shadow: 0 6px 14px rgba(0,0,0,0.10);
+              transition: transform .25s ease;
+            }
+            .ep-meta-cell:hover .ep-meta-icon { transform: scale(1.06) rotate(-3deg); }
+            .ep-meta-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 3px; }
+            .ep-meta-value { font-size: 14px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color)); line-height: 1.25; word-break: break-word; }
+            .ep-meta-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; margin: 2px 4px 2px 0; }
           `}</style>
           {(() => {
             const ancillaryList = Array.isArray(employee?.ancillaryRole)
               ? (employee?.ancillaryRole as string[]).filter(Boolean)
               : (employee?.ancillaryRole ? [employee.ancillaryRole as string] : []);
             const cells = [
-              { label: 'Department',     value: employee?.department,                       icon: 'ri-building-2-line',   bg: '#dceefe', fg: '#0c63b0' },
-              { label: 'Designation',    value: employee?.designation,                      icon: 'ri-briefcase-line',    bg: '#fde8c4', fg: '#a4661c' },
-              { label: 'Primary Role',   value: employee?.primaryRole,                      icon: 'ri-user-star-line',    bg: '#d6f4e3', fg: '#108548' },
-              { label: 'Ancillary Role', value: ancillaryList.length ? ancillaryList : null, icon: 'ri-team-line',         bg: '#ece6ff', fg: '#5a3fd1' },
-              { label: 'Manager',        value: employee?.manager,                          icon: 'ri-user-shared-line',  bg: '#fdd9ea', fg: '#a02960' },
+              { label: 'Department',     value: employee?.department,                       icon: 'ri-building-2-line',  pill: { bg: '#dceefe', fg: '#0c63b0' }, strip: 'linear-gradient(180deg, #299cdb, #5fc8ff)' },
+              { label: 'Designation',    value: employee?.designation,                      icon: 'ri-briefcase-line',   pill: { bg: '#fde8c4', fg: '#a4661c' }, strip: 'linear-gradient(180deg, #f7b84b, #ffd47a)' },
+              { label: 'Primary Role',   value: employee?.primaryRole,                      icon: 'ri-user-star-line',   pill: { bg: '#d6f4e3', fg: '#108548' }, strip: 'linear-gradient(180deg, #0ab39c, #30d5b5)' },
+              { label: 'Ancillary Role', value: ancillaryList.length ? ancillaryList : null, icon: 'ri-team-line',        pill: { bg: '#ece6ff', fg: '#5a3fd1' }, strip: 'linear-gradient(180deg, #6a5acd, #a78bfa)' },
+              { label: 'Manager',        value: employee?.manager,                          icon: 'ri-user-shared-line', pill: { bg: '#fdd9ea', fg: '#a02960' }, strip: 'linear-gradient(180deg, #f06548, #ff9e7c)' },
             ];
             return (
               <div className="ep-meta">
                 {cells.map(c => (
-                  <div key={c.label} className="ep-meta-cell d-flex align-items-center gap-2">
-                    <span className="ep-meta-icon" style={{ background: c.bg, color: c.fg }}>
+                  <div
+                    key={c.label}
+                    className="ep-meta-cell d-flex align-items-center gap-3"
+                    style={{ ['--strip' as any]: c.strip }}
+                  >
+                    <span className="ep-meta-icon">
                       <i className={c.icon} />
                     </span>
                     <div className="min-w-0 flex-grow-1">
@@ -315,7 +360,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
                           ? <div className="text-muted fs-12">—</div>
                           : <div>
                               {c.value.map(v => (
-                                <span key={v} className="ep-meta-pill" style={{ background: c.bg, color: c.fg }}>
+                                <span key={v} className="ep-meta-pill" style={{ background: c.pill.bg, color: c.pill.fg }}>
                                   {v}
                                 </span>
                               ))}
