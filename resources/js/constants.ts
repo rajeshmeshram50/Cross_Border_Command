@@ -74,7 +74,6 @@ export const MASTER_GROUPS: MenuGroup[] = [
     children: [
       { id: 'master.assets',           icon: 'Briefcase', label: 'Assets' },
       { id: 'master.asset_categories', icon: 'Tags',      label: 'Asset Categories' },
-      { id: 'master.numbering_series', icon: 'Hash',      label: 'Numbering Series' },
     ],
   },
   {
@@ -114,11 +113,13 @@ export const MASTER_GROUPS: MenuGroup[] = [
 export const HR_GROUPS: MenuGroup[] = [
   {
     id: 'hr.command',
-    label: 'HRMS Command',
+    label: 'HRMS Command Center',
     icon: 'LayoutDashboard',
     children: [
-      { id: 'hr.overview', icon: 'LayoutGrid',     label: 'HRMS Overview' },
-      { id: 'hr.pip',      icon: 'ClipboardCheck', label: 'PIP' },
+      { id: 'hr.overview',  icon: 'LayoutGrid',     label: 'HRMS Overview' },
+      { id: 'hr.pip',       icon: 'ClipboardCheck', label: 'PIP' },
+      { id: 'hr.reports',   icon: 'BarChart3',      label: 'HR Reports' },
+      { id: 'hr.ai_master', icon: 'Sparkles',       label: 'AI Master' },
     ],
   },
   {
@@ -126,19 +127,8 @@ export const HR_GROUPS: MenuGroup[] = [
     label: 'HR Core',
     icon: 'Users',
     children: [
-      { id: 'hr.employee',    icon: 'User',       label: 'Employee' },
-      { id: 'hr.department',  icon: 'Building2',  label: 'Department' },
-      { id: 'hr.designation', icon: 'BadgeCheck', label: 'Designation' },
-      { id: 'hr.role',        icon: 'UserCog',    label: 'Role' },
-      { id: 'hr.kpis',        icon: 'TrendingUp', label: "KPI's" },
-    ],
-  },
-  {
-    id: 'hr.operations',
-    label: 'HR Operations',
-    icon: 'Workflow',
-    children: [
       { id: 'hr.recruitment', icon: 'UserPlus',  label: 'Recruitment' },
+      { id: 'hr.employee',    icon: 'User',      label: 'Employee' },
       { id: 'hr.onboarding',  icon: 'UserCheck', label: 'Employee Onboarding' },
       { id: 'hr.exit',        icon: 'LogOut',    label: 'Exit Management' },
     ],
@@ -164,19 +154,10 @@ export const HR_GROUPS: MenuGroup[] = [
       { id: 'hr.templates',      icon: 'FileText',    label: 'Templates' },
       { id: 'hr.policies',       icon: 'BookOpen',    label: 'Policies' },
       { id: 'hr.broadcast',      icon: 'Megaphone',   label: 'Broadcast Centre' },
-      { id: 'hr.doc_category',   icon: 'FolderOpen',  label: 'Document Category' },
+      { id: 'hr.doc_category',   icon: 'FolderOpen',  label: 'Category' },
       { id: 'hr.doc_types',      icon: 'FileBadge',   label: 'Document Types' },
       { id: 'hr.doc_gen_rules',  icon: 'Settings2',   label: 'Doc Generation Rules' },
       { id: 'hr.custom_fields',  icon: 'PlusSquare',  label: 'Custom Fields' },
-    ],
-  },
-  {
-    id: 'hr.ai',
-    label: 'AI Intelligence',
-    icon: 'Brain',
-    children: [
-      { id: 'hr.reports',   icon: 'BarChart3', label: 'HR Reports' },
-      { id: 'hr.ai_master', icon: 'Sparkles',  label: 'AI Master' },
     ],
   },
 ];

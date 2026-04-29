@@ -38,7 +38,7 @@ class ModuleSeeder extends Seeder
             ['name' => 'Trade & Commercial',    'slug' => 'master.trade',        'icon' => 'TrendingUp',  'description' => 'HSN, GST, currency, units, incoterms'],
             ['name' => 'Party & Classification', 'slug' => 'master.party',       'icon' => 'Users',       'description' => 'Customer, vendor and party types'],
             ['name' => 'Legal & Compliance',    'slug' => 'master.legal',        'icon' => 'Scale',       'description' => 'Licenses, risk, documents, hazards'],
-            ['name' => 'Operations & Support',  'slug' => 'master.operations',   'icon' => 'Wrench',      'description' => 'Assets, asset categories, numbering series'],
+            ['name' => 'Operations & Support',  'slug' => 'master.operations',   'icon' => 'Wrench',      'description' => 'Assets and asset categories'],
             ['name' => 'P2P Masters',           'slug' => 'master.p2p',          'icon' => 'Handshake',   'description' => 'Procure-to-pay configuration'],
             ['name' => 'Warehouse Masters',     'slug' => 'master.warehouse',    'icon' => 'Warehouse',   'description' => 'Warehouse, zones, racks, freezers'],
         ];
@@ -98,7 +98,6 @@ class ModuleSeeder extends Seeder
             'master.operations' => [
                 ['name' => 'Assets',           'slug' => 'master.assets',            'icon' => 'Briefcase',    'description' => 'Company equipment & assets'],
                 ['name' => 'Asset Categories', 'slug' => 'master.asset_categories',  'icon' => 'Tags',         'description' => 'Group assets by type & depreciation'],
-                ['name' => 'Numbering Series', 'slug' => 'master.numbering_series',  'icon' => 'Hash',         'description' => 'System auto-numbering series'],
             ],
             'master.p2p' => [
                 ['name' => 'Payment Terms',               'slug' => 'master.payment_terms',         'icon' => 'CalendarDays',  'description' => 'Credit days, advance %, milestone structure'],

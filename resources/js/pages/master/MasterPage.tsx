@@ -78,6 +78,9 @@ function MasterPageInner({
   const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
   const [dsnLevelFilter, setDsnLevelFilter] = useState<string>('all');
   const [dsnDeptFilter, setDsnDeptFilter] = useState<string>('all');
+  // Department-master-specific filter state. Only used when cfg.slug === 'departments'.
+  const [dpStatusFilter, setDpStatusFilter] = useState<string>('all');
+  const [dpParentFilter, setDpParentFilter] = useState<string>('all');
   // Role-master-specific filter state. Only used when cfg.slug === 'roles'.
   const [roleStatusFilter, setRoleStatusFilter] = useState<string>('all');
   const [roleTypeFilter, setRoleTypeFilter] = useState<string>('all');
@@ -250,6 +253,7 @@ function MasterPageInner({
   const filteredRecords = useMemo(() => {
     const q = searchInput.trim().toLowerCase();
     const isDsn = cfg.slug === 'designations';
+    const isDp  = cfg.slug === 'departments';
     const isRole = cfg.slug === 'roles';
     const searchableKeys = [
       ...cfg.cols,
@@ -266,6 +270,19 @@ function MasterPageInner({
         }
         if (dsnDeptFilter !== 'all') {
           if (String(row.department_id ?? '') !== String(dsnDeptFilter)) return false;
+        }
+      }
+      // Department-master extra filters: Status / Parent dropdowns.
+      if (isDp) {
+        if (dpStatusFilter !== 'all') {
+          if (String(row.status ?? '').toLowerCase() !== dpStatusFilter.toLowerCase()) return false;
+        }
+        if (dpParentFilter !== 'all') {
+          if (dpParentFilter === 'root') {
+            if (row.parent_id != null && row.parent_id !== '') return false;
+          } else if (String(row.parent_id ?? '') !== String(dpParentFilter)) {
+            return false;
+          }
         }
       }
       // Role-master extra filters: tab (All/Primary/Ancillary) + Type/Status/Dept.
@@ -304,7 +321,7 @@ function MasterPageInner({
       return false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, roleStatusFilter, roleTypeFilter, roleDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter]);
+  }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, dpStatusFilter, dpParentFilter, roleStatusFilter, roleTypeFilter, roleDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter]);
 
   // Effective ref-data passed to renderField. For self-referential refs (e.g.
   // Designation's "Reports To" → Designations) we want the dropdown to reflect
@@ -803,6 +820,10 @@ function MasterPageInner({
         cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
       },
     ];
+    // Icon column — hidden on designations (the level rating already gives a
+    // strong visual cue, so the duplicate badge column wastes horizontal space)
+    // and on departments (the table already leads with a coloured Code column).
+    if (cfg.slug !== 'designations' && cfg.slug !== 'departments') {
     // Icon column — hidden on rich masters (designations / roles / kpis) since
     // the colored type/level/priority pills already give a strong visual cue.
     if (cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis') {
@@ -874,6 +895,37 @@ function MasterPageInner({
           return (
             <div className="text-center" style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', fontVariantNumeric: 'tabular-nums' }}>
               {n.toLocaleString()}
+            </div>
+          );
+        },
+      });
+    }
+    // Department-master Employees column. Two-line cell ("18" / "employees").
+    // Prefers row.employees_count; falls back to a deterministic mock derived
+    // from the row id so the table reads naturally before the backend wires up
+    // a real join with the employees table.
+    if (cfg.slug === 'departments') {
+      const mockCountFor = (row: any): number => {
+        const seed = String(row?.id ?? row?.code ?? row?.name ?? '');
+        let h = 0;
+        for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+        return 4 + Math.abs(h) % 22; // 4..25
+      };
+      cols.push({
+        header: () => <div className="text-center">Employees</div>,
+        id: '__employees',
+        accessorFn: (row: any) => Number(row.employees_count ?? mockCountFor(row)),
+        cell: (info: any) => {
+          const row = info.row.original;
+          const n = Number(row?.employees_count ?? mockCountFor(row));
+          return (
+            <div className="text-center" style={{ lineHeight: 1.1 }}>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', fontVariantNumeric: 'tabular-nums' }}>
+                {n.toLocaleString()}
+              </div>
+              <div className="text-muted" style={{ fontSize: '0.7rem', marginTop: 2 }}>
+                employees
+              </div>
             </div>
           );
         },
@@ -1109,7 +1161,9 @@ function MasterPageInner({
         }
       `}</style>
       {/* Page title — designations gets the rich [icon|title+subtitle][Add] strip;
+          departments is rendered headerless (goes straight into KPI/table);
           all other masters keep the original [back][title][breadcrumb] layout. */}
+      {cfg.slug !== 'departments' && (
       <Row>
         <Col xs={12}>
           {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? (
@@ -1211,10 +1265,11 @@ function MasterPageInner({
           )}
         </Col>
       </Row>
+      )}
 
       {/* "What you are doing here" — hidden on designations & roles since the
           rich title strip already carries the subtitle context. */}
-      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && <WhatYouDoHere cfg={cfg} />}
+      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && <WhatYouDoHere cfg={cfg} onAdd={openAdd} canAdd={caps.add} />}
 
       {/* KPI strip — only when the master config opts in via `kpis` */}
       {cfg.kpis && cfg.kpis.length > 0 && (
@@ -1291,6 +1346,7 @@ function MasterPageInner({
 
               {/* Search bar (left) + filters/Add button on the right. */}
               <Row className="g-2 align-items-center mb-3">
+                <Col md={cfg.slug === 'designations' || cfg.slug === 'departments' ? 4 : 6} sm={12}>
                 <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? 4 : 6} sm={12}>
                   <div className="search-box">
                     <Input
@@ -1303,6 +1359,7 @@ function MasterPageInner({
                     <i className="ri-search-line search-icon"></i>
                   </div>
                 </Col>
+                <Col md={cfg.slug === 'designations' || cfg.slug === 'departments' ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
                 <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis') ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
                   {cfg.slug === 'designations' && (
                     <DesignationInlineFilters
@@ -1315,6 +1372,19 @@ function MasterPageInner({
                       setDeptFilter={setDsnDeptFilter}
                     />
                   )}
+                  {cfg.slug === 'departments' && (
+                    <DepartmentInlineFilters
+                      records={records}
+                      statusFilter={dpStatusFilter}
+                      setStatusFilter={setDpStatusFilter}
+                      parentFilter={dpParentFilter}
+                      setParentFilter={setDpParentFilter}
+                    />
+                  )}
+                  {/* Add button — shown here for most masters; designations puts
+                      it in the page title strip, departments puts it in the
+                      "What you are doing here" header row. */}
+                  {cfg.slug !== 'designations' && cfg.slug !== 'departments' && caps.add && (
                   {cfg.slug === 'roles' && (
                     <RolesInlineFilters
                       refData={refData}
@@ -1607,10 +1677,69 @@ const STEP_PALETTES: { grad: string; tint: string; border: string; accent: strin
   { grad: 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)', tint: 'linear-gradient(135deg, rgba(240,101,72,0.08), rgba(255,158,124,0.04))', border: 'rgba(240,101,72,0.22)', accent: '#f06548' },
 ];
 
-function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
+function WhatYouDoHere({ cfg, onAdd, canAdd }: { cfg: MasterConfig; onAdd?: () => void; canAdd?: boolean }) {
   const steps = cfg.wtd || [];
   const singular = cfg.titleSingular || cfg.title;
   const [open, setOpen] = useState(false);
+  // Departments collapses the body — only the heading + Add button row is shown.
+  const isDepartments = cfg.slug === 'departments';
+
+  // Heading content reused by both the collapsible (default) and static
+  // (departments) variants so the title styling stays in sync.
+  const heading = (
+    <div className="d-flex align-items-center gap-3">
+      <span
+        className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+        style={{
+          width: 40, height: 40,
+          background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
+          boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
+        }}
+      >
+        <i className="ri-lightbulb-flash-line" style={{ color: '#fff', fontSize: 18 }}></i>
+      </span>
+      <div>
+        <div className="fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 15 }}>
+          {cfg.title} — What you are doing here
+        </div>
+        <small className="text-muted">Quick 4-step guide to set up a {singular} record</small>
+      </div>
+    </div>
+  );
+
+  if (isDepartments) {
+    return (
+      <Card
+        className="border shadow-sm mb-3 overflow-hidden"
+        style={{
+          background: 'var(--vz-card-bg)',
+          borderColor: 'var(--vz-border-color)',
+          borderRadius: 16,
+        }}
+      >
+        <div
+          className="d-flex align-items-center justify-content-between flex-wrap gap-2 px-3 py-3"
+          style={{ background: 'transparent' }}
+        >
+          {heading}
+          {canAdd && onAdd && (
+            <Button
+              className="btn-label waves-effect waves-light rounded-pill border-0"
+              onClick={onAdd}
+              style={{
+                background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
+                color: '#fff',
+                boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
+              }}
+            >
+              <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+              Add {singular}
+            </Button>
+          )}
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card
@@ -1633,24 +1762,7 @@ function WhatYouDoHere({ cfg }: { cfg: MasterConfig }) {
           userSelect: 'none',
         }}
       >
-        <div className="d-flex align-items-center gap-3">
-          <span
-            className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-            style={{
-              width: 40, height: 40,
-              background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-              boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
-            }}
-          >
-            <i className="ri-lightbulb-flash-line" style={{ color: '#fff', fontSize: 18 }}></i>
-          </span>
-          <div>
-            <div className="fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', fontSize: 15 }}>
-              {cfg.title} — What you are doing here
-            </div>
-            <small className="text-muted">Quick 4-step guide to set up a {singular} record</small>
-          </div>
-        </div>
+        {heading}
         <span
           className="d-inline-flex align-items-center justify-content-center rounded-circle bg-primary-subtle text-primary flex-shrink-0"
           style={{
@@ -2105,6 +2217,65 @@ function DesignationInlineFilters({
               ...departments.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
             ]}
             placeholder="All Departments"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Inline Status / Parent filters — sits between the search box and the
+ * Add button row on the Department master. */
+function DepartmentInlineFilters({
+  records,
+  statusFilter, setStatusFilter,
+  parentFilter, setParentFilter,
+}: {
+  records: any[];
+  statusFilter: string;
+  setStatusFilter: (v: string) => void;
+  parentFilter: string;
+  setParentFilter: (v: string) => void;
+}) {
+  return (
+    <div className="dsn-inline-filters d-flex align-items-center flex-wrap" style={{ gap: 12 }}>
+      <div className="dsn-il-group">
+        <span className="dsn-il-label">Status</span>
+        <div style={{ minWidth: 130 }}>
+          <MasterSelect
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v || 'all')}
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'Active', label: 'Active' },
+              { value: 'Inactive', label: 'Inactive' },
+            ]}
+            placeholder="All"
+          />
+        </div>
+      </div>
+      <div className="dsn-il-group">
+        <span className="dsn-il-label">Parent</span>
+        <div style={{ minWidth: 160 }}>
+          <MasterSelect
+            value={parentFilter}
+            onChange={(v) => setParentFilter(v || 'all')}
+            options={(() => {
+              // Only departments that are actually being used as a parent of
+              // another row appear in this dropdown — filtering by a leaf
+              // department would always return zero rows, so it shouldn't show.
+              const parentIds = new Set<string>();
+              for (const r of records) {
+                if (r?.parent_id != null && r.parent_id !== '') parentIds.add(String(r.parent_id));
+              }
+              const parentRows = records.filter((d: any) => parentIds.has(String(d.id)));
+              return [
+                { value: 'all',  label: 'All' },
+                { value: 'root', label: 'Root (no parent)' },
+                ...parentRows.map((d: any) => ({ value: String(d.id), label: String(d.name) })),
+              ];
+            })()}
+            placeholder="All"
           />
         </div>
       </div>

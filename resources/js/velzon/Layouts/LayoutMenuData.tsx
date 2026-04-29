@@ -53,10 +53,15 @@ const slugToPath = (slug: string): string => {
   }
 };
 
-// HR leaves don't have dedicated pages yet — every leaf points at the hub
-// (/hr) so navigation is graceful. When a real per-leaf page is built later,
-// just return `/hr/<leaf-slug-after-prefix>` here without changing anything else.
-const hrLeafLink = (_leafId: string): string => "/hr";
+// Most HR leaves don't have dedicated pages yet — they fall back to the hub
+// (/hr) so navigation stays graceful. As real per-leaf pages get built, add
+// them to the switch below; the rest keep falling back to /hr.
+const hrLeafLink = (leafId: string): string => {
+  switch (leafId) {
+    case "hr.employee": return "/hr/employees";
+    default:            return "/hr";
+  }
+};
 
 const Navdata = () => {
   const { user } = useAuth();

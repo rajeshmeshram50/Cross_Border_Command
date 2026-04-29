@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PropTypes from "prop-types";
-import { Collapse, Container } from 'reactstrap';
+import { Container } from 'reactstrap';
 import withRouter from '../../Components/Common/withRouter';
 
 import logoSm from "../../assets/images/logo-sm.png";
@@ -10,12 +10,34 @@ import { withTranslation } from "react-i18next";
 
 // Import Data
 import navdata from "../LayoutMenuData";
+import { closeAllMenus, subscribeMenu } from "../menuState";
 import VerticalLayout from "../VerticalLayouts";
 
 //SimpleBar
 import SimpleBar from "simplebar-react";
 
+// See VerticalLayouts/index.tsx for rationale: only render dropdowns when
+// open, omit the `.collapse` class, and let Velzon's `.menu-dropdown.show`
+// rule drive visibility.
+const dropdownClass = () => "menu-dropdown show";
+
 const TwoColumnLayout = (props: any) => {
+    // Re-render whenever any sidebar dropdown is toggled. Open/closed state
+    // lives in a module-level Set (see ../menuState.ts); without this the
+    // layout never sees toggleMenu() updates and the Collapse stays stale.
+    const [, setTick] = useState(0);
+    useEffect(() => subscribeMenu(() => setTick((t) => t + 1)), []);
+
+    // Close any open dropdown when the user clicks outside the menu column.
+    useEffect(() => {
+        const handleOutside = (e: MouseEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (target && !target.closest("#navbar-nav")) closeAllMenus();
+        };
+        document.addEventListener("mousedown", handleOutside);
+        return () => document.removeEventListener("mousedown", handleOutside);
+    }, []);
+
     const navData = navdata().props.children;
     const activateParentDropdown = useCallback((item: any) => {
         item.classList.add("active");
@@ -153,8 +175,7 @@ const TwoColumnLayout = (props: any) => {
                                                         onClick={item.click}
                                                         to="#"
                                                         sub-items={item.id}
-                                                        className="nav-icon"
-                                                        data-bs-toggle="collapse">
+                                                        className="nav-icon">
                                                         <i className={item.icon}></i>
                                                     </Link>
                                                 </li>
@@ -165,8 +186,7 @@ const TwoColumnLayout = (props: any) => {
                                                         onClick={item.click}
                                                         to={item.link ? item.link : "/#"}
                                                         sub-items={item.id}
-                                                        className="nav-icon"
-                                                        data-bs-toggle="collapse">
+                                                        className="nav-icon">
                                                         <i className={item.icon}></i>
                                                     </Link>
                                                 </>
@@ -182,9 +202,9 @@ const TwoColumnLayout = (props: any) => {
                                 <React.Fragment key={key}>
                                     {item.subItems ? (
                                         <li className="nav-item">
-                                            <Collapse
-                                                className="menu-dropdown"
-                                                isOpen={item.stateVariables}
+                                            {item.stateVariables && (
+                                            <div
+                                                className={dropdownClass()}
                                                 id={item.id}>
                                                 <ul className="nav nav-sm flex-column">
                                                     {/* subItems  */}
@@ -208,14 +228,14 @@ const TwoColumnLayout = (props: any) => {
                                                                         onClick={subItem.click}
                                                                         className="nav-link"
                                                                         to="/#"
-                                                                        data-bs-toggle="collapse"
                                                                         aria-expanded={subItem.stateVariables}
                                                                     > {props.t(subItem.label)}
                                                                         {subItem.badgeName ?
                                                                             <span className={"badge badge-pill bg-" + subItem.badgeColor} data-key="t-new">{subItem.badgeName}</span>
                                                                             : null}
                                                                     </Link>
-                                                                    <Collapse className="menu-dropdown" isOpen={subItem.stateVariables} id={subItem.id}>
+                                                                    {subItem.stateVariables && (
+                                                                    <div className={dropdownClass()} id={subItem.id}>
                                                                         <ul className="nav nav-sm flex-column">
                                                                             {/* child subItems  */}
                                                                             {subItem.childItems && (
@@ -235,12 +255,12 @@ const TwoColumnLayout = (props: any) => {
                                                                                                 <Link
                                                                                                     to={childItem.link ? childItem.link : "/#"}
                                                                                                     onClick={childItem.click}
-                                                                                                    data-bs-toggle="collapse"
                                                                                                     aria-expanded={childItem.stateVariables}
                                                                                                     className="nav-link" >
                                                                                                     {props.t(childItem.label)}
                                                                                                 </Link>
-                                                                                                <Collapse className="menu-dropdown" isOpen={childItem.stateVariables} id={childItem.id}>
+                                                                                                {childItem.stateVariables && (
+                                                                                                <div className={dropdownClass()} id={childItem.id}>
                                                                                                     <ul className="nav nav-sm flex-column">
                                                                                                         {/* child subChildItems  */}
                                                                                                         {childItem.isChildItem && (
@@ -255,14 +275,16 @@ const TwoColumnLayout = (props: any) => {
                                                                                                             ))
                                                                                                         )}
                                                                                                     </ul>
-                                                                                                </Collapse>
+                                                                                                </div>
+                                                                                                )}
                                                                                             </li>
                                                                                         )}
                                                                                     </React.Fragment>
                                                                                 ))
                                                                             )}
                                                                         </ul>
-                                                                    </Collapse>
+                                                                    </div>
+                                                                    )}
                                                                 </li>
                                                             )}
                                                         </React.Fragment>
@@ -270,7 +292,8 @@ const TwoColumnLayout = (props: any) => {
                                                     )}
                                                 </ul>
 
-                                            </Collapse>
+                                            </div>
+                                            )}
                                         </li>
                                     ) : null
                                     }

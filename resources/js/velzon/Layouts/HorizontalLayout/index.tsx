@@ -1,16 +1,45 @@
 import React, { useEffect, useState } from 'react';
 import PropTypes from "prop-types";
 import { Link } from 'react-router-dom';
-import { Col, Collapse, Row } from 'reactstrap';
+import { Col, Row } from 'reactstrap';
 import withRouter from '../../Components/Common/withRouter';
 
 // Import Data
 import navdata from "../LayoutMenuData";
+import { closeAllMenus, subscribeMenu } from "../menuState";
 //i18n
 import { withTranslation } from "react-i18next";
 
+// We deliberately omit Bootstrap's `.collapse` class on these dropdowns.
+// In this build, having `collapse` on the wrapper kept the menu hidden even
+// when `.show` was present; dropping it lets Velzon's
+// `[data-layout="..."] .menu-dropdown.show { display: block }` rule drive
+// visibility cleanly. Closed dropdowns are simply not rendered, which
+// guarantees they're invisible without depending on any CSS reset.
+const dropdownClass = (extra = "") =>
+    `menu-dropdown show${extra ? " " + extra : ""}`;
+
 const HorizontalLayout = (props : any) => {
     const [isMoreMenu, setIsMoreMenu] = useState(false);
+    // Re-render whenever any sidebar dropdown is toggled. Open/closed state
+    // lives in a module-level Set (see ../menuState.ts); without this the
+    // layout never sees toggleMenu() updates and the Collapse stays stale.
+    const [, setTick] = useState(0);
+    useEffect(() => subscribeMenu(() => setTick((t) => t + 1)), []);
+
+    // Close any open dropdown when the user clicks anywhere outside the
+    // navbar. mousedown (rather than click) so we react before the focus/blur
+    // shuffle, and `composedPath`/`closest` so a click on a child element
+    // inside the navbar still counts as "inside".
+    useEffect(() => {
+        const handleOutside = (e: MouseEvent) => {
+            const target = e.target as HTMLElement | null;
+            if (target && !target.closest("#navbar-nav")) closeAllMenus();
+        };
+        document.addEventListener("mousedown", handleOutside);
+        return () => document.removeEventListener("mousedown", handleOutside);
+    }, []);
+
     const navData = navdata().props.children;
     let menuItems = [];
     let splitMenuItems : Array<any> = [];
@@ -113,14 +142,13 @@ const HorizontalLayout = (props : any) => {
                                         onClick={item.click}
                                         className="nav-link menu-link"
                                         to={item.link ? item.link : "/#"}
-                                        data-bs-toggle="collapse"
                                         aria-expanded={item.stateVariables}
                                     >
                                         <i className={item.icon}></i> <span data-key="t-apps">{props.t(item.label)}</span>
                                     </Link>
-                                    <Collapse
-                                        className={item.id === "baseUi" && item.subItems.length > 13 ? "menu-dropdown mega-dropdown-menu" : "menu-dropdown"}
-                                        isOpen={item.stateVariables}
+                                    {item.stateVariables && (
+                                    <div
+                                        className={dropdownClass(item.id === "baseUi" && item.subItems.length > 13 ? "mega-dropdown-menu" : "")}
                                         id={item.id}>
                                         {/* subItems  */}
                                         {item.id === "baseUi" && item.subItems.length > 13 ? (
@@ -170,11 +198,11 @@ const HorizontalLayout = (props : any) => {
                                                                     onClick={subItem.click}
                                                                     className="nav-link"
                                                                     to="/#"
-                                                                    data-bs-toggle="collapse"
                                                                     aria-expanded={subItem.stateVariables}
                                                                 > {props.t(subItem.label)}
                                                                 </Link>
-                                                                <Collapse className="menu-dropdown" isOpen={subItem.stateVariables} id={subItem.id}>
+                                                                {subItem.stateVariables && (
+                                                                <div className={dropdownClass()} id={subItem.id}>
                                                                     <ul className="nav nav-sm flex-column">
                                                                         {/* child subItems  */}
                                                                         {subItem.childItems && (
@@ -195,11 +223,11 @@ const HorizontalLayout = (props : any) => {
                                                                                                 onClick={subChildItem.click}
                                                                                                 className="nav-link"
                                                                                                 to="/#"
-                                                                                                data-bs-toggle="collapse"
                                                                                                 aria-expanded={subChildItem.stateVariables}
                                                                                             > {props.t(subChildItem.label)}
                                                                                             </Link>
-                                                                                            <Collapse className="menu-dropdown" isOpen={subChildItem.stateVariables} id={subChildItem.id}>
+                                                                                            {subChildItem.stateVariables && (
+                                                                                            <div className={dropdownClass()} id={subChildItem.id}>
                                                                                                 <ul className="nav nav-sm flex-column">
                                                                                                     {/* child subItems  */}
                                                                                                     {subChildItem.childItems && (
@@ -215,14 +243,16 @@ const HorizontalLayout = (props : any) => {
                                                                                                         ))
                                                                                                     )}
                                                                                                 </ul>
-                                                                                            </Collapse>
+                                                                                            </div>
+                                                                                            )}
                                                                                         </li>
                                                                                     )}
                                                                                 </React.Fragment>
                                                                             ))
                                                                         )}
                                                                     </ul>
-                                                                </Collapse>
+                                                                </div>
+                                                                )}
                                                             </li>
                                                         )}
                                                     </React.Fragment>
@@ -230,7 +260,8 @@ const HorizontalLayout = (props : any) => {
                                                 )}
                                             </ul>
                                         )}
-                                    </Collapse>
+                                    </div>
+                                    )}
                                 </li>
                             ) : (
                                 <li className="nav-item">

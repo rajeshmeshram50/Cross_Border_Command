@@ -79,7 +79,6 @@ const LEAF_DESCRIPTIONS: Record<string, string> = {
   'master.compliance_behaviours':   'Rules for regulated, cold-chain & controlled substance handling',
   'master.assets':                  'Company equipment & assets for ops & depreciation tracking',
   'master.asset_categories':        'Group assets by type (Machinery, IT, Furniture)',
-  'master.numbering_series':        'System auto-numbering — locks after first transaction',
   'master.payment_terms':           'Credit days, advance % & milestone structure for PO terms',
   'master.approval_authority':      'Value threshold + role matrix for PO, VPI & Payment approvals',
   'master.procurement_category':    'Goods / Services / AMC / Job Work — drives 3-way vs 2-way match',

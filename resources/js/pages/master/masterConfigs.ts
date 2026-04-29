@@ -1059,36 +1059,6 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  numbering_series: {
-    key: 'numbering_series', slug: 'numbering_series', title: 'Numbering Series', titleSingular: 'Numbering Series',
-    icon: 'ri-hashtag', iconColor: 'primary', iconBg: 'primary',
-    desc: 'System auto-numbering — locks after first transaction',
-    cat: 'Operations & Support',
-    fields: [
-      { n: 'module', l: 'Module Name', t: 'text', r: true, p: 'e.g. Purchase Order' },
-      { n: 'prefix', l: 'Prefix', t: 'text', r: true, p: 'e.g. PO/' },
-      { n: 'fy_format', l: 'FY Format', t: 'select', opts: ['YYYY-YY', 'YYYY', 'YY-YY', 'None'] },
-      { n: 'next_number', l: 'Next Number', t: 'number', r: true, p: 'e.g. 126' },
-      { n: 'is_locked', l: 'Locked', t: 'select', opts: ['No', 'Yes'] },
-      { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
-    ],
-    cols: ['module', 'prefix', 'fy_format', 'next_number', 'is_locked', 'status'],
-    colL: ['Module', 'Prefix', 'FY Format', 'Next Number', 'Locked', 'Status'],
-    uFields: ['module'],
-    data: [
-      { id: 1, module: 'Purchase Order', prefix: 'PO/', fy_format: 'YYYY-YY', next_number: 126, is_locked: 'Yes', status: 'Active' },
-      { id: 2, module: 'Proforma Invoice', prefix: 'INV/', fy_format: 'YYYY-YY', next_number: 89, is_locked: 'Yes', status: 'Active' },
-      { id: 3, module: 'Quotation', prefix: 'QT/', fy_format: 'YYYY-YY', next_number: 45, is_locked: 'Yes', status: 'Active' },
-      { id: 4, module: 'Shipment', prefix: 'SHP-EXP-', fy_format: 'YYYY', next_number: 1, is_locked: 'No', status: 'Active' },
-    ],
-    wtd: [
-      { icon: 'ri-settings-3-line', title: 'Set Module Name', desc: 'e.g. Purchase Order, Shipment' },
-      { icon: 'ri-hashtag', title: 'Define Prefix', desc: 'e.g. PO/ or SHP-EXP-' },
-      { icon: 'ri-sort-asc', title: 'Set Next Number', desc: 'Starting sequence — auto-increments' },
-      { icon: 'ri-lock-line', title: 'Lock After First Use', desc: 'Prevents format change after use' },
-    ],
-  },
-
   // ---------- P2P MASTERS ----------
   payment_terms: {
     key: 'payment_terms', slug: 'payment_terms', title: 'Payment Terms', titleSingular: 'Payment Term',

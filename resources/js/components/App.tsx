@@ -39,6 +39,7 @@ import ClientSettings from '../pages/ClientSettings';
 import MasterDashboard from '../pages/MasterDashboard';
 import MasterPage from '../pages/master/MasterPage';
 import HrDashboard from '../pages/HrDashboard';
+import HrEmployees from '../pages/HrEmployees';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -275,6 +276,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/hr" element={<HrDashboard />} />
+              <Route path="/hr/employees" element={<HrEmployees />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </VelzonShell>
