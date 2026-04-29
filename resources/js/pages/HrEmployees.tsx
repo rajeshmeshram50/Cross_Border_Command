@@ -118,11 +118,7 @@ const STATE_OPTIONS = [
   { value: 'Tamil Nadu',  label: 'Tamil Nadu' },
   { value: 'Gujarat',     label: 'Gujarat' },
 ];
-const NUMBER_SERIES_OPTIONS = [
-  { value: 'Default Number Series', label: 'Default Number Series' },
-  { value: 'Contractor Series',     label: 'Contractor Series' },
-  { value: 'Intern Series',         label: 'Intern Series' },
-];
+
 const EMP_STATUS_OPTIONS = [
   { value: 'Active',    label: 'Active' },
   { value: 'On Leave',  label: 'On Leave' },
@@ -160,12 +156,19 @@ const LEGAL_ENTITY_OPTIONS = [
 const LOCATION_OPTIONS = [
   'Pune HQ','Mumbai Office','Bengaluru Office','Delhi Office','Hyderabad Office','Remote',
 ].map(l => ({ value: l, label: l }));
+// Sentinel values used by the dropdowns to flag "open the custom field below".
+const CUSTOM_PROBATION_VALUE = '__custom_probation__';
+const CUSTOM_NOTICE_VALUE    = '__custom_notice__';
 const PROBATION_POLICY_OPTIONS = [
-  'Default Probation Policy','3-Month Probation','6-Month Probation','No Probation',
-].map(p => ({ value: p, label: p }));
+  ...['Default Probation Policy','3-Month Probation','6-Month Probation','No Probation']
+    .map(p => ({ value: p, label: p })),
+  { value: CUSTOM_PROBATION_VALUE, label: 'Set Custom Probation…' },
+];
 const NOTICE_PERIOD_OPTIONS = [
-  'Default Notice Period','15 Days','30 Days','60 Days','90 Days',
-].map(n => ({ value: n, label: n }));
+  ...['Default Notice Period','15 Days','30 Days','60 Days','90 Days']
+    .map(n => ({ value: n, label: n })),
+  { value: CUSTOM_NOTICE_VALUE, label: 'Set Custom Notice Period…' },
+];
 
 // Step 3 — Work Details option lists
 const LEAVE_PLAN_OPTIONS    = ['Leave Policy','Standard Leave','Senior Leave Policy'].map(v => ({ value: v, label: v }));
@@ -353,7 +356,6 @@ export default function HrEmployees() {
   // Step 1 — Contact & Identity
   const [eWorkEmail, setEWorkEmail]       = useState('');
   const [eMobile, setEMobile]             = useState('');
-  const [eNumberSeries, setENumberSeries] = useState('Default Number Series');
   const [eEmpId, setEEmpId]               = useState('');
   const [eStatus, setEStatus]             = useState('Active');
   // Step 1 — Address (current + permanent)
@@ -382,6 +384,9 @@ export default function HrEmployees() {
   const [eReportingMgr, setEReportingMgr]        = useState('');
   const [eProbationPolicy, setEProbationPolicy]  = useState('Default Probation Policy');
   const [eNoticePeriod, setENoticePeriod]        = useState('Default Notice Period');
+  // Custom values that appear below their dropdowns when "Set Custom…" is picked.
+  const [eCustomProbation, setECustomProbation]  = useState('');
+  const [eCustomNotice, setECustomNotice]        = useState('');
   // Step 3 — Work Details
   const [eLeavePlan, setELeavePlan]              = useState('Leave Policy');
   const [eHolidayList, setEHolidayList]          = useState('Holiday Calendar');
@@ -542,7 +547,6 @@ export default function HrEmployees() {
     setEDisplayName(''); setEActualName('');
     setEGender(''); setEDob(''); setENationality('Indian');
     setEWorkEmail(''); setEMobile('');
-    setENumberSeries('Default Number Series');
     setEEmpId(''); setEStatus('Active');
     setECurAddr1(''); setECurAddr2(''); setECurCity(''); setECurState(''); setECurCountry('India'); setECurPin('');
     setESameAsCurrent(false);
@@ -552,6 +556,7 @@ export default function HrEmployees() {
     setEPrimaryRole(''); setEAncillaryRole(''); setEWorkType('Full Time');
     setELegalEntity(''); setELocation(''); setEReportingMgr('');
     setEProbationPolicy('Default Probation Policy'); setENoticePeriod('Default Notice Period');
+    setECustomProbation(''); setECustomNotice('');
     // Step 3
     setELeavePlan('Leave Policy'); setEHolidayList('Holiday Calendar');
     setEAttendanceTracking(true); setEShift('General Shift');
@@ -1170,7 +1175,7 @@ export default function HrEmployees() {
         scrollable
       >
         <style>{`
-          .emp-modal-wide .modal-dialog { max-width: min(960px, 92vw); }
+          .emp-modal-wide .modal-dialog { max-width: min(1020px, 92vw); }
           .emp-modal-wide .modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
           .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
           .emp-input::placeholder { color: #9ca3af; }
@@ -1366,10 +1371,7 @@ export default function HrEmployees() {
                       <label className="emp-label">Mobile Number<span className="req">*</span></label>
                       <input className="emp-input" type="tel" placeholder="10-digit mobile number" value={eMobile} onChange={e => setEMobile(e.target.value)} />
                     </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Number Series</label>
-                      <MasterSelect value={eNumberSeries} onChange={setENumberSeries} options={NUMBER_SERIES_OPTIONS} />
-                    </Col>
+                    
                     <Col md={4}>
                       <label className="emp-label">
                         Employee ID<span className="hint">(auto-assigned)</span>
@@ -1530,10 +1532,30 @@ export default function HrEmployees() {
                     <Col md={6}>
                       <label className="emp-label">Probation Policy<span className="req">*</span></label>
                       <MasterSelect value={eProbationPolicy} onChange={setEProbationPolicy} options={PROBATION_POLICY_OPTIONS} />
+                      {eProbationPolicy === CUSTOM_PROBATION_VALUE && (
+                        <input
+                          className="emp-input mt-2"
+                          type="text"
+                          placeholder="e.g. 4-month probation, monthly review"
+                          value={eCustomProbation}
+                          onChange={e => setECustomProbation(e.target.value)}
+                          autoFocus
+                        />
+                      )}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Notice Period<span className="req">*</span></label>
                       <MasterSelect value={eNoticePeriod} onChange={setENoticePeriod} options={NOTICE_PERIOD_OPTIONS} />
+                      {eNoticePeriod === CUSTOM_NOTICE_VALUE && (
+                        <input
+                          className="emp-input mt-2"
+                          type="text"
+                          placeholder="e.g. 45 Days, 2 months, etc."
+                          value={eCustomNotice}
+                          onChange={e => setECustomNotice(e.target.value)}
+                          autoFocus
+                        />
+                      )}
                     </Col>
                   </Row>
                 </div>
