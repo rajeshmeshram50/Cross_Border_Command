@@ -42,35 +42,64 @@ const GRAD_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
 const GRAD_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
 
 const cardStyle: React.CSSProperties = {
-  borderRadius: 20,
+  borderRadius: 18,
   border: '1px solid var(--vz-border-color)',
   boxShadow: '0 4px 24px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
   background: 'var(--vz-card-bg)',
   overflow: 'hidden',
+  position: 'relative',
+  transition: 'transform .25s ease, box-shadow .25s ease',
 };
 
-function SectionHeader({ title, gradient, icon, action }: { title: string; gradient: string; icon: string; action?: React.ReactNode }) {
+// Section card wrapper — adds a top gradient strip and a hover lift to any
+// content card. The gradient is the same colour family as the section header
+// icon, so each section has a distinct visual identity (Personal=indigo,
+// Contact=blue, Address=green, etc.).
+function SectionCard({ gradient, children, className }: { gradient: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className="d-flex align-items-center gap-2 mb-3">
+    <Card className={`ep-section-card mb-0 ${className || ''}`} style={cardStyle}>
+      <div
+        style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: 4,
+          background: gradient, zIndex: 1,
+        }}
+      />
+      {children}
+    </Card>
+  );
+}
+
+function SectionHeader({ title, gradient, icon, action, subtitle }: { title: string; gradient: string; icon: string; action?: React.ReactNode; subtitle?: string }) {
+  return (
+    <div className="d-flex align-items-center gap-3 mb-3 pb-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
       <span
-        className="d-inline-flex align-items-center justify-content-center rounded-3"
-        style={{ width: 36, height: 36, background: gradient, boxShadow: '0 4px 10px rgba(64,81,137,0.20)' }}
+        className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+        style={{ width: 40, height: 40, background: gradient, boxShadow: '0 6px 14px rgba(64,81,137,0.22)' }}
       >
-        <i className={icon} style={{ color: '#fff', fontSize: 16 }} />
+        <i className={icon} style={{ color: '#fff', fontSize: 18 }} />
       </span>
-      <h5 className="card-title mb-0 flex-grow-1">{title}</h5>
+      <div className="flex-grow-1 min-w-0">
+        <h5 className="card-title mb-0">{title}</h5>
+        {subtitle && <small className="text-muted">{subtitle}</small>}
+      </div>
       {action}
     </div>
   );
 }
 
-function Field({ label, value, span = 6 }: { label: string; value?: React.ReactNode; span?: number }) {
+// Single label / value field — rendered as a clean key/value row with a small
+// colored accent dot. The accent dot's color comes from the parent section so
+// every field nests visually under its section header.
+function Field({ label, value, span = 6, accent = '#6366f1' }: { label: string; value?: React.ReactNode; span?: number; accent?: string }) {
   return (
     <Col md={span as any} className="mb-3">
-      <p className="mb-1 fs-12 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.05em' }}>
-        {label}
-      </p>
-      <div className="fs-14 fw-semibold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+      <div className="d-flex align-items-center gap-2 mb-1">
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, boxShadow: `0 0 0 3px ${accent}22`, flexShrink: 0 }} />
+        <p className="mb-0 fs-11 text-uppercase fw-bold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.08em' }}>
+          {label}
+        </p>
+      </div>
+      <div className="fs-14 fw-bold ps-3" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.4 }}>
         {value || <span className="text-muted fw-normal">—</span>}
       </div>
     </Col>
@@ -330,6 +359,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   return (
     <>
       <style>{`
+        .ep-section-card { position: relative; }
+        .ep-section-card:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 14px 32px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.04) !important;
+        }
+        .ep-section-card .card-body { position: relative; z-index: 2; }
+        /* Subtle gradient wash on hover, gated to the active section's accent. */
+        .ep-section-card::after {
+          content: ''; position: absolute; inset: 4px 0 0 0;
+          background: linear-gradient(180deg, rgba(99,102,241,0.04), transparent 40%);
+          opacity: 0;
+          transition: opacity .25s ease;
+          pointer-events: none;
+        }
+        .ep-section-card:hover::after { opacity: 1; }
         .ep-tab-btn {
           background: transparent; border: none;
           padding: 14px 18px;
@@ -516,15 +560,112 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl={4}>
               <Card className="h-100 mb-0" style={cardStyle}>
-                <CardBody>
-                  <SectionHeader title="Profile Completion" gradient={GRAD_PURPLE} icon="ri-bar-chart-2-line" />
-                  <div className="text-center my-2">
-                    <h2 className="fw-bold mb-0" style={{ fontSize: 36, color: '#5a3fd1' }}>{profilePct}%</h2>
-                    <p className="text-muted fs-12 mb-3">Profile data captured</p>
+                <CardBody className="d-flex flex-column">
+                  <SectionHeader title="Profile Completion" subtitle="Profile data captured" gradient={GRAD_PURPLE} icon="ri-bar-chart-2-line" />
+                  {/* Striped progress bar with floating circular badge above
+                      the fill end — same recipe as the directory's Profile %
+                      column, scaled up for the larger card surface. */}
+                  {(() => {
+                    const p = profilePct;
+                    const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
+                              : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
+                              : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
+                              :           { dark: '#f06548', light: '#fda192' };
+                    const badgeLeft = Math.max(8, Math.min(92, p));
+                    return (
+                      <div
+                        style={{ position: 'relative', width: '100%', paddingTop: 56 }}
+                        title={`Profile ${p}% complete`}
+                      >
+                        {/* Floating badge + downward triangle */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: `${badgeLeft}%`,
+                            transform: 'translateX(-50%)',
+                            textAlign: 'center',
+                          }}
+                        >
+                          <div
+                            className="d-flex align-items-center justify-content-center fw-bold"
+                            style={{
+                              width: 46, height: 46, borderRadius: '50%',
+                              background: `linear-gradient(135deg, ${TIER.dark}, ${TIER.light})`,
+                              color: '#fff', fontSize: 14,
+                              boxShadow: `0 8px 18px ${TIER.dark}55, inset 0 1px 0 rgba(255,255,255,0.20)`,
+                              border: '3px solid #fff',
+                            }}
+                          >
+                            {p}%
+                          </div>
+                          <div
+                            style={{
+                              width: 0, height: 0, margin: '0 auto',
+                              borderLeft: '6px solid transparent',
+                              borderRight: '6px solid transparent',
+                              borderTop: `8px solid ${TIER.dark}`,
+                            }}
+                          />
+                        </div>
+
+                        {/* Track + striped fill */}
+                        <div
+                          style={{
+                            width: '100%', height: 14,
+                            borderRadius: 999,
+                            background: '#e5e7eb',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${p}%`, height: '100%',
+                              borderRadius: 999,
+                              background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.32) 0 6px, transparent 6px 12px), linear-gradient(90deg, ${TIER.dark}, ${TIER.light})`,
+                              transition: 'width .35s ease',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Section-by-section breakdown — keeps the card filled and
+                      shows the user exactly which areas still need attention. */}
+                  <div className="mt-3 pt-3 flex-grow-1" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+                    <p className="mb-2 fs-11 text-uppercase fw-bold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.08em' }}>
+                      Section breakdown
+                    </p>
+                    {[
+                      { label: 'Personal Information', pct: 100, color: '#0ab39c' },
+                      { label: 'Contact Information',  pct: 100, color: '#0ab39c' },
+                      { label: 'Address Details',      pct: 75,  color: '#3b82f6' },
+                      { label: 'KYC Documents',        pct: 75,  color: '#3b82f6' },
+                      { label: 'Work Experience',      pct: 50,  color: '#f59e0b' },
+                    ].map(s => (
+                      <div key={s.label} className="d-flex align-items-center gap-2 py-1">
+                        <span
+                          className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                          style={{
+                            width: 18, height: 18,
+                            background: s.pct === 100 ? s.color : `${s.color}22`,
+                            color: s.pct === 100 ? '#fff' : s.color,
+                            fontSize: 11,
+                          }}
+                        >
+                          <i className={s.pct === 100 ? 'ri-check-line' : 'ri-time-line'} />
+                        </span>
+                        <span className="flex-grow-1 fs-12 fw-semibold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                          {s.label}
+                        </span>
+                        <span className="fs-12 fw-bold" style={{ color: s.color }}>{s.pct}%</span>
+                      </div>
+                    ))}
                   </div>
-                  <Progress value={profilePct} style={{ height: 8, borderRadius: 999 }} barStyle={{ background: GRAD_PURPLE, borderRadius: 999 }} />
-                  <p className="text-muted text-center fs-12 mb-0 mt-2">
-                    {profilePct >= 90 ? 'Excellent — almost complete.' : profilePct >= 70 ? 'Good — a few fields left.' : 'Needs more details.'}
+
+                  <p className="text-muted text-center fs-12 mb-0 mt-3 pt-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+                    {profilePct >= 90 ? '✨ Excellent — almost complete.' : profilePct >= 70 ? '👍 Good — a few fields left.' : '⚠ Needs more details.'}
                   </p>
                 </CardBody>
               </Card>
@@ -543,78 +684,142 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </Col>
           </Row>
 
+          {/* Row 2 — Combined Personal & Contact Info (left) + Address Details (right) */}
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl={6}>
               <Card className="h-100 mb-0" style={cardStyle}>
                 <CardBody>
-                  <SectionHeader title="Personal Information" gradient={GRAD_PRIMARY} icon="ri-user-line" />
-                  <Row>
-                    <Field label="First Name"     value={employee?.name?.split(' ')[0]} />
-                    <Field label="Last Name"      value={employee?.name?.split(' ').slice(1).join(' ')} />
-                    <Field label="Display Name"   value={employee?.name} />
-                    <Field label="Date of Birth"  value="1985-11-02" />
-                    <Field label="Gender"         value={null} />
-                    <Field label="Nationality"    value="Indian" />
+                  <SectionHeader
+                    title="Personal & Contact Information"
+                    subtitle="Identity basics, name and reach-out details"
+                    gradient={GRAD_PRIMARY}
+                    icon="ri-user-line"
+                  />
+                  <Row className="g-3">
+                    {/* Personal sub-column */}
+                    <Col md={6}>
+                      <div className="px-3 py-2 mb-3 d-inline-flex align-items-center gap-2" style={{ borderRadius: 999, background: 'linear-gradient(135deg, rgba(64,81,137,0.10), rgba(102,145,231,0.04))', border: '1px solid rgba(64,81,137,0.22)', fontSize: 11, fontWeight: 700, color: '#405189', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                        <i className="ri-user-3-fill" /> Personal
+                      </div>
+                      <Row>
+                        <Field accent="#405189" label="Full Name"     value={employee?.name || 'Aarav Kale'} span={12} />
+                        <Field accent="#405189" label="Date of Birth" value="02 Nov 1985"                    span={12} />
+                        <Field accent="#405189" label="Gender"        value="Male"                            span={12} />
+                        <Field accent="#405189" label="Nationality"   value="Indian"                          span={12} />
+                      </Row>
+                    </Col>
+                    {/* Contact sub-column */}
+                    <Col md={6}>
+                      <div className="px-3 py-2 mb-3 d-inline-flex align-items-center gap-2" style={{ borderRadius: 999, background: 'linear-gradient(135deg, rgba(41,156,219,0.12), rgba(95,200,255,0.05))', border: '1px solid rgba(41,156,219,0.26)', fontSize: 11, fontWeight: 700, color: '#0c63b0', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                        <i className="ri-phone-fill" /> Contact
+                      </div>
+                      <Row>
+                        <Field accent="#299cdb" label="Personal Email" value={employee?.email || 'aarav.kale@enterprise.com'} span={12} />
+                        <Field accent="#299cdb" label="Mobile Number"  value="+91 96352 03533"                                  span={12} />
+                        <Field accent="#299cdb" label="Work Country"   value="India"                                            span={12} />
+                      </Row>
+                    </Col>
                   </Row>
                 </CardBody>
               </Card>
             </Col>
+
             <Col xl={6}>
               <Card className="h-100 mb-0" style={cardStyle}>
                 <CardBody>
-                  <SectionHeader title="Contact Information" gradient={GRAD_INFO} icon="ri-phone-line" />
-                  <Row>
-                    <Field label="Personal Email" value={employee?.email} />
-                    <Field label="Mobile Number"  value="9635203533" />
-                    <Field label="Work Country"   value="India" />
-                    <Field label="Number Series"  value="Default Number Series" />
-                  </Row>
+                  <SectionHeader
+                    title="Address Details"
+                    subtitle="Current and permanent residence"
+                    gradient={GRAD_SUCCESS}
+                    icon="ri-map-pin-line"
+                  />
+
+                  {/* Current address — single full-line address card */}
+                  <div className="px-3 py-2 mb-2 d-inline-flex align-items-center gap-2" style={{ borderRadius: 999, background: 'linear-gradient(135deg, rgba(10,179,156,0.12), rgba(48,213,181,0.04))', border: '1px solid rgba(10,179,156,0.25)', fontSize: 11, fontWeight: 700, color: '#0a8a78', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    <i className="ri-home-4-fill" /> Current Address
+                  </div>
+                  <div
+                    className="d-flex align-items-start gap-3 p-3 mb-3"
+                    style={{
+                      borderRadius: 14,
+                      background: 'linear-gradient(135deg, rgba(10,179,156,0.06), rgba(48,213,181,0.02))',
+                      border: '1px solid rgba(10,179,156,0.20)',
+                    }}
+                  >
+                    <span
+                      className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                      style={{ width: 36, height: 36, background: GRAD_SUCCESS, boxShadow: '0 4px 10px rgba(10,179,156,0.30)' }}
+                    >
+                      <i className="ri-home-4-line" style={{ color: '#fff', fontSize: 16 }} />
+                    </span>
+                    <div className="min-w-0 flex-grow-1">
+                      <p className="mb-1 fs-11 text-uppercase fw-bold" style={{ color: '#0a8a78', letterSpacing: '0.06em' }}>
+                        Residential Address
+                      </p>
+                      <div className="fs-14 fw-semibold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.55 }}>
+                        Office No. 821, 8th Floor, Solitaire Business Hub,<br />
+                        Balewadi High Street, Gaon, Baner, Pune,<br />
+                        Maharashtra — 411045
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Permanent address — same layout, stacked below */}
+                  <div className="px-3 py-2 mb-2 d-inline-flex align-items-center gap-2" style={{ borderRadius: 999, background: 'linear-gradient(135deg, rgba(106,90,205,0.12), rgba(167,139,250,0.04))', border: '1px solid rgba(106,90,205,0.22)', fontSize: 11, fontWeight: 700, color: '#5a3fd1', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    <i className="ri-pin-distance-fill" /> Permanent Address
+                  </div>
+                  <div
+                    className="d-flex align-items-start gap-3 p-3"
+                    style={{
+                      borderRadius: 14,
+                      background: 'linear-gradient(135deg, rgba(106,90,205,0.06), rgba(167,139,250,0.02))',
+                      border: '1px solid rgba(106,90,205,0.20)',
+                    }}
+                  >
+                    <span
+                      className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                      style={{ width: 36, height: 36, background: GRAD_PURPLE, boxShadow: '0 4px 10px rgba(106,90,205,0.30)' }}
+                    >
+                      <i className="ri-map-pin-2-line" style={{ color: '#fff', fontSize: 16 }} />
+                    </span>
+                    <div className="min-w-0 flex-grow-1">
+                      <p className="mb-1 fs-11 text-uppercase fw-bold" style={{ color: '#5a3fd1', letterSpacing: '0.06em' }}>
+                        Native Address
+                      </p>
+                      <div className="fs-14 fw-semibold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1.55 }}>
+                        Plot No. 14, Sector 3, Vimaan Nagar Road,<br />
+                        Lohegaon, Pune,<br />
+                        Maharashtra — 411014
+                      </div>
+                    </div>
+                  </div>
                 </CardBody>
               </Card>
             </Col>
           </Row>
 
-          <Row className="g-3 mb-3">
-            <Col xs={12}>
-              <Card className="mb-0" style={cardStyle}>
-                <CardBody>
-                  <SectionHeader title="Address Details" gradient={GRAD_SUCCESS} icon="ri-map-pin-line" />
-                  <div className="px-3 py-2 mb-2" style={{ borderRadius: 10, background: 'rgba(10,179,156,0.06)', border: '1px solid rgba(10,179,156,0.18)', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#0a8a78', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                    <i className="ri-checkbox-circle-fill" /> Current Address
-                  </div>
-                  <Row>
-                    <Field label="Address Line 1" value={null} />
-                    <Field label="Address Line 2" value={null} />
-                    <Field label="City"           value={null} span={3} />
-                    <Field label="State"          value={null} span={3} />
-                    <Field label="Country"        value="India" span={3} />
-                    <Field label="Pincode"        value={null} span={3} />
-                  </Row>
-                  <div className="px-3 py-2 mb-2 mt-2" style={{ borderRadius: 10, background: 'rgba(10,179,156,0.06)', border: '1px solid rgba(10,179,156,0.18)', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#0a8a78', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                    <i className="ri-checkbox-circle-fill" /> Permanent Address
-                  </div>
-                  <Row>
-                    <Field label="Address Line 1" value={null} />
-                    <Field label="Address Line 2" value={null} />
-                    <Field label="City"           value={null} span={3} />
-                    <Field label="State"          value={null} span={3} />
-                    <Field label="Country"        value="India" span={3} />
-                    <Field label="Pincode"        value={null} span={3} />
-                  </Row>
-                </CardBody>
-              </Card>
-            </Col>
-          </Row>
-
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl={6}>
               <Card className="h-100 mb-0" style={cardStyle}>
-                <CardBody>
-                  <SectionHeader title="Work Experience" gradient={GRAD_WARNING} icon="ri-history-line" />
-                  <Row>
-                    <Field label="Status"  value="Fresher" />
-                    <Field label="Details" value="No previous experience recorded" />
-                  </Row>
+                <CardBody className="d-flex flex-column">
+                  <SectionHeader title="Work Experience" subtitle="Prior employment and tenure" gradient={GRAD_WARNING} icon="ri-history-line" />
+                  <div className="text-center my-auto py-3">
+                    <span
+                      className="d-inline-flex align-items-center justify-content-center rounded-circle mb-3"
+                      style={{
+                        width: 76, height: 76,
+                        background: 'linear-gradient(135deg, rgba(247,184,75,0.18), rgba(255,212,122,0.08))',
+                        border: '2px solid rgba(247,184,75,0.30)',
+                      }}
+                    >
+                      <i className="ri-emotion-happy-line" style={{ fontSize: 36, color: '#f7b84b' }} />
+                    </span>
+                    <h5 className="mb-1 fw-bold">Fresher</h5>
+                    <p className="text-muted mb-3 fs-13">No previous experience recorded</p>
+                    <div className="d-inline-flex align-items-center gap-2 px-3 py-2" style={{ borderRadius: 999, background: 'rgba(247,184,75,0.12)', border: '1px solid rgba(247,184,75,0.30)', fontSize: 12, fontWeight: 600, color: '#a4661c' }}>
+                      <i className="ri-flag-line" /> First job at the company
+                    </div>
+                  </div>
                 </CardBody>
               </Card>
             </Col>
