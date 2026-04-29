@@ -575,23 +575,23 @@ function MasterPageInner({
 
     if (fieldName === 'status') {
       const active = String(raw).toLowerCase() === 'active';
+      const titleCase = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
       const tone = active
         ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e', text: 'Active' }
-        : { bg: '#fee2e2', fg: '#b91c1c', border: '#ef4444', text: raw || 'Inactive' };
+        : { bg: '#fee2e2', fg: '#b91c1c', border: '#ef4444', text: raw ? titleCase(String(raw)) : 'Inactive' };
       return (
         <span
-          className="d-inline-block rounded-pill text-uppercase"
+          className="d-inline-block rounded-pill"
           style={{
             background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
             color: tone.fg,
             border: `1px solid ${tone.border}66`,
-            padding: '1px 8px',
-            fontSize: '9.5px',
-            fontWeight: 700,
-            letterSpacing: '0.05em',
+            padding: '2px 10px',
+            fontSize: '10.5px',
+            fontWeight: 600,
             lineHeight: 1.3,
             whiteSpace: 'nowrap',
-            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 3px ${tone.border}26`,
           }}
         >
           {tone.text}
@@ -630,14 +630,14 @@ function MasterPageInner({
             background: 'linear-gradient(180deg, #fef3c7 0%, #fde68a 100%)',
             color: '#92400e',
             border: '1px solid #f59e0b99',
-            padding: '1px 7px',
-            fontSize: '9.5px',
-            fontWeight: 700,
+            padding: '2px 10px',
+            fontSize: '10.5px',
+            fontWeight: 600,
             lineHeight: 1.3,
             letterSpacing: '0.02em',
             fontVariantNumeric: 'tabular-nums',
             whiteSpace: 'nowrap',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.85), inset 0 -1px 0 rgba(245,158,11,0.24), 0 1px 4px rgba(245,158,11,0.32), 0 0 0 2px rgba(245,158,11,0.08)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 rgba(245,158,11,0.22), 0 1px 3px rgba(245,158,11,0.26)',
           }}
         >
           {String(raw).toUpperCase()}
@@ -645,65 +645,61 @@ function MasterPageInner({
       );
     }
 
-    // KPI Target Type — colored pill matching the KPI strip palette.
+    // KPI Target Type — colored text pill (matches Status/Created By style).
     if (fieldName === 'target_type') {
       const v = String(raw);
       const tone =
-        /numeric|number/i.test(v)    ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6', icon: 'ri-hashtag' } :
-        /percent/i.test(v)           ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e', icon: 'ri-percent-fill' } :
-        /currency/i.test(v)          ? { bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6', icon: 'ri-money-dollar-circle-fill' } :
-        /boolean|done/i.test(v)      ? { bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6', icon: 'ri-check-double-fill' } :
-        /date/i.test(v)              ? { bg: '#ffedd5', fg: '#c2410c', border: '#f97316', icon: 'ri-calendar-fill' } :
-        /rating/i.test(v)            ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', icon: 'ri-star-fill' } :
-                                       { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', icon: 'ri-circle-fill' };
+        /numeric|number/i.test(v)    ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6' } :
+        /percent/i.test(v)           ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e' } :
+        /currency/i.test(v)          ? { bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6' } :
+        /boolean|done/i.test(v)      ? { bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6' } :
+        /date/i.test(v)              ? { bg: '#ffedd5', fg: '#c2410c', border: '#f97316' } :
+        /rating/i.test(v)            ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b' } :
+                                       { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8' };
       return (
         <span
-          className="d-inline-flex align-items-center rounded-pill"
+          className="d-inline-block rounded-pill"
           style={{
-            gap: 4,
             background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
             color: tone.fg,
             border: `1px solid ${tone.border}80`,
-            padding: '1px 8px',
-            fontSize: '9.5px',
+            padding: '2px 10px',
+            fontSize: '10.5px',
             fontWeight: 600,
             whiteSpace: 'nowrap',
             lineHeight: 1.3,
-            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 3px ${tone.border}26`,
           }}
         >
-          <i className={tone.icon} style={{ fontSize: 9 }} />
           {v}
         </span>
       );
     }
 
-    // KPI Priority — colored pill (Critical → Low gradient of urgency).
+    // KPI Priority — colored text pill (matches Status/Created By style).
     if (fieldName === 'priority') {
       const v = String(raw);
       const tone =
-        /critical/i.test(v) ? { bg: '#fee2e2', fg: '#b91c1c', border: '#ef4444', icon: 'ri-alarm-warning-fill' } :
-        /high/i.test(v)     ? { bg: '#ffedd5', fg: '#c2410c', border: '#f97316', icon: 'ri-flag-2-fill' } :
-        /medium/i.test(v)   ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b', icon: 'ri-flag-line' } :
-        /low/i.test(v)      ? { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', icon: 'ri-arrow-down-fill' } :
-                              { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8', icon: 'ri-circle-fill' };
+        /critical/i.test(v) ? { bg: '#fee2e2', fg: '#b91c1c', border: '#ef4444' } :
+        /high/i.test(v)     ? { bg: '#ffedd5', fg: '#c2410c', border: '#f97316' } :
+        /medium/i.test(v)   ? { bg: '#fef3c7', fg: '#92400e', border: '#f59e0b' } :
+        /low/i.test(v)      ? { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8' } :
+                              { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8' };
       return (
         <span
-          className="d-inline-flex align-items-center rounded-pill"
+          className="d-inline-block rounded-pill"
           style={{
-            gap: 4,
             background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
             color: tone.fg,
             border: `1px solid ${tone.border}80`,
-            padding: '1px 8px',
-            fontSize: '9.5px',
-            fontWeight: 700,
+            padding: '2px 10px',
+            fontSize: '10.5px',
+            fontWeight: 600,
             whiteSpace: 'nowrap',
             lineHeight: 1.3,
-            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 3px ${tone.border}26`,
           }}
         >
-          <i className={tone.icon} style={{ fontSize: 9 }} />
           {v}
         </span>
       );
@@ -723,19 +719,19 @@ function MasterPageInner({
         <span
           className="d-inline-flex align-items-center rounded-pill"
           style={{
-            gap: 4,
+            gap: 5,
             background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
             color: tone.fg,
             border: `1px solid ${tone.border}80`,
-            padding: '1px 8px',
-            fontSize: '9.5px',
+            padding: '2px 10px',
+            fontSize: '10.5px',
             fontWeight: 600,
             whiteSpace: 'nowrap',
             lineHeight: 1.3,
-            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 3px ${tone.border}26`,
           }}
         >
-          <i className={tone.icon} style={{ fontSize: 9 }} />
+          <i className={tone.icon} style={{ fontSize: 10 }} />
           {v}
         </span>
       );
@@ -766,12 +762,12 @@ function MasterPageInner({
               background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
               color: tone.fg,
               border: `1px solid ${tone.border}80`,
-              padding: '1px 8px',
-              fontSize: '9.5px',
+              padding: '2px 10px',
+              fontSize: '10.5px',
               fontWeight: 600,
               whiteSpace: 'nowrap',
               lineHeight: 1.3,
-              boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 4px ${tone.border}30, 0 0 0 2px ${tone.border}0d`,
+              boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 3px ${tone.border}26`,
             }}
           >
             {tone.short}
@@ -1246,38 +1242,49 @@ function MasterPageInner({
                 <button
                   type="button"
                   onClick={() => navigate('/master')}
-                  title="Back to Masters"
-                  className="d-inline-flex align-items-center gap-1 rounded-pill"
+                  title="Back to Master list"
+                  className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
                   style={{
-                    padding: '8px 16px',
+                    height: 38,
+                    padding: '0 18px',
                     background: 'color-mix(in srgb, #405189 8%, #ffffff)',
                     color: '#405189',
                     border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
                     fontSize: 13,
                     fontWeight: 600,
                     cursor: 'pointer',
-                    transition: 'background 0.18s ease, transform 0.18s ease',
+                    transition: 'background 0.18s ease',
+                    whiteSpace: 'nowrap',
                   }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
                 >
                   <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
-                  Back to Masters
+                  Back to Master list
                 </button>
                 {caps.add && (
-                  <Button
-                    color="secondary"
-                    className="btn-label waves-effect waves-light rounded-pill border-0"
+                  <button
+                    type="button"
                     onClick={openAdd}
+                    className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill border-0"
                     style={{
+                      height: 38,
+                      padding: '0 20px',
                       background: 'linear-gradient(120deg, #405189 0%, #6691e7 100%)',
-                      color: '#fff',
+                      color: '#ffffff',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
                       boxShadow: '0 4px 12px rgba(64,81,137,0.28)',
+                      transition: 'transform .18s ease, box-shadow .18s ease',
                     }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 16px rgba(64,81,137,0.36)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(64,81,137,0.28)'; }}
                   >
-                    <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                    <i className="ri-add-line" style={{ fontSize: 16 }}></i>
                     Add {singular}
-                  </Button>
+                  </button>
                 )}
               </div>
             </div>
@@ -2616,7 +2623,7 @@ function RolesInlineFilters({
   deptFilter: string;
   setDeptFilter: (v: string) => void;
 }) {
-  const TYPES = ['Primary', 'Ancillary', 'Operational', 'Administrative', 'Functional'];
+  const TYPES = ['Primary', 'Ancillary'];
   const departments = refData['departments'] || [];
   return (
     <div className="role-inline-filters d-flex align-items-center flex-wrap" style={{ gap: 12 }}>
@@ -3080,7 +3087,7 @@ function renderField(
         key={isAutogen ? autogenVal : undefined}
         defaultValue={defaultVal}
         disabled={viewOnly}
-        readOnly={isAutogen}
+        readOnly={isAutogen || !!f.auto}
         invalid={!!err}
         onInput={handleInput}
         className={f.auto ? 'master-field-auto' : undefined}
