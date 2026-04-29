@@ -44,6 +44,60 @@ const EMP_STATUS_OPTIONS = [
   { value: 'Inactive',  label: 'Inactive' },
 ];
 
+// Step 2 — Job Details option lists
+const DEPARTMENT_OPTIONS = [
+  'Accounts','Mobile Application Development','Software Testing','Recruiter','International Sales',
+  'UI/UX Designing','CNS','Software Development','Logistics','Logistic','Legal','Journalism',
+  'Management','Product Design',
+].map(d => ({ value: d, label: d }));
+const DESIGNATION_OPTIONS = [
+  'Associate Engineer','Sr. Business Analyst','Data Analyst','Platform Engineer','QA Testing Lead II',
+  'Lead Business Analyst','Quality Engineer','Team Lead II','VP Engineering','Jr. Software Engineer',
+  'Account Manager','Product Designer','Sr. QA Engineer','Accounts Head I','Accounts Manager II',
+  'Cloud Engineer','Scrum Master I','Data Analyst I','UI/UX Designer II','Coordinator I',
+  'Engineer II','C-Suite Executive','Sr. CEO','Lead I','Sr. Software Engineer','Developer I','Design Head I',
+].map(d => ({ value: d, label: d }));
+const PRIMARY_ROLE_OPTIONS = Array.from(new Set([
+  'Associate','Business Analyst','Analyst','DevOps Engineer','QA Testing Lead','QA Engineer',
+  'Team Lead','Executive','Software Engineer','Sales Manager','Designer','Accounts Head',
+  'Accounts Manager','Scrum Master','Data Analyst','UI/UX Designer','Coordinator','Engineer',
+  'CEO','Lead','Sr. Software Engineer','Developer','Design Head',
+])).map(r => ({ value: r, label: r }));
+const ANCILLARY_ROLE_OPTIONS = [
+  '','Training Coordinator','Project Coordinator','Security Analyst','Mentor','Brand Consultant',
+  'Test Automation Lead','Board Member',
+].map(r => ({ value: r, label: r || '— None —' }));
+const WORK_TYPE_OPTIONS = ['Full Time','Part Time','Contract','Intern','Consultant'].map(w => ({ value: w, label: w }));
+const LEGAL_ENTITY_OPTIONS = [
+  'Enterprise India Pvt. Ltd.','Enterprise Global Holdings','Enterprise Solutions LLP',
+].map(e => ({ value: e, label: e }));
+const LOCATION_OPTIONS = [
+  'Pune HQ','Mumbai Office','Bengaluru Office','Delhi Office','Hyderabad Office','Remote',
+].map(l => ({ value: l, label: l }));
+const PROBATION_POLICY_OPTIONS = [
+  'Default Probation Policy','3-Month Probation','6-Month Probation','No Probation',
+].map(p => ({ value: p, label: p }));
+const NOTICE_PERIOD_OPTIONS = [
+  'Default Notice Period','15 Days','30 Days','60 Days','90 Days',
+].map(n => ({ value: n, label: n }));
+
+// Step 3 — Work Details option lists
+const LEAVE_PLAN_OPTIONS    = ['Leave Policy','Standard Leave','Senior Leave Policy'].map(v => ({ value: v, label: v }));
+const HOLIDAY_LIST_OPTIONS  = ['Holiday Calendar','India Holidays 2026','Global Holidays 2026'].map(v => ({ value: v, label: v }));
+const SHIFT_OPTIONS         = ['General Shift','Morning Shift','Evening Shift','Night Shift','Flexible'].map(v => ({ value: v, label: v }));
+const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Only','Rotational'].map(v => ({ value: v, label: v }));
+const TIME_TRACKING_OPTIONS = ['Attendance Capture','Biometric','Web Check-in','GPS Tracking'].map(v => ({ value: v, label: v }));
+const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
+const OVERTIME_OPTIONS      = ['Not applicable','Hourly Pay','Compensation Off','Time and a Half'].map(v => ({ value: v, label: v }));
+const EXPENSE_POLICY_OPTIONS= ['Select policy','Standard Expense Policy','Manager Approval','No Expenses'].map((v, i) => ({ value: i === 0 ? '' : v, label: v }));
+const LAPTOP_OPTIONS        = ['Yes','No','Pending'].map(v => ({ value: v, label: v }));
+
+// Step 4 — Compensation option lists
+const PAY_GROUP_OPTIONS         = ['Default pay group','Senior Pay Group','Intern Pay Group','Contractor Pay Group'].map(v => ({ value: v, label: v }));
+const SALARY_FREQUENCY_OPTIONS  = ['Per annum','Per month','Per hour','Per day'].map(v => ({ value: v, label: v }));
+const SALARY_STRUCTURE_OPTIONS  = ['Range Based','Fixed','Component Based'].map(v => ({ value: v, label: v }));
+const TAX_REGIME_OPTIONS        = ['New Regime (115BAC)','Old Regime'].map(v => ({ value: v, label: v }));
+
 // HR → Employee directory page. KPI tiles, tabs, filter row and table follow
 // the same surface/card pattern used on Clients.tsx so the look stays
 // consistent across modules.
@@ -75,6 +129,30 @@ const EMPLOYEES: EmployeeRow[] = [
   { id: 'EMP-1036', name: 'Chirag Reddy',     email: 'chirag.reddy@enterprise.com',     initials: 'CR', accent: '#f06548', department: 'International Sales',   designation: 'Quality Engineer',      primaryRole: 'QA Engineer',       ancillaryRole: null,                    manager: 'Gaurav Jagtap',   profile: 97, onboarding: 'Completed', status: 'active',  enabled: true },
   { id: 'EMP-1083', name: 'Dhruv Verma',      email: 'dhruv.verma@enterprise.com',      initials: 'DV', accent: '#405189', department: 'UI/UX Designing',       designation: 'Team Lead II',          primaryRole: 'Team Lead',         ancillaryRole: null,                    manager: 'Parth Lakare',    profile: 91, onboarding: 'Completed', status: 'active',  enabled: true },
   { id: 'EMP-1046', name: 'Divya Desai',      email: 'divya.desai@enterprise.com',      initials: 'DD', accent: '#d63384', department: 'CNS',                   designation: 'Lead Business Analyst', primaryRole: 'Business Analyst',  ancillaryRole: 'Project Coordinator',  manager: 'Atharv Patekar',  profile: 95, onboarding: 'Completed', status: 'active',  enabled: true },
+
+  // ── Disabled employees (visible under the "Disabled Employees" tab) ──
+  // Same row schema, just `enabled: false`. Onboarding mostly "In Progress"
+  // since these are profiles that haven't completed setup yet.
+  { id: 'EMP-1073', name: 'Aarav Patel',      email: 'aarav.patel@enterprise.com',      initials: 'AP', accent: '#7c5cfc', department: 'Software Development',  designation: 'VP Engineering',         primaryRole: 'Executive',         ancillaryRole: null,                    manager: 'Gaurav Jagtap',  profile: 74, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1031', name: 'Aditi Singh',      email: 'aditi.singh@enterprise.com',      initials: 'AS', accent: '#0ab39c', department: 'CNS',                   designation: 'Jr. Software Engineer',  primaryRole: 'Software Engineer', ancillaryRole: 'Mentor',                manager: 'Atharv Patekar', profile: 79, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1026', name: 'Amit Deshpande',   email: 'amit.deshpande@enterprise.com',   initials: 'AD', accent: '#f7b84b', department: 'International Sales',   designation: 'Account Manager',        primaryRole: 'Sales Manager',     ancillaryRole: null,                    manager: 'Rahul Verma',    profile: 78, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1072', name: 'Ananya Sharma',    email: 'ananya.sharma@enterprise.com',    initials: 'AS', accent: '#0ea5e9', department: 'Software Development',  designation: 'Product Designer',       primaryRole: 'Designer',          ancillaryRole: 'Brand Consultant',     manager: 'Gaurav Jagtap',  profile: 73, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1069', name: 'Anil Gupta',       email: 'anil.gupta@enterprise.com',       initials: 'AG', accent: '#e83e8c', department: 'Software Development',  designation: 'Sr. QA Engineer',        primaryRole: 'QA Engineer',       ancillaryRole: 'Test Automation Lead', manager: 'Gaurav Jagtap',  profile: 74, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1030', name: 'Deepa Kulkarni',   email: 'deepa.kulkarni@enterprise.com',   initials: 'DK', accent: '#299cdb', department: 'Accounts',              designation: 'Accounts Head I',        primaryRole: 'Accounts Head',     ancillaryRole: null,                    manager: 'Rahul Verma',    profile: 79, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1023', name: 'Deepa Patil',      email: 'deepa.patil@enterprise.com',      initials: 'DP', accent: '#f06548', department: 'Accounts',              designation: 'Accounts Manager II',    primaryRole: 'Accounts Manager',  ancillaryRole: null,                    manager: 'Rahul Verma',    profile: 77, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1037', name: 'Deepa Shah',       email: 'deepa.shah@enterprise.com',       initials: 'DS', accent: '#405189', department: 'Journalism',            designation: 'Cloud Engineer',         primaryRole: 'DevOps Engineer',   ancillaryRole: null,                    manager: 'Atharv Patekar', profile: 76, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1082', name: 'Deepa Shah',       email: 'deepa.shah2@enterprise.com',      initials: 'DS', accent: '#d63384', department: 'Software Testing',      designation: 'Scrum Master I',         primaryRole: 'Scrum Master',      ancillaryRole: null,                    manager: 'Atharv Patekar', profile: 75, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1038', name: 'Dhruv Verma',      email: 'dhruv.verma2@enterprise.com',     initials: 'DV', accent: '#0ab39c', department: 'Legal',                 designation: 'Data Analyst I',         primaryRole: 'Data Analyst',      ancillaryRole: null,                    manager: 'Parth Lakare',   profile: 75, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1039', name: 'Esha Agrawal',     email: 'esha.agrawal@enterprise.com',     initials: 'EA', accent: '#0ea5e9', department: 'Logistic',              designation: 'UI/UX Designer II',      primaryRole: 'UI/UX Designer',    ancillaryRole: null,                    manager: 'Sneha Sharma',   profile: 75, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1047', name: 'Ishaan More',      email: 'ishaan.more@enterprise.com',      initials: 'IM', accent: '#0ab39c', department: 'Accounts',              designation: 'Coordinator I',          primaryRole: 'Coordinator',       ancillaryRole: null,                    manager: 'Deepa Kulkarni', profile: 74, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1066', name: 'Kavita Singh',     email: 'kavita.singh@enterprise.com',     initials: 'KS', accent: '#7c5cfc', department: 'Software Development',  designation: 'Engineer II',            primaryRole: 'Engineer',          ancillaryRole: null,                    manager: 'Gaurav Jagtap',  profile: 72, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1050', name: 'Nikhil Gawade',    email: 'nikhil.gawade@enterprise.com',    initials: 'NG', accent: '#299cdb', department: 'Logistics',             designation: 'C-Suite Executive',      primaryRole: 'Executive',         ancillaryRole: 'Board Member',          manager: 'Manoj Gawade',   profile: 77, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1085', name: 'Rahul Verma',      email: 'rahul.verma@enterprise.com',      initials: 'RV', accent: '#f7b84b', department: 'Management',            designation: 'Sr. CEO',                primaryRole: 'CEO',               ancillaryRole: null,                    manager: '—',              profile: 79, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1052', name: 'Rohan Deshmukh',   email: 'rohan.deshmukh@enterprise.com',   initials: 'RD', accent: '#f06548', department: 'Software Development',  designation: 'Lead I',                 primaryRole: 'Lead',              ancillaryRole: null,                    manager: 'Gaurav Jagtap',  profile: 76, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1054', name: 'Simran Sharma',    email: 'simran.sharma@enterprise.com',    initials: 'SS', accent: '#0ab39c', department: 'Software Development',  designation: 'Product Designer',       primaryRole: 'Designer',          ancillaryRole: null,                    manager: 'Gaurav Jagtap',  profile: 79, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1015', name: 'Sneha Kulkarni',   email: 'sneha.kulkarni@enterprise.com',   initials: 'SK', accent: '#0ea5e9', department: 'Software Development',  designation: 'Sr. Software Engineer',  primaryRole: 'Sr. Software Engineer', ancillaryRole: null,                manager: 'Gaurav Jagtap',  profile: 75, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1056', name: 'Sneha More',       email: 'sneha.more@enterprise.com',       initials: 'SM', accent: '#0ab39c', department: 'Software Testing',      designation: 'Developer I',            primaryRole: 'Developer',         ancillaryRole: null,                    manager: 'Atharv Patekar', profile: 77, onboarding: 'In Progress', status: 'inactive', enabled: false },
+  { id: 'EMP-1044', name: 'Sneha Patil',      email: 'sneha.patil@enterprise.com',      initials: 'SP', accent: '#f7b84b', department: 'Product Design',        designation: 'Design Head I',          primaryRole: 'Design Head',       ancillaryRole: null,                    manager: 'Rahul Verma',    profile: 72, onboarding: 'In Progress', status: 'inactive', enabled: false },
 ];
 
 // Soft tonal palette for the role pills.
@@ -89,8 +167,37 @@ const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
   'QA Testing Lead':      { bg: '#fde8c4', fg: '#a4661c' },
   'QA Engineer':          { bg: '#fde8c4', fg: '#a4661c' },
   'Team Lead':            { bg: '#fdf3d6', fg: '#a06f00' },
+  // Disabled-list roles
+  'Executive':            { bg: '#fdf3d6', fg: '#a06f00' },
+  'Software Engineer':    { bg: '#dceefe', fg: '#0c63b0' },
+  'Mentor':               { bg: '#dceefe', fg: '#0c63b0' },
+  'Sales Manager':        { bg: '#fde8c4', fg: '#a4661c' },
+  'Designer':             { bg: '#fdf3d6', fg: '#a06f00' },
+  'Brand Consultant':     { bg: '#dceefe', fg: '#0c63b0' },
+  'Test Automation Lead': { bg: '#dceefe', fg: '#0c63b0' },
+  'Accounts Head':        { bg: '#fde8c4', fg: '#a4661c' },
+  'Accounts Manager':     { bg: '#fde8c4', fg: '#a4661c' },
+  'Scrum Master':         { bg: '#fdf3d6', fg: '#a06f00' },
+  'Data Analyst':         { bg: '#fde8c4', fg: '#a4661c' },
+  'UI/UX Designer':       { bg: '#fdf3d6', fg: '#a06f00' },
+  'Coordinator':          { bg: '#fdf3d6', fg: '#a06f00' },
+  'Engineer':             { bg: '#fdf3d6', fg: '#a06f00' },
+  'Board Member':         { bg: '#dceefe', fg: '#0c63b0' },
+  'CEO':                  { bg: '#fdf3d6', fg: '#a06f00' },
+  'Lead':                 { bg: '#fdf3d6', fg: '#a06f00' },
+  'Sr. Software Engineer':{ bg: '#fdf3d6', fg: '#a06f00' },
+  'Developer':            { bg: '#fdf3d6', fg: '#a06f00' },
+  'Design Head':          { bg: '#fdf3d6', fg: '#a06f00' },
 };
 const tone = (role: string) => ROLE_TONES[role] || { bg: '#eef2f6', fg: '#475569' };
+
+// Onboarding-status pill recipe — green for completed, warning for in-progress
+// pending stays muted grey since nothing has happened yet.
+const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { border: string; fg: string }> = {
+  'Completed':   { border: '#0ab39c', fg: '#0a8a78' },
+  'In Progress': { border: '#f7b84b', fg: '#b97a00' },
+  'Pending':     { border: '#878a99', fg: '#5b6478' },
+};
 
 // Reuse the Clients KPI card recipe — gradient strip on top + 44×44 icon box,
 // 11px uppercase label, 26px value. Keep gradients distinct per status so the
@@ -164,6 +271,47 @@ export default function HrEmployees() {
   const [ePermState, setEPermState] = useState('');
   const [ePermCountry, setEPermCountry] = useState('India');
   const [ePermPin, setEPermPin]     = useState('');
+  // Step 2 — Job Details
+  const [eJoinDate, setEJoinDate]                = useState('');
+  const [eDept, setEDept]                        = useState('');
+  const [eDesignation, setEDesignation]          = useState('');
+  const [ePrimaryRole, setEPrimaryRole]          = useState('');
+  const [eAncillaryRole, setEAncillaryRole]      = useState('');
+  const [eWorkType, setEWorkType]                = useState('Full Time');
+  const [eLegalEntity, setELegalEntity]          = useState('');
+  const [eLocation, setELocation]                = useState('');
+  const [eReportingMgr, setEReportingMgr]        = useState('');
+  const [eProbationPolicy, setEProbationPolicy]  = useState('Default Probation Policy');
+  const [eNoticePeriod, setENoticePeriod]        = useState('Default Notice Period');
+  // Step 3 — Work Details
+  const [eLeavePlan, setELeavePlan]              = useState('Leave Policy');
+  const [eHolidayList, setEHolidayList]          = useState('Holiday Calendar');
+  const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
+  const [eShift, setEShift]                      = useState('General Shift');
+  const [eWeeklyOff, setEWeeklyOff]              = useState('Week Off Policy');
+  const [eAttendanceNumber, setEAttendanceNumber]= useState('');
+  const [eTimeTracking, setETimeTracking]        = useState('Attendance Capture');
+  const [ePenalizationPolicy, setEPenalizationPolicy] = useState('Tracking Policy');
+  const [eOvertime, setEOvertime]                = useState('Not applicable');
+  const [eExpensePolicy, setEExpensePolicy]      = useState('');
+  const [eLaptopAssigned, setELaptopAssigned]    = useState('No');
+  const [eLaptopAssetId, setELaptopAssetId]      = useState('');
+  const [eMobileDevice, setEMobileDevice]        = useState('');
+  const [eOtherAssets, setEOtherAssets]          = useState('');
+  const [eAadharFile, setEAadharFile]            = useState<File | null>(null);
+  const [ePanFile, setEPanFile]                  = useState<File | null>(null);
+  const [ePhotoFile, setEPhotoFile]              = useState<File | null>(null);
+  // Step 4 — Compensation
+  const [eEnablePayroll, setEEnablePayroll]      = useState(true);
+  const [ePayGroup, setEPayGroup]                = useState('Default pay group');
+  const [eAnnualSalary, setEAnnualSalary]        = useState('');
+  const [eSalaryFreq, setESalaryFreq]            = useState('Per annum');
+  const [eSalaryFrom, setESalaryFrom]            = useState('');
+  const [eSalaryStructure, setESalaryStructure]  = useState('Range Based');
+  const [eTaxRegime, setETaxRegime]              = useState('New Regime (115BAC)');
+  const [eBonusInAnnual, setEBonusInAnnual]      = useState(false);
+  const [ePfEligible, setEPfEligible]            = useState(false);
+  const [eDetailedBreakup, setEDetailedBreakup]  = useState(false);
 
   const resetEmpForm = () => {
     setEmpStep(1);
@@ -177,6 +325,24 @@ export default function HrEmployees() {
     setECurAddr1(''); setECurAddr2(''); setECurCity(''); setECurState(''); setECurCountry('India'); setECurPin('');
     setESameAsCurrent(false);
     setEPermAddr1(''); setEPermAddr2(''); setEPermCity(''); setEPermState(''); setEPermCountry('India'); setEPermPin('');
+    // Step 2
+    setEJoinDate(''); setEDept(''); setEDesignation('');
+    setEPrimaryRole(''); setEAncillaryRole(''); setEWorkType('Full Time');
+    setELegalEntity(''); setELocation(''); setEReportingMgr('');
+    setEProbationPolicy('Default Probation Policy'); setENoticePeriod('Default Notice Period');
+    // Step 3
+    setELeavePlan('Leave Policy'); setEHolidayList('Holiday Calendar');
+    setEAttendanceTracking(true); setEShift('General Shift');
+    setEWeeklyOff('Week Off Policy'); setEAttendanceNumber('');
+    setETimeTracking('Attendance Capture'); setEPenalizationPolicy('Tracking Policy');
+    setEOvertime('Not applicable'); setEExpensePolicy('');
+    setELaptopAssigned('No'); setELaptopAssetId(''); setEMobileDevice(''); setEOtherAssets('');
+    setEAadharFile(null); setEPanFile(null); setEPhotoFile(null);
+    // Step 4
+    setEEnablePayroll(true); setEPayGroup('Default pay group');
+    setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
+    setESalaryStructure('Range Based'); setETaxRegime('New Regime (115BAC)');
+    setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(false);
   };
 
   const closeEmp = () => { setEmpOpen(false); resetEmpForm(); };
@@ -200,6 +366,12 @@ export default function HrEmployees() {
     setEWorkEmail(row.email);
     setEEmpId(row.id);
     setEStatus(row.enabled ? 'Active' : 'Inactive');
+    // Step 2 — pre-fill from row
+    setEDept(row.department);
+    setEDesignation(row.designation);
+    setEPrimaryRole(row.primaryRole);
+    setEAncillaryRole(row.ancillaryRole || '');
+    setEReportingMgr(row.manager);
     setEmpOpen(true);
   };
 
@@ -267,18 +439,33 @@ export default function HrEmployees() {
           >
             {/* ── Header row ── */}
             <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
-              <div>
-                <div className="d-flex align-items-center gap-2 flex-wrap">
-                  <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee Directory</h5>
-                  <span
-                    className="badge rounded-pill border border-success text-success text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1"
-                  >
-                    <span className="bg-success rounded-circle" style={{ width: 6, height: 6 }} />
-                    {counts.total} employees · {counts.active} active
-                  </span>
-                </div>
-                <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-                  Employee directory, profiles, and employment records
+              <div className="d-flex align-items-center gap-3 min-w-0">
+                {/* Icon tile — gradient square with white glyph and a soft
+                    primary shadow, matching the master "What you are doing
+                    here" card on the Department Master. */}
+                <span
+                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                  style={{
+                    width: 46, height: 46,
+                    background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
+                    boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
+                  }}
+                >
+                  <i className="ri-team-line" style={{ color: '#fff', fontSize: 21 }} />
+                </span>
+                <div className="min-w-0">
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee Directory</h5>
+                    <span
+                      className="badge rounded-pill border border-success text-success text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1"
+                    >
+                      <span className="bg-success rounded-circle" style={{ width: 6, height: 6 }} />
+                      {counts.total} employees · {counts.active} active
+                    </span>
+                  </div>
+                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+                    Employee directory, profiles, and employment records
+                  </div>
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
@@ -541,10 +728,17 @@ export default function HrEmployees() {
                               </div>
                             </td>
                             <td>
-                              <span className="badge rounded-pill border border-success text-success text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1">
-                                <span className="bg-success rounded-circle" style={{ width: 6, height: 6 }} />
-                                {e.onboarding}
-                              </span>
+                              {(() => {
+                                const ob = ONBOARDING_TONES[e.onboarding];
+                                return (
+                                  <span
+                                    className="badge rounded-pill text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center"
+                                    style={{ background: 'transparent', border: `1px solid ${ob.border}`, color: ob.fg }}
+                                  >
+                                    {e.onboarding}
+                                  </span>
+                                );
+                              })()}
                             </td>
                             <td className="pe-3">
                               <div className="d-flex gap-1 justify-content-center align-items-center">
@@ -565,7 +759,7 @@ export default function HrEmployees() {
                 {/* Footer count — matches the rhythm of the Clients table */}
                 <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top">
                   <div className="text-muted" style={{ fontSize: 12 }}>
-                    Showing <span className="fw-bold text-body">{filtered.length}</span> of <span className="fw-bold text-body">{EMPLOYEES.length}</span> Results
+                    Showing <span className="fw-bold text-body">{filtered.length}</span> of <span className="fw-bold text-body">{EMPLOYEES.filter(e => tab === 'active' ? e.enabled : !e.enabled).length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
                   </div>
                 </div>
               </CardBody>
@@ -579,43 +773,48 @@ export default function HrEmployees() {
         isOpen={onboardOpen}
         toggle={closeOnboard}
         centered
-        size="lg"
-        contentClassName="border-0"
+        size="md"
+        contentClassName="onb-modal-content border-0"
       >
         <style>{`
-          .onb-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; font-size: 13.5px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
-          .onb-input::placeholder { color: #9ca3af; }
+          .onb-modal-content { border-radius: 24px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
+          .onb-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px; font-size: 14px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; height: 50px; }
+          .onb-input::placeholder { color: #9ca3af; font-weight: 400; }
           .onb-input:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
           [data-bs-theme="dark"] .onb-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
           [data-bs-theme="dark"] .onb-input::placeholder { color: var(--vz-secondary-color); }
-          .onb-label { font-size: 11px; font-weight: 700; color: #6b7280; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; display: block; }
-          [data-bs-theme="dark"] .onb-label { color: var(--vz-secondary-color); }
-          .onb-expiry-pill { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 999px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: #fff; border: 1px solid #e5e7eb; color: #6b7280; }
+          .onb-label { font-size: 12px; font-weight: 700; color: #374151; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; display: block; }
+          [data-bs-theme="dark"] .onb-label { color: var(--vz-body-color); }
+          .onb-label .onb-req { color: #f06548; margin-left: 2px; font-weight: 700; }
+          .onb-expiry-pill { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: #fff; border: 1px solid #e5e7eb; color: #6b7280; }
           .onb-expiry-pill:hover { border-color: #c4b5fd; color: #7c5cfc; }
-          .onb-expiry-pill.is-active { background: #f5f1ff; border-color: #a78bfa; color: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.10); }
+          .onb-expiry-pill.is-active { background: #f5f0ff; border-color: #a78bfa; color: #7c5cfc; }
           [data-bs-theme="dark"] .onb-expiry-pill { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); color: var(--vz-secondary-color); }
-          [data-bs-theme="dark"] .onb-expiry-pill.is-active { background: rgba(124,92,252,0.12); border-color: #a78bfa; color: #c4b5fd; }
+          [data-bs-theme="dark"] .onb-expiry-pill.is-active { background: rgba(124,92,252,0.18); border-color: #a78bfa; color: #c4b5fd; }
+          .onb-submit-btn { padding: 16px 22px; border-radius: 16px; font-size: 15px; color: #fff; border: none; background: linear-gradient(90deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%); box-shadow: 0 10px 22px rgba(124,58,237,0.32); transition: transform .15s ease, box-shadow .15s ease; }
+          .onb-submit-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 28px rgba(124,58,237,0.38); }
+          .onb-close-btn { width: 32px; height: 32px; border-radius: 10px; background: transparent; border: none; color: #6b7280; transition: background .15s ease, color .15s ease; }
+          .onb-close-btn:hover { background: #f3f4f6; color: #1f2937; }
         `}</style>
 
-        <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg, #fff)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden' }}>
+        <ModalBody className="p-0" style={{ background: '#fff' }}>
           {/* Header */}
-          <div className="d-flex align-items-start justify-content-between" style={{ padding: '22px 24px 16px' }}>
+          <div className="d-flex align-items-start justify-content-between" style={{ padding: '24px 28px 18px' }}>
             <div className="d-flex align-items-center gap-3">
               <div
                 className="d-flex align-items-center justify-content-center flex-shrink-0"
                 style={{
-                  width: 44, height: 44, borderRadius: 12,
-                  background: 'linear-gradient(135deg,#ede5ff,#dccff8)',
-                  boxShadow: '0 4px 12px rgba(124,92,252,0.18)',
+                  width: 52, height: 52, borderRadius: 14,
+                  background: '#f3edff',
                 }}
               >
-                <i className="ri-link" style={{ fontSize: 20, color: '#7c5cfc' }} />
+                <i className="ri-link" style={{ fontSize: 22, color: '#7c3aed' }} />
               </div>
               <div>
-                <h5 className="fw-bold mb-1" style={{ fontSize: 17, letterSpacing: '-0.01em' }}>
+                <h5 className="fw-bold mb-1" style={{ fontSize: 19, letterSpacing: '-0.01em', color: '#1f2937' }}>
                   Generate Onboarding Link
                 </h5>
-                <div className="text-muted" style={{ fontSize: 12.5 }}>
+                <div style={{ fontSize: 13.5, color: '#6b7280' }}>
                   Create a secure link for new employee onboarding
                 </div>
               </div>
@@ -624,26 +823,20 @@ export default function HrEmployees() {
               type="button"
               onClick={closeOnboard}
               aria-label="Close"
-              className="btn p-0 d-inline-flex align-items-center justify-content-center"
-              style={{
-                width: 28, height: 28, borderRadius: 8,
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--vz-secondary-color)',
-              }}
+              className="onb-close-btn d-inline-flex align-items-center justify-content-center"
             >
-              <i className="ri-close-line" style={{ fontSize: 18 }} />
+              <i className="ri-close-line" style={{ fontSize: 20 }} />
             </button>
           </div>
 
           {/* Divider */}
-          <div style={{ height: 1, background: 'var(--vz-border-color)', margin: '0 24px' }} />
+          <div style={{ height: 1, background: '#eef0f4', margin: '0 28px' }} />
 
           {/* Form body */}
-          <div style={{ padding: '20px 24px 8px' }}>
+          <div style={{ padding: '22px 28px 10px' }}>
             <Row className="g-3">
               <Col md={6}>
-                <label className="onb-label" htmlFor="onb-name">Employee Name <span style={{ color: '#f06548' }}>*</span></label>
+                <label className="onb-label" htmlFor="onb-name">Employee Name<span className="onb-req">*</span></label>
                 <input
                   id="onb-name"
                   type="text"
@@ -654,7 +847,7 @@ export default function HrEmployees() {
                 />
               </Col>
               <Col md={6}>
-                <label className="onb-label" htmlFor="onb-email">Email Address <span style={{ color: '#f06548' }}>*</span></label>
+                <label className="onb-label" htmlFor="onb-email">Email Address<span className="onb-req">*</span></label>
                 <input
                   id="onb-email"
                   type="email"
@@ -665,7 +858,7 @@ export default function HrEmployees() {
                 />
               </Col>
               <Col md={6}>
-                <label className="onb-label">Department <span style={{ color: '#f06548' }}>*</span></label>
+                <label className="onb-label">Department<span className="onb-req">*</span></label>
                 <MasterSelect
                   value={onbDept}
                   onChange={setOnbDept}
@@ -676,7 +869,7 @@ export default function HrEmployees() {
                 />
               </Col>
               <Col md={6}>
-                <label className="onb-label">Expected Joining Date <span style={{ color: '#f06548' }}>*</span></label>
+                <label className="onb-label">Expected Joining Date<span className="onb-req">*</span></label>
                 <MasterDatePicker
                   value={onbDate}
                   onChange={setOnbDate}
@@ -686,7 +879,7 @@ export default function HrEmployees() {
             </Row>
 
             {/* Link expiry */}
-            <div className="mt-3">
+            <div className="mt-4">
               <label className="onb-label">Link Expiry</label>
               <div className="d-flex flex-wrap gap-2">
                 {([3, 7, 15] as ExpiryDays[]).map(days => {
@@ -698,7 +891,7 @@ export default function HrEmployees() {
                       onClick={() => setOnbExpiry(days)}
                       className={`onb-expiry-pill${active ? ' is-active' : ''}`}
                     >
-                      <i className="ri-time-line" style={{ fontSize: 13 }} />
+                      <i className="ri-time-line" style={{ fontSize: 16 }} />
                       {days} Days
                     </button>
                   );
@@ -708,25 +901,16 @@ export default function HrEmployees() {
           </div>
 
           {/* Footer / submit */}
-          <div style={{ padding: '16px 24px 22px' }}>
+          <div style={{ padding: '20px 28px 26px' }}>
             <button
               type="button"
-              className="btn w-100 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-              style={{
-                padding: '12px 18px',
-                borderRadius: 12,
-                fontSize: 14,
-                color: '#fff',
-                border: 'none',
-                background: 'linear-gradient(135deg,#7c5cfc,#a78bfa)',
-                boxShadow: '0 8px 20px rgba(124,92,252,0.30)',
-              }}
+              className="onb-submit-btn w-100 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
               onClick={() => {
                 // TODO: wire to backend — generate signed onboarding link
                 closeOnboard();
               }}
             >
-              <i className="ri-link" style={{ fontSize: 16 }} />
+              <i className="ri-link" style={{ fontSize: 18 }} />
               Generate Onboarding Link
             </button>
           </div>
@@ -1036,25 +1220,435 @@ export default function HrEmployees() {
               </>
             )}
 
-            {empStep > 1 && (
-              <div className="emp-section text-center" style={{ padding: '40px 24px' }}>
-                <div
-                  className="d-inline-flex align-items-center justify-content-center rounded-circle mb-3"
-                  style={{ width: 56, height: 56, background: 'linear-gradient(135deg,#ede5ff,#dccff8)' }}
-                >
-                  <i className={
-                    empStep === 2 ? 'ri-briefcase-line'
-                    : empStep === 3 ? 'ri-building-line'
-                    : 'ri-money-dollar-circle-line'
-                  } style={{ fontSize: 26, color: '#7c5cfc' }} />
+            {empStep === 2 && (
+              <>
+                {/* Employment Details */}
+                <div className="emp-section">
+                  <div className="emp-section-title">
+                    <i className="ri-briefcase-line" /> Employment Details
+                  </div>
+                  <Row className="g-3">
+                    <Col md={4}>
+                      <label className="emp-label">Joining Date<span className="req">*</span></label>
+                      <MasterDatePicker value={eJoinDate} onChange={setEJoinDate} placeholder="dd-mm-yyyy" />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Department<span className="req">*</span></label>
+                      <MasterSelect value={eDept} onChange={setEDept} placeholder="Select department" options={DEPARTMENT_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Designation<span className="req">*</span></label>
+                      <MasterSelect value={eDesignation} onChange={setEDesignation} placeholder="Select designation" options={DESIGNATION_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Primary Role<span className="req">*</span></label>
+                      <MasterSelect value={ePrimaryRole} onChange={setEPrimaryRole} placeholder="Select role" options={PRIMARY_ROLE_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Ancillary Role</label>
+                      <MasterSelect value={eAncillaryRole} onChange={setEAncillaryRole} placeholder="— None —" options={ANCILLARY_ROLE_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Work Type<span className="req">*</span></label>
+                      <MasterSelect value={eWorkType} onChange={setEWorkType} options={WORK_TYPE_OPTIONS} />
+                    </Col>
+                  </Row>
                 </div>
-                <h6 className="fw-bold mb-1">
-                  {empStep === 2 ? 'Job Details' : empStep === 3 ? 'Work Details' : 'Compensation'}
-                </h6>
-                <p className="text-muted mb-0" style={{ fontSize: 12.5 }}>
-                  This step's form will go here. Share the design and I'll wire it up.
-                </p>
-              </div>
+
+                {/* Organisational Details */}
+                <div className="emp-section">
+                  <div className="emp-section-title">
+                    <i className="ri-building-2-line" /> Organisational Details
+                  </div>
+                  <Row className="g-3">
+                    <Col md={4}>
+                      <label className="emp-label">Legal Entity<span className="req">*</span></label>
+                      <MasterSelect value={eLegalEntity} onChange={setELegalEntity} placeholder="Select entity" options={LEGAL_ENTITY_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Location<span className="req">*</span></label>
+                      <MasterSelect value={eLocation} onChange={setELocation} placeholder="Select location" options={LOCATION_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Reporting Manager</label>
+                      <input className="emp-input" type="text" placeholder="Enter manager name" value={eReportingMgr} onChange={e => setEReportingMgr(e.target.value)} />
+                    </Col>
+                  </Row>
+                </div>
+
+                {/* Employment Terms */}
+                <div className="emp-section">
+                  <div className="emp-section-title">
+                    <i className="ri-file-list-3-line" /> Employment Terms
+                  </div>
+                  <Row className="g-3">
+                    <Col md={6}>
+                      <label className="emp-label">Probation Policy<span className="req">*</span></label>
+                      <MasterSelect value={eProbationPolicy} onChange={setEProbationPolicy} options={PROBATION_POLICY_OPTIONS} />
+                    </Col>
+                    <Col md={6}>
+                      <label className="emp-label">Notice Period<span className="req">*</span></label>
+                      <MasterSelect value={eNoticePeriod} onChange={setENoticePeriod} options={NOTICE_PERIOD_OPTIONS} />
+                    </Col>
+                  </Row>
+                </div>
+              </>
+            )}
+
+            {empStep === 3 && (
+              <>
+                {/* Leave & Attendance */}
+                <div className="emp-section">
+                  <div className="emp-section-title" style={{ color: '#0a8a78' }}>
+                    <i className="ri-calendar-2-line" style={{ color: '#0ab39c' }} /> Leave &amp; Attendance
+                  </div>
+                  <Row className="g-3">
+                    <Col md={6}>
+                      <label className="emp-label">Leave Plan<span className="req">*</span></label>
+                      <MasterSelect value={eLeavePlan} onChange={setELeavePlan} options={LEAVE_PLAN_OPTIONS} />
+                    </Col>
+                    <Col md={6}>
+                      <label className="emp-label">Holiday List<span className="req">*</span></label>
+                      <MasterSelect value={eHolidayList} onChange={setEHolidayList} options={HOLIDAY_LIST_OPTIONS} />
+                    </Col>
+                    <Col md={6}>
+                      <label className="emp-label">Attendance Tracking</label>
+                      <div
+                        className="d-flex align-items-center justify-content-between emp-input"
+                        style={{ height: 38, cursor: 'pointer' }}
+                        onClick={() => setEAttendanceTracking(v => !v)}
+                      >
+                        <span style={{ fontSize: 13, color: '#374151' }}>
+                          {eAttendanceTracking ? 'Enabled' : 'Disabled'}
+                        </span>
+                        <button
+                          type="button"
+                          aria-pressed={eAttendanceTracking}
+                          onClick={(e) => { e.stopPropagation(); setEAttendanceTracking(v => !v); }}
+                          className="btn p-0 border-0 d-inline-flex align-items-center"
+                          style={{
+                            width: 36, height: 20, borderRadius: 999,
+                            background: eAttendanceTracking ? '#7c5cfc' : '#cbd0d8',
+                            position: 'relative',
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 14, height: 14, borderRadius: '50%',
+                              background: '#fff', position: 'absolute', top: 2,
+                              left: eAttendanceTracking ? 19 : 2, transition: 'left .15s ease',
+                            }}
+                          />
+                        </button>
+                      </div>
+                    </Col>
+                    <Col md={6}>
+                      <label className="emp-label">Shift<span className="req">*</span></label>
+                      <MasterSelect value={eShift} onChange={setEShift} options={SHIFT_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Weekly Off<span className="req">*</span></label>
+                      <MasterSelect value={eWeeklyOff} onChange={setEWeeklyOff} options={WEEKLY_OFF_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Attendance Number</label>
+                      <input className="emp-input" type="text" placeholder="Attendance number" value={eAttendanceNumber} onChange={e => setEAttendanceNumber(e.target.value)} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Time Tracking Policy<span className="req">*</span></label>
+                      <MasterSelect value={eTimeTracking} onChange={setETimeTracking} options={TIME_TRACKING_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Penalization Policy<span className="req">*</span></label>
+                      <MasterSelect value={ePenalizationPolicy} onChange={setEPenalizationPolicy} options={PENALIZATION_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Overtime</label>
+                      <MasterSelect value={eOvertime} onChange={setEOvertime} options={OVERTIME_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Expense Policy<span className="req">*</span></label>
+                      <MasterSelect value={eExpensePolicy} onChange={setEExpensePolicy} placeholder="Select policy" options={EXPENSE_POLICY_OPTIONS} />
+                    </Col>
+                  </Row>
+                </div>
+
+                {/* Assets & Security */}
+                <div className="emp-section">
+                  <div className="emp-section-title" style={{ color: '#0c63b0' }}>
+                    <i className="ri-computer-line" style={{ color: '#299cdb' }} /> Assets &amp; Security
+                  </div>
+                  <Row className="g-3">
+                    <Col md={4}>
+                      <label className="emp-label">Laptop Assigned</label>
+                      <MasterSelect value={eLaptopAssigned} onChange={setELaptopAssigned} options={LAPTOP_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Laptop Asset ID</label>
+                      <input className="emp-input" type="text" placeholder="e.g. LAP-0042" value={eLaptopAssetId} onChange={e => setELaptopAssetId(e.target.value)} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Mobile Device</label>
+                      <input className="emp-input" type="text" placeholder="e.g. iPhone 15" value={eMobileDevice} onChange={e => setEMobileDevice(e.target.value)} />
+                    </Col>
+                    <Col md={12}>
+                      <label className="emp-label">Other Assets</label>
+                      <input className="emp-input" type="text" placeholder="e.g. Monitor, Keyboard, Headset" value={eOtherAssets} onChange={e => setEOtherAssets(e.target.value)} />
+                    </Col>
+                  </Row>
+                </div>
+
+                {/* Documents */}
+                <div className="emp-section">
+                  <div className="emp-section-title">
+                    <i className="ri-file-text-line" /> Documents
+                  </div>
+                  <Row className="g-3">
+                    {[
+                      { label: 'Aadhar Card', required: true,  file: eAadharFile, set: setEAadharFile },
+                      { label: 'Pan Card',    required: true,  file: ePanFile,    set: setEPanFile },
+                      { label: 'Photo ID',    required: false, file: ePhotoFile,  set: setEPhotoFile },
+                    ].map(d => (
+                      <Col md={4} key={d.label}>
+                        <label className="emp-label">{d.label}{d.required && <span className="req">*</span>}</label>
+                        <label
+                          className="d-flex align-items-center justify-content-center gap-2"
+                          style={{
+                            height: 38,
+                            border: '1.5px dashed #a78bfa',
+                            borderRadius: 8,
+                            background: '#f5f0ff',
+                            cursor: 'pointer',
+                            color: '#7c5cfc',
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                          }}
+                        >
+                          <i className="ri-upload-2-line" />
+                          {d.file ? d.file.name : 'Choose file'}
+                          <input
+                            type="file"
+                            style={{ display: 'none' }}
+                            onChange={e => d.set(e.target.files?.[0] || null)}
+                          />
+                        </label>
+                      </Col>
+                    ))}
+                  </Row>
+                </div>
+              </>
+            )}
+
+            {empStep === 4 && (
+              <>
+                {/* Payroll Configuration */}
+                <div className="emp-section">
+                  <div className="emp-section-title">
+                    <i className="ri-money-dollar-circle-line" /> Payroll Configuration
+                  </div>
+                  <div
+                    className="d-flex align-items-center gap-2 mb-3"
+                    style={{
+                      padding: '10px 14px',
+                      border: '1px solid #b6e9d9',
+                      background: 'linear-gradient(135deg, #ddf5ec, #c7efde)',
+                      borderRadius: 10,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={eEnablePayroll}
+                      onClick={() => setEEnablePayroll(v => !v)}
+                      className="btn p-0 border-0 d-inline-flex align-items-center"
+                      style={{
+                        width: 36, height: 20, borderRadius: 999,
+                        background: eEnablePayroll ? '#0ab39c' : '#cbd0d8',
+                        position: 'relative',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 14, height: 14, borderRadius: '50%',
+                          background: '#fff', position: 'absolute', top: 2,
+                          left: eEnablePayroll ? 19 : 2, transition: 'left .15s ease',
+                        }}
+                      />
+                    </button>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#0a8a78' }}>
+                      Enable payroll for this employee
+                    </span>
+                  </div>
+                  <Row className="g-3">
+                    <Col md={4}>
+                      <label className="emp-label">Pay Group</label>
+                      <MasterSelect value={ePayGroup} onChange={setEPayGroup} options={PAY_GROUP_OPTIONS} />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Annual Salary</label>
+                      <div className="d-flex gap-2">
+                        <input className="emp-input" type="number" placeholder="Enter amount" value={eAnnualSalary} onChange={e => setEAnnualSalary(e.target.value)} style={{ flex: 1 }} />
+                        <div style={{ width: 130, flexShrink: 0 }}>
+                          <MasterSelect value={eSalaryFreq} onChange={setESalaryFreq} options={SALARY_FREQUENCY_OPTIONS} />
+                        </div>
+                      </div>
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Salary Effective From</label>
+                      <MasterDatePicker value={eSalaryFrom} onChange={setESalaryFrom} placeholder="dd-mm-yyyy" />
+                    </Col>
+                    <Col md={6}>
+                      <label className="emp-label">Salary Structure Type</label>
+                      <MasterSelect value={eSalaryStructure} onChange={setESalaryStructure} options={SALARY_STRUCTURE_OPTIONS} />
+                    </Col>
+                    <Col md={6}>
+                      <label className="emp-label">Tax Regime</label>
+                      <MasterSelect value={eTaxRegime} onChange={setETaxRegime} options={TAX_REGIME_OPTIONS} />
+                    </Col>
+                  </Row>
+                </div>
+
+                {/* Bonus, Perks & Payroll Settings */}
+                <div className="emp-section">
+                  <div className="emp-section-title">
+                    <i className="ri-gift-line" style={{ color: '#7c5cfc' }} /> Bonus, Perks &amp; Payroll Settings
+                  </div>
+                  <div
+                    className="d-flex align-items-center gap-2 mb-3"
+                    style={{ padding: '8px 12px', border: '1px solid var(--vz-border-color)', borderRadius: 8 }}
+                  >
+                    <input
+                      type="checkbox"
+                      id="bonus-in-annual"
+                      className="form-check-input m-0"
+                      checked={eBonusInAnnual}
+                      onChange={e => setEBonusInAnnual(e.target.checked)}
+                    />
+                    <label htmlFor="bonus-in-annual" className="mb-0" style={{ fontSize: 13, cursor: 'pointer' }}>
+                      Bonus included in annual salary
+                    </label>
+                  </div>
+                  <div className="d-flex flex-wrap gap-2 mb-3">
+                    <button
+                      type="button"
+                      className="btn d-inline-flex align-items-center gap-1 fw-semibold"
+                      style={{
+                        fontSize: 12.5,
+                        padding: '6px 14px',
+                        borderRadius: 8,
+                        background: '#fff',
+                        color: '#7c5cfc',
+                        border: '1px dashed #a78bfa',
+                      }}
+                    >
+                      <i className="ri-add-line" /> Add Bonus
+                    </button>
+                    <button
+                      type="button"
+                      className="btn d-inline-flex align-items-center gap-1 fw-semibold"
+                      style={{
+                        fontSize: 12.5,
+                        padding: '6px 14px',
+                        borderRadius: 8,
+                        background: '#fff',
+                        color: '#0ab39c',
+                        border: '1px dashed #2dd4bf',
+                      }}
+                    >
+                      <i className="ri-add-line" /> Add Perks
+                    </button>
+                  </div>
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <input
+                      type="checkbox"
+                      id="pf-eligible"
+                      className="form-check-input m-0"
+                      checked={ePfEligible}
+                      onChange={e => setEPfEligible(e.target.checked)}
+                    />
+                    <label htmlFor="pf-eligible" className="mb-0" style={{ fontSize: 13, cursor: 'pointer' }}>
+                      Provident Fund (PF) Eligible
+                    </label>
+                  </div>
+                  <div
+                    className="d-flex align-items-center gap-2"
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      background: '#f5f0ff',
+                      border: '1px solid #d6c9ff',
+                      color: '#5a3fd1',
+                      fontSize: 12.5,
+                    }}
+                  >
+                    <i className="ri-information-line" />
+                    ESi is not applicable for the selected Pay Group
+                  </div>
+                </div>
+
+                {/* Salary Breakup */}
+                <div className="emp-section">
+                  <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                    <div className="emp-section-title mb-0">
+                      <i className="ri-calculator-line" style={{ color: '#0c63b0' }} /> Salary Breakup
+                    </div>
+                    <label className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)', cursor: 'pointer' }}>
+                      <button
+                        type="button"
+                        aria-pressed={eDetailedBreakup}
+                        onClick={() => setEDetailedBreakup(v => !v)}
+                        className="btn p-0 border-0 d-inline-flex align-items-center"
+                        style={{
+                          width: 32, height: 18, borderRadius: 999,
+                          background: eDetailedBreakup ? '#7c5cfc' : '#cbd0d8',
+                          position: 'relative',
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 12, height: 12, borderRadius: '50%',
+                            background: '#fff', position: 'absolute', top: 3,
+                            left: eDetailedBreakup ? 17 : 3, transition: 'left .15s ease',
+                          }}
+                        />
+                      </button>
+                      Detailed breakup
+                    </label>
+                  </div>
+                  <div className="emp-label mb-1">Salary Effective From</div>
+                  <div className="text-muted mb-3" style={{ fontSize: 13 }}>
+                    {eSalaryFrom ? eSalaryFrom : '—'}
+                  </div>
+                  <div
+                    className="d-flex align-items-center justify-content-between flex-wrap"
+                    style={{
+                      background: '#f8fafc',
+                      border: '1px solid #eef0f4',
+                      borderRadius: 10,
+                      padding: '14px 16px',
+                      gap: 12,
+                    }}
+                  >
+                    <div className="text-center" style={{ flex: 1 }}>
+                      <div className="emp-label mb-1">Regular Salary</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#1f2937' }}>
+                        INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 18, color: '#9ca3af' }}>+</div>
+                    <div className="text-center" style={{ flex: 1 }}>
+                      <div className="emp-label mb-1">Bonus</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#1f2937' }}>INR 0</div>
+                    </div>
+                    <div style={{ fontSize: 18, color: '#9ca3af' }}>=</div>
+                    <div className="text-center" style={{ flex: 1, background: '#f5f0ff', borderRadius: 8, padding: '6px 8px' }}>
+                      <div className="emp-label mb-1" style={{ color: '#5a3fd1' }}>Total CTC</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: '#5a3fd1' }}>
+                        INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
           </div>
 
@@ -1067,28 +1661,12 @@ export default function HrEmployees() {
               borderTop: '1px solid var(--vz-border-color)',
             }}
           >
-            <button
-              type="button"
-              onClick={() => setEmpStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
-              disabled={empStep === 1}
-              className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-              style={{
-                fontSize: 13,
-                background: '#fff',
-                color: empStep === 1 ? '#c4c7d0' : 'var(--vz-secondary-color)',
-                border: '1px solid var(--vz-border-color)',
-                opacity: empStep === 1 ? 0.6 : 1,
-                cursor: empStep === 1 ? 'not-allowed' : 'pointer',
-              }}
-            >
-              <i className="ri-arrow-left-line" /> Previous
-            </button>
-
-            <div className="d-flex align-items-center gap-2">
+            {/* Left side — Back button (steps 2+) */}
+            {empStep > 1 ? (
               <button
                 type="button"
-                onClick={closeEmp}
-                className="btn fw-semibold rounded-pill px-3"
+                onClick={() => setEmpStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
+                className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
                 style={{
                   fontSize: 13,
                   background: '#fff',
@@ -1096,8 +1674,14 @@ export default function HrEmployees() {
                   border: '1px solid var(--vz-border-color)',
                 }}
               >
-                Cancel
+                <i className="ri-arrow-left-s-line" /> Back
               </button>
+            ) : (
+              <span />
+            )}
+
+            {/* Right side — Next (steps 1-3) or Skip + Save (step 4) */}
+            <div className="d-flex align-items-center gap-2">
               {empStep < 4 ? (
                 <button
                   type="button"
@@ -1111,26 +1695,44 @@ export default function HrEmployees() {
                     boxShadow: '0 6px 16px rgba(124,92,252,0.30)',
                   }}
                 >
-                  Next <i className="ri-arrow-right-line" />
+                  Next <i className="ri-arrow-right-s-line" />
                 </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    // TODO: wire to backend — create / update employee
-                    closeEmp();
-                  }}
-                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                  style={{
-                    fontSize: 13,
-                    color: '#fff',
-                    border: 'none',
-                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                    boxShadow: '0 6px 16px rgba(10,179,156,0.30)',
-                  }}
-                >
-                  <i className="ri-check-line" /> {empMode === 'edit' ? 'Save Changes' : 'Create Employee'}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // TODO: wire to backend — save without compensation
+                      closeEmp();
+                    }}
+                    className="btn fw-semibold rounded-pill px-3"
+                    style={{
+                      fontSize: 13,
+                      background: '#fff',
+                      color: 'var(--vz-secondary-color)',
+                      border: '1px solid var(--vz-border-color)',
+                    }}
+                  >
+                    Skip this Step
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // TODO: wire to backend — create / update employee
+                      closeEmp();
+                    }}
+                    className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
+                    style={{
+                      fontSize: 13,
+                      color: '#fff',
+                      border: 'none',
+                      background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                      boxShadow: '0 6px 16px rgba(10,179,156,0.30)',
+                    }}
+                  >
+                    <i className="ri-check-line" /> Save Employee
+                  </button>
+                </>
               )}
             </div>
           </div>
