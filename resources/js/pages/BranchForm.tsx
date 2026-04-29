@@ -217,6 +217,23 @@ export default function BranchForm({ onBack, editId }: Props) {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const touchedRef = useRef<Record<string, boolean>>({});
 
+  // Branch logo upload — file is held in memory until save, then submitted
+  // alongside the form via multipart/form-data. Preview is a data URL while
+  // a new file is staged, or the saved /storage/... URL when editing.
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+
+  const handleLogoChange = (file: File | null) => {
+    setLogoFile(file);
+    if (file) {
+      const r = new FileReader();
+      r.onload = ev => setLogoPreview(ev.target?.result as string);
+      r.readAsDataURL(file);
+    } else {
+      setLogoPreview(null);
+    }
+  };
+
   // ── one state per dropdown ──────────────────────────────────────────────────
   const [ddBranchType, setDdBranchType] = useState(false);
   const [ddStatus,     setDdStatus]     = useState(false);
@@ -315,6 +332,7 @@ export default function BranchForm({ onBack, editId }: Props) {
         user_password: '', user_password_confirmation: '',
         user_status: u?.status || 'active',
       });
+      if (b.logo) setLogoPreview(b.logo);
     }).catch(() => {}).finally(() => setLoadingData(false));
   }, [editId]);
 
@@ -354,10 +372,26 @@ export default function BranchForm({ onBack, editId }: Props) {
       payload.max_users = parseInt(form.max_users) || 0;
 
       if (isEdit) {
-        await api.put(`/branches/${editId}`, payload);
+        if (logoFile) {
+          // Multipart upload — Laravel reads PUT only as application/x-www-form-urlencoded,
+          // so use POST + _method=PUT spoofing (same trick ClientForm uses).
+          const fd = new FormData();
+          Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
+          fd.append('logo', logoFile);
+          await api.post(`/branches/${editId}?_method=PUT`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        } else {
+          await api.put(`/branches/${editId}`, payload);
+        }
         toast.success('Branch Updated', 'Branch details have been updated successfully');
       } else {
-        await api.post('/branches', payload);
+        if (logoFile) {
+          const fd = new FormData();
+          Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
+          fd.append('logo', logoFile);
+          await api.post('/branches', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        } else {
+          await api.post('/branches', payload);
+        }
         toast.success('Branch Created', 'New branch has been created with login credentials');
       }
       setTimeout(() => onBack(), 1200);
@@ -391,6 +425,7 @@ export default function BranchForm({ onBack, editId }: Props) {
 
   const handleReset = () => {
     setForm(empty); setValidationErrors({}); touchedRef.current = {};
+    setLogoFile(null); setLogoPreview(null);
   };
 
   if (loadingData) return (
@@ -1004,11 +1039,19 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Input style={css.input} type="url" value={form.website} onChange={e => set('website', e.target.value)}
                   placeholder="www.branch.com" />
               </Col>
-              <Col xs={12}>
+              <Col md={8}>
                 <Lbl>Description</Lbl>
                 <Input style={css.textarea} type="textarea" rows={2} value={form.description}
                   onChange={e => set('description', e.target.value)}
                   placeholder="Short description of this branch..." />
+              </Col>
+              <Col md={4}>
+                <Lbl>Branch Logo</Lbl>
+                <div className="d-flex gap-2 align-items-center">
+                  {logoPreview && <img src={logoPreview} alt="logo" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" onChange={e => handleLogoChange(e.target.files?.[0] || null)} />
+                </div>
+                <small style={css.small}>PNG, JPG, SVG — Max 2MB. Falls back to client logo if blank.</small>
               </Col>
             </Row>
 

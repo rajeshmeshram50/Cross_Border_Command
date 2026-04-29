@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use App\Mail\WelcomeCredentialsMail;
 
@@ -97,6 +98,8 @@ class ClientController extends Controller
             // Branding
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
+            'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
+            'favicon' => 'nullable|image|mimes:jpg,jpeg,png,ico,svg,webp|max:512',
 
             // Notes
             'notes' => 'nullable|string',
@@ -147,6 +150,20 @@ class ClientController extends Controller
                 'notes' => $request->notes,
                 'created_by' => $request->user()->id,
             ]);
+
+            // Save uploaded branding files (logo / favicon) under
+            // storage/app/public/client-logos. The stored value is the public
+            // URL (/storage/...) so the SPA can use it directly.
+            $brandingUpdates = [];
+            if ($request->hasFile('logo')) {
+                $brandingUpdates['logo'] = '/storage/' . $request->file('logo')->store('clients/logos', 'public');
+            }
+            if ($request->hasFile('favicon')) {
+                $brandingUpdates['favicon'] = '/storage/' . $request->file('favicon')->store('clients/favicons', 'public');
+            }
+            if ($brandingUpdates) {
+                $client->update($brandingUpdates);
+            }
 
             // Create default branch (NOT main — main is set manually by client)
             $branch = Branch::create([
@@ -242,6 +259,8 @@ class ClientController extends Controller
             'plan_expires_at' => 'nullable|date',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
+            'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
+            'favicon' => 'nullable|image|mimes:jpg,jpeg,png,ico,svg,webp|max:512',
             'notes' => 'nullable|string',
             'admin_name' => 'nullable|string|max:255',
             'admin_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($adminUser?->id)->whereNull('deleted_at')],
@@ -277,6 +296,21 @@ class ClientController extends Controller
                 && $payload['status'] !== 'active';
 
             $client->update($payload);
+
+            // Replace branding files if new uploads came in. Old files are deleted
+            // so we don't accumulate orphans on the public disk.
+            if ($request->hasFile('logo')) {
+                if ($client->logo && str_starts_with($client->logo, '/storage/')) {
+                    Storage::disk('public')->delete(substr($client->logo, strlen('/storage/')));
+                }
+                $client->update(['logo' => '/storage/' . $request->file('logo')->store('clients/logos', 'public')]);
+            }
+            if ($request->hasFile('favicon')) {
+                if ($client->favicon && str_starts_with($client->favicon, '/storage/')) {
+                    Storage::disk('public')->delete(substr($client->favicon, strlen('/storage/')));
+                }
+                $client->update(['favicon' => '/storage/' . $request->file('favicon')->store('clients/favicons', 'public')]);
+            }
 
             if ($statusBecomingInactive) {
                 $this->revokeAllUserTokensForClient($client->id);
