@@ -1,10 +1,54 @@
 import { useState } from 'react';
-import { Card, CardBody, Col, Row, Modal, ModalBody } from 'reactstrap';
+import { createPortal } from 'react-dom';
+import { Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import { useToast } from '../contexts/ToastContext';
 
-// Standalone employee profile — opens when an employee row is clicked in the
-// HR directory. Mirrors ClientView/BranchView styling (indigo gradient hero +
-// 20px-radius info cards + soft shadows) and exposes 5 tabs:
-// Profile Details · Job Details · Attendance · Evidence Vault · Payroll Details.
+// Custom portal-based modal — renders directly to document.body so it always
+// escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
+// timing issues with our z-index overrides on first open; this is bulletproof.
+function EpModal({ open, onClose, size = 'md', children, dismissOnBackdrop = false, panelClassName }: {
+  open: boolean;
+  onClose: () => void;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+  children: React.ReactNode;
+  dismissOnBackdrop?: boolean;
+  panelClassName?: string;
+}) {
+  if (!open) return null;
+  const widths = { sm: 420, md: 600, lg: 900, xl: 1180 };
+  return createPortal(
+    <div
+      className="ep-modal-overlay"
+      onClick={dismissOnBackdrop ? onClose : undefined}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 5000,
+        background: 'rgba(15,23,42,0.55)',
+        backdropFilter: 'blur(2px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16, overflowY: 'auto',
+      }}
+    >
+      <div
+        className={`ep-modal-card ${panelClassName || ''}`}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--vz-card-bg, #fff)',
+          borderRadius: 16,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.30)',
+          width: '100%',
+          maxWidth: widths[size],
+          maxHeight: 'calc(100vh - 32px)',
+          overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+        }}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 
 export interface EmployeeProfileTarget {
   id: string;
@@ -141,40 +185,42 @@ function MiniInfo({ icon, label, value, gradient }: { icon: string; label: strin
 function KpiTile({ label, value, sub, icon, gradient }: { label: string; value: React.ReactNode; sub?: string; icon: string; gradient: string; tint?: string }) {
   return (
     <div
-      className="dashboard-surface"
+      className="ep-kpi-tile dashboard-surface"
       style={{
-        borderRadius: 16,
-        padding: '20px 20px 16px',
-        boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+        borderRadius: 12,
+        padding: '12px 14px 10px',
+        boxShadow: '0 2px 14px rgba(0,0,0,0.05)',
         border: '1px solid var(--vz-border-color)',
         position: 'relative',
         overflow: 'hidden',
         height: '100%',
-        background: 'var(--vz-card-bg)',
+        background: '#ffffff',
+        transition: 'transform .25s ease, box-shadow .25s ease, border-color .25s ease',
+        cursor: 'default',
       }}
     >
       {/* Gradient top strip */}
       <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+        position: 'absolute', top: 0, left: 0, right: 0, height: 2,
         background: gradient,
       }} />
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
             {label}
           </p>
-          <h3 style={{ fontSize: 28, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+          <h3 style={{ fontSize: 22, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
             {value}
           </h3>
-          {sub && <small className="text-muted d-block mt-2">{sub}</small>}
+          {sub && <small className="text-muted d-block" style={{ fontSize: 10.5, marginTop: 4 }}>{sub}</small>}
         </div>
         <div style={{
-          width: 46, height: 46, borderRadius: 12,
+          width: 36, height: 36, borderRadius: 10,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: gradient, flexShrink: 0,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.10)',
+          boxShadow: '0 3px 8px rgba(0,0,0,0.10)',
         }}>
-          <i className={icon} style={{ fontSize: 20, color: '#fff' }} />
+          <i className={icon} style={{ fontSize: 16, color: '#fff' }} />
         </div>
       </div>
     </div>
@@ -352,6 +398,132 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [regNote, setRegNote] = useState('');
   const REG_LOCATION_OPTIONS = ['Baner Office', 'Hinjewadi Office', 'Kharadi Office', 'Remote', 'Client Site'];
 
+  // Today's date in "DD MMM YYYY" so the regularization modal shows the
+  // correct selected day on every open instead of a stale hardcoded value.
+  const regSelectedDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  // Toast hook (used by the Export Timelogs button) and last-7-month picker
+  // for the timelog history filter.
+  const toast = useToast();
+  const [monthOpen, setMonthOpen] = useState(false);
+  const ATT_MONTHS = (() => {
+    const out: { key: string; label: string }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      out.push({
+        key: `${d.getFullYear()}-${d.getMonth() + 1}`,
+        label: d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
+      });
+    }
+    return out;
+  })();
+  const [attMonth, setAttMonth] = useState<string>(ATT_MONTHS[0]?.label || 'April 2026');
+
+  // Payslip viewer modal — opens from the "View Payslip" button in the
+  // Payroll Summary hero. Filters by year/month and shows the rendered
+  // payslip on the right with download/print/email actions in the header.
+  const [paySlipOpen, setPaySlipOpen] = useState(false);
+  const [paySlipYear, setPaySlipYear] = useState('2026');
+  const [paySlipMonth, setPaySlipMonth] = useState('March');
+  const PAYSLIP_RECENT = [
+    { label: 'Mar 2026', now: true },
+    { label: 'Feb 2026' },
+    { label: 'Jan 2026' },
+    { label: 'Dec 2025' },
+    { label: 'Nov 2025' },
+    { label: 'Oct 2025' },
+  ];
+  const PAYSLIP_EARNINGS = [
+    { label: 'Basic Salary',          amount: 121000 },
+    { label: 'House Rent Allowance (HRA)', amount: 60500 },
+    { label: 'Special Allowance',     amount: 120900 },
+  ];
+  const PAYSLIP_DEDUCTIONS = [
+    { label: 'Professional Tax',  amount: 200 },
+    { label: 'Provident Fund (12%)', amount: 14520 },
+    { label: 'Income Tax (TDS)',  amount: 8400 },
+  ];
+  const paySlipTotalEarnings   = PAYSLIP_EARNINGS.reduce((s, r) => s + r.amount, 0);
+  const paySlipTotalDeductions = PAYSLIP_DEDUCTIONS.reduce((s, r) => s + r.amount, 0);
+  const paySlipNetPay          = paySlipTotalEarnings - paySlipTotalDeductions;
+
+  // Salary timeline + Revise Salary / View Breakdown modals (Payment Details
+  // sub-tab). Timeline is defined here so both the inline list and the
+  // breakdown modal stay in sync.
+  const SALARY_TIMELINE = [
+    { id: 'sal-1', dateShort: '01 Nov 2025', annual: 302400, current: true  },
+    { id: 'sal-2', dateShort: '23 May 2025', annual: 222000, current: false },
+    { id: 'sal-3', dateShort: '27 Jan 2025', annual: 72000,  current: false },
+  ];
+  function makeBreakdown(annual: number) {
+    const monthly = annual / 12;
+    // 40% / 20% / remainder split — same rule the HRMS reference uses.
+    const basic   = Math.round(monthly * 0.40);
+    const hra     = Math.round(monthly * 0.20);
+    const special = Math.round(monthly - basic - hra);
+    const totalMonthly = basic + hra + special;
+    // Net pay ≈ gross − PF (12% of basic) − TDS (rough). Mirrors the screenshot
+    // ratio (₹22,176 / ₹25,200 ≈ 0.88 of monthly gross).
+    const netPay  = Math.round(totalMonthly * 0.88);
+    return {
+      rows: [
+        { label: 'Basic Salary',                  monthly: basic,   annual: basic * 12   },
+        { label: 'House Rent Allowance (HRA)',    monthly: hra,     annual: hra * 12     },
+        { label: 'Special Allowance',             monthly: special, annual: special * 12 },
+      ],
+      totalMonthly,
+      totalAnnual: totalMonthly * 12,
+      netPay,
+    };
+  }
+  const [reviseOpen, setReviseOpen]       = useState(false);
+  const [reviseAmount, setReviseAmount]   = useState('3,50,000');
+  const [revisePct, setRevisePct]         = useState('');
+  const [reviseStructure, setReviseStructure] = useState('Class A');
+  const [reviseDate, setReviseDate]       = useState('2026-05-01');
+  const [reviseBonusInSal, setReviseBonusInSal] = useState(false);
+  const [reviseNote, setReviseNote]       = useState('');
+  const [showBreakdownToggle, setShowBreakdownToggle] = useState(false);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [breakdownRowId, setBreakdownRowId] = useState<string>('sal-1');
+  const breakdownRow   = SALARY_TIMELINE.find(s => s.id === breakdownRowId) || SALARY_TIMELINE[0];
+  const breakdownData  = makeBreakdown(breakdownRow.annual);
+
+  // Live preview math for the Revise Salary modal.
+  const reviseAnnualNum = Number(String(reviseAmount).replace(/[^\d.]/g, '')) || 0;
+  const reviseMonthlyNum = reviseAnnualNum > 0 ? Math.round(reviseAnnualNum / 12) : 0;
+  const currentAnnual = SALARY_TIMELINE[0].annual;
+  const reviseDifference = reviseAnnualNum - currentAnnual;
+  const revisePctChange  = currentAnnual > 0 ? ((reviseDifference / currentAnnual) * 100) : 0;
+
+  // Submit New Expense Claim modal — opens from "+ Raise New Claim" in the
+  // Expense Details tab. Two modes: Expense Claim (orange) and Advance
+  // Request (purple/indigo).
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [claimMode, setClaimMode] = useState<'expense' | 'advance'>('expense');
+  const [claimEmployee, setClaimEmployee] = useState('');
+  const [claimCategory, setClaimCategory] = useState('');
+  const [claimCurrency, setClaimCurrency] = useState('INR');
+  const [claimProject, setClaimProject] = useState('');
+  const [claimPayment, setClaimPayment] = useState('Corporate Card');
+  const [claimTitle, setClaimTitle] = useState('');
+  const [claimAmount, setClaimAmount] = useState('');
+  const [claimDate, setClaimDate] = useState(new Date().toISOString().slice(0, 10));
+  const [claimVendor, setClaimVendor] = useState('');
+  const [claimPurpose, setClaimPurpose] = useState('');
+  // Advance request fields
+  const [advType, setAdvType] = useState('');
+  const [advAmount, setAdvAmount] = useState('');
+  const [advRequestedDate, setAdvRequestedDate] = useState(new Date().toISOString().slice(0, 10));
+  const [advRecoveryStart, setAdvRecoveryStart] = useState('');
+  const [advRecoveryMode, setAdvRecoveryMode] = useState('');
+  const [advMonths, setAdvMonths] = useState('');
+  const [advReason, setAdvReason] = useState('');
+  const advMonthlyEmi = Number(advAmount) > 0 && Number(advMonths) > 0
+    ? Math.round(Number(advAmount) / Number(advMonths))
+    : 0;
+
   // Live counts for the Evidence Vault hero KPIs.
   const allVaultDocs = [
     ...VAULT_EMPLOYEE.flatMap(s => s.docs.map(d => ({ status: d.status }))),
@@ -396,6 +568,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     : EXPENSE_CLAIMS.filter(c => c.status.toLowerCase() === expenseFilter);
 
   return (
+    <>
     <div className="ep-fullscreen-overlay">
       <style>{`
         /* Full-screen overlay so the employee profile reads as a dedicated
@@ -412,10 +585,619 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           overflow-y: auto;
           padding-bottom: 32px;
         }
+        /* Keep the regularization modal above the fullscreen overlay
+           (Bootstrap defaults to 1055/1050 which falls below the 1080
+           overlay, so the popup would be invisible). Defined globally so
+           the rule applies on the very first open. */
+        .modal.ep-reg-modal { z-index: 2100 !important; }
+        .modal-backdrop.ep-reg-backdrop { z-index: 2095 !important; }
+        .modal.ep-pay-modal { z-index: 2100 !important; }
+        .modal-backdrop.ep-pay-backdrop { z-index: 2095 !important; }
+        .modal.ep-rev-modal { z-index: 2100 !important; }
+        .modal-backdrop.ep-rev-backdrop { z-index: 2095 !important; }
+        .modal.ep-bd-modal { z-index: 2100 !important; }
+        .modal-backdrop.ep-bd-backdrop { z-index: 2095 !important; }
+
+        /* ── Revise Salary modal ── */
+        .ep-rev-modal .modal-content { border: none; border-radius: 16px; overflow: hidden; }
+        .ep-rev-modal .modal-dialog { max-width: 1180px; }
+        .ep-rev-hero {
+          background: linear-gradient(135deg, #047857 0%, #0a8a5a 50%, #0ab39c 100%);
+          color: #fff; padding: 22px 26px;
+        }
+        .ep-rev-cancel-hero {
+          padding: 8px 18px; background: rgba(255,255,255,0.10);
+          color: #fff; border: 1px solid rgba(255,255,255,0.30);
+          border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .ep-rev-cancel-hero:hover { background: rgba(255,255,255,0.20); }
+        .ep-rev-submit-hero {
+          padding: 8px 22px; background: #ffffff; color: #047857;
+          border: none; border-radius: 8px;
+          font-size: 13px; font-weight: 700; cursor: pointer;
+          box-shadow: 0 4px 14px rgba(0,0,0,0.20);
+        }
+        .ep-rev-submit-hero:hover { background: #f0fdf4; }
+        .ep-rev-strip {
+          display: grid; grid-template-columns: 1.4fr repeat(5, 1fr);
+          margin-top: 22px;
+          padding: 14px 16px;
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.12);
+          border-radius: 12px;
+        }
+        .ep-rev-strip-cell { display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+        .ep-rev-strip-cell + .ep-rev-strip-cell { border-left: 1px solid rgba(255,255,255,0.14); }
+        .ep-rev-avatar {
+          width: 44px; height: 44px; border-radius: 12px;
+          background: rgba(255,255,255,0.15);
+          color: #fff; font-weight: 700; font-size: 16px;
+          display: inline-flex; align-items: center; justify-content: center;
+          border: 1px solid rgba(255,255,255,0.30);
+          flex-shrink: 0;
+        }
+        .ep-rev-strip-label {
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
+          text-transform: uppercase; color: rgba(255,255,255,0.65);
+        }
+        .ep-rev-strip-value { font-size: 13px; font-weight: 700; color: #fff; }
+        .ep-rev-strip-sub  { font-size: 11.5px; color: rgba(255,255,255,0.70); }
+
+        .ep-rev-body {
+          display: grid; grid-template-columns: 1fr 320px;
+          gap: 0;
+          background: var(--vz-body-bg, #f3f4f9);
+          max-height: 78vh; overflow-y: auto;
+        }
+        .ep-rev-form { padding: 22px; }
+        .ep-rev-card {
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 12px;
+          padding: 16px;
+        }
+        .ep-rev-icon {
+          width: 36px; height: 36px; border-radius: 10px;
+          color: #fff; font-size: 18px;
+          display: inline-flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .ep-rev-label {
+          font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+          text-transform: uppercase; color: var(--vz-secondary-color);
+          margin-bottom: 6px;
+        }
+        .ep-rev-input {
+          width: 100%; padding: 9px 12px;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 8px; background: var(--vz-card-bg);
+          color: var(--vz-body-color); font-size: 13px;
+        }
+        .ep-rev-input:focus { outline: none; border-color: #0ab39c; box-shadow: 0 0 0 3px rgba(10,179,156,0.18); }
+        .ep-rev-add-btn {
+          padding: 6px 14px; background: rgba(10,179,156,0.10);
+          color: #0a8a78; border: 1px dashed rgba(10,179,156,0.40);
+          border-radius: 999px; font-size: 12.5px; font-weight: 600;
+          cursor: pointer; transition: all .15s ease;
+        }
+        .ep-rev-add-btn:hover { background: rgba(10,179,156,0.18); }
+
+        .ep-rev-preview {
+          padding: 22px;
+          border-left: 1px solid var(--vz-border-color);
+          background: var(--vz-card-bg);
+        }
+        .ep-rev-net {
+          background: linear-gradient(135deg, #047857 0%, #0a8a5a 100%);
+          color: #fff;
+          padding: 16px 18px;
+          border-radius: 12px;
+          margin-bottom: 14px;
+          box-shadow: 0 6px 18px rgba(4,120,87,0.30);
+        }
+        .ep-rev-summary {
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 12px;
+          padding: 14px 16px;
+        }
+        .ep-rev-summary-head {
+          font-size: 10.5px; font-weight: 700; letter-spacing: 0.10em;
+          text-transform: uppercase; color: var(--vz-secondary-color);
+          margin-bottom: 10px;
+        }
+        .ep-rev-summary-row {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 6px 0; font-size: 13px;
+          border-bottom: 1px dashed var(--vz-border-color);
+        }
+        .ep-rev-summary-row:last-child { border-bottom: none; }
+
+        /* ── Salary Breakdown modal ── */
+        .ep-bd-modal .modal-content { border: none; border-radius: 16px; overflow: hidden; }
+        .ep-bd-modal .modal-dialog { max-width: 1100px; }
+        .ep-bd-hero {
+          background: linear-gradient(135deg, #047857 0%, #0a8a5a 50%, #0ab39c 100%);
+          color: #fff; padding: 22px 26px;
+        }
+        .ep-bd-close {
+          width: 32px; height: 32px; border-radius: 50%;
+          background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.30);
+          color: #fff; cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center;
+        }
+        .ep-bd-close:hover { background: rgba(255,255,255,0.25); }
+        .ep-bd-body {
+          display: grid; grid-template-columns: 1fr 280px;
+          gap: 0; background: var(--vz-body-bg, #f3f4f9);
+          max-height: 78vh; overflow-y: auto;
+        }
+        .ep-bd-main { padding: 22px; }
+        .ep-bd-card {
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 12px; overflow: hidden;
+        }
+        .ep-bd-table { width: 100%; font-size: 13px; margin: 0; }
+        .ep-bd-table th {
+          font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase; color: rgba(255,255,255,0.85);
+          padding: 11px 16px;
+          background: #1f2937;
+        }
+        .ep-bd-table td {
+          padding: 12px 16px; border-bottom: 1px solid var(--vz-border-color);
+        }
+        .ep-bd-table tbody tr:last-child td { border-bottom: none; }
+        .ep-bd-net {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 16px; padding: 18px 22px;
+          background: linear-gradient(135deg, #047857 0%, #0a8a5a 100%);
+          color: #fff;
+        }
+        .ep-bd-note {
+          display: flex; align-items: flex-start; gap: 10px;
+          margin-top: 14px; padding: 12px 16px;
+          background: rgba(245,158,11,0.10);
+          border: 1px solid rgba(245,158,11,0.30);
+          border-radius: 10px;
+          color: #a16207; font-size: 12.5px;
+        }
+        .ep-bd-history {
+          padding: 22px;
+          border-left: 1px solid var(--vz-border-color);
+          background: var(--vz-card-bg);
+        }
+        .ep-bd-version {
+          display: flex; align-items: flex-start; gap: 12px;
+          padding: 10px 12px; margin-bottom: 12px;
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 10px;
+          width: 100%; cursor: pointer;
+          transition: all .15s ease;
+          position: relative;
+        }
+        .ep-bd-version:hover { border-color: #0ab39c; }
+        .ep-bd-version.is-current {
+          background: rgba(10,179,156,0.06);
+          border-color: rgba(10,179,156,0.40);
+          box-shadow: inset 0 0 0 1px rgba(10,179,156,0.30);
+        }
+        .ep-bd-dot {
+          width: 16px; height: 16px; border-radius: 50%;
+          display: inline-flex; align-items: center; justify-content: center;
+          flex-shrink: 0; margin-top: 2px;
+          margin-left: -22px;
+          z-index: 1;
+        }
+        .ep-bd-now {
+          background: linear-gradient(135deg,#0ab39c,#30d5b5); color: #fff;
+          font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+          padding: 2px 8px; border-radius: 999px;
+        }
+
+        @media (max-width: 991.98px) {
+          .ep-rev-body, .ep-bd-body { grid-template-columns: 1fr; }
+          .ep-rev-preview, .ep-bd-history { border-left: none; border-top: 1px solid var(--vz-border-color); }
+          .ep-rev-strip { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+          .ep-rev-strip-cell + .ep-rev-strip-cell { border-left: none; }
+        }
+
+        /* ── Submit New Expense Claim modal ── */
+        .ep-claim-modal { --accent: #f97316; --accent-2: #fb923c; --accent-soft: rgba(249,115,22,0.10); --accent-border: rgba(249,115,22,0.30); }
+        .ep-claim-modal.is-advance { --accent: #6366f1; --accent-2: #8b5cf6; --accent-soft: rgba(99,102,241,0.10); --accent-border: rgba(99,102,241,0.30); }
+        .ep-claim-hero {
+          background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+          color: #fff; padding: 18px 22px;
+        }
+        .ep-claim-icon {
+          width: 44px; height: 44px; border-radius: 12px;
+          background: rgba(255,255,255,0.15);
+          border: 1px solid rgba(255,255,255,0.30);
+          color: #fff; font-size: 20px;
+          display: inline-flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .ep-claim-mode-pill {
+          background: rgba(255,255,255,0.18);
+          border: 1px solid rgba(255,255,255,0.30);
+          color: #fff;
+          font-size: 10.5px; font-weight: 700; letter-spacing: 0.10em;
+          padding: 5px 12px; border-radius: 999px;
+        }
+        .ep-claim-x {
+          width: 32px; height: 32px; border-radius: 50%;
+          background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.30);
+          color: #fff; cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center;
+        }
+        .ep-claim-x:hover { background: rgba(255,255,255,0.28); }
+        .ep-claim-tabs {
+          display: inline-flex; gap: 0;
+          background: rgba(255,255,255,0.10);
+          border: 1px solid rgba(255,255,255,0.18);
+          border-radius: 10px; padding: 4px;
+        }
+        .ep-claim-tab {
+          background: transparent; border: none;
+          padding: 7px 14px; border-radius: 8px;
+          font-size: 12.5px; font-weight: 600;
+          color: rgba(255,255,255,0.75);
+          cursor: pointer; transition: all .15s ease;
+          display: inline-flex; align-items: center; gap: 6px;
+        }
+        .ep-claim-tab:hover { color: #fff; background: rgba(255,255,255,0.10); }
+        .ep-claim-tab.is-active { background: #fff; color: var(--accent); box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
+
+        .ep-claim-body {
+          padding: 22px;
+          overflow-y: auto;
+          flex: 1 1 auto;
+          background: var(--vz-card-bg);
+        }
+        .ep-claim-section-head {
+          display: flex; align-items: center; gap: 8px;
+          font-size: 11px; font-weight: 700; letter-spacing: 0.10em;
+          text-transform: uppercase; color: var(--accent);
+          margin-bottom: 12px;
+        }
+        .ep-claim-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+        .ep-claim-dot.is-faded { opacity: 0.4; }
+        .ep-claim-label {
+          font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+          text-transform: uppercase; color: var(--vz-secondary-color);
+          margin-bottom: 6px;
+        }
+        .ep-claim-req { color: #ef4444; }
+        .ep-claim-input {
+          width: 100%; padding: 9px 12px;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 8px; background: var(--vz-card-bg);
+          color: var(--vz-body-color); font-size: 13px;
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .ep-claim-input:focus {
+          outline: none; border-color: var(--accent);
+          box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+        .ep-claim-upload {
+          padding: 22px; text-align: center;
+          background: var(--accent-soft);
+          border: 2px dashed var(--accent-border);
+          border-radius: 12px;
+          cursor: pointer;
+          transition: background .15s ease;
+        }
+        .ep-claim-upload:hover { background: rgba(249,115,22,0.16); }
+        .is-advance .ep-claim-upload:hover { background: rgba(99,102,241,0.14); }
+        .ep-claim-upload-icon {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 44px; height: 44px; border-radius: 12px;
+          background: rgba(249,115,22,0.15); color: var(--accent);
+          margin-bottom: 8px; font-size: 20px;
+        }
+        .ep-claim-intel {
+          padding: 16px;
+          background: var(--vz-secondary-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 10px;
+          min-height: 56px;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .ep-claim-route {
+          padding: 16px;
+          background: var(--accent-soft);
+          border: 1px solid var(--accent-border);
+          border-radius: 12px;
+        }
+        .ep-claim-stepper {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 4px; position: relative;
+        }
+        .ep-claim-step {
+          display: flex; flex-direction: column; align-items: center; gap: 6px;
+          flex: 1; min-width: 0; position: relative;
+        }
+        .ep-claim-step-icon {
+          width: 36px; height: 36px; border-radius: 50%;
+          display: inline-flex; align-items: center; justify-content: center;
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          color: var(--vz-secondary-color);
+          font-size: 16px; z-index: 1;
+        }
+        .ep-claim-step-icon.is-active {
+          background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          color: #fff; border-color: var(--accent);
+          box-shadow: 0 4px 12px var(--accent-border);
+        }
+        .ep-claim-step-label { font-size: 11px; font-weight: 600; color: var(--vz-secondary-color); }
+        .ep-claim-step-line {
+          position: absolute; top: 18px; left: 50%; right: -50%;
+          height: 2px; background: var(--vz-border-color); z-index: 0;
+        }
+        .ep-claim-step-line.is-active { background: var(--accent); }
+        .ep-claim-audit {
+          background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          color: #fff;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+          padding: 4px 10px; border-radius: 999px;
+        }
+        .ep-claim-route-hint {
+          font-size: 11.5px; color: var(--accent);
+          padding: 8px 12px; background: rgba(255,255,255,0.55);
+          border-radius: 8px;
+        }
+
+        .ep-claim-banner {
+          display: flex; align-items: center; gap: 12px;
+          padding: 14px 16px; margin-bottom: 18px;
+          background: var(--accent-soft);
+          border: 1px solid var(--accent-border);
+          border-radius: 12px;
+        }
+        .ep-claim-banner-icon {
+          width: 38px; height: 38px; border-radius: 10px;
+          background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          color: #fff; font-size: 18px;
+          display: inline-flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .ep-claim-flow-pill {
+          background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          color: #fff;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+          padding: 4px 10px; border-radius: 999px;
+        }
+        .ep-claim-warn {
+          display: flex; align-items: flex-start; gap: 10px;
+          padding: 12px 14px;
+          background: rgba(245,158,11,0.10);
+          border: 1px solid rgba(245,158,11,0.30);
+          border-radius: 10px;
+          color: #a16207; font-size: 12px;
+        }
+        .ep-claim-warn i { font-size: 16px; flex-shrink: 0; margin-top: 2px; }
+
+        .ep-claim-footer {
+          display: flex; align-items: center; gap: 8px;
+          padding: 14px 22px;
+          border-top: 1px solid var(--vz-border-color);
+          background: var(--vz-card-bg);
+        }
+        .ep-claim-cancel {
+          padding: 8px 18px;
+          background: var(--vz-card-bg); color: var(--vz-body-color);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 8px; font-size: 13px; font-weight: 600;
+          cursor: pointer;
+        }
+        .ep-claim-secondary {
+          padding: 8px 14px;
+          background: var(--vz-card-bg); color: var(--vz-body-color);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 8px; font-size: 12.5px; font-weight: 600;
+          cursor: pointer;
+        }
+        .ep-claim-secondary:hover { border-color: var(--accent); color: var(--accent); }
+        .ep-claim-submit {
+          padding: 8px 22px;
+          background: linear-gradient(135deg, var(--accent), var(--accent-2));
+          color: #fff; border: none; border-radius: 8px;
+          font-size: 13px; font-weight: 700; cursor: pointer;
+          box-shadow: 0 4px 12px var(--accent-border);
+        }
+        .ep-claim-submit:hover { transform: translateY(-1px); }
+        .ep-pay-modal .modal-content { border: none; border-radius: 16px; overflow: hidden; }
+        .ep-pay-modal .modal-dialog { max-width: 1300px; }
+
+        .ep-pay-shell { background: var(--vz-card-bg); }
+        .ep-pay-header {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 12px; padding: 14px 20px;
+          border-bottom: 1px solid var(--vz-border-color);
+        }
+        .ep-pay-logo {
+          width: 40px; height: 40px; border-radius: 10px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          color: #fff; display: inline-flex; align-items: center; justify-content: center;
+          font-size: 18px; box-shadow: 0 4px 12px rgba(99,102,241,0.30);
+        }
+        .ep-pay-x {
+          width: 32px; height: 32px; border-radius: 8px;
+          background: var(--vz-light); border: 1px solid var(--vz-border-color);
+          color: var(--vz-secondary-color); cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center;
+        }
+        .ep-pay-x:hover { background: var(--vz-secondary-bg); }
+
+        .ep-pay-body {
+          display: grid;
+          grid-template-columns: 240px 1fr;
+          gap: 0;
+          max-height: 80vh; overflow-y: auto;
+        }
+        .ep-pay-sidebar {
+          padding: 20px 18px;
+          border-right: 1px solid var(--vz-border-color);
+          background: var(--vz-card-bg);
+        }
+        .ep-pay-side-label {
+          font-size: 10.5px; font-weight: 700; letter-spacing: 0.10em;
+          text-transform: uppercase; color: var(--vz-secondary-color);
+          margin-bottom: 12px;
+        }
+        .ep-pay-mini-label {
+          font-size: 10.5px; font-weight: 700;
+          color: var(--vz-secondary-color); margin-bottom: 4px;
+        }
+        .ep-pay-input {
+          width: 100%; padding: 8px 10px;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 8px; background: var(--vz-card-bg);
+          color: var(--vz-body-color); font-size: 13px;
+        }
+        .ep-pay-input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.18); }
+        .ep-pay-side-btn {
+          width: 100%; padding: 9px 12px;
+          background: linear-gradient(135deg, #4338ca, #6366f1);
+          color: #fff; border: none; border-radius: 10px;
+          font-size: 13px; font-weight: 600;
+          cursor: pointer;
+          box-shadow: 0 4px 12px rgba(99,102,241,0.30);
+          transition: transform .15s ease;
+        }
+        .ep-pay-side-btn:hover { transform: translateY(-1px); }
+        .ep-pay-recent {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 9px 12px;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 10px;
+          background: var(--vz-card-bg);
+          color: var(--vz-body-color);
+          font-size: 13px; font-weight: 600;
+          cursor: pointer; transition: all .15s ease;
+        }
+        .ep-pay-recent:hover { border-color: #6366f1; color: #6366f1; }
+        .ep-pay-recent.is-current {
+          background: rgba(99,102,241,0.08);
+          border-color: rgba(99,102,241,0.40);
+          color: #4338ca;
+        }
+        .ep-pay-now {
+          background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff;
+          font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+          padding: 2px 8px; border-radius: 999px;
+        }
+
+        .ep-pay-preview { padding: 20px; background: var(--vz-body-bg, #f3f4f9); }
+        .ep-pay-company {
+          position: relative; overflow: hidden;
+          color: #fff; padding: 22px 24px;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #1d2c6b 0%, #2c3974 100%);
+          margin-bottom: 14px;
+        }
+        .ep-pay-company-logo {
+          width: 52px; height: 52px; border-radius: 12px;
+          background: rgba(255,255,255,0.10);
+          border: 1px solid rgba(255,255,255,0.30);
+          display: inline-flex; align-items: center; justify-content: center;
+          color: #fff; font-weight: 700; font-size: 18px;
+        }
+        .ep-pay-identity {
+          display: grid; grid-template-columns: repeat(5, 1fr);
+          margin-top: 18px; padding: 12px 16px;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 10px;
+          position: relative; z-index: 1;
+        }
+        .ep-pay-identity-cell + .ep-pay-identity-cell {
+          padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.10);
+        }
+        .ep-pay-identity-cell { padding-right: 16px; }
+        .ep-pay-identity-label {
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
+          text-transform: uppercase; color: rgba(255,255,255,0.62);
+          margin-bottom: 4px;
+        }
+        .ep-pay-identity-value { font-size: 13px; font-weight: 700; color: #fff; }
+
+        .ep-pay-kpis {
+          display: grid; grid-template-columns: repeat(4, 1fr);
+          gap: 8px; margin-bottom: 14px;
+        }
+        .ep-pay-kpi {
+          padding: 14px 16px; border-radius: 10px; text-align: center;
+        }
+        .ep-pay-kpi-label {
+          font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+          text-transform: uppercase; color: var(--vz-secondary-color);
+          margin-bottom: 4px;
+        }
+        .ep-pay-kpi-value { font-size: 22px; font-weight: 800; line-height: 1; }
+
+        .ep-pay-table-card {
+          background: var(--vz-card-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 12px; overflow: hidden;
+        }
+        .ep-pay-table-head {
+          display: flex; align-items: center; gap: 8px;
+          padding: 12px 16px;
+          font-size: 11.5px; font-weight: 700; letter-spacing: 0.10em;
+          border-bottom: 1px solid var(--vz-border-color);
+        }
+        .ep-pay-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .ep-pay-table { width: 100%; font-size: 13px; margin: 0; }
+        .ep-pay-table th {
+          font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase; color: var(--vz-secondary-color);
+          padding: 10px 16px; border-bottom: 1px solid var(--vz-border-color);
+          background: var(--vz-secondary-bg);
+        }
+        .ep-pay-table td {
+          padding: 10px 16px; border-bottom: 1px solid var(--vz-border-color);
+        }
+        .ep-pay-table tbody tr:last-child td { border-bottom: none; }
+
+        .ep-pay-net {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 16px; padding: 22px 28px;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #047857 0%, #0a8a5a 100%);
+          color: #fff;
+          box-shadow: 0 12px 30px rgba(4,120,87,0.30);
+        }
+        .ep-pay-footer {
+          text-align: center; margin-top: 14px; padding: 10px;
+          font-size: 11.5px; color: var(--vz-secondary-color);
+          background: var(--vz-secondary-bg); border-radius: 10px;
+        }
+        .ep-pay-footer a { color: #6366f1; text-decoration: none; font-weight: 600; }
+
+        @media (max-width: 991.98px) {
+          .ep-pay-body { grid-template-columns: 1fr; }
+          .ep-pay-sidebar { border-right: none; border-bottom: 1px solid var(--vz-border-color); }
+          .ep-pay-identity { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+          .ep-pay-identity-cell + .ep-pay-identity-cell { padding-left: 0; border-left: none; }
+          .ep-pay-kpis { grid-template-columns: repeat(2, 1fr); }
+        }
         /* Dashboard surface — KPI tile background that flips in dark mode,
            matching the admin/client/branch dashboard's .dashboard-surface. */
         .dashboard-surface { background: #ffffff; }
         [data-bs-theme="dark"] .dashboard-surface { background: #1c2531; }
+        /* KPI tile hover — lift + sharper shadow + indigo border tint, mirrors
+           the section-card hover treatment so the Attendance KPI strip reacts
+           to the cursor like the rest of the page. */
+        [data-bs-theme="dark"] .ep-kpi-tile { background: #1c2531 !important; }
+        .ep-kpi-tile:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 14px 32px rgba(15,23,42,0.10), 0 2px 6px rgba(15,23,42,0.04) !important;
+          border-color: rgba(99,102,241,0.30) !important;
+        }
         .ep-section-card { position: relative; transition: transform .25s ease, box-shadow .25s ease; }
         .ep-section-card:hover {
           transform: translateY(-3px);
@@ -427,11 +1209,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         .ep-hero {
           position: relative;
           color: #fff;
-          padding: 28px 32px 0;
+          padding: 20px 28px 14px;
           background:
-            radial-gradient(circle at 12% 22%, rgba(99,102,241,0.28), transparent 45%),
-            radial-gradient(circle at 88% 78%, rgba(34,197,94,0.18), transparent 50%),
-            linear-gradient(135deg, #0c1437 0%, #131c46 45%, #1d2c6b 100%);
+            
+            linear-gradient(120deg,#08112b 0%,#0c1740 40%,#0f1e55 70%,#0d1848 100%);
         }
         .ep-hero::after {
           content: ''; position: absolute; inset: 0;
@@ -440,60 +1221,62 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           background-size: 16px 16px;
           opacity: 0.35; pointer-events: none;
         }
-        /* Bottom tab strip baked into the hero card — uses a translucent dark
-           panel so the navy gradient still bleeds through behind it. */
+        /* Bottom tab strip baked into the hero card — sits above a thin
+           divider line and pulls in the same horizontal padding as the
+           hero content so the tabs align with the avatar/identity row. */
         .ep-hero-tabs {
           position: relative; z-index: 2;
-          margin-top: 2px;
-          padding: 1px 0 4px;
+          margin-top: 10px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(255,255,255,0.10);
         }
         .ep-close-btn {
-          position: absolute; top: 18px; right: 22px;
-          width: 36px; height: 36px; border-radius: 10px;
+          position: absolute; top: 14px; right: 18px;
+          width: 30px; height: 30px; border-radius: 8px;
           background: rgba(255,255,255,0.10);
           border: 1px solid rgba(255,255,255,0.20);
           color: #fff; display: inline-flex;
           align-items: center; justify-content: center;
           cursor: pointer; transition: background .15s ease;
-          z-index: 3;
+          z-index: 3; font-size: 16px;
         }
         .ep-close-btn:hover { background: rgba(255,255,255,0.20); }
         .ep-avatar-square {
-          width: 100px; height: 100px;
-          border-radius: 24px;
+          width: 82px; height: 82px;
+          border-radius: 20px;
           background: linear-gradient(135deg, #4f46e5 0%, #7c5cfc 100%);
           display: inline-flex; align-items: center; justify-content: center;
-          color: #fff; font-weight: 700; font-size: 36px;
+          color: #fff; font-weight: 700; font-size: 28px;
           position: relative;
-          box-shadow: 0 14px 32px rgba(79,70,229,0.45), inset 0 1px 0 rgba(255,255,255,0.20);
+          box-shadow: 0 10px 24px rgba(79,70,229,0.40), inset 0 1px 0 rgba(255,255,255,0.20);
           letter-spacing: 0.02em;
         }
         .ep-avatar-square::after {
-          content: ''; position: absolute; bottom: 6px; right: 6px;
-          width: 14px; height: 14px; border-radius: 50%;
-          background: #22c55e; border: 3px solid #ffffff;
-          box-shadow: 0 0 8px rgba(34,197,94,0.6);
+          content: ''; position: absolute; bottom: 4px; right: 4px;
+          width: 12px; height: 12px; border-radius: 50%;
+          background: #22c55e; border: 2px solid #ffffff;
+          box-shadow: 0 0 6px rgba(34,197,94,0.55);
         }
         .ep-hero-pill {
-          display: inline-flex; align-items: center; gap: 6px;
-          font-size: 11.5px; font-weight: 600;
-          padding: 4px 12px; border-radius: 999px;
+          display: inline-flex; align-items: center; gap: 5px;
+          font-size: 11px; font-weight: 600;
+          padding: 3px 10px; border-radius: 999px;
         }
         .ep-hero-pill-blue   { background: rgba(99,102,241,0.20); color: #c7d2fe; border: 1px solid rgba(99,102,241,0.40); }
         .ep-hero-pill-teal   { background: rgba(20,184,166,0.20); color: #99f6e4; border: 1px solid rgba(20,184,166,0.40); }
         .ep-hero-pill-active { background: rgba(34,197,94,0.18);  color: #86efac; border: 1px solid rgba(34,197,94,0.40); }
 
-        .ep-hero-meta { display: flex; align-items: center; gap: 10px; }
-        .ep-hero-meta i { color: rgba(255,255,255,0.60); font-size: 16px; }
+        .ep-hero-meta { display: flex; align-items: center; gap: 8px; }
+        .ep-hero-meta i { color: rgba(255,255,255,0.60); font-size: 14px; }
         .ep-hero-meta-label {
-          color: rgba(255,255,255,0.55); font-size: 10.5px;
+          color: rgba(255,255,255,0.55); font-size: 9.5px;
           font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
         }
-        .ep-hero-meta-value { color: #fff; font-size: 13.5px; font-weight: 600; }
+        .ep-hero-meta-value { color: #fff; font-size: 12.5px; font-weight: 600; }
 
         /* Ring chart — pure CSS conic-gradient with a dark hole. */
         .ep-ring {
-          width: 110px; height: 110px;
+          width: 86px; height: 86px;
           border-radius: 50%;
           position: relative;
           background:
@@ -502,73 +1285,75 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           display: flex; align-items: center; justify-content: center;
         }
         .ep-ring::before {
-          content: ''; position: absolute; inset: 9px;
+          content: ''; position: absolute; inset: 7px;
           border-radius: 50%;
           background: var(--ring-bg, #131c46);
         }
         .ep-ring-inner { position: relative; z-index: 1; text-align: center; color: #fff; line-height: 1; }
-        .ep-ring-num { font-size: 30px; font-weight: 800; }
-        .ep-ring-pct { font-size: 11px; color: rgba(255,255,255,0.65); margin-top: 2px; }
+        .ep-ring-num { font-size: 22px; font-weight: 800; }
+        .ep-ring-pct { font-size: 10px; color: rgba(255,255,255,0.65); margin-top: 1px; }
         .ep-ring-label {
           color: rgba(255,255,255,0.65);
-          font-size: 11px; font-weight: 700; letter-spacing: 0.10em;
-          text-transform: uppercase; text-align: center; margin-top: 10px;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
+          text-transform: uppercase; text-align: center; margin-top: 6px;
         }
 
-        /* ── Tab bar (nested inside hero) ── */
+        /* ── Tab bar (nested inside hero) ──
+           Renders as a flat horizontal row of tab buttons, no surrounding
+           pill container. Active tab gets a white background that "rises"
+           into the navy hero. */
         .ep-tabbar {
-          background: rgba(255,255,255,0.06);
-          border: 1px solid rgba(255,255,255,0.12);
-          padding: 6px;
-          display: inline-flex; flex-wrap: wrap; gap: 4px;
-          border-radius: 14px;
-          backdrop-filter: blur(6px);
+          background: transparent;
+          border: none;
+          padding: 0;
+          display: flex; flex-wrap: wrap; gap: 6px;
+          border-radius: 0;
         }
         .ep-tabbar-btn {
           background: transparent; border: none;
-          padding: 8px 14px;
-          font-size: 13px; font-weight: 600;
+          padding: 5px 10px;
+          font-size: 11.5px; font-weight: 600;
           color: rgba(255,255,255,0.65);
-          display: inline-flex; align-items: center; gap: 8px;
-          border-radius: 10px;
+          display: inline-flex; align-items: center; gap: 5px;
+          border-radius: 7px;
           cursor: pointer;
           transition: all .15s ease;
           white-space: nowrap;
         }
-        .ep-tabbar-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
+        .ep-tabbar-btn:hover { color: #fff; background: rgba(255,255,255,0.06); }
         .ep-tabbar-btn.is-active {
           background: #ffffff;
           color: #0f172a;
-          box-shadow: 0 4px 14px rgba(15,23,42,0.25);
         }
         .ep-tabbar-icon {
-          width: 26px; height: 26px; border-radius: 7px;
+          width: 18px; height: 18px; border-radius: 5px;
           display: inline-flex; align-items: center; justify-content: center;
-          color: #fff; font-size: 13px;
-          box-shadow: 0 2px 6px rgba(15,23,42,0.30);
+          color: #fff; font-size: 10.5px;
+          flex-shrink: 0;
         }
 
         /* ── Section card icon pill (light tinted, replaces the colored
               SectionHeader gradient circle) ── */
         .ep-section-icon {
-          width: 38px; height: 38px; border-radius: 10px;
+          width: 32px; height: 32px; border-radius: 8px;
           display: inline-flex; align-items: center; justify-content: center;
-          font-size: 18px; flex-shrink: 0;
+          font-size: 15px; flex-shrink: 0;
         }
         .ep-section-card-flat {
           border-radius: 16px;
           border: 1px solid var(--vz-border-color);
-          background: var(--vz-card-bg);
+          background: #ffffff;
           box-shadow: 0 2px 14px rgba(15,23,42,0.05);
           overflow: hidden;
         }
+        [data-bs-theme="dark"] .ep-section-card-flat { background: #1c2531; }
         .ep-field-label {
-          font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
           text-transform: uppercase; color: var(--vz-secondary-color);
-          margin-bottom: 6px;
+          margin-bottom: 4px;
         }
         .ep-field-value {
-          font-size: 14px; font-weight: 600;
+          font-size: 13px; font-weight: 600;
           color: var(--vz-heading-color, var(--vz-body-color));
         }
         .ep-addr-marker {
@@ -586,6 +1371,39 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           border-radius: 999px; padding: 4px;
           display: inline-flex; gap: 4px;
         }
+        /* Payroll sub-tabs — two equal-width pill buttons that span the
+           container. Active tab gets a strong gradient (purple for Summary,
+           teal/green for Payment Details), inactive sits on a soft grey. */
+        .ep-pay-subtab {
+          display: grid; grid-template-columns: 1fr 1fr;
+          gap: 8px;
+        }
+        .ep-pay-subtab-btn {
+          background: var(--vz-light, #f3f4f9);
+          color: var(--vz-secondary-color);
+          border: none;
+          border-radius: 12px;
+          padding: 10px 16px;
+          font-size: 13px; font-weight: 600;
+          cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center;
+          gap: 8px;
+          transition: all .15s ease;
+        }
+        .ep-pay-subtab-btn:hover {
+          background: var(--vz-secondary-bg);
+          color: var(--vz-body-color);
+        }
+        .ep-pay-subtab-btn.is-active.is-summary {
+          background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 50%, #6366f1 100%);
+          color: #fff;
+          box-shadow: 0 6px 18px rgba(67,56,202,0.30);
+        }
+        .ep-pay-subtab-btn.is-active.is-details {
+          background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #0a8a5a 100%);
+          color: #fff;
+          box-shadow: 0 6px 18px rgba(4,120,87,0.30);
+        }
         .ep-subtab-btn {
           background: transparent; border: none;
           padding: 7px 18px; border-radius: 999px;
@@ -599,6 +1417,24 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           color: #fff;
           box-shadow: 0 4px 10px rgba(99,102,241,0.30);
         }
+        /* Evidence Vault tables — dark navy header strip + tight row padding
+           to match the Figma reference. */
+        .ep-vault-table { font-size: 12.5px; margin: 0; }
+        .ep-vault-table th {
+          font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: rgba(79, 79, 79, 0.85);
+          padding: 8px 12px !important;
+          border-bottom: none !important;
+          white-space: nowrap;
+        }
+        .ep-vault-table td {
+          padding: 8px 12px !important;
+          border-bottom: 1px solid var(--vz-border-color) !important;
+          vertical-align: middle;
+        }
+        .ep-vault-table tbody tr:last-child td { border-bottom: none !important; }
+
         .ep-att-table { font-size: 13px; }
         .ep-att-table th { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vz-secondary-color); font-weight: 700; padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); }
         .ep-att-table td { padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); }
@@ -621,18 +1457,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           {/* Identity */}
           <Col xs={12} md className="min-w-0">
             <div className="d-flex align-items-center gap-2 mb-1">
-              <h2 className="text-white mb-0 fw-bold" style={{ fontSize: 28 }}>{employee?.name || employeeId}</h2>
+              <h2 className="text-white mb-0 fw-bold" style={{ fontSize: 22, lineHeight: 1.15 }}>{employee?.name || employeeId}</h2>
               <button
                 type="button"
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center"
-                style={{ width: 30, height: 30, padding: 0, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 8, color: '#fff' }}
+                style={{ width: 26, height: 26, padding: 0, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 7, color: '#fff', fontSize: 13 }}
                 aria-label="More actions"
               >
                 <i className="ri-more-2-fill" />
               </button>
             </div>
-            <p className="mb-1" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.06em' }}>{employeeId}</p>
-            <p className="mb-2" style={{ color: 'rgba(255,255,255,0.78)', fontSize: 13.5 }}>
+            <p className="mb-1" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em' }}>{employeeId}</p>
+            <p className="mb-2" style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12.5 }}>
               {employee?.department || 'Accounts'}
               <span className="mx-2" style={{ opacity: 0.5 }}>·</span>
               {employee?.designation || 'Associate Engineer'}
@@ -653,7 +1489,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 {statusTone.label}
               </span>
             </div>
-            <div className="d-flex gap-4 flex-wrap">
+            <div className="d-flex column-gap-4 row-gap-2 flex-wrap">
               <div className="ep-hero-meta">
                 <i className="ri-mail-line" />
                 <div>
@@ -668,31 +1504,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <span className="ep-hero-meta-value">{employee?.manager || '—'}</span>
                 </div>
               </div>
-            </div>
-          </Col>
-
-          {/* Mobile / Joined column */}
-          <Col xs="auto" className="d-none d-lg-block">
-            <div className="d-flex flex-column gap-3">
               <div className="ep-hero-meta">
                 <i className="ri-phone-line" />
                 <div>
-                  <div className="ep-hero-meta-label">Mobile</div>
-                  <div className="ep-hero-meta-value">9635203533</div>
+                  <span className="ep-hero-meta-label">Mobile</span>{' '}
+                  <span className="ep-hero-meta-value">9635203533</span>
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-calendar-line" />
                 <div>
-                  <div className="ep-hero-meta-label">Joined</div>
-                  <div className="ep-hero-meta-value">2023-11-03</div>
+                  <span className="ep-hero-meta-label">Joined</span>{' '}
+                  <span className="ep-hero-meta-value">2023-11-03</span>
                 </div>
               </div>
             </div>
           </Col>
 
-          {/* Ring charts */}
-          <Col xs="auto">
+          {/* Ring charts — pulled in toward the centre with auto-margin */}
+          <Col xs="auto" className="ms-auto" style={{ marginRight: 80 }}>
             <div className="d-flex gap-3">
               <div>
                 <div
@@ -754,74 +1584,85 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <>
           {/* Personal Information — full-width row of 7 identity fields */}
           <div className="ep-section-card-flat ep-section-card mb-3">
-            <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+            <div className="d-flex align-items-center gap-3 px-3 py-2" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
               <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
                 <i className="ri-user-line" />
               </span>
               <h6 className="mb-0 fw-bold">Personal Information</h6>
             </div>
-            <div className="px-4 py-4">
+            <div className="px-3 py-3">
               <Row className="g-4">
                 <Col><div className="ep-field-label">First Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ')[0] || 'Aarav'}</div></Col>
-                <Col><div className="ep-field-label">Middle Name</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
+                <Col><div className="ep-field-label">Middle Name</div><div className="ep-field-value">Rajendra</div></Col>
                 <Col><div className="ep-field-label">Last Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ').slice(1).join(' ') || 'Kale'}</div></Col>
                 <Col><div className="ep-field-label">Display Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
                 <Col><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">1985-11-02</div></Col>
-                <Col><div className="ep-field-label">Gender</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col><div className="ep-field-label">Nationality</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
+                <Col><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
+                <Col><div className="ep-field-label">Nationality</div><div className="ep-field-value">Indian</div></Col>
               </Row>
             </div>
           </div>
 
           {/* Contact Information — 4 fields */}
           <div className="ep-section-card-flat ep-section-card mb-3">
-            <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+            <div className="d-flex align-items-center gap-3 px-3 py-2" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
               <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.12)', color: '#299cdb' }}>
                 <i className="ri-phone-line" />
               </span>
               <h6 className="mb-0 fw-bold">Contact Information</h6>
             </div>
-            <div className="px-4 py-4">
+            <div className="px-3 py-3">
               <Row className="g-4">
                 <Col md={3}><div className="ep-field-label">Work Email</div><div className="ep-field-value">{employee?.email || 'aarav.kale@enterprise.com'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Mobile</div><div className="ep-field-value font-monospace">9635203533</div></Col>
-                <Col md={3}><div className="ep-field-label">Work Country</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col md={3}><div className="ep-field-label">Reporting Manager</div><div className="ep-field-value">{employee?.manager || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Mobile</div><div className="ep-field-value font-monospace">+91 9635203533</div></Col>
+                <Col md={3}><div className="ep-field-label">Work Country</div><div className="ep-field-value">India</div></Col>
+                <Col md={3}><div className="ep-field-label">Reporting Manager</div><div className="ep-field-value">{employee?.manager || 'Deepa Kulkarni'}</div></Col>
               </Row>
             </div>
           </div>
 
-          {/* Address Details — Current + Permanent stacked, with green accent */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #0ab39c' }}>
-            <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-              <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.12)', color: '#0ab39c' }}>
+          {/* Address Details — Current + Permanent side-by-side. Gradient
+              tint is restricted to the header strip; the body sits on plain
+              white so the field rows stay readable. */}
+          <div className="ep-section-card-flat ep-section-card mb-3">
+            <div
+              className="d-flex align-items-center gap-3 px-3 py-2"
+              style={{
+                borderBottom: '1px solid rgba(10,179,156,0.18)',
+                background: 'linear-gradient(135deg, rgba(10,179,156,0.12) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
+              }}
+            >
+              <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
                 <i className="ri-map-pin-line" />
               </span>
-              <h6 className="mb-0 fw-bold">Address Details</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Address Details</h6>
             </div>
-            <div className="px-4 py-4">
-              {/* Current */}
-              <div className="ep-addr-marker" style={{ color: '#0ab39c' }}>
-                <span className="dot" style={{ background: '#0ab39c' }} /> Current Address
-              </div>
-              <Row className="g-4 mb-4">
-                <Col><div className="ep-field-label">Address</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col><div className="ep-field-label">City</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col><div className="ep-field-label">State</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col><div className="ep-field-label">Country</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-              </Row>
-
-              {/* Permanent */}
-              <div className="ep-addr-marker" style={{ color: '#0ab39c' }}>
-                <span className="dot" style={{ background: '#0ab39c' }} /> Permanent Address
-              </div>
+            <div className="px-3 py-3">
               <Row className="g-4">
-                <Col><div className="ep-field-label">Address</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col><div className="ep-field-label">City</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col><div className="ep-field-label">State</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col><div className="ep-field-label">Country</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-                <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
+                <Col md={6}>
+                  <div className="ep-addr-marker" style={{ color: '#0ab39c' }}>
+                    <span className="dot" style={{ background: '#0ab39c' }} /> Current Address
+                  </div>
+                  <Row className="g-3">
+                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">Office No. 821, Solitaire Hub, Balewadi</div></Col>
+                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">Pune</div></Col>
+                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">Maharashtra</div></Col>
+                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">India</div></Col>
+                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">411045</div></Col>
+                  </Row>
+                </Col>
+                <Col md={6}>
+                  <div className="ep-addr-marker" style={{ color: '#0ab39c' }}>
+                    <span className="dot" style={{ background: '#0ab39c' }} /> Permanent Address
+                  </div>
+                  <Row className="g-3">
+                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">Plot No. 14, Sector 3, Vimaan Nagar Rd</div></Col>
+                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">Pune</div></Col>
+                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">Maharashtra</div></Col>
+                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">India</div></Col>
+                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">411014</div></Col>
+                  </Row>
+                </Col>
               </Row>
             </div>
           </div>
@@ -830,21 +1671,35 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl={4}>
               <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
-                <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-                  <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
+                <div
+                  className="d-flex align-items-center gap-3 px-3 py-2"
+                  style={{
+                    borderBottom: '1px solid rgba(245,158,11,0.18)',
+                    background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0.04) 60%, rgba(245,158,11,0.01) 100%)',
+                  }}
+                >
+                  <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
                     <i className="ri-briefcase-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold">Work Experience</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Work Experience</h6>
                 </div>
-                <div className="px-4 py-4 flex-grow-1">
-                  <Row className="g-4">
+                <div className="px-3 py-3 flex-grow-1">
+                  <Row className="g-3">
                     <Col xs={6}>
                       <div className="ep-field-label">Status</div>
-                      <div className="ep-field-value">Fresher</div>
+                      <div className="ep-field-value">Experienced</div>
                     </Col>
                     <Col xs={6}>
-                      <div className="ep-field-label">Details</div>
-                      <div className="ep-field-value">No previous experience recorded</div>
+                      <div className="ep-field-label">Total Experience</div>
+                      <div className="ep-field-value">5 yrs 3 mos</div>
+                    </Col>
+                    <Col xs={6}>
+                      <div className="ep-field-label">Last Company</div>
+                      <div className="ep-field-value">Infotech Solutions Ltd</div>
+                    </Col>
+                    <Col xs={6}>
+                      <div className="ep-field-label">Last Designation</div>
+                      <div className="ep-field-value">Software Engineer</div>
                     </Col>
                   </Row>
                 </div>
@@ -852,47 +1707,50 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </Col>
 
             <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.06), rgba(99,102,241,0.04))' }}>
-                <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.12) 0%, rgba(99,102,241,0.06) 60%, rgba(168,85,247,0.04) 100%)', border: '1px solid rgba(168,85,247,0.18)' }}>
+                <div className="px-3 pt-3 pb-2 d-flex align-items-center gap-3">
                   <div
                     className="d-inline-flex align-items-center justify-content-center"
                     style={{
-                      width: 56, height: 56, borderRadius: '50%',
-                      background: `conic-gradient(#a855f7 ${profilePct}%, rgba(168,85,247,0.15) 0)`,
+                      width: 44, height: 44, borderRadius: '50%',
+                      background: `conic-gradient(#a855f7 ${profilePct}%, rgba(168,85,247,0.18) 0)`,
                       flexShrink: 0,
                       position: 'relative',
                     }}
                   >
                     <span
                       style={{
-                        position: 'absolute', inset: 5, borderRadius: '50%',
-                        background: 'var(--vz-card-bg)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 12, fontWeight: 800, color: '#a855f7',
+                        position: 'absolute', inset: 4, borderRadius: '50%',
+                        background: '#ffffff',
+                        display: 'flex', alignItems: 'baseline', justifyContent: 'center',
+                        fontWeight: 800, color: '#7c3aed',
+                        fontSize: 12, gap: 1, paddingTop: 4,
                       }}
                     >
-                      {profilePct}%
+                      {profilePct}<span style={{ fontSize: 7.5, fontWeight: 700 }}>%</span>
                     </span>
                   </div>
                   <div className="flex-grow-1">
-                    <h6 className="mb-1 fw-bold" style={{ color: '#7c3aed' }}>Profile Completion</h6>
-                    <small className="text-muted">
-                      <i className="ri-check-line" style={{ color: '#10b981' }} /> Complete &amp; Verified
+                    <h6 className="mb-1 fw-bold" style={{ color: '#7c3aed', fontSize: 14 }}>Profile Completion</h6>
+                    <small className="text-muted" style={{ fontSize: 11 }}>
+                      In Progress · {profilePct}% done
                     </small>
                   </div>
                 </div>
-                <div className="px-4 py-4 flex-grow-1">
-                  {/* Striped progress bar */}
-                  <div style={{ width: '100%', height: 10, borderRadius: 999, background: '#e5e7eb', overflow: 'hidden', marginBottom: 18 }}>
+                {/* Full-width progress bar */}
+                <div className="px-3 pb-2">
+                  <div style={{ width: '100%', height: 7, borderRadius: 999, background: 'rgba(168,85,247,0.18)', overflow: 'hidden' }}>
                     <div
                       style={{
                         width: `${profilePct}%`, height: '100%', borderRadius: 999,
-                        background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.32) 0 6px, transparent 6px 12px), linear-gradient(90deg, #a855f7, #c084fc)`,
+                        background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.30) 0 6px, transparent 6px 12px), linear-gradient(90deg, #a855f7, #c084fc)`,
                         transition: 'width .35s ease',
                       }}
                     />
                   </div>
-                  {/* 4 mini-tiles */}
+                </div>
+                {/* 4 mini-tiles */}
+                <div className="px-3 pb-3 flex-grow-1">
                   <Row className="g-2">
                     <Col xs={6}>
                       <div className="px-3 py-2" style={{ borderRadius: 10, background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.25)' }}>
@@ -928,37 +1786,57 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
             <Col xl={4}>
               <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
-                <div className="d-flex align-items-center justify-content-between gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+                <div
+                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+                  style={{
+                    borderBottom: '1px solid rgba(99,102,241,0.18)',
+                    background: 'linear-gradient(135deg, rgba(99,102,241,0.14) 0%, rgba(99,102,241,0.04) 60%, rgba(99,102,241,0.01) 100%)',
+                  }}
+                >
                   <div className="d-flex align-items-center gap-3">
-                    <span className="ep-section-icon" style={{ background: 'rgba(168,85,247,0.12)', color: '#a855f7' }}>
+                    <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
                       <i className="ri-shield-check-line" />
                     </span>
-                    <h6 className="mb-0 fw-bold">KYC Documents</h6>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>KYC Documents</h6>
                   </div>
-                  <span className="badge rounded-pill fw-semibold fs-11 px-2 py-1" style={{ background: 'rgba(168,85,247,0.12)', color: '#a855f7' }}>3 / 4</span>
+                  <span className="badge rounded-pill fw-semibold px-2 py-1" style={{ background: 'rgba(99,102,241,0.16)', color: '#4338ca', fontSize: 10.5 }}>3 / 4</span>
                 </div>
                 <div className="px-3 py-3 flex-grow-1">
                   {[
-                    { label: 'Aadhaar Card',   status: 'Uploaded',  icon: 'ri-checkbox-circle-fill', iconColor: '#10b981' },
-                    { label: 'PAN Card',       status: 'Uploaded',  icon: 'ri-checkbox-circle-fill', iconColor: '#10b981' },
-                    { label: 'Passport Photo', status: 'Uploaded',  icon: 'ri-checkbox-circle-fill', iconColor: '#10b981' },
-                    { label: 'Address Proof',  status: 'Pending',   icon: 'ri-time-fill',            iconColor: '#f59e0b' },
-                  ].map(d => (
-                    <div key={d.label} className="d-flex align-items-center gap-2 px-2 py-2">
-                      <i className={d.icon} style={{ color: d.iconColor, fontSize: 18 }} />
-                      <div className="fs-13 fw-semibold flex-grow-1">{d.label}</div>
-                      <span
-                        className="d-inline-flex align-items-center fw-semibold"
-                        style={{
-                          fontSize: 11, padding: '2px 10px', borderRadius: 999,
-                          background: d.status === 'Pending' ? '#fef3c7' : '#dbeafe',
-                          color:      d.status === 'Pending' ? '#a16207' : '#1d4ed8',
-                        }}
-                      >
-                        {d.status}
-                      </span>
-                    </div>
-                  ))}
+                    { label: 'Aadhaar Card',   status: 'Uploaded' },
+                    { label: 'PAN Card',       status: 'Uploaded' },
+                    { label: 'Passport Photo', status: 'Uploaded' },
+                    { label: 'Address Proof',  status: 'Pending'  },
+                  ].map(d => {
+                    const uploaded = d.status === 'Uploaded';
+                    return (
+                      <div key={d.label} className="d-flex align-items-center gap-2 px-2 py-1">
+                        <span
+                          className="d-inline-flex align-items-center justify-content-center"
+                          style={{
+                            width: 18, height: 18, borderRadius: 5,
+                            background: uploaded ? '#3b82f6' : '#f59e0b',
+                            color: '#fff', fontSize: 12,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <i className={uploaded ? 'ri-check-line' : 'ri-time-line'} />
+                        </span>
+                        <div className="flex-grow-1" style={{ fontSize: 12.5, fontWeight: 600 }}>{d.label}</div>
+                        <span
+                          className="d-inline-flex align-items-center fw-semibold"
+                          style={{
+                            fontSize: 10, padding: '2px 9px', borderRadius: 999,
+                            background: uploaded ? 'rgba(59,130,246,0.10)' : 'rgba(245,158,11,0.12)',
+                            color:      uploaded ? '#1d4ed8' : '#a16207',
+                            border:     `1px solid ${uploaded ? 'rgba(59,130,246,0.25)' : 'rgba(245,158,11,0.25)'}`,
+                          }}
+                        >
+                          {d.status}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </Col>
@@ -971,13 +1849,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <>
           {/* Employment Details — single row of 7 fields */}
           <div className="ep-section-card-flat ep-section-card mb-3">
-            <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-              <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
+            <div
+              className="d-flex align-items-center gap-3 px-3 py-2"
+              style={{
+                borderBottom: '1px solid rgba(99,102,241,0.18)',
+                background: 'linear-gradient(135deg, rgba(99,102,241,0.14) 0%, rgba(99,102,241,0.04) 60%, rgba(99,102,241,0.01) 100%)',
+              }}
+            >
+              <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
                 <i className="ri-briefcase-line" />
               </span>
-              <h6 className="mb-0 fw-bold">Employment Details</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Employment Details</h6>
             </div>
-            <div className="px-4 py-4">
+            <div className="px-3 py-3">
               <Row className="g-4">
                 <Col>
                   <div className="ep-field-label">Employee Number</div>
@@ -994,14 +1878,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </div>
 
           {/* Organisational Structure — 4 fields full width */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #299cdb' }}>
-            <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-              <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.12)', color: '#299cdb' }}>
+          <div className="ep-section-card-flat ep-section-card mb-3">
+            <div
+              className="d-flex align-items-center gap-3 px-3 py-2"
+              style={{
+                borderBottom: '1px solid rgba(41,156,219,0.20)',
+                background: 'linear-gradient(135deg, rgba(41,156,219,0.14) 0%, rgba(41,156,219,0.04) 60%, rgba(41,156,219,0.01) 100%)',
+              }}
+            >
+              <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
                 <i className="ri-building-2-line" />
               </span>
-              <h6 className="mb-0 fw-bold">Organisational Structure</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Organisational Structure</h6>
             </div>
-            <div className="px-4 py-4">
+            <div className="px-3 py-3">
               <Row className="g-4">
                 <Col md={3}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">Inorbvict Healthcare India Pvt. Ltd.</div></Col>
                 <Col md={3}><div className="ep-field-label">Department</div><div className="ep-field-value">{employee?.department || '—'}</div></Col>
@@ -1014,62 +1904,77 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           {/* Row of 3 cards: Role & Positioning | Employment Terms | Attendance & Time */}
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100">
-                <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-                  <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.12)', color: '#0ab39c' }}>
+              <div className="ep-section-card-flat ep-section-card h-100" style={{ borderTop: '3px solid #0ab39c' }}>
+                <div
+                  className="d-flex align-items-center gap-3 px-3 py-2"
+                  style={{
+                    borderBottom: '1px solid rgba(10,179,156,0.18)',
+                    background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
+                  }}
+                >
+                  <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
                     <i className="ri-edit-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold">Role &amp; Positioning</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Role &amp; Positioning</h6>
                 </div>
-                <div className="px-4 py-4">
+                <div className="px-3 py-3">
                   <Row className="g-4">
-                    <Col xs={4}><div className="ep-field-label">Primary Role</div><div className="ep-field-value">{employee?.primaryRole || '—'}</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Ancillary Role</div><div className="ep-field-value">{ancillaryList[0] || '—'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Primary Role</div><div className="ep-field-value">{employee?.primaryRole || 'Executive'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Ancillary Role</div><div className="ep-field-value">{ancillaryList[0] || <span className="text-muted fw-normal">—</span>}</div></Col>
                     <Col xs={4}><div className="ep-field-label">Employee Level</div><div className="ep-field-value">L3 — Mid</div></Col>
                   </Row>
                 </div>
               </div>
             </Col>
             <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100">
-                <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-                  <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+              <div className="ep-section-card-flat ep-section-card h-100" style={{ borderTop: '3px solid #f59e0b' }}>
+                <div
+                  className="d-flex align-items-center gap-3 px-3 py-2"
+                  style={{
+                    borderBottom: '1px solid rgba(245,158,11,0.20)',
+                    background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0.04) 60%, rgba(245,158,11,0.01) 100%)',
+                  }}
+                >
+                  <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
                     <i className="ri-file-list-3-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold">Employment Terms</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Employment Terms</h6>
                 </div>
-                <div className="px-4 py-4">
+                <div className="px-3 py-3">
                   <Row className="g-3">
                     <Col xs={6}><div className="ep-field-label">Probation Policy</div><div className="ep-field-value">Default Probation Policy</div></Col>
                     <Col xs={6}><div className="ep-field-label">Probation Duration</div><div className="ep-field-value">3 Months</div></Col>
                     <Col xs={6}><div className="ep-field-label">Notice Period</div><div className="ep-field-value">2 Months</div></Col>
                     <Col xs={6}><div className="ep-field-label">Contract Status</div><div className="ep-field-value">Permanent</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Penalization</div><div className="ep-field-value">Default</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Overtime Policy</div><div className="ep-field-value">Standard OT</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Shift Allowance</div><div className="ep-field-value">None</div></Col>
                   </Row>
                 </div>
               </div>
             </Col>
             <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100">
-                <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-                  <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.12)', color: '#299cdb' }}>
+              <div className="ep-section-card-flat ep-section-card h-100" style={{ borderTop: '3px solid #299cdb' }}>
+                <div
+                  className="d-flex align-items-center gap-3 px-3 py-2"
+                  style={{
+                    borderBottom: '1px solid rgba(41,156,219,0.20)',
+                    background: 'linear-gradient(135deg, rgba(41,156,219,0.14) 0%, rgba(41,156,219,0.04) 60%, rgba(41,156,219,0.01) 100%)',
+                  }}
+                >
+                  <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
                     <i className="ri-time-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold">Attendance &amp; Time</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Attendance &amp; Time</h6>
                 </div>
-                <div className="px-4 py-4">
+                <div className="px-3 py-3">
                   <Row className="g-3">
-                    <Col xs={6}><div className="ep-field-label">Shift</div><div className="ep-field-value">Morning Shift</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Weekly Off</div><div className="ep-field-value">Sat &amp; Sun</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Leave Plan</div><div className="ep-field-value">Default Leave Plan</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Holiday Calendar</div><div className="ep-field-value">Maharashtra 2026</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Time Tracking</div><div className="ep-field-value">Enabled</div></Col>
-                    <Col xs={6}>
-                      <div className="ep-field-label">Attendance No.</div>
-                      <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 10px', borderRadius: 8, fontSize: 12.5 }}>{employeeId}</span>
-                    </Col>
+                    <Col xs={4}><div className="ep-field-label">Shift</div><div className="ep-field-value">Morning Shift</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Weekly Off</div><div className="ep-field-value">Sat &amp; Sun</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Leave Plan</div><div className="ep-field-value">Default Leave Plan</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Holiday Calendar</div><div className="ep-field-value">Maharashtra 2026</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Time Tracking</div><div className="ep-field-value">Enabled</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Attendance No.</div><div className="ep-field-value font-monospace">{employeeId}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Penalization</div><div className="ep-field-value">Default</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Overtime Policy</div><div className="ep-field-value">Standard OT</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Shift Allowance</div><div className="ep-field-value">None</div></Col>
                   </Row>
                 </div>
               </div>
@@ -1077,15 +1982,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </Row>
 
           {/* Asset Details */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #f59e0b' }}>
-            <div className="d-flex align-items-center gap-3 px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-              <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+          <div className="ep-section-card-flat ep-section-card mb-3">
+            <div
+              className="d-flex align-items-center gap-3 px-3 py-2"
+              style={{
+                borderBottom: '1px solid rgba(245,158,11,0.20)',
+                background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0.04) 60%, rgba(245,158,11,0.01) 100%)',
+              }}
+            >
+              <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
                 <i className="ri-computer-line" />
               </span>
-              <h6 className="mb-0 fw-bold">Asset Details</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Asset Details</h6>
             </div>
-            <div className="px-4 py-4">
-              <Row className="g-4 mb-3">
+            <div className="px-3 py-3">
+              <Row className="g-3">
                 <Col md={3}><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">Yes</div></Col>
                 <Col md={3}>
                   <div className="ep-field-label">Laptop Asset ID</div>
@@ -1093,16 +2004,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </Col>
                 <Col md={3}><div className="ep-field-label">Laptop Type</div><div className="ep-field-value">Dell Latitude 5510</div></Col>
                 <Col md={3}><div className="ep-field-label">Mobile Device</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-              </Row>
-              <Row className="g-4 mb-3">
+
                 <Col md={3}><div className="ep-field-label">Monitor</div><div className="ep-field-value">24" Dell Monitor</div></Col>
                 <Col md={3}><div className="ep-field-label">Keyboard</div><div className="ep-field-value">Logitech K380</div></Col>
                 <Col md={3}><div className="ep-field-label">Mouse</div><div className="ep-field-value">Logitech MX</div></Col>
                 <Col md={3}><div className="ep-field-label">Headset</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-              </Row>
-              <Row className="g-4">
+
                 <Col md={3}><div className="ep-field-label">Other Assets</div><div className="ep-field-value">Access Card, Desk</div></Col>
-                <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">2023-11-03</div></Col>
+                <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">2022-05-17</div></Col>
                 <Col md={3}><div className="ep-field-label">Acknowledgment</div><div className="ep-field-value">Signed</div></Col>
                 <Col md={3}><div className="ep-field-label">Return Required</div><div className="ep-field-value">No</div></Col>
               </Row>
@@ -1125,76 +2034,80 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl={6}>
               <Card className="h-100 mb-0" style={cardStyle}>
-                <CardBody>
-                  <SectionHeader
-                    title="Today's Updated Record"
-                    gradient={GRAD_SUCCESS}
-                    icon="ri-calendar-check-line"
-                    action={<small className="text-muted">Mon, 21 Apr 2026</small>}
-                  />
-                  <span className="d-inline-flex align-items-center gap-1 fw-semibold mb-3" style={{ fontSize: 11.5, padding: '3px 10px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} /> Present
+                <CardBody className="p-3">
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.15)', color: '#0a8a78' }}>
+                        <i className="ri-calendar-check-line" />
+                      </span>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Today's Updated Record</h6>
+                    </div>
+                    <small className="text-muted" style={{ fontSize: 11 }}>Mon, 21 Apr 2026</small>
+                  </div>
+                  <span className="d-inline-flex align-items-center gap-1 fw-semibold mb-2" style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} /> Present
                   </span>
-                  <Row className="g-2 mb-3">
+                  <Row className="g-2 mb-2">
                     <Col xs={6}>
-                      <div className="px-3 py-2" style={{ borderRadius: 10, background: '#ecfaf3', border: '1px solid #bce8d2' }}>
-                        <p className="mb-1 fs-11 text-uppercase fw-semibold" style={{ color: '#0a8a78', letterSpacing: '0.06em' }}>» First In</p>
-                        <h4 className="mb-0 fw-bold" style={{ color: '#108548' }}>07:01 <small className="fs-12">AM</small></h4>
+                      <div className="px-2 py-2" style={{ borderRadius: 8, background: '#ecfaf3', border: '1px solid #bce8d2' }}>
+                        <p className="mb-1 fw-semibold" style={{ fontSize: 10, color: '#0a8a78', letterSpacing: '0.06em', textTransform: 'uppercase' }}>» First In</p>
+                        <h5 className="mb-0 fw-bold" style={{ color: '#108548', fontSize: 18 }}>07:01 <small style={{ fontSize: 10 }}>AM</small></h5>
                       </div>
                     </Col>
                     <Col xs={6}>
-                      <div className="px-3 py-2" style={{ borderRadius: 10, background: '#eaf6fd', border: '1px solid #b8dcef' }}>
-                        <p className="mb-1 fs-11 text-uppercase fw-semibold" style={{ color: '#0c63b0', letterSpacing: '0.06em' }}>» Last Out</p>
-                        <h4 className="mb-0 fw-bold" style={{ color: '#0c63b0' }}>04:02 <small className="fs-12">PM</small></h4>
+                      <div className="px-2 py-2" style={{ borderRadius: 8, background: '#eaf6fd', border: '1px solid #b8dcef' }}>
+                        <p className="mb-1 fw-semibold" style={{ fontSize: 10, color: '#0c63b0', letterSpacing: '0.06em', textTransform: 'uppercase' }}>» Last Out</p>
+                        <h5 className="mb-0 fw-bold" style={{ color: '#0c63b0', fontSize: 18 }}>04:02 <small style={{ fontSize: 10 }}>PM</small></h5>
                       </div>
                     </Col>
                   </Row>
                   <div className="d-flex justify-content-around text-center pt-2 border-top">
-                    <div><h5 className="mb-0 fw-bold" style={{ color: '#5a3fd1' }}>2</h5><small className="text-muted text-uppercase fs-10 fw-semibold">Punches</small></div>
-                    <div><h5 className="mb-0 fw-bold" style={{ color: '#108548' }}>9h 01m</h5><small className="text-muted text-uppercase fs-10 fw-semibold">Worked</small></div>
-                    <div><h5 className="mb-0 fw-bold" style={{ color: '#5a3fd1' }}>9h 00m</h5><small className="text-muted text-uppercase fs-10 fw-semibold">Expected</small></div>
+                    <div><h6 className="mb-0 fw-bold" style={{ color: '#5a3fd1', fontSize: 14 }}>2</h6><small className="text-muted text-uppercase fw-semibold" style={{ fontSize: 9.5, letterSpacing: '0.06em' }}>Punches</small></div>
+                    <div><h6 className="mb-0 fw-bold" style={{ color: '#108548', fontSize: 14 }}>9h 01m</h6><small className="text-muted text-uppercase fw-semibold" style={{ fontSize: 9.5, letterSpacing: '0.06em' }}>Worked</small></div>
+                    <div><h6 className="mb-0 fw-bold" style={{ color: '#5a3fd1', fontSize: 14 }}>9h 00m</h6><small className="text-muted text-uppercase fw-semibold" style={{ fontSize: 9.5, letterSpacing: '0.06em' }}>Expected</small></div>
                   </div>
                 </CardBody>
               </Card>
             </Col>
             <Col xl={6}>
               <Card className="h-100 mb-0" style={cardStyle}>
-                <CardBody>
-                  <SectionHeader
-                    title="Intraday Punch Timeline"
-                    gradient={GRAD_INFO}
-                    icon="ri-pulse-line"
-                    action={(
-                      <div className="d-flex align-items-center gap-2">
-                        <span className="badge rounded-pill" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1', fontSize: 11, padding: '4px 10px' }}>2 punches today</span>
-                        <button
-                          type="button"
-                          className="btn btn-sm rounded-pill fw-semibold"
-                          style={{ background: GRAD_INFO, color: '#fff', border: 'none', fontSize: 12, padding: '4px 12px' }}
-                          onClick={() => setRegOpen(true)}
-                        >
-                          <i className="ri-add-line me-1" /> Regularization
-                        </button>
-                      </div>
-                    )}
-                  />
-                  <div className="position-relative" style={{ paddingLeft: 30 }}>
-                    <div style={{ position: 'absolute', top: 8, bottom: 8, left: 13, width: 2, background: 'var(--vz-border-color)' }} />
-                    <div className="mb-3 position-relative">
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ position: 'absolute', left: -30, width: 28, height: 28, background: '#10b981', color: '#fff', boxShadow: '0 4px 10px rgba(16,185,129,0.40)' }}>
-                        <i className="ri-checkbox-circle-fill" style={{ fontSize: 14 }} />
+                <CardBody className="p-3">
+                  <div className="d-flex align-items-center justify-content-between mb-3">
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.15)', color: '#0c63b0' }}>
+                        <i className="ri-pulse-line" />
                       </span>
-                      <h5 className="mb-0 fw-bold" style={{ color: '#108548' }}>07:01 AM</h5>
-                      <p className="mb-1 fs-13 fw-semibold">Check In</p>
-                      <span className="badge rounded-pill" style={{ background: '#dceefe', color: '#0c63b0', fontSize: 10, padding: '3px 8px' }}>BIOMETRIC</span>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Intraday Punch Timeline</h6>
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="badge rounded-pill" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1', fontSize: 10.5, padding: '3px 9px' }}>2 punches today</span>
+                      <button
+                        type="button"
+                        className="btn btn-sm rounded-pill fw-semibold"
+                        style={{ background: GRAD_INFO, color: '#fff', border: 'none', fontSize: 11.5, padding: '3px 11px' }}
+                        onClick={() => setRegOpen(true)}
+                      >
+                        <i className="ri-add-line me-1" /> Regularization
+                      </button>
+                    </div>
+                  </div>
+                  <div className="position-relative" style={{ paddingLeft: 26 }}>
+                    <div style={{ position: 'absolute', top: 6, bottom: 6, left: 11, width: 2, background: 'var(--vz-border-color)' }} />
+                    <div className="mb-2 position-relative">
+                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ position: 'absolute', left: -26, top: 2, width: 24, height: 24, background: '#10b981', color: '#fff', boxShadow: '0 3px 8px rgba(16,185,129,0.40)' }}>
+                        <i className="ri-checkbox-circle-fill" style={{ fontSize: 12 }} />
+                      </span>
+                      <h6 className="mb-0 fw-bold" style={{ color: '#108548', fontSize: 14 }}>07:01 AM</h6>
+                      <p className="mb-1 fw-semibold" style={{ fontSize: 12 }}>Check In</p>
+                      <span className="badge rounded-pill" style={{ background: '#dceefe', color: '#0c63b0', fontSize: 9.5, padding: '2px 7px' }}>BIOMETRIC</span>
                     </div>
                     <div className="position-relative">
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ position: 'absolute', left: -30, width: 28, height: 28, background: '#3b82f6', color: '#fff', boxShadow: '0 4px 10px rgba(59,130,246,0.40)' }}>
-                        <i className="ri-logout-circle-r-line" style={{ fontSize: 14 }} />
+                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ position: 'absolute', left: -26, top: 2, width: 24, height: 24, background: '#3b82f6', color: '#fff', boxShadow: '0 3px 8px rgba(59,130,246,0.40)' }}>
+                        <i className="ri-logout-circle-r-line" style={{ fontSize: 12 }} />
                       </span>
-                      <h5 className="mb-0 fw-bold" style={{ color: '#0c63b0' }}>04:02 PM</h5>
-                      <p className="mb-1 fs-13 fw-semibold">Check Out</p>
-                      <span className="badge rounded-pill" style={{ background: '#dceefe', color: '#0c63b0', fontSize: 10, padding: '3px 8px' }}>BIOMETRIC</span>
+                      <h6 className="mb-0 fw-bold" style={{ color: '#0c63b0', fontSize: 14 }}>04:02 PM</h6>
+                      <p className="mb-1 fw-semibold" style={{ fontSize: 12 }}>Check Out</p>
+                      <span className="badge rounded-pill" style={{ background: '#dceefe', color: '#0c63b0', fontSize: 9.5, padding: '2px 7px' }}>BIOMETRIC</span>
                     </div>
                   </div>
                 </CardBody>
@@ -1212,10 +2125,34 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     icon="ri-history-line"
                     action={(
                       <div className="d-flex align-items-center gap-2">
-                        <span className="badge rounded-pill" style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', fontSize: 11, padding: '4px 10px', border: '1px solid var(--vz-border-color)' }}>
-                          <i className="ri-calendar-line me-1" /> April 2026
-                        </span>
-                        <button type="button" className="btn btn-sm rounded-pill fw-semibold" style={{ background: GRAD_PURPLE, color: '#fff', border: 'none', fontSize: 12, padding: '4px 12px' }}>
+                        <Dropdown isOpen={monthOpen} toggle={() => setMonthOpen(o => !o)}>
+                          <DropdownToggle
+                            tag="button"
+                            type="button"
+                            className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
+                            style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11.5, padding: '4px 12px' }}
+                          >
+                            <i className="ri-calendar-line" /> {attMonth}
+                            <i className="ri-arrow-down-s-line" />
+                          </DropdownToggle>
+                          <DropdownMenu end>
+                            {ATT_MONTHS.map(m => (
+                              <DropdownItem
+                                key={m.key}
+                                active={attMonth === m.label}
+                                onClick={() => setAttMonth(m.label)}
+                              >
+                                {m.label}
+                              </DropdownItem>
+                            ))}
+                          </DropdownMenu>
+                        </Dropdown>
+                        <button
+                          type="button"
+                          className="btn btn-sm rounded-pill fw-semibold"
+                          style={{ background: GRAD_PURPLE, color: '#fff', border: 'none', fontSize: 12, padding: '4px 12px' }}
+                          onClick={() => toast.info('Exporting timelogs', `Preparing ${attMonth} export…`)}
+                        >
                           <i className="ri-download-2-line me-1" /> Export Timelogs
                         </button>
                       </div>
@@ -1374,27 +2311,27 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           {vaultTab === 'employee' && VAULT_EMPLOYEE.map(section => (
             <Card className="mb-3" style={cardStyle} key={section.title}>
               <CardBody className="p-0">
-                <div className="d-flex align-items-start justify-content-between gap-3 px-3 py-3" style={{ background: 'linear-gradient(135deg, rgba(64,81,137,0.04), rgba(102,145,231,0.02))', borderBottom: '1px solid var(--vz-border-color)' }}>
-                  <div className="d-flex align-items-start gap-2">
-                    <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 40, height: 40, background: section.iconTint, color: section.iconFg, fontSize: 20 }}>
+                <div className="d-flex align-items-center justify-content-between gap-3 px-3 py-2" style={{ background: 'linear-gradient(135deg, rgba(64,81,137,0.05), rgba(102,145,231,0.02))', borderBottom: '1px solid var(--vz-border-color)' }}>
+                  <div className="d-flex align-items-center gap-2">
+                    <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 32, height: 32, background: section.iconTint, color: section.iconFg, fontSize: 16 }}>
                       <i className={section.icon} />
                     </span>
                     <div>
-                      <h6 className="mb-0 fw-bold">{section.title}</h6>
-                      <small className="text-muted">{section.subtitle}</small>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 13.5 }}>{section.title}</h6>
+                      <small className="text-muted" style={{ fontSize: 11 }}>{section.subtitle}</small>
                     </div>
                   </div>
                   <div className="text-end">
-                    <h3 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 28, lineHeight: 1 }}>{section.docs.length}</h3>
-                    <small className="text-muted text-uppercase" style={{ fontSize: 10, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
+                    <h4 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 22, lineHeight: 1 }}>{section.docs.length}</h4>
+                    <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
                   </div>
                 </div>
                 <div className="table-responsive">
-                  <table className="table align-middle mb-0" style={{ fontSize: 13 }}>
-                    <thead style={{ background: 'var(--vz-secondary-bg)' }}>
+                  <table className="table align-middle mb-0 ep-vault-table">
+                    <thead>
                       <tr>
                         {['SR', 'Document Name', 'ID / Number', 'Issuing Authority', 'Issue Date', 'Expiry Date', 'Attachment', 'Status'].map(h => (
-                          <th key={h} style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px' }}>{h}</th>
+                          <th key={h}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1403,25 +2340,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         const st = VAULT_STATUS_TONE[doc.status];
                         return (
                           <tr key={`${section.title}-${doc.name}`}>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="text-muted">{idx + 1}</td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="fw-semibold">{doc.name}</td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                            <td className="text-muted">{idx + 1}</td>
+                            <td className="fw-semibold">{doc.name}</td>
+                            <td>
                               {doc.idNumber
-                                ? <span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '3px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 600 }}>{doc.idNumber}</span>
+                                ? <span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600 }}>{doc.idNumber}</span>
                                 : <span className="text-muted">—</span>}
                             </td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>{doc.authority || <span className="text-muted">—</span>}</td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="font-monospace">{doc.issueDate || <span className="text-muted">—</span>}</td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="font-monospace">{doc.expiryDate || <span className="text-muted">—</span>}</td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                            <td>{doc.authority || <span className="text-muted">—</span>}</td>
+                            <td className="font-monospace">{doc.issueDate || <span className="text-muted">—</span>}</td>
+                            <td className="font-monospace">{doc.expiryDate || <span className="text-muted">—</span>}</td>
+                            <td>
                               {doc.attachment
-                                ? <a href="#" onClick={e => e.preventDefault()} className="d-inline-flex align-items-center gap-1 text-decoration-none" style={{ background: '#d6f4e3', color: '#108548', padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 600 }}>
+                                ? <a href="#" onClick={e => { e.preventDefault(); toast.info('Downloading attachment', `${doc.attachment} is being prepared…`); }} className="d-inline-flex align-items-center gap-1 text-decoration-none" style={{ background: 'rgba(16,185,129,0.10)', color: '#0a8a78', padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, border: '1px solid rgba(16,185,129,0.25)' }}>
                                     <i className="ri-file-text-line" /> {doc.attachment}
                                   </a>
                                 : <span className="text-muted">—</span>}
                             </td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
-                              <span className="d-inline-flex align-items-center gap-1 fw-semibold text-uppercase" style={{ fontSize: 10.5, padding: '4px 10px', borderRadius: 999, background: st.bg, color: st.fg, letterSpacing: '0.04em' }}>
+                            <td>
+                              <span className="d-inline-flex align-items-center gap-1 fw-semibold text-uppercase" style={{ fontSize: 9.5, padding: '3px 9px', borderRadius: 999, background: st.bg, color: st.fg, letterSpacing: '0.04em' }}>
                                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot }} /> {doc.status}
                               </span>
                             </td>
@@ -1439,27 +2376,27 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           {vaultTab === 'organizational' && VAULT_ORG.map(section => (
             <Card className="mb-3" style={cardStyle} key={section.title}>
               <CardBody className="p-0">
-                <div className="d-flex align-items-start justify-content-between gap-3 px-3 py-3" style={{ background: 'linear-gradient(135deg, rgba(64,81,137,0.04), rgba(102,145,231,0.02))', borderBottom: '1px solid var(--vz-border-color)' }}>
-                  <div className="d-flex align-items-start gap-2">
-                    <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 40, height: 40, background: section.iconTint, color: section.iconFg, fontSize: 20 }}>
+                <div className="d-flex align-items-center justify-content-between gap-3 px-3 py-2" style={{ background: 'linear-gradient(135deg, rgba(64,81,137,0.05), rgba(102,145,231,0.02))', borderBottom: '1px solid var(--vz-border-color)' }}>
+                  <div className="d-flex align-items-center gap-2">
+                    <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 32, height: 32, background: section.iconTint, color: section.iconFg, fontSize: 16 }}>
                       <i className={section.icon} />
                     </span>
                     <div>
-                      <h6 className="mb-0 fw-bold">{section.title}</h6>
-                      <small className="text-muted">{section.subtitle}</small>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 13.5 }}>{section.title}</h6>
+                      <small className="text-muted" style={{ fontSize: 11 }}>{section.subtitle}</small>
                     </div>
                   </div>
                   <div className="text-end">
-                    <h3 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 28, lineHeight: 1 }}>{section.docs.length}</h3>
-                    <small className="text-muted text-uppercase" style={{ fontSize: 10, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
+                    <h4 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 22, lineHeight: 1 }}>{section.docs.length}</h4>
+                    <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
                   </div>
                 </div>
                 <div className="table-responsive">
-                  <table className="table align-middle mb-0" style={{ fontSize: 13 }}>
-                    <thead style={{ background: 'var(--vz-secondary-bg)' }}>
+                  <table className="table align-middle mb-0 ep-vault-table">
+                    <thead>
                       <tr>
                         {['SR', 'Document Name', 'Type', 'Effective Date', 'Valid Until', 'Attachment', 'Status'].map(h => (
-                          <th key={h} style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px' }}>{h}</th>
+                          <th key={h}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -1471,24 +2408,24 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           : { bg: '#dceefe', fg: '#0c63b0' };
                         return (
                           <tr key={`${section.title}-${doc.name}`}>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="text-muted">{idx + 1}</td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="fw-semibold">{doc.name}</td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
-                              <span className="d-inline-flex align-items-center fw-semibold text-uppercase" style={{ fontSize: 10.5, padding: '4px 10px', borderRadius: 999, background: typeTone.bg, color: typeTone.fg, letterSpacing: '0.04em' }}>
+                            <td className="text-muted">{idx + 1}</td>
+                            <td className="fw-semibold">{doc.name}</td>
+                            <td>
+                              <span className="d-inline-flex align-items-center fw-semibold text-uppercase" style={{ fontSize: 9.5, padding: '3px 9px', borderRadius: 999, background: typeTone.bg, color: typeTone.fg, letterSpacing: '0.04em' }}>
                                 {doc.type}
                               </span>
                             </td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="font-monospace">{doc.effectiveDate || <span className="text-muted">—</span>}</td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="font-monospace">{doc.validUntil || <span className="text-muted">—</span>}</td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                            <td className="font-monospace">{doc.effectiveDate || <span className="text-muted">—</span>}</td>
+                            <td className="font-monospace">{doc.validUntil || <span className="text-muted">—</span>}</td>
+                            <td>
                               {doc.attachment
-                                ? <a href="#" onClick={e => e.preventDefault()} className="d-inline-flex align-items-center gap-1 text-decoration-none" style={{ background: '#d6f4e3', color: '#108548', padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 600 }}>
+                                ? <a href="#" onClick={e => { e.preventDefault(); toast.info('Downloading attachment', `${doc.attachment} is being prepared…`); }} className="d-inline-flex align-items-center gap-1 text-decoration-none" style={{ background: 'rgba(16,185,129,0.10)', color: '#0a8a78', padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, border: '1px solid rgba(16,185,129,0.25)' }}>
                                     <i className="ri-file-text-line" /> {doc.attachment}
                                   </a>
                                 : <span className="text-muted">—</span>}
                             </td>
-                            <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
-                              <span className="d-inline-flex align-items-center gap-1 fw-semibold text-uppercase" style={{ fontSize: 10.5, padding: '4px 10px', borderRadius: 999, background: st.bg, color: st.fg, letterSpacing: '0.04em' }}>
+                            <td>
+                              <span className="d-inline-flex align-items-center gap-1 fw-semibold text-uppercase" style={{ fontSize: 9.5, padding: '3px 9px', borderRadius: 999, background: st.bg, color: st.fg, letterSpacing: '0.04em' }}>
                                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot }} /> {doc.status}
                               </span>
                             </td>
@@ -1507,15 +2444,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {/* ── Tab: Payroll Details ── */}
       {tab === 'payroll' && (
         <>
-          <div className="d-flex justify-content-center mb-3">
-            <div className="ep-subtab">
-              <button type="button" onClick={() => setPayrollTab('summary')} className={`ep-subtab-btn${payrollTab === 'summary' ? ' is-active' : ''}`}>
-                <i className="ri-calendar-line" /> Payroll Summary
-              </button>
-              <button type="button" onClick={() => setPayrollTab('details')} className={`ep-subtab-btn${payrollTab === 'details' ? ' is-active' : ''}`}>
-                <i className="ri-money-dollar-circle-line" /> Payment Details
-              </button>
-            </div>
+          <div className="ep-pay-subtab mb-3">
+            <button
+              type="button"
+              onClick={() => setPayrollTab('summary')}
+              className={`ep-pay-subtab-btn${payrollTab === 'summary' ? ' is-active is-summary' : ''}`}
+            >
+              <i className="ri-calendar-line" /> Payroll Summary
+            </button>
+            <button
+              type="button"
+              onClick={() => setPayrollTab('details')}
+              className={`ep-pay-subtab-btn${payrollTab === 'details' ? ' is-active is-details' : ''}`}
+            >
+              <i className="ri-money-dollar-circle-line" /> Payment Details
+            </button>
           </div>
 
           {payrollTab === 'summary' && (
@@ -1547,7 +2490,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           <p className="fs-10 mb-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.78)' }}>Status</p>
                           <h6 className="mb-0 text-white fw-bold lh-1">Active</h6>
                         </div>
-                        <button type="button" className="btn btn-light rounded-pill fw-semibold" style={{ fontSize: 12, padding: '8px 14px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-light rounded-pill fw-semibold"
+                          style={{ fontSize: 12, padding: '8px 14px' }}
+                          onClick={() => setPaySlipOpen(true)}
+                        >
                           <i className="ri-download-2-line me-1" /> View Payslip
                         </button>
                       </div>
@@ -1558,87 +2506,158 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
               <Row className="g-3 mb-3 align-items-stretch">
                 <Col xl={6}>
-                  <Card className="h-100 mb-0" style={cardStyle}>
-                    <CardBody>
-                      <SectionHeader
-                        title="Payment Information"
-                        gradient={GRAD_INFO}
-                        icon="ri-bank-card-line"
-                        action={<span className="badge rounded-pill fw-semibold fs-11 px-2 py-1" style={{ background: '#fff7e6', color: '#a4661c' }}>● Not Initiated</span>}
-                      />
-                      <div className="mb-3">
-                        Salary Payment Mode: <strong>Bank Transfer</strong>
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                    <div
+                      className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+                      style={{
+                        borderBottom: '1px solid rgba(41,156,219,0.18)',
+                        background: 'linear-gradient(135deg, rgba(41,156,219,0.14) 0%, rgba(41,156,219,0.04) 60%, rgba(41,156,219,0.01) 100%)',
+                      }}
+                    >
+                      <div className="d-flex align-items-center gap-2">
+                        <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
+                          <i className="ri-bank-card-line" />
+                        </span>
+                        <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Payment Information</h6>
                       </div>
-                      <Row>
-                        <Field label="Bank Name"      value="Kotak Mahindra Bank" />
-                        <Field label="Account Number" value={<span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '2px 8px', borderRadius: 6 }}>XXXXXXXX36</span>} />
-                        <Field label="IFSC Code"      value={<span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '2px 8px', borderRadius: 6 }}>KKBK0000823</span>} />
-                        <Field label="Name on Account" value={employee?.name} />
-                        <Field label="Branch"         value="Silvaasa" />
-                        <Field label="Account Type"   value="Salary" />
+                      <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10, padding: '3px 9px', borderRadius: 999, background: 'rgba(245,158,11,0.12)', color: '#a16207', border: '1px solid rgba(245,158,11,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#f59e0b' }} /> Not Initiated
+                      </span>
+                    </div>
+                    <div className="px-3 py-3 flex-grow-1">
+                      <p className="mb-3" style={{ fontSize: 12.5 }}>
+                        Salary Payment Mode: <strong style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>Bank Transfer</strong>
+                      </p>
+                      <Row className="g-3">
+                        <Col md={6}><div className="ep-field-label">Bank Name</div><div className="ep-field-value">Kotak Mahindra Bank</div></Col>
+                        <Col md={6}>
+                          <div className="ep-field-label">Account Number</div>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>XXXXXXXX36</span>
+                        </Col>
+                        <Col md={6}>
+                          <div className="ep-field-label">IFSC Code</div>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>KKBK0000823</span>
+                        </Col>
+                        <Col md={6}><div className="ep-field-label">Name on Account</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
+                        <Col md={6}><div className="ep-field-label">Branch</div><div className="ep-field-value">Silvaasa</div></Col>
+                        <Col md={6}><div className="ep-field-label">Account Type</div><div className="ep-field-value">Salary</div></Col>
                       </Row>
-                    </CardBody>
-                  </Card>
+                    </div>
+                  </div>
                 </Col>
                 <Col xl={6}>
-                  <Card className="h-100 mb-0" style={cardStyle}>
-                    <CardBody>
-                      <SectionHeader title="Identity Information" gradient={GRAD_PURPLE} icon="ri-user-2-line" />
-                      <div className="mb-2 fw-semibold" style={{ color: '#5a3fd1' }}>
-                        PAN Card <span className="badge rounded-pill ms-1" style={{ background: '#d6f4e3', color: '#108548', fontSize: 10 }}>● Verified</span>
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                    <div
+                      className="d-flex align-items-center gap-3 px-3 py-2"
+                      style={{
+                        borderBottom: '1px solid rgba(168,85,247,0.18)',
+                        background: 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)',
+                      }}
+                    >
+                      <span className="ep-section-icon" style={{ background: 'rgba(168,85,247,0.18)', color: '#7c3aed' }}>
+                        <i className="ri-user-2-line" />
+                      </span>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Identity Information</h6>
+                    </div>
+                    <div className="px-3 py-3 flex-grow-1">
+                      {/* PAN Card sub-header */}
+                      <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-2" style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.20)', borderRadius: 8 }}>
+                        <span className="fw-bold" style={{ color: '#7c3aed', fontSize: 12.5 }}>PAN Card</span>
+                        <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: 'rgba(16,185,129,0.12)', color: '#0a8a78', border: '1px solid rgba(16,185,129,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} /> Verified
+                        </span>
                       </div>
-                      <Row>
-                        <Field label="PAN Number"  value={<span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '2px 8px', borderRadius: 6 }}>XXXXXX89K</span>} />
-                        <Field label="Name"        value={employee?.name} />
-                        <Field label="Date of Birth" value="1985-11-02" />
-                        <Field label="Parent Name" value="Kiran Kale" />
+                      <Row className="g-3 mb-3">
+                        <Col md={3}>
+                          <div className="ep-field-label">PAN Number</div>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>XXXXXX89K</span>
+                        </Col>
+                        <Col md={3}><div className="ep-field-label">Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
+                        <Col md={3}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">1985-11-02</div></Col>
+                        <Col md={3}><div className="ep-field-label">Parent Name</div><div className="ep-field-value">Kiran Kale</div></Col>
                       </Row>
-                      <div className="mb-2 mt-2 fw-semibold" style={{ color: '#0a8a78' }}>
-                        Aadhaar Card <span className="badge rounded-pill ms-1" style={{ background: '#d6f4e3', color: '#108548', fontSize: 10 }}>● Verified</span>
+
+                      {/* Aadhaar Card sub-header */}
+                      <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-2" style={{ background: 'rgba(10,179,156,0.08)', border: '1px solid rgba(10,179,156,0.20)', borderRadius: 8 }}>
+                        <span className="fw-bold" style={{ color: '#0a8a78', fontSize: 12.5 }}>Aadhaar Card</span>
+                        <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: 'rgba(16,185,129,0.12)', color: '#0a8a78', border: '1px solid rgba(16,185,129,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} /> Verified
+                        </span>
                       </div>
-                      <Row>
-                        <Field label="Aadhaar Number" value={<span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '2px 8px', borderRadius: 6 }}>XXXX-XXXX-2821</span>} />
-                        <Field label="Enrollment No"  value="147" />
-                        <Field label="Address"        value="21 Jay Mahalar..." />
-                        <Field label="Gender"         value="Male" />
+                      <Row className="g-3">
+                        <Col md={3}>
+                          <div className="ep-field-label">Aadhaar Number</div>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>XXXX-XXXX-2821</span>
+                        </Col>
+                        <Col md={3}><div className="ep-field-label">Enrollment No</div><div className="ep-field-value">147</div></Col>
+                        <Col md={3}><div className="ep-field-label">Address</div><div className="ep-field-value">21 Jay Mahalar…</div></Col>
+                        <Col md={3}><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
                       </Row>
-                    </CardBody>
-                  </Card>
+                    </div>
+                  </div>
                 </Col>
               </Row>
 
               <Row className="g-3 mb-3 align-items-stretch">
                 <Col xl={6}>
-                  <Card className="h-100 mb-0" style={cardStyle}>
-                    <CardBody>
-                      <SectionHeader title="Address Proof" gradient={GRAD_SUCCESS} icon="ri-map-pin-line" />
-                      <div className="mb-2 fw-semibold" style={{ color: '#0a8a78' }}>
-                        Aadhaar Card (Address Proof) <span className="badge rounded-pill ms-1" style={{ background: '#d6f4e3', color: '#108548', fontSize: 10 }}>● Verified</span>
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                    <div
+                      className="d-flex align-items-center gap-3 px-3 py-2"
+                      style={{
+                        borderBottom: '1px solid rgba(10,179,156,0.18)',
+                        background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
+                      }}
+                    >
+                      <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
+                        <i className="ri-map-pin-line" />
+                      </span>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Address Proof</h6>
+                    </div>
+                    <div className="px-3 py-3 flex-grow-1">
+                      <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-3" style={{ background: 'rgba(10,179,156,0.08)', border: '1px solid rgba(10,179,156,0.20)', borderRadius: 8 }}>
+                        <span className="fw-bold" style={{ color: '#0a8a78', fontSize: 12.5 }}>Aadhaar Card (Address Proof)</span>
+                        <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10, padding: '2px 8px', borderRadius: 999, background: 'rgba(16,185,129,0.12)', color: '#0a8a78', border: '1px solid rgba(16,185,129,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} /> Verified
+                        </span>
                       </div>
-                      <Row>
-                        <Field label="Aadhaar Number" value={<span className="font-monospace" style={{ background: '#ece6ff', color: '#5a3fd1', padding: '2px 8px', borderRadius: 6 }}>XXXX-XXXX-2821</span>} />
-                        <Field label="Enrollment No"  value="147" />
-                        <Field label="Address"        value="21 Jay Mahalar, Pune" />
-                        <Field label="Verification"   value="01/01/2024" />
+                      <Row className="g-3">
+                        <Col md={6}>
+                          <div className="ep-field-label">Aadhaar Number</div>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>XXXX-XXXX-2821</span>
+                        </Col>
+                        <Col md={6}><div className="ep-field-label">Enrollment No</div><div className="ep-field-value">147</div></Col>
+                        <Col md={6}><div className="ep-field-label">Address</div><div className="ep-field-value">21 Jay Mahalar, Pune</div></Col>
+                        <Col md={6}><div className="ep-field-label">Verification</div><div className="ep-field-value font-monospace">01/01/2024</div></Col>
                       </Row>
-                    </CardBody>
-                  </Card>
+                    </div>
+                  </div>
                 </Col>
                 <Col xl={6}>
-                  <Card className="h-100 mb-0" style={cardStyle}>
-                    <CardBody>
-                      <SectionHeader title="Statutory Information" gradient={GRAD_WARNING} icon="ri-shield-line" />
-                      <div className="mb-2">
-                        <span className="badge rounded-pill" style={{ background: '#fde8c4', color: '#a4661c', fontSize: 11, padding: '4px 10px' }}>PT Details</span>
-                      </div>
-                      <Row>
-                        <Field label="State"               value="Maharashtra" />
-                        <Field label="Registered Location" value="Maharashtra" />
-                        <Field label="PT Applicable"       value="Yes" />
-                        <Field label="Professional Tax"    value="₹200/month" />
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                    <div
+                      className="d-flex align-items-center gap-3 px-3 py-2"
+                      style={{
+                        borderBottom: '1px solid rgba(245,158,11,0.20)',
+                        background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0.04) 60%, rgba(245,158,11,0.01) 100%)',
+                      }}
+                    >
+                      <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
+                        <i className="ri-shield-line" />
+                      </span>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Statutory Information</h6>
+                    </div>
+                    <div className="px-3 py-3 flex-grow-1">
+                      <span className="d-inline-flex align-items-center fw-semibold mb-3" style={{ fontSize: 10.5, padding: '3px 10px', borderRadius: 999, background: 'rgba(245,158,11,0.12)', color: '#a16207', border: '1px solid rgba(245,158,11,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        PT Details
+                      </span>
+                      <Row className="g-3">
+                        <Col md={6}><div className="ep-field-label">State</div><div className="ep-field-value">Maharashtra</div></Col>
+                        <Col md={6}><div className="ep-field-label">Registered Location</div><div className="ep-field-value">Maharashtra</div></Col>
+                        <Col md={6}><div className="ep-field-label">PT Applicable</div><div className="ep-field-value">Yes</div></Col>
+                        <Col md={6}><div className="ep-field-label">Professional Tax</div><div className="ep-field-value">₹200/month</div></Col>
                       </Row>
-                    </CardBody>
-                  </Card>
+                    </div>
+                  </div>
                 </Col>
               </Row>
             </>
@@ -1648,39 +2667,60 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <>
               <Row className="g-3 mb-3 align-items-stretch">
                 <Col xl={5}>
-                  <Card className="h-100 mb-0 border-0" style={{ borderRadius: 18, overflow: 'hidden' }}>
-                    <div style={{ background: 'linear-gradient(135deg, #0ab39c 0%, #02c8a7 100%)', color: '#fff', padding: '20px 24px', position: 'relative', overflow: 'hidden' }}>
-                      <div style={{ position: 'absolute', top: -30, right: -20, width: 140, height: 140, borderRadius: '50%', background: 'rgba(255,255,255,0.10)' }} />
-                      <p className="mb-1 fs-11 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}>Current Compensation</p>
-                      <h2 className="mb-0 fw-bold text-white" style={{ fontSize: 36 }}>₹3,02,400</h2>
-                      <p className="mb-3 fs-12" style={{ color: 'rgba(255,255,255,0.85)' }}>Per Annum</p>
-                      <div className="d-flex gap-3 pt-3 border-top" style={{ borderColor: 'rgba(255,255,255,0.20) !important' }}>
+                  <div
+                    className="ep-section-card-flat ep-section-card h-100 d-flex flex-column"
+                    style={{
+                      background: 'linear-gradient(135deg, #047857 0%, #0a8a5a 50%, #0ab39c 100%)',
+                      color: '#fff', padding: '14px 18px',
+                      position: 'relative', overflow: 'hidden',
+                      border: 'none',
+                    }}
+                  >
+                    <div style={{ position: 'absolute', top: -30, right: -20, width: 130, height: 130, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', pointerEvents: 'none' }} />
+                    <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div>
+                        <p className="mb-1" style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.78)' }}>Current Compensation</p>
+                        <h2 className="mb-0 fw-bold text-white" style={{ fontSize: 28, lineHeight: 1.1 }}>₹3,02,400</h2>
+                        <p className="mb-0 mt-1" style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.80)' }}>Per Annum</p>
+                      </div>
+                      <div className="d-flex gap-3 mt-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.18)' }}>
                         <div>
-                          <p className="mb-1 fs-10 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.75)' }}>Monthly</p>
-                          <h6 className="mb-0 text-white fw-bold">₹25,200</h6>
+                          <p className="mb-1" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>Monthly</p>
+                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 14 }}>₹25,200</h6>
                         </div>
-                        <div className="ps-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.20)' }}>
-                          <p className="mb-1 fs-10 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.75)' }}>Annual</p>
-                          <h6 className="mb-0 text-white fw-bold">₹3,02,400</h6>
+                        <div className="ps-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.18)' }}>
+                          <p className="mb-1" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>Annual</p>
+                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 14 }}>₹3,02,400</h6>
                         </div>
                       </div>
                     </div>
-                  </Card>
+                  </div>
                 </Col>
                 <Col xl={7}>
-                  <Card className="h-100 mb-0" style={cardStyle}>
-                    <CardBody>
-                      <SectionHeader title="Payroll Info" gradient={GRAD_PURPLE} icon="ri-briefcase-line" />
-                      <Row>
-                        <Field label="Legal Entity"      value="INORBVICT Healthcare India Pvt. Ltd." />
-                        <Field label="Remuneration Type" value="Annual" />
-                        <Field label="Pay Cycle"         value="Monthly" />
-                        <Field label="Payroll Status"    value="Active" />
-                        <Field label="Tax Regime"        value="New Regime (115BAC)" />
-                        <Field label="Pay Group"         value="Default" />
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                    <div
+                      className="d-flex align-items-center gap-3 px-3 py-2"
+                      style={{
+                        borderBottom: '1px solid rgba(99,102,241,0.18)',
+                        background: 'linear-gradient(135deg, rgba(99,102,241,0.14) 0%, rgba(99,102,241,0.04) 60%, rgba(99,102,241,0.01) 100%)',
+                      }}
+                    >
+                      <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
+                        <i className="ri-briefcase-line" />
+                      </span>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Payroll Info</h6>
+                    </div>
+                    <div className="px-3 py-3 flex-grow-1">
+                      <Row className="g-3">
+                        <Col md={4}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">INORBVICT Healthcare India Pvt. Ltd.</div></Col>
+                        <Col md={4}><div className="ep-field-label">Remuneration Type</div><div className="ep-field-value">Annual</div></Col>
+                        <Col md={4}><div className="ep-field-label">Pay Cycle</div><div className="ep-field-value">Monthly</div></Col>
+                        <Col md={4}><div className="ep-field-label">Payroll Status</div><div className="ep-field-value">Active</div></Col>
+                        <Col md={4}><div className="ep-field-label">Tax Regime</div><div className="ep-field-value">New Regime (115BAC)</div></Col>
+                        <Col md={4}><div className="ep-field-label">Pay Group</div><div className="ep-field-value">Default</div></Col>
                       </Row>
-                    </CardBody>
-                  </Card>
+                    </div>
+                  </div>
                 </Col>
               </Row>
 
@@ -1699,37 +2739,43 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     gradient={GRAD_SUCCESS}
                     icon="ri-line-chart-line"
                     action={
-                      <button type="button" className="btn btn-sm rounded-pill fw-semibold" style={{ background: GRAD_SUCCESS, color: '#fff', border: 'none', boxShadow: '0 4px 10px rgba(10,179,156,0.25)', fontSize: 12, padding: '4px 14px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-sm rounded-pill fw-semibold"
+                        style={{ background: GRAD_SUCCESS, color: '#fff', border: 'none', boxShadow: '0 4px 10px rgba(10,179,156,0.25)', fontSize: 12, padding: '4px 14px' }}
+                        onClick={() => setReviseOpen(true)}
+                      >
                         <i className="ri-edit-line me-1" /> Revise Salary
                       </button>
                     }
                   />
-                  {[
-                    { label: 'SALARY REVISION', tag: 'CURRENT', date: 'Effective 01 Nov 2025', regular: '₹3,02,400', total: '₹3,02,400', current: true },
-                    { label: 'SALARY REVISION', tag: '',        date: 'Effective 23 May 2025', regular: '₹2,22,000', total: '₹2,22,000', current: false },
-                    { label: 'SALARY REVISION', tag: '',        date: 'Effective 27 Jan 2025', regular: '₹72,000',   total: '₹72,000',   current: false },
-                  ].map((row, idx) => (
-                    <div key={idx} className="d-flex align-items-center gap-3 py-3 flex-wrap" style={{ borderBottom: idx < 2 ? '1px solid var(--vz-border-color)' : 'none' }}>
+                  {SALARY_TIMELINE.map((row, idx) => (
+                    <div key={row.id} className="d-flex align-items-center gap-3 py-3 flex-wrap" style={{ borderBottom: idx < SALARY_TIMELINE.length - 1 ? '1px solid var(--vz-border-color)' : 'none' }}>
                       <span className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style={{ width: 18, height: 18, background: row.current ? '#0ab39c' : 'transparent', border: row.current ? 'none' : '2px solid var(--vz-border-color)', boxShadow: row.current ? '0 0 0 4px rgba(10,179,156,0.18)' : 'none' }}>
                         {row.current && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
                       </span>
                       <div className="flex-grow-1 min-w-0">
                         <div className="d-flex align-items-center gap-2 flex-wrap">
-                          <p className="mb-0 fs-11 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em' }}>{row.label}</p>
-                          {row.tag && <span className="badge rounded-pill" style={{ background: '#d6f4e3', color: '#108548', fontSize: 10 }}>{row.tag}</span>}
+                          <p className="mb-0 fs-11 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em' }}>SALARY REVISION</p>
+                          {row.current && <span className="badge rounded-pill" style={{ background: '#d6f4e3', color: '#108548', fontSize: 10 }}>CURRENT</span>}
                         </div>
-                        <small className="text-muted">{row.date}</small>
+                        <small className="text-muted">Effective {row.dateShort}</small>
                       </div>
                       <div className="text-end">
                         <p className="mb-0 fs-11 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)' }}>Regular Salary</p>
-                        <h6 className="mb-0 fw-bold">{row.regular}</h6>
+                        <h6 className="mb-0 fw-bold">₹{row.annual.toLocaleString('en-IN')}</h6>
                       </div>
                       <span style={{ color: 'var(--vz-secondary-color)' }}>=</span>
                       <div className="text-end">
                         <p className="mb-0 fs-11 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)' }}>Total</p>
-                        <h6 className="mb-0 fw-bold" style={{ color: '#5a3fd1' }}>{row.total}</h6>
+                        <h6 className="mb-0 fw-bold" style={{ color: '#5a3fd1' }}>₹{row.annual.toLocaleString('en-IN')}</h6>
                       </div>
-                      <button type="button" className="btn btn-sm rounded-pill fw-semibold" style={{ background: '#fff', color: '#374151', border: '1px solid var(--vz-border-color)', fontSize: 12 }}>
+                      <button
+                        type="button"
+                        className="btn btn-sm rounded-pill fw-semibold"
+                        style={{ background: '#fff', color: '#374151', border: '1px solid var(--vz-border-color)', fontSize: 12 }}
+                        onClick={() => { setBreakdownRowId(row.id); setBreakdownOpen(true); }}
+                      >
                         View Breakdown
                       </button>
                     </div>
@@ -1745,25 +2791,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {tab === 'expense' && (
         <>
           {/* Expense Overview hero — total claimed + 4 status counters */}
-          <Card className="mb-3 border-0" style={{ borderRadius: 18, overflow: 'hidden' }}>
+          <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
             <div
               style={{
                 background: 'linear-gradient(135deg, #5a3fd1 0%, #6366f1 50%, #7c5cfc 100%)',
                 color: '#fff',
-                padding: '20px 24px',
+                padding: '14px 20px',
                 position: 'relative',
                 overflow: 'hidden',
               }}
             >
-              <div style={{ position: 'absolute', top: -40, right: -30, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
+              <div style={{ position: 'absolute', top: -30, right: -20, width: 160, height: 160, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', pointerEvents: 'none' }} />
               <Row className="align-items-center g-3" style={{ position: 'relative' }}>
                 <Col xs={12} lg className="min-w-0">
-                  <p className="mb-1 fs-11 text-uppercase fw-semibold d-inline-flex align-items-center gap-1" style={{ color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}>
+                  <p className="mb-1 d-inline-flex align-items-center gap-1" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.78)' }}>
                     <i className="ri-wallet-3-line" /> Expense Overview
                   </p>
-                  <h2 className="mb-0 fw-bold text-white" style={{ fontSize: 36 }}>
+                  <h2 className="mb-0 fw-bold text-white" style={{ fontSize: 26, lineHeight: 1.1 }}>
                     ₹{totalClaimed.toLocaleString('en-IN')}
-                    <small className="ms-2 fs-13 fw-normal" style={{ color: 'rgba(255,255,255,0.85)' }}>Total Claimed</small>
+                    <small className="ms-2 fw-normal" style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>Total Claimed</small>
                   </h2>
                 </Col>
                 <Col xs={12} lg="auto">
@@ -1776,17 +2822,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     ].map(c => (
                       <div
                         key={c.label}
-                        className="text-center px-3 py-2"
+                        className="text-center px-2 py-1"
                         style={{
                           background: 'rgba(255,255,255,0.12)',
                           border: '1px solid rgba(255,255,255,0.20)',
-                          borderRadius: 14,
+                          borderRadius: 10,
                           backdropFilter: 'blur(6px)',
-                          minWidth: 96,
+                          minWidth: 76,
                         }}
                       >
-                        <h4 className="mb-0 fw-bold lh-1" style={{ color: c.color }}>{c.value}</h4>
-                        <p className="mb-0 fs-10 text-uppercase fw-semibold mt-1" style={{ color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}>
+                        <h5 className="mb-0 fw-bold lh-1" style={{ color: c.color, fontSize: 18 }}>{c.value}</h5>
+                        <p className="mb-0 mt-1" style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.78)' }}>
                           {c.label}
                         </p>
                       </div>
@@ -1799,26 +2845,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
           {/* Expense Claims */}
           <Card className="mb-3" style={cardStyle}>
-            <CardBody>
-              <div className="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-3">
+            <CardBody className="p-3">
+              <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
                 <div className="d-flex align-items-center gap-2">
                   <span
                     className="d-inline-flex align-items-center justify-content-center rounded-3"
-                    style={{ width: 36, height: 36, background: GRAD_PURPLE, boxShadow: '0 4px 10px rgba(64,81,137,0.20)' }}
+                    style={{ width: 32, height: 32, background: GRAD_PURPLE, boxShadow: '0 3px 8px rgba(64,81,137,0.20)' }}
                   >
-                    <i className="ri-file-list-3-line" style={{ color: '#fff', fontSize: 16 }} />
+                    <i className="ri-file-list-3-line" style={{ color: '#fff', fontSize: 14 }} />
                   </span>
                   <div>
-                    <h5 className="card-title mb-0">Expense Claims</h5>
-                    <small className="text-muted">
+                    <h6 className="card-title mb-0 fw-bold" style={{ fontSize: 14 }}>Expense Claims</h6>
+                    <small className="text-muted" style={{ fontSize: 11 }}>
                       {expenseCounts.all} total · {expenseCounts.approved} approved · {expenseCounts.pending} pending
                     </small>
                   </div>
                 </div>
                 <div className="d-flex align-items-center gap-2 flex-wrap">
-                  <div className="search-box" style={{ minWidth: 220 }}>
-                    <input type="text" className="form-control form-control-sm" placeholder="Search…" />
-                    <i className="ri-search-line search-icon" />
+                  <div className="search-box" style={{ minWidth: 200 }}>
+                    <input type="text" className="form-control form-control-sm" placeholder="Search…" style={{ fontSize: 12, height: 30 }} />
+                    <i className="ri-search-line search-icon" style={{ fontSize: 12 }} />
                   </div>
                   <button
                     type="button"
@@ -1827,7 +2873,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       background: 'var(--vz-card-bg)',
                       color: '#374151',
                       border: '1px solid var(--vz-border-color)',
-                      fontSize: 12, padding: '6px 14px',
+                      fontSize: 11.5, padding: '4px 12px',
                     }}
                   >
                     <i className="ri-download-2-line me-1" /> Export
@@ -1839,9 +2885,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       background: 'linear-gradient(135deg, #f97316, #fb923c)',
                       color: '#fff',
                       border: 'none',
-                      boxShadow: '0 4px 12px rgba(249,115,22,0.30)',
-                      fontSize: 12, padding: '6px 14px',
+                      boxShadow: '0 4px 10px rgba(249,115,22,0.28)',
+                      fontSize: 11.5, padding: '4px 12px',
                     }}
+                    onClick={() => { setClaimMode('expense'); setClaimOpen(true); }}
                   >
                     <i className="ri-add-line me-1" /> Raise New Claim
                   </button>
@@ -1864,8 +2911,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       onClick={() => setExpenseFilter(f.key)}
                       className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold"
                       style={{
-                        fontSize: 12.5,
-                        padding: '5px 14px',
+                        fontSize: 11.5,
+                        padding: '4px 12px',
                         background: on ? f.tint : 'var(--vz-card-bg)',
                         color: on ? f.active : 'var(--vz-secondary-color)',
                         border: `1px solid ${on ? f.active : 'var(--vz-border-color)'}`,
@@ -1876,11 +2923,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <span
                         className="d-inline-flex align-items-center justify-content-center rounded-pill"
                         style={{
-                          minWidth: 22, height: 18,
-                          padding: '0 7px',
+                          minWidth: 20, height: 16,
+                          padding: '0 6px',
                           background: on ? f.active : 'var(--vz-secondary-bg)',
                           color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          fontSize: 10.5, fontWeight: 700,
+                          fontSize: 10, fontWeight: 700,
                         }}
                       >
                         {f.count}
@@ -1892,17 +2939,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
               {/* Claims table */}
               <div className="table-responsive">
-                <table className="table align-middle mb-0" style={{ fontSize: 13 }}>
+                <table className="table align-middle mb-0 ep-vault-table">
                   <thead>
                     <tr>
-                      <th style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>Exp ID</th>
-                      <th style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>Employee</th>
-                      <th style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>Category</th>
-                      <th style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>Description</th>
-                      <th style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>Expense Date</th>
-                      <th style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>Amount</th>
-                      <th style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>Proof of Payment</th>
-                      <th style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, padding: '10px 12px', borderBottom: '1px solid var(--vz-border-color)' }}>Payment Action</th>
+                      <th>Exp ID</th>
+                      <th>Employee</th>
+                      <th>Category</th>
+                      <th>Description</th>
+                      <th>Expense Date</th>
+                      <th>Amount</th>
+                      <th>Proof of Payment</th>
+                      <th>Payment Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1918,23 +2965,23 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       const st = EXPENSE_STATUS_TONE[c.status];
                       return (
                         <tr key={c.id}>
-                          <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                          <td>
                             <span
                               className="font-monospace fw-semibold"
                               style={{
-                                fontSize: 11.5, padding: '3px 10px', borderRadius: 999,
+                                fontSize: 11, padding: '2px 9px', borderRadius: 999,
                                 background: '#ece6ff', color: '#5a3fd1', letterSpacing: '0.02em',
                               }}
                             >
                               {c.id}
                             </span>
                           </td>
-                          <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                          <td>
                             <div className="d-flex align-items-center gap-2">
                               <div
                                 className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
                                 style={{
-                                  width: 28, height: 28, fontSize: 11,
+                                  width: 24, height: 24, fontSize: 10,
                                   background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
                                   boxShadow: `0 2px 6px ${accent}40`,
                                 }}
@@ -1944,11 +2991,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                               <span className="fw-semibold">{employee?.name || employeeId}</span>
                             </div>
                           </td>
-                          <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                          <td>
                             <span
                               className="d-inline-flex align-items-center gap-1 fw-semibold"
                               style={{
-                                fontSize: 11.5, padding: '4px 10px', borderRadius: 999,
+                                fontSize: 11, padding: '3px 9px', borderRadius: 999,
                                 background: cat.bg, color: cat.fg,
                               }}
                             >
@@ -1956,45 +3003,42 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                               {c.category}
                             </span>
                           </td>
-                          <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                          <td>
                             {c.description}
                           </td>
-                          <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="text-muted">
-                            {c.date}
-                          </td>
-                          <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }} className="fw-bold">
-                            ₹{c.amount.toLocaleString('en-IN')}
-                          </td>
-                          <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                          <td className="text-muted">{c.date}</td>
+                          <td className="fw-bold">₹{c.amount.toLocaleString('en-IN')}</td>
+                          <td>
                             <a
                               href="#"
-                              onClick={(e) => e.preventDefault()}
+                              onClick={(e) => { e.preventDefault(); toast.info('Downloading receipt', `${c.receipt} is being prepared…`); }}
                               className="d-inline-flex align-items-center gap-1 text-decoration-none"
                               style={{
-                                fontSize: 11.5,
-                                padding: '4px 10px',
+                                fontSize: 11,
+                                padding: '3px 9px',
                                 borderRadius: 8,
                                 background: 'rgba(239,68,68,0.10)',
                                 color: '#dc2626',
                                 fontWeight: 600,
+                                border: '1px solid rgba(239,68,68,0.25)',
                               }}
                             >
                               <i className="ri-file-text-line" />
                               {c.receipt}…
                             </a>
                           </td>
-                          <td style={{ padding: '12px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                          <td>
                             {c.status === 'Pending' ? (
-                              <div className="d-flex gap-2">
+                              <div className="d-flex gap-1">
                                 <button
                                   type="button"
                                   className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
                                   style={{
-                                    fontSize: 12,
-                                    padding: '4px 12px',
+                                    fontSize: 11,
+                                    padding: '3px 10px',
                                     background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
                                     color: '#fff', border: 'none',
-                                    boxShadow: '0 3px 8px rgba(10,179,156,0.25)',
+                                    boxShadow: '0 2px 6px rgba(10,179,156,0.25)',
                                   }}
                                 >
                                   <i className="ri-check-line" /> Approve
@@ -2003,11 +3047,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                                   type="button"
                                   className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
                                   style={{
-                                    fontSize: 12,
-                                    padding: '4px 12px',
+                                    fontSize: 11,
+                                    padding: '3px 10px',
                                     background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
                                     color: '#fff', border: 'none',
-                                    boxShadow: '0 3px 8px rgba(240,101,72,0.25)',
+                                    boxShadow: '0 2px 6px rgba(240,101,72,0.25)',
                                   }}
                                 >
                                   <i className="ri-close-line" /> Reject
@@ -2017,8 +3061,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                               <span
                                 className="d-inline-flex align-items-center gap-1 fw-semibold"
                                 style={{
-                                  fontSize: 11.5,
-                                  padding: '4px 12px',
+                                  fontSize: 11,
+                                  padding: '3px 10px',
                                   borderRadius: 999,
                                   background: st.bg,
                                   color: st.fg,
@@ -2051,19 +3095,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       )}
 
       </div>
+    </div>
 
-      {/* ── Attendance Regularization Modal ── */}
-      <Modal
-        isOpen={regOpen}
-        toggle={() => setRegOpen(false)}
-        centered
-        size="md"
-        backdrop="static"
-        fade={false}
-        modalClassName="ep-reg-modal"
-        backdropClassName="ep-reg-backdrop"
-        contentClassName="border-0"
-      >
+    {/* ── Attendance Regularization Modal ── */}
+    <EpModal open={regOpen} onClose={() => setRegOpen(false)} size="md" panelClassName="ep-reg-modal">
         <style>{`
           /* Lift the modal above the .ep-fullscreen-overlay (z-index 1080)
              so it isn't hidden behind the navy hero. Bootstrap defaults to
@@ -2216,11 +3251,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </button>
         </div>
 
-        <ModalBody style={{ padding: '20px 22px', maxHeight: '70vh', overflowY: 'auto' }}>
+        <div style={{ padding: '20px 22px', overflowY: 'auto', flex: '1 1 auto' }}>
           {/* Selected Date */}
           <div className="mb-3">
             <div className="ep-reg-label">Selected Date</div>
-            <input className="ep-reg-input" value="29 Apr 2026" readOnly />
+            <input className="ep-reg-input" value={regSelectedDate} readOnly />
           </div>
 
           {/* Radio options */}
@@ -2354,7 +3389,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               onChange={e => setRegNote(e.target.value)}
             />
           </div>
-        </ModalBody>
+        </div>
 
         <div className="ep-reg-footer">
           <button type="button" className="ep-reg-cancel" onClick={() => setRegOpen(false)}>
@@ -2368,7 +3403,874 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             Request
           </button>
         </div>
-      </Modal>
-    </div>
+      </EpModal>
+
+      {/* ── Payslip Viewer Modal ── */}
+      <EpModal open={paySlipOpen} onClose={() => setPaySlipOpen(false)} size="xl" panelClassName="ep-pay-modal">
+        <div className="ep-pay-shell">
+          {/* Header bar */}
+          <div className="ep-pay-header">
+            <div className="d-flex align-items-center gap-3">
+              <span className="ep-pay-logo">
+                <i className="ri-file-text-line" />
+              </span>
+              <div>
+                <h5 className="mb-0 fw-bold" style={{ fontSize: 16 }}>Payslip Viewer</h5>
+                <small className="text-muted">Select month and year to view or download payslip</small>
+              </div>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', border: 'none', fontSize: 12.5, padding: '8px 14px', borderRadius: 8, boxShadow: '0 4px 12px rgba(10,179,156,0.30)' }}>
+                <i className="ri-download-2-line" /> Download PDF
+              </button>
+              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 12.5, padding: '8px 14px', borderRadius: 8 }}>
+                <i className="ri-printer-line" /> Print
+              </button>
+              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 12.5, padding: '8px 14px', borderRadius: 8 }}>
+                <i className="ri-mail-line" /> Email
+              </button>
+              <button type="button" className="ep-pay-x" onClick={() => setPaySlipOpen(false)} aria-label="Close">
+                <i className="ri-close-line" style={{ fontSize: 18 }} />
+              </button>
+            </div>
+          </div>
+
+          {/* Body — sidebar + payslip preview */}
+          <div className="ep-pay-body">
+            {/* Sidebar */}
+            <aside className="ep-pay-sidebar">
+              <div className="ep-pay-side-label">Filter</div>
+              <div className="mb-3">
+                <div className="ep-pay-mini-label">Year</div>
+                <select className="ep-pay-input" value={paySlipYear} onChange={e => setPaySlipYear(e.target.value)}>
+                  {['2026','2025','2024'].map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <div className="mb-3">
+                <div className="ep-pay-mini-label">Month</div>
+                <select className="ep-pay-input" value={paySlipMonth} onChange={e => setPaySlipMonth(e.target.value)}>
+                  {['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+              <button type="button" className="ep-pay-side-btn">
+                <i className="ri-eye-line me-1" /> View Payslip
+              </button>
+
+              <div className="ep-pay-side-label mt-4">Recent Payslips</div>
+              <div className="d-flex flex-column gap-2">
+                {PAYSLIP_RECENT.map(p => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    className={`ep-pay-recent${p.now ? ' is-current' : ''}`}
+                    onClick={() => {
+                      const [m, y] = p.label.split(' ');
+                      const monthMap: Record<string,string> = { Jan:'January', Feb:'February', Mar:'March', Apr:'April', May:'May', Jun:'June', Jul:'July', Aug:'August', Sep:'September', Oct:'October', Nov:'November', Dec:'December' };
+                      setPaySlipMonth(monthMap[m] || m);
+                      setPaySlipYear(y);
+                    }}
+                  >
+                    <span>{p.label}</span>
+                    {p.now ? <span className="ep-pay-now">NOW</span> : <i className="ri-arrow-right-s-line" />}
+                  </button>
+                ))}
+              </div>
+            </aside>
+
+            {/* Payslip preview */}
+            <div className="ep-pay-preview">
+              {/* Company hero */}
+              <div className="ep-pay-company">
+                <div style={{ position: 'absolute', top: -40, right: -30, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+                <div className="d-flex align-items-start justify-content-between gap-3" style={{ position: 'relative', zIndex: 1 }}>
+                  <div className="d-flex align-items-center gap-3">
+                    <span className="ep-pay-company-logo">IN</span>
+                    <div>
+                      <h5 className="mb-1 text-white fw-bold" style={{ fontSize: 18 }}>INORBVICT Healthcare India Pvt. Ltd.</h5>
+                      <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12 }}>
+                        Pune, Maharashtra, India · GSTIN: 27XXXXXXXXXXX · CIN: U85190MH2020PTC339XXX
+                      </small>
+                    </div>
+                  </div>
+                  <div className="text-end">
+                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYSLIP</div>
+                    <h4 className="text-white mb-0 fw-bold" style={{ fontSize: 22 }}>{paySlipMonth} {paySlipYear}</h4>
+                    <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11.5 }}>Pay Period: 01–31 {paySlipMonth.slice(0,3)} {paySlipYear}</small>
+                  </div>
+                </div>
+
+                {/* Inner identity strip */}
+                <div className="ep-pay-identity">
+                  {[
+                    { label: 'Employee Name', value: employee?.name || 'Aarav Patel' },
+                    { label: 'Employee ID',   value: employeeId },
+                    { label: 'Designation',   value: employee?.designation || 'VP Engineering' },
+                    { label: 'Department',    value: employee?.department || 'Software Development' },
+                    { label: 'Pay Period',    value: `${paySlipMonth.slice(0,3)} ${paySlipYear}` },
+                  ].map(c => (
+                    <div className="ep-pay-identity-cell" key={c.label}>
+                      <div className="ep-pay-identity-label">{c.label}</div>
+                      <div className="ep-pay-identity-value">{c.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 4 KPI strip */}
+              <div className="ep-pay-kpis">
+                {[
+                  { label: 'Working Days', value: 31, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
+                  { label: 'Days Present', value: 31, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
+                  { label: 'Loss of Pay',  value: 0,  tint: 'rgba(245,158,11,0.10)',  fg: '#a16207' },
+                  { label: 'Paid Days',    value: 31, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
+                ].map(k => (
+                  <div className="ep-pay-kpi" key={k.label} style={{ background: k.tint }}>
+                    <div className="ep-pay-kpi-label">{k.label}</div>
+                    <div className="ep-pay-kpi-value" style={{ color: k.fg }}>{k.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Earnings + Deductions */}
+              <Row className="g-3 mb-3">
+                <Col md={6}>
+                  <div className="ep-pay-table-card">
+                    <div className="ep-pay-table-head">
+                      <span className="ep-pay-dot" style={{ background: '#10b981' }} />
+                      <span style={{ color: '#108548' }}>EARNINGS</span>
+                    </div>
+                    <table className="ep-pay-table">
+                      <thead>
+                        <tr><th>Component</th><th className="text-end">Monthly</th></tr>
+                      </thead>
+                      <tbody>
+                        {PAYSLIP_EARNINGS.map(r => (
+                          <tr key={r.label}>
+                            <td>{r.label}</td>
+                            <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ background: 'rgba(16,185,129,0.06)' }}>
+                          <td className="fw-bold" style={{ color: '#108548' }}>Total Earnings</td>
+                          <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{paySlipTotalEarnings.toLocaleString('en-IN')}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </Col>
+                <Col md={6}>
+                  <div className="ep-pay-table-card">
+                    <div className="ep-pay-table-head">
+                      <span className="ep-pay-dot" style={{ background: '#ef4444' }} />
+                      <span style={{ color: '#b91c1c' }}>DEDUCTIONS</span>
+                    </div>
+                    <table className="ep-pay-table">
+                      <thead>
+                        <tr><th>Component</th><th className="text-end">Monthly</th></tr>
+                      </thead>
+                      <tbody>
+                        {PAYSLIP_DEDUCTIONS.map(r => (
+                          <tr key={r.label}>
+                            <td>{r.label}</td>
+                            <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ background: 'rgba(239,68,68,0.06)' }}>
+                          <td className="fw-bold" style={{ color: '#b91c1c' }}>Total Deductions</td>
+                          <td className="text-end fw-bold" style={{ color: '#b91c1c' }}>₹{paySlipTotalDeductions.toLocaleString('en-IN')}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </Col>
+              </Row>
+
+              {/* Net Pay banner */}
+              <div className="ep-pay-net">
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>
+                    NET PAY — {paySlipMonth.toUpperCase()} {paySlipYear}
+                  </div>
+                  <h5 className="text-white fw-semibold mb-2" style={{ fontSize: 15 }}>Gross Earnings − Total Deductions</h5>
+                  <div className="d-flex gap-4">
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>GROSS</div>
+                      <div className="text-white fw-bold">₹{paySlipTotalEarnings.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>DEDUCTIONS</div>
+                      <div className="fw-bold" style={{ color: '#fecaca' }}>−₹{paySlipTotalDeductions.toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="text-end">
+                  <h2 className="text-white fw-bold mb-0" style={{ fontSize: 36 }}>
+                    ₹{paySlipNetPay.toLocaleString('en-IN')}
+                  </h2>
+                  <small style={{ color: 'rgba(255,255,255,0.78)' }}>Per Month (In Hand)</small>
+                </div>
+              </div>
+
+              <div className="ep-pay-footer">
+                This is a computer-generated payslip. No signature required. Queries:{' '}
+                <a href="mailto:hr@inorbvict.com">hr@inorbvict.com</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </EpModal>
+
+      {/* ── Revise Salary Modal ── */}
+      <EpModal open={reviseOpen} onClose={() => setReviseOpen(false)} size="xl" panelClassName="ep-rev-modal">
+        {/* Hero header */}
+        <div className="ep-rev-hero">
+          <div className="d-flex align-items-start justify-content-between gap-3">
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYROLL ACTION</div>
+              <h4 className="text-white fw-bold mb-0" style={{ fontSize: 22 }}>Revise Salary</h4>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <button type="button" className="ep-rev-cancel-hero" onClick={() => setReviseOpen(false)}>Cancel</button>
+              <button type="button" className="ep-rev-submit-hero" onClick={() => setReviseOpen(false)}>
+                <i className="ri-check-line me-1" /> Revise Salary
+              </button>
+            </div>
+          </div>
+
+          {/* Employee strip */}
+          <div className="ep-rev-strip">
+            <div className="ep-rev-strip-cell">
+              <span className="ep-rev-avatar">{initials}</span>
+              <div>
+                <div className="ep-rev-strip-label">Employee</div>
+                <div className="ep-rev-strip-value">{employee?.name || 'Aarav Patel'}</div>
+                <div className="ep-rev-strip-sub">{employee?.designation || 'VP Engineering'}</div>
+              </div>
+            </div>
+            <div className="ep-rev-strip-cell">
+              <div>
+                <div className="ep-rev-strip-label">Joined</div>
+                <div className="ep-rev-strip-value">2022-05-17</div>
+              </div>
+            </div>
+            <div className="ep-rev-strip-cell">
+              <div>
+                <div className="ep-rev-strip-label">Department</div>
+                <div className="ep-rev-strip-value">{employee?.department || 'Software Development'}</div>
+              </div>
+            </div>
+            <div className="ep-rev-strip-cell">
+              <div>
+                <div className="ep-rev-strip-label">Current Salary</div>
+                <div className="ep-rev-strip-value">₹{currentAnnual.toLocaleString('en-IN')}</div>
+              </div>
+            </div>
+            <div className="ep-rev-strip-cell">
+              <div>
+                <div className="ep-rev-strip-label">Remuneration</div>
+                <div className="ep-rev-strip-value">Annual</div>
+              </div>
+            </div>
+            <div className="ep-rev-strip-cell">
+              <div>
+                <div className="ep-rev-strip-label">Bonus</div>
+                <div className="ep-rev-strip-value" style={{ color: '#fcd34d' }}>₹0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Body — form on left, live preview on right */}
+        <div className="ep-rev-body">
+          <div className="ep-rev-form">
+            {/* New Salary Details */}
+            <div className="ep-rev-card mb-3">
+              <div className="d-flex align-items-center gap-2 mb-3">
+                <span className="ep-rev-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}>
+                  <i className="ri-money-rupee-circle-line" />
+                </span>
+                <h6 className="mb-0 fw-bold">New Salary Details</h6>
+              </div>
+              <Row className="g-3">
+                <Col md={6}>
+                  <div className="ep-rev-label">New Salary (₹ Annual)</div>
+                  <div className="position-relative">
+                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                    <input
+                      className="ep-rev-input"
+                      style={{ paddingLeft: 28 }}
+                      value={reviseAmount}
+                      onChange={e => setReviseAmount(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                </Col>
+                <Col md={6}>
+                  <div className="ep-rev-label">Percentage Change (%)</div>
+                  <div className="position-relative">
+                    <input
+                      className="ep-rev-input"
+                      style={{ paddingRight: 28 }}
+                      value={revisePct}
+                      onChange={e => setRevisePct(e.target.value)}
+                      placeholder="e.g. 15"
+                    />
+                    <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>%</span>
+                  </div>
+                </Col>
+              </Row>
+            </div>
+
+            <Row className="g-3 mb-3">
+              <Col md={6}>
+                <div className="ep-rev-card h-100">
+                  <h6 className="fw-bold mb-1" style={{ fontSize: 14 }}>Salary Structure</h6>
+                  <div className="ep-rev-label mt-3">Structure Type</div>
+                  <select
+                    className="ep-rev-input"
+                    value={reviseStructure}
+                    onChange={e => setReviseStructure(e.target.value)}
+                  >
+                    {['Class A', 'Class B', 'Class C'].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </Col>
+              <Col md={6}>
+                <div className="ep-rev-card h-100">
+                  <h6 className="fw-bold mb-1" style={{ fontSize: 14 }}>Effective Date</h6>
+                  <div className="ep-rev-label mt-3">From Date</div>
+                  <input
+                    type="date"
+                    className="ep-rev-input"
+                    value={reviseDate}
+                    onChange={e => setReviseDate(e.target.value)}
+                  />
+                </div>
+              </Col>
+            </Row>
+
+            <div className="ep-rev-card mb-3">
+              <div className="d-flex align-items-center justify-content-between mb-2">
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Bonus</h6>
+                <label className="d-inline-flex align-items-center gap-2" style={{ fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={reviseBonusInSal} onChange={e => setReviseBonusInSal(e.target.checked)} />
+                  Include bonus in salary
+                </label>
+              </div>
+              <button type="button" className="ep-rev-add-btn"><i className="ri-add-line" /> Add Bonus</button>
+            </div>
+
+            <div className="ep-rev-card mb-3">
+              <h6 className="fw-bold mb-1" style={{ fontSize: 14 }}>
+                Add Note <span className="text-muted fw-normal" style={{ fontSize: 12 }}>(optional)</span>
+              </h6>
+              <textarea
+                className="ep-rev-input mt-2"
+                rows={3}
+                placeholder="Reason for revision, performance notes, appraisal cycle..."
+                value={reviseNote}
+                onChange={e => setReviseNote(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Live preview sidebar */}
+          <aside className="ep-rev-preview">
+            <div className="d-flex align-items-center gap-2 mb-3">
+              <i className="ri-eye-line" style={{ color: '#0ab39c', fontSize: 16 }} />
+              <h6 className="mb-0 fw-bold">Live Preview</h6>
+            </div>
+
+            <div className="ep-rev-net">
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>NEW COMPENSATION</div>
+              <h2 className="text-white fw-bold mb-0" style={{ fontSize: 30 }}>
+                ₹{reviseAnnualNum.toLocaleString('en-IN')}
+              </h2>
+              <small style={{ color: 'rgba(255,255,255,0.78)' }}>Per Annum</small>
+              <div className="d-flex justify-content-between mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.20)' }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>MONTHLY</div>
+                  <div className="text-white fw-bold">₹{reviseMonthlyNum.toLocaleString('en-IN')}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>BONUS</div>
+                  <div className="fw-bold" style={{ color: '#fcd34d' }}>₹0</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>TOTAL</div>
+                  <div className="text-white fw-bold">₹{reviseAnnualNum.toLocaleString('en-IN')}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="ep-rev-summary">
+              <div className="ep-rev-summary-head">CHANGE SUMMARY</div>
+              <div className="ep-rev-summary-row">
+                <span>Current Salary</span>
+                <span className="fw-semibold">₹{currentAnnual.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="ep-rev-summary-row">
+                <span>New Salary</span>
+                <span className="fw-semibold" style={{ color: '#0a8a78' }}>
+                  {reviseAnnualNum > 0 ? `₹${reviseAnnualNum.toLocaleString('en-IN')}` : '₹—'}
+                </span>
+              </div>
+              <div className="ep-rev-summary-row">
+                <span>Difference</span>
+                <span className="fw-semibold" style={{ color: reviseDifference >= 0 ? '#0a8a78' : '#b91c1c' }}>
+                  {reviseAnnualNum > 0 ? `${reviseDifference >= 0 ? '+' : ''}₹${reviseDifference.toLocaleString('en-IN')}` : '₹—'}
+                </span>
+              </div>
+              <div className="ep-rev-summary-row">
+                <span>% Change</span>
+                <span className="fw-semibold" style={{ color: revisePctChange >= 0 ? '#0a8a78' : '#b91c1c' }}>
+                  {reviseAnnualNum > 0 ? `${revisePctChange >= 0 ? '+' : ''}${revisePctChange.toFixed(1)}%` : '—%'}
+                </span>
+              </div>
+            </div>
+
+            <div className="ep-rev-summary mt-3">
+              <div className="d-flex align-items-center justify-content-between">
+                <div className="ep-rev-summary-head mb-0">COMPONENT BREAKDOWN</div>
+                <label className="d-inline-flex align-items-center gap-1" style={{ fontSize: 11.5, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={showBreakdownToggle} onChange={e => setShowBreakdownToggle(e.target.checked)} />
+                  Show
+                </label>
+              </div>
+              {!showBreakdownToggle && (
+                <small className="text-muted d-block text-center mt-2">Toggle to see component split</small>
+              )}
+              {showBreakdownToggle && reviseAnnualNum > 0 && (() => {
+                const bd = makeBreakdown(reviseAnnualNum);
+                return (
+                  <div className="mt-2">
+                    {bd.rows.map(r => (
+                      <div className="ep-rev-summary-row" key={r.label} style={{ fontSize: 12 }}>
+                        <span>{r.label}</span>
+                        <span className="fw-semibold">₹{r.monthly.toLocaleString('en-IN')}/mo</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </aside>
+        </div>
+      </EpModal>
+
+      {/* ── Salary Breakdown Modal ── */}
+      <EpModal open={breakdownOpen} onClose={() => setBreakdownOpen(false)} size="lg" panelClassName="ep-bd-modal">
+        <div className="ep-bd-hero">
+          <div className="d-flex align-items-start justify-content-between gap-3">
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>SALARY DETAILS</div>
+              <h4 className="text-white fw-bold mb-1" style={{ fontSize: 20 }}>
+                Salary Breakdown for{' '}
+                <span style={{ color: '#86efac' }}>₹{breakdownRow.annual.toLocaleString('en-IN')} / Annum</span>
+              </h4>
+              <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12 }}>
+                Pay Group: <strong>Default</strong> · Structure: <strong>Class A</strong> · Effective: <strong>{breakdownRow.dateShort}</strong>
+              </small>
+            </div>
+            <button type="button" className="ep-bd-close" onClick={() => setBreakdownOpen(false)} aria-label="Close">
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+          </div>
+        </div>
+
+        <div className="ep-bd-body">
+          <div className="ep-bd-main">
+            <div className="ep-bd-card">
+              <div className="d-flex align-items-center gap-2 px-3 py-2" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+                <span className="ep-rev-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', width: 32, height: 32, fontSize: 14 }}>
+                  <i className="ri-money-rupee-circle-line" />
+                </span>
+                <h6 className="mb-0 fw-bold">Earnings Breakdown</h6>
+              </div>
+              <table className="ep-bd-table">
+                <thead>
+                  <tr>
+                    <th>Component</th>
+                    <th className="text-end">Monthly</th>
+                    <th className="text-end">Annually</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {breakdownData.rows.map(r => (
+                    <tr key={r.label}>
+                      <td>{r.label}</td>
+                      <td className="text-end font-monospace fw-semibold">₹{r.monthly.toLocaleString('en-IN')}</td>
+                      <td className="text-end font-monospace fw-semibold">₹{r.annual.toLocaleString('en-IN')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr style={{ background: 'rgba(16,185,129,0.06)' }}>
+                    <td className="fw-bold" style={{ color: '#108548' }}>Total Earnings</td>
+                    <td className="text-end fw-bold font-monospace" style={{ color: '#108548' }}>₹{breakdownData.totalMonthly.toLocaleString('en-IN')}</td>
+                    <td className="text-end fw-bold font-monospace" style={{ color: '#108548' }}>₹{breakdownData.totalAnnual.toLocaleString('en-IN')}</td>
+                  </tr>
+                </tfoot>
+              </table>
+
+              <div className="ep-bd-net">
+                <div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>AFTER TAX & DEDUCTIONS</div>
+                  <h5 className="text-white fw-bold mb-0" style={{ fontSize: 16 }}>NET PAY</h5>
+                </div>
+                <div className="text-end">
+                  <h2 className="text-white fw-bold mb-0" style={{ fontSize: 32 }}>₹{breakdownData.netPay.toLocaleString('en-IN')}</h2>
+                  <small style={{ color: 'rgba(255,255,255,0.78)' }}>per month (estimated)</small>
+                </div>
+              </div>
+            </div>
+
+            <div className="ep-bd-note">
+              <i className="ri-information-line" style={{ fontSize: 16, color: '#a16207', flexShrink: 0 }} />
+              <div>
+                <strong>Note:</strong> Net Pay excludes applicable taxes (TDS) and statutory deductions (PF, PT). Actual disbursement may vary based on declarations and investments.
+              </div>
+            </div>
+          </div>
+
+          {/* Version history */}
+          <aside className="ep-bd-history">
+            <div className="d-flex align-items-center gap-2 mb-3">
+              <i className="ri-history-line" style={{ color: '#0ab39c' }} />
+              <h6 className="mb-0 fw-bold">Version History</h6>
+            </div>
+            <div className="position-relative" style={{ paddingLeft: 22 }}>
+              <div style={{ position: 'absolute', top: 12, bottom: 12, left: 8, width: 2, background: 'var(--vz-border-color)' }} />
+              {SALARY_TIMELINE.map(s => {
+                const active = s.id === breakdownRow.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={`ep-bd-version${active ? ' is-current' : ''}`}
+                    onClick={() => setBreakdownRowId(s.id)}
+                  >
+                    <span className="ep-bd-dot" style={{ background: active ? '#0ab39c' : 'transparent', border: active ? 'none' : '2px solid var(--vz-border-color)' }}>
+                      {active && <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#fff' }} />}
+                    </span>
+                    <div className="flex-grow-1 min-w-0 text-start">
+                      <div className="d-flex align-items-center gap-2 mb-1">
+                        <small className="fw-semibold">{s.dateShort}</small>
+                        {s.current && <span className="ep-bd-now">CURRENT</span>}
+                      </div>
+                      <div className="fw-bold" style={{ color: active ? '#0a8a78' : 'var(--vz-body-color)' }}>
+                        ₹{s.annual.toLocaleString('en-IN')}
+                      </div>
+                      <small className="text-muted">Per Annum</small>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+        </div>
+      </EpModal>
+
+      {/* ── Submit New Expense Claim / Advance Request Modal ── */}
+      <EpModal open={claimOpen} onClose={() => setClaimOpen(false)} size="xl" panelClassName={`ep-claim-modal ${claimMode === 'expense' ? 'is-expense' : 'is-advance'}`}>
+        {/* Hero header */}
+        <div className="ep-claim-hero">
+          <div className="d-flex align-items-start justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-3">
+              <span className="ep-claim-icon">
+                <i className="ri-file-text-line" />
+              </span>
+              <div>
+                <h5 className="text-white fw-bold mb-1" style={{ fontSize: 18 }}>
+                  {claimMode === 'expense' ? 'Submit New Expense Claim' : 'Advance Request — Recoverable Payout'}
+                </h5>
+                <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12 }}>
+                  All required fields must be completed · Receipt required above ₹500 · Changes take effect after MCA approval
+                </small>
+              </div>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <span className="ep-claim-mode-pill">
+                {claimMode === 'expense' ? 'EXPENSE MODE' : 'ADVANCE MODE'}
+              </span>
+              <button type="button" className="ep-claim-x" onClick={() => setClaimOpen(false)} aria-label="Close">
+                <i className="ri-close-line" style={{ fontSize: 18 }} />
+              </button>
+            </div>
+          </div>
+
+          {/* Mode tabs + flow hint */}
+          <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3">
+            <div className="ep-claim-tabs">
+              <button
+                type="button"
+                className={`ep-claim-tab${claimMode === 'expense' ? ' is-active' : ''}`}
+                onClick={() => setClaimMode('expense')}
+              >
+                <i className="ri-file-text-line" /> Expense Claim
+              </button>
+              <button
+                type="button"
+                className={`ep-claim-tab${claimMode === 'advance' ? ' is-active' : ''}`}
+                onClick={() => setClaimMode('advance')}
+              >
+                <i className="ri-money-dollar-circle-line" /> Advance Request
+              </button>
+            </div>
+            <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11.5 }}>
+              {claimMode === 'expense'
+                ? <>Expense → <strong>Reimbursement</strong> &nbsp;|&nbsp; Advance → Payroll Recovery</>
+                : <>Advance → <strong>Payroll Recovery</strong> &nbsp;|&nbsp; Expense → Reimbursement</>}
+            </small>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="ep-claim-body">
+          {claimMode === 'expense' ? (
+            <Row className="g-4">
+              {/* Left column */}
+              <Col lg={6}>
+                <div className="ep-claim-section-head">
+                  <span className="ep-claim-dot" /> A — Claim Context
+                </div>
+                <div className="mb-3">
+                  <div className="ep-claim-label">Employee <span className="ep-claim-req">*</span></div>
+                  <select className="ep-claim-input" value={claimEmployee} onChange={e => setClaimEmployee(e.target.value)}>
+                    <option value="">Select employee</option>
+                    <option value={employeeId}>{employee?.name || 'Aarav Patel'} ({employeeId})</option>
+                  </select>
+                </div>
+                <Row className="g-3 mb-3">
+                  <Col md={6}>
+                    <div className="ep-claim-label">Category <span className="ep-claim-req">*</span></div>
+                    <select className="ep-claim-input" value={claimCategory} onChange={e => setClaimCategory(e.target.value)}>
+                      <option value="">Select category</option>
+                      <option>Travel</option>
+                      <option>Meals</option>
+                      <option>Internet</option>
+                      <option>Office Supplies</option>
+                      <option>Training</option>
+                    </select>
+                  </Col>
+                  <Col md={6}>
+                    <div className="ep-claim-label">Currency</div>
+                    <select className="ep-claim-input" value={claimCurrency} onChange={e => setClaimCurrency(e.target.value)}>
+                      <option value="INR">₹ INR</option>
+                      <option value="USD">$ USD</option>
+                      <option value="EUR">€ EUR</option>
+                    </select>
+                  </Col>
+                </Row>
+                <Row className="g-3 mb-4">
+                  <Col md={6}>
+                    <div className="ep-claim-label">Project / Cost Center</div>
+                    <select className="ep-claim-input" value={claimProject} onChange={e => setClaimProject(e.target.value)}>
+                      <option value="">Not assigned</option>
+                      <option>Project Alpha</option>
+                      <option>Project Beta</option>
+                    </select>
+                  </Col>
+                  <Col md={6}>
+                    <div className="ep-claim-label">Payment Method</div>
+                    <select className="ep-claim-input" value={claimPayment} onChange={e => setClaimPayment(e.target.value)}>
+                      <option>Corporate Card</option>
+                      <option>Personal Card</option>
+                      <option>Cash</option>
+                      <option>UPI</option>
+                    </select>
+                  </Col>
+                </Row>
+
+                <div className="ep-claim-section-head">
+                  <span className="ep-claim-dot is-faded" /> B — Expense Details
+                </div>
+                <div className="mb-3">
+                  <div className="ep-claim-label">Expense Title <span className="ep-claim-req">*</span></div>
+                  <input className="ep-claim-input" placeholder="Brief description of expense..." value={claimTitle} onChange={e => setClaimTitle(e.target.value)} />
+                </div>
+                <Row className="g-3 mb-3">
+                  <Col md={6}>
+                    <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
+                    <div className="position-relative">
+                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                      <input className="ep-claim-input" style={{ paddingLeft: 28 }} placeholder="0.00" value={claimAmount} onChange={e => setClaimAmount(e.target.value)} />
+                    </div>
+                  </Col>
+                  <Col md={6}>
+                    <div className="ep-claim-label">Expense Date <span className="ep-claim-req">*</span></div>
+                    <input type="date" className="ep-claim-input" value={claimDate} onChange={e => setClaimDate(e.target.value)} />
+                  </Col>
+                </Row>
+                <div className="mb-3">
+                  <div className="ep-claim-label">Vendor / Merchant</div>
+                  <input className="ep-claim-input" placeholder="Vendor name (optional)" value={claimVendor} onChange={e => setClaimVendor(e.target.value)} />
+                </div>
+                <div className="mb-0">
+                  <div className="ep-claim-label">Business Purpose <span className="ep-claim-req">*</span></div>
+                  <textarea className="ep-claim-input" rows={3} placeholder="Explain the business purpose..." value={claimPurpose} onChange={e => setClaimPurpose(e.target.value)} />
+                </div>
+              </Col>
+
+              {/* Right column */}
+              <Col lg={6}>
+                <div className="ep-claim-section-head">
+                  <span className="ep-claim-dot is-faded" /> C — Proof &amp; Receipt
+                </div>
+                <div className="ep-claim-upload mb-4">
+                  <span className="ep-claim-upload-icon">
+                    <i className="ri-upload-2-line" />
+                  </span>
+                  <div className="fw-semibold" style={{ fontSize: 13 }}>Click to upload or drag &amp; drop</div>
+                  <small className="text-muted" style={{ fontSize: 11.5 }}>PDF, JPG, PNG · Max 5 MB</small>
+                </div>
+
+                <div className="ep-claim-section-head">
+                  <span className="ep-claim-dot is-faded" /> D — System Intelligence
+                </div>
+                <div className="ep-claim-intel mb-4">
+                  <small className="text-muted">Fill in expense details to see live policy checks</small>
+                </div>
+
+                
+              </Col>
+            </Row>
+          ) : (
+            /* ── Advance Request mode ── */
+            <Row className="g-4">
+              <Col lg={6}>
+                <div className="ep-claim-banner">
+                  <span className="ep-claim-banner-icon">
+                    <i className="ri-money-dollar-circle-line" />
+                  </span>
+                  <div className="flex-grow-1">
+                    <h6 className="mb-1 fw-bold" style={{ color: '#4338ca', fontSize: 14 }}>Advance Request — Recoverable Payout</h6>
+                    <small style={{ color: '#6366f1', fontSize: 11.5 }}>Amount will be recovered through payroll deduction · MCA approval required</small>
+                  </div>
+                  <span className="ep-claim-flow-pill">MCA FLOW</span>
+                </div>
+
+                <div className="mb-3">
+                  <div className="ep-claim-label">Employee <span className="ep-claim-req">*</span></div>
+                  <select className="ep-claim-input" value={claimEmployee} onChange={e => setClaimEmployee(e.target.value)}>
+                    <option value="">Select employee</option>
+                    <option value={employeeId}>{employee?.name || 'Aarav Patel'} ({employeeId})</option>
+                  </select>
+                </div>
+                <Row className="g-3 mb-3">
+                  <Col md={6}>
+                    <div className="ep-claim-label">Advance Type <span className="ep-claim-req">*</span></div>
+                    <select className="ep-claim-input" value={advType} onChange={e => setAdvType(e.target.value)}>
+                      <option value="">Select type...</option>
+                      <option>Travel Advance</option>
+                      <option>Salary Advance</option>
+                      <option>Medical Advance</option>
+                      <option>Other</option>
+                    </select>
+                  </Col>
+                  <Col md={6}>
+                    <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
+                    <div className="position-relative">
+                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                      <input className="ep-claim-input" style={{ paddingLeft: 28 }} placeholder="0" value={advAmount} onChange={e => setAdvAmount(e.target.value)} />
+                    </div>
+                  </Col>
+                </Row>
+                <Row className="g-3 mb-3">
+                  <Col md={6}>
+                    <div className="ep-claim-label">Requested Date <span className="ep-claim-req">*</span></div>
+                    <input type="date" className="ep-claim-input" value={advRequestedDate} onChange={e => setAdvRequestedDate(e.target.value)} />
+                  </Col>
+                  <Col md={6}>
+                    <div className="ep-claim-label">Recovery Start <span className="ep-claim-req">*</span></div>
+                    <input type="month" className="ep-claim-input" value={advRecoveryStart} onChange={e => setAdvRecoveryStart(e.target.value)} placeholder="May, 2026" />
+                  </Col>
+                </Row>
+                <div className="mb-3">
+                  <div className="ep-claim-label">Recovery Mode <span className="ep-claim-req">*</span></div>
+                  <select className="ep-claim-input" value={advRecoveryMode} onChange={e => setAdvRecoveryMode(e.target.value)}>
+                    <option value="">Select mode...</option>
+                    <option value="emi">Equal monthly installments</option>
+                    <option value="lumpsum">Lumpsum</option>
+                  </select>
+                </div>
+                <Row className="g-3 mb-3">
+                  <Col md={6}>
+                    <div className="ep-claim-label">No. of Months</div>
+                    <input className="ep-claim-input" placeholder="e.g. 6" value={advMonths} onChange={e => setAdvMonths(e.target.value)} />
+                  </Col>
+                  <Col md={6}>
+                    <div className="ep-claim-label">Monthly EMI</div>
+                    <input className="ep-claim-input" readOnly value={advMonthlyEmi > 0 ? `₹${advMonthlyEmi.toLocaleString('en-IN')}` : '—'} style={{ background: 'var(--vz-secondary-bg)' }} />
+                  </Col>
+                </Row>
+                <div className="mb-3">
+                  <div className="ep-claim-label">Reason / Purpose <span className="ep-claim-req">*</span></div>
+                  <textarea className="ep-claim-input" rows={3} placeholder="Describe why this advance is needed..." value={advReason} onChange={e => setAdvReason(e.target.value)} />
+                </div>
+                <div className="mb-0">
+                  <div className="ep-claim-label">Supporting Document</div>
+                  <div className="ep-claim-upload" style={{ background: 'rgba(99,102,241,0.04)', borderColor: 'rgba(99,102,241,0.25)' }}>
+                    <span className="ep-claim-upload-icon" style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>
+                      <i className="ri-attachment-line" />
+                    </span>
+                    <div className="fw-semibold" style={{ fontSize: 13, color: '#4338ca' }}>Attach document (bank letter, itinerary…)</div>
+                    <small className="text-muted" style={{ fontSize: 11.5 }}>PDF, JPG, PNG · Max 5 MB</small>
+                  </div>
+                </div>
+              </Col>
+
+              <Col lg={6}>
+                <div className="ep-claim-label" style={{ marginBottom: 6 }}>Payroll Recovery Preview</div>
+                <div className="ep-claim-intel mb-4">
+                  <small className="text-muted">
+                    {advMonthlyEmi > 0
+                      ? <>Monthly deduction <strong>₹{advMonthlyEmi.toLocaleString('en-IN')}</strong> for <strong>{advMonths}</strong> months starting <strong>{advRecoveryStart || '—'}</strong></>
+                      : 'Enter amount and recovery mode to preview'}
+                  </small>
+                </div>
+
+                <div className="ep-claim-label" style={{ marginBottom: 6 }}>Advance Intelligence</div>
+                <div className="ep-claim-intel mb-4">
+                  <small className="text-muted">Policy checks will appear here</small>
+                </div>
+
+               
+
+                <div className="ep-claim-warn mt-3">
+                  <i className="ri-error-warning-line" />
+                  <div>
+                    This creates a recoverable liability entry. The advance will be deducted from your salary per the selected schedule. Original record is immutable after approval.
+                  </div>
+                </div>
+              </Col>
+            </Row>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="ep-claim-footer">
+          <button type="button" className="ep-claim-cancel" onClick={() => setClaimOpen(false)}>Cancel</button>
+          <div className="d-flex gap-2 ms-auto">
+            <button type="button" className="ep-claim-secondary">
+              <i className="ri-save-line me-1" /> Save Draft
+            </button>
+            <button type="button" className="ep-claim-secondary">
+              <i className="ri-add-line me-1" /> Save &amp; Add Another
+            </button>
+            <button type="button" className="ep-claim-submit" onClick={() => setClaimOpen(false)}>
+              <i className={claimMode === 'expense' ? 'ri-send-plane-line me-1' : 'ri-send-plane-fill me-1'} />
+              {claimMode === 'expense' ? 'Submit Claim' : 'Submit Advance Request'}
+            </button>
+          </div>
+        </div>
+      </EpModal>
+    </>
   );
 }
