@@ -1606,6 +1606,23 @@ export default function HrEmployees() {
           .emp-stepper-label.is-done { color: #0ab39c; }
           .emp-stepper-line { flex: 1; height: 2px; background: #e5e7eb; margin: 0 6px; align-self: flex-start; margin-top: 16px; transition: background .2s ease; }
           .emp-stepper-line.is-done { background: #0ab39c; }
+          /* Make the stepper item itself act as a click target so the user can
+             jump between steps. The button is unstyled — child .emp-stepper-circle
+             and .emp-stepper-label keep all visual responsibility. */
+          .emp-stepper-btn {
+            background: transparent; border: none; padding: 0;
+            cursor: pointer; display: flex; flex-direction: column; align-items: center;
+            min-width: 92px;
+            transition: transform .15s ease;
+          }
+          .emp-stepper-btn:focus-visible { outline: 2px solid #7c5cfc; outline-offset: 4px; border-radius: 8px; }
+          .emp-stepper-btn:hover .emp-stepper-circle:not(.is-active):not(.is-done) {
+            border-color: #c4b5fd; color: #7c5cfc; background: #f5f3ff;
+          }
+          .emp-stepper-btn:hover .emp-stepper-label:not(.is-active):not(.is-done) {
+            color: #7c5cfc;
+          }
+          .emp-stepper-btn:hover { transform: translateY(-1px); }
         `}</style>
 
         <ModalBody className="p-0" style={{ background: 'var(--vz-secondary-bg, #f7f8fc)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden' }}>
@@ -1685,14 +1702,20 @@ export default function HrEmployees() {
                 const done = empStep > s.n;
                 return (
                   <div key={s.n} className="d-flex align-items-start" style={{ flex: idx === arr.length - 1 ? '0 0 auto' : '1 1 0' }}>
-                    <div className="d-flex flex-column align-items-center" style={{ minWidth: 92 }}>
+                    <button
+                      type="button"
+                      className="emp-stepper-btn"
+                      onClick={() => setEmpStep(s.n as 1 | 2 | 3 | 4)}
+                      aria-label={`Go to step ${s.n}: ${s.label}`}
+                      aria-current={active ? 'step' : undefined}
+                    >
                       <div className={`emp-stepper-circle${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}>
                         {done ? <i className="ri-check-line" style={{ fontSize: 16 }} /> : s.n}
                       </div>
                       <div className={`emp-stepper-label${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}>
                         {s.label}
                       </div>
-                    </div>
+                    </button>
                     {idx < arr.length - 1 && <div className={`emp-stepper-line${done ? ' is-done' : ''}`} />}
                   </div>
                 );
