@@ -366,9 +366,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     || (employee?.name ? employee.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase() : 'EM');
   const accent = employee?.accent || '#7c5cfc';
   const profilePct = typeof employee?.profile === 'number' ? employee.profile : 83;
+  // Ancillary roles support multiple values per employee — accept either an
+  // array or a single string from `employee.ancillaryRole`. Falls back to a
+  // mock multi-role list so the directory→profile flow still showcases the
+  // multi-pill scenario when no employee state is passed.
   const ancillaryList = Array.isArray(employee?.ancillaryRole)
     ? (employee?.ancillaryRole as string[]).filter(Boolean)
-    : (employee?.ancillaryRole ? [employee.ancillaryRole as string] : []);
+    : (employee?.ancillaryRole
+        ? [employee.ancillaryRole as string]
+        : ['Training Coordinator', 'Onboarding Buddy', 'Interviewer']);
 
   const statusTone =
       employee?.status === 'active'         ? { bg: 'rgba(255,255,255,0.18)', dot: '#22c55e', label: 'Active' }
@@ -1242,7 +1248,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         }
         .ep-close-btn:hover { background: rgba(255,255,255,0.20); }
         .ep-avatar-square {
-          width: 82px; height: 82px;
+          width: 92px; height: 92px;
           border-radius: 20px;
           background: linear-gradient(135deg, #4f46e5 0%, #7c5cfc 100%);
           display: inline-flex; align-items: center; justify-content: center;
@@ -1583,9 +1589,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {tab === 'profile' && (
         <>
           {/* Personal Information — full-width row of 7 identity fields */}
-          <div className="ep-section-card-flat ep-section-card mb-3">
-            <div className="d-flex align-items-center gap-3 px-3 py-2" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-              <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
+          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #6366f1' }}>
+            <div
+              className="d-flex align-items-center gap-3 px-3 py-2"
+              style={{
+                borderBottom: '1px solid rgba(99,102,241,0.18)',
+                background: 'linear-gradient(135deg, rgba(99,102,241,0.10) 0%, rgba(99,102,241,0.03) 60%, rgba(99,102,241,0.01) 100%)',
+              }}
+            >
+              <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
                 <i className="ri-user-line" />
               </span>
               <h6 className="mb-0 fw-bold">Personal Information</h6>
@@ -1604,12 +1616,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </div>
 
           {/* Contact Information — 4 fields */}
-          <div className="ep-section-card-flat ep-section-card mb-3">
-            <div className="d-flex align-items-center gap-3 px-3 py-2" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-              <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.12)', color: '#299cdb' }}>
+          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #299cdb' }}>
+            <div
+              className="d-flex align-items-center gap-3 px-3 py-2"
+              style={{
+                borderBottom: '1px solid rgba(41,156,219,0.18)',
+                background: 'linear-gradient(135deg, rgba(41,156,219,0.12) 0%, rgba(41,156,219,0.03) 60%, rgba(41,156,219,0.01) 100%)',
+              }}
+            >
+              <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
                 <i className="ri-phone-line" />
               </span>
-              <h6 className="mb-0 fw-bold">Contact Information</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Contact Information</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
@@ -1624,7 +1642,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           {/* Address Details — Current + Permanent side-by-side. Gradient
               tint is restricted to the header strip; the body sits on plain
               white so the field rows stay readable. */}
-          <div className="ep-section-card-flat ep-section-card mb-3">
+          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #0ab39c' }}>
             <div
               className="d-flex align-items-center gap-3 px-3 py-2"
               style={{
@@ -1670,7 +1688,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           {/* Bottom row: Work Experience | Profile Completion | KYC Documents */}
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #f59e0b' }}>
                 <div
                   className="d-flex align-items-center gap-3 px-3 py-2"
                   style={{
@@ -1707,7 +1725,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </Col>
 
             <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.12) 0%, rgba(99,102,241,0.06) 60%, rgba(168,85,247,0.04) 100%)', border: '1px solid rgba(168,85,247,0.18)' }}>
+              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.12) 0%, rgba(99,102,241,0.06) 60%, rgba(168,85,247,0.04) 100%)', border: '1px solid rgba(168,85,247,0.18)', borderTop: '3px solid #a855f7' }}>
                 <div className="px-3 pt-3 pb-2 d-flex align-items-center gap-3">
                   <div
                     className="d-inline-flex align-items-center justify-content-center"
@@ -1737,17 +1755,70 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </small>
                   </div>
                 </div>
-                {/* Full-width progress bar */}
+                {/* Full-width striped progress bar with floating circular
+                    badge above the fill end. Locked to the card's violet
+                    theme so it reads as a continuation of the gradient
+                    background instead of a separate tier-colored band. */}
                 <div className="px-3 pb-2">
-                  <div style={{ width: '100%', height: 7, borderRadius: 999, background: 'rgba(168,85,247,0.18)', overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        width: `${profilePct}%`, height: '100%', borderRadius: 999,
-                        background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.30) 0 6px, transparent 6px 12px), linear-gradient(90deg, #a855f7, #c084fc)`,
-                        transition: 'width .35s ease',
-                      }}
-                    />
-                  </div>
+                  {(() => {
+                    const p = profilePct;
+                    const VIOLET = { dark: '#7c3aed', light: '#a855f7' };
+                    const badgeLeft = Math.max(8, Math.min(92, p));
+                    return (
+                      <div style={{ position: 'relative', width: '100%', paddingTop: 0 }} title={`Profile ${p}% complete`}>
+                        {/* Floating badge + downward pointer */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: -33,
+                            left: `${badgeLeft}%`,
+                            transform: 'translateX(-50%)',
+                            textAlign: 'center',
+                          }}
+                        >
+                          <div
+                            className="d-flex align-items-center justify-content-center fw-bold"
+                            style={{
+                              width: 30, height: 30, borderRadius: '50%',
+                              background: `linear-gradient(135deg, ${VIOLET.dark}, ${VIOLET.light})`,
+                              color: '#fff', fontSize: 10.5,
+                              boxShadow: `0 6px 14px ${VIOLET.dark}55, inset 0 1px 0 rgba(255,255,255,0.20)`,
+                              border: '2px solid #fff',
+                            }}
+                          >
+                            {p}%
+                          </div>
+                          <div
+                            style={{
+                              width: 0, height: 0, margin: '0 auto',
+                              borderLeft: '5px solid transparent',
+                              borderRight: '5px solid transparent',
+                              borderTop: `6px solid ${VIOLET.dark}`,
+                            }}
+                          />
+                        </div>
+
+                        {/* Track + striped fill */}
+                        <div
+                          style={{
+                            width: '100%', height: 10,
+                            borderRadius: 999,
+                            background: 'rgba(168,85,247,0.18)',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${p}%`, height: '100%',
+                              borderRadius: 999,
+                              background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.32) 0 6px, transparent 6px 12px), linear-gradient(90deg, ${VIOLET.dark}, ${VIOLET.light})`,
+                              transition: 'width .35s ease',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 {/* 4 mini-tiles */}
                 <div className="px-3 pb-3 flex-grow-1">
@@ -1785,7 +1856,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </Col>
 
             <Col xl={4}>
-              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #6366f1' }}>
                 <div
                   className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
                   style={{
@@ -1848,7 +1919,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {tab === 'job' && (
         <>
           {/* Employment Details — single row of 7 fields */}
-          <div className="ep-section-card-flat ep-section-card mb-3">
+          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #6366f1' }}>
             <div
               className="d-flex align-items-center gap-3 px-3 py-2"
               style={{
@@ -1869,7 +1940,28 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </Col>
                 <Col><div className="ep-field-label">Joining Date</div><div className="ep-field-value font-monospace">2023-11-03</div></Col>
                 <Col><div className="ep-field-label">Job Title (Primary)</div><div className="ep-field-value">{employee?.designation || '—'}</div></Col>
-                <Col><div className="ep-field-label">Job Title (Secondary)</div><div className="ep-field-value">{ancillaryList[0] || '—'}</div></Col>
+                <Col>
+                  <div className="ep-field-label">Job Title (Secondary)</div>
+                  {ancillaryList.length > 0 ? (
+                    <div className="d-flex flex-wrap gap-1">
+                      {ancillaryList.map(r => (
+                        <span
+                          key={r}
+                          className="d-inline-flex align-items-center fw-semibold"
+                          style={{
+                            fontSize: 11, padding: '2px 9px', borderRadius: 999,
+                            background: 'rgba(20,184,166,0.10)', color: '#0a716a',
+                            border: '1px solid rgba(20,184,166,0.25)',
+                          }}
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="ep-field-value text-muted fw-normal">—</div>
+                  )}
+                </Col>
                 <Col><div className="ep-field-label">Employment Status</div><div className="ep-field-value">{employee?.enabled === false ? 'Disabled' : 'active'}</div></Col>
                 <Col><div className="ep-field-label">Worker Type</div><div className="ep-field-value">Full-time</div></Col>
                 <Col><div className="ep-field-label">Time Type</div><div className="ep-field-value">Full Time</div></Col>
@@ -1878,7 +1970,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </div>
 
           {/* Organisational Structure — 4 fields full width */}
-          <div className="ep-section-card-flat ep-section-card mb-3">
+          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #299cdb' }}>
             <div
               className="d-flex align-items-center gap-3 px-3 py-2"
               style={{
@@ -1920,7 +2012,28 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div className="px-3 py-3">
                   <Row className="g-4">
                     <Col xs={4}><div className="ep-field-label">Primary Role</div><div className="ep-field-value">{employee?.primaryRole || 'Executive'}</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Ancillary Role</div><div className="ep-field-value">{ancillaryList[0] || <span className="text-muted fw-normal">—</span>}</div></Col>
+                    <Col xs={4}>
+                      <div className="ep-field-label">Ancillary Role</div>
+                      {ancillaryList.length > 0 ? (
+                        <div className="d-flex flex-wrap gap-1">
+                          {ancillaryList.map(r => (
+                            <span
+                              key={r}
+                              className="d-inline-flex align-items-center fw-semibold"
+                              style={{
+                                fontSize: 11, padding: '2px 9px', borderRadius: 999,
+                                background: 'rgba(20,184,166,0.10)', color: '#0a716a',
+                                border: '1px solid rgba(20,184,166,0.25)',
+                              }}
+                            >
+                              {r}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="ep-field-value text-muted fw-normal">—</div>
+                      )}
+                    </Col>
                     <Col xs={4}><div className="ep-field-label">Employee Level</div><div className="ep-field-value">L3 — Mid</div></Col>
                   </Row>
                 </div>
@@ -1982,7 +2095,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </Row>
 
           {/* Asset Details */}
-          <div className="ep-section-card-flat ep-section-card mb-3">
+          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #f59e0b' }}>
             <div
               className="d-flex align-items-center gap-3 px-3 py-2"
               style={{
@@ -2506,7 +2619,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
               <Row className="g-3 mb-3 align-items-stretch">
                 <Col xl={6}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #299cdb' }}>
                     <div
                       className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
                       style={{
@@ -2546,7 +2659,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                 </Col>
                 <Col xl={6}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #a855f7' }}>
                     <div
                       className="d-flex align-items-center gap-3 px-3 py-2"
                       style={{
@@ -2600,7 +2713,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
               <Row className="g-3 mb-3 align-items-stretch">
                 <Col xl={6}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #0ab39c' }}>
                     <div
                       className="d-flex align-items-center gap-3 px-3 py-2"
                       style={{
@@ -2633,7 +2746,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                 </Col>
                 <Col xl={6}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #f59e0b' }}>
                     <div
                       className="d-flex align-items-center gap-3 px-3 py-2"
                       style={{
@@ -2697,7 +2810,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                 </Col>
                 <Col xl={7}>
-                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
+                  <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #6366f1' }}>
                     <div
                       className="d-flex align-items-center gap-3 px-3 py-2"
                       style={{
