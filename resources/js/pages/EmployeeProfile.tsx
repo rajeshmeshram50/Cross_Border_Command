@@ -3207,7 +3207,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   {/* Vertical guide line connecting the timeline dots */}
                   <span style={{
                     position: 'absolute',
-                    left: 21, top: 22, bottom: 22,
+                    left: 25, top: 22, bottom: 22,
                     width: 2,
                     background: 'var(--vz-border-color)',
                     pointerEvents: 'none',
