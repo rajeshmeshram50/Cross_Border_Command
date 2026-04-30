@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import { Button, Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { useToast } from '../contexts/ToastContext';
+import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 
 // Custom portal-based modal — renders directly to document.body so it always
 // escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
@@ -178,6 +179,26 @@ function MiniInfo({ icon, label, value, gradient }: { icon: string; label: strin
   );
 }
 
+// Count-up number animation — mirrors the AnimatedNumber recipe used on the
+// admin/client/branch dashboards so KPI tiles feel consistent across the app.
+function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    let start = 0;
+    const end = value;
+    const duration = 1200;
+    const step = Math.max(1, Math.floor(end / 60));
+    const interval = duration / (end / step || 1);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= end) { setDisplay(end); clearInterval(timer); }
+      else setDisplay(start);
+    }, interval);
+    return () => clearInterval(timer);
+  }, [value]);
+  return <>{prefix}{display.toLocaleString()}{suffix}</>;
+}
+
 // Generic KPI tile — same recipe as the admin/client/branch dashboard
 // `KpiCard` so every tile across the app reads consistently. The `tint` prop
 // is accepted for backwards compatibility but ignored; the card always uses
@@ -229,19 +250,19 @@ function KpiTile({ label, value, sub, icon, gradient }: { label: string; value: 
 
 // Mock attendance history rows used inside the Attendance tab.
 const ATTENDANCE_HISTORY = [
-  { date: '21 Apr', day: 'Mon', shift: 'EARLY',   firstIn: '07:01', lastOut: '16:02', punches: 2, worked: '9h 01m', deviation: '+0h 01m', status: 'Present' },
-  { date: '20 Apr', day: 'Sun', shift: '—',       firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Weekly Off' },
-  { date: '19 Apr', day: 'Sat', shift: '—',       firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Weekly Off' },
-  { date: '18 Apr', day: 'Fri', shift: 'GENERAL', firstIn: '09:15', lastOut: '18:20', punches: 4, worked: '9h 05m', deviation: '+0h 05m', status: 'Present' },
-  { date: '17 Apr', day: 'Thu', shift: 'GENERAL', firstIn: '10:02', lastOut: '19:15', punches: 4, worked: '9h 13m', deviation: '+0h 13m', status: 'Late' },
-  { date: '16 Apr', day: 'Wed', shift: 'GENERAL', firstIn: '09:00', lastOut: '18:00', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
-  { date: '15 Apr', day: 'Tue', shift: 'GENERAL', firstIn: '09:10', lastOut: '18:10', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
-  { date: '14 Apr', day: 'Mon', shift: 'GENERAL', firstIn: '09:05', lastOut: '18:07', punches: 4, worked: '9h 02m', deviation: '+0h 02m', status: 'Present' },
-  { date: '13 Apr', day: 'Sun', shift: '—',       firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Weekly Off' },
-  { date: '11 Apr', day: 'Fri', shift: 'GENERAL', firstIn: '09:00', lastOut: '18:00', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
-  { date: '10 Apr', day: 'Thu', shift: 'GENERAL', firstIn: '09:22', lastOut: '18:30', punches: 4, worked: '9h 08m', deviation: '+0h 08m', status: 'Present' },
-  { date: '09 Apr', day: 'Wed', shift: 'GENERAL', firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Absent' },
-  { date: '08 Apr', day: 'Tue', shift: 'GENERAL', firstIn: '09:00', lastOut: '18:00', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
+  { date: '21-Apr', day: 'Mon', shift: 'EARLY',   firstIn: '07:01', lastOut: '16:02', punches: 2, worked: '9h 01m', deviation: '+0h 01m', status: 'Present' },
+  { date: '20-Apr', day: 'Sun', shift: '—',       firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Weekly Off' },
+  { date: '19-Apr', day: 'Sat', shift: '—',       firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Weekly Off' },
+  { date: '18-Apr', day: 'Fri', shift: 'GENERAL', firstIn: '09:15', lastOut: '18:20', punches: 4, worked: '9h 05m', deviation: '+0h 05m', status: 'Present' },
+  { date: '17-Apr', day: 'Thu', shift: 'GENERAL', firstIn: '10:02', lastOut: '19:15', punches: 4, worked: '9h 13m', deviation: '+0h 13m', status: 'Late' },
+  { date: '16-Apr', day: 'Wed', shift: 'GENERAL', firstIn: '09:00', lastOut: '18:00', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
+  { date: '15-Apr', day: 'Tue', shift: 'GENERAL', firstIn: '09:10', lastOut: '18:10', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
+  { date: '14-Apr', day: 'Mon', shift: 'GENERAL', firstIn: '09:05', lastOut: '18:07', punches: 4, worked: '9h 02m', deviation: '+0h 02m', status: 'Present' },
+  { date: '13-Apr', day: 'Sun', shift: '—',       firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Weekly Off' },
+  { date: '11-Apr', day: 'Fri', shift: 'GENERAL', firstIn: '09:00', lastOut: '18:00', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
+  { date: '10-Apr', day: 'Thu', shift: 'GENERAL', firstIn: '09:22', lastOut: '18:30', punches: 4, worked: '9h 08m', deviation: '+0h 08m', status: 'Present' },
+  { date: '09-Apr', day: 'Wed', shift: 'GENERAL', firstIn: '—',     lastOut: '—',     punches: 0, worked: '—',     deviation: '—',        status: 'Absent' },
+  { date: '08-Apr', day: 'Tue', shift: 'GENERAL', firstIn: '09:00', lastOut: '18:00', punches: 4, worked: '9h 00m', deviation: '+0h 00m', status: 'Present' },
 ];
 
 const STATUS_TONE: Record<string, { bg: string; fg: string; dot: string }> = {
@@ -269,17 +290,17 @@ const VAULT_EMPLOYEE: EmpDocSection[] = [
     title: 'Identity (KYC)', subtitle: 'Core identity documents for employee verification',
     icon: 'ri-shield-user-line', iconTint: '#dceefe', iconFg: '#0c63b0',
     docs: [
-      { name: 'Aadhaar Card',              idNumber: 'XXXX-XXXX-1234', authority: 'UIDAI',           issueDate: '01/01/2020', attachment: 'Aadhaar.pdf', status: 'Verified' },
-      { name: 'PAN Card',                  idNumber: 'ABCDE1234F',     authority: 'Income Tax Dept', issueDate: '01/01/2018', attachment: 'PAN.pdf',     status: 'Verified' },
-      { name: 'Passport-size Photograph',                                                            issueDate: '01/01/2024', attachment: 'Photo.jpg',   status: 'Uploaded' },
+      { name: 'Aadhaar Card',              idNumber: 'XXXX-XXXX-1234', authority: 'UIDAI',           issueDate: '01-Jan-2020', attachment: 'Aadhaar.pdf', status: 'Verified' },
+      { name: 'PAN Card',                  idNumber: 'ABCDE1234F',     authority: 'Income Tax Dept', issueDate: '01-Jan-2018', attachment: 'PAN.pdf',     status: 'Verified' },
+      { name: 'Passport-size Photograph',                                                            issueDate: '01-Jan-2024', attachment: 'Photo.jpg',   status: 'Uploaded' },
     ],
   },
   {
     title: 'Address Proof', subtitle: 'Residential address verification documents',
     icon: 'ri-map-pin-line', iconTint: '#d6f4e3', iconFg: '#108548',
     docs: [
-      { name: 'Aadhaar Card (Reused)', idNumber: 'XXXX-XXXX-1234', authority: 'UIDAI', issueDate: '01/01/2020', expiryDate: '01/01/2030', attachment: 'Aadhaar.pdf',     status: 'Verified' },
-      { name: 'Current Address Proof',                                                  issueDate: '01/01/2022', expiryDate: '01/01/2027', attachment: 'CurrentAddr.pdf', status: 'Verified' },
+      { name: 'Aadhaar Card (Reused)', idNumber: 'XXXX-XXXX-1234', authority: 'UIDAI', issueDate: '01-Jan-2020', expiryDate: '01-Jan-2030', attachment: 'Aadhaar.pdf',     status: 'Verified' },
+      { name: 'Current Address Proof',                                                  issueDate: '01-Jan-2022', expiryDate: '01-Jan-2027', attachment: 'CurrentAddr.pdf', status: 'Verified' },
       { name: 'Permanent Address Proof',                                                                                                                                  status: 'Pending'  },
     ],
   },
@@ -287,23 +308,23 @@ const VAULT_EMPLOYEE: EmpDocSection[] = [
     title: 'Education Documents', subtitle: 'Academic qualifications and credentials',
     icon: 'ri-graduation-cap-line', iconTint: '#ece6ff', iconFg: '#5a3fd1',
     docs: [
-      { name: '10th Marksheet',         authority: 'State Board', issueDate: '01/05/2001', attachment: '10th.pdf',     status: 'Verified' },
-      { name: '12th Marksheet',         authority: 'State Board', issueDate: '01/05/2003', attachment: '12th.pdf',     status: 'Verified' },
-      { name: 'Graduation Marksheet',   authority: 'University',  issueDate: '01/06/2007', attachment: 'GradMark.pdf', status: 'Verified' },
-      { name: 'Graduation Certificate', authority: 'University',  issueDate: '01/10/2007', attachment: 'GradCert.pdf', status: 'Pending'  },
+      { name: '10th Marksheet',         authority: 'State Board', issueDate: '01-May-2001', attachment: '10th.pdf',     status: 'Verified' },
+      { name: '12th Marksheet',         authority: 'State Board', issueDate: '01-May-2003', attachment: '12th.pdf',     status: 'Verified' },
+      { name: 'Graduation Marksheet',   authority: 'University',  issueDate: '01-Jun-2007', attachment: 'GradMark.pdf', status: 'Verified' },
+      { name: 'Graduation Certificate', authority: 'University',  issueDate: '01-Oct-2007', attachment: 'GradCert.pdf', status: 'Pending'  },
     ],
   },
   {
     title: 'Previous Employment Documents', subtitle: 'Employment history, documents & background verification',
     icon: 'ri-briefcase-line', iconTint: '#fde8c4', iconFg: '#a4661c',
     docs: [
-      { name: 'Experience Letter',      authority: 'Infotech Solutions Ltd', issueDate: '01/11/2023', attachment: 'ExpLetter.pdf',  status: 'Verified' },
-      { name: 'Relieving Letter',       authority: 'Infotech Solutions Ltd', issueDate: '01/11/2023', attachment: 'Relieving.pdf',  status: 'Verified' },
-      { name: 'Last 3 Pay Slips',       authority: 'Infotech Solutions Ltd', issueDate: '01/10/2023', attachment: 'PaySlips.pdf',   status: 'Verified' },
-      { name: 'Form 16 (FY 2022-23)',   authority: 'Infotech Solutions Ltd', issueDate: '01/06/2023', attachment: 'Form16.pdf',     status: 'Verified' },
-      { name: 'Bank Statement (3 mo.)', authority: 'Kotak Mahindra Bank',    issueDate: '01/11/2023', attachment: 'BankStmt.pdf',   status: 'Uploaded' },
-      { name: 'Background Verification',authority: 'BGV Vendor',             issueDate: '15/11/2023', attachment: 'BGV.pdf',        status: 'Verified' },
-      { name: 'Reference Check',        authority: 'BGV Vendor',             issueDate: '15/11/2023',                                status: 'Pending'  },
+      { name: 'Experience Letter',      authority: 'Infotech Solutions Ltd', issueDate: '01-Nov-2023', attachment: 'ExpLetter.pdf',  status: 'Verified' },
+      { name: 'Relieving Letter',       authority: 'Infotech Solutions Ltd', issueDate: '01-Nov-2023', attachment: 'Relieving.pdf',  status: 'Verified' },
+      { name: 'Last 3 Pay Slips',       authority: 'Infotech Solutions Ltd', issueDate: '01-Oct-2023', attachment: 'PaySlips.pdf',   status: 'Verified' },
+      { name: 'Form 16 (FY 2022-23)',   authority: 'Infotech Solutions Ltd', issueDate: '01-Jun-2023', attachment: 'Form16.pdf',     status: 'Verified' },
+      { name: 'Bank Statement (3 mo.)', authority: 'Kotak Mahindra Bank',    issueDate: '01-Nov-2023', attachment: 'BankStmt.pdf',   status: 'Uploaded' },
+      { name: 'Background Verification',authority: 'BGV Vendor',             issueDate: '15-Nov-2023', attachment: 'BGV.pdf',        status: 'Verified' },
+      { name: 'Reference Check',        authority: 'BGV Vendor',             issueDate: '15-Nov-2023',                                status: 'Pending'  },
     ],
   },
 ];
@@ -313,19 +334,19 @@ const VAULT_ORG: OrgDocSection[] = [
     title: 'Legal Agreements', subtitle: 'Binding legal documents signed between employee and organization',
     icon: 'ri-file-shield-2-line', iconTint: '#ece6ff', iconFg: '#5a3fd1',
     docs: [
-      { name: 'Non-Disclosure Agreement (NDA)',           type: 'AGREEMENT', effectiveDate: '01/11/2023', validUntil: '01/11/2028', attachment: 'NDA.pdf',             status: 'Signed' },
-      { name: 'Employment Agreement / Appointment Letter', type: 'AGREEMENT', effectiveDate: '03/11/2023',                           attachment: 'Appointment.pdf',     status: 'Signed' },
-      { name: 'Confidentiality Agreement',                 type: 'AGREEMENT', effectiveDate: '03/11/2023',                           attachment: 'Confidentiality.pdf', status: 'Signed' },
+      { name: 'Non-Disclosure Agreement (NDA)',           type: 'AGREEMENT', effectiveDate: '01-Nov-2023', validUntil: '01-Nov-2028', attachment: 'NDA.pdf',             status: 'Signed' },
+      { name: 'Employment Agreement / Appointment Letter', type: 'AGREEMENT', effectiveDate: '03-Nov-2023',                           attachment: 'Appointment.pdf',     status: 'Signed' },
+      { name: 'Confidentiality Agreement',                 type: 'AGREEMENT', effectiveDate: '03-Nov-2023',                           attachment: 'Confidentiality.pdf', status: 'Signed' },
     ],
   },
   {
     title: 'Company Policies', subtitle: 'Internal policies acknowledged and accepted by the employee',
     icon: 'ri-file-list-3-line', iconTint: '#d3f0ee', iconFg: '#0a716a',
     docs: [
-      { name: 'Code of Conduct Policy',         type: 'POLICY', effectiveDate: '03/11/2023', attachment: 'CodeOfConduct.pdf', status: 'Signed' },
-      { name: 'IT Security & Acceptable Use Policy', type: 'POLICY', effectiveDate: '03/11/2023', attachment: 'ITPolicy.pdf',   status: 'Signed' },
-      { name: 'Leave & Attendance Policy',      type: 'POLICY', effectiveDate: '03/11/2023', attachment: 'LeavePolicy.pdf',   status: 'Signed' },
-      { name: 'Gratuity & Benefit Policy',      type: 'POLICY', effectiveDate: '03/11/2023', attachment: 'GratuityPolicy.pdf', status: 'Pending' },
+      { name: 'Code of Conduct Policy',         type: 'POLICY', effectiveDate: '03-Nov-2023', attachment: 'CodeOfConduct.pdf', status: 'Signed' },
+      { name: 'IT Security & Acceptable Use Policy', type: 'POLICY', effectiveDate: '03-Nov-2023', attachment: 'ITPolicy.pdf',   status: 'Signed' },
+      { name: 'Leave & Attendance Policy',      type: 'POLICY', effectiveDate: '03-Nov-2023', attachment: 'LeavePolicy.pdf',   status: 'Signed' },
+      { name: 'Gratuity & Benefit Policy',      type: 'POLICY', effectiveDate: '03-Nov-2023', attachment: 'GratuityPolicy.pdf', status: 'Pending' },
     ],
   },
 ];
@@ -344,12 +365,12 @@ const EXPENSE_STATUS_TONE: Record<string, { bg: string; fg: string; dot: string 
   'Rejected': { bg: '#fdd9ea', fg: '#a02960', dot: '#ef4444' },
 };
 const EXPENSE_CLAIMS: { id: string; category: keyof typeof EXPENSE_CATEGORY_TONE; description: string; date: string; amount: number; receipt: string; status: 'Approved' | 'Pending' | 'Rejected' }[] = [
-  { id: 'EXP-2201', category: 'Travel',          description: 'Client visit to Mumbai — cab + train',         date: '10 Apr 2026', amount: 2800, receipt: 'Receipt_EXP2201', status: 'Approved' },
-  { id: 'EXP-2198', category: 'Meals',           description: 'Team lunch — project kickoff meeting',         date: '05 Apr 2026', amount: 850,  receipt: 'Receipt_EXP2198', status: 'Pending'  },
-  { id: 'EXP-2181', category: 'Internet',        description: 'Monthly internet reimbursement — Apr',         date: '22 Mar 2026', amount: 999,  receipt: 'Receipt_EXP2181', status: 'Approved' },
-  { id: 'EXP-2174', category: 'Travel',          description: 'Pune–Mumbai flight for quarterly review',      date: '15 Mar 2026', amount: 4500, receipt: 'Receipt_EXP2174', status: 'Rejected' },
-  { id: 'EXP-2165', category: 'Office Supplies', description: 'Stationery and printer cartridges',            date: '08 Mar 2026', amount: 1200, receipt: 'Receipt_EXP2165', status: 'Approved' },
-  { id: 'EXP-2150', category: 'Training',        description: 'Online certification course — AWS',            date: '01 Mar 2026', amount: 3500, receipt: 'Receipt_EXP2150', status: 'Pending'  },
+  { id: 'EXP-2201', category: 'Travel',          description: 'Client visit to Mumbai — cab + train',         date: '10-Apr-2026', amount: 2800, receipt: 'Receipt_EXP2201', status: 'Approved' },
+  { id: 'EXP-2198', category: 'Meals',           description: 'Team lunch — project kickoff meeting',         date: '05-Apr-2026', amount: 850,  receipt: 'Receipt_EXP2198', status: 'Pending'  },
+  { id: 'EXP-2181', category: 'Internet',        description: 'Monthly internet reimbursement — Apr',         date: '22-Mar-2026', amount: 999,  receipt: 'Receipt_EXP2181', status: 'Approved' },
+  { id: 'EXP-2174', category: 'Travel',          description: 'Pune–Mumbai flight for quarterly review',      date: '15-Mar-2026', amount: 4500, receipt: 'Receipt_EXP2174', status: 'Rejected' },
+  { id: 'EXP-2165', category: 'Office Supplies', description: 'Stationery and printer cartridges',            date: '08-Mar-2026', amount: 1200, receipt: 'Receipt_EXP2165', status: 'Approved' },
+  { id: 'EXP-2150', category: 'Training',        description: 'Online certification course — AWS',            date: '01-Mar-2026', amount: 3500, receipt: 'Receipt_EXP2150', status: 'Pending'  },
 ];
 
 const VAULT_STATUS_TONE: Record<string, { bg: string; fg: string; dot: string }> = {
@@ -406,7 +427,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   // Today's date in "DD MMM YYYY" so the regularization modal shows the
   // correct selected day on every open instead of a stale hardcoded value.
-  const regSelectedDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const regSelectedDate = new Date()
+    .toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    .replace(/ /g, '-');
 
   // Toast hook (used by the Export Timelogs button) and last-7-month picker
   // for the timelog history filter.
@@ -425,6 +448,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     return out;
   })();
   const [attMonth, setAttMonth] = useState<string>(ATT_MONTHS[0]?.label || 'April 2026');
+  // Attendance Timelog History pagination — 6 rows per page to match the
+  // compact card height used by the Attendance tab. Reset to page 0 whenever
+  // the month filter changes so the user doesn't land on an empty page.
+  const ATT_PAGE_SIZE = 6;
+  const [attPage, setAttPage] = useState(0);
+  useEffect(() => { setAttPage(0); }, [attMonth]);
 
   // Payslip viewer modal — opens from the "View Payslip" button in the
   // Payroll Summary hero. Filters by year/month and shows the rendered
@@ -458,9 +487,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // sub-tab). Timeline is defined here so both the inline list and the
   // breakdown modal stay in sync.
   const SALARY_TIMELINE = [
-    { id: 'sal-1', dateShort: '01 Nov 2025', annual: 302400, current: true  },
-    { id: 'sal-2', dateShort: '23 May 2025', annual: 222000, current: false },
-    { id: 'sal-3', dateShort: '27 Jan 2025', annual: 72000,  current: false },
+    { id: 'sal-1', dateShort: '01-Nov-2025', annual: 302400, current: true  },
+    { id: 'sal-2', dateShort: '23-May-2025', annual: 222000, current: false },
+    { id: 'sal-3', dateShort: '27-Jan-2025', annual: 72000,  current: false },
   ];
   function makeBreakdown(annual: number) {
     const monthly = annual / 12;
@@ -489,6 +518,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [reviseStructure, setReviseStructure] = useState('Class A');
   const [reviseDate, setReviseDate]       = useState('2026-05-01');
   const [reviseBonusInSal, setReviseBonusInSal] = useState(false);
+  const [reviseBonusOpen, setReviseBonusOpen]   = useState(false);
+  const [reviseBonusAmount, setReviseBonusAmount] = useState('');
   const [reviseNote, setReviseNote]       = useState('');
   const [showBreakdownToggle, setShowBreakdownToggle] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
@@ -575,6 +606,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   return (
     <>
+    {/* Inject the shared master form theme so MasterSelect / MasterDatePicker
+        used inside the modals pick up the same look as the master forms. */}
+    <MasterFormStyles />
     <div className="ep-fullscreen-overlay">
       <style>{`
         /* Full-screen overlay so the employee profile reads as a dedicated
@@ -597,6 +631,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
            the rule applies on the very first open. */
         .modal.ep-reg-modal { z-index: 2100 !important; }
         .modal-backdrop.ep-reg-backdrop { z-index: 2095 !important; }
+        /* MasterSelect / MasterDatePicker popups default to z-index 2000,
+           which sits BELOW our EpModal overlay (5000). Lift them so the
+           calendar / dropdown menu paint on top of the modal. */
+        .master-select-menu,
+        .master-datepicker-popup,
+        .master-yearmonth-popup { z-index: 6000 !important; }
         .modal.ep-pay-modal { z-index: 2100 !important; }
         .modal-backdrop.ep-pay-backdrop { z-index: 2095 !important; }
         .modal.ep-rev-modal { z-index: 2100 !important; }
@@ -608,7 +648,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         .ep-rev-modal .modal-content { border: none; border-radius: 16px; overflow: hidden; }
         .ep-rev-modal .modal-dialog { max-width: 1180px; }
         .ep-rev-hero {
-          background: linear-gradient(135deg, #047857 0%, #0a8a5a 50%, #0ab39c 100%);
+          background: linear-gradient(135deg,#064e3b,#065f46,#059669);
           color: #fff; padding: 22px 26px;
         }
         .ep-rev-cancel-hero {
@@ -636,11 +676,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         .ep-rev-strip-cell + .ep-rev-strip-cell { border-left: 1px solid rgba(255,255,255,0.14); }
         .ep-rev-avatar {
           width: 44px; height: 44px; border-radius: 12px;
-          background: rgba(255,255,255,0.15);
+          background: linear-gradient(135deg, #4f46e5 0%, #7c5cfc 100%);
           color: #fff; font-weight: 700; font-size: 16px;
           display: inline-flex; align-items: center; justify-content: center;
           border: 1px solid rgba(255,255,255,0.30);
           flex-shrink: 0;
+          box-shadow: 0 6px 14px rgba(79,70,229,0.40), inset 0 1px 0 rgba(255,255,255,0.20);
         }
         .ep-rev-strip-label {
           font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
@@ -681,12 +722,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         }
         .ep-rev-input:focus { outline: none; border-color: #0ab39c; box-shadow: 0 0 0 3px rgba(10,179,156,0.18); }
         .ep-rev-add-btn {
-          padding: 6px 14px; background: rgba(10,179,156,0.10);
-          color: #0a8a78; border: 1px dashed rgba(10,179,156,0.40);
-          border-radius: 999px; font-size: 12.5px; font-weight: 600;
+          display: inline-flex; align-items: center; gap: 4px;
+          padding: 5px 14px; background: rgba(10,179,156,0.08);
+          color: #0a8a78; border: 1px dashed rgba(10,179,156,0.45);
+          border-radius: 999px; font-size: 12px; font-weight: 600;
           cursor: pointer; transition: all .15s ease;
         }
-        .ep-rev-add-btn:hover { background: rgba(10,179,156,0.18); }
+        .ep-rev-add-btn:hover {
+          background: rgba(10,179,156,0.16);
+          border-color: rgba(10,179,156,0.65);
+        }
+        .ep-rev-add-btn i { font-size: 14px; line-height: 1; }
 
         .ep-rev-preview {
           padding: 22px;
@@ -723,7 +769,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         .ep-bd-modal .modal-content { border: none; border-radius: 16px; overflow: hidden; }
         .ep-bd-modal .modal-dialog { max-width: 1100px; }
         .ep-bd-hero {
-          background: linear-gradient(135deg, #047857 0%, #0a8a5a 50%, #0ab39c 100%);
+          background: linear-gradient(135deg,#064e3b,#065f46,#059669);
           color: #fff; padding: 22px 26px;
         }
         .ep-bd-close {
@@ -744,12 +790,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           border: 1px solid var(--vz-border-color);
           border-radius: 12px; overflow: hidden;
         }
-        .ep-bd-table { width: 100%; font-size: 13px; margin: 0; }
+        .ep-bd-table { width: 100%; font-size: 12.5px; margin: 0; }
         .ep-bd-table th {
-          font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
-          text-transform: uppercase; color: rgba(255,255,255,0.85);
-          padding: 11px 16px;
-          background: #1f2937;
+          font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+          text-transform: uppercase; color: var(--vz-secondary-color);
+          padding: 9px 16px;
+          background: var(--vz-secondary-bg);
+          border-bottom: 1px solid var(--vz-border-color);
         }
         .ep-bd-table td {
           padding: 12px 16px; border-bottom: 1px solid var(--vz-border-color);
@@ -1102,7 +1149,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           position: relative; overflow: hidden;
           color: #fff; padding: 22px 24px;
           border-radius: 14px;
-          background: linear-gradient(135deg, #1d2c6b 0%, #2c3974 100%);
+          background: linear-gradient(135deg,#0f172a 0%,#1e1b4b 35%,#312e81 70%,#4338ca 100%);
           margin-bottom: 14px;
         }
         .ep-pay-company-logo {
@@ -1248,20 +1295,32 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         }
         .ep-close-btn:hover { background: rgba(255,255,255,0.20); }
         .ep-avatar-square {
-          width: 92px; height: 92px;
-          border-radius: 20px;
+          width: 110px; height: 110px;
+          border-radius: 26px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 36px; font-weight: 800; color: #fff; letter-spacing: -0.02em;
+          position: relative; z-index: 1; flex-shrink: 0;
           background: linear-gradient(135deg, #4f46e5 0%, #7c5cfc 100%);
-          display: inline-flex; align-items: center; justify-content: center;
-          color: #fff; font-weight: 700; font-size: 28px;
-          position: relative;
-          box-shadow: 0 10px 24px rgba(79,70,229,0.40), inset 0 1px 0 rgba(255,255,255,0.20);
-          letter-spacing: 0.02em;
+          box-shadow:
+            0 14px 40px rgba(0,0,0,0.55),
+            0 0 0 2px rgba(255,255,255,0.16),
+            0 0 0 5px rgba(255,255,255,0.05);
         }
+        /* Top-left highlight for a soft 3D bevel */
+        .ep-avatar-square::before {
+          content: ''; position: absolute; inset: -1px;
+          border-radius: 27px;
+          background: linear-gradient(145deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.04) 60%, transparent 100%);
+          pointer-events: none;
+        }
+        /* Online status dot in the bottom-right corner */
         .ep-avatar-square::after {
-          content: ''; position: absolute; bottom: 4px; right: 4px;
-          width: 12px; height: 12px; border-radius: 50%;
-          background: #22c55e; border: 2px solid #ffffff;
-          box-shadow: 0 0 6px rgba(34,197,94,0.55);
+          content: ''; position: absolute; bottom: 0; right: 0;
+          width: 20px; height: 20px; border-radius: 50%;
+          background: #22c55e;
+          border: 3px solid #0c1740;
+          box-shadow: 0 0 12px rgba(34,197,94,0.90);
+          z-index: 2;
         }
         .ep-hero-pill {
           display: inline-flex; align-items: center; gap: 5px;
@@ -1354,12 +1413,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         }
         [data-bs-theme="dark"] .ep-section-card-flat { background: #1c2531; }
         .ep-field-label {
-          font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+          font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
           text-transform: uppercase; color: var(--vz-secondary-color);
           margin-bottom: 4px;
         }
         .ep-field-value {
-          font-size: 13px; font-weight: 600;
+          font-size: 11px; font-weight: 600;
           color: var(--vz-heading-color, var(--vz-body-color));
         }
         .ep-addr-marker {
@@ -1376,39 +1435,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           background: var(--vz-secondary-bg); border: 1px solid var(--vz-border-color);
           border-radius: 999px; padding: 4px;
           display: inline-flex; gap: 4px;
-        }
-        /* Payroll sub-tabs — two equal-width pill buttons that span the
-           container. Active tab gets a strong gradient (purple for Summary,
-           teal/green for Payment Details), inactive sits on a soft grey. */
-        .ep-pay-subtab {
-          display: grid; grid-template-columns: 1fr 1fr;
-          gap: 8px;
-        }
-        .ep-pay-subtab-btn {
-          background: var(--vz-light, #f3f4f9);
-          color: var(--vz-secondary-color);
-          border: none;
-          border-radius: 12px;
-          padding: 10px 16px;
-          font-size: 13px; font-weight: 600;
-          cursor: pointer;
-          display: inline-flex; align-items: center; justify-content: center;
-          gap: 8px;
-          transition: all .15s ease;
-        }
-        .ep-pay-subtab-btn:hover {
-          background: var(--vz-secondary-bg);
-          color: var(--vz-body-color);
-        }
-        .ep-pay-subtab-btn.is-active.is-summary {
-          background: linear-gradient(135deg, #1e1b4b 0%, #4338ca 50%, #6366f1 100%);
-          color: #fff;
-          box-shadow: 0 6px 18px rgba(67,56,202,0.30);
-        }
-        .ep-pay-subtab-btn.is-active.is-details {
-          background: linear-gradient(135deg, #064e3b 0%, #047857 50%, #0a8a5a 100%);
-          color: #fff;
-          box-shadow: 0 6px 18px rgba(4,120,87,0.30);
         }
         .ep-subtab-btn {
           background: transparent; border: none;
@@ -1441,10 +1467,71 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         }
         .ep-vault-table tbody tr:last-child td { border-bottom: none !important; }
 
-        .ep-att-table { font-size: 13px; }
-        .ep-att-table th { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vz-secondary-color); font-weight: 700; padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); }
-        .ep-att-table td { padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); }
-        .ep-att-table tr:last-child td { border-bottom: none; }
+        /* Intraday Punch Timeline — horizontal scrollable rail with dot
+           markers along a connecting line. Lets a WFO employee with 10–15
+           in/out punches per day fit comfortably in the card width. */
+        .ep-punch-rail {
+          position: relative;
+          overflow-x: auto;
+          padding: 8px 4px 12px;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(99,102,241,0.40) transparent;
+        }
+        .ep-punch-rail::-webkit-scrollbar { height: 6px; }
+        .ep-punch-rail::-webkit-scrollbar-thumb {
+          background: rgba(99,102,241,0.30); border-radius: 999px;
+        }
+        .ep-punch-rail::-webkit-scrollbar-track { background: transparent; }
+        /* Inner track sizes to its full flex content so the absolutely-positioned
+           connector line spans every stop instead of clipping to the rail's
+           viewport. Without this, the line stops where the scroll container
+           clips, leaving punches past the fold disconnected. */
+        .ep-punch-track {
+          position: relative;
+          display: inline-flex;
+          gap: 28px;
+          min-width: 100%;
+        }
+        .ep-punch-line {
+          position: absolute;
+          top: 10px; left: 12px; right: 12px;
+          height: 2px;
+          background: var(--vz-border-color);
+          z-index: 0;
+        }
+        .ep-punch-stop {
+          flex: 0 0 auto;
+          width: 92px;
+          text-align: center;
+          position: relative;
+          z-index: 1;
+        }
+        .ep-punch-dot {
+          width: 22px; height: 22px;
+          margin: 0 auto;
+        }
+
+        /* Attendance Timelog History — visual parity with master/client TableContainer:
+           bordered+rounded scroll wrap, sticky table-light header, Velzon scrollbar. */
+        .ep-att-scroll-wrap {
+          max-height: 445px;
+          overflow-y: auto;
+        }
+        .ep-att-scroll-wrap thead {
+          position: sticky;
+          top: 0;
+          z-index: 2;
+        }
+        .ep-att-scroll-wrap::-webkit-scrollbar { width: 8px; }
+        .ep-att-scroll-wrap::-webkit-scrollbar-track { background: transparent; }
+        .ep-att-scroll-wrap::-webkit-scrollbar-thumb { background: var(--vz-border-color); border-radius: 8px; }
+        .ep-att-scroll-wrap::-webkit-scrollbar-thumb:hover { background: var(--vz-secondary-color); }
+        .ep-att-table { font-size: 13px; margin-bottom: 0; }
+        .ep-att-table th { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vz-secondary-color); font-weight: 700; padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); white-space: nowrap; }
+        .ep-att-table td { padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); vertical-align: middle; white-space: nowrap; }
+        .ep-att-table tbody tr:last-child td { border-bottom: none; }
+        .ep-att-table tbody tr { transition: background-color .15s ease; }
+        .ep-att-table tbody tr:hover { background: var(--vz-light); }
         .ep-shift-pill { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; }
       `}</style>
 
@@ -1521,7 +1608,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-calendar-line" />
                 <div>
                   <span className="ep-hero-meta-label">Joined</span>{' '}
-                  <span className="ep-hero-meta-value">2023-11-03</span>
+                  <span className="ep-hero-meta-value">03-Nov-2023</span>
                 </div>
               </div>
             </div>
@@ -1600,7 +1687,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
                 <i className="ri-user-line" />
               </span>
-              <h6 className="mb-0 fw-bold">Personal Information</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Personal Information</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
@@ -1608,7 +1695,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <Col><div className="ep-field-label">Middle Name</div><div className="ep-field-value">Rajendra</div></Col>
                 <Col><div className="ep-field-label">Last Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ').slice(1).join(' ') || 'Kale'}</div></Col>
                 <Col><div className="ep-field-label">Display Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-                <Col><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">1985-11-02</div></Col>
+                <Col><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
                 <Col><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
                 <Col><div className="ep-field-label">Nationality</div><div className="ep-field-value">Indian</div></Col>
               </Row>
@@ -1627,7 +1714,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
                 <i className="ri-phone-line" />
               </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Contact Information</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Contact Information</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
@@ -1653,7 +1740,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
                 <i className="ri-map-pin-line" />
               </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Address Details</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Address Details</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
@@ -1699,7 +1786,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
                     <i className="ri-briefcase-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Work Experience</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Work Experience</h6>
                 </div>
                 <div className="px-3 py-3 flex-grow-1">
                   <Row className="g-3">
@@ -1749,8 +1836,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </span>
                   </div>
                   <div className="flex-grow-1">
-                    <h6 className="mb-1 fw-bold" style={{ color: '#7c3aed', fontSize: 14 }}>Profile Completion</h6>
-                    <small className="text-muted" style={{ fontSize: 11 }}>
+                    <h6 className="mb-1 fw-bold" style={{ color: '#7c3aed', fontSize: 12 }}>Profile Completion</h6>
+                    <small className="text-muted" style={{ fontSize: 12 }}>
                       In Progress · {profilePct}% done
                     </small>
                   </div>
@@ -1841,7 +1928,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <Col xs={6}>
                       <div className="px-3 py-2" style={{ borderRadius: 10, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)' }}>
                         <div className="ep-field-label" style={{ color: '#a16207' }}>Joined</div>
-                        <div className="ep-field-value font-monospace" style={{ color: '#a16207', fontSize: 13 }}>2023-11-03</div>
+                        <div className="ep-field-value font-monospace" style={{ color: '#a16207', fontSize: 13 }}>03-Nov-2023</div>
                       </div>
                     </Col>
                     <Col xs={6}>
@@ -1868,7 +1955,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
                       <i className="ri-shield-check-line" />
                     </span>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>KYC Documents</h6>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>KYC Documents</h6>
                   </div>
                   <span className="badge rounded-pill fw-semibold px-2 py-1" style={{ background: 'rgba(99,102,241,0.16)', color: '#4338ca', fontSize: 10.5 }}>3 / 4</span>
                 </div>
@@ -1930,15 +2017,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
                 <i className="ri-briefcase-line" />
               </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Employment Details</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Employment Details</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
                 <Col>
                   <div className="ep-field-label">Employee Number</div>
-                  <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 13 }}>{employeeId}</span>
+                  <span className=" fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 10 }}>{employeeId}</span>
                 </Col>
-                <Col><div className="ep-field-label">Joining Date</div><div className="ep-field-value font-monospace">2023-11-03</div></Col>
+                <Col><div className="ep-field-label">Joining Date</div><div className="ep-field-value " style={{ fontSize: 11 }}>29-Apr-2026</div></Col>
                 <Col><div className="ep-field-label">Job Title (Primary)</div><div className="ep-field-value">{employee?.designation || '—'}</div></Col>
                 <Col>
                   <div className="ep-field-label">Job Title (Secondary)</div>
@@ -1981,7 +2068,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
                 <i className="ri-building-2-line" />
               </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Organisational Structure</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Organisational Structure</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
@@ -2007,7 +2094,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
                     <i className="ri-edit-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Role &amp; Positioning</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Role &amp; Positioning</h6>
                 </div>
                 <div className="px-3 py-3">
                   <Row className="g-4">
@@ -2021,7 +2108,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                               key={r}
                               className="d-inline-flex align-items-center fw-semibold"
                               style={{
-                                fontSize: 11, padding: '2px 9px', borderRadius: 999,
+                                fontSize: 9, padding: '2px 8px', borderRadius: 999,
                                 background: 'rgba(20,184,166,0.10)', color: '#0a716a',
                                 border: '1px solid rgba(20,184,166,0.25)',
                               }}
@@ -2051,7 +2138,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
                     <i className="ri-file-list-3-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Employment Terms</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Employment Terms</h6>
                 </div>
                 <div className="px-3 py-3">
                   <Row className="g-3">
@@ -2075,7 +2162,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
                     <i className="ri-time-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Attendance &amp; Time</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Attendance &amp; Time</h6>
                 </div>
                 <div className="px-3 py-3">
                   <Row className="g-3">
@@ -2106,14 +2193,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
                 <i className="ri-computer-line" />
               </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Asset Details</h6>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Asset Details</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-3">
                 <Col md={3}><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">Yes</div></Col>
                 <Col md={3}>
                   <div className="ep-field-label">Laptop Asset ID</div>
-                  <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 13 }}>LAP-0042</span>
+                  <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 9 }}>LAP-0042</span>
                 </Col>
                 <Col md={3}><div className="ep-field-label">Laptop Type</div><div className="ep-field-value">Dell Latitude 5510</div></Col>
                 <Col md={3}><div className="ep-field-label">Mobile Device</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
@@ -2124,7 +2211,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <Col md={3}><div className="ep-field-label">Headset</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
 
                 <Col md={3}><div className="ep-field-label">Other Assets</div><div className="ep-field-value">Access Card, Desk</div></Col>
-                <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">2022-05-17</div></Col>
+                <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">17-May-2022</div></Col>
                 <Col md={3}><div className="ep-field-label">Acknowledgment</div><div className="ep-field-value">Signed</div></Col>
                 <Col md={3}><div className="ep-field-label">Return Required</div><div className="ep-field-value">No</div></Col>
               </Row>
@@ -2137,26 +2224,32 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {tab === 'attendance' && (
         <>
           <Row className="g-3 mb-3 align-items-stretch">
-            <Col xl><KpiTile label="Present Days"    value="14"  sub="This month"      icon="ri-checkbox-circle-line" gradient={GRAD_SUCCESS} tint="#ecfaf3" /></Col>
-            <Col xl><KpiTile label="Late Marks"      value="1"   sub="This month"      icon="ri-time-line"            gradient={GRAD_WARNING} tint="#fff7e6" /></Col>
-            <Col xl><KpiTile label="Missing Biometric" value="1" sub="Entries this month" icon="ri-error-warning-line" gradient={GRAD_DANGER}  tint="#fff1ed" /></Col>
-            <Col xl><KpiTile label="Compliance Score" value="93%" sub="Attendance rate" icon="ri-shield-check-line"   gradient={GRAD_INFO}    tint="#eaf6fd" /></Col>
-            <Col xl><KpiTile label="Total Leaves"    value="0"   sub="This month"      icon="ri-calendar-todo-line"   gradient={GRAD_PURPLE}  tint="#f3eeff" /></Col>
+            <Col xl><KpiTile label="Present Days"    value={<AnimatedNumber value={14} />}            sub="This month"      icon="ri-checkbox-circle-line" gradient={GRAD_SUCCESS} tint="#ecfaf3" /></Col>
+            <Col xl><KpiTile label="Late Marks"      value={<AnimatedNumber value={1} />}             sub="This month"      icon="ri-time-line"            gradient={GRAD_WARNING} tint="#fff7e6" /></Col>
+            <Col xl><KpiTile label="Missing Biometric" value={<AnimatedNumber value={1} />}           sub="Entries this month" icon="ri-error-warning-line" gradient={GRAD_DANGER}  tint="#fff1ed" /></Col>
+            <Col xl><KpiTile label="Compliance Score" value={<AnimatedNumber value={93} suffix="%" />} sub="Attendance rate" icon="ri-shield-check-line"   gradient={GRAD_INFO}    tint="#eaf6fd" /></Col>
+            <Col xl><KpiTile label="Total Leaves"    value={<AnimatedNumber value={0} />}             sub="This month"      icon="ri-calendar-todo-line"   gradient={GRAD_PURPLE}  tint="#f3eeff" /></Col>
           </Row>
 
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl={6}>
-              <Card className="h-100 mb-0" style={cardStyle}>
-                <CardBody className="p-3">
-                  <div className="d-flex align-items-center justify-content-between mb-2">
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.15)', color: '#0a8a78' }}>
-                        <i className="ri-calendar-check-line" />
-                      </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Today's Updated Record</h6>
-                    </div>
-                    <small className="text-muted" style={{ fontSize: 11 }}>Mon, 21 Apr 2026</small>
+              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #0ab39c' }}>
+                <div
+                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+                  style={{
+                    borderBottom: '1px solid rgba(10,179,156,0.18)',
+                    background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
+                  }}
+                >
+                  <div className="d-flex align-items-center gap-2">
+                    <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
+                      <i className="ri-calendar-check-line" />
+                    </span>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Today's Updated Record</h6>
                   </div>
+                  <small className="text-muted" style={{ fontSize: 11 }}>Mon, 21-Apr-2026</small>
+                </div>
+                <div className="px-3 py-3 flex-grow-1">
                   <span className="d-inline-flex align-items-center gap-1 fw-semibold mb-2" style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
                     <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} /> Present
                   </span>
@@ -2179,107 +2272,161 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div><h6 className="mb-0 fw-bold" style={{ color: '#108548', fontSize: 14 }}>9h 01m</h6><small className="text-muted text-uppercase fw-semibold" style={{ fontSize: 9.5, letterSpacing: '0.06em' }}>Worked</small></div>
                     <div><h6 className="mb-0 fw-bold" style={{ color: '#5a3fd1', fontSize: 14 }}>9h 00m</h6><small className="text-muted text-uppercase fw-semibold" style={{ fontSize: 9.5, letterSpacing: '0.06em' }}>Expected</small></div>
                   </div>
-                </CardBody>
-              </Card>
+                </div>
+              </div>
             </Col>
             <Col xl={6}>
-              <Card className="h-100 mb-0" style={cardStyle}>
-                <CardBody className="p-3">
-                  <div className="d-flex align-items-center justify-content-between mb-3">
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.15)', color: '#0c63b0' }}>
-                        <i className="ri-pulse-line" />
-                      </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Intraday Punch Timeline</h6>
-                    </div>
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="badge rounded-pill" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1', fontSize: 10.5, padding: '3px 9px' }}>2 punches today</span>
-                      <button
-                        type="button"
-                        className="btn btn-sm rounded-pill fw-semibold"
-                        style={{ background: GRAD_INFO, color: '#fff', border: 'none', fontSize: 11.5, padding: '3px 11px' }}
-                        onClick={() => setRegOpen(true)}
-                      >
-                        <i className="ri-add-line me-1" /> Regularization
-                      </button>
-                    </div>
+              <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #299cdb' }}>
+                <div
+                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+                  style={{
+                    borderBottom: '1px solid rgba(41,156,219,0.18)',
+                    background: 'linear-gradient(135deg, rgba(41,156,219,0.14) 0%, rgba(41,156,219,0.04) 60%, rgba(41,156,219,0.01) 100%)',
+                  }}
+                >
+                  <div className="d-flex align-items-center gap-2">
+                    <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
+                      <i className="ri-pulse-line" />
+                    </span>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Intraday Punch Timeline</h6>
                   </div>
-                  <div className="position-relative" style={{ paddingLeft: 26 }}>
-                    <div style={{ position: 'absolute', top: 6, bottom: 6, left: 11, width: 2, background: 'var(--vz-border-color)' }} />
-                    <div className="mb-2 position-relative">
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ position: 'absolute', left: -26, top: 2, width: 24, height: 24, background: '#10b981', color: '#fff', boxShadow: '0 3px 8px rgba(16,185,129,0.40)' }}>
-                        <i className="ri-checkbox-circle-fill" style={{ fontSize: 12 }} />
-                      </span>
-                      <h6 className="mb-0 fw-bold" style={{ color: '#108548', fontSize: 14 }}>07:01 AM</h6>
-                      <p className="mb-1 fw-semibold" style={{ fontSize: 12 }}>Check In</p>
-                      <span className="badge rounded-pill" style={{ background: '#dceefe', color: '#0c63b0', fontSize: 9.5, padding: '2px 7px' }}>BIOMETRIC</span>
-                    </div>
-                    <div className="position-relative">
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle" style={{ position: 'absolute', left: -26, top: 2, width: 24, height: 24, background: '#3b82f6', color: '#fff', boxShadow: '0 3px 8px rgba(59,130,246,0.40)' }}>
-                        <i className="ri-logout-circle-r-line" style={{ fontSize: 12 }} />
-                      </span>
-                      <h6 className="mb-0 fw-bold" style={{ color: '#0c63b0', fontSize: 14 }}>04:02 PM</h6>
-                      <p className="mb-1 fw-semibold" style={{ fontSize: 12 }}>Check Out</p>
-                      <span className="badge rounded-pill" style={{ background: '#dceefe', color: '#0c63b0', fontSize: 9.5, padding: '2px 7px' }}>BIOMETRIC</span>
-                    </div>
+                  <div className="d-flex align-items-center gap-2">
+                    {(() => {
+                      const PUNCHES = [
+                        { time: '08:02 AM', kind: 'in',  label: 'Check In',  src: 'BIOMETRIC' },
+                        { time: '10:15 AM', kind: 'out', label: 'Step Out',  src: 'WEB' },
+                        { time: '10:42 AM', kind: 'in',  label: 'Step In',   src: 'WEB' },
+                        { time: '12:30 PM', kind: 'out', label: 'Lunch Out', src: 'BIOMETRIC' },
+                        { time: '01:14 PM', kind: 'in',  label: 'Lunch In',  src: 'BIOMETRIC' },
+                        { time: '02:48 PM', kind: 'out', label: 'Meeting',   src: 'MOBILE' },
+                        { time: '04:05 PM', kind: 'in',  label: 'Back',      src: 'MOBILE' },
+                        { time: '05:20 PM', kind: 'out', label: 'Tea Break', src: 'WEB' },
+                        { time: '05:38 PM', kind: 'in',  label: 'Resumed',   src: 'WEB' },
+                        { time: '07:02 PM', kind: 'out', label: 'Step Out',  src: 'BIOMETRIC' },
+                        { time: '07:25 PM', kind: 'in',  label: 'Step In',   src: 'BIOMETRIC' },
+                        { time: '08:55 PM', kind: 'out', label: 'Check Out', src: 'BIOMETRIC' },
+                      ];
+                      return (
+                        <span className="badge rounded-pill" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1', fontSize: 10.5, padding: '3px 9px' }}>{PUNCHES.length} punches today</span>
+                      );
+                    })()}
+                    <Button
+                      color="secondary"
+                      className="btn-label waves-effect waves-light rounded-pill btn-sm"
+                      onClick={() => setRegOpen(true)}
+                    >
+                      <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2" />
+                      Regularization
+                    </Button>
                   </div>
-                </CardBody>
-              </Card>
+                </div>
+                <div className="px-3 py-3 flex-grow-1">
+                  {(() => {
+                    const PUNCHES = [
+                      { time: '08:02 AM', kind: 'in',  label: 'Check In',  src: 'BIOMETRIC' },
+                      { time: '10:15 AM', kind: 'out', label: 'Step Out',  src: 'WEB' },
+                      { time: '10:42 AM', kind: 'in',  label: 'Step In',   src: 'WEB' },
+                      { time: '12:30 PM', kind: 'out', label: 'Lunch Out', src: 'BIOMETRIC' },
+                      { time: '01:14 PM', kind: 'in',  label: 'Lunch In',  src: 'BIOMETRIC' },
+                      { time: '02:48 PM', kind: 'out', label: 'Meeting',   src: 'MOBILE' },
+                      { time: '04:05 PM', kind: 'in',  label: 'Back',      src: 'MOBILE' },
+                      { time: '05:20 PM', kind: 'out', label: 'Tea Break', src: 'WEB' },
+                      { time: '05:38 PM', kind: 'in',  label: 'Resumed',   src: 'WEB' },
+                      { time: '07:02 PM', kind: 'out', label: 'Step Out',  src: 'BIOMETRIC' },
+                      { time: '07:25 PM', kind: 'in',  label: 'Step In',   src: 'BIOMETRIC' },
+                      { time: '08:55 PM', kind: 'out', label: 'Check Out', src: 'BIOMETRIC' },
+                    ];
+                    return (
+                      <div className="ep-punch-rail">
+                        <div className="ep-punch-track">
+                          <div className="ep-punch-line" />
+                          {PUNCHES.map((p, i) => {
+                            const isIn = p.kind === 'in';
+                            const dotBg = isIn ? '#10b981' : '#3b82f6';
+                            const dotShadow = isIn ? 'rgba(16,185,129,0.40)' : 'rgba(59,130,246,0.40)';
+                            const fg = isIn ? '#108548' : '#0c63b0';
+                            return (
+                              <div className="ep-punch-stop" key={i}>
+                                <span
+                                  className="ep-punch-dot d-inline-flex align-items-center justify-content-center rounded-circle"
+                                  style={{ background: dotBg, color: '#fff', boxShadow: `0 3px 8px ${dotShadow}` }}
+                                >
+                                  <i className={isIn ? 'ri-checkbox-circle-fill' : 'ri-logout-circle-r-line'} style={{ fontSize: 11 }} />
+                                </span>
+                                <h6 className="mb-0 fw-bold mt-2" style={{ color: fg, fontSize: 12 }}>{p.time}</h6>
+                                <p className="mb-1 fw-semibold" style={{ fontSize: 10.5 }}>{p.label}</p>
+                                <span className="badge rounded-pill" style={{ background: '#dceefe', color: '#0c63b0', fontSize: 8.5, padding: '2px 6px', letterSpacing: '0.04em' }}>{p.src}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
             </Col>
           </Row>
 
           <Row className="g-3 mb-3">
             <Col xs={12}>
-              <Card className="mb-0" style={cardStyle}>
-                <CardBody>
-                  <SectionHeader
-                    title="Attendance Timelog History"
-                    gradient={GRAD_PURPLE}
-                    icon="ri-history-line"
-                    action={(
-                      <div className="d-flex align-items-center gap-2">
-                        <Dropdown isOpen={monthOpen} toggle={() => setMonthOpen(o => !o)}>
-                          <DropdownToggle
-                            tag="button"
-                            type="button"
-                            className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
-                            style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11.5, padding: '4px 12px' }}
+              <div className="ep-section-card-flat ep-section-card" style={{ borderTop: '3px solid #a855f7' }}>
+                <div
+                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+                  style={{
+                    borderBottom: '1px solid rgba(168,85,247,0.18)',
+                    background: 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)',
+                  }}
+                >
+                  <div className="d-flex align-items-center gap-2">
+                    <span className="ep-section-icon" style={{ background: 'rgba(168,85,247,0.18)', color: '#7c3aed' }}>
+                      <i className="ri-history-line" />
+                    </span>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Attendance Timelog History</h6>
+                  </div>
+                  <div className="d-flex align-items-center gap-2">
+                    <Dropdown isOpen={monthOpen} toggle={() => setMonthOpen(o => !o)}>
+                      <DropdownToggle
+                        tag="button"
+                        type="button"
+                        className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
+                        style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11.5, padding: '4px 12px' }}
+                      >
+                        <i className="ri-calendar-line" /> {attMonth}
+                        <i className="ri-arrow-down-s-line" />
+                      </DropdownToggle>
+                      <DropdownMenu end>
+                        {ATT_MONTHS.map(m => (
+                          <DropdownItem
+                            key={m.key}
+                            active={attMonth === m.label}
+                            onClick={() => setAttMonth(m.label)}
                           >
-                            <i className="ri-calendar-line" /> {attMonth}
-                            <i className="ri-arrow-down-s-line" />
-                          </DropdownToggle>
-                          <DropdownMenu end>
-                            {ATT_MONTHS.map(m => (
-                              <DropdownItem
-                                key={m.key}
-                                active={attMonth === m.label}
-                                onClick={() => setAttMonth(m.label)}
-                              >
-                                {m.label}
-                              </DropdownItem>
-                            ))}
-                          </DropdownMenu>
-                        </Dropdown>
-                        <button
-                          type="button"
-                          className="btn btn-sm rounded-pill fw-semibold"
-                          style={{ background: GRAD_PURPLE, color: '#fff', border: 'none', fontSize: 12, padding: '4px 12px' }}
-                          onClick={() => toast.info('Exporting timelogs', `Preparing ${attMonth} export…`)}
-                        >
-                          <i className="ri-download-2-line me-1" /> Export Timelogs
-                        </button>
-                      </div>
-                    )}
-                  />
-                  <div className="table-responsive">
-                    <table className="table ep-att-table mb-0">
-                      <thead>
+                            {m.label}
+                          </DropdownItem>
+                        ))}
+                      </DropdownMenu>
+                    </Dropdown>
+                    <Button
+                      color="secondary"
+                      className="btn-label waves-effect waves-light rounded-pill btn-sm"
+                      onClick={() => toast.info('Exporting timelogs', `Preparing ${attMonth} export…`)}
+                    >
+                      <i className="ri-download-2-line label-icon align-middle rounded-pill fs-16 me-2" />
+                      Export Timelogs
+                    </Button>
+                  </div>
+                </div>
+                <div className="px-3 pb-3 pt-2">
+                  <div className="table-responsive border rounded ep-att-scroll-wrap">
+                    <table className="table align-middle table-nowrap ep-att-table mb-0">
+                      <thead className="table-light">
                         <tr>
                           <th>Date</th><th>Day</th><th>Shift</th><th>First In</th><th>Last Out</th><th>Punches</th><th>Worked</th><th>Deviation</th><th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {ATTENDANCE_HISTORY.map(r => {
+                        {ATTENDANCE_HISTORY.slice(attPage * ATT_PAGE_SIZE, attPage * ATT_PAGE_SIZE + ATT_PAGE_SIZE).map(r => {
                           const t = STATUS_TONE[r.status];
                           const shiftTone = r.shift === 'EARLY' ? { bg: '#d6f4e3', fg: '#108548' } : r.shift === 'GENERAL' ? { bg: '#dceefe', fg: '#0c63b0' } : null;
                           return (
@@ -2303,8 +2450,77 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       </tbody>
                     </table>
                   </div>
-                </CardBody>
-              </Card>
+                  {(() => {
+                    const total = ATTENDANCE_HISTORY.length;
+                    const pageCount = Math.max(1, Math.ceil(total / ATT_PAGE_SIZE));
+                    const startIdx = attPage * ATT_PAGE_SIZE;
+                    const shownEnd = Math.min(startIdx + ATT_PAGE_SIZE, total);
+                    const canPrev = attPage > 0;
+                    const canNext = attPage < pageCount - 1;
+                    // Windowed paginator — same recipe as the master TableContainer:
+                    // first, last, current ± 1, ellipses for any gap. With ≤7 pages
+                    // we render every number.
+                    const siblings = 1;
+                    const items: Array<number | 'ellipsis-l' | 'ellipsis-r'> = [];
+                    if (pageCount <= 7) {
+                      for (let i = 0; i < pageCount; i++) items.push(i);
+                    } else {
+                      const left = Math.max(attPage - siblings, 1);
+                      const right = Math.min(attPage + siblings, pageCount - 2);
+                      items.push(0);
+                      if (left > 1) items.push('ellipsis-l');
+                      for (let i = left; i <= right; i++) items.push(i);
+                      if (right < pageCount - 2) items.push('ellipsis-r');
+                      items.push(pageCount - 1);
+                    }
+                    return (
+                      <Row className="align-items-center mt-3 g-3 text-center text-sm-start">
+                        <div className="col-sm">
+                          <div className="text-muted">
+                            Showing<span className="fw-semibold ms-1">{shownEnd - startIdx}</span> of <span className="fw-semibold">{total}</span> Results
+                          </div>
+                        </div>
+                        <div className="col-sm-auto">
+                          <ul className="pagination pagination-separated pagination-md justify-content-center justify-content-sm-start mb-0">
+                            <li className={!canPrev ? 'page-item disabled' : 'page-item'}>
+                              <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (canPrev) setAttPage(p => p - 1); }}>
+                                <i className="ri-arrow-left-s-line" />
+                              </a>
+                            </li>
+                            {items.map((item, key) => {
+                              if (item === 'ellipsis-l' || item === 'ellipsis-r') {
+                                return (
+                                  <li key={`${item}-${key}`} className="page-item disabled">
+                                    <span className="page-link" style={{ cursor: 'default' }}>…</span>
+                                  </li>
+                                );
+                              }
+                              const isActive = attPage === item;
+                              return (
+                                <li key={item} className="page-item">
+                                  <a
+                                    href="#"
+                                    className={isActive ? 'page-link active' : 'page-link'}
+                                    style={isActive ? { backgroundColor: 'var(--vz-secondary)', borderColor: 'var(--vz-secondary)', color: '#fff' } : undefined}
+                                    onClick={e => { e.preventDefault(); setAttPage(item); }}
+                                  >
+                                    {item + 1}
+                                  </a>
+                                </li>
+                              );
+                            })}
+                            <li className={!canNext ? 'page-item disabled' : 'page-item'}>
+                              <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (canNext) setAttPage(p => p + 1); }}>
+                                <i className="ri-arrow-right-s-line" />
+                              </a>
+                            </li>
+                          </ul>
+                        </div>
+                      </Row>
+                    );
+                  })()}
+                </div>
+              </div>
             </Col>
           </Row>
         </>
@@ -2314,32 +2530,32 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {tab === 'vault' && (
         <>
           {/* Hero strip — "Evidence Vault — {Name} Document Repository" + KPIs */}
-          <Card className="mb-3 border-0" style={{ borderRadius: 18, overflow: 'hidden' }}>
+          <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
             <div
               style={{
-                background: 'linear-gradient(135deg, #5a3fd1 0%, #6366f1 50%, #7c5cfc 100%)',
+                background: 'linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%)',
                 color: '#fff',
-                padding: '20px 24px',
+                padding: '12px 18px',
                 position: 'relative',
                 overflow: 'hidden',
               }}
             >
-              <div style={{ position: 'absolute', top: -50, right: -40, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', pointerEvents: 'none' }} />
-              <Row className="align-items-center g-3" style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: -50, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+              <Row className="align-items-center g-2" style={{ position: 'relative' }}>
                 <Col xs="auto">
-                  <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 48, height: 48, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.30)' }}>
-                    <i className="ri-lock-2-line" style={{ fontSize: 22, color: '#fff' }} />
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.30)' }}>
+                    <i className="ri-lock-2-line" style={{ fontSize: 17, color: '#fff' }} />
                   </span>
                 </Col>
                 <Col className="min-w-0">
-                  <p className="mb-1 fs-11 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}>Evidence Vault</p>
-                  <h5 className="mb-1 fw-bold text-white">
+                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>Evidence Vault</p>
+                  <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
                     {employee?.name || employeeId} <span style={{ color: 'rgba(255,255,255,0.55)' }}>—</span> Document Repository
-                  </h5>
-                  <small style={{ color: 'rgba(255,255,255,0.78)' }}>All documents are securely stored and version-controlled</small>
+                  </div>
+                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>All documents are securely stored and version-controlled</small>
                 </Col>
                 <Col xs="12" lg="auto">
-                  <div className="d-flex gap-2 flex-wrap justify-content-lg-end">
+                  <div className="d-flex gap-1 flex-wrap justify-content-lg-end">
                     {[
                       { label: 'Total Docs', value: vaultCounts.total,    color: '#fff' },
                       { label: 'Verified',   value: vaultCounts.verified, color: '#86efac' },
@@ -2348,17 +2564,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     ].map(c => (
                       <div
                         key={c.label}
-                        className="text-center px-3 py-2"
+                        className="text-center"
                         style={{
-                          background: 'rgba(255,255,255,0.12)',
-                          border: '1px solid rgba(255,255,255,0.20)',
-                          borderRadius: 14,
-                          backdropFilter: 'blur(6px)',
-                          minWidth: 90,
+                          background: 'rgba(255,255,255,0.10)',
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          borderRadius: 9,
+                          padding: '4px 10px',
+                          minWidth: 72,
                         }}
                       >
-                        <p className="mb-1 fs-10 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}>{c.label}</p>
-                        <h5 className="mb-0 fw-bold lh-1" style={{ color: c.color }}>{c.value}</h5>
+                        <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
+                        <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
                       </div>
                     ))}
                   </div>
@@ -2375,14 +2591,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 style={{
                   background: 'var(--vz-secondary-bg)',
                   border: '1px solid var(--vz-border-color)',
-                  borderRadius: 12,
-                  padding: 4,
-                  gap: 4,
+                  borderRadius: 9,
+                  padding: 3,
+                  gap: 3,
                 }}
               >
                 {[
-                  { key: 'employee'       as VaultTab, label: 'Employee Documents',      count: employeeDocCount,      icon: 'ri-user-line' },
-                  { key: 'organizational' as VaultTab, label: 'Organizational Documents', count: organizationalDocCount, icon: 'ri-building-line' },
+                  { key: 'employee'       as VaultTab, label: 'Employee Documents',      count: employeeDocCount,      icon: 'ri-user-line',     activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
+                  { key: 'organizational' as VaultTab, label: 'Organizational Documents', count: organizationalDocCount, icon: 'ri-building-line', activeBg: 'linear-gradient(135deg,#064e3b,#047857)', shadow: 'rgba(4,120,87,0.22)' },
                 ].map(t => {
                   const on = vaultTab === t.key;
                   return (
@@ -2392,21 +2608,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       onClick={() => setVaultTab(t.key)}
                       className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
                       style={{
-                        borderRadius: 10,
-                        padding: '10px 14px',
-                        fontSize: 13,
-                        background: on ? 'linear-gradient(135deg,#5a3fd1,#7c5cfc)' : 'transparent',
+                        borderRadius: 7,
+                        padding: '5px 12px',
+                        fontSize: 11.5,
+                        background: on ? t.activeBg : 'transparent',
                         color: on ? '#fff' : 'var(--vz-secondary-color)',
                         border: 'none',
-                        boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
+                        boxShadow: on ? `0 3px 8px ${t.shadow}` : 'none',
                       }}
                     >
-                      <i className={t.icon} style={{ fontSize: 14 }} />
+                      <i className={t.icon} style={{ fontSize: 12 }} />
                       {t.label}
                       <span
                         className="badge rounded-pill"
                         style={{
-                          fontSize: 11,
+                          fontSize: 10,
+                          padding: '2px 6px',
                           background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
                           color: on ? '#fff' : 'var(--vz-secondary-color)',
                         }}
@@ -2422,26 +2639,36 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
           {/* Employee Documents sub-tab */}
           {vaultTab === 'employee' && VAULT_EMPLOYEE.map(section => (
-            <Card className="mb-3" style={cardStyle} key={section.title}>
-              <CardBody className="p-0">
-                <div className="d-flex align-items-center justify-content-between gap-3 px-3 py-2" style={{ background: 'linear-gradient(135deg, rgba(64,81,137,0.05), rgba(102,145,231,0.02))', borderBottom: '1px solid var(--vz-border-color)' }}>
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 32, height: 32, background: section.iconTint, color: section.iconFg, fontSize: 16 }}>
-                      <i className={section.icon} />
-                    </span>
-                    <div>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 13.5 }}>{section.title}</h6>
-                      <small className="text-muted" style={{ fontSize: 11 }}>{section.subtitle}</small>
-                    </div>
-                  </div>
-                  <div className="text-end">
-                    <h4 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 22, lineHeight: 1 }}>{section.docs.length}</h4>
-                    <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
+            <div
+              className="ep-section-card-flat ep-section-card mb-3"
+              style={{ borderTop: `3px solid ${section.iconFg}` }}
+              key={section.title}
+            >
+              <div
+                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+                style={{
+                  borderBottom: `1px solid color-mix(in srgb, ${section.iconFg} 18%, transparent)`,
+                  background: `linear-gradient(135deg, color-mix(in srgb, ${section.iconFg} 14%, transparent) 0%, color-mix(in srgb, ${section.iconFg} 4%, transparent) 60%, color-mix(in srgb, ${section.iconFg} 1%, transparent) 100%)`,
+                }}
+              >
+                <div className="d-flex align-items-center gap-2">
+                  <span className="ep-section-icon" style={{ background: `color-mix(in srgb, ${section.iconFg} 18%, transparent)`, color: section.iconFg }}>
+                    <i className={section.icon} />
+                  </span>
+                  <div>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>{section.title}</h6>
+                    <small className="text-muted" style={{ fontSize: 11 }}>{section.subtitle}</small>
                   </div>
                 </div>
-                <div className="table-responsive">
-                  <table className="table align-middle mb-0 ep-vault-table">
-                    <thead>
+                <div className="text-end">
+                  <h4 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 22, lineHeight: 1 }}>{section.docs.length}</h4>
+                  <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
+                </div>
+              </div>
+              <div className="px-3 pb-3 pt-2">
+                <div className="table-responsive border rounded ep-att-scroll-wrap">
+                  <table className="table align-middle table-nowrap ep-att-table mb-0">
+                    <thead className="table-light">
                       <tr>
                         {['SR', 'Document Name', 'ID / Number', 'Issuing Authority', 'Issue Date', 'Expiry Date', 'Attachment', 'Status'].map(h => (
                           <th key={h}>{h}</th>
@@ -2481,32 +2708,42 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </tbody>
                   </table>
                 </div>
-              </CardBody>
-            </Card>
+              </div>
+            </div>
           ))}
 
           {/* Organizational Documents sub-tab */}
           {vaultTab === 'organizational' && VAULT_ORG.map(section => (
-            <Card className="mb-3" style={cardStyle} key={section.title}>
-              <CardBody className="p-0">
-                <div className="d-flex align-items-center justify-content-between gap-3 px-3 py-2" style={{ background: 'linear-gradient(135deg, rgba(64,81,137,0.05), rgba(102,145,231,0.02))', borderBottom: '1px solid var(--vz-border-color)' }}>
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0" style={{ width: 32, height: 32, background: section.iconTint, color: section.iconFg, fontSize: 16 }}>
-                      <i className={section.icon} />
-                    </span>
-                    <div>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 13.5 }}>{section.title}</h6>
-                      <small className="text-muted" style={{ fontSize: 11 }}>{section.subtitle}</small>
-                    </div>
-                  </div>
-                  <div className="text-end">
-                    <h4 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 22, lineHeight: 1 }}>{section.docs.length}</h4>
-                    <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
+            <div
+              className="ep-section-card-flat ep-section-card mb-3"
+              style={{ borderTop: `3px solid ${section.iconFg}` }}
+              key={section.title}
+            >
+              <div
+                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+                style={{
+                  borderBottom: `1px solid color-mix(in srgb, ${section.iconFg} 18%, transparent)`,
+                  background: `linear-gradient(135deg, color-mix(in srgb, ${section.iconFg} 14%, transparent) 0%, color-mix(in srgb, ${section.iconFg} 4%, transparent) 60%, color-mix(in srgb, ${section.iconFg} 1%, transparent) 100%)`,
+                }}
+              >
+                <div className="d-flex align-items-center gap-2">
+                  <span className="ep-section-icon" style={{ background: `color-mix(in srgb, ${section.iconFg} 18%, transparent)`, color: section.iconFg }}>
+                    <i className={section.icon} />
+                  </span>
+                  <div>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>{section.title}</h6>
+                    <small className="text-muted" style={{ fontSize: 11 }}>{section.subtitle}</small>
                   </div>
                 </div>
-                <div className="table-responsive">
-                  <table className="table align-middle mb-0 ep-vault-table">
-                    <thead>
+                <div className="text-end">
+                  <h4 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 22, lineHeight: 1 }}>{section.docs.length}</h4>
+                  <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
+                </div>
+              </div>
+              <div className="px-3 pb-3 pt-2">
+                <div className="table-responsive border rounded ep-att-scroll-wrap">
+                  <table className="table align-middle table-nowrap ep-att-table mb-0">
+                    <thead className="table-light">
                       <tr>
                         {['SR', 'Document Name', 'Type', 'Effective Date', 'Valid Until', 'Attachment', 'Status'].map(h => (
                           <th key={h}>{h}</th>
@@ -2548,8 +2785,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </tbody>
                   </table>
                 </div>
-              </CardBody>
-            </Card>
+              </div>
+            </div>
           ))}
         </>
       )}
@@ -2557,66 +2794,115 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {/* ── Tab: Payroll Details ── */}
       {tab === 'payroll' && (
         <>
-          <div className="ep-pay-subtab mb-3">
-            <button
-              type="button"
-              onClick={() => setPayrollTab('summary')}
-              className={`ep-pay-subtab-btn${payrollTab === 'summary' ? ' is-active is-summary' : ''}`}
+          {/* Hero strip — shared across both subtabs, mirrors Evidence Vault.
+              Same deep-indigo gradient + decorative circle so the two tabs
+              read as siblings of the same family. */}
+          <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
+            <div
+              style={{
+                background: 'linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%)',
+                color: '#fff',
+                padding: '12px 18px',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
             >
-              <i className="ri-calendar-line" /> Payroll Summary
-            </button>
-            <button
-              type="button"
-              onClick={() => setPayrollTab('details')}
-              className={`ep-pay-subtab-btn${payrollTab === 'details' ? ' is-active is-details' : ''}`}
-            >
-              <i className="ri-money-dollar-circle-line" /> Payment Details
-            </button>
-          </div>
+              <div style={{ position: 'absolute', top: -50, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+              <Row className="align-items-center g-2" style={{ position: 'relative' }}>
+                <Col xs="auto">
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.30)' }}>
+                    <i className="ri-money-dollar-circle-line" style={{ fontSize: 17, color: '#fff' }} />
+                  </span>
+                </Col>
+                <Col className="min-w-0">
+                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>Payroll Summary</p>
+                  <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
+                    Last Processed: <span style={{ color: '#bce8ff' }}>Mar 2026</span> (01 Mar – 31 Mar)
+                  </div>
+                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>Next cycle: Apr 2026 · Monthly payroll</small>
+                </Col>
+                <Col xs="12" lg="auto">
+                  <div className="d-flex gap-1 flex-wrap justify-content-lg-end align-items-center">
+                    {[
+                      { label: 'Working Days', value: '31',     color: '#fff' },
+                      { label: 'Loss of Pay',  value: '0',      color: '#fcd34d' },
+                      { label: 'Status',       value: 'Active', color: '#86efac' },
+                    ].map(c => (
+                      <div
+                        key={c.label}
+                        className="text-center"
+                        style={{
+                          background: 'rgba(255,255,255,0.10)',
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          borderRadius: 9,
+                          padding: '4px 10px',
+                          minWidth: 72,
+                        }}
+                      >
+                        <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
+                        <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="btn btn-light rounded-pill fw-semibold ms-1"
+                      style={{ fontSize: 10.5, padding: '4px 10px' }}
+                      onClick={() => setPaySlipOpen(true)}
+                    >
+                      <i className="ri-download-2-line me-1" /> View Payslip
+                    </button>
+                  </div>
+                </Col>
+              </Row>
+            </div>
+          </Card>
+
+          {/* Sub-tab pill — Payroll Summary (indigo) | Payment Details (green).
+              Same compact strap shape as the Evidence Vault subtabs. */}
+          <Row className="g-2 mb-3">
+            <Col xs={12}>
+              <div
+                className="d-flex"
+                style={{
+                  background: 'var(--vz-secondary-bg)',
+                  border: '1px solid var(--vz-border-color)',
+                  borderRadius: 9,
+                  padding: 3,
+                  gap: 3,
+                }}
+              >
+                {[
+                  { key: 'summary' as PayrollTab, label: 'Payroll Summary',  icon: 'ri-calendar-line',            activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
+                  { key: 'details' as PayrollTab, label: 'Payment Details',  icon: 'ri-money-dollar-circle-line', activeBg: 'linear-gradient(135deg,#064e3b,#047857)', shadow: 'rgba(4,120,87,0.22)' },
+                ].map(t => {
+                  const on = payrollTab === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => setPayrollTab(t.key)}
+                      className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
+                      style={{
+                        borderRadius: 7,
+                        padding: '5px 12px',
+                        fontSize: 11.5,
+                        background: on ? t.activeBg : 'transparent',
+                        color: on ? '#fff' : 'var(--vz-secondary-color)',
+                        border: 'none',
+                        boxShadow: on ? `0 3px 8px ${t.shadow}` : 'none',
+                      }}
+                    >
+                      <i className={t.icon} style={{ fontSize: 12 }} />
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Col>
+          </Row>
 
           {payrollTab === 'summary' && (
             <>
-              <Card className="mb-3 border-0" style={{ borderRadius: 18, overflow: 'hidden' }}>
-                <div style={{ background: 'linear-gradient(135deg, #5a3fd1 0%, #6366f1 50%, #7c5cfc 100%)', color: '#fff', padding: '20px 24px' }}>
-                  <Row className="align-items-center g-3">
-                    <Col xs="auto">
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 46, height: 46, background: 'rgba(255,255,255,0.22)' }}>
-                        <i className="ri-money-dollar-circle-line" style={{ fontSize: 22 }} />
-                      </span>
-                    </Col>
-                    <Col className="min-w-0">
-                      <p className="mb-1 fs-11 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.78)', letterSpacing: '0.06em' }}>Payroll Summary</p>
-                      <h5 className="mb-1 text-white fw-bold">Last Processed: <span style={{ color: '#bce8ff' }}>Mar 2026</span> (01 Mar – 31 Mar)</h5>
-                      <small style={{ color: 'rgba(255,255,255,0.78)' }}>Next cycle: Apr 2026 · Monthly payroll</small>
-                    </Col>
-                    <Col xs="auto">
-                      <div className="d-flex gap-2 flex-wrap">
-                        <div className="text-center px-3 py-2" style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 12, minWidth: 100 }}>
-                          <p className="fs-10 mb-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.78)' }}>Working Days</p>
-                          <h6 className="mb-0 text-white fw-bold lh-1">31</h6>
-                        </div>
-                        <div className="text-center px-3 py-2" style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 12, minWidth: 100 }}>
-                          <p className="fs-10 mb-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.78)' }}>Loss of Pay</p>
-                          <h6 className="mb-0 text-white fw-bold lh-1">0</h6>
-                        </div>
-                        <div className="text-center px-3 py-2" style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', borderRadius: 12, minWidth: 100 }}>
-                          <p className="fs-10 mb-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.78)' }}>Status</p>
-                          <h6 className="mb-0 text-white fw-bold lh-1">Active</h6>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-light rounded-pill fw-semibold"
-                          style={{ fontSize: 12, padding: '8px 14px' }}
-                          onClick={() => setPaySlipOpen(true)}
-                        >
-                          <i className="ri-download-2-line me-1" /> View Payslip
-                        </button>
-                      </div>
-                    </Col>
-                  </Row>
-                </div>
-              </Card>
-
               <Row className="g-3 mb-3 align-items-stretch">
                 <Col xl={6}>
                   <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #299cdb' }}>
@@ -2631,7 +2917,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         <span className="ep-section-icon" style={{ background: 'rgba(41,156,219,0.18)', color: '#0c63b0' }}>
                           <i className="ri-bank-card-line" />
                         </span>
-                        <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Payment Information</h6>
+                        <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Payment Information</h6>
                       </div>
                       <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 10, padding: '3px 9px', borderRadius: 999, background: 'rgba(245,158,11,0.12)', color: '#a16207', border: '1px solid rgba(245,158,11,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#f59e0b' }} /> Not Initiated
@@ -2645,11 +2931,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         <Col md={6}><div className="ep-field-label">Bank Name</div><div className="ep-field-value">Kotak Mahindra Bank</div></Col>
                         <Col md={6}>
                           <div className="ep-field-label">Account Number</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>XXXXXXXX36</span>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>XXXXXXXX36</span>
                         </Col>
                         <Col md={6}>
                           <div className="ep-field-label">IFSC Code</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>KKBK0000823</span>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>KKBK0000823</span>
                         </Col>
                         <Col md={6}><div className="ep-field-label">Name on Account</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
                         <Col md={6}><div className="ep-field-label">Branch</div><div className="ep-field-value">Silvaasa</div></Col>
@@ -2670,7 +2956,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <span className="ep-section-icon" style={{ background: 'rgba(168,85,247,0.18)', color: '#7c3aed' }}>
                         <i className="ri-user-2-line" />
                       </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Identity Information</h6>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Identity Information</h6>
                     </div>
                     <div className="px-3 py-3 flex-grow-1">
                       {/* PAN Card sub-header */}
@@ -2683,10 +2969,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <Row className="g-3 mb-3">
                         <Col md={3}>
                           <div className="ep-field-label">PAN Number</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>XXXXXX89K</span>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>XXXXXX89K</span>
                         </Col>
                         <Col md={3}><div className="ep-field-label">Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-                        <Col md={3}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">1985-11-02</div></Col>
+                        <Col md={3}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
                         <Col md={3}><div className="ep-field-label">Parent Name</div><div className="ep-field-value">Kiran Kale</div></Col>
                       </Row>
 
@@ -2700,7 +2986,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <Row className="g-3">
                         <Col md={3}>
                           <div className="ep-field-label">Aadhaar Number</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>XXXX-XXXX-2821</span>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>XXXX-XXXX-2821</span>
                         </Col>
                         <Col md={3}><div className="ep-field-label">Enrollment No</div><div className="ep-field-value">147</div></Col>
                         <Col md={3}><div className="ep-field-label">Address</div><div className="ep-field-value">21 Jay Mahalar…</div></Col>
@@ -2724,7 +3010,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
                         <i className="ri-map-pin-line" />
                       </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Address Proof</h6>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Address Proof</h6>
                     </div>
                     <div className="px-3 py-3 flex-grow-1">
                       <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-3" style={{ background: 'rgba(10,179,156,0.08)', border: '1px solid rgba(10,179,156,0.20)', borderRadius: 8 }}>
@@ -2736,11 +3022,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <Row className="g-3">
                         <Col md={6}>
                           <div className="ep-field-label">Aadhaar Number</div>
-                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 12.5 }}>XXXX-XXXX-2821</span>
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '3px 10px', borderRadius: 8, fontSize: 9 }}>XXXX-XXXX-2821</span>
                         </Col>
                         <Col md={6}><div className="ep-field-label">Enrollment No</div><div className="ep-field-value">147</div></Col>
                         <Col md={6}><div className="ep-field-label">Address</div><div className="ep-field-value">21 Jay Mahalar, Pune</div></Col>
-                        <Col md={6}><div className="ep-field-label">Verification</div><div className="ep-field-value font-monospace">01/01/2024</div></Col>
+                        <Col md={6}><div className="ep-field-label">Verification</div><div className="ep-field-value font-monospace">01-Jan-2024</div></Col>
                       </Row>
                     </div>
                   </div>
@@ -2757,7 +3043,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
                         <i className="ri-shield-line" />
                       </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Statutory Information</h6>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Statutory Information</h6>
                     </div>
                     <div className="px-3 py-3 flex-grow-1">
                       <span className="d-inline-flex align-items-center fw-semibold mb-3" style={{ fontSize: 10.5, padding: '3px 10px', borderRadius: 999, background: 'rgba(245,158,11,0.12)', color: '#a16207', border: '1px solid rgba(245,158,11,0.30)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -2783,7 +3069,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <div
                     className="ep-section-card-flat ep-section-card h-100 d-flex flex-column"
                     style={{
-                      background: 'linear-gradient(135deg, #047857 0%, #0a8a5a 50%, #0ab39c 100%)',
+                      background: 'linear-gradient(135deg, #064e3b, #065f46, #059669)',
                       color: '#fff', padding: '14px 18px',
                       position: 'relative', overflow: 'hidden',
                       border: 'none',
@@ -2799,11 +3085,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <div className="d-flex gap-3 mt-3 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.18)' }}>
                         <div>
                           <p className="mb-1" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>Monthly</p>
-                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 14 }}>₹25,200</h6>
+                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 12 }}>₹25,200</h6>
                         </div>
                         <div className="ps-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.18)' }}>
                           <p className="mb-1" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.72)' }}>Annual</p>
-                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 14 }}>₹3,02,400</h6>
+                          <h6 className="mb-0 text-white fw-bold" style={{ fontSize: 12 }}>₹3,02,400</h6>
                         </div>
                       </div>
                     </div>
@@ -2821,7 +3107,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
                         <i className="ri-briefcase-line" />
                       </span>
-                      <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Payroll Info</h6>
+                      <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Payroll Info</h6>
                     </div>
                     <div className="px-3 py-3 flex-grow-1">
                       <Row className="g-3">
@@ -2852,14 +3138,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     gradient={GRAD_SUCCESS}
                     icon="ri-line-chart-line"
                     action={
-                      <button
-                        type="button"
-                        className="btn btn-sm rounded-pill fw-semibold"
-                        style={{ background: GRAD_SUCCESS, color: '#fff', border: 'none', boxShadow: '0 4px 10px rgba(10,179,156,0.25)', fontSize: 12, padding: '4px 14px' }}
+                      <Button
+                        color="success"
+                        className="btn-label waves-effect waves-light rounded-pill btn-sm"
                         onClick={() => setReviseOpen(true)}
                       >
-                        <i className="ri-edit-line me-1" /> Revise Salary
-                      </button>
+                        <i className="ri-edit-line label-icon align-middle rounded-pill fs-16 me-2" />
+                        Revise Salary
+                      </Button>
                     }
                   />
                   {SALARY_TIMELINE.map((row, idx) => (
@@ -2968,7 +3254,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <i className="ri-file-list-3-line" style={{ color: '#fff', fontSize: 14 }} />
                   </span>
                   <div>
-                    <h6 className="card-title mb-0 fw-bold" style={{ fontSize: 14 }}>Expense Claims</h6>
+                    <h6 className="card-title mb-0 fw-bold" style={{ fontSize: 12 }}>Expense Claims</h6>
                     <small className="text-muted" style={{ fontSize: 11 }}>
                       {expenseCounts.all} total · {expenseCounts.approved} approved · {expenseCounts.pending} pending
                     </small>
@@ -3402,7 +3688,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <>
               {/* Attendance Adjustment header + Add Log */}
               <div className="d-flex align-items-center justify-content-between mb-2">
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Attendance Adjustment</h6>
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Attendance Adjustment</h6>
                 <button
                   type="button"
                   className="ep-reg-add-btn"
@@ -3433,22 +3719,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   ))}
                 </div>
               )}
-              <select
-                className="ep-reg-input mb-1"
-                value={regLocationDraft}
-                onChange={e => {
-                  const v = e.target.value;
-                  if (v && !regLocations.includes(v)) {
-                    setRegLocations(prev => [...prev, v]);
-                  }
-                  setRegLocationDraft('');
-                }}
-              >
-                <option value="">— Select location —</option>
-                {REG_LOCATION_OPTIONS.filter(o => !regLocations.includes(o)).map(o => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
+              <div className="mb-1">
+                <MasterSelect
+                  value={regLocationDraft}
+                  placeholder="— Select location —"
+                  options={REG_LOCATION_OPTIONS.filter(o => !regLocations.includes(o)).map(o => ({ value: o, label: o }))}
+                  onChange={(v) => {
+                    if (v && !regLocations.includes(v)) {
+                      setRegLocations(prev => [...prev, v]);
+                    }
+                    setRegLocationDraft('');
+                  }}
+                />
+              </div>
               <small className="text-muted d-block mb-3" style={{ fontSize: 11 }}>
                 Select your work location(s) for this correction request
               </small>
@@ -3555,17 +3838,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <div className="ep-pay-side-label">Filter</div>
               <div className="mb-3">
                 <div className="ep-pay-mini-label">Year</div>
-                <select className="ep-pay-input" value={paySlipYear} onChange={e => setPaySlipYear(e.target.value)}>
-                  {['2026','2025','2024'].map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
+                <MasterSelect
+                  value={paySlipYear}
+                  options={['2026','2025','2024'].map(y => ({ value: y, label: y }))}
+                  onChange={setPaySlipYear}
+                />
               </div>
               <div className="mb-3">
                 <div className="ep-pay-mini-label">Month</div>
-                <select className="ep-pay-input" value={paySlipMonth} onChange={e => setPaySlipMonth(e.target.value)}>
-                  {['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+                <MasterSelect
+                  value={paySlipMonth}
+                  options={['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => ({ value: m, label: m }))}
+                  onChange={setPaySlipMonth}
+                />
               </div>
               <button type="button" className="ep-pay-side-btn">
                 <i className="ri-eye-line me-1" /> View Payslip
@@ -3769,7 +4054,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <div className="ep-rev-strip-cell">
               <div>
                 <div className="ep-rev-strip-label">Joined</div>
-                <div className="ep-rev-strip-value">2022-05-17</div>
+                <div className="ep-rev-strip-value">17-May-2022</div>
               </div>
             </div>
             <div className="ep-rev-strip-cell">
@@ -3806,7 +4091,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <div className="ep-rev-card mb-3">
               <div className="d-flex align-items-center gap-2 mb-3">
                 <span className="ep-rev-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}>
-                  <i className="ri-money-rupee-circle-line" />
+                  <i className="ri-money-dollar-circle-line" />
                 </span>
                 <h6 className="mb-0 fw-bold">New Salary Details</h6>
               </div>
@@ -3845,24 +4130,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div className="ep-rev-card h-100">
                   <h6 className="fw-bold mb-1" style={{ fontSize: 14 }}>Salary Structure</h6>
                   <div className="ep-rev-label mt-3">Structure Type</div>
-                  <select
-                    className="ep-rev-input"
+                  <MasterSelect
                     value={reviseStructure}
-                    onChange={e => setReviseStructure(e.target.value)}
-                  >
-                    {['Class A', 'Class B', 'Class C'].map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                    options={['Class A', 'Class B', 'Class C'].map(s => ({ value: s, label: s }))}
+                    onChange={setReviseStructure}
+                  />
                 </div>
               </Col>
               <Col md={6}>
                 <div className="ep-rev-card h-100">
                   <h6 className="fw-bold mb-1" style={{ fontSize: 14 }}>Effective Date</h6>
                   <div className="ep-rev-label mt-3">From Date</div>
-                  <input
-                    type="date"
-                    className="ep-rev-input"
+                  <MasterDatePicker
                     value={reviseDate}
-                    onChange={e => setReviseDate(e.target.value)}
+                    onChange={setReviseDate}
                   />
                 </div>
               </Col>
@@ -3870,13 +4151,42 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
             <div className="ep-rev-card mb-3">
               <div className="d-flex align-items-center justify-content-between mb-2">
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Bonus</h6>
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Bonus</h6>
                 <label className="d-inline-flex align-items-center gap-2" style={{ fontSize: 13, cursor: 'pointer' }}>
                   <input type="checkbox" checked={reviseBonusInSal} onChange={e => setReviseBonusInSal(e.target.checked)} />
                   Include bonus in salary
                 </label>
               </div>
-              <button type="button" className="ep-rev-add-btn"><i className="ri-add-line" /> Add Bonus</button>
+              {reviseBonusOpen && (
+                <div className="mb-2">
+                  <div className="ep-rev-label">Bonus Amount (₹)</div>
+                  <div className="position-relative">
+                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                    <input
+                      className="ep-rev-input"
+                      style={{ paddingLeft: 28 }}
+                      placeholder="0"
+                      value={reviseBonusAmount}
+                      onChange={e => setReviseBonusAmount(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                className="ep-rev-add-btn"
+                onClick={() => {
+                  if (reviseBonusOpen) {
+                    setReviseBonusOpen(false);
+                    setReviseBonusAmount('');
+                  } else {
+                    setReviseBonusOpen(true);
+                  }
+                }}
+              >
+                <i className={reviseBonusOpen ? 'ri-subtract-line' : 'ri-add-line'} />{' '}
+                {reviseBonusOpen ? 'Remove Bonus' : 'Add Bonus'}
+              </button>
             </div>
 
             <div className="ep-rev-card mb-3">
@@ -4001,10 +4311,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           <div className="ep-bd-main">
             <div className="ep-bd-card">
               <div className="d-flex align-items-center gap-2 px-3 py-2" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-                <span className="ep-rev-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', width: 32, height: 32, fontSize: 14 }}>
-                  <i className="ri-money-rupee-circle-line" />
+                <span className="ep-rev-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', width: 32, height: 32, fontSize: 16 }}>
+                  <i className="ri-line-chart-line" />
                 </span>
-                <h6 className="mb-0 fw-bold">Earnings Breakdown</h6>
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Earnings Breakdown</h6>
               </div>
               <table className="ep-bd-table">
                 <thead>
@@ -4155,49 +4465,49 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <div className="mb-3">
                   <div className="ep-claim-label">Employee <span className="ep-claim-req">*</span></div>
-                  <select className="ep-claim-input" value={claimEmployee} onChange={e => setClaimEmployee(e.target.value)}>
-                    <option value="">Select employee</option>
-                    <option value={employeeId}>{employee?.name || 'Aarav Patel'} ({employeeId})</option>
-                  </select>
+                  <MasterSelect
+                    value={claimEmployee}
+                    placeholder="Select employee"
+                    options={[{ value: employeeId, label: `${employee?.name || 'Aarav Patel'} (${employeeId})` }]}
+                    onChange={setClaimEmployee}
+                  />
                 </div>
                 <Row className="g-3 mb-3">
                   <Col md={6}>
                     <div className="ep-claim-label">Category <span className="ep-claim-req">*</span></div>
-                    <select className="ep-claim-input" value={claimCategory} onChange={e => setClaimCategory(e.target.value)}>
-                      <option value="">Select category</option>
-                      <option>Travel</option>
-                      <option>Meals</option>
-                      <option>Internet</option>
-                      <option>Office Supplies</option>
-                      <option>Training</option>
-                    </select>
+                    <MasterSelect
+                      value={claimCategory}
+                      placeholder="Select category"
+                      options={['Travel','Meals','Internet','Office Supplies','Training'].map(o => ({ value: o, label: o }))}
+                      onChange={setClaimCategory}
+                    />
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Currency</div>
-                    <select className="ep-claim-input" value={claimCurrency} onChange={e => setClaimCurrency(e.target.value)}>
-                      <option value="INR">₹ INR</option>
-                      <option value="USD">$ USD</option>
-                      <option value="EUR">€ EUR</option>
-                    </select>
+                    <MasterSelect
+                      value={claimCurrency}
+                      options={[{ value: 'INR', label: '₹ INR' }, { value: 'USD', label: '$ USD' }, { value: 'EUR', label: '€ EUR' }]}
+                      onChange={setClaimCurrency}
+                    />
                   </Col>
                 </Row>
                 <Row className="g-3 mb-4">
                   <Col md={6}>
                     <div className="ep-claim-label">Project / Cost Center</div>
-                    <select className="ep-claim-input" value={claimProject} onChange={e => setClaimProject(e.target.value)}>
-                      <option value="">Not assigned</option>
-                      <option>Project Alpha</option>
-                      <option>Project Beta</option>
-                    </select>
+                    <MasterSelect
+                      value={claimProject}
+                      placeholder="Not assigned"
+                      options={['Project Alpha','Project Beta'].map(o => ({ value: o, label: o }))}
+                      onChange={setClaimProject}
+                    />
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Payment Method</div>
-                    <select className="ep-claim-input" value={claimPayment} onChange={e => setClaimPayment(e.target.value)}>
-                      <option>Corporate Card</option>
-                      <option>Personal Card</option>
-                      <option>Cash</option>
-                      <option>UPI</option>
-                    </select>
+                    <MasterSelect
+                      value={claimPayment}
+                      options={['Corporate Card','Personal Card','Cash','UPI'].map(o => ({ value: o, label: o }))}
+                      onChange={setClaimPayment}
+                    />
                   </Col>
                 </Row>
 
@@ -4218,7 +4528,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Expense Date <span className="ep-claim-req">*</span></div>
-                    <input type="date" className="ep-claim-input" value={claimDate} onChange={e => setClaimDate(e.target.value)} />
+                    <MasterDatePicker value={claimDate} onChange={setClaimDate} />
                   </Col>
                 </Row>
                 <div className="mb-3">
@@ -4271,21 +4581,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
                 <div className="mb-3">
                   <div className="ep-claim-label">Employee <span className="ep-claim-req">*</span></div>
-                  <select className="ep-claim-input" value={claimEmployee} onChange={e => setClaimEmployee(e.target.value)}>
-                    <option value="">Select employee</option>
-                    <option value={employeeId}>{employee?.name || 'Aarav Patel'} ({employeeId})</option>
-                  </select>
+                  <MasterSelect
+                    value={claimEmployee}
+                    placeholder="Select employee"
+                    options={[{ value: employeeId, label: `${employee?.name || 'Aarav Patel'} (${employeeId})` }]}
+                    onChange={setClaimEmployee}
+                  />
                 </div>
                 <Row className="g-3 mb-3">
                   <Col md={6}>
                     <div className="ep-claim-label">Advance Type <span className="ep-claim-req">*</span></div>
-                    <select className="ep-claim-input" value={advType} onChange={e => setAdvType(e.target.value)}>
-                      <option value="">Select type...</option>
-                      <option>Travel Advance</option>
-                      <option>Salary Advance</option>
-                      <option>Medical Advance</option>
-                      <option>Other</option>
-                    </select>
+                    <MasterSelect
+                      value={advType}
+                      placeholder="Select type..."
+                      options={['Travel Advance','Salary Advance','Medical Advance','Other'].map(o => ({ value: o, label: o }))}
+                      onChange={setAdvType}
+                    />
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
@@ -4298,20 +4609,24 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <Row className="g-3 mb-3">
                   <Col md={6}>
                     <div className="ep-claim-label">Requested Date <span className="ep-claim-req">*</span></div>
-                    <input type="date" className="ep-claim-input" value={advRequestedDate} onChange={e => setAdvRequestedDate(e.target.value)} />
+                    <MasterDatePicker value={advRequestedDate} onChange={setAdvRequestedDate} />
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Recovery Start <span className="ep-claim-req">*</span></div>
-                    <input type="month" className="ep-claim-input" value={advRecoveryStart} onChange={e => setAdvRecoveryStart(e.target.value)} placeholder="May, 2026" />
+                    <MasterDatePicker value={advRecoveryStart} onChange={setAdvRecoveryStart} />
                   </Col>
                 </Row>
                 <div className="mb-3">
                   <div className="ep-claim-label">Recovery Mode <span className="ep-claim-req">*</span></div>
-                  <select className="ep-claim-input" value={advRecoveryMode} onChange={e => setAdvRecoveryMode(e.target.value)}>
-                    <option value="">Select mode...</option>
-                    <option value="emi">Equal monthly installments</option>
-                    <option value="lumpsum">Lumpsum</option>
-                  </select>
+                  <MasterSelect
+                    value={advRecoveryMode}
+                    placeholder="Select mode..."
+                    options={[
+                      { value: 'emi', label: 'Equal monthly installments' },
+                      { value: 'lumpsum', label: 'Lumpsum' },
+                    ]}
+                    onChange={setAdvRecoveryMode}
+                  />
                 </div>
                 <Row className="g-3 mb-3">
                   <Col md={6}>
