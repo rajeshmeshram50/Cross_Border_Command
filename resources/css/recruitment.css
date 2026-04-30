@@ -2925,6 +2925,324 @@
 .cand-export-submit:active { transform: translateY(0); filter: brightness(0.98); }
 .cand-export-submit i { font-size: 14px; }
 
+/* ---------------------------------------------------------------------
+   Confirm Selection / Confirm Rejection modal — green / red header
+   --------------------------------------------------------------------- */
+.cand-confirm-modal {
+  border-radius: 16px !important;
+  overflow: hidden;
+  box-shadow:
+    0 30px 60px rgba(15,23,42,0.30),
+    0 12px 24px rgba(15,23,42,0.18);
+}
+.cand-confirm-head {
+  position: relative;
+  padding: 16px 20px;
+  display: flex; align-items: center; gap: 14px;
+  color: #ffffff;
+}
+.cand-confirm-modal--select .cand-confirm-head {
+  background:
+    radial-gradient(700px 220px at 100% 0%, rgba(255,255,255,0.22) 0%, transparent 60%),
+    linear-gradient(135deg, #22c55e, #15803d);
+}
+.cand-confirm-modal--reject .cand-confirm-head {
+  background:
+    radial-gradient(700px 220px at 100% 0%, rgba(255,255,255,0.22) 0%, transparent 60%),
+    linear-gradient(135deg, #ef4444, #b91c1c);
+}
+.cand-confirm-head-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px;
+  border-radius: 11px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.28);
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.30);
+}
+.cand-confirm-head-icon i { font-size: 22px; color: #ffffff; }
+.cand-confirm-head-text { flex: 1; min-width: 0; }
+.cand-confirm-head-text h5 { font-size: 15px; font-weight: 700; color: #ffffff; line-height: 1.2; }
+.cand-confirm-head-sub { font-size: 11.5px; color: rgba(255,255,255,0.92); margin-top: 2px; }
+.cand-confirm-close {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #ffffff;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background .15s ease;
+  flex-shrink: 0;
+}
+.cand-confirm-close:hover { background: rgba(255,255,255,0.30); }
+.cand-confirm-close i { font-size: 17px; }
+
+.cand-confirm-body {
+  padding: 16px 20px 8px;
+  background: #ffffff;
+  display: flex; flex-direction: column; gap: 14px;
+}
+[data-bs-theme="dark"] .cand-confirm-body { background: var(--vz-card-bg); }
+
+/* Candidate summary card inside the body */
+.cand-confirm-summary {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #fafbfc 0%, #f5f6f8 100%);
+  border: 1px solid #ececf2;
+  border-radius: 12px;
+}
+[data-bs-theme="dark"] .cand-confirm-summary {
+  background: color-mix(in srgb, #ffffff 4%, var(--vz-card-bg));
+  border-color: var(--vz-border-color);
+}
+.cand-confirm-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(15,23,42,0.10);
+}
+.cand-confirm-summary-text { flex: 1; min-width: 0; }
+.cand-confirm-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1.2;
+}
+.cand-confirm-meta {
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+.cand-confirm-meta .dot { color: #cbd5e1; }
+[data-bs-theme="dark"] .cand-confirm-name { color: #ffffff; }
+[data-bs-theme="dark"] .cand-confirm-meta { color: rgba(255,255,255,0.65); }
+.cand-confirm-stage { text-align: right; flex-shrink: 0; }
+.cand-confirm-stage-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 3px;
+}
+[data-bs-theme="dark"] .cand-confirm-stage-label { color: rgba(255,255,255,0.55); }
+
+/* Form fields */
+.cand-confirm-field { display: flex; flex-direction: column; gap: 6px; }
+.cand-confirm-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #374151;
+  margin: 0;
+}
+.cand-confirm-label .req { color: #ef4444; margin-left: 3px; font-size: 13px; }
+.cand-confirm-label .opt {
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: #9ca3af;
+  font-size: 11px;
+}
+[data-bs-theme="dark"] .cand-confirm-label { color: rgba(255,255,255,0.78); }
+
+.cand-confirm-select {
+  width: 100%; height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid #fca5a5;
+  background: #ffffff;
+  font-size: 13px;
+  color: #1f2937;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.cand-confirm-select:focus {
+  outline: none;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.18);
+}
+.cand-confirm-select.is-invalid {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239,68,68,0.16);
+}
+[data-bs-theme="dark"] .cand-confirm-select {
+  background: var(--vz-card-bg);
+  border-color: rgba(239,68,68,0.55);
+  color: var(--vz-body-color);
+}
+
+.cand-confirm-textarea {
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  font-size: 13px;
+  font-family: inherit;
+  color: #1f2937;
+  resize: vertical;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.cand-confirm-textarea:focus {
+  outline: none;
+  border-color: #6b7280;
+  box-shadow: 0 0 0 3px rgba(107,114,128,0.16);
+}
+.cand-confirm-textarea::placeholder { color: #9ca3af; }
+[data-bs-theme="dark"] .cand-confirm-textarea {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+  color: var(--vz-body-color);
+}
+
+.cand-confirm-error {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px;
+  color: #b91c1c;
+  font-weight: 600;
+}
+.cand-confirm-error i { font-size: 13px; }
+
+/* Footer */
+.cand-confirm-footer {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);
+  border-top: 1px solid #ececf2;
+}
+[data-bs-theme="dark"] .cand-confirm-footer {
+  background: var(--vz-card-bg);
+  border-top-color: var(--vz-border-color);
+}
+.cand-confirm-submit {
+  height: 38px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: 0;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.cand-confirm-modal--select .cand-confirm-submit {
+  background: linear-gradient(135deg, #22c55e, #15803d);
+  box-shadow:
+    0 6px 16px rgba(34,197,94,0.40),
+    0 2px 4px rgba(21,128,61,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.28);
+}
+.cand-confirm-modal--reject .cand-confirm-submit {
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  box-shadow:
+    0 6px 16px rgba(239,68,68,0.40),
+    0 2px 4px rgba(185,28,28,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.28);
+}
+.cand-confirm-submit:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+.cand-confirm-modal--select .cand-confirm-submit:hover {
+  box-shadow:
+    0 10px 22px rgba(34,197,94,0.48),
+    0 3px 6px rgba(21,128,61,0.26),
+    inset 0 1px 0 rgba(255,255,255,0.32);
+}
+.cand-confirm-modal--reject .cand-confirm-submit:hover {
+  box-shadow:
+    0 10px 22px rgba(239,68,68,0.48),
+    0 3px 6px rgba(185,28,28,0.26),
+    inset 0 1px 0 rgba(255,255,255,0.32);
+}
+.cand-confirm-submit:active { transform: translateY(0); filter: brightness(0.98); }
+.cand-confirm-submit i { font-size: 14px; }
+
+/* ---------------------------------------------------------------------
+   Candidate table — compact rows + green CV download chip
+   --------------------------------------------------------------------- */
+/* Candidate page is denser than the recruitment table — pull the row
+   padding in and shrink the body font half a step so 10 rows fit at a
+   glance like the Figma reference. Every cell stays vertically centred
+   on the same horizontal line via fixed line-height + middle vertical
+   alignment. */
+.cand-page-table.rec-list-table thead th {
+  padding: 9px 10px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.cand-page-table.rec-list-table tbody td {
+  padding: 6px 10px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+/* Strip stray block margins from inline content so the row can collapse
+   to its natural single-line height — the badges (status pill, CV chip)
+   and pills are already inline-flex, this just prevents any leftover
+   line-height inflation. */
+.cand-page-table.rec-list-table tbody td > * { vertical-align: middle; }
+.cand-page-table.rec-list-table tbody tr { height: 46px; }
+/* Inline CV download chip — soft green pill, matches the reference. */
+.cand-cv-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: #d1fae5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-decoration: none !important;
+  transition: background .15s ease, transform .15s ease, box-shadow .15s ease;
+  white-space: nowrap;
+}
+.cand-cv-chip:hover {
+  background: #a7f3d0;
+  color: #065f46;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(4,120,87,0.18);
+}
+.cand-cv-chip i { font-size: 12px; line-height: 1; }
+[data-bs-theme="dark"] .cand-cv-chip {
+  background: rgba(16,185,129,0.18);
+  color: #6ee7b7;
+  border-color: rgba(16,185,129,0.40);
+}
+[data-bs-theme="dark"] .cand-cv-chip:hover {
+  background: rgba(16,185,129,0.28);
+  color: #d1fae5;
+}
+
+/* ---------------------------------------------------------------------
+   Modal backdrop — soft blur so the page behind any open dialog reads
+   as a frosted backdrop. Applies to every modal in the app.
+   --------------------------------------------------------------------- */
+.modal-backdrop.show {
+  background-color: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 1 !important;
+}
+[data-bs-theme="dark"] .modal-backdrop.show {
+  background-color: rgba(0, 0, 0, 0.55);
+}
+
 /* Result-count chip in the candidate filter row */
 .cand-result-chip {
   display: inline-flex;
