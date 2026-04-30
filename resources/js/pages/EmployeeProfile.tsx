@@ -645,122 +645,133 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         .modal-backdrop.ep-bd-backdrop { z-index: 2095 !important; }
 
         /* ── Revise Salary modal ── */
-        .ep-rev-modal .modal-content { border: none; border-radius: 16px; overflow: hidden; }
+        .ep-rev-modal .modal-content { border: none; border-radius: 14px; overflow: hidden; }
         .ep-rev-modal .modal-dialog { max-width: 1180px; }
         .ep-rev-hero {
           background: linear-gradient(135deg,#064e3b,#065f46,#059669);
-          color: #fff; padding: 22px 26px;
+          color: #fff; padding: 12px 18px;
         }
         .ep-rev-cancel-hero {
-          padding: 8px 18px; background: rgba(255,255,255,0.10);
+          padding: 4px 12px; background: rgba(255,255,255,0.10);
           color: #fff; border: 1px solid rgba(255,255,255,0.30);
-          border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+          border-radius: 7px; font-size: 11.5px; font-weight: 600; cursor: pointer;
         }
         .ep-rev-cancel-hero:hover { background: rgba(255,255,255,0.20); }
         .ep-rev-submit-hero {
-          padding: 8px 22px; background: #ffffff; color: #047857;
-          border: none; border-radius: 8px;
-          font-size: 13px; font-weight: 700; cursor: pointer;
-          box-shadow: 0 4px 14px rgba(0,0,0,0.20);
+          padding: 4px 14px; background: #ffffff; color: #047857;
+          border: none; border-radius: 7px;
+          font-size: 11.5px; font-weight: 700; cursor: pointer;
+          box-shadow: 0 3px 10px rgba(0,0,0,0.18);
         }
         .ep-rev-submit-hero:hover { background: #f0fdf4; }
         .ep-rev-strip {
           display: grid; grid-template-columns: 1.4fr repeat(5, 1fr);
-          margin-top: 22px;
-          padding: 14px 16px;
+          margin-top: 10px;
+          padding: 8px 10px;
           background: rgba(255,255,255,0.08);
           border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 12px;
+          border-radius: 9px;
         }
-        .ep-rev-strip-cell { display: flex; align-items: center; gap: 10px; padding: 0 14px; }
+        .ep-rev-strip-cell { display: flex; align-items: center; gap: 8px; padding: 0 10px; }
         .ep-rev-strip-cell + .ep-rev-strip-cell { border-left: 1px solid rgba(255,255,255,0.14); }
         .ep-rev-avatar {
-          width: 44px; height: 44px; border-radius: 12px;
-          background: linear-gradient(135deg, #4f46e5 0%, #7c5cfc 100%);
-          color: #fff; font-weight: 700; font-size: 16px;
+          width: 32px; height: 32px; border-radius: 8px;
+          background: #4f46e5;
+          color: #fff; font-weight: 700; font-size: 11.5px;
           display: inline-flex; align-items: center; justify-content: center;
-          border: 1px solid rgba(255,255,255,0.30);
+          border: 1px solid rgba(255,255,255,0.20);
           flex-shrink: 0;
-          box-shadow: 0 6px 14px rgba(79,70,229,0.40), inset 0 1px 0 rgba(255,255,255,0.20);
+          box-shadow: 0 3px 8px rgba(79,70,229,0.28);
         }
         .ep-rev-strip-label {
-          font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
+          font-size: 8.5px; font-weight: 700; letter-spacing: 0.08em;
           text-transform: uppercase; color: rgba(255,255,255,0.65);
         }
-        .ep-rev-strip-value { font-size: 13px; font-weight: 700; color: #fff; }
-        .ep-rev-strip-sub  { font-size: 11.5px; color: rgba(255,255,255,0.70); }
+        .ep-rev-strip-value { font-size: 11.5px; font-weight: 700; color: #fff; line-height: 1.25; }
+        .ep-rev-strip-sub  { font-size: 10px; color: rgba(255,255,255,0.70); line-height: 1.2; }
 
         .ep-rev-body {
-          display: grid; grid-template-columns: 1fr 320px;
+          display: grid; grid-template-columns: 1fr 300px;
           gap: 0;
           background: var(--vz-body-bg, #f3f4f9);
-          max-height: 78vh; overflow-y: auto;
         }
-        .ep-rev-form { padding: 22px; }
+        .ep-rev-form { padding: 12px; }
         .ep-rev-card {
           background: var(--vz-card-bg);
           border: 1px solid var(--vz-border-color);
-          border-radius: 12px;
-          padding: 16px;
+          border-radius: 10px;
+          padding: 10px 12px;
         }
         .ep-rev-icon {
-          width: 36px; height: 36px; border-radius: 10px;
-          color: #fff; font-size: 18px;
+          width: 28px; height: 28px; border-radius: 8px;
+          color: #fff; font-size: 14px;
           display: inline-flex; align-items: center; justify-content: center;
           flex-shrink: 0;
         }
         .ep-rev-label {
-          font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
           text-transform: uppercase; color: var(--vz-secondary-color);
-          margin-bottom: 6px;
+          margin-bottom: 4px;
         }
         .ep-rev-input {
-          width: 100%; padding: 9px 12px;
+          width: 100%; padding: 6px 10px;
           border: 1px solid var(--vz-border-color);
-          border-radius: 8px; background: var(--vz-card-bg);
-          color: var(--vz-body-color); font-size: 13px;
+          border-radius: 7px; background: var(--vz-card-bg);
+          color: var(--vz-body-color); font-size: 11.5px;
         }
         .ep-rev-input:focus { outline: none; border-color: #0ab39c; box-shadow: 0 0 0 3px rgba(10,179,156,0.18); }
         .ep-rev-add-btn {
           display: inline-flex; align-items: center; gap: 4px;
-          padding: 5px 14px; background: rgba(10,179,156,0.08);
+          padding: 3px 10px; background: rgba(10,179,156,0.08);
           color: #0a8a78; border: 1px dashed rgba(10,179,156,0.45);
-          border-radius: 999px; font-size: 12px; font-weight: 600;
+          border-radius: 999px; font-size: 10.5px; font-weight: 600;
           cursor: pointer; transition: all .15s ease;
         }
         .ep-rev-add-btn:hover {
           background: rgba(10,179,156,0.16);
           border-color: rgba(10,179,156,0.65);
         }
-        .ep-rev-add-btn i { font-size: 14px; line-height: 1; }
+        .ep-rev-add-btn i { font-size: 12px; line-height: 1; }
 
         .ep-rev-preview {
-          padding: 22px;
+          padding: 12px;
           border-left: 1px solid var(--vz-border-color);
           background: var(--vz-card-bg);
         }
         .ep-rev-net {
-          background: linear-gradient(135deg, #047857 0%, #0a8a5a 100%);
+          background: linear-gradient(135deg, #064e3b, #065f46, #059669);
           color: #fff;
-          padding: 16px 18px;
-          border-radius: 12px;
-          margin-bottom: 14px;
-          box-shadow: 0 6px 18px rgba(4,120,87,0.30);
+          padding: 10px 14px;
+          border-radius: 10px;
+          margin-bottom: 10px;
+          box-shadow: 0 4px 14px rgba(4,120,87,0.25);
+          position: relative;
+          overflow: hidden;
         }
+        .ep-rev-net::before {
+          content: '';
+          position: absolute;
+          top: -30px; right: -20px;
+          width: 110px; height: 110px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.08);
+          pointer-events: none;
+        }
+        .ep-rev-net > * { position: relative; }
         .ep-rev-summary {
           background: var(--vz-card-bg);
           border: 1px solid var(--vz-border-color);
-          border-radius: 12px;
-          padding: 14px 16px;
+          border-radius: 10px;
+          padding: 10px 12px;
         }
         .ep-rev-summary-head {
-          font-size: 10.5px; font-weight: 700; letter-spacing: 0.10em;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
           text-transform: uppercase; color: var(--vz-secondary-color);
-          margin-bottom: 10px;
+          margin-bottom: 6px;
         }
         .ep-rev-summary-row {
           display: flex; align-items: center; justify-content: space-between;
-          padding: 6px 0; font-size: 13px;
+          padding: 4px 0; font-size: 11.5px;
           border-bottom: 1px dashed var(--vz-border-color);
         }
         .ep-rev-summary-row:last-child { border-bottom: none; }
@@ -862,13 +873,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         .ep-claim-modal.is-advance { --accent: #6366f1; --accent-2: #8b5cf6; --accent-soft: rgba(99,102,241,0.10); --accent-border: rgba(99,102,241,0.30); }
         .ep-claim-hero {
           background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
-          color: #fff; padding: 18px 22px;
+          color: #fff; padding: 12px 16px;
         }
         .ep-claim-icon {
-          width: 44px; height: 44px; border-radius: 12px;
+          width: 34px; height: 34px; border-radius: 10px;
           background: rgba(255,255,255,0.15);
           border: 1px solid rgba(255,255,255,0.30);
-          color: #fff; font-size: 20px;
+          color: #fff; font-size: 15px;
           display: inline-flex; align-items: center; justify-content: center;
           flex-shrink: 0;
         }
@@ -876,11 +887,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           background: rgba(255,255,255,0.18);
           border: 1px solid rgba(255,255,255,0.30);
           color: #fff;
-          font-size: 10.5px; font-weight: 700; letter-spacing: 0.10em;
-          padding: 5px 12px; border-radius: 999px;
+          font-size: 9px; font-weight: 700; letter-spacing: 0.10em;
+          padding: 3px 10px; border-radius: 999px;
         }
         .ep-claim-x {
-          width: 32px; height: 32px; border-radius: 50%;
+          width: 26px; height: 26px; border-radius: 50%;
           background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.30);
           color: #fff; cursor: pointer;
           display: inline-flex; align-items: center; justify-content: center;
@@ -890,44 +901,44 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           display: inline-flex; gap: 0;
           background: rgba(255,255,255,0.10);
           border: 1px solid rgba(255,255,255,0.18);
-          border-radius: 10px; padding: 4px;
+          border-radius: 8px; padding: 3px;
         }
         .ep-claim-tab {
           background: transparent; border: none;
-          padding: 7px 14px; border-radius: 8px;
-          font-size: 12.5px; font-weight: 600;
+          padding: 4px 11px; border-radius: 6px;
+          font-size: 11px; font-weight: 600;
           color: rgba(255,255,255,0.75);
           cursor: pointer; transition: all .15s ease;
-          display: inline-flex; align-items: center; gap: 6px;
+          display: inline-flex; align-items: center; gap: 5px;
         }
         .ep-claim-tab:hover { color: #fff; background: rgba(255,255,255,0.10); }
-        .ep-claim-tab.is-active { background: #fff; color: var(--accent); box-shadow: 0 4px 12px rgba(0,0,0,0.18); }
+        .ep-claim-tab.is-active { background: #fff; color: var(--accent); box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
 
         .ep-claim-body {
-          padding: 22px;
+          padding: 14px;
           overflow-y: auto;
           flex: 1 1 auto;
           background: var(--vz-card-bg);
         }
         .ep-claim-section-head {
-          display: flex; align-items: center; gap: 8px;
-          font-size: 11px; font-weight: 700; letter-spacing: 0.10em;
+          display: flex; align-items: center; gap: 6px;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
           text-transform: uppercase; color: var(--accent);
-          margin-bottom: 12px;
+          margin-bottom: 8px;
         }
-        .ep-claim-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+        .ep-claim-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
         .ep-claim-dot.is-faded { opacity: 0.4; }
         .ep-claim-label {
-          font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
           text-transform: uppercase; color: var(--vz-secondary-color);
-          margin-bottom: 6px;
+          margin-bottom: 4px;
         }
         .ep-claim-req { color: #ef4444; }
         .ep-claim-input {
-          width: 100%; padding: 9px 12px;
+          width: 100%; padding: 6px 10px;
           border: 1px solid var(--vz-border-color);
-          border-radius: 8px; background: var(--vz-card-bg);
-          color: var(--vz-body-color); font-size: 13px;
+          border-radius: 7px; background: var(--vz-card-bg);
+          color: var(--vz-body-color); font-size: 11.5px;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
         .ep-claim-input:focus {
@@ -935,10 +946,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           box-shadow: 0 0 0 3px var(--accent-soft);
         }
         .ep-claim-upload {
-          padding: 22px; text-align: center;
+          padding: 14px; text-align: center;
           background: var(--accent-soft);
           border: 2px dashed var(--accent-border);
-          border-radius: 12px;
+          border-radius: 10px;
           cursor: pointer;
           transition: background .15s ease;
         }
@@ -946,120 +957,120 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         .is-advance .ep-claim-upload:hover { background: rgba(99,102,241,0.14); }
         .ep-claim-upload-icon {
           display: inline-flex; align-items: center; justify-content: center;
-          width: 44px; height: 44px; border-radius: 12px;
+          width: 32px; height: 32px; border-radius: 9px;
           background: rgba(249,115,22,0.15); color: var(--accent);
-          margin-bottom: 8px; font-size: 20px;
+          margin-bottom: 6px; font-size: 14px;
         }
         .ep-claim-intel {
-          padding: 16px;
+          padding: 10px 12px;
           background: var(--vz-secondary-bg);
           border: 1px solid var(--vz-border-color);
-          border-radius: 10px;
-          min-height: 56px;
+          border-radius: 8px;
+          min-height: 44px;
           display: flex; align-items: center; justify-content: center;
         }
         .ep-claim-route {
-          padding: 16px;
+          padding: 10px 12px;
           background: var(--accent-soft);
           border: 1px solid var(--accent-border);
-          border-radius: 12px;
+          border-radius: 10px;
         }
         .ep-claim-stepper {
           display: flex; align-items: center; justify-content: space-between;
           gap: 4px; position: relative;
         }
         .ep-claim-step {
-          display: flex; flex-direction: column; align-items: center; gap: 6px;
+          display: flex; flex-direction: column; align-items: center; gap: 4px;
           flex: 1; min-width: 0; position: relative;
         }
         .ep-claim-step-icon {
-          width: 36px; height: 36px; border-radius: 50%;
+          width: 28px; height: 28px; border-radius: 50%;
           display: inline-flex; align-items: center; justify-content: center;
           background: var(--vz-card-bg);
           border: 1px solid var(--vz-border-color);
           color: var(--vz-secondary-color);
-          font-size: 16px; z-index: 1;
+          font-size: 13px; z-index: 1;
         }
         .ep-claim-step-icon.is-active {
           background: linear-gradient(135deg, var(--accent), var(--accent-2));
           color: #fff; border-color: var(--accent);
-          box-shadow: 0 4px 12px var(--accent-border);
+          box-shadow: 0 3px 8px var(--accent-border);
         }
-        .ep-claim-step-label { font-size: 11px; font-weight: 600; color: var(--vz-secondary-color); }
+        .ep-claim-step-label { font-size: 9.5px; font-weight: 600; color: var(--vz-secondary-color); }
         .ep-claim-step-line {
-          position: absolute; top: 18px; left: 50%; right: -50%;
+          position: absolute; top: 14px; left: 50%; right: -50%;
           height: 2px; background: var(--vz-border-color); z-index: 0;
         }
         .ep-claim-step-line.is-active { background: var(--accent); }
         .ep-claim-audit {
           background: linear-gradient(135deg, var(--accent), var(--accent-2));
           color: #fff;
-          font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
-          padding: 4px 10px; border-radius: 999px;
+          font-size: 8.5px; font-weight: 700; letter-spacing: 0.08em;
+          padding: 3px 8px; border-radius: 999px;
         }
         .ep-claim-route-hint {
-          font-size: 11.5px; color: var(--accent);
-          padding: 8px 12px; background: rgba(255,255,255,0.55);
-          border-radius: 8px;
+          font-size: 10px; color: var(--accent);
+          padding: 5px 10px; background: rgba(255,255,255,0.55);
+          border-radius: 7px;
         }
 
         .ep-claim-banner {
-          display: flex; align-items: center; gap: 12px;
-          padding: 14px 16px; margin-bottom: 18px;
+          display: flex; align-items: center; gap: 10px;
+          padding: 10px 12px; margin-bottom: 12px;
           background: var(--accent-soft);
           border: 1px solid var(--accent-border);
-          border-radius: 12px;
+          border-radius: 10px;
         }
         .ep-claim-banner-icon {
-          width: 38px; height: 38px; border-radius: 10px;
+          width: 30px; height: 30px; border-radius: 8px;
           background: linear-gradient(135deg, var(--accent), var(--accent-2));
-          color: #fff; font-size: 18px;
+          color: #fff; font-size: 14px;
           display: inline-flex; align-items: center; justify-content: center;
           flex-shrink: 0;
         }
         .ep-claim-flow-pill {
           background: linear-gradient(135deg, var(--accent), var(--accent-2));
           color: #fff;
-          font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
-          padding: 4px 10px; border-radius: 999px;
+          font-size: 8.5px; font-weight: 700; letter-spacing: 0.08em;
+          padding: 3px 8px; border-radius: 999px;
         }
         .ep-claim-warn {
-          display: flex; align-items: flex-start; gap: 10px;
-          padding: 12px 14px;
+          display: flex; align-items: flex-start; gap: 8px;
+          padding: 8px 12px;
           background: rgba(245,158,11,0.10);
           border: 1px solid rgba(245,158,11,0.30);
-          border-radius: 10px;
-          color: #a16207; font-size: 12px;
+          border-radius: 8px;
+          color: #a16207; font-size: 10.5px;
         }
-        .ep-claim-warn i { font-size: 16px; flex-shrink: 0; margin-top: 2px; }
+        .ep-claim-warn i { font-size: 13px; flex-shrink: 0; margin-top: 2px; }
 
         .ep-claim-footer {
-          display: flex; align-items: center; gap: 8px;
-          padding: 14px 22px;
+          display: flex; align-items: center; gap: 6px;
+          padding: 10px 16px;
           border-top: 1px solid var(--vz-border-color);
           background: var(--vz-card-bg);
         }
         .ep-claim-cancel {
-          padding: 8px 18px;
+          padding: 4px 14px;
           background: var(--vz-card-bg); color: var(--vz-body-color);
           border: 1px solid var(--vz-border-color);
-          border-radius: 8px; font-size: 13px; font-weight: 600;
+          border-radius: 7px; font-size: 11.5px; font-weight: 600;
           cursor: pointer;
         }
         .ep-claim-secondary {
-          padding: 8px 14px;
+          padding: 4px 12px;
           background: var(--vz-card-bg); color: var(--vz-body-color);
           border: 1px solid var(--vz-border-color);
-          border-radius: 8px; font-size: 12.5px; font-weight: 600;
+          border-radius: 7px; font-size: 11px; font-weight: 600;
           cursor: pointer;
         }
         .ep-claim-secondary:hover { border-color: var(--accent); color: var(--accent); }
         .ep-claim-submit {
-          padding: 8px 22px;
+          padding: 4px 16px;
           background: linear-gradient(135deg, var(--accent), var(--accent-2));
-          color: #fff; border: none; border-radius: 8px;
-          font-size: 13px; font-weight: 700; cursor: pointer;
-          box-shadow: 0 4px 12px var(--accent-border);
+          color: #fff; border: none; border-radius: 7px;
+          font-size: 11.5px; font-weight: 700; cursor: pointer;
+          box-shadow: 0 3px 10px var(--accent-border);
         }
         .ep-claim-submit:hover { transform: translateY(-1px); }
         .ep-pay-modal .modal-content { border: none; border-radius: 16px; overflow: hidden; }
@@ -2794,69 +2805,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {/* ── Tab: Payroll Details ── */}
       {tab === 'payroll' && (
         <>
-          {/* Hero strip — shared across both subtabs, mirrors Evidence Vault.
-              Same deep-indigo gradient + decorative circle so the two tabs
-              read as siblings of the same family. */}
-          <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
-            <div
-              style={{
-                background: 'linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%)',
-                color: '#fff',
-                padding: '12px 18px',
-                position: 'relative',
-                overflow: 'hidden',
-              }}
-            >
-              <div style={{ position: 'absolute', top: -50, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
-              <Row className="align-items-center g-2" style={{ position: 'relative' }}>
-                <Col xs="auto">
-                  <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.30)' }}>
-                    <i className="ri-money-dollar-circle-line" style={{ fontSize: 17, color: '#fff' }} />
-                  </span>
-                </Col>
-                <Col className="min-w-0">
-                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>Payroll Summary</p>
-                  <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
-                    Last Processed: <span style={{ color: '#bce8ff' }}>Mar 2026</span> (01 Mar – 31 Mar)
-                  </div>
-                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>Next cycle: Apr 2026 · Monthly payroll</small>
-                </Col>
-                <Col xs="12" lg="auto">
-                  <div className="d-flex gap-1 flex-wrap justify-content-lg-end align-items-center">
-                    {[
-                      { label: 'Working Days', value: '31',     color: '#fff' },
-                      { label: 'Loss of Pay',  value: '0',      color: '#fcd34d' },
-                      { label: 'Status',       value: 'Active', color: '#86efac' },
-                    ].map(c => (
-                      <div
-                        key={c.label}
-                        className="text-center"
-                        style={{
-                          background: 'rgba(255,255,255,0.10)',
-                          border: '1px solid rgba(255,255,255,0.18)',
-                          borderRadius: 9,
-                          padding: '4px 10px',
-                          minWidth: 72,
-                        }}
-                      >
-                        <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
-                        <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      className="btn btn-light rounded-pill fw-semibold ms-1"
-                      style={{ fontSize: 10.5, padding: '4px 10px' }}
-                      onClick={() => setPaySlipOpen(true)}
-                    >
-                      <i className="ri-download-2-line me-1" /> View Payslip
-                    </button>
-                  </div>
-                </Col>
-              </Row>
-            </div>
-          </Card>
-
           {/* Sub-tab pill — Payroll Summary (indigo) | Payment Details (green).
               Same compact strap shape as the Evidence Vault subtabs. */}
           <Row className="g-2 mb-3">
@@ -2903,6 +2851,80 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
           {payrollTab === 'summary' && (
             <>
+              {/* Hero strip — only on the Payroll Summary tab. */}
+              <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%)',
+                    color: '#fff',
+                    padding: '12px 18px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: -50, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+                  <Row className="align-items-center g-2" style={{ position: 'relative' }}>
+                    <Col xs="auto">
+                      <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.30)' }}>
+                        <i className="ri-money-dollar-circle-line" style={{ fontSize: 17, color: '#fff' }} />
+                      </span>
+                    </Col>
+                    <Col className="min-w-0">
+                      <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>Payroll Summary</p>
+                      <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
+                        Last Processed: <span style={{ color: '#bce8ff' }}>Mar 2026</span> (01 Mar – 31 Mar)
+                      </div>
+                      <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>Next cycle: Apr 2026 · Monthly payroll</small>
+                    </Col>
+                    <Col xs="12" lg="auto">
+                      <div className="d-flex gap-1 flex-wrap justify-content-lg-end align-items-center">
+                        {[
+                          { label: 'Working Days', value: '31',     color: '#fff' },
+                          { label: 'Loss of Pay',  value: '0',      color: '#fcd34d' },
+                          { label: 'Status',       value: 'Active', color: '#86efac' },
+                        ].map(c => (
+                          <div
+                            key={c.label}
+                            className="text-center"
+                            style={{
+                              background: 'rgba(255,255,255,0.10)',
+                              border: '1px solid rgba(255,255,255,0.18)',
+                              borderRadius: 9,
+                              padding: '4px 10px',
+                              minWidth: 72,
+                            }}
+                          >
+                            <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
+                            <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setPaySlipOpen(true)}
+                          className="d-inline-flex align-items-center gap-1 fw-semibold lh-1"
+                          style={{
+                            background: 'rgba(255,255,255,0.10)',
+                            border: '1px solid rgba(255,255,255,0.18)',
+                            borderRadius: 9,
+                            padding: '4px 10px',
+                            minWidth: 72,
+                            height: 36,
+                            color: '#fff',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                            transition: 'background .15s ease',
+                          }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.18)'; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.10)'; }}
+                        >
+                          <i className="ri-download-2-line" style={{ fontSize: 13 }} /> View Payslip
+                        </button>
+                      </div>
+                    </Col>
+                  </Row>
+                </div>
+              </Card>
+
               <Row className="g-3 mb-3 align-items-stretch">
                 <Col xl={6}>
                   <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #299cdb' }}>
@@ -3131,56 +3153,135 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <span>Income and tax liability is being computed as per <strong>New Tax Regime</strong>. To switch to Old Tax Regime, contact your HR admin.</span>
               </div>
 
-              <Card className="mb-3" style={cardStyle}>
-                <CardBody>
-                  <SectionHeader
-                    title="Salary Timeline"
-                    gradient={GRAD_SUCCESS}
-                    icon="ri-line-chart-line"
-                    action={
-                      <Button
-                        color="success"
-                        className="btn-label waves-effect waves-light rounded-pill btn-sm"
-                        onClick={() => setReviseOpen(true)}
-                      >
-                        <i className="ri-edit-line label-icon align-middle rounded-pill fs-16 me-2" />
-                        Revise Salary
-                      </Button>
-                    }
-                  />
+              <div
+                className="ep-section-card-flat ep-section-card mb-3"
+                style={{ borderTop: '3px solid #0ab39c' }}
+              >
+                <div
+                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+                  style={{
+                    borderBottom: '1px solid rgba(10,179,156,0.18)',
+                    background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
+                  }}
+                >
+                  <div className="d-flex align-items-center gap-2">
+                    <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
+                      <i className="ri-line-chart-line" />
+                    </span>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Salary Timeline</h6>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReviseOpen(true)}
+                    className="d-inline-flex align-items-center gap-1 fw-semibold"
+                    style={{
+                      background: 'linear-gradient(135deg,#0a8a78,#0ab39c)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 999,
+                      padding: '6px 16px',
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 12px rgba(10,138,120,0.32)',
+                    }}
+                  >
+                    <i className="ri-edit-line" style={{ fontSize: 13 }} /> Revise Salary
+                  </button>
+                </div>
+                <div className="px-3 py-2 position-relative">
+                  {/* Vertical guide line connecting the timeline dots */}
+                  <span style={{
+                    position: 'absolute',
+                    left: 21, top: 22, bottom: 22,
+                    width: 2,
+                    background: 'var(--vz-border-color)',
+                    pointerEvents: 'none',
+                  }} />
                   {SALARY_TIMELINE.map((row, idx) => (
-                    <div key={row.id} className="d-flex align-items-center gap-3 py-3 flex-wrap" style={{ borderBottom: idx < SALARY_TIMELINE.length - 1 ? '1px solid var(--vz-border-color)' : 'none' }}>
-                      <span className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style={{ width: 18, height: 18, background: row.current ? '#0ab39c' : 'transparent', border: row.current ? 'none' : '2px solid var(--vz-border-color)', boxShadow: row.current ? '0 0 0 4px rgba(10,179,156,0.18)' : 'none' }}>
-                        {row.current && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }} />}
-                      </span>
-                      <div className="flex-grow-1 min-w-0">
-                        <div className="d-flex align-items-center gap-2 flex-wrap">
-                          <p className="mb-0 fs-11 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em' }}>SALARY REVISION</p>
-                          {row.current && <span className="badge rounded-pill" style={{ background: '#d6f4e3', color: '#108548', fontSize: 10 }}>CURRENT</span>}
-                        </div>
-                        <small className="text-muted">Effective {row.dateShort}</small>
-                      </div>
-                      <div className="text-end">
-                        <p className="mb-0 fs-11 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)' }}>Regular Salary</p>
-                        <h6 className="mb-0 fw-bold">₹{row.annual.toLocaleString('en-IN')}</h6>
-                      </div>
-                      <span style={{ color: 'var(--vz-secondary-color)' }}>=</span>
-                      <div className="text-end">
-                        <p className="mb-0 fs-11 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)' }}>Total</p>
-                        <h6 className="mb-0 fw-bold" style={{ color: '#5a3fd1' }}>₹{row.annual.toLocaleString('en-IN')}</h6>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn btn-sm rounded-pill fw-semibold"
-                        style={{ background: '#fff', color: '#374151', border: '1px solid var(--vz-border-color)', fontSize: 12 }}
-                        onClick={() => { setBreakdownRowId(row.id); setBreakdownOpen(true); }}
+                    <div
+                      key={row.id}
+                      className="d-flex align-items-center gap-3 py-2 flex-wrap position-relative"
+                    >
+                      {/* Timeline dot */}
+                      <span
+                        className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+                        style={{
+                          width: 18, height: 18,
+                          background: row.current ? '#0ab39c' : 'var(--vz-card-bg)',
+                          border: row.current ? '3px solid #fff' : '2px solid var(--vz-border-color)',
+                          boxShadow: row.current ? '0 0 0 3px #0ab39c, 0 0 0 6px rgba(10,179,156,0.18)' : 'none',
+                          position: 'relative', zIndex: 1,
+                        }}
                       >
-                        View Breakdown
-                      </button>
+                        {!row.current && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--vz-border-color)' }} />}
+                      </span>
+
+                      {/* Row body — current row gets the soft green → white gradient */}
+                      <div
+                        className="d-flex align-items-center gap-3 flex-grow-1 flex-wrap"
+                        style={{
+                          background: row.current
+                            ? 'linear-gradient(90deg, rgba(10,179,156,0.10) 0%, rgba(10,179,156,0.02) 60%, transparent 100%)'
+                            : 'transparent',
+                          border: row.current ? '1px solid rgba(10,179,156,0.30)' : '1px solid transparent',
+                          borderRadius: 10,
+                          padding: '8px 12px',
+                        }}
+                      >
+                        <div className="flex-grow-1 min-w-0">
+                          <div className="d-flex align-items-center gap-2 flex-wrap">
+                            <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', fontSize: 10.5 }}>SALARY REVISION</p>
+                            {row.current && (
+                              <span
+                                className="d-inline-flex align-items-center fw-bold text-uppercase"
+                                style={{
+                                  background: 'linear-gradient(135deg,#0a8a78,#0ab39c)',
+                                  color: '#fff',
+                                  fontSize: 9,
+                                  letterSpacing: '0.08em',
+                                  padding: '2px 8px',
+                                  borderRadius: 999,
+                                  boxShadow: '0 2px 6px rgba(10,138,120,0.32)',
+                                }}
+                              >
+                                CURRENT
+                              </span>
+                            )}
+                          </div>
+                          <small style={{ color: 'var(--vz-secondary-color)', fontSize: 11.5 }}>
+                            Effective <span className="fw-semibold" style={{ color: 'var(--vz-body-color)' }}>{row.dateShort}</span>
+                          </small>
+                        </div>
+                        <div className="text-end">
+                          <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', fontSize: 9.5 }}>Regular Salary</p>
+                          <div className="fw-bold" style={{ fontSize: 13, color: 'var(--vz-body-color)' }}>₹{row.annual.toLocaleString('en-IN')}</div>
+                        </div>
+                        <span style={{ color: 'var(--vz-secondary-color)', fontSize: 14 }}>=</span>
+                        <div className="text-end">
+                          <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', fontSize: 9.5 }}>Total</p>
+                          <div className="fw-bold" style={{ fontSize: 13, color: '#0a8a78' }}>₹{row.annual.toLocaleString('en-IN')}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="d-inline-flex align-items-center fw-semibold"
+                          style={{
+                            background: '#fff',
+                            color: '#374151',
+                            border: '1px solid var(--vz-border-color)',
+                            borderRadius: 999,
+                            padding: '5px 14px',
+                            fontSize: 11.5,
+                            cursor: 'pointer',
+                          }}
+                          onClick={() => { setBreakdownRowId(row.id); setBreakdownOpen(true); }}
+                        >
+                          View Breakdown
+                        </button>
+                      </div>
                     </div>
                   ))}
-                </CardBody>
-              </Card>
+                </div>
+              </div>
             </>
           )}
         </>
@@ -3189,30 +3290,33 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {/* ── Tab: Expense Details ── */}
       {tab === 'expense' && (
         <>
-          {/* Expense Overview hero — total claimed + 4 status counters */}
+          {/* Expense Overview hero — same shape as Evidence Vault / Payroll Summary. */}
           <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
             <div
               style={{
-                background: 'linear-gradient(135deg, #5a3fd1 0%, #6366f1 50%, #7c5cfc 100%)',
+                background: 'linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%)',
                 color: '#fff',
-                padding: '14px 20px',
+                padding: '12px 18px',
                 position: 'relative',
                 overflow: 'hidden',
               }}
             >
-              <div style={{ position: 'absolute', top: -30, right: -20, width: 160, height: 160, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', pointerEvents: 'none' }} />
-              <Row className="align-items-center g-3" style={{ position: 'relative' }}>
-                <Col xs={12} lg className="min-w-0">
-                  <p className="mb-1 d-inline-flex align-items-center gap-1" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.78)' }}>
-                    <i className="ri-wallet-3-line" /> Expense Overview
-                  </p>
-                  <h2 className="mb-0 fw-bold text-white" style={{ fontSize: 26, lineHeight: 1.1 }}>
-                    ₹{totalClaimed.toLocaleString('en-IN')}
-                    <small className="ms-2 fw-normal" style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>Total Claimed</small>
-                  </h2>
+              <div style={{ position: 'absolute', top: -50, right: -40, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+              <Row className="align-items-center g-2" style={{ position: 'relative' }}>
+                <Col xs="auto">
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3" style={{ width: 38, height: 38, background: 'rgba(255,255,255,0.22)', border: '1px solid rgba(255,255,255,0.30)' }}>
+                    <i className="ri-wallet-3-line" style={{ fontSize: 17, color: '#fff' }} />
+                  </span>
                 </Col>
-                <Col xs={12} lg="auto">
-                  <div className="d-flex gap-2 flex-wrap justify-content-lg-end">
+                <Col className="min-w-0">
+                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>Expense Overview</p>
+                  <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
+                    Total Claimed: <span style={{ color: '#bce8ff' }}>₹{totalClaimed.toLocaleString('en-IN')}</span>
+                  </div>
+                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>{expenseCounts.all} claims · {expenseCounts.approved} approved · {expenseCounts.pending} pending</small>
+                </Col>
+                <Col xs="12" lg="auto">
+                  <div className="d-flex gap-1 flex-wrap justify-content-lg-end">
                     {[
                       { label: 'Total',    value: expenseCounts.all,      color: '#fff' },
                       { label: 'Approved', value: expenseCounts.approved, color: '#86efac' },
@@ -3221,19 +3325,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     ].map(c => (
                       <div
                         key={c.label}
-                        className="text-center px-2 py-1"
+                        className="text-center"
                         style={{
-                          background: 'rgba(255,255,255,0.12)',
-                          border: '1px solid rgba(255,255,255,0.20)',
-                          borderRadius: 10,
-                          backdropFilter: 'blur(6px)',
-                          minWidth: 76,
+                          background: 'rgba(255,255,255,0.10)',
+                          border: '1px solid rgba(255,255,255,0.18)',
+                          borderRadius: 9,
+                          padding: '4px 10px',
+                          minWidth: 72,
                         }}
                       >
-                        <h5 className="mb-0 fw-bold lh-1" style={{ color: c.color, fontSize: 18 }}>{c.value}</h5>
-                        <p className="mb-0 mt-1" style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.78)' }}>
-                          {c.label}
-                        </p>
+                        <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
+                        <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
                       </div>
                     ))}
                   </div>
@@ -3243,64 +3345,70 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </Card>
 
           {/* Expense Claims */}
-          <Card className="mb-3" style={cardStyle}>
-            <CardBody className="p-3">
-              <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-                <div className="d-flex align-items-center gap-2">
-                  <span
-                    className="d-inline-flex align-items-center justify-content-center rounded-3"
-                    style={{ width: 32, height: 32, background: GRAD_PURPLE, boxShadow: '0 3px 8px rgba(64,81,137,0.20)' }}
-                  >
-                    <i className="ri-file-list-3-line" style={{ color: '#fff', fontSize: 14 }} />
-                  </span>
-                  <div>
-                    <h6 className="card-title mb-0 fw-bold" style={{ fontSize: 12 }}>Expense Claims</h6>
-                    <small className="text-muted" style={{ fontSize: 11 }}>
-                      {expenseCounts.all} total · {expenseCounts.approved} approved · {expenseCounts.pending} pending
-                    </small>
-                  </div>
-                </div>
-                <div className="d-flex align-items-center gap-2 flex-wrap">
-                  <div className="search-box" style={{ minWidth: 200 }}>
-                    <input type="text" className="form-control form-control-sm" placeholder="Search…" style={{ fontSize: 12, height: 30 }} />
-                    <i className="ri-search-line search-icon" style={{ fontSize: 12 }} />
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-sm rounded-pill fw-semibold"
-                    style={{
-                      background: 'var(--vz-card-bg)',
-                      color: '#374151',
-                      border: '1px solid var(--vz-border-color)',
-                      fontSize: 11.5, padding: '4px 12px',
-                    }}
-                  >
-                    <i className="ri-download-2-line me-1" /> Export
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm rounded-pill fw-semibold"
-                    style={{
-                      background: 'linear-gradient(135deg, #f97316, #fb923c)',
-                      color: '#fff',
-                      border: 'none',
-                      boxShadow: '0 4px 10px rgba(249,115,22,0.28)',
-                      fontSize: 11.5, padding: '4px 12px',
-                    }}
-                    onClick={() => { setClaimMode('expense'); setClaimOpen(true); }}
-                  >
-                    <i className="ri-add-line me-1" /> Raise New Claim
-                  </button>
+          <div
+            className="ep-section-card-flat ep-section-card mb-3"
+            style={{ borderTop: '3px solid #a855f7' }}
+          >
+            <div
+              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap"
+              style={{
+                borderBottom: '1px solid rgba(168,85,247,0.18)',
+                background: 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)',
+              }}
+            >
+              <div className="d-flex align-items-center gap-2">
+                <span className="ep-section-icon" style={{ background: 'rgba(168,85,247,0.18)', color: '#7c3aed' }}>
+                  <i className="ri-file-list-3-line" />
+                </span>
+                <div>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Expense Claims</h6>
+                  <small className="text-muted" style={{ fontSize: 11 }}>
+                    {expenseCounts.all} total · {expenseCounts.approved} approved · {expenseCounts.pending} pending
+                  </small>
                 </div>
               </div>
-
-              {/* Filter pills */}
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <div className="search-box" style={{ minWidth: 200 }}>
+                  <input type="text" className="form-control form-control-sm" placeholder="Search…" style={{ fontSize: 12, height: 30 }} />
+                  <i className="ri-search-line search-icon" style={{ fontSize: 12 }} />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
+                  style={{
+                    background: 'var(--vz-card-bg)',
+                    color: '#374151',
+                    border: '1px solid var(--vz-border-color)',
+                    fontSize: 11.5, padding: '4px 12px',
+                  }}
+                >
+                  <i className="ri-download-2-line" /> Export
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
+                  style={{
+                    background: 'linear-gradient(135deg,#f97316,#fb923c)',
+                    color: '#fff',
+                    border: 'none',
+                    boxShadow: '0 4px 10px rgba(249,115,22,0.28)',
+                    fontSize: 11.5, padding: '4px 12px',
+                  }}
+                  onClick={() => { setClaimMode('expense'); setClaimOpen(true); }}
+                >
+                  <i className="ri-add-line" /> Raise New Claim
+                </button>
+              </div>
+            </div>
+            <div className="px-3 pb-3 pt-2">
+              {/* Filter pills — active = solid filled with colored shadow for
+                  strong visibility; inactive = subtle white with border. */}
               <div className="d-flex gap-2 flex-wrap mb-3">
                 {[
-                  { key: 'all'      as ExpenseFilter, label: 'All',      count: expenseCounts.all,      active: '#6366f1', tint: 'rgba(99,102,241,0.10)' },
-                  { key: 'approved' as ExpenseFilter, label: 'Approved', count: expenseCounts.approved, active: '#10b981', tint: 'rgba(16,185,129,0.10)' },
-                  { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: expenseCounts.rejected, active: '#ef4444', tint: 'rgba(239,68,68,0.10)' },
-                  { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: expenseCounts.pending,  active: '#f59e0b', tint: 'rgba(245,158,11,0.10)' },
+                  { key: 'all'      as ExpenseFilter, label: 'All',      count: expenseCounts.all,      active: '#6366f1', shadow: 'rgba(99,102,241,0.32)' },
+                  { key: 'approved' as ExpenseFilter, label: 'Approved', count: expenseCounts.approved, active: '#10b981', shadow: 'rgba(16,185,129,0.32)' },
+                  { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: expenseCounts.rejected, active: '#ef4444', shadow: 'rgba(239,68,68,0.32)'  },
+                  { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: expenseCounts.pending,  active: '#f59e0b', shadow: 'rgba(245,158,11,0.32)' },
                 ].map(f => {
                   const on = expenseFilter === f.key;
                   return (
@@ -3312,9 +3420,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       style={{
                         fontSize: 11.5,
                         padding: '4px 12px',
-                        background: on ? f.tint : 'var(--vz-card-bg)',
-                        color: on ? f.active : 'var(--vz-secondary-color)',
+                        background: on ? f.active : 'var(--vz-card-bg)',
+                        color: on ? '#fff' : 'var(--vz-secondary-color)',
                         border: `1px solid ${on ? f.active : 'var(--vz-border-color)'}`,
+                        boxShadow: on ? `0 4px 10px ${f.shadow}` : 'none',
                         transition: 'all .15s ease',
                       }}
                     >
@@ -3324,7 +3433,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         style={{
                           minWidth: 20, height: 16,
                           padding: '0 6px',
-                          background: on ? f.active : 'var(--vz-secondary-bg)',
+                          background: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
                           color: on ? '#fff' : 'var(--vz-secondary-color)',
                           fontSize: 10, fontWeight: 700,
                         }}
@@ -3337,9 +3446,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
 
               {/* Claims table */}
-              <div className="table-responsive">
-                <table className="table align-middle mb-0 ep-vault-table">
-                  <thead>
+              <div className="table-responsive border rounded ep-att-scroll-wrap">
+                <table className="table align-middle table-nowrap ep-att-table mb-0">
+                  <thead className="table-light">
                     <tr>
                       <th>Exp ID</th>
                       <th>Employee</th>
@@ -3488,8 +3597,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   Last updated: Apr 2026
                 </small>
               </div>
-            </CardBody>
-          </Card>
+            </div>
+          </div>
         </>
       )}
 
@@ -4030,8 +4139,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <div className="ep-rev-hero">
           <div className="d-flex align-items-start justify-content-between gap-3">
             <div>
-              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYROLL ACTION</div>
-              <h4 className="text-white fw-bold mb-0" style={{ fontSize: 22 }}>Revise Salary</h4>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYROLL ACTION</div>
+              <h4 className="text-white fw-bold mb-0" style={{ fontSize: 16 }}>Revise Salary</h4>
             </div>
             <div className="d-flex align-items-center gap-2">
               <button type="button" className="ep-rev-cancel-hero" onClick={() => setReviseOpen(false)}>Cancel</button>
@@ -4088,21 +4197,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <div className="ep-rev-body">
           <div className="ep-rev-form">
             {/* New Salary Details */}
-            <div className="ep-rev-card mb-3">
-              <div className="d-flex align-items-center gap-2 mb-3">
+            <div className="ep-rev-card mb-2">
+              <div className="d-flex align-items-center gap-2 mb-2">
                 <span className="ep-rev-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}>
                   <i className="ri-money-dollar-circle-line" />
                 </span>
-                <h6 className="mb-0 fw-bold">New Salary Details</h6>
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>New Salary Details</h6>
               </div>
-              <Row className="g-3">
+              <Row className="g-2">
                 <Col md={6}>
                   <div className="ep-rev-label">New Salary (₹ Annual)</div>
                   <div className="position-relative">
-                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                    <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 11.5, fontWeight: 600 }}>₹</span>
                     <input
                       className="ep-rev-input"
-                      style={{ paddingLeft: 28 }}
+                      style={{ paddingLeft: 24 }}
                       value={reviseAmount}
                       onChange={e => setReviseAmount(e.target.value)}
                       placeholder="0"
@@ -4114,22 +4223,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <div className="position-relative">
                     <input
                       className="ep-rev-input"
-                      style={{ paddingRight: 28 }}
+                      style={{ paddingRight: 24 }}
                       value={revisePct}
                       onChange={e => setRevisePct(e.target.value)}
                       placeholder="e.g. 15"
                     />
-                    <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>%</span>
+                    <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 11.5, fontWeight: 600 }}>%</span>
                   </div>
                 </Col>
               </Row>
             </div>
 
-            <Row className="g-3 mb-3">
+            <Row className="g-2 mb-2">
               <Col md={6}>
                 <div className="ep-rev-card h-100">
-                  <h6 className="fw-bold mb-1" style={{ fontSize: 14 }}>Salary Structure</h6>
-                  <div className="ep-rev-label mt-3">Structure Type</div>
+                  <h6 className="fw-bold mb-1" style={{ fontSize: 12 }}>Salary Structure</h6>
+                  <div className="ep-rev-label mt-2">Structure Type</div>
                   <MasterSelect
                     value={reviseStructure}
                     options={['Class A', 'Class B', 'Class C'].map(s => ({ value: s, label: s }))}
@@ -4139,8 +4248,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </Col>
               <Col md={6}>
                 <div className="ep-rev-card h-100">
-                  <h6 className="fw-bold mb-1" style={{ fontSize: 14 }}>Effective Date</h6>
-                  <div className="ep-rev-label mt-3">From Date</div>
+                  <h6 className="fw-bold mb-1" style={{ fontSize: 12 }}>Effective Date</h6>
+                  <div className="ep-rev-label mt-2">From Date</div>
                   <MasterDatePicker
                     value={reviseDate}
                     onChange={setReviseDate}
@@ -4149,22 +4258,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </Col>
             </Row>
 
-            <div className="ep-rev-card mb-3">
-              <div className="d-flex align-items-center justify-content-between mb-2">
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Bonus</h6>
-                <label className="d-inline-flex align-items-center gap-2" style={{ fontSize: 13, cursor: 'pointer' }}>
+            <div className="ep-rev-card mb-2">
+              <div className="d-flex align-items-center justify-content-between mb-1">
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 11 }}>Bonus</h6>
+                <label className="d-inline-flex align-items-center gap-1" style={{ fontSize: 11, cursor: 'pointer' }}>
                   <input type="checkbox" checked={reviseBonusInSal} onChange={e => setReviseBonusInSal(e.target.checked)} />
                   Include bonus in salary
                 </label>
               </div>
               {reviseBonusOpen && (
-                <div className="mb-2">
+                <div className="mb-1">
                   <div className="ep-rev-label">Bonus Amount (₹)</div>
                   <div className="position-relative">
-                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                    <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 11.5, fontWeight: 600 }}>₹</span>
                     <input
                       className="ep-rev-input"
-                      style={{ paddingLeft: 28 }}
+                      style={{ paddingLeft: 24 }}
                       placeholder="0"
                       value={reviseBonusAmount}
                       onChange={e => setReviseBonusAmount(e.target.value)}
@@ -4189,13 +4298,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </button>
             </div>
 
-            <div className="ep-rev-card mb-3">
-              <h6 className="fw-bold mb-1" style={{ fontSize: 14 }}>
-                Add Note <span className="text-muted fw-normal" style={{ fontSize: 12 }}>(optional)</span>
+            <div className="ep-rev-card">
+              <h6 className="fw-bold mb-1" style={{ fontSize: 12 }}>
+                Add Note <span className="text-muted fw-normal" style={{ fontSize: 10.5 }}>(optional)</span>
               </h6>
               <textarea
-                className="ep-rev-input mt-2"
-                rows={3}
+                className="ep-rev-input mt-1"
+                rows={2}
                 placeholder="Reason for revision, performance notes, appraisal cycle..."
                 value={reviseNote}
                 onChange={e => setReviseNote(e.target.value)}
@@ -4205,29 +4314,29 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
           {/* Live preview sidebar */}
           <aside className="ep-rev-preview">
-            <div className="d-flex align-items-center gap-2 mb-3">
-              <i className="ri-eye-line" style={{ color: '#0ab39c', fontSize: 16 }} />
-              <h6 className="mb-0 fw-bold">Live Preview</h6>
+            <div className="d-flex align-items-center gap-2 mb-2">
+              <i className="ri-eye-line" style={{ color: '#0ab39c', fontSize: 13 }} />
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Live Preview</h6>
             </div>
 
             <div className="ep-rev-net">
-              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>NEW COMPENSATION</div>
-              <h2 className="text-white fw-bold mb-0" style={{ fontSize: 30 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>NEW COMPENSATION</div>
+              <h2 className="text-white fw-bold mb-0" style={{ fontSize: 22, lineHeight: 1.1 }}>
                 ₹{reviseAnnualNum.toLocaleString('en-IN')}
               </h2>
-              <small style={{ color: 'rgba(255,255,255,0.78)' }}>Per Annum</small>
-              <div className="d-flex justify-content-between mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.20)' }}>
+              <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 10 }}>Per Annum</small>
+              <div className="d-flex justify-content-between mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.20)' }}>
                 <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>MONTHLY</div>
-                  <div className="text-white fw-bold">₹{reviseMonthlyNum.toLocaleString('en-IN')}</div>
+                  <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>MONTHLY</div>
+                  <div className="text-white fw-bold" style={{ fontSize: 11.5 }}>₹{reviseMonthlyNum.toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>BONUS</div>
-                  <div className="fw-bold" style={{ color: '#fcd34d' }}>₹0</div>
+                  <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>BONUS</div>
+                  <div className="fw-bold" style={{ color: '#fcd34d', fontSize: 11.5 }}>₹0</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>TOTAL</div>
-                  <div className="text-white fw-bold">₹{reviseAnnualNum.toLocaleString('en-IN')}</div>
+                  <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.65)' }}>TOTAL</div>
+                  <div className="text-white fw-bold" style={{ fontSize: 11.5 }}>₹{reviseAnnualNum.toLocaleString('en-IN')}</div>
                 </div>
               </div>
             </div>
@@ -4258,23 +4367,23 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </div>
 
-            <div className="ep-rev-summary mt-3">
+            <div className="ep-rev-summary mt-2">
               <div className="d-flex align-items-center justify-content-between">
                 <div className="ep-rev-summary-head mb-0">COMPONENT BREAKDOWN</div>
-                <label className="d-inline-flex align-items-center gap-1" style={{ fontSize: 11.5, cursor: 'pointer' }}>
+                <label className="d-inline-flex align-items-center gap-1" style={{ fontSize: 10.5, cursor: 'pointer' }}>
                   <input type="checkbox" checked={showBreakdownToggle} onChange={e => setShowBreakdownToggle(e.target.checked)} />
                   Show
                 </label>
               </div>
               {!showBreakdownToggle && (
-                <small className="text-muted d-block text-center mt-2">Toggle to see component split</small>
+                <small className="text-muted d-block text-center mt-1" style={{ fontSize: 10.5 }}>Toggle to see component split</small>
               )}
               {showBreakdownToggle && reviseAnnualNum > 0 && (() => {
                 const bd = makeBreakdown(reviseAnnualNum);
                 return (
-                  <div className="mt-2">
+                  <div className="mt-1">
                     {bd.rows.map(r => (
-                      <div className="ep-rev-summary-row" key={r.label} style={{ fontSize: 12 }}>
+                      <div className="ep-rev-summary-row" key={r.label} style={{ fontSize: 10.5 }}>
                         <span>{r.label}</span>
                         <span className="fw-semibold">₹{r.monthly.toLocaleString('en-IN')}/mo</span>
                       </div>
@@ -4410,10 +4519,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-file-text-line" />
               </span>
               <div>
-                <h5 className="text-white fw-bold mb-1" style={{ fontSize: 18 }}>
+                <h5 className="text-white fw-bold mb-0" style={{ fontSize: 14 }}>
                   {claimMode === 'expense' ? 'Submit New Expense Claim' : 'Advance Request — Recoverable Payout'}
                 </h5>
-                <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12 }}>
+                <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 10.5 }}>
                   All required fields must be completed · Receipt required above ₹500 · Changes take effect after MCA approval
                 </small>
               </div>
@@ -4423,13 +4532,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 {claimMode === 'expense' ? 'EXPENSE MODE' : 'ADVANCE MODE'}
               </span>
               <button type="button" className="ep-claim-x" onClick={() => setClaimOpen(false)} aria-label="Close">
-                <i className="ri-close-line" style={{ fontSize: 18 }} />
+                <i className="ri-close-line" style={{ fontSize: 14 }} />
               </button>
             </div>
           </div>
 
           {/* Mode tabs + flow hint */}
-          <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3">
+          <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-2">
             <div className="ep-claim-tabs">
               <button
                 type="button"
@@ -4446,7 +4555,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-money-dollar-circle-line" /> Advance Request
               </button>
             </div>
-            <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11.5 }}>
+            <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>
               {claimMode === 'expense'
                 ? <>Expense → <strong>Reimbursement</strong> &nbsp;|&nbsp; Advance → Payroll Recovery</>
                 : <>Advance → <strong>Payroll Recovery</strong> &nbsp;|&nbsp; Expense → Reimbursement</>}
@@ -4457,7 +4566,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         {/* Body */}
         <div className="ep-claim-body">
           {claimMode === 'expense' ? (
-            <Row className="g-4">
+            <Row className="g-2">
               {/* Left column */}
               <Col lg={6}>
                 <div className="ep-claim-section-head">
@@ -4472,7 +4581,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     onChange={setClaimEmployee}
                   />
                 </div>
-                <Row className="g-3 mb-3">
+                <Row className="g-2 mb-2">
                   <Col md={6}>
                     <div className="ep-claim-label">Category <span className="ep-claim-req">*</span></div>
                     <MasterSelect
