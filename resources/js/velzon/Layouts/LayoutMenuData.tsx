@@ -60,6 +60,7 @@ const hrLeafLink = (leafId: string): string => {
   switch (leafId) {
     case "hr.employee":    return "/hr/employees";
     case "hr.recruitment": return "/hr/recruitment";
+    case "hr.onboarding":  return "/hr/employee-onboarding";
     default:               return "/hr";
   }
 };
