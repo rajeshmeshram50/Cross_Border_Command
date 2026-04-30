@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import { useToast } from '../contexts/ToastContext';
+import api from '../api';
+import '../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type RecruitmentStatus = 'In Progress' | 'Completed' | 'Cancelled';
@@ -29,6 +32,18 @@ interface RecruitmentRow {
   startDate: string;
   deadline: string;
   status: RecruitmentStatus;
+}
+
+// ── Date formatting helper ─────────────────────────────────────────────────
+// Renders dates as "05-Apr-2026" (DD-MMM-YYYY) — used by every date cell in
+// the recruitment + hiring-requests tables.
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatDate(raw: any): string {
+  if (raw == null || raw === '') return '—';
+  const d = new Date(String(raw));
+  if (isNaN(d.getTime())) return String(raw);
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
 
 type RequestStatus = 'Approved' | 'Under Review' | 'Submitted' | 'Sent Back' | 'Draft' | 'Rejected';
@@ -105,17 +120,24 @@ const HIRING_REQUESTS: HiringRequestRow[] = [
 
 // ── Lookup palettes ─────────────────────────────────────────────────────────
 const PRIORITY_TONES: Record<Priority, { bg: string; fg: string }> = {
-  Low:      { bg: '#d6f4e3', fg: '#108548' },
-  Medium:   { bg: '#fde8c4', fg: '#a4661c' },
-  High:     { bg: '#fdd9d6', fg: '#b1401d' },
-  Critical: { bg: '#fdd9ea', fg: '#a02960' },
+  Low:      { bg: '#d1fae5', fg: '#047857' },
+  Medium:   { bg: '#fef3c7', fg: '#b45309' },
+  High:     { bg: '#fed7aa', fg: '#c2410c' },
+  Critical: { bg: '#fce7f3', fg: '#be185d' },
 };
 
 const WORK_MODE_TONES: Record<WorkMode, { bg: string; fg: string }> = {
-  'On-site':  { bg: '#dceefe', fg: '#0c63b0' },
-  Remote:     { bg: '#fde8c4', fg: '#a4661c' },
-  Hybrid:     { bg: '#ece6ff', fg: '#5a3fd1' },
-  Flexible:   { bg: '#d3f0ee', fg: '#0a716a' },
+  'On-site':  { bg: '#dbeafe', fg: '#1d4ed8' },
+  Remote:     { bg: '#ede9fe', fg: '#6d28d9' },
+  Hybrid:     { bg: '#ccfbf1', fg: '#0f766e' },
+  Flexible:   { bg: '#fce7f3', fg: '#be185d' },
+};
+
+const EMPLOY_TYPE_TONES: Record<EmployType, { bg: string; fg: string }> = {
+  'Full Time':  { bg: '#dbeafe', fg: '#1d4ed8' },
+  'Part Time':  { bg: '#fed7aa', fg: '#c2410c' },
+  Contract:     { bg: '#ccfbf1', fg: '#0f766e' },
+  Internship:   { bg: '#fce7f3', fg: '#be185d' },
 };
 
 const REQUEST_STATUS_TONES: Record<RequestStatus, { bg: string; fg: string; dot: string }> = {
@@ -134,14 +156,15 @@ const REQUEST_URGENCY_TONES: Record<RequestUrgency, { bg: string; fg: string }> 
   Critical: { bg: '#fdd9ea', fg: '#a02960' },
 };
 
-// ── KPI cards (6 tiles) ─────────────────────────────────────────────────────
+// ── KPI cards (6 tiles) — same look as master pages: top accent strip,
+// label + tabular number on the left, gradient icon tile on the right.
 const KPI_CARDS = [
-  { key: 'total',       label: 'Total Recruitments', icon: 'ri-briefcase-4-line',     gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
-  { key: 'active',      label: 'Active Hiring',      icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-  { key: 'candidates',  label: 'Total Candidates',   icon: 'ri-team-line',            gradient: 'linear-gradient(135deg,#299cdb,#63bcec)' },
-  { key: 'selected',    label: 'Selected',           icon: 'ri-user-follow-line',     gradient: 'linear-gradient(135deg,#10b981,#34d399)' },
-  { key: 'rejected',    label: 'Rejected',           icon: 'ri-close-circle-fill',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
-  { key: 'pending',     label: 'Pending Interviews', icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fad07e)' },
+  { key: 'total',       label: 'Total Recruitments', icon: 'ri-briefcase-4-line',     gradient: 'linear-gradient(135deg,#299cdb 0%,#4dabf7 100%)', deep: '#1e6dd6' },
+  { key: 'active',      label: 'Active Hiring',      icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
+  { key: 'candidates',  label: 'Total Candidates',   icon: 'ri-team-line',            gradient: 'linear-gradient(135deg,#6366f1 0%,#818cf8 100%)', deep: '#4f46e5' },
+  { key: 'selected',    label: 'Selected',           icon: 'ri-user-follow-line',     gradient: 'linear-gradient(135deg,#10b981 0%,#34d399 100%)', deep: '#059669' },
+  { key: 'rejected',    label: 'Rejected',           icon: 'ri-close-circle-fill',    gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', deep: '#d63a5e' },
+  { key: 'pending',     label: 'Pending Interviews', icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', deep: '#a4661c' },
 ] as const;
 
 // ── Filter option lists ────────────────────────────────────────────────────
@@ -173,17 +196,9 @@ const JOB_TYPE_FILTER_OPTIONS = [
 ];
 
 // ── Form option lists for Raise Hiring Request modal ───────────────────────
-const HR_DEPT_OPTIONS = [
-  { value: 'Engineering', label: 'Engineering' },
-  { value: 'Design',      label: 'Design' },
-  { value: 'Sales',       label: 'Sales' },
-  { value: 'HR',          label: 'HR' },
-  { value: 'Finance',     label: 'Finance' },
-  { value: 'Marketing',   label: 'Marketing' },
-  { value: 'Operations',  label: 'Operations' },
-  { value: 'Product',     label: 'Product' },
-  { value: 'Mobile',      label: 'Mobile' },
-];
+// Department options are now loaded from the Departments master at runtime
+// (see RaiseHiringRequestModal / CreateRecruitmentModal). Designation is
+// loaded from the Designations master in CreateRecruitmentModal.
 const EMPLOYMENT_TYPE_OPTIONS = [
   { value: 'Full-time', label: 'Full-time' },
   { value: 'Part-time', label: 'Part-time' },
@@ -237,18 +252,18 @@ const REC_EMPLOYMENT_OPTIONS = [
   { value: 'Contract',   label: 'Contract' },
   { value: 'Internship', label: 'Internship' },
 ];
-const REC_PRIORITY_OPTIONS: { value: Priority; label: Priority }[] = [
-  { value: 'Low',      label: 'Low' },
-  { value: 'Medium',   label: 'Medium' },
-  { value: 'High',     label: 'High' },
-  { value: 'Critical', label: 'Critical' },
-];
+// Priority is rendered as colored pill buttons (High / Medium / Low) inside
+// CreateRecruitmentModal — no dropdown options needed here.
 
 // ── Page ────────────────────────────────────────────────────────────────────
 export default function HrRecruitment() {
   const toast = useToast();
+  const navigate = useNavigate();
 
-  // List state
+  // List state — fetched from /api/recruitments and kept in local state so
+  // creates / updates / cancels reflect instantly.
+  const [recruitments, setRecruitments] = useState<RecruitmentRow[]>([]);
+  const [loadingList, setLoadingList] = useState(true);
   const [tab, setTab] = useState<RecruitmentStatus>('In Progress');
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
@@ -260,42 +275,76 @@ export default function HrRecruitment() {
   // Reset page when tab / filters change
   useEffect(() => { setPage(1); }, [tab, q, deptFilter, priorityFilter, jobTypeFilter]);
 
-  // Counts
+  // Initial load — pull all recruitments from the backend.
+  const fetchRecruitments = async () => {
+    // ── DUMMY DATA START — remove this whole block once the `/recruitments`
+    //    backend API is wired up and uncomment the original `api.get` call
+    //    below. ─────────────────────────────────────────────────────────
+    setLoadingList(true);
+    setRecruitments(buildDummyRecruitments());
+    setLoadingList(false);
+    return;
+    // ── DUMMY DATA END ────────────────────────────────────────────────
+
+    /* Real API call — restore when backend is ready
+    try {
+      setLoadingList(true);
+      const { data } = await api.get('/recruitments');
+      setRecruitments(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      toast.error('Could not load recruitments', err?.response?.data?.message || 'Please try again.');
+      setRecruitments([]);
+    } finally {
+      setLoadingList(false);
+    }
+    */
+  };
+  useEffect(() => { fetchRecruitments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Counts — derived from the fetched list so KPI badges update on every change.
+  // Candidate-based KPIs (candidates/selected/rejected/pending) will be wired
+  // up once the candidate pipeline is built; for now they reflect the actual
+  // current data, which is 0.
   const counts = useMemo(() => {
-    const total = RECRUITMENTS.length;
-    const inProgress = RECRUITMENTS.filter(r => r.status === 'In Progress').length;
-    const completed  = RECRUITMENTS.filter(r => r.status === 'Completed').length;
-    const cancelled  = RECRUITMENTS.filter(r => r.status === 'Cancelled').length;
+    const total = recruitments.length;
+    const inProgress = recruitments.filter(r => r.status === 'In Progress').length;
+    const completed  = recruitments.filter(r => r.status === 'Completed').length;
+    const cancelled  = recruitments.filter(r => r.status === 'Cancelled').length;
+    // Sum openings across active recruitments — gives a meaningful "total
+    // open positions" number until candidates are tracked.
+    const openings = recruitments
+      .filter(r => r.status === 'In Progress')
+      .reduce((sum, r) => sum + (Number(r.openings) || 0), 0);
     return {
       total,
       active: inProgress,
-      // Mock totals — visible on the KPI tiles
-      candidates: 55,
-      selected: 13,
-      rejected: 14,
-      pending: 25,
+      candidates: 0,
+      selected: 0,
+      rejected: 0,
+      pending: openings,
       tabs: { 'In Progress': inProgress, Completed: completed, Cancelled: cancelled },
     };
-  }, []);
+  }, [recruitments]);
 
   // Filtered rows
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return RECRUITMENTS.filter(r => r.status === tab)
+    return recruitments.filter(r => r.status === tab)
       .filter(r => deptFilter === 'All' || r.department === deptFilter)
       .filter(r => priorityFilter === 'All' || r.priority === priorityFilter)
       .filter(r => jobTypeFilter === 'All' || r.employmentType === jobTypeFilter)
       .filter(r => {
         if (!needle) return true;
         return (
-          r.id.toLowerCase().includes(needle) ||
+          String(r.id).toLowerCase().includes(needle) ||
+          String((r as any).code || '').toLowerCase().includes(needle) ||
           r.jobTitle.toLowerCase().includes(needle) ||
-          r.department.toLowerCase().includes(needle) ||
-          r.assignedHrName.toLowerCase().includes(needle) ||
-          r.hiringManagerName.toLowerCase().includes(needle)
+          (r.department || '').toLowerCase().includes(needle) ||
+          (r.assignedHrName || '').toLowerCase().includes(needle) ||
+          (r.hiringManagerName || '').toLowerCase().includes(needle)
         );
       });
-  }, [tab, q, deptFilter, priorityFilter, jobTypeFilter]);
+  }, [recruitments, tab, q, deptFilter, priorityFilter, jobTypeFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
@@ -316,134 +365,44 @@ export default function HrRecruitment() {
 
   return (
     <>
-      <style>{`
-        .rec-surface { background: #ffffff; }
-        [data-bs-theme="dark"] .rec-surface { background: #1c2531; }
-        .rec-tab { border-radius: 12px; padding: 10px 18px; font-weight: 600; font-size: 13.5px; cursor: pointer; transition: all .15s ease; display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--vz-border-color); background: var(--vz-secondary-bg); color: var(--vz-secondary-color); }
-        .rec-tab:hover { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .rec-tab.is-active.in-progress { background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border-color: transparent; box-shadow: 0 4px 14px rgba(124,92,252,0.30); }
-        .rec-tab.is-active.completed   { background: linear-gradient(135deg,#0ab39c,#02c8a7); color: #fff; border-color: transparent; box-shadow: 0 4px 14px rgba(10,179,156,0.30); }
-        .rec-tab.is-active.cancelled   { background: linear-gradient(135deg,#f06548,#f4907b); color: #fff; border-color: transparent; box-shadow: 0 4px 14px rgba(240,101,72,0.30); }
-        .rec-tab .badge { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--vz-light); color: var(--vz-secondary-color); }
-        .rec-tab.is-active .badge { background: rgba(255,255,255,0.22); color: #fff; }
-        .rec-id-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-family: var(--vz-font-monospace, monospace); font-weight: 700; font-size: 11.5px; letter-spacing: 0.02em; }
-        .rec-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-        .rec-num { font-weight: 700; font-size: 14px; color: var(--vz-heading-color, var(--vz-body-color)); }
-        .rec-pagebtn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--vz-border-color); background: #fff; color: var(--vz-secondary-color); font-weight: 600; font-size: 13px; cursor: pointer; transition: all .15s ease; }
-        .rec-pagebtn:hover:not(:disabled) { border-color: #a78bfa; color: #7c5cfc; }
-        .rec-pagebtn:disabled { opacity: 0.45; cursor: not-allowed; }
-        .rec-pagebtn.is-active { background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border-color: transparent; box-shadow: 0 3px 8px rgba(124,92,252,0.25); }
-        [data-bs-theme="dark"] .rec-pagebtn { background: var(--vz-secondary-bg); }
-
-        /* Form modal (Raise / Create) */
-        .rec-form-modal .modal-dialog { max-width: min(960px, 94vw); }
-        .rec-form-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.20); }
-        .rec-form-header { background: linear-gradient(135deg,#5b3fd1 0%, #7c5cfc 50%, #a78bfa 100%); color: #fff; padding: 22px 28px 14px; }
-        .rec-form-header .crumbs { display: flex; gap: 22px; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.20); font-size: 11px; font-weight: 700; letter-spacing: 0.10em; text-transform: uppercase; }
-        .rec-form-header .crumb { color: rgba(255,255,255,0.55); position: relative; padding-bottom: 6px; }
-        .rec-form-header .crumb.active { color: #fff; }
-        .rec-form-header .crumb.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: #fff; border-radius: 2px; }
-        .rec-form-body { background: #f8f9fc; padding: 22px 28px 8px; max-height: 70vh; overflow-y: auto; }
-        [data-bs-theme="dark"] .rec-form-body { background: #1f2630; }
-        .rec-form-section { background: #fff; border: 1px solid #eef0f4; border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; }
-        [data-bs-theme="dark"] .rec-form-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .rec-form-section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-        .rec-form-section-icon { width: 36px; height: 36px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .rec-form-section-title { font-size: 11px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .rec-form-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .rec-form-section-sub   { font-size: 12px; color: #6b7280; margin: 0; }
-        .rec-form-label { font-size: 11.5px; font-weight: 700; color: #374151; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 6px; display: block; }
-        [data-bs-theme="dark"] .rec-form-label { color: var(--vz-body-color); }
-        .rec-form-label .req { color: #f06548; margin-left: 2px; font-weight: 700; }
-        .rec-input { width: 100%; height: 42px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 8px 12px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; }
-        .rec-input::placeholder { color: #9ca3af; }
-        .rec-input:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
-        .rec-input.is-invalid { border-color: #f06548 !important; box-shadow: 0 0 0 3px rgba(240,101,72,0.15) !important; }
-        .rec-textarea { width: 100%; min-height: 80px; padding: 10px 12px; resize: vertical; }
-        [data-bs-theme="dark"] .rec-input, [data-bs-theme="dark"] .rec-textarea { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
-        .rec-error { color: #f06548; font-size: 12px; margin-top: 4px; display: flex; align-items: center; gap: 4px; }
-        .rec-mode-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-        @media (max-width: 720px) { .rec-mode-grid { grid-template-columns: repeat(2, 1fr); } }
-        .rec-mode-btn { height: 42px; border: 1px solid #e5e7eb; background: #fff; border-radius: 10px; font-size: 13px; font-weight: 600; color: #6b7280; cursor: pointer; transition: all .15s ease; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-        .rec-mode-btn:hover { border-color: #c4b5fd; color: #7c5cfc; }
-        .rec-mode-btn.is-active { color: #fff; border-color: transparent; box-shadow: 0 4px 12px rgba(124,92,252,0.25); }
-        .rec-mode-btn.is-active.onsite   { background: linear-gradient(135deg,#5b3fd1,#7c5cfc); }
-        .rec-mode-btn.is-active.remote   { background: linear-gradient(135deg,#0c63b0,#3b82f6); }
-        .rec-mode-btn.is-active.hybrid   { background: linear-gradient(135deg,#7c5cfc,#a78bfa); }
-        .rec-mode-btn.is-active.flexible { background: linear-gradient(135deg,#0ab39c,#02c8a7); }
-        [data-bs-theme="dark"] .rec-mode-btn { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-secondary-color); }
-        .rec-urgency-row { display: flex; flex-wrap: wrap; gap: 8px; }
-        .rec-urgency { padding: 7px 16px; border-radius: 999px; font-size: 12.5px; font-weight: 700; cursor: pointer; border: 1px solid transparent; transition: all .15s ease; display: inline-flex; align-items: center; gap: 6px; }
-        .rec-urgency.is-active { box-shadow: 0 3px 10px rgba(0,0,0,0.10); transform: translateY(-1px); }
-        .rec-form-footer { background: #fff; border-top: 1px solid #eef0f4; padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-        [data-bs-theme="dark"] .rec-form-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .rec-form-footer .hint { font-size: 12px; color: #6b7280; }
-        .rec-btn-primary { padding: 10px 20px; border-radius: 12px; font-size: 13.5px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg,#7c5cfc,#5b3fd1); box-shadow: 0 8px 18px rgba(91,63,209,0.28); cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; gap: 8px; }
-        .rec-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(91,63,209,0.36); }
-        .rec-btn-ghost { padding: 10px 18px; border-radius: 12px; font-size: 13.5px; font-weight: 600; color: #4b5563; background: #fff; border: 1px solid #e5e7eb; cursor: pointer; transition: all .15s ease; display: inline-flex; align-items: center; gap: 6px; }
-        .rec-btn-ghost:hover { border-color: #a78bfa; color: #7c5cfc; }
-        [data-bs-theme="dark"] .rec-btn-ghost { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
-        .rec-close-btn { width: 34px; height: 34px; border-radius: 10px; background: rgba(255,255,255,0.18); border: none; color: #fff; transition: background .15s ease; }
-        .rec-close-btn:hover { background: rgba(255,255,255,0.30); }
-
-        /* Hiring Requests modal */
-        .rec-req-modal .modal-dialog { max-width: min(1100px, 94vw); }
-        .rec-req-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.20); }
-        .rec-req-header { background: linear-gradient(135deg,#5b3fd1 0%, #7c5cfc 50%, #a78bfa 100%); color: #fff; padding: 22px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-        .rec-signal { background: #fff7e6; border-bottom: 1px solid #fde8c4; padding: 10px 28px; font-size: 12.5px; color: #a4661c; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-        .rec-req-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; padding: 16px 28px; border-bottom: 1px solid #eef0f4; background: #fff; }
-        @media (max-width: 720px) { .rec-req-stats { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
-        [data-bs-theme="dark"] .rec-req-stats { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .rec-req-stat { padding: 4px 14px; border-right: 1px solid #eef0f4; }
-        .rec-req-stat:last-child { border-right: none; }
-        [data-bs-theme="dark"] .rec-req-stat { border-color: var(--vz-border-color); }
-        .rec-req-stat .v { font-size: 24px; font-weight: 800; line-height: 1; }
-        .rec-req-stat .l { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vz-secondary-color); margin-top: 4px; }
-
-        /* tiny chip used inside the position cell of hiring-requests table */
-        .rec-mini-chip { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; margin-left: 4px; }
-      `}</style>
       <MasterFormStyles />
 
       <Row>
         <Col xs={12}>
-          <div
-            className="rec-surface"
-            style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
-            }}
-          >
+          <div className="rec-page">
             {/* ── Header ── */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
+            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-2">
               <div className="d-flex align-items-center gap-3 min-w-0">
                 <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0 position-relative"
                   style={{
-                    width: 46, height: 46,
-                    background: 'linear-gradient(135deg, #7c5cfc 0%, #a78bfa 100%)',
-                    boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
+                    width: 48, height: 48,
+                    background: 'linear-gradient(135deg, #a855f7 0%, #9333ea 60%, #7c3aed 100%)',
+                    boxShadow:
+                      '0 8px 18px rgba(147,51,234,0.38), 0 2px 4px rgba(124,58,237,0.22), inset 0 1px 0 rgba(255,255,255,0.30), inset 0 -1px 0 rgba(0,0,0,0.10)',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    overflow: 'hidden',
                   }}
                 >
-                  <i className="ri-briefcase-4-line" style={{ color: '#fff', fontSize: 21 }} />
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute', inset: 0,
+                      background: 'linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 45%)',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                  <i
+                    className="ri-briefcase-4-fill"
+                    style={{ color: '#fff', fontSize: 24, position: 'relative', lineHeight: 1 }}
+                  />
                 </span>
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Recruitment Management</h5>
-                    <span
-                      className="badge rounded-pill"
-                      style={{
-                        background: 'rgba(124,92,252,0.12)',
-                        color: '#5a3fd1',
-                        fontSize: 11,
-                        padding: '5px 10px',
-                        fontWeight: 700,
-                      }}
-                    >
-                      <i className="ri-checkbox-circle-fill align-bottom me-1" style={{ fontSize: 9 }} />
-                      {counts.total} recruitments
+                    <span className="rec-header-count">
+                      <span className="dot" />
+                      {recruitments.length} recruitment{recruitments.length === 1 ? '' : 's'}
                     </span>
                   </div>
                   <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
@@ -452,81 +411,52 @@ export default function HrRecruitment() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
-                <Button
+                <button
+                  type="button"
+                  className="rec-btn-primary"
                   onClick={() => { setCreateMode('add'); setCreateEditingId(null); setCreateOpen(true); }}
-                  className="rounded-pill px-3 fw-semibold"
-                  style={{
-                    background: 'linear-gradient(90deg,#7c5cfc,#5b3fd1)',
-                    color: '#fff',
-                    border: 'none',
-                    boxShadow: '0 6px 16px rgba(91,63,209,0.30)',
-                  }}
                 >
-                  <i className="ri-add-line align-bottom me-1"></i>Create Recruitment
-                </Button>
-                <Button
+                  <i className="ri-add-line" />Create Recruitment
+                </button>
+                <button
+                  type="button"
+                  className="rec-btn-soft"
                   onClick={() => setRaiseOpen(true)}
-                  className="rounded-pill px-3 fw-semibold"
-                  style={{
-                    background: 'linear-gradient(90deg,#3b82f6,#0c63b0)',
-                    color: '#fff',
-                    border: 'none',
-                    boxShadow: '0 6px 16px rgba(59,130,246,0.30)',
-                  }}
                 >
-                  <i className="ri-file-add-line align-bottom me-1"></i>Raise Hiring Request
-                </Button>
-                <Button
+                  <i className="ri-file-add-line" />Raise Hiring Request
+                </button>
+                <button
+                  type="button"
+                  className="rec-btn-ghost"
                   onClick={() => setRequestsOpen(true)}
-                  className="rounded-pill px-3 fw-semibold"
-                  style={{
-                    background: '#fff',
-                    color: 'var(--vz-secondary)',
-                    border: '1px solid var(--vz-secondary)',
-                  }}
                 >
-                  <i className="ri-eye-line align-bottom me-1"></i>View Hiring Requests
-                </Button>
+                  <i className="ri-eye-line" />View Hiring Requests
+                </button>
               </div>
             </div>
 
-            {/* ── KPI cards (6 tiles) ── */}
-            <Row className="g-3 mb-3 align-items-stretch">
+            {/* ── KPI cards (6 tiles) — master-style with top accent strip ── */}
+            <Row className="g-3 mb-2 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl={2} md={4} sm={6} xs={12}>
-                  <div
-                    className="rec-surface"
-                    style={{
-                      borderRadius: 14,
-                      border: '1px solid var(--vz-border-color)',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                      padding: '16px 18px',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      height: '100%',
-                    }}
-                  >
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                      <div className="min-w-0">
-                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                          {k.label}
-                        </p>
-                        <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                          <AnimatedNumber value={(counts as any)[k.key]} />
-                        </h3>
-                      </div>
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
-                      </div>
+                  <div className="rec-kpi-card h-100">
+                    <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+                    <div className="rec-kpi-text">
+                      <span className="rec-kpi-label">{k.label}</span>
+                      <span className="rec-kpi-num">
+                        <AnimatedNumber value={(counts as any)[k.key]} />
+                      </span>
                     </div>
+                    <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                      <i className={k.icon} />
+                    </span>
                   </div>
                 </Col>
               ))}
             </Row>
 
-            {/* ── Tabs (In Progress / Completed / Cancelled) ── */}
-            <div className="d-flex gap-2 mb-3 flex-wrap">
+            {/* ── Tabs (In Progress / Completed / Cancelled) — segmented control ── */}
+            <div className="rec-tab-track mb-2">
               {([
                 { key: 'In Progress' as const, label: 'In Progress', count: counts.tabs['In Progress'], icon: 'ri-time-line',           variant: 'in-progress' },
                 { key: 'Completed'   as const, label: 'Completed',   count: counts.tabs.Completed,     icon: 'ri-checkbox-circle-line',variant: 'completed'   },
@@ -545,82 +475,57 @@ export default function HrRecruitment() {
               ))}
             </div>
 
-            {/* ── Search + Filters ── */}
-            <Row className="g-2 align-items-center mb-3">
-              <Col md={4} sm={12}>
-                <div className="search-box">
-                  <Input
-                    type="text"
-                    className="form-control"
-                    placeholder="Search ID, job title, HR…"
-                    value={q}
-                    onChange={e => setQ(e.target.value)}
-                  />
-                  <i className="ri-search-line search-icon"></i>
-                </div>
-              </Col>
-              <Col md={8} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-                  <div style={{ minWidth: 150 }}>
-                    <MasterSelect
-                      value={deptFilter}
-                      onChange={setDeptFilter}
-                      options={DEPARTMENT_FILTER_OPTIONS}
-                      placeholder="All"
-                    />
+            {/* ── Search + Filters + Table — inside ONE card frame ── */}
+            <Card className="border-0 shadow-none mb-0 bg-transparent">
+              <CardBody className="p-0">
+                <div className="rec-list-frame">
+                  <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
+                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
+                      <Input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search ID, job title, HR…"
+                        value={q}
+                        onChange={e => setQ(e.target.value)}
+                      />
+                      <i className="ri-search-line search-icon"></i>
+                    </div>
+                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Department</span>
+                    <div style={{ minWidth: 150 }}>
+                      <MasterSelect value={deptFilter} onChange={setDeptFilter} options={DEPARTMENT_FILTER_OPTIONS} placeholder="All" />
+                    </div>
+                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Priority</span>
+                    <div style={{ minWidth: 130 }}>
+                      <MasterSelect value={priorityFilter} onChange={setPriorityFilter} options={PRIORITY_FILTER_OPTIONS} placeholder="All" />
+                    </div>
+                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Job Type</span>
+                    <div style={{ minWidth: 140 }}>
+                      <MasterSelect value={jobTypeFilter} onChange={setJobTypeFilter} options={JOB_TYPE_FILTER_OPTIONS} placeholder="All" />
+                    </div>
+                    <span className="cand-result-chip ms-auto">
+                      <i className="ri-filter-3-line" />
+                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
+                    </span>
                   </div>
-                </div>
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Priority</span>
-                  <div style={{ minWidth: 130 }}>
-                    <MasterSelect
-                      value={priorityFilter}
-                      onChange={setPriorityFilter}
-                      options={PRIORITY_FILTER_OPTIONS}
-                      placeholder="All"
-                    />
-                  </div>
-                </div>
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Job Type</span>
-                  <div style={{ minWidth: 140 }}>
-                    <MasterSelect
-                      value={jobTypeFilter}
-                      onChange={setJobTypeFilter}
-                      options={JOB_TYPE_FILTER_OPTIONS}
-                      placeholder="All"
-                    />
-                  </div>
-                </div>
-                <span className="text-muted fw-semibold" style={{ fontSize: 12 }}>
-                  {filtered.length} results
-                </span>
-              </Col>
-            </Row>
-
-            {/* ── Table ── */}
-            <Card className="border-0 shadow-none mb-0">
-              <CardBody className="p-3">
-                <div className="table-responsive table-card border rounded">
-                  <table className="table align-middle table-nowrap mb-0">
-                    <thead className="table-light">
+                  <div className="rec-list-scroll">
+                  <table className="rec-list-table align-middle table-nowrap mb-0">
+                    <thead>
                       <tr>
-                        <th scope="col" className="ps-3 text-center" style={{ width: 56 }}>SR. NO</th>
-                        <th scope="col">REC ID</th>
+                        <th scope="col" className="ps-3 text-center" style={{ width: 50 }}>SR.</th>
+                        <th scope="col" style={{ width: 90 }}>REC ID</th>
                         <th scope="col">Job Title</th>
-                        <th scope="col">Department</th>
-                        <th scope="col">Designation</th>
-                        <th scope="col">Employment Type</th>
-                        <th scope="col" className="text-center">Openings</th>
-                        <th scope="col">Experience<br/>Required</th>
-                        <th scope="col">Work Mode</th>
-                        <th scope="col">Priority</th>
+                        <th scope="col" style={{ width: 110 }}>Department</th>
+                        <th scope="col" style={{ width: 130 }}>Designation</th>
+                        <th scope="col" style={{ width: 110 }}>Employment</th>
+                        <th scope="col" className="text-center" style={{ width: 80 }}>Openings</th>
+                        <th scope="col" className="text-center" style={{ width: 100 }}>Experience</th>
+                        <th scope="col" style={{ width: 100 }}>Work Mode</th>
+                        <th scope="col" style={{ width: 90 }}>Priority</th>
                         <th scope="col">Hiring Manager</th>
                         <th scope="col">Assigned HR</th>
-                        <th scope="col">Start Date</th>
-                        <th scope="col">TAT /<br/>Deadline</th>
-                        <th scope="col" className="text-center pe-3" style={{ width: 130 }}>Action</th>
+                        <th scope="col" style={{ width: 110 }}>Start Date</th>
+                        <th scope="col" style={{ width: 120 }}>Deadline</th>
+                        <th scope="col" className="text-center pe-3" style={{ width: 110 }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -634,20 +539,21 @@ export default function HrRecruitment() {
                       ) : visible.map((r, idx) => {
                         const pri = PRIORITY_TONES[r.priority];
                         const wm  = WORK_MODE_TONES[r.workMode];
+                        const et  = EMPLOY_TYPE_TONES[r.employmentType];
                         return (
                           <tr key={r.id}>
                             <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
-                            <td><span className="rec-id-pill">{r.id}</span></td>
+                            <td><span className="rec-id-pill">{(r as any).code || r.id}</span></td>
                             <td className="fw-bold fs-13" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{r.jobTitle}</td>
                             <td className="fs-13">{r.department}</td>
                             <td className="fs-13">{r.designation}</td>
                             <td>
-                              <span className="rec-pill" style={{ background: '#eef2f6', color: '#475569' }}>
+                              <span className="rec-pill" style={{ background: et.bg, color: et.fg }}>
                                 {r.employmentType}
                               </span>
                             </td>
                             <td className="text-center"><span className="rec-num">{r.openings}</span></td>
-                            <td className="fs-13"><span className="text-muted">{r.experience}</span></td>
+                            <td className="fs-13 text-center"><span className="text-muted">{r.experience}</span></td>
                             <td><span className="rec-pill" style={{ background: wm.bg, color: wm.fg }}>{r.workMode}</span></td>
                             <td><span className="rec-pill" style={{ background: pri.bg, color: pri.fg }}>{r.priority}</span></td>
                             <td>
@@ -658,7 +564,7 @@ export default function HrRecruitment() {
                                 >
                                   {r.hiringManagerInitials}
                                 </div>
-                                <span className="fs-13">{r.hiringManagerRole} – {r.hiringManagerName}</span>
+                                <span className="fs-13">{r.hiringManagerRole ? `${r.hiringManagerRole} – ` : ''}{r.hiringManagerName}</span>
                               </div>
                             </td>
                             <td>
@@ -672,8 +578,8 @@ export default function HrRecruitment() {
                                 <span className="fs-13">{r.assignedHrName}</span>
                               </div>
                             </td>
-                            <td className="fs-13">{r.startDate}</td>
-                            <td className="fs-13">{r.deadline}</td>
+                            <td className="fs-13"><span className="rec-date">{formatDate(r.startDate)}</span></td>
+                            <td className="fs-13"><span className="rec-date">{formatDate(r.deadline)}</span></td>
                             <td className="pe-3">
                               <div className="d-flex gap-1 justify-content-center align-items-center">
                                 <ActionBtn
@@ -686,7 +592,7 @@ export default function HrRecruitment() {
                                   title="View Candidates"
                                   icon="ri-team-line"
                                   color="primary"
-                                  onClick={() => setCandidatesTarget(r)}
+                                  onClick={() => navigate(`/hr/recruitment/${r.id}/candidates`)}
                                 />
                                 <ActionBtn
                                   title={r.status === 'Cancelled' ? 'Already Cancelled' : 'Cancel Recruitment'}
@@ -702,40 +608,41 @@ export default function HrRecruitment() {
                       })}
                     </tbody>
                   </table>
-                </div>
-
-                {/* Pagination */}
-                <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3 pt-2 border-top">
-                  <div className="d-flex align-items-center gap-2">
-                    <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
-                    <div style={{ width: 80 }}>
-                      <MasterSelect
-                        value={String(pageSize)}
-                        onChange={(v) => { setPageSize(Number(v) || 10); setPage(1); }}
-                        options={['10', '25', '50'].map(v => ({ value: v, label: v }))}
-                        placeholder="10"
-                      />
-                    </div>
-                    <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
-                      Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
-                    </span>
                   </div>
-                  <div className="d-flex align-items-center gap-1">
-                    <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>
-                      ‹ Prev
-                    </button>
-                    {Array.from({ length: pageCount }).map((_, i) => (
-                      <button
-                        key={i}
-                        className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`}
-                        onClick={() => goto(i + 1)}
-                      >
-                        {i + 1}
+
+                  {/* Pagination footer — sits inside the same elevated frame */}
+                  <div className="rec-list-footer">
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
+                      <div style={{ width: 80 }}>
+                        <MasterSelect
+                          value={String(pageSize)}
+                          onChange={(v) => { setPageSize(Number(v) || 10); setPage(1); }}
+                          options={['10', '25', '50'].map(v => ({ value: v, label: v }))}
+                          placeholder="10"
+                        />
+                      </div>
+                      <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
+                        Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
+                      </span>
+                    </div>
+                    <div className="d-flex align-items-center gap-1">
+                      <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>
+                        ‹ Prev
                       </button>
-                    ))}
-                    <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>
-                      Next ›
-                    </button>
+                      {Array.from({ length: pageCount }).map((_, i) => (
+                        <button
+                          key={i}
+                          className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`}
+                          onClick={() => goto(i + 1)}
+                        >
+                          {i + 1}
+                        </button>
+                      ))}
+                      <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>
+                        Next ›
+                      </button>
+                    </div>
                   </div>
                 </div>
               </CardBody>
@@ -759,25 +666,51 @@ export default function HrRecruitment() {
         isOpen={requestsOpen}
         onClose={() => setRequestsOpen(false)}
         onRaiseNew={() => { setRequestsOpen(false); setRaiseOpen(true); }}
+        onCreateRecruitment={() => {
+          // Close the Hiring Requests modal and open Create Recruitment.
+          // (The form's defaults can be wired in a follow-up to pre-fill from
+          // the request's department/position/openings, etc.)
+          setRequestsOpen(false);
+          setCreateMode('add');
+          setCreateEditingId(null);
+          setCreateOpen(true);
+        }}
       />
 
       <CreateRecruitmentModal
         isOpen={createOpen}
         mode={createMode}
         editingId={createEditingId}
+        recruitments={recruitments}
         onClose={() => setCreateOpen(false)}
-        onSubmit={() => {
+        onSaved={(row) => {
+          setRecruitments(prev => {
+            const idx = prev.findIndex(r => String(r.id) === String(row.id));
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = row;
+              return next;
+            }
+            return [row, ...prev];
+          });
           setCreateOpen(false);
-          toast.success(createMode === 'add' ? 'Recruitment created' : 'Recruitment updated', createMode === 'add' ? 'New recruitment is now live.' : 'Changes saved successfully.');
         }}
       />
 
       <CancelConfirmModal
         target={cancelTarget}
         onClose={() => setCancelTarget(null)}
-        onConfirm={() => {
-          if (cancelTarget) toast.success('Recruitment cancelled', `${cancelTarget.id} has been moved to Cancelled.`);
-          setCancelTarget(null);
+        onConfirm={async () => {
+          if (!cancelTarget) return;
+          try {
+            const { data } = await api.patch(`/recruitments/${cancelTarget.id}/status`, { status: 'Cancelled' });
+            setRecruitments(prev => prev.map(r => String(r.id) === String(data.id) ? data : r));
+            toast.success('Recruitment cancelled', `${data.code || data.id} has been moved to Cancelled.`);
+          } catch (err: any) {
+            toast.error('Could not cancel', err?.response?.data?.message || 'Please try again.');
+          } finally {
+            setCancelTarget(null);
+          }
         }}
       />
 
@@ -801,6 +734,30 @@ interface RaiseHiringRequestModalProps {
 
 function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringRequestModalProps) {
   const toast = useToast();
+
+  // Department options pulled from the Departments master so the dropdown
+  // mirrors what's actually configured in Master → Departments.
+  const [deptOptions, setDeptOptions] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get('/master/departments');
+        if (cancelled) return;
+        const rows: any[] = Array.isArray(data) ? data : [];
+        setDeptOptions(
+          rows
+            .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
+            .map(r => ({ value: r.name, label: r.name }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+        );
+      } catch {
+        if (!cancelled) setDeptOptions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen]);
 
   // Section 1 — Basics
   const [title, setTitle]           = useState('');
@@ -884,46 +841,42 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
   };
 
   return (
-    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-form-modal" contentClassName="rec-form-content border-0" backdrop="static" keyboard={false}>
+    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-form-modal rec-form-modal-navy" contentClassName="rec-form-content border-0" backdrop="static" keyboard={false}>
       <ModalBody className="p-0">
-        {/* Header */}
+        {/* Header — dark navy gradient (matches the Assign Assets reference) */}
         <div className="rec-form-header">
           <div className="d-flex align-items-center justify-content-between gap-3">
-            <div className="d-flex align-items-center gap-3">
+            <div className="d-flex align-items-center gap-2">
               <span
                 style={{
-                  width: 44, height: 44, borderRadius: 12,
+                  width: 32, height: 32, borderRadius: 8,
                   background: 'rgba(255,255,255,0.18)',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
-                <i className="ri-file-add-line" style={{ fontSize: 22 }} />
+                <i className="ri-file-add-line" style={{ fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 18, letterSpacing: '-0.01em' }}>Raise Hiring Request</h5>
-                <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>Raise Hiring Request</h5>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   Internal workforce demand · Reviewed by HR before job posting
                 </div>
               </div>
             </div>
             <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
-              <i className="ri-close-line" style={{ fontSize: 20 }} />
+              <i className="ri-close-line" style={{ fontSize: 17 }} />
             </button>
-          </div>
-          <div className="crumbs">
-            <span className="crumb active">Basics</span>
-            <span className="crumb">Hiring Need</span>
-            <span className="crumb">Role Details</span>
-            <span className="crumb">Justification</span>
           </div>
         </div>
 
-        {/* Body */}
+        {/* Body — all 4 sections live inside a single gradient-accented card
+            so they read as one cohesive form (matching Create Recruitment). */}
         <div className="rec-form-body">
+          <div className="rec-form-card">
           {/* Section 1 — Basics */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
-              <span className="rec-form-section-icon" style={{ background: '#ece6ff', color: '#5a3fd1' }}>
+              <span className="rec-form-section-icon" style={{ background: 'linear-gradient(135deg,#5b3fd1 0%,#7c5cfc 50%,#a78bfa 100%)', color: '#ffffff', boxShadow: '0 4px 12px rgba(124,92,252,0.35), inset 0 1px 0 rgba(255,255,255,0.30)' }}>
                 <i className="ri-calendar-event-line" style={{ fontSize: 18 }} />
               </span>
               <div>
@@ -931,8 +884,8 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 <p className="rec-form-section-sub">Core identification of the hiring request</p>
               </div>
             </div>
-            <Row className="g-3">
-              <Col md={8}>
+            <Row className="g-2">
+              <Col md={4}>
                 <label className="rec-form-label">Request Title<span className="req">*</span></label>
                 <input
                   type="text"
@@ -954,18 +907,18 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.jobRole && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobRole}</div>}
               </Col>
-              <Col md={6}>
+              <Col md={4}>
                 <label className="rec-form-label">Department<span className="req">*</span></label>
                 <MasterSelect
                   value={department}
                   onChange={(v) => { setDepartment(v); clear('department'); }}
-                  options={HR_DEPT_OPTIONS}
-                  placeholder="Select Department"
+                  options={deptOptions}
+                  placeholder={deptOptions.length === 0 ? 'Loading…' : 'Select Department'}
                   invalid={!!errors.department}
                 />
                 {errors.department && <div className="rec-error"><i className="ri-error-warning-line" />{errors.department}</div>}
               </Col>
-              <Col md={6}>
+              <Col md={4}>
                 <label className="rec-form-label">Team / Sub-Department</label>
                 <input
                   type="text"
@@ -975,7 +928,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                   onChange={e => setTeam(e.target.value)}
                 />
               </Col>
-              <Col md={6}>
+              <Col md={4}>
                 <label className="rec-form-label">Requested By</label>
                 <input
                   type="text"
@@ -985,7 +938,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                   onChange={e => setRequestedBy(e.target.value)}
                 />
               </Col>
-              <Col md={6}>
+              <Col md={4}>
                 <label className="rec-form-label">Request Date</label>
                 <MasterDatePicker
                   value={reqDate}
@@ -999,7 +952,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
           {/* Section 2 — Hiring Need */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
-              <span className="rec-form-section-icon" style={{ background: '#dceefe', color: '#0c63b0' }}>
+              <span className="rec-form-section-icon" style={{ background: 'linear-gradient(135deg,#0c63b0 0%,#3b82f6 50%,#60a5fa 100%)', color: '#ffffff', boxShadow: '0 4px 12px rgba(59,130,246,0.35), inset 0 1px 0 rgba(255,255,255,0.30)' }}>
                 <i className="ri-time-line" style={{ fontSize: 18 }} />
               </span>
               <div>
@@ -1007,7 +960,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 <p className="rec-form-section-sub">Openings, type, mode and urgency</p>
               </div>
             </div>
-            <Row className="g-3">
+            <Row className="g-2">
               <Col md={4}>
                 <label className="rec-form-label">No. of Openings<span className="req">*</span></label>
                 <input
@@ -1082,7 +1035,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
           {/* Section 3 — Role Details */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
-              <span className="rec-form-section-icon" style={{ background: '#fde8c4', color: '#a4661c' }}>
+              <span className="rec-form-section-icon" style={{ background: 'linear-gradient(135deg,#a4661c 0%,#f59e0b 50%,#fbbf24 100%)', color: '#ffffff', boxShadow: '0 4px 12px rgba(245,158,11,0.35), inset 0 1px 0 rgba(255,255,255,0.30)' }}>
                 <i className="ri-team-line" style={{ fontSize: 18 }} />
               </span>
               <div>
@@ -1090,8 +1043,8 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 <p className="rec-form-section-sub">Job description, skills and qualifications</p>
               </div>
             </div>
-            <Row className="g-3">
-              <Col xs={12}>
+            <Row className="g-2">
+              <Col md={6}>
                 <label className="rec-form-label">Job Description<span className="req">*</span></label>
                 <textarea
                   className={`rec-input rec-textarea${errors.jobDesc ? ' is-invalid' : ''}`}
@@ -1101,7 +1054,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.jobDesc && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobDesc}</div>}
               </Col>
-              <Col xs={12}>
+              <Col md={6}>
                 <label className="rec-form-label">Daily Responsibilities</label>
                 <textarea
                   className="rec-input rec-textarea"
@@ -1110,7 +1063,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                   onChange={e => setDailyResp(e.target.value)}
                 />
               </Col>
-              <Col md={6}>
+              <Col md={3}>
                 <label className="rec-form-label">Required Skills<span className="req">*</span></label>
                 <input
                   type="text"
@@ -1121,7 +1074,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.requiredSkills && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requiredSkills}</div>}
               </Col>
-              <Col md={6}>
+              <Col md={3}>
                 <label className="rec-form-label">Required Experience<span className="req">*</span></label>
                 <MasterSelect
                   value={requiredExp}
@@ -1132,7 +1085,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.requiredExp && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requiredExp}</div>}
               </Col>
-              <Col md={6}>
+              <Col md={3}>
                 <label className="rec-form-label">Required Qualification</label>
                 <input
                   type="text"
@@ -1142,7 +1095,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                   onChange={e => setRequiredQual(e.target.value)}
                 />
               </Col>
-              <Col md={6}>
+              <Col md={3}>
                 <label className="rec-form-label">Preferred Candidate Profile</label>
                 <input
                   type="text"
@@ -1158,7 +1111,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
           {/* Section 4 — Business Justification */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
-              <span className="rec-form-section-icon" style={{ background: '#fdd9d6', color: '#b1401d' }}>
+              <span className="rec-form-section-icon" style={{ background: 'linear-gradient(135deg,#b1401d 0%,#ef4444 50%,#f87171 100%)', color: '#ffffff', boxShadow: '0 4px 12px rgba(239,68,68,0.35), inset 0 1px 0 rgba(255,255,255,0.30)' }}>
                 <i className="ri-flashlight-line" style={{ fontSize: 18 }} />
               </span>
               <div>
@@ -1166,18 +1119,8 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 <p className="rec-form-section-sub">Why this hire is needed now</p>
               </div>
             </div>
-            <Row className="g-3">
-              <Col xs={12}>
-                <label className="rec-form-label">Hiring Need Reason<span className="req">*</span></label>
-                <textarea
-                  className={`rec-input rec-textarea${errors.needReason ? ' is-invalid' : ''}`}
-                  placeholder="Why is this position needed now?…"
-                  value={needReason}
-                  onChange={e => { setNeedReason(e.target.value); clear('needReason'); }}
-                />
-                {errors.needReason && <div className="rec-error"><i className="ri-error-warning-line" />{errors.needReason}</div>}
-              </Col>
-              <Col md={6}>
+            <Row className="g-2">
+              <Col md={4}>
                 <label className="rec-form-label">Request Type<span className="req">*</span></label>
                 <MasterSelect
                   value={requestType}
@@ -1188,7 +1131,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.requestType && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requestType}</div>}
               </Col>
-              <Col md={6}>
+              <Col md={8}>
                 <label className="rec-form-label">Business Justification<span className="req">*</span></label>
                 <input
                   type="text"
@@ -1199,7 +1142,17 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.businessJust && <div className="rec-error"><i className="ri-error-warning-line" />{errors.businessJust}</div>}
               </Col>
-              <Col md={6}>
+              <Col md={4}>
+                <label className="rec-form-label">Hiring Need Reason<span className="req">*</span></label>
+                <textarea
+                  className={`rec-input rec-textarea${errors.needReason ? ' is-invalid' : ''}`}
+                  placeholder="Why is this position needed now?…"
+                  value={needReason}
+                  onChange={e => { setNeedReason(e.target.value); clear('needReason'); }}
+                />
+                {errors.needReason && <div className="rec-error"><i className="ri-error-warning-line" />{errors.needReason}</div>}
+              </Col>
+              <Col md={4}>
                 <label className="rec-form-label">Current Team Gap</label>
                 <textarea
                   className="rec-input rec-textarea"
@@ -1208,7 +1161,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                   onChange={e => setTeamGap(e.target.value)}
                 />
               </Col>
-              <Col md={6}>
+              <Col md={4}>
                 <label className="rec-form-label">What If Not Filled?</label>
                 <textarea
                   className="rec-input rec-textarea"
@@ -1219,6 +1172,8 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
               </Col>
             </Row>
           </div>
+          </div>
+          {/* /rec-form-card */}
         </div>
 
         {/* Footer */}
@@ -1246,27 +1201,44 @@ interface HiringRequestsListModalProps {
   isOpen: boolean;
   onClose: () => void;
   onRaiseNew: () => void;
+  onCreateRecruitment: (req: HiringRequestRow) => void;
 }
 
-function HiringRequestsListModal({ isOpen, onClose, onRaiseNew }: HiringRequestsListModalProps) {
+function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitment }: HiringRequestsListModalProps) {
   const [statusFilter, setStatusFilter]   = useState<string>('All');
   const [urgencyFilter, setUrgencyFilter] = useState<string>('All');
   const [q, setQ] = useState('');
 
-  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); } }, [isOpen]);
+  // Pagination — 5 rows per page by default; configurable via dropdown.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+
+  // Local copy of requests so action buttons (Approve / Reject / Send Back /
+  // Job Post) can mutate status optimistically. Resets when modal opens so a
+  // fresh view always reflects the latest mock data.
+  const [requests, setRequests] = useState<HiringRequestRow[]>(HIRING_REQUESTS);
+  useEffect(() => { if (isOpen) setRequests([...HIRING_REQUESTS]); }, [isOpen]);
+
+  // Detail-view sub-modal (when "View" is clicked on a row).
+  const [viewing, setViewing] = useState<HiringRequestRow | null>(null);
+
+  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); setViewing(null); setPage(1); } }, [isOpen]);
+  // Reset to page 1 whenever filters or search change so the user never
+  // ends up on an empty page after narrowing the result set.
+  useEffect(() => { setPage(1); }, [statusFilter, urgencyFilter, q]);
 
   const stats = useMemo(() => {
-    const total       = HIRING_REQUESTS.length;
-    const underReview = HIRING_REQUESTS.filter(r => r.status === 'Under Review').length;
-    const approved    = HIRING_REQUESTS.filter(r => r.status === 'Approved').length;
-    const critical    = HIRING_REQUESTS.filter(r => r.urgency === 'Critical').length;
-    const sentBack    = HIRING_REQUESTS.filter(r => r.status === 'Sent Back').length;
+    const total       = requests.length;
+    const underReview = requests.filter(r => r.status === 'Under Review').length;
+    const approved    = requests.filter(r => r.status === 'Approved').length;
+    const critical    = requests.filter(r => r.urgency === 'Critical').length;
+    const sentBack    = requests.filter(r => r.status === 'Sent Back').length;
     return { total, underReview, approved, critical, sentBack };
-  }, []);
+  }, [requests]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return HIRING_REQUESTS
+    return requests
       .filter(r => statusFilter === 'All' || r.status === statusFilter)
       .filter(r => urgencyFilter === 'All' || r.urgency === urgencyFilter)
       .filter(r => {
@@ -1278,7 +1250,19 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew }: HiringRequests
           r.requestedByName.toLowerCase().includes(needle)
         );
       });
-  }, [statusFilter, urgencyFilter, q]);
+  }, [requests, statusFilter, urgencyFilter, q]);
+
+  // Derive page slice — clamp `page` so a stale value can't land us past
+  // the end of the list when filters shrink the result set.
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage  = Math.min(page, pageCount);
+  const sliceFrom = (safePage - 1) * pageSize;
+  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
+  const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
+
+  // requests state used to drive optimistic status changes; status-mutator
+  // handlers were removed when the action column shrank to View + Create
+  // Recruitment. Bring them back if approve / reject / send-back UI returns.
 
   return (
     <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-req-modal" contentClassName="rec-req-content border-0" backdrop="static" keyboard={false}>
@@ -1300,59 +1284,41 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew }: HiringRequests
             <button
               type="button"
               onClick={onRaiseNew}
-              className="d-inline-flex align-items-center gap-2"
-              style={{
-                background: 'rgba(255,255,255,0.18)',
-                border: '1px solid rgba(255,255,255,0.28)',
-                color: '#fff',
-                padding: '8px 16px',
-                borderRadius: 10,
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
+              className="rec-req-raise-btn d-inline-flex align-items-center gap-2"
             >
               <i className="ri-add-line" />Raise New Request
             </button>
             <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
-              <i className="ri-close-line" style={{ fontSize: 20 }} />
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
           </div>
         </div>
 
-        {/* Smart signals strip */}
-        <div className="rec-signal">
-          <i className="ri-error-warning-line" style={{ fontSize: 14 }} />
-          <span><strong>Smart Signals:</strong> {stats.sentBack} request sent back — action needed by requester · {stats.critical} critical urgency request{stats.critical === 1 ? '' : 's'} still open</span>
-        </div>
-
-        {/* Stats strip */}
+        {/* KPI strip — premium vivid gradient palette per status */}
         <div className="rec-req-stats">
-          <div className="rec-req-stat">
-            <div className="v" style={{ color: '#1f2937' }}>{stats.total}</div>
-            <div className="l">Total</div>
-          </div>
-          <div className="rec-req-stat">
-            <div className="v" style={{ color: '#0c63b0' }}>{stats.underReview}</div>
-            <div className="l">Under Review</div>
-          </div>
-          <div className="rec-req-stat">
-            <div className="v" style={{ color: '#108548' }}>{stats.approved}</div>
-            <div className="l">Approved</div>
-          </div>
-          <div className="rec-req-stat">
-            <div className="v" style={{ color: '#a02960' }}>{stats.critical}</div>
-            <div className="l">Critical</div>
-          </div>
-          <div className="rec-req-stat">
-            <div className="v" style={{ color: '#a4661c' }}>{stats.sentBack}</div>
-            <div className="l">Sent Back</div>
-          </div>
+          {[
+            { label: 'Total',        value: stats.total,       icon: 'ri-file-list-3-line',     accent: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
+            { label: 'Under Review', value: stats.underReview, icon: 'ri-time-line',            accent: 'linear-gradient(135deg, #7c3aed 0%, #9333ea 60%, #a855f7 100%)', deep: '#7c3aed' },
+            { label: 'Approved',     value: stats.approved,    icon: 'ri-checkbox-circle-line', accent: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
+            { label: 'Critical',     value: stats.critical,    icon: 'ri-flashlight-line',      accent: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
+            { label: 'Sent Back',    value: stats.sentBack,    icon: 'ri-arrow-go-back-line',   accent: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
+          ].map(k => (
+            <div className="rec-kpi-card" key={k.label}>
+              <span className="rec-kpi-strip" style={{ background: k.accent }} />
+              <div className="rec-kpi-text">
+                <span className="rec-kpi-label">{k.label}</span>
+                <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value.toLocaleString()}</span>
+              </div>
+              <span className="rec-kpi-icon" style={{ background: k.accent }}>
+                <i className={k.icon} />
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* Filter row */}
-        <div className="d-flex align-items-center gap-2 flex-wrap" style={{ padding: '14px 28px', background: '#fff', borderBottom: '1px solid #eef0f4' }}>
-          <div className="search-box" style={{ flex: 1, minWidth: 220 }}>
+        <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
+          <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220, maxWidth: 380 }}>
             <Input
               type="text"
               className="form-control"
@@ -1362,7 +1328,7 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew }: HiringRequests
             />
             <i className="ri-search-line search-icon"></i>
           </div>
-          <div style={{ minWidth: 150 }}>
+          <div style={{ width: 130 }}>
             <MasterSelect
               value={statusFilter}
               onChange={setStatusFilter}
@@ -1378,7 +1344,7 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew }: HiringRequests
               placeholder="All Status"
             />
           </div>
-          <div style={{ minWidth: 150 }}>
+          <div style={{ width: 130 }}>
             <MasterSelect
               value={urgencyFilter}
               onChange={setUrgencyFilter}
@@ -1392,15 +1358,16 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew }: HiringRequests
               placeholder="All Urgency"
             />
           </div>
-          <span className="text-muted fw-semibold ms-auto" style={{ fontSize: 12 }}>
-            {filtered.length} request{filtered.length === 1 ? '' : 's'}
-          </span>
         </div>
 
-        {/* List */}
-        <div style={{ maxHeight: '50vh', overflowY: 'auto', background: '#fff' }}>
-          <table className="table align-middle table-nowrap mb-0">
-            <thead className="table-light">
+        {/* List — minHeight pinned so the modal keeps the same overall
+            footprint whether the current page shows 5 rows or fewer. */}
+        <div
+          className="rec-req-table-wrap"
+          style={{ maxHeight: '50vh', minHeight: 'calc(48px + 56px * 5)', overflowY: 'auto' }}
+        >
+          <table className="rec-req-table table align-middle table-nowrap mb-0">
+            <thead>
               <tr>
                 <th className="ps-4">REQ ID</th>
                 <th>Position</th>
@@ -1411,18 +1378,19 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew }: HiringRequests
                 <th>Urgency</th>
                 <th>Status</th>
                 <th>Req Date</th>
-                <th className="pe-4">Target Join</th>
+                <th>Target Join</th>
+                <th className="pe-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-center py-5 text-muted">
+                  <td colSpan={11} className="text-center py-5 text-muted">
                     <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
                     No requests match your filters
                   </td>
                 </tr>
-              ) : filtered.map(r => {
+              ) : visible.map(r => {
                 const u = REQUEST_URGENCY_TONES[r.urgency];
                 const s = REQUEST_STATUS_TONES[r.status];
                 return (
@@ -1462,8 +1430,30 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew }: HiringRequests
                         {r.status}
                       </span>
                     </td>
-                    <td className="fs-13">{r.requestDate}</td>
-                    <td className="pe-4 fs-13">{r.targetJoinDate}</td>
+                    <td className="fs-13"><span className="rec-date">{formatDate(r.requestDate)}</span></td>
+                    <td className="fs-13"><span className="rec-date">{formatDate(r.targetJoinDate)}</span></td>
+                    <td className="pe-4">
+                      <div className="rec-row-actions">
+                        <button
+                          type="button"
+                          className="rec-act rec-act-view rec-act--icon"
+                          onClick={() => setViewing(r)}
+                          title="View"
+                          aria-label="View"
+                        >
+                          <i className="ri-eye-line" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rec-act rec-act-create rec-act--icon"
+                          onClick={() => onCreateRecruitment(r)}
+                          title="Create Recruitment"
+                          aria-label="Create Recruitment"
+                        >
+                          <i className="ri-user-search-line" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -1471,9 +1461,117 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew }: HiringRequests
           </table>
         </div>
 
+        {/* Pagination — 5 rows per page by default; configurable */}
+        <div className="rec-list-footer">
+          <div className="d-flex align-items-center gap-2">
+            <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
+            <div style={{ width: 80 }}>
+              <MasterSelect
+                value={String(pageSize)}
+                onChange={(v) => { setPageSize(Number(v) || 5); setPage(1); }}
+                options={['5', '10', '25', '50'].map(v => ({ value: v, label: v }))}
+                placeholder="5"
+              />
+            </div>
+            <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
+              Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
+            </span>
+          </div>
+          <div className="d-flex align-items-center gap-1">
+            <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>
+              ‹ Prev
+            </button>
+            {Array.from({ length: pageCount }).map((_, i) => (
+              <button
+                key={i}
+                className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`}
+                onClick={() => goto(i + 1)}
+              >
+                {i + 1}
+              </button>
+            ))}
+            <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>
+              Next ›
+            </button>
+          </div>
+        </div>
+
         {/* Footer */}
         <div className="rec-form-footer">
           <span className="hint">Status changes are applied immediately and visible to all HR users</span>
+          <button type="button" className="rec-btn-ghost" onClick={onClose}>
+            <i className="ri-close-line" />Close
+          </button>
+        </div>
+      </ModalBody>
+
+      {/* View detail sub-modal — shows full request details when "View" clicked */}
+      <ViewHiringRequestModal request={viewing} onClose={() => setViewing(null)} />
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// View Hiring Request — read-only detail modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRow | null; onClose: () => void }) {
+  if (!request) return null;
+  const r = request;
+  const u = REQUEST_URGENCY_TONES[r.urgency];
+  const s = REQUEST_STATUS_TONES[r.status];
+  const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="rec-view-field">
+      <div className="rec-view-label">{label}</div>
+      <div className="rec-view-value">{value || <span className="text-muted">—</span>}</div>
+    </div>
+  );
+  return (
+    <Modal isOpen={!!request} toggle={onClose} centered size="lg" backdrop="static" contentClassName="rec-view-content border-0">
+      <ModalBody className="p-0">
+        <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-3 min-w-0">
+              <span style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <i className="ri-eye-line" style={{ fontSize: 18 }} />
+              </span>
+              <div className="min-w-0">
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                  {r.position} <span style={{ opacity: 0.8 }}>· {r.id}</span>
+                </h5>
+                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                  Requested by {r.requestedByName} · {r.department}
+                </div>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
+              <i className="ri-close-line" style={{ fontSize: 17 }} />
+            </button>
+          </div>
+        </div>
+
+        <div className="rec-view-body" style={{ padding: '14px 18px', maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+          <div className="rec-view-card">
+            <div className="rec-view-grid">
+              <Field label="Position Type" value={r.positionType} />
+              <Field label="Work Mode" value={r.positionMode} />
+              <Field label="Openings" value={r.openings} />
+              <Field label="Request Type" value={r.requestType} />
+              <Field label="Urgency" value={<span className="rec-pill" style={{ background: u.bg, color: u.fg }}>{r.urgency}</span>} />
+              <Field label="Status" value={
+                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: s.bg, color: s.fg }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot }} />
+                  {r.status}
+                </span>
+              } />
+              <Field label="Request Date" value={formatDate(r.requestDate)} />
+              <Field label="Target Join Date" value={formatDate(r.targetJoinDate)} />
+            </div>
+          </div>
+        </div>
+
+        <div className="rec-form-footer">
+          <span className="hint">Read-only view · Use the row actions to change status</span>
           <button type="button" className="rec-btn-ghost" onClick={onClose}>
             <i className="ri-close-line" />Close
           </button>
@@ -1491,13 +1589,14 @@ interface CreateRecruitmentModalProps {
   isOpen: boolean;
   mode: 'add' | 'edit';
   editingId: string | null;
+  recruitments: RecruitmentRow[];
+  onSaved: (row: RecruitmentRow) => void;
   onClose: () => void;
-  onSubmit: () => void;
 }
 
-function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: CreateRecruitmentModalProps) {
+function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved, onClose }: CreateRecruitmentModalProps) {
   const toast = useToast();
-  const editing = mode === 'edit' && editingId ? RECRUITMENTS.find(r => r.id === editingId) : null;
+  const editing = mode === 'edit' && editingId ? recruitments.find(r => String(r.id) === String(editingId)) : null;
 
   const [jobTitle, setJobTitle]               = useState('');
   const [department, setDepartment]           = useState('');
@@ -1513,13 +1612,102 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
   const [deadline, setDeadline]               = useState('');
   const [linkedRequest, setLinkedRequest]     = useState('');
   const [jobDescription, setJobDescription]   = useState('');
-  const [requiredSkills, setRequiredSkills]   = useState('');
-  const [postExternally, setPostExternally]   = useState(true);
+  const [requirements, setRequirements]       = useState('');
+  const [primaryRole, setPrimaryRole]         = useState('');
+  const [ctcRange, setCtcRange]               = useState('');
+  const [postOnPortal, setPostOnPortal]       = useState(true);
+  const [notifyTeamLeads, setNotifyTeamLeads] = useState(true);
+  const [enableReferralBonus, setEnableReferralBonus] = useState(false);
+
+  // Load Department + Designation options from the master APIs so the
+  // dropdowns reflect what's actually configured in Master → Departments /
+  // Designations (and stay in sync as new ones are added).
+  const [deptOptions, setDeptOptions] = useState<{ value: string; label: string }[]>([]);
+  const [desigOptions, setDesigOptions] = useState<{ value: string; label: string }[]>([]);
+  const [desigByDept, setDesigByDept] = useState<Record<string, string[]>>({});
+  const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [deptRes, desigRes, roleRes] = await Promise.all([
+          api.get('/master/departments'),
+          api.get('/master/designations'),
+          api.get('/master/roles'),
+        ]);
+        if (cancelled) return;
+
+        const deptRows: any[] = Array.isArray(deptRes.data) ? deptRes.data : [];
+        const desigRows: any[] = Array.isArray(desigRes.data) ? desigRes.data : [];
+        const roleRows: any[] = Array.isArray(roleRes.data) ? roleRes.data : [];
+
+        // Active-only, name-sorted lists for the selects.
+        const isActive = (r: any) => !r.status || String(r.status).toLowerCase() === 'active';
+        const deptList = deptRows
+          .filter(isActive)
+          .map(r => ({ id: r.id, name: r.name }))
+          .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+        setDeptOptions(deptList.map(d => ({ value: d.name, label: d.name })));
+
+        // Build a department→[designations] map so picking a department can
+        // narrow the designation list — we use designation.department_id to
+        // group, but fall back to "all" if a row has no department.
+        const deptIdToName: Record<string, string> = {};
+        deptRows.forEach(r => { deptIdToName[String(r.id)] = r.name; });
+
+        const groups: Record<string, Set<string>> = {};
+        const allNames = new Set<string>();
+        desigRows.filter(isActive).forEach(r => {
+          if (!r.name) return;
+          allNames.add(r.name);
+          const deptName = r.department_id != null ? deptIdToName[String(r.department_id)] : null;
+          if (deptName) {
+            if (!groups[deptName]) groups[deptName] = new Set();
+            groups[deptName].add(r.name);
+          }
+        });
+
+        const groupedObj: Record<string, string[]> = {};
+        Object.keys(groups).forEach(k => { groupedObj[k] = Array.from(groups[k]).sort(); });
+        setDesigByDept(groupedObj);
+        setDesigOptions(Array.from(allNames).sort().map(n => ({ value: n, label: n })));
+
+        // Roles master → Primary Role dropdown.
+        setRoleOptions(
+          roleRows
+            .filter(isActive)
+            .map(r => ({ value: r.name, label: r.name }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+        );
+      } catch {
+        // Soft-fail — leave the options empty; user sees an empty dropdown
+        // rather than a broken modal.
+        if (!cancelled) {
+          setDeptOptions([]);
+          setDesigOptions([]);
+          setDesigByDept({});
+          setRoleOptions([]);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  // When the user picks a department, narrow the designation list to that
+  // department's designations (falling back to the full list if none).
+  const filteredDesigOptions = useMemo(() => {
+    if (department && desigByDept[department]?.length) {
+      return desigByDept[department].map(n => ({ value: n, label: n }));
+    }
+    return desigOptions;
+  }, [department, desigByDept, desigOptions]);
 
   type CreateErrors = Partial<Record<
-    'jobTitle' | 'department' | 'designation' | 'employmentType' | 'openings' | 'experience'
+    'jobTitle' | 'department' | 'designation' | 'primaryRole' | 'employmentType' | 'openings' | 'experience'
     | 'workMode' | 'priority' | 'hiringManager' | 'assignedHr' | 'startDate' | 'deadline'
-    | 'jobDescription' | 'requiredSkills',
+    | 'jobDescription' | 'requirements' | 'ctcRange',
     string
   >>;
   const [errors, setErrors] = useState<CreateErrors>({});
@@ -1530,6 +1718,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
       setJobTitle(editing.jobTitle);
       setDepartment(editing.department);
       setDesignation(editing.designation);
+      setPrimaryRole('');
+      setCtcRange('');
       setEmploymentType(editing.employmentType);
       setOpenings(String(editing.openings));
       setExperience(editing.experience);
@@ -1541,14 +1731,18 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
       setDeadline('');
       setLinkedRequest('');
       setJobDescription('');
-      setRequiredSkills('');
-      setPostExternally(true);
+      setRequirements('');
+      setPostOnPortal(true);
+      setNotifyTeamLeads(true);
+      setEnableReferralBonus(false);
       setErrors({});
     } else {
-      setJobTitle(''); setDepartment(''); setDesignation(''); setEmploymentType('Full Time');
+      setJobTitle(''); setDepartment(''); setDesignation(''); setPrimaryRole('');
+      setCtcRange(''); setEmploymentType('Full Time');
       setOpenings('1'); setExperience(''); setWorkMode('Hybrid'); setPriority('Medium');
       setHiringManager(''); setAssignedHr(''); setStartDate(''); setDeadline('');
-      setLinkedRequest(''); setJobDescription(''); setRequiredSkills(''); setPostExternally(true);
+      setLinkedRequest(''); setJobDescription(''); setRequirements('');
+      setPostOnPortal(true); setNotifyTeamLeads(true); setEnableReferralBonus(false);
       setErrors({});
     }
   }, [isOpen, editingId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1560,11 +1754,10 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
     const e: CreateErrors = {};
     if (!jobTitle.trim())        e.jobTitle        = 'Job title is required';
     if (!department)             e.department      = 'Department is required';
-    if (!designation.trim())     e.designation     = 'Designation is required';
+    if (!designation)            e.designation     = 'Designation is required';
+    if (!primaryRole)            e.primaryRole     = 'Primary role is required';
     if (!employmentType)         e.employmentType  = 'Employment type is required';
     if (!openings.trim() || Number(openings) <= 0) e.openings = 'Openings must be at least 1';
-    if (!experience.trim())      e.experience      = 'Experience is required';
-    if (!workMode)               e.workMode        = 'Work mode is required';
     if (!priority)               e.priority        = 'Priority is required';
     if (!hiringManager)          e.hiringManager   = 'Hiring manager is required';
     if (!assignedHr)             e.assignedHr      = 'Assigned HR is required';
@@ -1573,14 +1766,70 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
     return e;
   };
 
-  const handleSubmit = () => {
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
       toast.error('Please complete required fields', `${Object.keys(errs).length} field${Object.keys(errs).length === 1 ? '' : 's'} need attention.`);
       return;
     }
-    onSubmit();
+
+    // Backend payload — snake_case columns, properly typed values.
+    const payload = {
+      job_title:             jobTitle,
+      department,
+      designation,
+      primary_role:          primaryRole || null,
+      employment_type:       employmentType,
+      openings:              Number(openings) || 1,
+      experience:            experience || null,
+      work_mode:             workMode || null,
+      ctc_range:             ctcRange || null,
+      priority,
+      hiring_manager:        hiringManager,
+      assigned_hr:           assignedHr,
+      start_date:            startDate || null,
+      deadline:              deadline || null,
+      job_description:       jobDescription || null,
+      requirements:          requirements || null,
+      post_on_portal:        !!postOnPortal,
+      notify_team_leads:     !!notifyTeamLeads,
+      enable_referral_bonus: !!enableReferralBonus,
+    };
+
+    setSaving(true);
+    try {
+      const isEdit = mode === 'edit' && editingId != null;
+      const { data } = isEdit
+        ? await api.put(`/recruitments/${editingId}`, payload)
+        : await api.post('/recruitments', payload);
+      toast.success(isEdit ? 'Recruitment updated' : 'Recruitment created',
+        isEdit ? 'Changes saved successfully.' : `${data.code || 'New recruitment'} is now live.`);
+      onSaved(data);
+    } catch (err: any) {
+      // Surface any per-field validation errors back into the form.
+      if (err?.response?.status === 422 && err?.response?.data?.errors) {
+        const serverErrs = err.response.data.errors as Record<string, string | string[]>;
+        const mapped: Record<string, string> = {};
+        const fieldMap: Record<string, string> = {
+          job_title: 'jobTitle', employment_type: 'employmentType', primary_role: 'primaryRole',
+          hiring_manager: 'hiringManager', assigned_hr: 'assignedHr',
+          start_date: 'startDate', deadline: 'deadline', work_mode: 'workMode',
+        };
+        for (const k of Object.keys(serverErrs)) {
+          const v = serverErrs[k];
+          mapped[fieldMap[k] || k] = Array.isArray(v) ? String(v[0]) : String(v);
+        }
+        setErrors(mapped);
+        toast.error('Validation failed', 'Please fix the highlighted fields.');
+      } else {
+        toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1589,94 +1838,103 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
         {/* Header */}
         <div className="rec-form-header">
           <div className="d-flex align-items-center justify-content-between gap-3">
-            <div className="d-flex align-items-center gap-3">
+            <div className="d-flex align-items-center gap-2">
               <span
                 style={{
-                  width: 44, height: 44, borderRadius: 12,
+                  width: 32, height: 32, borderRadius: 8,
                   background: 'rgba(255,255,255,0.18)',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                 }}
               >
-                <i className={mode === 'edit' ? 'ri-pencil-line' : 'ri-add-circle-line'} style={{ fontSize: 22 }} />
+                <i className={mode === 'edit' ? 'ri-pencil-line' : 'ri-add-circle-line'} style={{ fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 18, letterSpacing: '-0.01em' }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, letterSpacing: '-0.01em', lineHeight: 1.2 }}>
                   {mode === 'edit' ? `Edit Recruitment ${editing ? `(${editing.id})` : ''}` : 'Create Recruitment'}
                 </h5>
-                <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>
-                  Set up a new hiring drive — link to a request or post directly
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1, lineHeight: 1.2 }}>
+                  Fill in the details to open a new hiring position
                 </div>
               </div>
             </div>
             <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
-              <i className="ri-close-line" style={{ fontSize: 20 }} />
+              <i className="ri-close-line" style={{ fontSize: 17 }} />
             </button>
           </div>
         </div>
 
-        {/* Body */}
+        {/* Body — all 3 sections live inside ONE card so they read as a
+            single, continuous form rather than 3 separate panels. */}
         <div className="rec-form-body">
-          {/* Job Basics */}
+          <div className="rec-form-card">
+          {/* Position Details */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
-              <span className="rec-form-section-icon" style={{ background: '#ece6ff', color: '#5a3fd1' }}>
-                <i className="ri-briefcase-4-line" style={{ fontSize: 18 }} />
+              <span className="rec-form-section-icon rec-form-section-icon--soft">
+                <i className="ri-briefcase-4-line" />
               </span>
               <div>
-                <p className="rec-form-section-title">Job Basics</p>
-                <p className="rec-form-section-sub">Title, department and designation</p>
+                <p className="rec-form-section-title">Position Details</p>
               </div>
             </div>
-            <Row className="g-3">
-              <Col md={6}>
-                <label className="rec-form-label">Job Title<span className="req">*</span></label>
-                <input
-                  type="text"
-                  className={`rec-input${errors.jobTitle ? ' is-invalid' : ''}`}
-                  placeholder="e.g. Senior Backend Engineer"
-                  value={jobTitle}
-                  onChange={e => { setJobTitle(e.target.value); clear('jobTitle'); }}
-                />
+            <Row className="g-2">
+              <Col xs={12}>
+                <label className="rec-form-label"><i className="ri-briefcase-4-line" />Job Title<span className="req">*</span></label>
+                <div className={`rec-input-icon${errors.jobTitle ? ' is-invalid' : ''}`}>
+                  <i className="ri-briefcase-4-line rec-input-icon-leading" />
+                  <input
+                    type="text"
+                    className={`rec-input has-leading-icon${errors.jobTitle ? ' is-invalid' : ''}`}
+                    placeholder="e.g. Senior Backend Engineer"
+                    value={jobTitle}
+                    onChange={e => { setJobTitle(e.target.value); clear('jobTitle'); }}
+                  />
+                </div>
                 {errors.jobTitle && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobTitle}</div>}
               </Col>
-              <Col md={6}>
-                <label className="rec-form-label">Linked Hiring Request</label>
-                <MasterSelect
-                  value={linkedRequest}
-                  onChange={setLinkedRequest}
-                  options={[
-                    { value: '', label: 'None — direct posting' },
-                    ...HIRING_REQUESTS.filter(r => r.status === 'Approved').map(r => ({
-                      value: r.id, label: `${r.id} · ${r.position}`,
-                    })),
-                  ]}
-                  placeholder="None — direct posting"
-                />
-              </Col>
               <Col md={4}>
-                <label className="rec-form-label">Department<span className="req">*</span></label>
+                <label className="rec-form-label"><i className="ri-building-2-line" />Department<span className="req">*</span></label>
                 <MasterSelect
                   value={department}
-                  onChange={(v) => { setDepartment(v); clear('department'); }}
-                  options={HR_DEPT_OPTIONS}
-                  placeholder="Select"
+                  onChange={(v) => {
+                    setDepartment(v);
+                    clear('department');
+                    // Clear designation when department changes so the user
+                    // re-picks from the now-narrowed list.
+                    if (designation) setDesignation('');
+                  }}
+                  options={deptOptions}
+                  placeholder={deptOptions.length === 0 ? 'Loading…' : '— Select —'}
                   invalid={!!errors.department}
                 />
                 {errors.department && <div className="rec-error"><i className="ri-error-warning-line" />{errors.department}</div>}
               </Col>
               <Col md={4}>
-                <label className="rec-form-label">Designation<span className="req">*</span></label>
-                <input
-                  type="text"
-                  className={`rec-input${errors.designation ? ' is-invalid' : ''}`}
-                  placeholder="e.g. Senior Software Engineer"
+                <label className="rec-form-label"><i className="ri-medal-line" />Designation<span className="req">*</span></label>
+                <MasterSelect
                   value={designation}
-                  onChange={e => { setDesignation(e.target.value); clear('designation'); }}
+                  onChange={(v) => { setDesignation(v); clear('designation'); }}
+                  options={filteredDesigOptions}
+                  placeholder={
+                    filteredDesigOptions.length === 0
+                      ? (department ? 'No designations for this department' : 'Loading…')
+                      : '— Select —'
+                  }
+                  invalid={!!errors.designation}
                 />
                 {errors.designation && <div className="rec-error"><i className="ri-error-warning-line" />{errors.designation}</div>}
               </Col>
               <Col md={4}>
-                <label className="rec-form-label">Employment Type<span className="req">*</span></label>
+                <label className="rec-form-label"><i className="ri-user-star-line" />Primary Role<span className="req">*</span></label>
+                <MasterSelect
+                  value={primaryRole}
+                  onChange={(v) => { setPrimaryRole(v); clear('primaryRole' as any); }}
+                  options={roleOptions}
+                  placeholder={roleOptions.length === 0 ? 'Loading…' : '— Select —'}
+                />
+              </Col>
+              <Col md={4}>
+                <label className="rec-form-label"><i className="ri-time-line" />Employment Type<span className="req">*</span></label>
                 <MasterSelect
                   value={employmentType}
                   onChange={(v) => { setEmploymentType(v); clear('employmentType'); }}
@@ -1686,23 +1944,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
                 />
                 {errors.employmentType && <div className="rec-error"><i className="ri-error-warning-line" />{errors.employmentType}</div>}
               </Col>
-            </Row>
-          </div>
-
-          {/* Pipeline & Logistics */}
-          <div className="rec-form-section">
-            <div className="rec-form-section-head">
-              <span className="rec-form-section-icon" style={{ background: '#dceefe', color: '#0c63b0' }}>
-                <i className="ri-flow-chart" style={{ fontSize: 18 }} />
-              </span>
-              <div>
-                <p className="rec-form-section-title">Pipeline &amp; Logistics</p>
-                <p className="rec-form-section-sub">Openings, experience, mode and priority</p>
-              </div>
-            </div>
-            <Row className="g-3">
-              <Col md={3}>
-                <label className="rec-form-label">No. of Openings<span className="req">*</span></label>
+              <Col md={4}>
+                <label className="rec-form-label"><i className="ri-team-line" />No. of Openings<span className="req">*</span></label>
                 <input
                   type="number"
                   min={1}
@@ -1712,19 +1955,19 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
                 />
                 {errors.openings && <div className="rec-error"><i className="ri-error-warning-line" />{errors.openings}</div>}
               </Col>
-              <Col md={3}>
-                <label className="rec-form-label">Experience<span className="req">*</span></label>
-                <input
-                  type="text"
-                  className={`rec-input${errors.experience ? ' is-invalid' : ''}`}
-                  placeholder="e.g. 4 yr+"
+              <Col md={4}>
+                <label className="rec-form-label"><i className="ri-history-line" />Experience Required</label>
+                <MasterSelect
                   value={experience}
-                  onChange={e => { setExperience(e.target.value); clear('experience'); }}
+                  onChange={(v) => { setExperience(v); clear('experience'); }}
+                  options={REQUIRED_EXPERIENCE_OPTIONS}
+                  placeholder="— Select —"
+                  invalid={!!errors.experience}
                 />
                 {errors.experience && <div className="rec-error"><i className="ri-error-warning-line" />{errors.experience}</div>}
               </Col>
-              <Col md={3}>
-                <label className="rec-form-label">Work Mode<span className="req">*</span></label>
+              <Col md={6}>
+                <label className="rec-form-label"><i className="ri-map-pin-line" />Work Mode</label>
                 <MasterSelect
                   value={workMode}
                   onChange={(v) => { setWorkMode(v); clear('workMode'); }}
@@ -1734,41 +1977,75 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
                 />
                 {errors.workMode && <div className="rec-error"><i className="ri-error-warning-line" />{errors.workMode}</div>}
               </Col>
-              <Col md={3}>
-                <label className="rec-form-label">Priority<span className="req">*</span></label>
-                <MasterSelect
-                  value={priority}
-                  onChange={(v) => { setPriority(v as Priority); clear('priority'); }}
-                  options={REC_PRIORITY_OPTIONS}
-                  placeholder="Select"
-                  invalid={!!errors.priority}
+              <Col md={6}>
+                <label className="rec-form-label"><i className="ri-money-rupee-circle-line" />CTC Range (LPA)</label>
+                <input
+                  type="text"
+                  className="rec-input"
+                  placeholder="e.g. 8-12"
+                  value={ctcRange}
+                  onChange={e => setCtcRange(e.target.value)}
                 />
+              </Col>
+              <Col xs={12}>
+                <label className="rec-form-label"><i className="ri-flag-line" />Priority<span className="req">*</span></label>
+                <div className="rec-priority-row">
+                  {(['High', 'Medium', 'Low'] as Priority[]).map((p) => {
+                    const dotColor = p === 'High' ? '#ef4444' : p === 'Medium' ? '#f5d000' : '#3b82f6';
+                    const active = priority === p;
+                    return (
+                      <button
+                        type="button"
+                        key={p}
+                        className={`rec-priority-pill${active ? ` is-active priority-${p.toLowerCase()}` : ''}`}
+                        onClick={() => { setPriority(p); clear('priority'); }}
+                      >
+                        <span className="rec-priority-dot" style={{ background: dotColor }} />
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
                 {errors.priority && <div className="rec-error"><i className="ri-error-warning-line" />{errors.priority}</div>}
               </Col>
-              <Col md={6}>
-                <label className="rec-form-label">Hiring Manager<span className="req">*</span></label>
+            </Row>
+          </div>
+
+          {/* Hiring Configuration */}
+          <div className="rec-form-section">
+            <div className="rec-form-section-head">
+              <span className="rec-form-section-icon rec-form-section-icon--soft">
+                <i className="ri-user-settings-line" />
+              </span>
+              <div>
+                <p className="rec-form-section-title">Hiring Configuration</p>
+              </div>
+            </div>
+            <Row className="g-2">
+              <Col md={3}>
+                <label className="rec-form-label"><i className="ri-user-settings-line" />Hiring Manager<span className="req">*</span></label>
                 <MasterSelect
                   value={hiringManager}
                   onChange={(v) => { setHiringManager(v); clear('hiringManager'); }}
                   options={HIRING_MANAGER_OPTIONS}
-                  placeholder="Select hiring manager"
+                  placeholder="— Select —"
                   invalid={!!errors.hiringManager}
                 />
                 {errors.hiringManager && <div className="rec-error"><i className="ri-error-warning-line" />{errors.hiringManager}</div>}
               </Col>
-              <Col md={6}>
-                <label className="rec-form-label">Assigned HR<span className="req">*</span></label>
+              <Col md={3}>
+                <label className="rec-form-label"><i className="ri-user-2-line" />Assigned HR<span className="req">*</span></label>
                 <MasterSelect
                   value={assignedHr}
                   onChange={(v) => { setAssignedHr(v); clear('assignedHr'); }}
                   options={ASSIGNED_HR_OPTIONS}
-                  placeholder="Select HR owner"
+                  placeholder="— Select —"
                   invalid={!!errors.assignedHr}
                 />
                 {errors.assignedHr && <div className="rec-error"><i className="ri-error-warning-line" />{errors.assignedHr}</div>}
               </Col>
-              <Col md={6}>
-                <label className="rec-form-label">Start Date<span className="req">*</span></label>
+              <Col md={3}>
+                <label className="rec-form-label"><i className="ri-calendar-line" />Start Date<span className="req">*</span></label>
                 <MasterDatePicker
                   value={startDate}
                   onChange={(v) => { setStartDate(v); clear('startDate'); }}
@@ -1777,8 +2054,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
                 />
                 {errors.startDate && <div className="rec-error"><i className="ri-error-warning-line" />{errors.startDate}</div>}
               </Col>
-              <Col md={6}>
-                <label className="rec-form-label">TAT / Deadline<span className="req">*</span></label>
+              <Col md={3}>
+                <label className="rec-form-label"><i className="ri-calendar-event-line" />TAT / Deadline<span className="req">*</span></label>
                 <MasterDatePicker
                   value={deadline}
                   onChange={(v) => { setDeadline(v); clear('deadline'); }}
@@ -1793,48 +2070,66 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
           {/* Job content */}
           <div className="rec-form-section">
             <div className="rec-form-section-head">
-              <span className="rec-form-section-icon" style={{ background: '#fde8c4', color: '#a4661c' }}>
-                <i className="ri-file-text-line" style={{ fontSize: 18 }} />
+              <span className="rec-form-section-icon rec-form-section-icon--soft">
+                <i className="ri-file-text-line" />
               </span>
               <div>
-                <p className="rec-form-section-title">Job Content</p>
-                <p className="rec-form-section-sub">Description and required skills (optional but recommended)</p>
+                <p className="rec-form-section-title">Job Details</p>
               </div>
             </div>
-            <Row className="g-3">
-              <Col xs={12}>
-                <label className="rec-form-label">Job Description</label>
+            <Row className="g-2">
+              <Col md={6}>
+                <label className="rec-form-label"><i className="ri-file-text-line" />Job Description</label>
                 <textarea
                   className="rec-input rec-textarea"
-                  placeholder="Paste from the linked hiring request or write fresh…"
+                  placeholder="Key responsibilities, expectations, and role overview…"
                   value={jobDescription}
                   onChange={e => setJobDescription(e.target.value)}
                 />
               </Col>
-              <Col xs={12}>
-                <label className="rec-form-label">Required Skills</label>
-                <input
-                  type="text"
-                  className="rec-input"
-                  placeholder="e.g. React, Node.js, AWS"
-                  value={requiredSkills}
-                  onChange={e => setRequiredSkills(e.target.value)}
+              <Col md={6}>
+                <label className="rec-form-label"><i className="ri-list-check-2" />Requirements</label>
+                <textarea
+                  className="rec-input rec-textarea"
+                  placeholder="Required skills, qualifications, certifications…"
+                  value={requirements}
+                  onChange={e => setRequirements(e.target.value)}
                 />
               </Col>
-              <Col xs={12}>
-                <label className="d-inline-flex align-items-center gap-2" style={{ cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={postExternally}
-                    onChange={e => setPostExternally(e.target.checked)}
-                    style={{ width: 16, height: 16, accentColor: '#7c5cfc' }}
-                  />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>
-                    Post to external job board after creation
-                  </span>
-                </label>
-              </Col>
             </Row>
+          </div>
+          </div>
+          {/* /rec-form-card */}
+
+          {/* Toggle row — 3 inline checkbox preferences */}
+          <div className="rec-toggle-row">
+            <label className="rec-toggle">
+              <input
+                type="checkbox"
+                checked={postOnPortal}
+                onChange={e => setPostOnPortal(e.target.checked)}
+              />
+              <i className="ri-global-line" />
+              <span>Post on careers portal</span>
+            </label>
+            <label className="rec-toggle">
+              <input
+                type="checkbox"
+                checked={notifyTeamLeads}
+                onChange={e => setNotifyTeamLeads(e.target.checked)}
+              />
+              <i className="ri-notification-3-line" />
+              <span>Notify team leads</span>
+            </label>
+            <label className="rec-toggle">
+              <input
+                type="checkbox"
+                checked={enableReferralBonus}
+                onChange={e => setEnableReferralBonus(e.target.checked)}
+              />
+              <i className="ri-star-line" />
+              <span>Enable referral bonus</span>
+            </label>
           </div>
         </div>
 
@@ -1842,13 +2137,21 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
         <div className="rec-form-footer">
           <span className="hint">Fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required</span>
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={onClose}>
-              <i className="ri-close-line" />Cancel
+            <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>
+              Cancel
             </button>
-            <button type="button" className="rec-btn-primary" onClick={handleSubmit}>
-              <i className={mode === 'edit' ? 'ri-save-3-line' : 'ri-add-circle-line'} />
-              {mode === 'edit' ? 'Save Changes' : 'Create Recruitment'}
-              <i className="ri-arrow-right-line" />
+            <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
+              {saving ? (
+                <>
+                  <Spinner size="sm" style={{ width: 14, height: 14 }} />
+                  <span>{mode === 'edit' ? 'Saving…' : 'Saving…'}</span>
+                </>
+              ) : (
+                <>
+                  <i className={mode === 'edit' ? 'ri-save-3-line' : 'ri-check-line'} />
+                  {mode === 'edit' ? 'Save Changes' : 'Save Recruitment'}
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -1861,56 +2164,130 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, onClose, onSubmit }: 
 // Cancel confirmation
 // ─────────────────────────────────────────────────────────────────────────────
 
+const CANCEL_REASONS = [
+  { value: 'Position no longer required',  label: 'Position no longer required' },
+  { value: 'Hiring freeze',                 label: 'Hiring freeze / budget hold' },
+  { value: 'Internal candidate selected',   label: 'Internal candidate selected' },
+  { value: 'Reassigned to another team',    label: 'Reassigned to another team' },
+  { value: 'Duplicate of another req',      label: 'Duplicate of another requisition' },
+  { value: 'Role redefined',                label: 'Role / scope redefined' },
+  { value: 'Other',                         label: 'Other (add notes below)' },
+];
+
 function CancelConfirmModal({
-  target, onClose, onConfirm,
-}: { target: RecruitmentRow | null; onClose: () => void; onConfirm: () => void }) {
+  target, candidateCount, onClose, onConfirm,
+}: { target: RecruitmentRow | null; candidateCount?: number; onClose: () => void; onConfirm: () => void }) {
+  const [reason, setReason]   = useState<string>('');
+  const [notes, setNotes]     = useState<string>('');
+  const [reasonErr, setReasonErr] = useState<boolean>(false);
+
+  // Reset form whenever a new target is selected / modal closes
+  useEffect(() => {
+    if (target) { setReason(''); setNotes(''); setReasonErr(false); }
+  }, [target]);
+
+  const handleConfirm = () => {
+    if (!reason) { setReasonErr(true); return; }
+    onConfirm();
+  };
+
+  const countLabel = candidateCount != null
+    ? `${candidateCount} candidate record${candidateCount === 1 ? '' : '(s)'}`
+    : 'Candidate records';
+
   return (
     <Modal isOpen={!!target} toggle={onClose} centered size="md" backdrop="static" keyboard={false}
-      contentClassName="border-0" style={{ borderRadius: 20 }}
+      contentClassName="border-0 rec-cancel-modal"
     >
-      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 20, overflow: 'hidden' }}>
+      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 18, overflow: 'hidden' }}>
         {target && (
           <>
-            <div style={{ background: 'linear-gradient(135deg,#fdd9d6 0%, #fdc8c2 100%)', padding: '22px 24px', textAlign: 'center' }}>
-              <div
-                className="d-inline-flex align-items-center justify-content-center"
-                style={{
-                  width: 56, height: 56, borderRadius: 16,
-                  background: '#f06548',
-                  boxShadow: '0 8px 22px rgba(240,101,72,0.40)',
-                }}
-              >
-                <i className="ri-close-circle-line" style={{ fontSize: 28, color: '#fff' }} />
-              </div>
-              <h5 className="fw-bold mt-3 mb-1" style={{ color: '#7a1f0d' }}>Cancel Recruitment</h5>
-              <div style={{ color: '#7a1f0d', fontSize: 13 }}>
-                Cancel <strong>{target.id} · {target.jobTitle}</strong>?
-              </div>
-            </div>
-            <div style={{ padding: '20px 24px', background: '#fef6f4', borderBottom: '1px solid #fde0db' }}>
-              <div style={{ background: '#fff', border: '1px solid #fde0db', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: '#7a1f0d' }}>
-                <i className="ri-information-line align-bottom me-1" />
-                The recruitment will move to the Cancelled tab. Linked candidate pipelines will be paused but kept for reference.
+            {/* Header — vivid orange gradient banner */}
+            <div className="rec-cancel-head">
+              <div className="rec-cancel-head-inner">
+                <span className="rec-cancel-head-icon">
+                  <i className="ri-forbid-2-line" />
+                </span>
+                <div className="rec-cancel-head-text">
+                  <h5 className="mb-0">Cancel Recruitment</h5>
+                  <div className="rec-cancel-head-sub">
+                    This action will move the recruitment to the Cancelled tab
+                  </div>
+                </div>
+                <button type="button" onClick={onClose} aria-label="Close" className="rec-cancel-close">
+                  <i className="ri-close-line" />
+                </button>
               </div>
             </div>
-            <div className="d-flex gap-2 justify-content-end" style={{ padding: '14px 24px' }}>
+
+            {/* Body */}
+            <div className="rec-cancel-body">
+              {/* Recruitment summary card */}
+              <div className="rec-cancel-summary">
+                <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
+                  <span className="rec-id-pill">{target.id}</span>
+                  <span className="rec-cancel-summary-title">{target.jobTitle}</span>
+                </div>
+                <div className="rec-cancel-summary-meta">
+                  <span><strong>Dept:</strong> {target.department}</span>
+                  <span className="dot">·</span>
+                  <span><strong>Openings:</strong> {target.openings}</span>
+                  <span className="dot">·</span>
+                  <span><strong>HR:</strong> {target.assignedHrName}</span>
+                </div>
+              </div>
+
+              {/* Impact warning */}
+              <div className="rec-cancel-impact">
+                <i className="ri-alert-line" />
+                <div>
+                  <strong>Impact:</strong> {countLabel} linked to this recruitment will be preserved
+                  but no longer actionable. This cannot be undone from the UI.
+                </div>
+              </div>
+
+              {/* Reason for cancellation */}
+              <div className="rec-cancel-field">
+                <label className="rec-cancel-label">
+                  Reason for Cancellation<span className="req">*</span>
+                </label>
+                <div className={`rec-cancel-select${reasonErr ? ' is-invalid' : ''}`}>
+                  <MasterSelect
+                    value={reason}
+                    onChange={(v) => { setReason(v); if (v) setReasonErr(false); }}
+                    options={CANCEL_REASONS}
+                    placeholder="— Select a reason —"
+                  />
+                </div>
+                {reasonErr && (
+                  <div className="rec-cancel-error">
+                    <i className="ri-error-warning-line" />Please select a reason before confirming
+                  </div>
+                )}
+              </div>
+
+              {/* Additional notes */}
+              <div className="rec-cancel-field">
+                <label className="rec-cancel-label">
+                  Additional Notes <span className="opt">(OPTIONAL)</span>
+                </label>
+                <textarea
+                  className="rec-cancel-textarea"
+                  rows={3}
+                  placeholder="Add context for the audit trail — stakeholders informed, next steps, etc."
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="rec-cancel-footer">
               <button type="button" className="rec-btn-ghost" onClick={onClose}>
-                <i className="ri-arrow-go-back-line" />Keep Active
+                Keep Active
               </button>
-              <button
-                type="button"
-                onClick={onConfirm}
-                className="d-inline-flex align-items-center gap-2"
-                style={{
-                  padding: '10px 20px', borderRadius: 12,
-                  background: 'linear-gradient(90deg,#f06548,#d94d2c)',
-                  color: '#fff', border: 'none',
-                  fontSize: 13.5, fontWeight: 700,
-                  boxShadow: '0 8px 18px rgba(240,101,72,0.30)',
-                  cursor: 'pointer',
-                }}
-              >
-                <i className="ri-close-circle-line" />Yes, Cancel
+              <button type="button" className="rec-cancel-confirm" onClick={handleConfirm}>
+                <i className="ri-forbid-2-line" />Confirm Cancellation
               </button>
             </div>
           </>
@@ -1982,35 +2359,23 @@ function CandidatesPlaceholderModal({
 function ActionBtn({
   title, icon, color, onClick, disabled,
 }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) {
+  // Map semantic colors → tinted glossy tone classes that already exist in
+  // recruitment.css (rec-act-view / approve / reject) so the buttons share
+  // the same look as the row actions on the Candidate page.
+  const toneClass =
+    color === 'info' || color === 'primary' ? 'rec-act-tone-info'
+    : color === 'success' ? 'rec-act-tone-success'
+    : color === 'danger'  ? 'rec-act-tone-danger'
+    : 'rec-act-tone-neutral';
   return (
     <button
       type="button"
       title={title}
       disabled={disabled}
-      className="btn p-0 d-inline-flex align-items-center justify-content-center"
-      style={{
-        width: 30, height: 30, borderRadius: 8,
-        background: 'var(--vz-secondary-bg)',
-        border: '1px solid var(--vz-border-color)',
-        color: 'var(--vz-secondary-color)',
-        transition: 'all .15s ease',
-        opacity: disabled ? 0.45 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-      }}
-      onMouseEnter={e => {
-        if (disabled) return;
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.borderColor = `var(--vz-${color})`;
-        el.style.color = `var(--vz-${color})`;
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.borderColor = 'var(--vz-border-color)';
-        el.style.color = 'var(--vz-secondary-color)';
-      }}
       onClick={onClick}
+      className={`rec-act-icon ${toneClass}`}
     >
-      <i className={`${icon} fs-14`} />
+      <i className={icon} />
     </button>
   );
 }
@@ -2034,4 +2399,64 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
     return () => cancelAnimationFrame(raf);
   }, [value]);
   return <>{prefix}{display}{suffix}</>;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ─── DUMMY DATA — REMOVE WHEN BACKEND APIs ARE READY ────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// Placeholder recruitments so the Recruitment Management page renders with
+// realistic content while the backend dev builds the `/recruitments` API.
+// To remove: delete this whole block AND restore the real `api.get` call
+// inside `fetchRecruitments()` near the top of this file.
+// ════════════════════════════════════════════════════════════════════════════
+
+function buildDummyRecruitments(): RecruitmentRow[] {
+  const palette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
+  const initialsOf = (name: string) => {
+    // For names like "CEO – Vishal Rao" pick the role abbreviation; for
+    // simple names pick first letters of each word.
+    const dashSplit = name.split('–').map(s => s.trim());
+    const display = dashSplit.length > 1 ? dashSplit[1] : name;
+    return display.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
+  };
+
+  type Seed = {
+    id: string; jobTitle: string; department: string; designation: string;
+    employmentType: EmployType; openings: number; experience: string;
+    workMode: WorkMode; priority: Priority;
+    hiringManagerName: string; hiringManagerRole: string;
+    assignedHrName: string;
+    startDate: string; deadline: string;
+    status: RecruitmentStatus;
+  };
+
+  const seeds: Seed[] = [
+    { id: 'REC-1001', jobTitle: 'Senior Backend Engineer',     department: 'Engineering', designation: 'Senior Software Engineer', employmentType: 'Full Time',  openings: 2, experience: '5 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CEO – Vishal Rao',           hiringManagerRole: 'CEO', assignedHrName: 'Sneha Chavan', startDate: '2026-03-05', deadline: '2026-05-20', status: 'In Progress' },
+    { id: 'REC-1002', jobTitle: 'Product Designer',            department: 'Design',      designation: 'Sr. Designer',             employmentType: 'Full Time',  openings: 1, experience: '3 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'HOD – Amit Shah',            hiringManagerRole: 'HOD', assignedHrName: 'Pooja Mehta',  startDate: '2026-03-12', deadline: '2026-05-30', status: 'In Progress' },
+    { id: 'REC-1003', jobTitle: 'Sales Executive',             department: 'Sales',       designation: 'Executive',                employmentType: 'Full Time',  openings: 4, experience: '1 yr+', workMode: 'On-site', priority: 'High',   hiringManagerName: 'Sales Lead – Priya Iyer',    hiringManagerRole: 'SL',  assignedHrName: 'Rahul Verma',  startDate: '2026-02-18', deadline: '2026-04-25', status: 'In Progress' },
+    { id: 'REC-1004', jobTitle: 'HR Intern',                   department: 'HR',          designation: 'Intern',                   employmentType: 'Internship', openings: 2, experience: '0 yr+', workMode: 'On-site', priority: 'Low',    hiringManagerName: 'HR Head – Sneha Chavan',     hiringManagerRole: 'HR',  assignedHrName: 'Anjali Rao',   startDate: '2026-03-20', deadline: '2026-05-01', status: 'In Progress' },
+    { id: 'REC-1005', jobTitle: 'Mobile App Developer',        department: 'Engineering', designation: 'Software Engineer',        employmentType: 'Full Time',  openings: 1, experience: '3 yr+', workMode: 'Remote',  priority: 'Medium', hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Sneha Chavan', startDate: '2026-02-10', deadline: '2026-04-15', status: 'Completed' },
+    { id: 'REC-1006', jobTitle: 'Marketing Manager',           department: 'Marketing',   designation: 'Manager',                  employmentType: 'Full Time',  openings: 1, experience: '6 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CMO – Ritu Khanna',          hiringManagerRole: 'CMO', assignedHrName: 'Pooja Mehta',  startDate: '2026-01-15', deadline: '2026-03-30', status: 'Completed' },
+    { id: 'REC-1007', jobTitle: 'DevOps Engineer',             department: 'Engineering', designation: 'Software Engineer',        employmentType: 'Full Time',  openings: 1, experience: '4 yr+', workMode: 'Remote',  priority: 'High',   hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Sneha Chavan', startDate: '2026-03-25', deadline: '2026-06-05', status: 'In Progress' },
+    { id: 'REC-1008', jobTitle: 'Frontend Engineer',           department: 'Engineering', designation: 'Software Engineer',        employmentType: 'Full Time',  openings: 2, experience: '3 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Sneha Chavan', startDate: '2026-03-28', deadline: '2026-06-10', status: 'In Progress' },
+    { id: 'REC-1009', jobTitle: 'QA Automation Engineer',      department: 'Engineering', designation: 'Senior QA Engineer',       employmentType: 'Full Time',  openings: 2, experience: '4 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Karan Singh',  startDate: '2026-04-01', deadline: '2026-06-20', status: 'In Progress' },
+    { id: 'REC-1010', jobTitle: 'Data Engineer',               department: 'Engineering', designation: 'Data Engineer',            employmentType: 'Full Time',  openings: 1, experience: '5 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Sneha Chavan', startDate: '2026-04-02', deadline: '2026-06-15', status: 'In Progress' },
+    { id: 'REC-1011', jobTitle: 'UI/UX Designer',              department: 'Design',      designation: 'Designer',                 employmentType: 'Full Time',  openings: 1, experience: '2 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'Design Head – Neha Kulkarni',hiringManagerRole: 'DH',  assignedHrName: 'Pooja Mehta',  startDate: '2026-03-18', deadline: '2026-05-25', status: 'In Progress' },
+    { id: 'REC-1012', jobTitle: 'Business Development Manager',department: 'Sales',       designation: 'Manager',                  employmentType: 'Full Time',  openings: 1, experience: '7 yr+', workMode: 'On-site', priority: 'High',   hiringManagerName: 'Sales Lead – Priya Iyer',    hiringManagerRole: 'SL',  assignedHrName: 'Rahul Verma',  startDate: '2026-03-22', deadline: '2026-05-30', status: 'In Progress' },
+    { id: 'REC-1013', jobTitle: 'Customer Success Lead',       department: 'Operations',  designation: 'Lead',                     employmentType: 'Full Time',  openings: 1, experience: '5 yr+', workMode: 'Remote',  priority: 'Medium', hiringManagerName: 'COO – Ritu Khanna',          hiringManagerRole: 'COO', assignedHrName: 'Anjali Rao',   startDate: '2026-04-05', deadline: '2026-06-25', status: 'In Progress' },
+    { id: 'REC-1014', jobTitle: 'Finance Analyst',             department: 'Finance',     designation: 'Analyst',                  employmentType: 'Full Time',  openings: 2, experience: '3 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'CFO – Nikhil Mehra',         hiringManagerRole: 'CFO', assignedHrName: 'Karan Singh',  startDate: '2026-03-08', deadline: '2026-05-15', status: 'In Progress' },
+    { id: 'REC-1015', jobTitle: 'Content Writer',              department: 'Marketing',   designation: 'Writer',                   employmentType: 'Contract',   openings: 2, experience: '2 yr+', workMode: 'Remote',  priority: 'Low',    hiringManagerName: 'CMO – Ritu Khanna',          hiringManagerRole: 'CMO', assignedHrName: 'Pooja Mehta',  startDate: '2026-04-10', deadline: '2026-07-10', status: 'In Progress' },
+    { id: 'REC-1016', jobTitle: 'Technical Recruiter',         department: 'HR',          designation: 'Recruiter',                employmentType: 'Full Time',  openings: 1, experience: '3 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'HR Head – Sneha Chavan',     hiringManagerRole: 'HR',  assignedHrName: 'Anjali Rao',   startDate: '2026-02-25', deadline: '2026-04-20', status: 'Cancelled' },
+    { id: 'REC-1017', jobTitle: 'Product Manager',             department: 'Engineering', designation: 'Manager',                  employmentType: 'Full Time',  openings: 1, experience: '6 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CEO – Vishal Rao',           hiringManagerRole: 'CEO', assignedHrName: 'Sneha Chavan', startDate: '2026-01-20', deadline: '2026-03-15', status: 'Completed' },
+    { id: 'REC-1018', jobTitle: 'Graphic Designer',            department: 'Design',      designation: 'Designer',                 employmentType: 'Part Time', openings: 1, experience: '2 yr+', workMode: 'Flexible', priority: 'Low',    hiringManagerName: 'Design Head – Neha Kulkarni',hiringManagerRole: 'DH',  assignedHrName: 'Pooja Mehta',  startDate: '2026-04-12', deadline: '2026-06-30', status: 'In Progress' },
+    { id: 'REC-1019', jobTitle: 'Account Executive',           department: 'Sales',       designation: 'Executive',                employmentType: 'Full Time',  openings: 3, experience: '2 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'Sales Lead – Priya Iyer',    hiringManagerRole: 'SL',  assignedHrName: 'Rahul Verma',  startDate: '2026-04-15', deadline: '2026-07-01', status: 'In Progress' },
+  ];
+
+  return seeds.map((s, idx) => ({
+    ...s,
+    hiringManagerInitials: initialsOf(s.hiringManagerName),
+    hiringManagerAccent:   palette[idx % palette.length],
+    assignedHrInitials:    initialsOf(s.assignedHrName),
+    assignedHrAccent:      palette[(idx + 3) % palette.length],
+  }));
 }
