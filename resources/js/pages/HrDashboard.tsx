@@ -1,8 +1,18 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Row, Col } from 'reactstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { HR_GROUPS } from '../constants';
 import type { MenuChild, MenuGroup } from '../types';
+
+// Maps HR leaf ids to the route they should open. Mirrors `hrLeafLink` in
+// LayoutMenuData.tsx — kept in sync here so the overview cards and the
+// sidebar both navigate to the same destination. Leaves omitted from this
+// map render as disabled "Coming Soon" cards.
+const HR_LEAF_ROUTES: Record<string, string> = {
+  'hr.employee':    '/hr/employees',
+  'hr.recruitment': '/hr/recruitment',
+};
 
 interface CategoryStyle { color: string; icon: string; gradient: string; }
 
@@ -275,13 +285,34 @@ export default function HrDashboard() {
 }
 
 function HrCard({ leaf, s, perms, isSuperAdmin }: { leaf: MenuChild; s: CategoryStyle; perms: Record<string, any>; isSuperAdmin: boolean }) {
+  const navigate = useNavigate();
   const p = perms[leaf.id] || {};
   const flags = ['view', 'add', 'edit', 'delete'].filter(f => (p as any)[`can_${f}`]);
+  const route = HR_LEAF_ROUTES[leaf.id];
+  const isLive = !!route;
+  // Live cards require either super admin or an explicit can_view permission
+  // for that leaf — mirrors the sidebar's permission gating so the overview
+  // never opens a page the user can't access.
+  const canOpen = isLive && (isSuperAdmin || !!(p as any).can_view);
   return (
     <div
       className="hr-surface"
-      title="HR pages coming soon"
-      style={{ borderRadius: 12, border: '1px solid var(--vz-border-color)', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', cursor: 'not-allowed', transition: 'box-shadow .18s ease, transform .18s ease, border-color .18s ease', display: 'flex', flexDirection: 'column', height: '100%', padding: '15px 15px 13px', position: 'relative', overflow: 'hidden' }}
+      title={canOpen ? `Open ${leaf.label}` : isLive ? 'You don’t have permission to view this' : 'HR pages coming soon'}
+      role={canOpen ? 'button' : undefined}
+      tabIndex={canOpen ? 0 : undefined}
+      onClick={canOpen ? () => navigate(route!) : undefined}
+      onKeyDown={canOpen ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(route!); }
+      } : undefined}
+      style={{
+        borderRadius: 12,
+        border: '1px solid var(--vz-border-color)',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+        cursor: canOpen ? 'pointer' : 'not-allowed',
+        transition: 'box-shadow .18s ease, transform .18s ease, border-color .18s ease',
+        display: 'flex', flexDirection: 'column', height: '100%',
+        padding: '15px 15px 13px', position: 'relative', overflow: 'hidden',
+      }}
       onMouseEnter={e => {
         const el = e.currentTarget as HTMLDivElement;
         el.style.boxShadow = `0 8px 24px ${s.color}22`;
@@ -308,10 +339,17 @@ function HrCard({ leaf, s, perms, isSuperAdmin }: { leaf: MenuChild; s: Category
             {leaf.label}
           </h6>
         </div>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#f7b84b18', color: '#f7b84b', border: '1px solid #f7b84b30', borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap' }}>
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#f7b84b' }} />
-          Coming Soon
-        </span>
+        {isLive ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#0ab39c18', color: '#0ab39c', border: '1px solid #0ab39c30', borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap' }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#0ab39c' }} />
+            Live
+          </span>
+        ) : (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#f7b84b18', color: '#f7b84b', border: '1px solid #f7b84b30', borderRadius: 20, padding: '2px 8px', fontSize: 10, fontWeight: 700, flexShrink: 0, whiteSpace: 'nowrap' }}>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#f7b84b' }} />
+            Coming Soon
+          </span>
+        )}
       </div>
 
       {/* Row 2: Description */}
@@ -319,7 +357,7 @@ function HrCard({ leaf, s, perms, isSuperAdmin }: { leaf: MenuChild; s: Category
         {leafDescription(leaf)}
       </p>
 
-      {/* Row 3: Permission flags + Manage (disabled) */}
+      {/* Row 3: Permission flags + Manage (active when route is wired up) */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 9, borderTop: '1px solid var(--vz-border-color)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           {!isSuperAdmin && flags.length > 0 ? (
@@ -332,11 +370,21 @@ function HrCard({ leaf, s, perms, isSuperAdmin }: { leaf: MenuChild; s: Category
               </span>
             ))
           ) : (
-            <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)' }}>No data yet</span>
+            <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)' }}>{isLive ? 'Click to open' : 'No data yet'}</span>
           )}
         </div>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--vz-secondary-bg)', color: 'var(--vz-secondary-color)', border: '1px solid var(--vz-border-color)', borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 700, opacity: 0.7 }}>
-          Manage <i className="ri-arrow-right-line" style={{ fontSize: 11 }} />
+        <span
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            background: canOpen ? s.gradient : 'var(--vz-secondary-bg)',
+            color: canOpen ? '#fff' : 'var(--vz-secondary-color)',
+            border: canOpen ? 'none' : '1px solid var(--vz-border-color)',
+            borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 700,
+            boxShadow: canOpen ? `0 3px 8px ${s.color}33` : 'none',
+            opacity: canOpen ? 1 : 0.7,
+          }}
+        >
+          {canOpen ? 'Open' : 'Manage'} <i className="ri-arrow-right-line" style={{ fontSize: 11 }} />
         </span>
       </div>
     </div>

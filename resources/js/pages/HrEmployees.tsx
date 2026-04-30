@@ -1606,6 +1606,23 @@ export default function HrEmployees() {
           .emp-stepper-label.is-done { color: #0ab39c; }
           .emp-stepper-line { flex: 1; height: 2px; background: #e5e7eb; margin: 0 6px; align-self: flex-start; margin-top: 16px; transition: background .2s ease; }
           .emp-stepper-line.is-done { background: #0ab39c; }
+          /* Make the stepper item itself act as a click target so the user can
+             jump between steps. The button is unstyled — child .emp-stepper-circle
+             and .emp-stepper-label keep all visual responsibility. */
+          .emp-stepper-btn {
+            background: transparent; border: none; padding: 0;
+            cursor: pointer; display: flex; flex-direction: column; align-items: center;
+            min-width: 92px;
+            transition: transform .15s ease;
+          }
+          .emp-stepper-btn:focus-visible { outline: 2px solid #7c5cfc; outline-offset: 4px; border-radius: 8px; }
+          .emp-stepper-btn:hover .emp-stepper-circle:not(.is-active):not(.is-done) {
+            border-color: #c4b5fd; color: #7c5cfc; background: #f5f3ff;
+          }
+          .emp-stepper-btn:hover .emp-stepper-label:not(.is-active):not(.is-done) {
+            color: #7c5cfc;
+          }
+          .emp-stepper-btn:hover { transform: translateY(-1px); }
         `}</style>
 
         <ModalBody className="p-0" style={{ background: 'var(--vz-secondary-bg, #f7f8fc)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden' }}>
@@ -1685,14 +1702,20 @@ export default function HrEmployees() {
                 const done = empStep > s.n;
                 return (
                   <div key={s.n} className="d-flex align-items-start" style={{ flex: idx === arr.length - 1 ? '0 0 auto' : '1 1 0' }}>
-                    <div className="d-flex flex-column align-items-center" style={{ minWidth: 92 }}>
+                    <button
+                      type="button"
+                      className="emp-stepper-btn"
+                      onClick={() => setEmpStep(s.n as 1 | 2 | 3 | 4)}
+                      aria-label={`Go to step ${s.n}: ${s.label}`}
+                      aria-current={active ? 'step' : undefined}
+                    >
                       <div className={`emp-stepper-circle${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}>
                         {done ? <i className="ri-check-line" style={{ fontSize: 16 }} /> : s.n}
                       </div>
                       <div className={`emp-stepper-label${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}>
                         {s.label}
                       </div>
-                    </div>
+                    </button>
                     {idx < arr.length - 1 && <div className={`emp-stepper-line${done ? ' is-done' : ''}`} />}
                   </div>
                 );
@@ -2833,8 +2856,22 @@ export default function HrEmployees() {
                 position: relative;
                 overflow: hidden;
                 height: 100%;
+                cursor: pointer;
+                transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+              }
+              .vault-kpi-card:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 12px 32px rgba(18,38,63,0.12);
+                border-color: rgba(99,102,241,0.30);
+              }
+              .vault-kpi-card:hover .vault-kpi-icon {
+                transform: scale(1.08);
+              }
+              .vault-kpi-card .vault-kpi-icon {
+                transition: transform .25s ease;
               }
               [data-bs-theme="dark"] .vault-kpi-card { background: #1c2531; }
+              [data-bs-theme="dark"] .vault-kpi-card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.45); }
               .vault-kpi-card .vault-kpi-strip { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
               .vault-kpi-card .vault-kpi-icon {
                 width: 46px; height: 46px; border-radius: 12px;
@@ -3163,7 +3200,9 @@ function MultiSelectChips({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // Close on outside click / ESC.
   useEffect(() => {
@@ -3180,11 +3219,25 @@ function MultiSelectChips({
     };
   }, [open]);
 
+  // Reset the query when the menu closes, and auto-focus the search input
+  // when it opens so the user can start typing immediately.
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => searchRef.current?.focus(), 0);
+    } else {
+      setQuery('');
+    }
+  }, [open]);
+
   const toggleVal = (v: string) => {
     if (value.includes(v)) onChange(value.filter(x => x !== v));
     else onChange([...value, v]);
   };
   const remove = (v: string) => onChange(value.filter(x => x !== v));
+
+  const filteredOptions = query.trim()
+    ? options.filter(o => o.label.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
 
   return (
     <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
@@ -3232,8 +3285,36 @@ function MultiSelectChips({
           border-radius: 10px;
           box-shadow: 0 14px 30px rgba(18,38,63,0.18), 0 2px 8px rgba(18,38,63,0.06);
           padding: 6px;
-          max-height: 220px; overflow-y: auto;
+          max-height: 260px; display: flex; flex-direction: column;
         }
+        .mschips-search-wrap {
+          position: relative; flex-shrink: 0;
+          padding: 2px 2px 6px 2px;
+          margin-bottom: 6px;
+          border-bottom: 1px solid var(--vz-border-color);
+        }
+        .mschips-search-icon {
+          position: absolute; left: 11px; top: 50%;
+          transform: translateY(calc(-50% - 3px));
+          font-size: 14px; color: var(--vz-secondary-color);
+          pointer-events: none;
+        }
+        .mschips-search {
+          width: 100%; height: 32px;
+          padding: 6px 10px 6px 32px;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 7px;
+          background: var(--vz-card-bg);
+          color: var(--vz-body-color);
+          font-size: 12.5px;
+          outline: none;
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .mschips-search:focus {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+        .mschips-list { overflow-y: auto; flex: 1 1 auto; }
         [data-bs-theme="dark"] .mschips-menu,
         [data-layout-mode="dark"] .mschips-menu {
           background-color: #2a2f34 !important;
@@ -3282,23 +3363,39 @@ function MultiSelectChips({
 
       {open && !disabled && (
         <div className="mschips-menu">
-          {options.length === 0 ? (
-            <div className="px-3 py-2 text-muted" style={{ fontSize: 12 }}>No options</div>
-          ) : options.map(opt => {
-            const on = value.includes(opt.value);
-            return (
-              <div
-                key={opt.value}
-                className={`mschips-item${on ? ' is-on' : ''}`}
-                onClick={() => toggleVal(opt.value)}
-              >
-                <span className="mschips-check">
-                  {on && <i className="ri-check-line" style={{ fontSize: 12 }} />}
-                </span>
-                {opt.label}
-              </div>
-            );
-          })}
+          <div className="mschips-search-wrap">
+            <i className="ri-search-line mschips-search-icon" />
+            <input
+              ref={searchRef}
+              type="text"
+              className="mschips-search"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search roles…"
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+          <div className="mschips-list">
+            {options.length === 0 ? (
+              <div className="px-3 py-2 text-muted" style={{ fontSize: 12 }}>No options</div>
+            ) : filteredOptions.length === 0 ? (
+              <div className="px-3 py-2 text-muted text-center" style={{ fontSize: 12 }}>No matches for &ldquo;{query}&rdquo;</div>
+            ) : filteredOptions.map(opt => {
+              const on = value.includes(opt.value);
+              return (
+                <div
+                  key={opt.value}
+                  className={`mschips-item${on ? ' is-on' : ''}`}
+                  onClick={() => toggleVal(opt.value)}
+                >
+                  <span className="mschips-check">
+                    {on && <i className="ri-check-line" style={{ fontSize: 12 }} />}
+                  </span>
+                  {opt.label}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
