@@ -1079,17 +1079,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         .ep-pay-shell { background: var(--vz-card-bg); }
         .ep-pay-header {
           display: flex; align-items: center; justify-content: space-between;
-          gap: 12px; padding: 14px 20px;
+          gap: 10px; padding: 10px 16px;
           border-bottom: 1px solid var(--vz-border-color);
         }
         .ep-pay-logo {
-          width: 40px; height: 40px; border-radius: 10px;
+          width: 32px; height: 32px; border-radius: 8px;
           background: linear-gradient(135deg, #6366f1, #8b5cf6);
           color: #fff; display: inline-flex; align-items: center; justify-content: center;
-          font-size: 18px; box-shadow: 0 4px 12px rgba(99,102,241,0.30);
+          font-size: 14px; box-shadow: 0 3px 10px rgba(99,102,241,0.28);
         }
         .ep-pay-x {
-          width: 32px; height: 32px; border-radius: 8px;
+          width: 28px; height: 28px; border-radius: 7px;
           background: var(--vz-light); border: 1px solid var(--vz-border-color);
           color: var(--vz-secondary-color); cursor: pointer;
           display: inline-flex; align-items: center; justify-content: center;
@@ -1098,49 +1098,49 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
         .ep-pay-body {
           display: grid;
-          grid-template-columns: 240px 1fr;
+          grid-template-columns: 220px 1fr;
           gap: 0;
           max-height: 80vh; overflow-y: auto;
         }
         .ep-pay-sidebar {
-          padding: 20px 18px;
+          padding: 14px 12px;
           border-right: 1px solid var(--vz-border-color);
           background: var(--vz-card-bg);
         }
         .ep-pay-side-label {
-          font-size: 10.5px; font-weight: 700; letter-spacing: 0.10em;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
           text-transform: uppercase; color: var(--vz-secondary-color);
-          margin-bottom: 12px;
+          margin-bottom: 8px;
         }
         .ep-pay-mini-label {
-          font-size: 10.5px; font-weight: 700;
-          color: var(--vz-secondary-color); margin-bottom: 4px;
+          font-size: 9.5px; font-weight: 700;
+          color: var(--vz-secondary-color); margin-bottom: 3px;
         }
         .ep-pay-input {
-          width: 100%; padding: 8px 10px;
+          width: 100%; padding: 5px 9px;
           border: 1px solid var(--vz-border-color);
-          border-radius: 8px; background: var(--vz-card-bg);
-          color: var(--vz-body-color); font-size: 13px;
+          border-radius: 7px; background: var(--vz-card-bg);
+          color: var(--vz-body-color); font-size: 11.5px;
         }
         .ep-pay-input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.18); }
         .ep-pay-side-btn {
-          width: 100%; padding: 9px 12px;
+          width: 100%; padding: 5px 12px;
           background: linear-gradient(135deg, #4338ca, #6366f1);
-          color: #fff; border: none; border-radius: 10px;
-          font-size: 13px; font-weight: 600;
+          color: #fff; border: none; border-radius: 8px;
+          font-size: 11.5px; font-weight: 600;
           cursor: pointer;
-          box-shadow: 0 4px 12px rgba(99,102,241,0.30);
+          box-shadow: 0 3px 10px rgba(99,102,241,0.28);
           transition: transform .15s ease;
         }
         .ep-pay-side-btn:hover { transform: translateY(-1px); }
         .ep-pay-recent {
           display: flex; align-items: center; justify-content: space-between;
-          padding: 9px 12px;
+          padding: 5px 10px;
           border: 1px solid var(--vz-border-color);
-          border-radius: 10px;
+          border-radius: 8px;
           background: var(--vz-card-bg);
           color: var(--vz-body-color);
-          font-size: 13px; font-weight: 600;
+          font-size: 11.5px; font-weight: 600;
           cursor: pointer; transition: all .15s ease;
         }
         .ep-pay-recent:hover { border-color: #6366f1; color: #6366f1; }
@@ -1151,94 +1151,109 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         }
         .ep-pay-now {
           background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff;
-          font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
-          padding: 2px 8px; border-radius: 999px;
+          font-size: 8px; font-weight: 700; letter-spacing: 0.08em;
+          padding: 1px 6px; border-radius: 999px;
         }
 
-        .ep-pay-preview { padding: 20px; background: var(--vz-body-bg, #f3f4f9); }
+        .ep-pay-preview { padding: 14px; background: var(--vz-body-bg, #f3f4f9); }
         .ep-pay-company {
           position: relative; overflow: hidden;
-          color: #fff; padding: 22px 24px;
-          border-radius: 14px;
-          background: linear-gradient(135deg,#0f172a 0%,#1e1b4b 35%,#312e81 70%,#4338ca 100%);
-          margin-bottom: 14px;
+          color: #fff; padding: 14px 18px;
+          border-radius: 12px;
+          /* Match the Payroll Summary hero gradient exactly so the payslip
+             reads as the same family. */
+          background: linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%);
+          margin-bottom: 10px;
         }
         .ep-pay-company-logo {
-          width: 52px; height: 52px; border-radius: 12px;
+          width: 40px; height: 40px; border-radius: 10px;
           background: rgba(255,255,255,0.10);
           border: 1px solid rgba(255,255,255,0.30);
           display: inline-flex; align-items: center; justify-content: center;
-          color: #fff; font-weight: 700; font-size: 18px;
+          color: #fff; font-weight: 700; font-size: 14px;
         }
         .ep-pay-identity {
           display: grid; grid-template-columns: repeat(5, 1fr);
-          margin-top: 18px; padding: 12px 16px;
+          margin-top: 12px; padding: 8px 12px;
           background: rgba(255,255,255,0.06);
           border: 1px solid rgba(255,255,255,0.10);
-          border-radius: 10px;
+          border-radius: 9px;
           position: relative; z-index: 1;
         }
         .ep-pay-identity-cell + .ep-pay-identity-cell {
-          padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.10);
+          padding-left: 12px; border-left: 1px solid rgba(255,255,255,0.10);
         }
-        .ep-pay-identity-cell { padding-right: 16px; }
+        .ep-pay-identity-cell { padding-right: 12px; }
         .ep-pay-identity-label {
-          font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
+          font-size: 8.5px; font-weight: 700; letter-spacing: 0.08em;
           text-transform: uppercase; color: rgba(255,255,255,0.62);
-          margin-bottom: 4px;
+          margin-bottom: 2px;
         }
-        .ep-pay-identity-value { font-size: 13px; font-weight: 700; color: #fff; }
+        .ep-pay-identity-value { font-size: 11.5px; font-weight: 700; color: #fff; }
 
         .ep-pay-kpis {
           display: grid; grid-template-columns: repeat(4, 1fr);
-          gap: 8px; margin-bottom: 14px;
+          gap: 6px; margin-bottom: 10px;
         }
         .ep-pay-kpi {
-          padding: 14px 16px; border-radius: 10px; text-align: center;
+          padding: 8px 12px; border-radius: 8px; text-align: center;
         }
         .ep-pay-kpi-label {
-          font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+          font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
           text-transform: uppercase; color: var(--vz-secondary-color);
-          margin-bottom: 4px;
+          margin-bottom: 2px;
         }
-        .ep-pay-kpi-value { font-size: 22px; font-weight: 800; line-height: 1; }
+        .ep-pay-kpi-value { font-size: 17px; font-weight: 800; line-height: 1; }
 
         .ep-pay-table-card {
           background: var(--vz-card-bg);
           border: 1px solid var(--vz-border-color);
-          border-radius: 12px; overflow: hidden;
+          border-radius: 10px; overflow: hidden;
         }
         .ep-pay-table-head {
-          display: flex; align-items: center; gap: 8px;
-          padding: 12px 16px;
-          font-size: 11.5px; font-weight: 700; letter-spacing: 0.10em;
+          display: flex; align-items: center; gap: 6px;
+          padding: 8px 12px;
+          font-size: 10px; font-weight: 700; letter-spacing: 0.10em;
           border-bottom: 1px solid var(--vz-border-color);
         }
-        .ep-pay-dot { width: 8px; height: 8px; border-radius: 50%; }
-        .ep-pay-table { width: 100%; font-size: 13px; margin: 0; }
+        .ep-pay-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .ep-pay-table { width: 100%; font-size: 11.5px; margin: 0; }
         .ep-pay-table th {
-          font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+          font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
           text-transform: uppercase; color: var(--vz-secondary-color);
-          padding: 10px 16px; border-bottom: 1px solid var(--vz-border-color);
+          padding: 7px 12px; border-bottom: 1px solid var(--vz-border-color);
           background: var(--vz-secondary-bg);
         }
         .ep-pay-table td {
-          padding: 10px 16px; border-bottom: 1px solid var(--vz-border-color);
+          padding: 7px 12px; border-bottom: 1px solid var(--vz-border-color);
         }
         .ep-pay-table tbody tr:last-child td { border-bottom: none; }
 
         .ep-pay-net {
           display: flex; align-items: center; justify-content: space-between;
-          gap: 16px; padding: 22px 28px;
-          border-radius: 14px;
-          background: linear-gradient(135deg, #047857 0%, #0a8a5a 100%);
+          gap: 12px; padding: 14px 20px;
+          border-radius: 12px;
+          /* Match the Payment Details "Current Compensation" green gradient
+             so both green panels in the payroll flow share the same identity. */
+          background: linear-gradient(135deg, #064e3b, #065f46, #059669);
           color: #fff;
-          box-shadow: 0 12px 30px rgba(4,120,87,0.30);
+          box-shadow: 0 8px 22px rgba(4,120,87,0.26);
+          position: relative; overflow: hidden;
         }
+        .ep-pay-net::before {
+          content: '';
+          position: absolute;
+          top: -30px; right: -20px;
+          width: 130px; height: 130px;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.08);
+          pointer-events: none;
+        }
+        .ep-pay-net > * { position: relative; }
         .ep-pay-footer {
-          text-align: center; margin-top: 14px; padding: 10px;
-          font-size: 11.5px; color: var(--vz-secondary-color);
-          background: var(--vz-secondary-bg); border-radius: 10px;
+          text-align: center; margin-top: 10px; padding: 7px;
+          font-size: 10px; color: var(--vz-secondary-color);
+          background: var(--vz-secondary-bg); border-radius: 8px;
         }
         .ep-pay-footer a { color: #6366f1; text-decoration: none; font-weight: 600; }
 
@@ -3920,22 +3935,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-file-text-line" />
               </span>
               <div>
-                <h5 className="mb-0 fw-bold" style={{ fontSize: 16 }}>Payslip Viewer</h5>
-                <small className="text-muted">Select month and year to view or download payslip</small>
+                <h5 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Payslip Viewer</h5>
+                <small className="text-muted" style={{ fontSize: 10.5 }}>Select month and year to view or download payslip</small>
               </div>
             </div>
             <div className="d-flex align-items-center gap-2">
-              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', border: 'none', fontSize: 12.5, padding: '8px 14px', borderRadius: 8, boxShadow: '0 4px 12px rgba(10,179,156,0.30)' }}>
+              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', border: 'none', fontSize: 11, padding: '5px 12px', borderRadius: 7, boxShadow: '0 3px 10px rgba(10,179,156,0.28)' }}>
                 <i className="ri-download-2-line" /> Download PDF
               </button>
-              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 12.5, padding: '8px 14px', borderRadius: 8 }}>
+              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11, padding: '5px 12px', borderRadius: 7 }}>
                 <i className="ri-printer-line" /> Print
               </button>
-              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 12.5, padding: '8px 14px', borderRadius: 8 }}>
+              <button type="button" className="btn fw-semibold d-inline-flex align-items-center gap-1" style={{ background: 'var(--vz-card-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 11, padding: '5px 12px', borderRadius: 7 }}>
                 <i className="ri-mail-line" /> Email
               </button>
               <button type="button" className="ep-pay-x" onClick={() => setPaySlipOpen(false)} aria-label="Close">
-                <i className="ri-close-line" style={{ fontSize: 18 }} />
+                <i className="ri-close-line" style={{ fontSize: 14 }} />
               </button>
             </div>
           </div>
@@ -3990,21 +4005,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <div className="ep-pay-preview">
               {/* Company hero */}
               <div className="ep-pay-company">
-                <div style={{ position: 'absolute', top: -40, right: -30, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', top: -40, right: -30, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
                 <div className="d-flex align-items-start justify-content-between gap-3" style={{ position: 'relative', zIndex: 1 }}>
-                  <div className="d-flex align-items-center gap-3">
+                  <div className="d-flex align-items-center gap-2">
                     <span className="ep-pay-company-logo">IN</span>
                     <div>
-                      <h5 className="mb-1 text-white fw-bold" style={{ fontSize: 18 }}>INORBVICT Healthcare India Pvt. Ltd.</h5>
-                      <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12 }}>
+                      <h5 className="mb-0 text-white fw-bold" style={{ fontSize: 14 }}>INORBVICT Healthcare India Pvt. Ltd.</h5>
+                      <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10.5 }}>
                         Pune, Maharashtra, India · GSTIN: 27XXXXXXXXXXX · CIN: U85190MH2020PTC339XXX
                       </small>
                     </div>
                   </div>
                   <div className="text-end">
-                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYSLIP</div>
-                    <h4 className="text-white mb-0 fw-bold" style={{ fontSize: 22 }}>{paySlipMonth} {paySlipYear}</h4>
-                    <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11.5 }}>Pay Period: 01–31 {paySlipMonth.slice(0,3)} {paySlipYear}</small>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYSLIP</div>
+                    <h4 className="text-white mb-0 fw-bold" style={{ fontSize: 17 }}>{paySlipMonth} {paySlipYear}</h4>
+                    <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>Pay Period: 01–31 {paySlipMonth.slice(0,3)} {paySlipYear}</small>
                   </div>
                 </div>
 
@@ -4041,7 +4056,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
 
               {/* Earnings + Deductions */}
-              <Row className="g-3 mb-3">
+              <Row className="g-2 mb-2">
                 <Col md={6}>
                   <div className="ep-pay-table-card">
                     <div className="ep-pay-table-head">
@@ -4101,26 +4116,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               {/* Net Pay banner */}
               <div className="ep-pay-net">
                 <div>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.78)' }}>
                     NET PAY — {paySlipMonth.toUpperCase()} {paySlipYear}
                   </div>
-                  <h5 className="text-white fw-semibold mb-2" style={{ fontSize: 15 }}>Gross Earnings − Total Deductions</h5>
-                  <div className="d-flex gap-4">
+                  <h5 className="text-white fw-semibold mb-2" style={{ fontSize: 12 }}>Gross Earnings − Total Deductions</h5>
+                  <div className="d-flex gap-3">
                     <div>
-                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>GROSS</div>
-                      <div className="text-white fw-bold">₹{paySlipTotalEarnings.toLocaleString('en-IN')}</div>
+                      <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>GROSS</div>
+                      <div className="text-white fw-bold" style={{ fontSize: 12 }}>₹{paySlipTotalEarnings.toLocaleString('en-IN')}</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>DEDUCTIONS</div>
-                      <div className="fw-bold" style={{ color: '#fecaca' }}>−₹{paySlipTotalDeductions.toLocaleString('en-IN')}</div>
+                      <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.65)' }}>DEDUCTIONS</div>
+                      <div className="fw-bold" style={{ color: '#fecaca', fontSize: 12 }}>−₹{paySlipTotalDeductions.toLocaleString('en-IN')}</div>
                     </div>
                   </div>
                 </div>
                 <div className="text-end">
-                  <h2 className="text-white fw-bold mb-0" style={{ fontSize: 36 }}>
+                  <h2 className="text-white fw-bold mb-0" style={{ fontSize: 26 }}>
                     ₹{paySlipNetPay.toLocaleString('en-IN')}
                   </h2>
-                  <small style={{ color: 'rgba(255,255,255,0.78)' }}>Per Month (In Hand)</small>
+                  <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 10 }}>Per Month (In Hand)</small>
                 </div>
               </div>
 

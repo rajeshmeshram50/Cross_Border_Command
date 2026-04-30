@@ -730,7 +730,9 @@ export const MASTER_MODAL_CSS = `
     -webkit-backdrop-filter: none !important;
     opacity: 1 !important;
     filter: none !important;
-    z-index: 2000 !important;
+    /* Sits above EpModal overlays (z-index 5000) used in EmployeeProfile so
+       the dropdown menu isn't trapped behind the modal backdrop. */
+    z-index: 6000 !important;
   }
   /* Search row at the top of the menu (sticks — not part of scroll area) */
   .master-select-search {
@@ -979,7 +981,10 @@ export const MASTER_MODAL_CSS = `
     border-radius: 12px;
     box-shadow: 0 12px 32px rgba(0,0,0,0.16);
     padding: 10px;
-    z-index: 2000 !important;
+    /* Sits above EpModal overlays (z-index 5000) used in EmployeeProfile —
+       Revise Salary, Raise Claim, Payslip viewer, Salary Breakdown — so the
+       portalled date picker isn't trapped behind the modal backdrop. */
+    z-index: 6000 !important;
   }
   html[data-bs-theme="dark"] .master-datepicker-popup,
   html[data-layout-mode="dark"] .master-datepicker-popup,
