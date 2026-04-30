@@ -107,6 +107,9 @@ export default function HrCandidates() {
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
+  // Selection / Rejection confirmation
+  const [confirming, setConfirming] = useState<{ row: CandidateRow; mode: 'select' | 'reject' } | null>(null);
+
   const fetchAll = async () => {
     if (!recruitmentId) return;
     // ── DUMMY DATA START — remove this whole block once the backend APIs
@@ -390,7 +393,7 @@ export default function HrCandidates() {
                     </span>
                   </div>
                   <div className="rec-list-scroll">
-                  <table className="rec-list-table align-middle table-nowrap mb-0">
+                  <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                     <thead>
                       <tr>
                         <th className="ps-3 text-center" style={{ width: 56 }}>SR</th>
@@ -425,13 +428,11 @@ export default function HrCandidates() {
                             <td>
                               <div className="d-flex align-items-center gap-2">
                                 <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                  style={{ width: 28, height: 28, fontSize: 11, background: `linear-gradient(135deg, ${c.accent}, ${c.accent}cc)` }}>
+                                  style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${c.accent}, ${c.accent}cc)` }}>
                                   {c.initials}
                                 </div>
-                                <div>
-                                  <div className="fw-bold fs-13">{c.name}</div>
-                                  {c.recruitment_code && <span className="rec-id-pill" style={{ fontSize: 10, padding: '2px 7px' }}>{c.recruitment_code}</span>}
-                                </div>
+                                <span className="fw-bold fs-13">{c.name}</span>
+                                {c.recruitment_code && <span className="rec-id-pill" style={{ fontSize: 10, padding: '2px 7px' }}>{c.recruitment_code}</span>}
                               </div>
                             </td>
                             <td className="fs-13 text-muted">{c.email || '—'}</td>
@@ -443,7 +444,7 @@ export default function HrCandidates() {
                             <td className="fs-13">{c.source || '—'}</td>
                             <td className="text-center">
                               {c.cv_url ? (
-                                <a href={c.cv_url} target="_blank" rel="noreferrer" className="rec-act rec-act-view" style={{ textDecoration: 'none', height: 22, padding: '0 8px', fontSize: 10.5 }}>
+                                <a href={c.cv_url} target="_blank" rel="noreferrer" className="cand-cv-chip" download>
                                   <i className="ri-download-line" /><span>CV</span>
                                 </a>
                               ) : <span className="text-muted">—</span>}
@@ -461,7 +462,7 @@ export default function HrCandidates() {
                                   className="rec-act rec-act-approve rec-act--icon"
                                   title="Mark Selected"
                                   aria-label="Mark Selected"
-                                  onClick={() => handleStatusUpdate(c, 'Selected')}
+                                  onClick={() => setConfirming({ row: c, mode: 'select' })}
                                 >
                                   <i className="ri-check-line" />
                                 </button>
@@ -470,7 +471,7 @@ export default function HrCandidates() {
                                   className="rec-act rec-act-reject rec-act--icon"
                                   title="Mark Rejected"
                                   aria-label="Mark Rejected"
-                                  onClick={() => handleStatusUpdate(c, 'Rejected')}
+                                  onClick={() => setConfirming({ row: c, mode: 'reject' })}
                                 >
                                   <i className="ri-close-line" />
                                 </button>
@@ -566,6 +567,20 @@ export default function HrCandidates() {
           downloadCandidatesXlsx(rows);
           toast.success('Export ready', `${rows.length} candidate${rows.length === 1 ? '' : 's'} downloaded`);
           setExportOpen(false);
+        }}
+      />
+
+      <CandidateConfirmModal
+        target={confirming}
+        onClose={() => setConfirming(null)}
+        onConfirm={(reasonOrNote: string) => {
+          if (!confirming) return;
+          const next: CandidateStatus = confirming.mode === 'select' ? 'Selected' : 'Rejected';
+          handleStatusUpdate(confirming.row, next);
+          // `reasonOrNote` is forwarded so when the API is wired you can pass it
+          // along to the backend in the PATCH body — the dummy mode just logs it.
+          if (reasonOrNote) console.debug(`[${next}] note for ${confirming.row.name}:`, reasonOrNote);
+          setConfirming(null);
         }}
       />
     </>
@@ -1182,6 +1197,144 @@ function CandidateFormModal({
   );
 }
 
+// ─── Confirm Selection / Confirm Rejection modal ────────────────────────────
+const REJECTION_REASONS = [
+  { value: 'Not a culture fit',                  label: 'Not a culture fit' },
+  { value: 'Skills mismatch',                    label: 'Skills mismatch' },
+  { value: 'Insufficient experience',            label: 'Insufficient experience' },
+  { value: 'Salary expectations out of range',   label: 'Salary expectations out of range' },
+  { value: 'Notice period too long',             label: 'Notice period too long' },
+  { value: 'Withdrew from process',              label: 'Withdrew from process' },
+  { value: 'Position filled internally',         label: 'Position filled internally' },
+  { value: 'Other',                              label: 'Other (add notes below)' },
+];
+
+function CandidateConfirmModal({
+  target, onClose, onConfirm,
+}: {
+  target: { row: CandidateRow; mode: 'select' | 'reject' } | null;
+  onClose: () => void;
+  onConfirm: (reasonOrNote: string) => void;
+}) {
+  const [notes, setNotes] = useState('');
+  const [reason, setReason] = useState('');
+  const [reasonErr, setReasonErr] = useState(false);
+
+  // Reset form whenever a new candidate / mode is targeted.
+  useEffect(() => {
+    if (target) { setNotes(''); setReason(''); setReasonErr(false); }
+  }, [target]);
+
+  if (!target) return null;
+  const { row, mode } = target;
+  const isReject = mode === 'reject';
+  const stage = STATUS_TONES[row.status];
+
+  const handleConfirm = () => {
+    if (isReject && !reason) { setReasonErr(true); return; }
+    const payload = isReject ? [reason, notes].filter(Boolean).join(' — ') : notes;
+    onConfirm(payload);
+  };
+
+  return (
+    <Modal isOpen={!!target} toggle={onClose} centered size="md" backdrop="static" contentClassName={`border-0 cand-confirm-modal cand-confirm-modal--${isReject ? 'reject' : 'select'}`}>
+      <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
+        {/* Header */}
+        <div className="cand-confirm-head">
+          <span className="cand-confirm-head-icon">
+            <i className={isReject ? 'ri-close-line' : 'ri-check-line'} />
+          </span>
+          <div className="cand-confirm-head-text">
+            <h5 className="mb-0">{isReject ? 'Confirm Rejection' : 'Confirm Selection'}</h5>
+            <div className="cand-confirm-head-sub">
+              {isReject
+                ? 'This will mark the candidate as Rejected — moves to Rejected tab'
+                : 'This will mark the candidate as Selected'}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="cand-confirm-close">
+            <i className="ri-close-line" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="cand-confirm-body">
+          {/* Candidate summary card */}
+          <div className="cand-confirm-summary">
+            <div
+              className="cand-confirm-avatar"
+              style={{ background: `linear-gradient(135deg, ${row.accent}, ${row.accent}cc)` }}
+            >
+              {row.initials}
+            </div>
+            <div className="cand-confirm-summary-text">
+              <div className="cand-confirm-name">{row.name}</div>
+              <div className="cand-confirm-meta">
+                <span>{row.email || '—'}</span>
+                {row.recruitment_code && (
+                  <>
+                    <span className="dot">·</span>
+                    <span className="rec-id-pill">{row.recruitment_code}</span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="cand-confirm-stage">
+              <div className="cand-confirm-stage-label">Current Stage</div>
+              <span className="rec-pill" style={{ background: stage.bg, color: stage.fg }}>{row.status}</span>
+            </div>
+          </div>
+
+          {isReject && (
+            <div className="cand-confirm-field">
+              <label className="cand-confirm-label">
+                Reason for Rejection<span className="req">*</span>
+              </label>
+              <select
+                className={`cand-confirm-select${reasonErr ? ' is-invalid' : ''}`}
+                value={reason}
+                onChange={e => { setReason(e.target.value); if (e.target.value) setReasonErr(false); }}
+              >
+                <option value="">— Select a reason —</option>
+                {REJECTION_REASONS.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
+              {reasonErr && (
+                <div className="cand-confirm-error">
+                  <i className="ri-error-warning-line" />Please select a reason before confirming
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="cand-confirm-field">
+            <label className="cand-confirm-label">
+              Notes <span className="opt">(OPTIONAL)</span>
+            </label>
+            <textarea
+              className="cand-confirm-textarea"
+              rows={2}
+              placeholder="Add context for the audit trail"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="cand-confirm-footer">
+          <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="cand-confirm-submit" onClick={handleConfirm}>
+            <i className={isReject ? 'ri-close-line' : 'ri-check-line'} />
+            {isReject ? 'Confirm Rejection' : 'Confirm Selection'}
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // ─── DUMMY DATA — REMOVE WHEN BACKEND APIs ARE READY ────────────────────────
 // ════════════════════════════════════════════════════════════════════════════
@@ -1213,8 +1366,16 @@ function buildDummyRecruitment(id: string | undefined): RecruitmentInfo {
 }
 
 function buildDummyCandidates(recruitmentId: string | undefined): CandidateRow[] {
-  const recId = Number(recruitmentId || 1);
+  // Coerce safely — Number('abc') would yield NaN and produce "REC-0NaN"
+  // pills in the table. Fall back to 1 whenever the param isn't a finite
+  // numeric string.
+  const parsed = Number(recruitmentId);
+  const recId = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
   const recCode = `REC-${(1000 + recId).toString().padStart(4, '0')}`;
+  // Stable, downloadable placeholder PDF — every dummy candidate's "CV"
+  // points here so the green CV chip renders and clicking it actually
+  // downloads a file. Replace with the real `c.cv_url` from the API.
+  const dummyCv = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
   const palette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
   const initialsOf = (name: string) =>
     name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
@@ -1257,8 +1418,8 @@ function buildDummyCandidates(recruitmentId: string | undefined): CandidateRow[]
     expected_salary_lpa: r.exp_lpa,
     notice_period: r.notice,
     source: r.source,
-    cv_path: null,
-    cv_url: null,
+    cv_path: 'dummy.pdf',
+    cv_url: dummyCv,
     status: r.status,
     created_at: new Date(2026, 2, 10 + idx).toISOString(),
   }));
