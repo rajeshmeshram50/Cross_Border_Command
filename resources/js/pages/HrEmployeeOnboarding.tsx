@@ -306,18 +306,18 @@ const STATUS_OPTIONS_PENDING = [
 ];
 
 const DESIGNATION_LEVELS = [
-  { id: 'all',    label: 'All Levels',         icon: 'ri-checkbox-circle-line' },
-  { id: 'hod',    label: 'Head of Dept (HOD)', icon: 'ri-vip-crown-line' },
-  { id: 'tl',     label: 'Team Leader',        icon: 'ri-user-star-line' },
-  { id: 'exec',   label: 'Executive',          icon: 'ri-briefcase-line' },
+  { id: 'all',    label: 'All Levels',         icon: 'ri-global-line' },
+  { id: 'hod',    label: 'Head of Dept (HOD)', icon: 'ri-shield-star-line' },
+  { id: 'tl',     label: 'Team Leader',        icon: 'ri-team-line' },
+  { id: 'exec',   label: 'Executive',          icon: 'ri-flashlight-line' },
   { id: 'emp',    label: 'Employee',           icon: 'ri-user-line' },
   { id: 'intern', label: 'Intern / Trainee',   icon: 'ri-graduation-cap-line' },
 ] as const;
 
 const EMPLOYEE_TYPES = [
-  { id: 'all',    label: 'All' },
-  { id: 'it',     label: 'IT Employee' },
-  { id: 'non_it', label: 'Non-IT Employee' },
+  { id: 'all',    label: 'All',              icon: '' },
+  { id: 'it',     label: 'IT Employee',      icon: 'ri-mac-line' },
+  { id: 'non_it', label: 'Non-IT Employee',  icon: 'ri-book-2-line' },
 ] as const;
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -339,8 +339,14 @@ export default function HrEmployeeOnboarding() {
   };
   const closeVault = () => { setVaultOpen(false); setVaultEmp(null); };
 
-  // Reset filters when tabbing across
-  useEffect(() => { setStatusFilter('All'); setQ(''); }, [tab]);
+  // Pagination — match the master tables (7 per page).
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 7;
+
+  // Reset filters and page when tabbing across; also reset page when filters
+  // change so the user always lands on page 1 of the new filtered set.
+  useEffect(() => { setStatusFilter('All'); setQ(''); setPage(1); }, [tab]);
+  useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter]);
 
   const counts = useMemo(() => {
     const all = [...PENDING, ...COMPLETED];
@@ -374,15 +380,46 @@ export default function HrEmployeeOnboarding() {
       });
   }, [rows, q, deptFilter, statusFilter]);
 
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage  = Math.min(page, pageCount);
+  const sliceFrom = (safePage - 1) * PAGE_SIZE;
+  const visible   = filtered.slice(sliceFrom, sliceFrom + PAGE_SIZE);
+  const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
+
   return (
     <>
       <style>{`
         .onb-surface { background: #ffffff; }
         [data-bs-theme="dark"] .onb-surface { background: #1c2531; }
 
+        /* Hero card (purple-tinted, separate container — matches screenshot) */
+        .onb-hero-card {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 16px; flex-wrap: wrap;
+          padding: 18px 22px;
+          border-radius: 16px;
+          background: linear-gradient(135deg, #f3edff 0%, #ede4ff 100%);
+          border: 1px solid #e3d6ff;
+          box-shadow: 0 2px 12px rgba(124,92,252,0.06);
+        }
+        [data-bs-theme="dark"] .onb-hero-card {
+          background: linear-gradient(135deg, rgba(124,92,252,0.18) 0%, rgba(167,139,250,0.10) 100%);
+          border-color: rgba(124,92,252,0.32);
+        }
+        .onb-checklist-cta {
+          padding: 10px 18px;
+          font-size: 13px; font-weight: 700;
+          color: #fff !important;
+          background: linear-gradient(135deg,#7c5cfc 0%,#5a3fd1 100%) !important;
+          border: none !important;
+          box-shadow: 0 8px 18px rgba(91,63,209,0.30) !important;
+          display: inline-flex; align-items: center;
+        }
+        .onb-checklist-cta:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(91,63,209,0.38) !important; }
+
         /* Hero pill (Active) */
-        .onb-hero-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(124,92,252,0.12); color: #5a3fd1; }
-        .onb-hero-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.18); }
+        .onb-hero-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(124,92,252,0.18); color: #5a3fd1; }
+        .onb-hero-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.20); }
 
         /* Status & badge pills — match HrEmployees */
         .onb-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
@@ -404,238 +441,226 @@ export default function HrEmployeeOnboarding() {
 
         /* ── Checklist modal ─────────────────────────────────────────────── */
         .onb-checklist-modal .modal-dialog { max-width: min(1080px, 96vw); }
-        .onb-checklist-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
-        .onb-checklist-header { background: linear-gradient(135deg,#5b3fd1 0%, #7c5cfc 50%, #a78bfa 100%); color: #fff; padding: 22px 28px 14px; position: relative; }
-        .onb-checklist-header .close-btn { position: absolute; top: 16px; right: 16px; width: 34px; height: 34px; border-radius: 10px; background: rgba(255,255,255,0.18); border: none; color: #fff; transition: background .15s ease; display: inline-flex; align-items: center; justify-content: center; }
+        .onb-checklist-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
+        .onb-checklist-header { background: linear-gradient(135deg,#3b0764,#4c1d95 35%,#6d28d9 70%,#7c3aed); color: #fff; padding: 14px 20px 12px; position: relative; }
+        .onb-checklist-header .close-btn { position: absolute; top: 14px; right: 14px; width: 26px; height: 26px; border-radius: 7px; background: rgba(255,255,255,0.18); border: none; color: #fff; transition: background .15s ease; display: inline-flex; align-items: center; justify-content: center; }
         .onb-checklist-header .close-btn:hover { background: rgba(255,255,255,0.30); }
-        .onb-cl-title { font-size: 17px; font-weight: 800; margin: 0; letter-spacing: -0.01em; display: flex; align-items: center; gap: 12px; }
-        .onb-cl-icon { width: 38px; height: 38px; border-radius: 11px; background: rgba(255,255,255,0.18); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-cl-sub { font-size: 12px; color: rgba(255,255,255,0.82); margin-top: 4px; padding-left: 50px; }
 
-        .onb-cl-filters { padding: 14px 28px 0; }
-        .onb-cl-filter-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: #ffffff; opacity: 0.92; margin: 0 0 8px; }
-        .onb-cl-pillrow { display: flex; flex-wrap: wrap; gap: 8px; }
-        .onb-cl-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; border-radius: 999px; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: rgba(255,255,255,0.18); color: #ffffff; border: 1px solid rgba(255,255,255,0.28); }
-        .onb-cl-pill:hover { background: rgba(255,255,255,0.26); border-color: rgba(255,255,255,0.45); }
-        .onb-cl-pill.is-active { background: #ffffff; color: #5a3fd1; border-color: #ffffff; box-shadow: 0 3px 8px rgba(0,0,0,0.10); font-weight: 700; }
-        .onb-cl-row { display: flex; align-items: center; gap: 12px; padding: 8px 28px 14px; flex-wrap: wrap; }
-        .onb-cl-summary { margin-left: auto; padding: 4px 11px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(255,255,255,0.20); color: #fff; }
+        .onb-cl-titlewrap { display: flex; align-items: center; gap: 11px; padding-right: 38px; }
+        .onb-cl-icon { width: 36px; height: 36px; border-radius: 9px; background: rgba(255,255,255,0.18); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; backdrop-filter: blur(6px); }
+        .onb-cl-title { font-size: 14.5px; font-weight: 700; margin: 0; letter-spacing: -0.01em; color: #fff; }
+        .onb-cl-sub { font-size: 11px; color: rgba(255,255,255,0.78); margin-top: 2px; }
 
-        .onb-cl-body { background: #f7f5fc; padding: 18px 22px 12px; max-height: 70vh; overflow-y: auto; }
+        .onb-cl-filters { padding: 10px 20px 0; }
+        .onb-cl-filter-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.72); margin: 0 0 6px; }
+        .onb-cl-pillrow { display: flex; flex-wrap: wrap; gap: 6px; }
+        .onb-cl-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; border-radius: 999px; font-size: 10.5px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: transparent; color: rgba(255,255,255,0.92); border: 1px solid rgba(255,255,255,0.30); }
+        .onb-cl-pill i { font-size: 11.5px; opacity: 0.95; }
+        .onb-cl-pill:hover { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.50); }
+        .onb-cl-pill.is-active { background: #ffffff; color: #4c1d95; border-color: #ffffff; box-shadow: 0 3px 8px rgba(0,0,0,0.12); font-weight: 700; }
+        .onb-cl-pill.is-active i { color: #6d28d9; opacity: 1; }
+
+        /* Employee Type row uses a translucent segmented control */
+        .onb-cl-row { display: flex; align-items: center; gap: 10px; padding: 8px 20px 12px; flex-wrap: wrap; }
+        .onb-cl-row .onb-cl-filter-label { margin: 0; }
+        .onb-cl-typebox { display: inline-flex; gap: 4px; padding: 3px; border-radius: 9px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.20); }
+        .onb-cl-type { display: inline-flex; align-items: center; gap: 5px; padding: 5px 13px; border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: transparent; color: rgba(255,255,255,0.90); border: none; }
+        .onb-cl-type i { font-size: 12px; }
+        .onb-cl-type:hover { background: rgba(255,255,255,0.10); }
+        .onb-cl-type.is-active { background: #ffffff; color: #1f2937; box-shadow: 0 2px 6px rgba(0,0,0,0.14); font-weight: 700; }
+        .onb-cl-type.is-active i { color: #6d28d9; }
+
+        .onb-cl-summary { margin-left: auto; padding: 4px 11px; border-radius: 999px; font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.16); color: #fff; border: 1px solid rgba(255,255,255,0.20); }
+
+        .onb-cl-body { background: #f7f5fc; padding: 14px 18px 10px; max-height: 50vh; overflow-y: auto; }
         [data-bs-theme="dark"] .onb-cl-body { background: #1f2630; }
 
-        .onb-stage { background: #fff; border: 1px solid #ece9f6; border-radius: 14px; margin-bottom: 14px; overflow: hidden; }
+        .onb-stage { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
         [data-bs-theme="dark"] .onb-stage { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-stage-head { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: linear-gradient(90deg, rgba(124,92,252,0.06), rgba(124,92,252,0)); border-bottom: 1px solid #ece9f6; }
+        .onb-stage-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: linear-gradient(90deg, rgba(124,92,252,0.05), rgba(124,92,252,0)); border-bottom: 1px solid #ece9f6; }
         [data-bs-theme="dark"] .onb-stage-head { border-color: var(--vz-border-color); }
-        .onb-stage-icon { width: 32px; height: 32px; border-radius: 9px; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; flex-shrink: 0; }
-        .onb-stage-title { font-size: 13.5px; font-weight: 700; color: #1f2937; margin: 0; }
+        .onb-stage-icon { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 12px; flex-shrink: 0; }
+        .onb-stage-title { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; }
         [data-bs-theme="dark"] .onb-stage-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-stage-sub { font-size: 12px; color: #6b7280; margin: 1px 0 0; }
+        .onb-stage-sub { font-size: 11px; color: #6b7280; margin: 1px 0 0; }
         [data-bs-theme="dark"] .onb-stage-sub { color: var(--vz-secondary-color); }
-        .onb-stage-count { margin-left: auto; padding: 4px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 11px; font-weight: 700; }
+        .onb-stage-count { margin-left: auto; padding: 3px 9px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 10px; font-weight: 700; }
 
-        .onb-cp { display: flex; align-items: flex-start; gap: 12px; padding: 12px 18px; border-bottom: 1px solid #f1eff7; }
+        .onb-cp { display: flex; align-items: flex-start; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #f1eff7; }
         [data-bs-theme="dark"] .onb-cp { border-color: var(--vz-border-color); }
         .onb-cp:last-child { border-bottom: none; }
-        .onb-cp-check { width: 22px; height: 22px; border-radius: 6px; background: #f3f0ff; color: #7c5cfc; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
-        .onb-cp-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        .onb-cp-title .t { font-size: 13px; font-weight: 700; color: #1f2937; }
+        .onb-cp-check { width: 18px; height: 18px; border-radius: 5px; background: #f3f0ff; color: #7c5cfc; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+        .onb-cp-title { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+        .onb-cp-title .t { font-size: 12px; font-weight: 700; color: #1f2937; }
         [data-bs-theme="dark"] .onb-cp-title .t { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-cp-desc { font-size: 11.5px; color: #6b7280; margin-top: 3px; line-height: 1.45; }
+        .onb-cp-desc { font-size: 10.5px; color: #6b7280; margin-top: 2px; line-height: 1.4; }
         [data-bs-theme="dark"] .onb-cp-desc { color: var(--vz-secondary-color); }
-        .onb-cp-badge { font-size: 9.5px; font-weight: 800; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 5px; }
+        .onb-cp-badge { font-size: 8.5px; font-weight: 800; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; }
 
-        .onb-cl-footer { background: #fff; border-top: 1px solid #eef0f4; padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .onb-cl-footer { background: #fff; border-top: 1px solid #eef0f4; padding: 10px 22px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-cl-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-cl-footer .hint { font-size: 12px; color: #6b7280; }
+        .onb-cl-footer .hint { font-size: 11px; color: #6b7280; }
         [data-bs-theme="dark"] .onb-cl-footer .hint { color: var(--vz-secondary-color); }
-        .onb-cl-close { padding: 9px 20px; border-radius: 11px; font-size: 13px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg,#7c5cfc,#5a3fd1); box-shadow: 0 6px 14px rgba(91,63,209,0.28); cursor: pointer; }
-        .onb-cl-close:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(91,63,209,0.36); }
+        .onb-cl-close { padding: 7px 18px; border-radius: 9px; font-size: 12px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg,#7c3aed,#4c1d95); box-shadow: 0 6px 14px rgba(76,29,149,0.28); cursor: pointer; }
+        .onb-cl-close:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(76,29,149,0.36); }
       `}</style>
       <MasterFormStyles />
 
-      <Row>
-        <Col xs={12}>
-          <div
-            className="onb-surface"
+      {/* ── Hero card (purple-tinted, separate container) ── */}
+      <div className="onb-hero-card mb-3">
+        <div className="d-flex align-items-center gap-3 min-w-0">
+          <span
+            className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
             style={{
-              borderRadius: 16,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.05)',
-              padding: '20px',
+              width: 46, height: 46,
+              background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
+              boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
             }}
           >
-            {/* ── Header row ── */}
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-3">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    width: 46, height: 46,
-                    background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
-                    boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
-                  }}
-                >
-                  <i className="ri-user-add-line" style={{ color: '#fff', fontSize: 21 }} />
-                </span>
+            <i className="ri-user-add-line" style={{ color: '#fff', fontSize: 21 }} />
+          </span>
+          <div className="min-w-0">
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee Onboarding Hub</h5>
+              <span className="onb-hero-pill">
+                <span className="dot" />Active
+              </span>
+            </div>
+            <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+              Track newly joined employees, onboarding progress, and completed onboarding records
+            </div>
+          </div>
+        </div>
+        <Button
+          onClick={() => setChecklistOpen(true)}
+          className="onb-checklist-cta rounded-pill"
+        >
+          <i className="ri-checkbox-multiple-line me-2" style={{ fontSize: 16 }} />
+          Onboarding Checklist
+        </Button>
+      </div>
+
+      {/* ── KPI cards (own row, each its own card) ── */}
+      <Row className="g-3 mb-3 align-items-stretch">
+        {KPI_CARDS.map(k => (
+          <Col key={k.key} xl={true} md={4} sm={6} xs={12}>
+            <div
+              className="onb-surface"
+              style={{
+                borderRadius: 14,
+                border: '1px solid var(--vz-border-color)',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                padding: '16px 18px',
+                position: 'relative',
+                overflow: 'hidden',
+                height: '100%',
+              }}
+            >
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.strip }} />
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
                 <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Employee Onboarding Hub</h5>
-                    <span className="onb-hero-pill">
-                      <span className="dot" />Active
-                    </span>
-                  </div>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-                    Track newly joined employees, onboarding progress, and completed onboarding records
-                  </div>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                    {k.label}
+                  </p>
+                  <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                    {(counts as any)[k.key]}
+                  </h3>
+                </div>
+                <div style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <i className={k.icon} style={{ fontSize: 20, color: k.fg }} />
                 </div>
               </div>
-              <Button
-                onClick={() => setChecklistOpen(true)}
-                color="secondary"
-                className="btn-label waves-effect waves-light rounded-pill"
-              >
-                <i className="ri-checkbox-multiple-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                Onboarding Checklist
-              </Button>
             </div>
+          </Col>
+        ))}
+      </Row>
 
-            {/* ── KPI cards (gradient strip + value + icon on right) ── */}
-            <Row className="g-3 mb-3 align-items-stretch">
-              {KPI_CARDS.map(k => (
-                <Col key={k.key} xl={true} md={4} sm={6} xs={12}>
-                  <div
-                    className="onb-surface"
-                    style={{
-                      borderRadius: 14,
-                      border: '1px solid var(--vz-border-color)',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                      padding: '16px 18px',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      height: '100%',
-                    }}
-                  >
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.strip }} />
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                      <div className="min-w-0">
-                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                          {k.label}
-                        </p>
-                        <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                          {(counts as any)[k.key]}
-                        </h3>
-                      </div>
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <i className={k.icon} style={{ fontSize: 20, color: k.fg }} />
-                      </div>
-                    </div>
-                  </div>
-                </Col>
-              ))}
-            </Row>
+      {/* ── Tabs (free, no surrounding container — like the screenshot) ── */}
+      <div className="d-flex mb-3" style={{ gap: 8, flexWrap: 'wrap' }}>
+        {[
+          { key: 'pending'   as const, label: 'Onboarding Pending (New Joiners)', count: counts.pending,   icon: 'ri-time-line' },
+          { key: 'completed' as const, label: 'Onboarding Completed',             count: counts.completed, icon: 'ri-checkbox-circle-line' },
+        ].map(t => {
+          const on = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className="btn d-inline-flex align-items-center gap-2 fw-semibold"
+              style={{
+                borderRadius: 999,
+                padding: '8px 16px',
+                fontSize: 13,
+                background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'var(--vz-card-bg)',
+                color: on ? '#fff' : 'var(--vz-secondary-color)',
+                border: on ? 'none' : '1px solid var(--vz-border-color)',
+                boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
+              }}
+            >
+              <i className={t.icon} style={{ fontSize: 14 }} />
+              {t.label}
+              <span
+                className="badge rounded-pill"
+                style={{
+                  fontSize: 11,
+                  background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
+                  color: on ? '#fff' : 'var(--vz-secondary-color)',
+                }}
+              >
+                {t.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
-            {/* ── Tabs (segmented toggle — matches HrEmployees Active/Disabled) ── */}
-            <Row className="g-2 mb-3">
-              <Col xs={12}>
-                <div
-                  className="d-flex"
-                  style={{
-                    background: 'var(--vz-secondary-bg)',
-                    border: '1px solid var(--vz-border-color)',
-                    borderRadius: 10,
-                    padding: 4,
-                    gap: 4,
-                  }}
-                >
-                  {[
-                    { key: 'pending'   as const, label: 'Onboarding Pending (New Joiners)', count: counts.pending,   icon: 'ri-time-line' },
-                    { key: 'completed' as const, label: 'Onboarding Completed',             count: counts.completed, icon: 'ri-checkbox-circle-line' },
-                  ].map(t => {
-                    const on = tab === t.key;
-                    return (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => setTab(t.key)}
-                        className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                        style={{
-                          borderRadius: 8,
-                          padding: '8px 14px',
-                          fontSize: 13,
-                          background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
-                          color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          border: 'none',
-                          boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-                        }}
-                      >
-                        <i className={t.icon} style={{ fontSize: 14 }} />
-                        {t.label}
-                        <span
-                          className="badge rounded-pill"
-                          style={{
-                            fontSize: 11,
-                            background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                            color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          }}
-                        >
-                          {t.count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </Col>
-            </Row>
-
-            {/* ── Search + filters ── */}
-            <Row className="g-2 align-items-center mb-3">
-              <Col md={5} sm={12}>
-                <div className="search-box">
-                  <Input
-                    type="text"
-                    className="form-control"
-                    placeholder="Search name, ID, department…"
-                    value={q}
-                    onChange={e => setQ(e.target.value)}
+      {/* ── Filters + Table — own card, like Employee list ── */}
+      <Card>
+        <CardBody>
+          <Row className="g-2 align-items-center mb-3">
+            <Col md={5} sm={12}>
+              <div className="search-box">
+                <Input
+                  type="text"
+                  className="form-control"
+                  placeholder="Search name, ID, department…"
+                  value={q}
+                  onChange={e => setQ(e.target.value)}
+                />
+                <i className="ri-search-line search-icon"></i>
+              </div>
+            </Col>
+            <Col md={7} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
+                <div style={{ minWidth: 170 }}>
+                  <MasterSelect
+                    value={deptFilter}
+                    onChange={setDeptFilter}
+                    options={DEPT_OPTIONS}
+                    placeholder="All"
                   />
-                  <i className="ri-search-line search-icon"></i>
                 </div>
-              </Col>
-              <Col md={7} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-                  <div style={{ minWidth: 170 }}>
-                    <MasterSelect
-                      value={deptFilter}
-                      onChange={setDeptFilter}
-                      options={DEPT_OPTIONS}
-                      placeholder="All"
-                    />
-                  </div>
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
+                <div style={{ minWidth: 170 }}>
+                  <MasterSelect
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    options={tab === 'pending' ? STATUS_OPTIONS_PENDING : [{ value: 'All', label: 'All' }, { value: 'Completed', label: 'Completed' }]}
+                    placeholder="All"
+                  />
                 </div>
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
-                  <div style={{ minWidth: 170 }}>
-                    <MasterSelect
-                      value={statusFilter}
-                      onChange={setStatusFilter}
-                      options={tab === 'pending' ? STATUS_OPTIONS_PENDING : [{ value: 'All', label: 'All' }, { value: 'Completed', label: 'Completed' }]}
-                      placeholder="All"
-                    />
-                  </div>
-                </div>
-                <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                  {filtered.length} results
-                </div>
-              </Col>
-            </Row>
+              </div>
+              <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600 }}>
+                {filtered.length} results
+              </div>
+            </Col>
+          </Row>
 
-            {/* ── Table ── */}
-            <Card className="border-0 shadow-none mb-0">
-              <CardBody className="p-0">
-                <div className="table-responsive table-card border rounded">
+          <div className="table-responsive table-card border rounded">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
@@ -659,7 +684,7 @@ export default function HrEmployeeOnboarding() {
                             No onboarding records match your filters
                           </td>
                         </tr>
-                      ) : filtered.map(r => {
+                      ) : visible.map(r => {
                         const tone = STATUS_TONES[r.status];
                         return (
                           <tr key={r.id}>
@@ -802,11 +827,40 @@ export default function HrEmployeeOnboarding() {
                     </tbody>
                   </table>
                 </div>
-              </CardBody>
-            </Card>
-          </div>
-        </Col>
-      </Row>
+
+          {/* Pagination — same layout as master TableContainer */}
+          <Row className="align-items-center mt-2 g-3 text-center text-sm-start">
+            <div className="col-sm">
+              <div className="text-muted">
+                Showing
+                <span className="fw-semibold ms-1">{visible.length}</span>
+                {' '}of <span className="fw-semibold">{filtered.length}</span> Results
+              </div>
+            </div>
+            <div className="col-sm-auto">
+              <ul className="pagination pagination-separated pagination-md justify-content-center justify-content-sm-start mb-0">
+                <li className={safePage <= 1 ? 'page-item disabled' : 'page-item'}>
+                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage - 1); }}>Previous</a>
+                </li>
+                {Array.from({ length: pageCount }).map((_, i) => (
+                  <li key={i} className="page-item">
+                    <a
+                      href="#"
+                      className={safePage === i + 1 ? 'page-link active' : 'page-link'}
+                      onClick={(e) => { e.preventDefault(); goto(i + 1); }}
+                    >
+                      {i + 1}
+                    </a>
+                  </li>
+                ))}
+                <li className={safePage >= pageCount ? 'page-item disabled' : 'page-item'}>
+                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage + 1); }}>Next</a>
+                </li>
+              </ul>
+            </div>
+          </Row>
+        </CardBody>
+      </Card>
 
       {/* ── Onboarding Checklist Modal ── */}
       <ChecklistModal isOpen={checklistOpen} onClose={() => setChecklistOpen(false)} />
@@ -1121,21 +1175,25 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
       modalClassName="onb-checklist-modal"
       backdrop="static"
       keyboard={false}
+      scrollable
     >
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
         {/* Header */}
         <div className="onb-checklist-header">
           <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
-            <i className="ri-close-line" style={{ fontSize: 18 }} />
+            <i className="ri-close-line" style={{ fontSize: 14 }} />
           </button>
-          <h5 className="onb-cl-title">
+
+          <div className="onb-cl-titlewrap">
             <span className="onb-cl-icon">
-              <i className="ri-checkbox-multiple-line" style={{ fontSize: 18 }} />
+              <i className="ri-checkbox-multiple-line" style={{ fontSize: 16 }} />
             </span>
-            Employee Onboarding Checklist
-          </h5>
-          <div className="onb-cl-sub">
-            {CHECKLIST_STAGES.length} stages · {CHECKLIST_STAGES.reduce((a, s) => a + s.checkpoints.length, 0)} checkpoints · Filtered by Designation &amp; Employee Type
+            <div className="min-w-0">
+              <h5 className="onb-cl-title">Employee Onboarding Checklist</h5>
+              <div className="onb-cl-sub">
+                {CHECKLIST_STAGES.length} stages · {CHECKLIST_STAGES.reduce((a, s) => a + s.checkpoints.length, 0)} checkpoints · Filtered by Designation &amp; Employee Type
+              </div>
+            </div>
           </div>
 
           <div className="onb-cl-filters">
@@ -1148,7 +1206,7 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
                   className={`onb-cl-pill ${level === l.id ? 'is-active' : ''}`}
                   onClick={() => setLevel(l.id)}
                 >
-                  <i className={l.icon} style={{ fontSize: 13 }} />
+                  <i className={l.icon} />
                   {l.label}
                 </button>
               ))}
@@ -1156,18 +1214,23 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
           </div>
 
           <div className="onb-cl-row">
-            <p className="onb-cl-filter-label" style={{ margin: 0 }}>Employee Type</p>
-            {EMPLOYEE_TYPES.map(t => (
-              <button
-                key={t.id}
-                type="button"
-                className={`onb-cl-pill ${empType === t.id ? 'is-active' : ''}`}
-                onClick={() => setEmpType(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
-            <span className="onb-cl-summary">{levelLabel} · {typeLabel}</span>
+            <span className="onb-cl-filter-label">Employee Type:</span>
+            <div className="onb-cl-typebox">
+              {EMPLOYEE_TYPES.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`onb-cl-type ${empType === t.id ? 'is-active' : ''}`}
+                  onClick={() => setEmpType(t.id)}
+                >
+                  {t.icon ? <i className={t.icon} /> : null}
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <span className="onb-cl-summary">
+              {levelLabel} · {typeLabel === 'All' ? 'All Types' : `${typeLabel}s`}
+            </span>
           </div>
         </div>
 
