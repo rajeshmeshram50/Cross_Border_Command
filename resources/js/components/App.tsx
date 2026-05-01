@@ -46,6 +46,7 @@ import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboard
 import EmployeePermissions from '../pages/EmployeePermissions';
 import EmployeeProfile from '../pages/EmployeeProfile';
 import PublicOnboarding from '../pages/PublicOnboarding';
+import ComingSoonShell from './ComingSoonShell';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -305,10 +306,33 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/employees" element={<HrEmployees />} />
-              <Route path="/hr/recruitment" element={<HrRecruitment />} />
-              <Route path="/hr/recruitment/:id/candidates" element={<HrCandidates />} />
-              <Route path="/hr/exit-management" element={<HrExitManagement />} />
-              <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />
+              {/* Recruitment / Candidates / Exit / Onboarding pages still
+                  serve dummy data — their `/recruitments`, `/candidates`,
+                  `/exit/employees` endpoints aren't registered in routes/api.php
+                  yet. Wrapping at the route level lets us drop the Coming
+                  Soon overlay across the whole page without surgery in the
+                  individual 2k-line page files. Remove the wrapper for any
+                  page once its backend ships. */}
+              <Route path="/hr/recruitment" element={
+                <ComingSoonShell title="Recruitment" subtitle="Job openings, application pipeline, hiring board">
+                  <HrRecruitment />
+                </ComingSoonShell>
+              } />
+              <Route path="/hr/recruitment/:id/candidates" element={
+                <ComingSoonShell title="Candidates" subtitle="Application reviews, interview tracking, scorecards">
+                  <HrCandidates />
+                </ComingSoonShell>
+              } />
+              <Route path="/hr/exit-management" element={
+                <ComingSoonShell title="Exit Management" subtitle="Resignations, clearances, FNF, exit interviews">
+                  <HrExitManagement />
+                </ComingSoonShell>
+              } />
+              <Route path="/hr/employee-onboarding" element={
+                <ComingSoonShell title="Onboarding Workflow" subtitle="Stage tracking, document checklist, IT setup">
+                  <HrEmployeeOnboarding />
+                </ComingSoonShell>
+              } />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
               <Route path="/hr/employees/:id/profile" element={<EmployeeProfileWrapper />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
