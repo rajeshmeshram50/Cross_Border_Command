@@ -21,7 +21,6 @@ import Clients from '../pages/Clients';
 import ClientForm from '../pages/ClientForm';
 import Branches from '../pages/Branches';
 import UsersPage from '../pages/UsersPage';
-import Employees from '../pages/Employees';
 import Plans from '../pages/Plans';
 import Payments from '../pages/Payments';
 import Permissions from '../pages/Permissions';
@@ -73,7 +72,6 @@ const getPagePath = (page: string, data?: any): string => {
     case 'branch-view': return `/branches/${data?.branchId}`;
     case 'branch-users': return '/branches/users';
     case 'client-users': return '/clients/users';
-    case 'employees': return '/employees';
     case 'hr-employees': return '/hr/employees';
     case 'hr-recruitment': return '/hr/recruitment';
     case 'hr-employee-onboarding': return '/hr/employee-onboarding';
@@ -276,7 +274,6 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/branches/:id/edit" element={<BranchFormWrapper />} />
               <Route path="/branches/users" element={<UsersPage />} />
               <Route path="/clients/users" element={<UsersPage />} />
-              <Route path="/employees" element={<Employees />} />
               <Route path="/plans" element={<Plans onNavigate={navigateFn} />} />
               <Route path="/plans/new" element={<AddPlanWrapper />} />
               <Route path="/plans/:id/edit" element={<AddPlanWrapper />} />

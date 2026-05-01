@@ -1,4 +1,9 @@
-export type UserRole = 'super_admin' | 'client_admin' | 'branch_user';
+// `employee` was added when the HR module started provisioning login
+// accounts for non-admin staff. They share the same permission/menu
+// machinery as branch_users — visibility is decided by the per-module
+// permission flags, not by user_type alone. `client_user` was already a
+// valid backend type but had been missing from this enum.
+export type UserRole = 'super_admin' | 'client_admin' | 'client_user' | 'branch_user' | 'employee';
 
 export interface ModulePermission {
   can_view: boolean;

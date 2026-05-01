@@ -242,6 +242,68 @@ class MasterController extends Controller
         return response()->json($this->withOwnership($row));
     }
 
+    /**
+     * slug -> ['col' => column_name, 'prefix' => 'DEPT-', 'pad' => 3]
+     * Registry of masters that auto-generate a sequenced code (e.g. DEPT-001).
+     * The next number is computed on the server against the same tenant scope
+     * the row will be saved under, so each tenant gets its own DEPT-001…N
+     * series independently of other tenants.
+     */
+    private const AUTO_CODES = [
+        'departments' => ['col' => 'code', 'prefix' => 'DEPT-', 'pad' => 3],
+    ];
+
+    /**
+     * Return the next auto-generated code for the given master, scoped to the
+     * (client_id, branch_id) tuple the new row will be stamped with. Used by
+     * the frontend to pre-fill the code field on form open.
+     *
+     * Response: { "code": "DEPT-001", "prefix": "DEPT-" }   when configured
+     *           { "code": null }                            when not configured
+     */
+    public function nextCode(Request $request, string $slug)
+    {
+        $this->authorizeMaster($request, $slug, 'can_view');
+
+        if (!isset(self::AUTO_CODES[$slug])) {
+            return response()->json(['code' => null]);
+        }
+        $cfg = self::AUTO_CODES[$slug];
+        $col    = $cfg['col'];
+        $prefix = $cfg['prefix'];
+        $pad    = $cfg['pad'];
+
+        $modelClass = $this->resolveModel($slug);
+
+        // Same tenant tuple used at create-time so the sequence restarts per
+        // (client_id, branch_id). Mirror logic in validatePayload().
+        [$tenantClientId, $tenantBranchId] = $this->resolveOwnership($request, $request->user());
+
+        $q = $modelClass::query();
+        $tenantClientId === null
+            ? $q->whereNull('client_id')
+            : $q->where('client_id', $tenantClientId);
+        $tenantBranchId === null
+            ? $q->whereNull('branch_id')
+            : $q->where('branch_id', $tenantBranchId);
+
+        $codes = $q->pluck($col);
+        $max = 0;
+        $re  = '/^' . preg_quote($prefix, '/') . '(\d+)$/i';
+        foreach ($codes as $c) {
+            if (preg_match($re, (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $max) $max = $n;
+            }
+        }
+        $next = $prefix . str_pad((string) ($max + 1), $pad, '0', STR_PAD_LEFT);
+
+        return response()->json([
+            'code'   => $next,
+            'prefix' => $prefix,
+        ]);
+    }
+
     public function destroy(Request $request, string $slug, $id)
     {
         $this->authorizeMaster($request, $slug, 'can_delete');
@@ -443,7 +505,16 @@ class MasterController extends Controller
             return;
         }
 
-        if ($user->user_type === 'branch_user') {
+        // branch_user AND employee share the same scope rules — both belong
+        // to a single (client, branch) tuple and should see:
+        //   - global rows (super-admin seeded, client_id IS NULL)
+        //   - their client's rows
+        //   - rows under their own branch
+        //   - rows under the client's main branch (shared template data)
+        // Without this, a freshly-onboarded employee opening the Edit form
+        // sees empty Country/State/Department dropdowns because the scope
+        // returns zero rows.
+        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
             $clientId = $user->client_id;
             $branchId = $user->branch_id;
             $isMain   = $user->branch?->is_main ?? false;
@@ -455,7 +526,8 @@ class MasterController extends Controller
                 return;
             }
 
-            // Non-main branch user: include global rows, client-level rows, own branch, main-branch-shared rows.
+            // Branch-bound user: include global rows, client-level rows, own
+            // branch, main-branch-shared rows.
             $mainBranchId = \App\Models\Branch::where('client_id', $clientId)
                 ->where('is_main', true)
                 ->value('id');
@@ -497,7 +569,10 @@ class MasterController extends Controller
             return [$user->client_id, null];
         }
 
-        if ($user && $user->user_type === 'branch_user') {
+        // branch_user / employee — both belong to a single (client, branch)
+        // tuple, so any master row they create gets stamped with both. Same
+        // rule keeps tenant numbering sequences (e.g. DEPT-###) isolated.
+        if ($user && in_array($user->user_type, ['branch_user', 'employee'], true)) {
             return [$user->client_id, $user->branch_id];
         }
 
