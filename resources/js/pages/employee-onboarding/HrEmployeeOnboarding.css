@@ -673,3 +673,106 @@
         .onb-init-btn-next:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(76,29,149,0.38); }
         .onb-init-btn-complete { padding: 7px 16px; border-radius: 9px; font-size: 11.5px; font-weight: 700; background: linear-gradient(135deg,#10b981,#059669); color: #fff; border: none; cursor: pointer; box-shadow: 0 6px 14px rgba(5,150,105,0.30); display: inline-flex; align-items: center; gap: 5px; }
         .onb-init-btn-complete:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(5,150,105,0.38); }
+
+        /* ── Dark theme — close the remaining hardcoded #fff / dark-text gaps so the
+              onboarding form is fully readable on a dark surface. Each rule below
+              maps a light-mode background or text colour to its dark equivalent. ── */
+
+        /* Sidebar stage cards (hover + active) — were stark white panels */
+        [data-bs-theme="dark"] .onb-init-stage-card:hover { background: rgba(255,255,255,0.04); border-color: var(--vz-border-color); }
+        [data-bs-theme="dark"] .onb-init-stage-card.is-active { background: rgba(124,92,252,0.14); border-color: rgba(124,92,252,0.50); box-shadow: 0 4px 12px rgba(0,0,0,0.30); }
+        [data-bs-theme="dark"] .onb-init-side-bar { background: rgba(255,255,255,0.08); }
+        [data-bs-theme="dark"] .onb-init-stage-num { background: rgba(255,255,255,0.08); color: var(--vz-secondary-color); }
+
+        /* Form inputs — required (pink) and autofilled (green) tinted bgs */
+        [data-bs-theme="dark"] .onb-init-input.is-required,
+        [data-bs-theme="dark"] .onb-prov-input.is-required { background: rgba(240,101,72,0.12); border-color: rgba(240,101,72,0.45); }
+        [data-bs-theme="dark"] .onb-init-input.is-autofilled,
+        [data-bs-theme="dark"] .onb-prov-input.is-autofetched { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.40); }
+
+        /* Profile completion banner — help text */
+        [data-bs-theme="dark"] .onb-init-profile-help { color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-init-profile-track { background: rgba(255,255,255,0.10); }
+
+        /* Add-experience button (dashed yellow) */
+        [data-bs-theme="dark"] .onb-init-add-btn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.45); color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-init-add-btn:hover { background: rgba(245,158,11,0.20); border-color: rgba(245,158,11,0.65); }
+
+        /* Salary breakup panel */
+        [data-bs-theme="dark"] .onb-init-breakup { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        [data-bs-theme="dark"] .onb-init-breakup-cell.total .v { color: #c4b5fd; }
+
+        /* Verification (Stage 6) progress bar inner track */
+        [data-bs-theme="dark"] .onb-ver-progress-bar,
+        [data-bs-theme="dark"] .onb-pay-progress-bar,
+        [data-bs-theme="dark"] .onb-pol-progress-bar,
+        [data-bs-theme="dark"] .onb-prov-progress-bar,
+        [data-bs-theme="dark"] .onb-doc-progress-bar { background: rgba(255,255,255,0.10); }
+        [data-bs-theme="dark"] .onb-ver-info-track { background: rgba(255,255,255,0.10); }
+
+        /* Stage 5 — policy doc rows + progress help */
+        [data-bs-theme="dark"] .onb-pol-doc { background: var(--vz-card-bg); }
+        [data-bs-theme="dark"] .onb-pol-progress-help,
+        [data-bs-theme="dark"] .onb-doc-progress-help { color: #c4b5fd; }
+
+        /* Stage 4 — payroll radio hover */
+        [data-bs-theme="dark"] .onb-pay-radio:hover { background: rgba(124,58,237,0.10); border-color: rgba(124,58,237,0.45); }
+        [data-bs-theme="dark"] .onb-pay-check-icon { background: rgba(245,158,11,0.16); }
+
+        /* Stage 6 — Flag Issue button (light pink-cream) */
+        [data-bs-theme="dark"] .onb-ver-flag-btn { background: var(--vz-card-bg); border-color: rgba(240,101,72,0.45); color: #fca5a5; }
+        [data-bs-theme="dark"] .onb-ver-flag-btn:hover { background: rgba(240,101,72,0.10); border-color: rgba(240,101,72,0.70); }
+
+        /* Stage 2 — previous-employment company close button + pill */
+        [data-bs-theme="dark"] .onb-doc-comp-close { background: var(--vz-card-bg); border-color: rgba(245,158,11,0.40); color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-doc-prev-pill { background: rgba(245,158,11,0.16); border-color: rgba(245,158,11,0.40); color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-doc-comp-doc-icon { background: rgba(245,158,11,0.16); color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-doc-comp-num { background: linear-gradient(135deg,#f59e0b,#b45309); }
+        [data-bs-theme="dark"] .onb-doc-comp-count { background: rgba(245,158,11,0.20); color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-doc-comp-section { color: #fcd34d; }
+
+        /* Footer outline + ghost buttons */
+        [data-bs-theme="dark"] .onb-init-btn-outline { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
+        [data-bs-theme="dark"] .onb-init-btn-outline:hover { background: rgba(124,58,237,0.14); border-color: #a78bfa; color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-init-btn-ghost:hover { color: var(--vz-body-color); border-color: rgba(255,255,255,0.40); }
+
+        /* Banner state pill text */
+        [data-bs-theme="dark"] .onb-init-banner-state { color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-init-banner-state .dot { background: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-init-banner-state.pending { color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-init-banner-state.pending .dot { background: #f59e0b; }
+
+        /* Pay/Pol/Doc count + percentage chips */
+        [data-bs-theme="dark"] .onb-pay-progress-count { color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-pol-progress-count,
+        [data-bs-theme="dark"] .onb-doc-progress-count { color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-prov-progress-count { color: #93c5fd; }
+        [data-bs-theme="dark"] .onb-doc-cat-pct { background: rgba(255,255,255,0.08); color: var(--vz-body-color); }
+        [data-bs-theme="dark"] .onb-pol-doc-status { background: rgba(255,255,255,0.08); color: var(--vz-body-color); }
+
+        /* Stage cards — keep solid pill backgrounds readable */
+        [data-bs-theme="dark"] .onb-init-section-step.basic   { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-init-section-step.job     { background: rgba(59,130,246,0.20); color: #93c5fd; }
+        [data-bs-theme="dark"] .onb-init-section-step.work    { background: rgba(10,179,156,0.20); color: #4dd4be; }
+        [data-bs-theme="dark"] .onb-init-section-step.comp    { background: rgba(245,158,11,0.20); color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-ver-section-icon.summary  { background: rgba(16,185,129,0.20); color: #4ade80; }
+        [data-bs-theme="dark"] .onb-ver-section-icon.action   { background: rgba(124,92,252,0.22); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-ver-section-pill         { background: rgba(16,185,129,0.20); color: #4ade80; }
+        [data-bs-theme="dark"] .onb-ver-stage-icon.s1,
+        [data-bs-theme="dark"] .onb-ver-stage-icon.s5         { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-ver-stage-icon.s2         { background: rgba(59,130,246,0.20); color: #93c5fd; }
+        [data-bs-theme="dark"] .onb-ver-stage-icon.s3         { background: rgba(10,179,156,0.20); color: #4dd4be; }
+        [data-bs-theme="dark"] .onb-ver-stage-icon.s4         { background: rgba(245,158,11,0.20); color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-ver-stage-icon.s6         { background: rgba(244,114,182,0.20); color: #f9a8d4; }
+        [data-bs-theme="dark"] .onb-pay-section-icon.mode     { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-pay-section-icon.bank     { background: rgba(59,130,246,0.20); color: #93c5fd; }
+        [data-bs-theme="dark"] .onb-pay-section-icon.tax      { background: rgba(245,158,11,0.20); color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-pay-section-icon.check    { background: rgba(16,185,129,0.20); color: #4ade80; }
+        [data-bs-theme="dark"] .onb-prov-section-icon.system  { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-prov-section-icon.device  { background: rgba(59,130,246,0.20); color: #93c5fd; }
+        [data-bs-theme="dark"] .onb-prov-section-icon.physical { background: rgba(10,179,156,0.20); color: #4dd4be; }
+        [data-bs-theme="dark"] .onb-pol-section-icon         { background: rgba(124,92,252,0.20); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-pol-doc-icon             { background: rgba(124,92,252,0.18); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-pol-section-pill         { background: rgba(124,92,252,0.22); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-doc-row-icon             { background: rgba(124,92,252,0.18); color: #c4b5fd; }
+        [data-bs-theme="dark"] .onb-doc-tag                  { background: rgba(124,92,252,0.22); color: #c4b5fd; }
