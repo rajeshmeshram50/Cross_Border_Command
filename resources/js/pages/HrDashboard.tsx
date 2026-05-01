@@ -76,6 +76,8 @@ const STAT_CARDS = [
   { label: 'Categories',     icon: 'ri-folder-line',          gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
   { label: 'Active Records', icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#10b981,#34d399)' },
   { label: 'Coming Soon',    icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#f1963b)' },
+  { label: 'Time & Pay',     icon: 'ri-money-rupee-circle-line', gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+  { label: 'Documents',      icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg,#e83e8c,#ef79b0)' },
 ];
 
 export default function HrDashboard() {
@@ -105,7 +107,15 @@ export default function HrDashboard() {
 
   const totals = useMemo(() => {
     const total = groups.reduce((s, g) => s + g.children.length, 0);
-    return { total, categories: groups.length, active: 0, soon: total };
+    const findCount = (id: string) => groups.find(g => g.id === id)?.children.length ?? 0;
+    return {
+      total,
+      categories: groups.length,
+      active: 0,
+      soon: total,
+      timePay: findCount('hr.time_pay'),
+      documents: findCount('hr.documents'),
+    };
   }, [groups]);
 
   const toggle = (id: string) => setClosedGroups(prev => {
@@ -130,13 +140,20 @@ export default function HrDashboard() {
     );
   }
 
-  const statValues = [totals.total, totals.categories, totals.active, totals.soon];
+  const statValues = [totals.total, totals.categories, totals.active, totals.soon, totals.timePay, totals.documents];
 
   return (
     <>
     <style>{`
       .hr-surface { background: #ffffff; }
       [data-bs-theme="dark"] .hr-surface { background: #1c2531; }
+
+      /* KPI cards — hover lift + icon scale, mirrors the onboarding/admin dashboards */
+      .hr-kpi-card { cursor: pointer; transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+      .hr-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(18,38,63,0.12) !important; border-color: rgba(124,92,252,0.30) !important; }
+      .hr-kpi-card .hr-kpi-icon { transition: transform .25s ease; }
+      .hr-kpi-card:hover .hr-kpi-icon { transform: scale(1.08); }
+      [data-bs-theme="dark"] .hr-kpi-card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.45) !important; }
     `}</style>
     <div>
       {/* ── Page Header ── */}
@@ -154,8 +171,8 @@ export default function HrDashboard() {
       {/* ── KPI Stat Cards ── */}
       <Row className="g-3 mb-4">
         {STAT_CARDS.map((sc, i) => (
-          <Col key={sc.label} xl={3} md={6} xs={12}>
-            <div className="hr-surface" style={{ borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px' }}>
+          <Col key={sc.label} xl={2} md={4} sm={6} xs={12}>
+            <div className="hr-surface hr-kpi-card" style={{ borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px', height: '100%' }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: sc.gradient }} />
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                 <div>
@@ -166,7 +183,7 @@ export default function HrDashboard() {
                     {statValues[i].toLocaleString()}
                   </div>
                 </div>
-                <div style={{ width: 44, height: 44, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: sc.gradient, flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                <div className="hr-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: sc.gradient, flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
                   <i className={sc.icon} style={{ fontSize: 20, color: '#fff' }} />
                 </div>
               </div>
