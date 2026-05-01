@@ -1929,7 +1929,12 @@ body .modal.cbc-payment-modal .modal-dialog {
   box-shadow: 0 8px 24px rgba(18,38,63,0.14);
   backdrop-filter: none;
 }
-[data-bs-theme="dark"] .hr-mega-cats { background: #1c2531; }
+[data-bs-theme="dark"] .hr-mega-cats,
+[data-layout-mode="dark"] .hr-mega-cats {
+  background: #1f2630 !important;
+  border-color: rgba(255,255,255,0.10) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45) !important;
+}
 .hr-mega-cat-btn {
   display: inline-flex;
   align-items: center;
@@ -2000,8 +2005,12 @@ body .modal.cbc-payment-modal .modal-dialog {
   box-shadow: 0 8px 24px rgba(18,38,63,0.14);
   backdrop-filter: none;
 }
-[data-bs-theme="dark"] .hr-mega-leaves { background: #1c2531; }
-[data-bs-theme="dark"] .hr-mega-leaves { background: rgba(124,92,252,0.10); }
+[data-bs-theme="dark"] .hr-mega-leaves,
+[data-layout-mode="dark"] .hr-mega-leaves {
+  background: #1f2630 !important;
+  border-color: rgba(255,255,255,0.10) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45) !important;
+}
 .hr-mega-leaf-link {
   display: inline-flex;
   align-items: center;
