@@ -159,6 +159,10 @@ interface ApiEmployee {
   gender: string | null;
   date_of_birth: string | null;
   status: string | null;
+  /** Server-tracked wizard progress (0-4). 0 = no save yet,
+   *  4 = all 4 steps completed. Used by openEditEmployee to resume
+   *  at the first unfilled step. */
+  wizard_step_completed: number | null;
   date_of_joining: string | null;
   department_id: number | null;
   designation_id: number | null;
@@ -225,8 +229,20 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
           ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
           : '')
       || '—',
-    profile: 100,
-    onboarding: 'Completed',
+    // Profile % maps to wizard progress, with 4 steps capped at 50%.
+    // The 4-step wizard is intentionally treated as half the data — the
+    // remaining 50% comes from later admin work (assets, payroll review,
+    // permissions, etc.). Each step = 12.5%; step 4 = 50%.
+    profile: Math.min(50, Math.max(0, Number(e.wizard_step_completed ?? 0) * 12.5)),
+    // Onboarding pill mirrors wizard progress: Completed when all 4 steps
+    // are saved; "In Progress" while still filling; "Pending" if no save
+    // has happened yet.
+    onboarding: ((): 'Completed' | 'In Progress' | 'Pending' => {
+      const step = Number(e.wizard_step_completed ?? 0);
+      if (step >= 4) return 'Completed';
+      if (step > 0) return 'In Progress';
+      return 'Pending';
+    })(),
     status: statusMap[e.status || 'Active'] || 'active',
     enabled,
     // Smuggle the DB id + raw row through so handlers can act on the API row
@@ -1072,6 +1088,17 @@ export default function HrEmployees() {
       setEEmpId(row.id);
       setEStatus(row.enabled ? 'Active' : 'Inactive');
     }
+
+    // Resume at the next-unfilled step. The server tracks the highest
+    // step the user completed; we land on `last + 1` (capped at 4).
+    // wizard_step_completed of 0 (no progress yet) and 4 (fully filled)
+    // both fall through to step 1 — for 4 the user is now editing a
+    // completed row and step 1 is the natural starting point.
+    const lastStep = Math.max(0, Math.min(4, Number((raw as any)?.wizard_step_completed ?? 0)));
+    const resumeAt: 1 | 2 | 3 | 4 =
+      lastStep === 0 || lastStep === 4 ? 1 : (((lastStep + 1) as 1 | 2 | 3 | 4));
+    setEmpStep(resumeAt);
+
     setEmpOpen(true);
   };
 
@@ -1152,7 +1179,135 @@ export default function HrEmployees() {
   };
 
   /** "Next" button → validate the CURRENT step; advance only when clean. */
-  const handleNextStep = () => {
+  /** Compose the full API payload from current state. Used by both per-step
+   *  PATCH and final submit — backend accepts partials, so sending all
+   *  known fields every time is harmless and lets a step-3 PATCH still
+   *  ship step-1 corrections the user made on the way back. */
+  const buildEmployeePayload = (stepCompleted: number): Record<string, any> => {
+    const intOrNull = (s: string | null | undefined) => {
+      const n = parseInt(String(s ?? ''), 10);
+      return Number.isFinite(n) ? n : null;
+    };
+    return {
+      first_name:  eFirstName.trim(),
+      middle_name: eMiddleName.trim() || null,
+      last_name:   eLastName.trim() || null,
+      gender:      eGender || null,
+      date_of_birth: eDob || null,
+      nationality_country_id: intOrNull(eNationality),
+      work_country_id:        intOrNull(eWorkCountry),
+      email:       eWorkEmail.trim(),
+      mobile:      eMobile.trim() || null,
+
+      address_line1: eCurAddr1.trim() || null,
+      address_line2: eCurAddr2.trim() || null,
+      city:          eCurCity.trim() || null,
+      state_id:      intOrNull(eCurState),
+      country_id:    intOrNull(eCurCountry),
+      pincode:       eCurPin.trim() || null,
+
+      perm_address_line1: (eSameAsCurrent ? eCurAddr1 : ePermAddr1).trim() || null,
+      perm_address_line2: (eSameAsCurrent ? eCurAddr2 : ePermAddr2).trim() || null,
+      perm_city:          (eSameAsCurrent ? eCurCity  : ePermCity).trim()  || null,
+      perm_state_id:      intOrNull(eSameAsCurrent ? eCurState   : ePermState),
+      perm_country_id:    intOrNull(eSameAsCurrent ? eCurCountry : ePermCountry),
+      perm_pincode:       (eSameAsCurrent ? eCurPin  : ePermPin).trim()    || null,
+
+      department_id:   intOrNull(eDept),
+      designation_id:  intOrNull(eDesignation),
+      primary_role_id: intOrNull(ePrimaryRole),
+      ancillary_role_id: intOrNull(eAncillaryRole[0]),
+      legal_entity_id: intOrNull(eLegalEntity),
+      location:        eLocation || null,
+      reporting_manager_id: (() => {
+        if (!eReportingMgr) return null;
+        const [kind, idStr] = String(eReportingMgr).split(':');
+        if (kind !== 'employee') return null;
+        return intOrNull(idStr);
+      })(),
+      date_of_joining: eJoinDate || null,
+      probation_policy: eProbationPolicy === CUSTOM_PROBATION_VALUE ? (eCustomProbation || 'Custom') : eProbationPolicy,
+      notice_period:    eNoticePeriod === CUSTOM_NOTICE_VALUE ? (eCustomNotice || 'Custom') : eNoticePeriod,
+      designation_name: mDesignations.find(d => String(d.id) === String(eDesignation))?.name,
+
+      leave_plan:           eLeavePlan || null,
+      holiday_list:         eHolidayList || null,
+      attendance_tracking:  !!eAttendanceTracking,
+      shift:                eShift || null,
+      weekly_off:           eWeeklyOff || null,
+      attendance_number:    eAttendanceNumber.trim() || null,
+      time_tracking:        eTimeTracking || null,
+      penalization_policy:  ePenalizationPolicy || null,
+      overtime:             eOvertime || null,
+      expense_policy:       eExpensePolicy || null,
+      laptop_assigned:      eLaptopAssigned || null,
+      laptop_asset_id:      eLaptopAssetId.trim() || null,
+      mobile_device:        eMobileDevice.trim() || null,
+      other_assets:         eOtherAssets.trim() || null,
+
+      enable_payroll:        !!eEnablePayroll,
+      pay_group:             ePayGroup || null,
+      annual_salary:         eAnnualSalary === '' ? null : Number(eAnnualSalary),
+      salary_frequency:      eSalaryFreq || null,
+      salary_effective_from: eSalaryFrom || null,
+      salary_structure:      eSalaryStructure || null,
+      tax_regime:            eTaxRegime || null,
+      bonus_in_annual:       !!eBonusInAnnual,
+      pf_eligible:           !!ePfEligible,
+      detailed_breakup:      !!eDetailedBreakup,
+
+      // Wizard-created rows always start Inactive — admin flips Active
+      // explicitly via the row toggle. Status from the form is ignored
+      // here on purpose; backend also forces Inactive on store.
+      status: eStatus || 'Inactive',
+
+      // Server uses this to track resume-on-edit + workflow state.
+      wizard_step_completed: stepCompleted,
+    };
+  };
+
+  /** Persist the wizard's current state. First save creates the row +
+   *  switches the modal to "edit" mode silently so subsequent step PATCHes
+   *  hit the same id. Returns true on success, false otherwise. */
+  const persistCurrentStep = async (stepCompleted: number): Promise<boolean> => {
+    if (saving) return false;
+    setSaving(true);
+    try {
+      const payload = buildEmployeePayload(stepCompleted);
+      if (editingDbId) {
+        await api.put(`/employees/${editingDbId}`, payload);
+      } else {
+        const r = await api.post('/employees', payload);
+        const newId: number | undefined = r?.data?.employee?.id;
+        if (newId) {
+          // Flip into edit mode so the next Next/Save patches the same
+          // row instead of creating a duplicate. Mode stays visually
+          // "Add" in the header — the user is mid-wizard, not done yet.
+          setEditingDbId(newId);
+        }
+      }
+      // Refresh background lists so the half-filled row appears in the
+      // disabled directory immediately.
+      await reloadEmployees();
+      return true;
+    } catch (err: any) {
+      const fieldErrors = err?.response?.data?.errors;
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const flat: Record<string, string> = {};
+        for (const k of Object.keys(fieldErrors)) {
+          flat[k] = Array.isArray(fieldErrors[k]) ? fieldErrors[k][0] : String(fieldErrors[k]);
+        }
+        setEErrors(flat);
+      }
+      const msg = err?.response?.data?.message || err?.message || 'Save failed';
+      toast.error('Could not save', String(msg));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleNextStep = async () => {
     const errs = empStep === 1 ? validateStep1()
                : empStep === 2 ? validateStep2()
                : empStep === 3 ? validateStep3()
@@ -1166,8 +1321,12 @@ export default function HrEmployees() {
       );
       return;
     }
-    // Clear stale errors and advance.
+    // Persist this step BEFORE advancing so the row exists in the
+    // disabled list even if the user closes the tab on step 2/3.
+    const ok = await persistCurrentStep(empStep);
+    if (!ok) return;
     setEErrors({});
+    toast.success(`Step ${empStep} saved`, `Progress saved — you can resume later.`);
     setEmpStep((s) => ((s + 1) as 1 | 2 | 3 | 4));
   };
 
@@ -1194,112 +1353,28 @@ export default function HrEmployees() {
       return;
     }
 
-    const intOrNull = (s: string | undefined | null) => {
-      const n = parseInt(String(s ?? ''), 10);
-      return Number.isFinite(n) ? n : null;
-    };
-
-    const payload: Record<string, any> = {
-      first_name:  eFirstName.trim(),
-      middle_name: eMiddleName.trim() || null,
-      last_name:   eLastName.trim() || null,
-      gender:      eGender || null,
-      date_of_birth: eDob || null,
-      nationality_country_id: intOrNull(eNationality),
-      work_country_id:        intOrNull(eWorkCountry),
-      email:       eWorkEmail.trim(),
-      mobile:      eMobile.trim() || null,
-
-      // Current address
-      address_line1: eCurAddr1.trim() || null,
-      address_line2: eCurAddr2.trim() || null,
-      city:          eCurCity.trim() || null,
-      state_id:      intOrNull(eCurState),
-      country_id:    intOrNull(eCurCountry),
-      pincode:       eCurPin.trim() || null,
-
-      // Permanent address — when "Same as Current" is checked we ship the
-      // current values so the saved row matches the rendered form.
-      perm_address_line1: (eSameAsCurrent ? eCurAddr1 : ePermAddr1).trim() || null,
-      perm_address_line2: (eSameAsCurrent ? eCurAddr2 : ePermAddr2).trim() || null,
-      perm_city:          (eSameAsCurrent ? eCurCity  : ePermCity).trim()  || null,
-      perm_state_id:      intOrNull(eSameAsCurrent ? eCurState   : ePermState),
-      perm_country_id:    intOrNull(eSameAsCurrent ? eCurCountry : ePermCountry),
-      perm_pincode:       (eSameAsCurrent ? eCurPin  : ePermPin).trim()    || null,
-
-      department_id:   intOrNull(eDept),
-      designation_id:  intOrNull(eDesignation),
-      primary_role_id: intOrNull(ePrimaryRole),
-      ancillary_role_id: intOrNull(eAncillaryRole[0]),
-      legal_entity_id: intOrNull(eLegalEntity),
-      location:        eLocation || null,
-      // `eReportingMgr` is a composite "kind:id" — only persist the id when
-      // the picked candidate is an actual employee row (the FK column
-      // expects employees.id). When the user picks a client_admin or
-      // branch_user, store their display name in `location`-style fields
-      // is overkill; for now just leave the FK null and skip the user
-      // pointer until a dedicated reporting_manager_user_id column lands.
-      reporting_manager_id: (() => {
-        if (!eReportingMgr) return null;
-        const [kind, idStr] = String(eReportingMgr).split(':');
-        if (kind !== 'employee') return null;
-        return intOrNull(idStr);
-      })(),
-      date_of_joining: eJoinDate || null,
-
-      probation_policy: eProbationPolicy === CUSTOM_PROBATION_VALUE ? (eCustomProbation || 'Custom') : eProbationPolicy,
-      notice_period:    eNoticePeriod === CUSTOM_NOTICE_VALUE ? (eCustomNotice || 'Custom') : eNoticePeriod,
-
-      // Snapshot the designation label onto the user record too — the user
-      // controller reads it verbatim when displaying who's logged in.
-      designation_name: mDesignations.find(d => String(d.id) === String(eDesignation))?.name,
-
-      // Step 3 — Work Details
-      leave_plan:           eLeavePlan || null,
-      holiday_list:         eHolidayList || null,
-      attendance_tracking:  !!eAttendanceTracking,
-      shift:                eShift || null,
-      weekly_off:           eWeeklyOff || null,
-      attendance_number:    eAttendanceNumber.trim() || null,
-      time_tracking:        eTimeTracking || null,
-      penalization_policy:  ePenalizationPolicy || null,
-      overtime:             eOvertime || null,
-      expense_policy:       eExpensePolicy || null,
-      laptop_assigned:      eLaptopAssigned || null,
-      laptop_asset_id:      eLaptopAssetId.trim() || null,
-      mobile_device:        eMobileDevice.trim() || null,
-      other_assets:         eOtherAssets.trim() || null,
-
-      // Step 4 — Compensation
-      enable_payroll:        !!eEnablePayroll,
-      pay_group:             ePayGroup || null,
-      annual_salary:         eAnnualSalary === '' ? null : Number(eAnnualSalary),
-      salary_frequency:      eSalaryFreq || null,
-      salary_effective_from: eSalaryFrom || null,
-      salary_structure:      eSalaryStructure || null,
-      tax_regime:            eTaxRegime || null,
-      bonus_in_annual:       !!eBonusInAnnual,
-      pf_eligible:           !!ePfEligible,
-      detailed_breakup:      !!eDetailedBreakup,
-
-      status: eStatus || 'Active',
-    };
+    // Build payload via the shared helper. Step 4 = full wizard done.
+    // Backend keeps employee status as "Inactive" — admin must toggle
+    // Active manually after onboarding wraps up.
+    const payload = buildEmployeePayload(4);
 
     setSaving(true);
     try {
-      if (empMode === 'edit' && editingDbId) {
+      if (editingDbId) {
         await api.put(`/employees/${editingDbId}`, payload);
-        toast.success('Employee updated', `${eFirstName} ${eLastName}`.trim());
+        toast.success('Employee saved', `${eFirstName} ${eLastName}`.trim() + ' · marked complete (still Inactive — toggle Active when ready).');
       } else {
+        // Edge case: somehow Submit was clicked without any prior step
+        // saving (e.g. user filled all 4 steps offline then clicked
+        // Save before any Next click — old behavior). Treat as a fresh
+        // create at step 4.
         const r = await api.post('/employees', payload);
         const emp = r?.data?.employee;
         toast.success(
-          'Employee created',
+          'Employee saved',
           `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`,
         );
       }
-      // Wipe the saved draft now that the data is committed — no risk of
-      // resurrecting it on the next Add open.
       clearDraft();
       await reloadEmployees();
       await reloadManagers();

@@ -52,7 +52,7 @@ class Employee extends Model
         'salary_effective_from', 'salary_structure', 'tax_regime',
         'bonus_in_annual', 'pf_eligible', 'detailed_breakup',
 
-        'assets', 'status',
+        'assets', 'status', 'wizard_step_completed',
     ];
 
     protected $casts = [
@@ -68,6 +68,7 @@ class Employee extends Model
         'pf_eligible' => 'boolean',
         'detailed_breakup' => 'boolean',
         'annual_salary' => 'decimal:2',
+        'wizard_step_completed' => 'integer',
     ];
 
     /**

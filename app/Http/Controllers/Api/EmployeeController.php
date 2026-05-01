@@ -203,14 +203,28 @@ class EmployeeController extends Controller
 
                 $empCode = $this->allocateCode($clientId, $branchId);
 
-                $employee = Employee::create(array_merge($data, [
-                    'client_id'    => $clientId,
-                    'branch_id'    => $branchId,
-                    'created_by'   => $auth?->id,
-                    'user_id'      => $loginUser->id,
-                    'emp_code'     => $empCode,
-                    'display_name' => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
-                ]));
+                // Wizard now saves per-step. The frontend ships the step
+                // number it just completed (1-4); we record it so Edit can
+                // resume at the right step. Default to 1 because the very
+                // first save corresponds to step 1 of the wizard.
+                $stepCompleted = max(1, min(4, (int) $request->input('wizard_step_completed', 1)));
+
+                // Force `Inactive` for wizard-created employees regardless of
+                // what the frontend sent. The 4-step wizard captures only
+                // half the data we eventually want — admin must explicitly
+                // flip the row to Active once the rest of the onboarding
+                // (assets, payroll review, etc.) is done.
+                $payload = array_merge($data, [
+                    'client_id'             => $clientId,
+                    'branch_id'             => $branchId,
+                    'created_by'            => $auth?->id,
+                    'user_id'               => $loginUser->id,
+                    'emp_code'              => $empCode,
+                    'display_name'          => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
+                    'status'                => 'Inactive',
+                    'wizard_step_completed' => $stepCompleted,
+                ]);
+                $employee = Employee::create($payload);
 
                 // Backfill emp_code onto the user row so legacy code that reads
                 // user.employee_code keeps working.
@@ -275,9 +289,25 @@ class EmployeeController extends Controller
 
         $data = $this->validatePayload($request, $row->id);
 
-        DB::transaction(function () use ($row, $data) {
+        // Track wizard progress as a high-watermark — never decrease it.
+        // The frontend posts the step number it just completed; we keep
+        // the maximum so a user editing an already-finished employee
+        // can't accidentally roll the progress meter backwards.
+        $stepFromRequest = (int) $request->input('wizard_step_completed', 0);
+        $newStep = max((int) $row->wizard_step_completed, $stepFromRequest);
+
+        DB::transaction(function () use ($row, $data, $newStep) {
+            // first_name might not be in $data on a partial step-3/step-4
+            // PATCH (the frontend only sends the fields for the step it
+            // just saved). Fall back to the existing row value so
+            // display_name doesn't get smashed to "" when the wizard
+            // saves a later step alone.
+            $first  = $data['first_name']  ?? $row->first_name;
+            $middle = array_key_exists('middle_name', $data) ? $data['middle_name'] : $row->middle_name;
+            $last   = array_key_exists('last_name', $data)   ? $data['last_name']   : $row->last_name;
             $row->update(array_merge($data, [
-                'display_name' => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
+                'display_name'          => Employee::composeDisplayName($first, $middle, $last),
+                'wizard_step_completed' => $newStep,
             ]));
 
             // Keep the linked user in sync — name + email + phone changes here
@@ -428,22 +458,34 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Validation rules. `email` must be unique on the users table because we
-     * mint a User row alongside; on update we ignore the linked user_id.
+     * Validation rules.
+     *
+     * The wizard now saves incrementally (one step at a time), so most
+     * fields are nullable to accept partial payloads. Only `first_name` is
+     * hard-required since it drives `display_name`. `email` is required
+     * for store (we need it on the User row eventually), but on update
+     * (when the User account already exists) we accept omitting it.
      */
     private function validatePayload(Request $request, ?int $employeeId = null): array
     {
         $ignoreUserId = null;
-        if ($employeeId) {
+        $isUpdate = $employeeId !== null;
+        if ($isUpdate) {
             $ignoreUserId = Employee::where('id', $employeeId)->value('user_id');
         }
-        $emailRule = ['required', 'email', 'max:191'];
+
+        // Email rules: required + unique on store; nullable + still-unique on
+        // update so partial step-3/step-4 PATCHes don't fail validation.
+        $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
         $emailRule[] = Rule::unique('users', 'email')
             ->whereNull('deleted_at')
             ->ignore($ignoreUserId);
 
         return $request->validate([
-            'first_name'   => 'required|string|max:100',
+            // Identity — first_name is the only field the server insists on
+            // (drives display_name + login user.name). Everything else can
+            // arrive in a later step.
+            'first_name'   => $isUpdate ? 'nullable|string|max:100' : 'required|string|max:100',
             'middle_name'  => 'nullable|string|max:100',
             'last_name'    => 'nullable|string|max:100',
             'gender'       => 'nullable|in:Male,Female,Other',
@@ -472,8 +514,11 @@ class EmployeeController extends Controller
 
             'legal_entity_id' => 'nullable|integer',
             'location'        => 'nullable|string|max:191',
-            'department_id'   => 'required|integer',
-            'designation_id'  => 'required|integer',
+            // Department + designation arrive in step 2 of the wizard, so
+            // they're nullable here — the frontend per-step validator gates
+            // them when the user actually clicks Next on step 2.
+            'department_id'   => 'nullable|integer',
+            'designation_id'  => 'nullable|integer',
             'primary_role_id' => 'nullable|integer',
             'ancillary_role_id' => 'nullable|integer',
             'reporting_manager_id' => 'nullable|integer',
