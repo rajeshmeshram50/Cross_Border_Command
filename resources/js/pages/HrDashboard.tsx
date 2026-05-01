@@ -12,6 +12,7 @@ import type { MenuChild, MenuGroup } from '../types';
 const HR_LEAF_ROUTES: Record<string, string> = {
   'hr.employee':    '/hr/employees',
   'hr.recruitment': '/hr/recruitment',
+  'hr.onboarding':  '/hr/employee-onboarding',
 };
 
 interface CategoryStyle { color: string; icon: string; gradient: string; }

@@ -140,6 +140,25 @@ const STATUS_TONES: Record<OnboardStatus, { bg: string; fg: string; dot: string 
   'Completed':        { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
 };
 
+// Animated count-up number (mirrors AdminDashboard's AnimatedNumber)
+function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    let start = 0;
+    const end = value;
+    const duration = 1200;
+    const step = Math.max(1, Math.floor(end / 60));
+    const interval = duration / (end / step || 1);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= end) { setDisplay(end); clearInterval(timer); }
+      else setDisplay(start);
+    }, interval);
+    return () => clearInterval(timer);
+  }, [value]);
+  return <>{prefix}{display.toLocaleString()}{suffix}</>;
+}
+
 // Five KPI cards on top — colored top strip + subtle icon tile
 const KPI_CARDS = [
   { key: 'total',     label: 'Total Employees',           icon: 'ri-team-line',          tint: '#ece6ff', fg: '#7c5cfc', strip: '#7c5cfc' },
@@ -398,6 +417,13 @@ export default function HrEmployeeOnboarding() {
         .onb-surface { background: #ffffff; }
         [data-bs-theme="dark"] .onb-surface { background: #1c2531; }
 
+        /* KPI cards — hover lift + icon scale, matches admin dashboard feel */
+        .onb-kpi-card { cursor: pointer; transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
+        .onb-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(18,38,63,0.12) !important; border-color: rgba(124,92,252,0.30) !important; }
+        .onb-kpi-card .onb-kpi-icon { transition: transform .25s ease; }
+        .onb-kpi-card:hover .onb-kpi-icon { transform: scale(1.08); }
+        [data-bs-theme="dark"] .onb-kpi-card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.45) !important; }
+
         /* Hero card (purple-tinted, separate container — matches screenshot) */
         .onb-hero-card {
           display: flex; align-items: center; justify-content: space-between;
@@ -551,7 +577,7 @@ export default function HrEmployeeOnboarding() {
         {KPI_CARDS.map(k => (
           <Col key={k.key} xl={true} md={4} sm={6} xs={12}>
             <div
-              className="onb-surface"
+              className="onb-surface onb-kpi-card"
               style={{
                 borderRadius: 14,
                 border: '1px solid var(--vz-border-color)',
@@ -569,10 +595,10 @@ export default function HrEmployeeOnboarding() {
                     {k.label}
                   </p>
                   <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                    {(counts as any)[k.key]}
+                    <AnimatedNumber value={(counts as any)[k.key] ?? 0} />
                   </h3>
                 </div>
-                <div style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <i className={k.icon} style={{ fontSize: 20, color: k.fg }} />
                 </div>
               </div>
@@ -666,7 +692,7 @@ export default function HrEmployeeOnboarding() {
             </Col>
           </Row>
 
-          <div className="table-responsive table-card border rounded">
+          <div className="table-responsive table-card  rounded p-2">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
