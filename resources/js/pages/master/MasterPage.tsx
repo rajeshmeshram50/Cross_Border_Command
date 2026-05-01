@@ -1364,7 +1364,7 @@ function MasterPageInner({
                   style={{
                     borderRadius: 12,
                     border: '1px solid var(--vz-border-color)',
-                    background: '#ffffff',
+                    background: 'var(--vz-card-bg)',
                     boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
                     padding: '14px 16px',
                     position: 'relative',

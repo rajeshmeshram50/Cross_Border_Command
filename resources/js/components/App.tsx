@@ -41,6 +41,7 @@ import HrDashboard from '../pages/HrDashboard';
 import HrEmployees from '../pages/HrEmployees';
 import HrRecruitment from '../pages/HrRecruitment';
 import HrCandidates from '../pages/HrCandidates';
+import HrExitManagement from '../pages/HrExitManagement';
 import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
 import EmployeePermissions from '../pages/EmployeePermissions';
 import EmployeeProfile from '../pages/EmployeeProfile';
@@ -306,6 +307,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr/employees" element={<HrEmployees />} />
               <Route path="/hr/recruitment" element={<HrRecruitment />} />
               <Route path="/hr/recruitment/:id/candidates" element={<HrCandidates />} />
+              <Route path="/hr/exit-management" element={<HrExitManagement />} />
               <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
               <Route path="/hr/employees/:id/profile" element={<EmployeeProfileWrapper />} />
