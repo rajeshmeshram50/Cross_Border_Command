@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Input } from 'reactstrap';
-import { MasterSelect, MasterFormStyles } from './master/masterFormKit';
+import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import '../../css/recruitment.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -142,7 +142,9 @@ export default function HrExitManagement() {
       <Row>
         <Col xs={12}>
           <div className="rec-page">
-            {/* ── Header ── */}
+            {/* ── Header — Exit-themed banner card (red accent), distinct from
+                 Recruitment's purple. Uses the original .exit-page-head /
+                 .exit-head-icon / .exit-head-badge / .exit-checklist-btn CSS. ── */}
             <div className="exit-page-head">
               <div className="d-flex align-items-center gap-3 min-w-0">
                 <span className="exit-head-icon">
@@ -165,22 +167,25 @@ export default function HrExitManagement() {
               </button>
             </div>
 
-            {/* ── KPI strip — CSS grid so 5 cards fit cleanly across at xl,
-                 reflow to 3 / 2 / 1 at smaller breakpoints. ── */}
-            <div className="exit-kpi-grid mb-2 rec-page-kpis">
+            {/* ── KPI cards — 5 across at xl, reflowing to 3 / 2 / 1 at smaller
+                 breakpoints. row-cols-* divides the row evenly regardless of
+                 card count, so all 5 always fill the full width. ── */}
+            <Row className="g-3 mb-2 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
               {KPI_CARDS.map(k => (
-                <div key={k.key} className="rec-kpi-card">
-                  <span className="rec-kpi-strip" style={{ background: k.gradient }} />
-                  <div className="rec-kpi-text">
-                    <span className="rec-kpi-label">{k.label}</span>
-                    <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
+                <Col key={k.key}>
+                  <div className="rec-kpi-card h-100">
+                    <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+                    <div className="rec-kpi-text">
+                      <span className="rec-kpi-label">{k.label}</span>
+                      <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
+                    </div>
+                    <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                      <i className={k.icon} />
+                    </span>
                   </div>
-                  <span className="rec-kpi-icon" style={{ background: k.gradient }}>
-                    <i className={k.icon} />
-                  </span>
-                </div>
+                </Col>
               ))}
-            </div>
+            </Row>
 
             {/* ── Tabs ── */}
             <div className="rec-tab-track mb-2">
@@ -1206,17 +1211,23 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
           </section>
         </div>
 
-        {/* Footer */}
+        {/* Footer — left: Save Draft / Reject (stage-level actions),
+                     right: Approve / Previous / Next Stage (navigation + sign-off) */}
         <div className="ep-footer">
           <div className="ep-footer-info">
             <i className="ri-information-line" />
             Stage {stage} of {EXIT_STAGES.length} — {current.title}
           </div>
-          <div className="d-flex gap-2">
+          <div className="d-flex gap-2 align-items-center flex-wrap">
+            <button type="button" className="ep-btn ep-btn--ghost"><i className="ri-save-3-line" />Save Draft</button>
+            <button type="button" className="ep-btn ep-btn--reject" onClick={closeAll}><i className="ri-close-circle-line" />Reject</button>
+            <div className="flex-grow-1" />
+            {!isLastStage && (
+              <button type="button" className="ep-btn ep-btn--approve" onClick={advance}><i className="ri-check-line" />Approve</button>
+            )}
             {stage > 1 && (
               <button type="button" className="ep-btn ep-btn--prev" onClick={goBack}><i className="ri-arrow-left-s-line" />Previous</button>
             )}
-            <button type="button" className="ep-btn ep-btn--ghost"><i className="ri-save-3-line" />Save Draft</button>
             {isLastStage ? (
               <button type="button" className="ep-btn ep-btn--complete" onClick={closeAll}><i className="ri-check-double-line" />Complete Exit</button>
             ) : (
@@ -1333,6 +1344,16 @@ function EpField({ label, children }: { label: string; children: React.ReactNode
   );
 }
 function EpInput({ value, onChange, type = 'text', disabled = false, placeholder }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string }) {
+  if (type === 'date') {
+    return (
+      <MasterDatePicker
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        placeholder={placeholder ?? 'dd-mm-yyyy'}
+      />
+    );
+  }
   return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} onChange={e => onChange(e.target.value)} />;
 }
 function EpSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
