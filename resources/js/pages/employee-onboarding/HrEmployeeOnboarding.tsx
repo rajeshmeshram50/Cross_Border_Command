@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
-import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
+import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
+import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
 const OPT = (...vals: string[]) => vals.map(v => ({ value: v, label: v }));
@@ -208,6 +209,10 @@ type CheckpointBadgeKind =
   | 'EMP OPTIONAL'
   | 'INTERN REQUIRED'
   | 'INTERN OPTIONAL'
+  | 'IT REQUIRED'
+  | 'IT OPTIONAL'
+  | 'NON-IT REQUIRED'
+  | 'NON-IT OPTIONAL'
   | 'OPTIONAL'
   | 'ALL';
 
@@ -223,6 +228,10 @@ const BADGE_TONES: Record<CheckpointBadgeKind, { bg: string; fg: string }> = {
   'EMP OPTIONAL':    { bg: '#e7f7ee', fg: '#1a9c5c' },
   'INTERN REQUIRED': { bg: '#fdf3d6', fg: '#a06f00' },
   'INTERN OPTIONAL': { bg: '#fff5dd', fg: '#bd8400' },
+  'IT REQUIRED':     { bg: '#dceefe', fg: '#1d4ed8' },
+  'IT OPTIONAL':     { bg: '#e8f0ff', fg: '#3b82f6' },
+  'NON-IT REQUIRED': { bg: '#ffe4d4', fg: '#a4661c' },
+  'NON-IT OPTIONAL': { bg: '#fff0e2', fg: '#c87837' },
   'OPTIONAL':        { bg: '#eef2f6', fg: '#5b6478' },
   'ALL':             { bg: '#eef2f6', fg: '#5b6478' },
 };
@@ -245,85 +254,75 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
     title: 'Employee Onboarding Setup',
     subtitle: 'Basic details, job info, work details & compensation',
     checkpoints: [
-      { title: 'Employee basic details verified', desc: 'First name, last name, display name, employee ID, work country, gender', badges: ['REQUIRED', 'ALL'] },
-      { title: 'Contact & identity filled',       desc: 'Work email, mobile number, DOB, blood group, number series',           badges: ['REQUIRED', 'ALL'] },
-      { title: 'Job details confirmed',           desc: 'Joining date, department, designation, primary role, ancillary role, work type', badges: ['REQUIRED', 'ALL'] },
-      { title: 'Organisational details assigned', desc: 'Legal entity, work location, reporting manager selected',              badges: ['REQUIRED', 'ALL'] },
-      { title: 'Work & attendance policy set',    desc: 'Leave plan, holiday list, shift, weekly off, time tracking, penalization policy', badges: ['REQUIRED', 'ALL'] },
-      { title: 'Compensation details configured', desc: 'Salary payment mode, pay group, CTC, tax regime, payroll enabled',     badges: ['REQUIRED', 'ALL'] },
-      { title: 'Department authority letter issued', desc: 'Authority matrix signed, KRA targets set, department scope defined', badges: ['HOD REQUIRED'] },
-      { title: 'Budget access & approval limits configured', desc: 'Departmental budget view, purchase approval threshold set in system', badges: ['HOD REQUIRED'] },
-      { title: 'Org chart updated with HOD mapped', desc: 'All direct reportees linked, org chart reviewed and approved by HR', badges: ['HOD REQUIRED'] },
-      { title: 'Executive introduction & cross-functional briefing', desc: 'Intro call with Director/CEO, peer HODs, and cross-functional heads', badges: ['HOD OPTIONAL'] },
-      { title: 'Team members mapped under Team Leader', desc: 'All direct reportees linked to Team Leader in org structure',   badges: ['TL REQUIRED'] },
-      { title: 'Sprint / project board access granted', desc: 'Project management access configured, current sprint briefed',  badges: ['TL REQUIRED'] },
-      { title: 'Reporting structure intro & team meet done', desc: 'TL introduced to HOD, peers, and team members',            badges: ['TL OPTIONAL'] },
-      { title: 'Role clarity session with reporting manager', desc: 'KPIs, deliverables, probation targets, and review schedule set', badges: ['EXEC REQUIRED'] },
-      { title: 'Cross-department introduction completed', desc: 'Introduced to key stakeholders and peer executives',           badges: ['EXEC OPTIONAL'] },
-      { title: 'Buddy / buddy-employee assigned',  desc: 'Experienced peer assigned to guide new employee through first 30 days', badges: ['EMP REQUIRED'] },
-      { title: 'First week schedule & induction plan shared', desc: 'Day-by-day plan, training schedule, key contacts list provided', badges: ['EMP REQUIRED'] },
-      { title: 'Asset allocation recorded',        desc: 'Laptop assigned, asset ID, mobile device, other assets',              badges: ['OPTIONAL', 'ALL'] },
-      { title: 'Internship agreement & offer letter signed', desc: 'Duration, stipend, NDA, and project scope confirmed',       badges: ['INTERN REQUIRED'] },
-      { title: 'Mentor / supervisor assigned',     desc: 'Dedicated mentor identified, first week schedule shared',             badges: ['INTERN REQUIRED'] },
+      { title: 'Employee basic details verified',        desc: 'First name, last name, display name, employee ID, work country, gender',                 badges: ['REQUIRED', 'ALL'] },
+      { title: 'Contact & identity filled',              desc: 'Work email, mobile number, DOB, blood group, number series',                              badges: ['REQUIRED', 'ALL'] },
+      { title: 'Job details confirmed',                  desc: 'Joining date, department, designation, primary role, ancillary role, work type',          badges: ['REQUIRED', 'ALL'] },
+      { title: 'Organisational details assigned',        desc: 'Legal entity, work location, reporting manager selected',                                 badges: ['REQUIRED', 'ALL'] },
+      { title: 'Work & attendance policy set',           desc: 'Leave plan, holiday list, shift, weekly off, time tracking, penalization policy',         badges: ['REQUIRED', 'ALL'] },
+      { title: 'Compensation details configured',        desc: 'Salary payment mode, pay group, CTC, tax regime, payroll enabled',                        badges: ['REQUIRED', 'ALL'] },
+      { title: 'Asset allocation recorded',              desc: 'Laptop assigned, asset ID, mobile device, other assets',                                  badges: ['OPTIONAL', 'ALL'] },
+      { title: 'Internship agreement & offer letter signed', desc: 'Duration, stipend, NDA, and project scope confirmed',                                 badges: ['INTERN REQUIRED'] },
+      { title: 'Mentor / supervisor assigned',           desc: 'Dedicated mentor identified, first week schedule shared',                                 badges: ['INTERN REQUIRED'] },
+      { title: 'Learning & project plan shared',         desc: 'Goals, milestones, and evaluation criteria documented',                                   badges: ['INTERN OPTIONAL'] },
     ],
   },
   {
     num: 2,
-    title: 'Documentation & Compliance',
-    subtitle: 'Identity verification, agreements, and policy acknowledgements',
+    title: 'Document Management',
+    subtitle: 'Identity, education, address & employment documents',
     checkpoints: [
-      { title: 'Government ID proofs uploaded', desc: 'Aadhaar, PAN, passport (if applicable) — uploaded and verified',         badges: ['REQUIRED', 'ALL'] },
-      { title: 'Address proofs verified',       desc: 'Current and permanent address proofs (utility bill, voter ID, etc.)',   badges: ['REQUIRED', 'ALL'] },
-      { title: 'Education certificates collected', desc: '10th, 12th, graduation, post-graduation certificates uploaded',      badges: ['REQUIRED', 'ALL'] },
-      { title: 'Previous employment proofs',    desc: 'Relieving letter, experience letter, last 3 pay slips',                  badges: ['OPTIONAL', 'ALL'] },
-      { title: 'NDA & employment agreement signed', desc: 'Non-disclosure agreement and offer/appointment letter executed',     badges: ['REQUIRED', 'ALL'] },
-      { title: 'Code of conduct acknowledgement', desc: 'Company ethics, behaviour, and conduct policy acknowledged',           badges: ['REQUIRED', 'ALL'] },
-      { title: 'Background verification initiated', desc: 'BGV vendor briefed; checks scheduled (employment, education, address)', badges: ['REQUIRED', 'ALL'] },
+      { title: 'Aadhaar Card uploaded',                          desc: 'Front & back, PDF or image, max 5 MB',                                            badges: ['REQUIRED', 'ALL'] },
+      { title: 'PAN Card uploaded',                              desc: 'PDF or image, max 5 MB',                                                          badges: ['REQUIRED', 'ALL'] },
+      { title: 'Passport-size Photograph uploaded',              desc: 'JPG/PNG, max 2 MB, white background preferred',                                   badges: ['REQUIRED', 'ALL'] },
+      { title: 'Current & permanent address proof submitted',    desc: 'Utility bill or rent agreement (max 6 months old)',                               badges: ['REQUIRED', 'ALL'] },
+      { title: '10th & 12th marksheets uploaded',                desc: 'SSC/HSC board certificates with marksheets',                                      badges: ['REQUIRED', 'ALL'] },
+      { title: 'Graduation / Degree certificate uploaded',       desc: 'Official degree or provisional certificate',                                      badges: ['REQUIRED', 'ALL'] },
+      { title: 'College ID / enrollment letter uploaded',        desc: 'Current semester enrollment proof from college/university',                       badges: ['INTERN REQUIRED'] },
+      { title: 'NOC from college / faculty submitted',           desc: 'If required by institution — No Objection Certificate for internship',            badges: ['INTERN OPTIONAL'] },
     ],
   },
   {
     num: 3,
-    title: 'IT & Workstation Setup',
-    subtitle: 'Hardware, software access, and security provisioning',
+    title: 'Provisioning & Asset Setup',
+    subtitle: 'Email, system access, devices, physical setup',
     checkpoints: [
-      { title: 'Laptop / workstation assigned',  desc: 'Hardware allocated, asset tag recorded, handover form signed',           badges: ['REQUIRED', 'ALL'] },
-      { title: 'Email & SSO accounts created',   desc: 'Corporate email, SSO/Okta account provisioned with default groups',      badges: ['REQUIRED', 'ALL'] },
-      { title: 'Project / repo access granted',  desc: 'Source-control, ticketing, and project board access mapped to role',     badges: ['REQUIRED', 'ALL'] },
-      { title: 'VPN & security tools installed', desc: 'VPN client, MDM, EDR, and password manager installed and tested',        badges: ['REQUIRED', 'ALL'] },
-      { title: 'Access card / biometric enrolled', desc: 'Office access card issued, biometric/fingerprint enrolled at security desk', badges: ['OPTIONAL', 'ALL'] },
+      { title: 'Official email address created',          desc: 'firstname.lastname@company.com format, verified and active',                             badges: ['REQUIRED', 'ALL'] },
+      { title: 'Employee code confirmed',                 desc: 'Unique employee code auto-fetched from number series',                                   badges: ['REQUIRED', 'ALL'] },
+      { title: 'Biometric registration completed',        desc: 'Fingerprint/face registration at biometric device on Day 1',                             badges: ['REQUIRED', 'ALL'] },
+      { title: 'ID card issued',                          desc: 'Photo ID card printed and handed over to employee',                                      badges: ['REQUIRED', 'ALL'] },
+      { title: 'ERP / CRM access configured',             desc: 'SAP/Salesforce/Zoho role-based access granted per department',                           badges: ['NON-IT REQUIRED'] },
+      { title: 'Role-specific tools & stationery issued', desc: 'Uniform, visiting cards, SIM card, field/sales kit as applicable',                       badges: ['NON-IT REQUIRED'] },
     ],
   },
   {
     num: 4,
-    title: 'Orientation & Induction',
-    subtitle: 'Company introduction, team meet, and first-week walkthrough',
+    title: 'Payroll & Finance Setup',
+    subtitle: 'Bank details, PAN, PF/ESIC, salary structure',
     checkpoints: [
-      { title: 'Company orientation session attended', desc: 'Vision, mission, values, and org structure walkthrough by HR',     badges: ['REQUIRED', 'ALL'] },
-      { title: 'HR policies briefing completed',       desc: 'Leave, attendance, expense, and grievance redressal policies covered', badges: ['REQUIRED', 'ALL'] },
-      { title: 'Team introduction & meet completed',   desc: 'Reporting manager and peer team formally introduced',               badges: ['REQUIRED', 'ALL'] },
-      { title: 'Office tour & facilities briefing',    desc: 'Workstation, cafeteria, meeting rooms, and emergency exits walkthrough', badges: ['OPTIONAL', 'ALL'] },
+      { title: 'PAN number verified',                desc: '10-digit PAN confirmed, cross-checked with ID documents',                                     badges: ['REQUIRED', 'ALL'] },
+      { title: 'Stipend payment details collected',  desc: 'Bank account / UPI details for stipend transfer. PF/ESIC not applicable',                     badges: ['INTERN REQUIRED'] },
     ],
   },
   {
     num: 5,
-    title: 'Payroll & Benefits Enrollment',
-    subtitle: 'Bank, tax, statutory, and benefit registrations',
+    title: 'Policies & Agreements',
+    subtitle: 'Document generation, signing & digital acknowledgement',
     checkpoints: [
-      { title: 'Bank account & salary mode captured', desc: 'Bank account, IFSC, and salary credit mode confirmed in payroll',   badges: ['REQUIRED', 'ALL'] },
-      { title: 'Tax regime selection submitted',      desc: 'Old vs new tax regime selected; investment declarations captured',  badges: ['REQUIRED', 'ALL'] },
-      { title: 'PF / ESI / gratuity enrolment done',  desc: 'Statutory enrolments raised; UAN / ESIC numbers recorded',          badges: ['REQUIRED', 'ALL'] },
-      { title: 'Insurance & wellness benefits opted', desc: 'Health insurance dependents added; wellness programs enrolled',     badges: ['OPTIONAL', 'ALL'] },
+      { title: 'NDA generated & signed',                  desc: 'Employee → HR Manager → Legal · Must be completed before Day 1',                         badges: ['REQUIRED', 'ALL'] },
+      { title: 'Internship agreement signed',             desc: 'Duration, deliverables, stipend, IP ownership, NDA — all parties signed',                badges: ['INTERN REQUIRED'] },
+      { title: 'Code of Conduct Policy acknowledged',     desc: 'Employee → HR Manager · Digital acknowledgement',                                        badges: ['REQUIRED', 'ALL'] },
+      { title: 'Leave & Attendance Policy acknowledged',  desc: 'Sign-off on leave types, attendance tracking & WFH policy',                              badges: ['REQUIRED', 'ALL'] },
+      { title: 'Confidentiality Agreement signed',        desc: 'Employee → HR Manager · Binding throughout employment duration',                         badges: ['REQUIRED', 'ALL'] },
     ],
   },
   {
     num: 6,
-    title: 'Probation & First-Month Review',
-    subtitle: 'Goal setting, check-ins, and probation roadmap',
+    title: 'Final Verification & Activation',
+    subtitle: 'HR review, stage validation & employee activation',
     checkpoints: [
-      { title: 'Probation period & terms acknowledged', desc: 'Probation duration, criteria, and confirmation policy shared',    badges: ['REQUIRED', 'ALL'] },
-      { title: 'KRAs & first-quarter goals locked',     desc: 'Reporting manager records KRAs and Q1 deliverables in HRMS',      badges: ['REQUIRED', 'ALL'] },
-      { title: '15-day buddy check-in completed',       desc: 'Buddy meets new joiner and logs feedback to HR',                  badges: ['EMP REQUIRED'] },
-      { title: '30-day reporting-manager review',       desc: 'First formal 1:1 review captured; action plan shared with HR',    badges: ['REQUIRED', 'ALL'] },
+      { title: 'All 5 stages verified by HR',  desc: 'Setup, Documents, Provisioning, Payroll, Policies — each confirmed Verified',                       badges: ['REQUIRED', 'ALL'] },
+      { title: 'HR final sign-off obtained',   desc: 'Onboarding Coordinator / HR Manager final approval — no pending issues',                            badges: ['REQUIRED', 'ALL'] },
+      { title: 'Employee activated in system', desc: 'Status set to Active · Reporting manager notified · Full system access granted',                    badges: ['REQUIRED', 'ALL'] },
     ],
   },
 ];
@@ -391,6 +390,12 @@ export default function HrEmployeeOnboarding() {
   const openInitiate = (row: OnboardRow) => { setInitiateRow(row); setInitiateOpen(true); };
   const closeInitiate = () => { setInitiateOpen(false); setInitiateRow(null); };
 
+  // Edit Employee modal — opened from the Action column pencil button
+  const [editOpen, setEditOpen] = useState(false);
+  const [editRow,  setEditRow]  = useState<OnboardRow | null>(null);
+  const openEdit  = (row: OnboardRow) => { setEditRow(row); setEditOpen(true); };
+  const closeEdit = () => { setEditOpen(false); setEditRow(null); };
+
   // Pagination — match the master tables (7 per page).
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 7;
@@ -440,129 +445,6 @@ export default function HrEmployeeOnboarding() {
 
   return (
     <>
-      <style>{`
-        .onb-surface { background: #ffffff; }
-        [data-bs-theme="dark"] .onb-surface { background: #1c2531; }
-
-        /* KPI cards — hover lift + icon scale, matches admin dashboard feel */
-        .onb-kpi-card { cursor: pointer; transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
-        .onb-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(18,38,63,0.12) !important; border-color: rgba(124,92,252,0.30) !important; }
-        .onb-kpi-card .onb-kpi-icon { transition: transform .25s ease; }
-        .onb-kpi-card:hover .onb-kpi-icon { transform: scale(1.08); }
-        [data-bs-theme="dark"] .onb-kpi-card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.45) !important; }
-
-        /* Hero card (purple-tinted, separate container — matches screenshot) */
-        .onb-hero-card {
-          display: flex; align-items: center; justify-content: space-between;
-          gap: 16px; flex-wrap: wrap;
-          padding: 18px 22px;
-          border-radius: 16px;
-          background: linear-gradient(135deg, #f3edff 0%, #ede4ff 100%);
-          border: 1px solid #e3d6ff;
-          box-shadow: 0 2px 12px rgba(124,92,252,0.06);
-        }
-        [data-bs-theme="dark"] .onb-hero-card {
-          background: linear-gradient(135deg, rgba(124,92,252,0.18) 0%, rgba(167,139,250,0.10) 100%);
-          border-color: rgba(124,92,252,0.32);
-        }
-        .onb-checklist-cta {
-          padding: 10px 18px;
-          font-size: 13px; font-weight: 700;
-          color: #fff !important;
-          background: linear-gradient(135deg,#7c5cfc 0%,#5a3fd1 100%) !important;
-          border: none !important;
-          box-shadow: 0 8px 18px rgba(91,63,209,0.30) !important;
-          display: inline-flex; align-items: center;
-        }
-        .onb-checklist-cta:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(91,63,209,0.38) !important; }
-
-        /* Hero pill (Active) */
-        .onb-hero-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(124,92,252,0.18); color: #5a3fd1; }
-        .onb-hero-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.20); }
-
-        /* Status & badge pills — match HrEmployees */
-        .onb-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
-        .onb-pill .d { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-        .onb-id-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-family: var(--vz-font-monospace, monospace); font-weight: 700; font-size: 12px; letter-spacing: 0.02em; }
-        .onb-role-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #eef2f6; color: #374151; font-size: 11px; font-weight: 600; }
-        [data-bs-theme="dark"] .onb-role-pill { background: var(--vz-secondary-bg); color: var(--vz-body-color); }
-
-        /* Action buttons in row */
-        .onb-edit-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--vz-border-color); background: #fff; color: #6b7280; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all .15s ease; }
-        .onb-edit-btn:hover { border-color: #a78bfa; color: #7c5cfc; background: #faf6ff; }
-        [data-bs-theme="dark"] .onb-edit-btn { background: var(--vz-secondary-bg); }
-        .onb-init-btn { padding: 7px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); box-shadow: 0 3px 8px rgba(91,63,209,0.24); cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-        .onb-init-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(91,63,209,0.32); }
-        .onb-vault-btn { padding: 6px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: #0a716a; border: 1px solid #b6e4dd; background: #e6f7f4; cursor: pointer; transition: all .15s ease; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-        .onb-vault-btn:hover { background: #d3f0ee; border-color: #8ad3c7; }
-        [data-bs-theme="dark"] .onb-vault-btn { background: rgba(10,113,106,0.18); border-color: rgba(10,179,156,0.40); color: #4dd4be; }
-
-
-        /* ── Checklist modal ─────────────────────────────────────────────── */
-        .onb-checklist-modal .modal-dialog { max-width: min(1080px, 96vw); }
-        .onb-checklist-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
-        .onb-checklist-header { background: linear-gradient(135deg,#3b0764,#4c1d95 35%,#6d28d9 70%,#7c3aed); color: #fff; padding: 14px 20px 12px; position: relative; }
-        .onb-checklist-header .close-btn { position: absolute; top: 14px; right: 14px; width: 26px; height: 26px; border-radius: 7px; background: rgba(255,255,255,0.18); border: none; color: #fff; transition: background .15s ease; display: inline-flex; align-items: center; justify-content: center; }
-        .onb-checklist-header .close-btn:hover { background: rgba(255,255,255,0.30); }
-
-        .onb-cl-titlewrap { display: flex; align-items: center; gap: 11px; padding-right: 38px; }
-        .onb-cl-icon { width: 36px; height: 36px; border-radius: 9px; background: rgba(255,255,255,0.18); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; backdrop-filter: blur(6px); }
-        .onb-cl-title { font-size: 14.5px; font-weight: 700; margin: 0; letter-spacing: -0.01em; color: #fff; }
-        .onb-cl-sub { font-size: 11px; color: rgba(255,255,255,0.78); margin-top: 2px; }
-
-        .onb-cl-filters { padding: 10px 20px 0; }
-        .onb-cl-filter-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.72); margin: 0 0 6px; }
-        .onb-cl-pillrow { display: flex; flex-wrap: wrap; gap: 6px; }
-        .onb-cl-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px; border-radius: 999px; font-size: 10.5px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: transparent; color: rgba(255,255,255,0.92); border: 1px solid rgba(255,255,255,0.30); }
-        .onb-cl-pill i { font-size: 11.5px; opacity: 0.95; }
-        .onb-cl-pill:hover { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.50); }
-        .onb-cl-pill.is-active { background: #ffffff; color: #4c1d95; border-color: #ffffff; box-shadow: 0 3px 8px rgba(0,0,0,0.12); font-weight: 700; }
-        .onb-cl-pill.is-active i { color: #6d28d9; opacity: 1; }
-
-        /* Employee Type row uses a translucent segmented control */
-        .onb-cl-row { display: flex; align-items: center; gap: 10px; padding: 8px 20px 12px; flex-wrap: wrap; }
-        .onb-cl-row .onb-cl-filter-label { margin: 0; }
-        .onb-cl-typebox { display: inline-flex; gap: 4px; padding: 3px; border-radius: 9px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.20); }
-        .onb-cl-type { display: inline-flex; align-items: center; gap: 5px; padding: 5px 13px; border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: transparent; color: rgba(255,255,255,0.90); border: none; }
-        .onb-cl-type i { font-size: 12px; }
-        .onb-cl-type:hover { background: rgba(255,255,255,0.10); }
-        .onb-cl-type.is-active { background: #ffffff; color: #1f2937; box-shadow: 0 2px 6px rgba(0,0,0,0.14); font-weight: 700; }
-        .onb-cl-type.is-active i { color: #6d28d9; }
-
-        .onb-cl-summary { margin-left: auto; padding: 4px 11px; border-radius: 999px; font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.16); color: #fff; border: 1px solid rgba(255,255,255,0.20); }
-
-        .onb-cl-body { background: #f7f5fc; padding: 14px 18px 10px; max-height: 50vh; overflow-y: auto; }
-        [data-bs-theme="dark"] .onb-cl-body { background: #1f2630; }
-
-        .onb-stage { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
-        [data-bs-theme="dark"] .onb-stage { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-stage-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: linear-gradient(90deg, rgba(124,92,252,0.05), rgba(124,92,252,0)); border-bottom: 1px solid #ece9f6; }
-        [data-bs-theme="dark"] .onb-stage-head { border-color: var(--vz-border-color); }
-        .onb-stage-icon { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 12px; flex-shrink: 0; }
-        .onb-stage-title { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .onb-stage-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-stage-sub { font-size: 11px; color: #6b7280; margin: 1px 0 0; }
-        [data-bs-theme="dark"] .onb-stage-sub { color: var(--vz-secondary-color); }
-        .onb-stage-count { margin-left: auto; padding: 3px 9px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 10px; font-weight: 700; }
-
-        .onb-cp { display: flex; align-items: flex-start; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #f1eff7; }
-        [data-bs-theme="dark"] .onb-cp { border-color: var(--vz-border-color); }
-        .onb-cp:last-child { border-bottom: none; }
-        .onb-cp-check { width: 18px; height: 18px; border-radius: 5px; background: #f3f0ff; color: #7c5cfc; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
-        .onb-cp-title { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-        .onb-cp-title .t { font-size: 12px; font-weight: 700; color: #1f2937; }
-        [data-bs-theme="dark"] .onb-cp-title .t { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-cp-desc { font-size: 10.5px; color: #6b7280; margin-top: 2px; line-height: 1.4; }
-        [data-bs-theme="dark"] .onb-cp-desc { color: var(--vz-secondary-color); }
-        .onb-cp-badge { font-size: 8.5px; font-weight: 800; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; }
-
-        .onb-cl-footer { background: #fff; border-top: 1px solid #eef0f4; padding: 10px 22px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-        [data-bs-theme="dark"] .onb-cl-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-cl-footer .hint { font-size: 11px; color: #6b7280; }
-        [data-bs-theme="dark"] .onb-cl-footer .hint { color: var(--vz-secondary-color); }
-        .onb-cl-close { padding: 7px 18px; border-radius: 9px; font-size: 12px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg,#7c3aed,#4c1d95); box-shadow: 0 6px 14px rgba(76,29,149,0.28); cursor: pointer; }
-        .onb-cl-close:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(76,29,149,0.36); }
-      `}</style>
       <MasterFormStyles />
 
       {/* ── Hero card (purple-tinted, separate container) ── */}
@@ -723,7 +605,8 @@ export default function HrEmployeeOnboarding() {
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th scope="col" className="ps-3">Employee</th>
+                        <th scope="col" className="ps-3" style={{ width: 60 }}>Sr. No.</th>
+                        <th scope="col">Employee</th>
                         <th scope="col">Emp ID</th>
                         <th scope="col">Department</th>
                         <th scope="col">Designation</th>
@@ -738,16 +621,17 @@ export default function HrEmployeeOnboarding() {
                     <tbody>
                       {filtered.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="text-center py-5 text-muted">
+                          <td colSpan={11} className="text-center py-5 text-muted">
                             <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                             No onboarding records match your filters
                           </td>
                         </tr>
-                      ) : visible.map(r => {
+                      ) : visible.map((r, idx) => {
                         const tone = STATUS_TONES[r.status];
                         return (
                           <tr key={r.id}>
-                            <td className="ps-3">
+                            <td className="ps-3 fw-semibold text-muted">{sliceFrom + idx + 1}</td>
+                            <td>
                               <div className="d-flex align-items-center gap-2">
                                 <div
                                   className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -870,7 +754,12 @@ export default function HrEmployeeOnboarding() {
                                 </button>
                               ) : (
                                 <div className="d-flex align-items-center gap-2">
-                                  <button type="button" className="onb-edit-btn" title="Edit">
+                                  <button
+                                    type="button"
+                                    className="onb-edit-btn"
+                                    title="Edit Employee"
+                                    onClick={() => openEdit(r)}
+                                  >
                                     <i className="ri-pencil-line" style={{ fontSize: 14 }} />
                                   </button>
                                   <button type="button" className="onb-init-btn" title="Initiate Onboarding" onClick={() => openInitiate(r)}>
@@ -939,7 +828,167 @@ export default function HrEmployeeOnboarding() {
         onClose={closeInitiate}
         emp={initiateRow}
       />
+
+      {/* ── Edit Employee Modal ── */}
+      <EditEmployeeModal
+        isOpen={editOpen}
+        onClose={closeEdit}
+        emp={editRow}
+      />
     </>
+  );
+}
+
+// ── Edit Employee modal — opens from the pencil icon in the Action column ──
+const EDIT_DEPT_OPTIONS = DEPT_OPTIONS.filter(o => o.value !== 'All');
+const EDIT_STATUS_OPTIONS = OPT('Active', 'On Probation', 'Inactive');
+const EDIT_WORK_TYPE_OPTIONS = OPT('Full Time', 'Part Time', 'Contract', 'Intern');
+
+function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose: () => void; emp: OnboardRow | null }) {
+  // Local form state — derived from emp on open and reset on close.
+  const [firstName, setFirstName]     = useState('');
+  const [lastName,  setLastName]      = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [workEmail, setWorkEmail]     = useState('');
+  const [mobile,    setMobile]        = useState('');
+  const [empId,     setEmpId]         = useState('');
+  const [status,    setStatus]        = useState('Active');
+  const [department, setDepartment]   = useState('');
+  const [designation, setDesignation] = useState('');
+  const [primaryRole, setPrimaryRole] = useState('');
+  const [ancillaryRole, setAncillaryRole] = useState('');
+  const [reportingMgr, setReportingMgr]   = useState('');
+  const [workType,  setWorkType]      = useState('Full Time');
+  const [joinDate,  setJoinDate]      = useState('');
+
+  useEffect(() => {
+    if (!emp) return;
+    const parts = emp.name.split(' ');
+    setFirstName(parts[0] || '');
+    setLastName(parts.slice(1).join(' ') || '');
+    setDisplayName(emp.name);
+    setWorkEmail(`${emp.name.toLowerCase().replace(/\s+/g, '.')}@enterprise.com`);
+    setMobile('');
+    setEmpId(emp.empId);
+    setStatus('Active');
+    setDepartment(emp.department);
+    setDesignation(emp.designation);
+    setPrimaryRole(emp.primaryRole);
+    setAncillaryRole(emp.ancillaryRole || '');
+    setReportingMgr(emp.managerName);
+    setWorkType('Full Time');
+    setJoinDate('');
+  }, [emp]);
+
+  if (!emp) return null;
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      toggle={onClose}
+      centered
+      size="lg"
+      contentClassName="border-0"
+      modalClassName="onb-edit-emp-modal"
+      scrollable
+      backdrop="static"
+      keyboard={false}
+    >
+
+      <ModalBody className="p-0">
+        <div className="onb-ee-header">
+          <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
+            <i className="ri-close-line" style={{ fontSize: 14 }} />
+          </button>
+          <div className="d-flex align-items-center gap-3">
+            <span className="onb-ee-icon"><i className="ri-user-3-line" style={{ fontSize: 20 }} /></span>
+            <div className="min-w-0">
+              <h5 className="onb-ee-title">Edit Employee</h5>
+              <p className="onb-ee-sub">Update details for {emp.name}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="onb-ee-body">
+          {/* Personal Info */}
+          <div className="onb-ee-section">
+            <h6 className="onb-ee-section-title"><i className="ri-user-line" /> Personal Information</h6>
+            <Row className="g-3">
+              <Col md={4}>
+                <label className="onb-ee-label">First Name <span className="req">*</span></label>
+                <input className="onb-ee-input" value={firstName} onChange={e => setFirstName(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Last Name <span className="req">*</span></label>
+                <input className="onb-ee-input" value={lastName} onChange={e => setLastName(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Display Name</label>
+                <input className="onb-ee-input" value={displayName} onChange={e => setDisplayName(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Work Email <span className="req">*</span></label>
+                <input className="onb-ee-input" value={workEmail} onChange={e => setWorkEmail(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Mobile Number</label>
+                <input className="onb-ee-input" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="+91 XXXXX XXXXX" />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Employee ID</label>
+                <input className="onb-ee-input is-readonly" value={empId} readOnly />
+              </Col>
+            </Row>
+          </div>
+
+          {/* Job Details */}
+          <div className="onb-ee-section">
+            <h6 className="onb-ee-section-title"><i className="ri-briefcase-line" /> Job Details</h6>
+            <Row className="g-3">
+              <Col md={4}>
+                <label className="onb-ee-label">Department <span className="req">*</span></label>
+                <MasterSelect value={department} onChange={setDepartment} options={EDIT_DEPT_OPTIONS} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Designation <span className="req">*</span></label>
+                <input className="onb-ee-input" value={designation} onChange={e => setDesignation(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Employee Status</label>
+                <MasterSelect value={status} onChange={setStatus} options={EDIT_STATUS_OPTIONS} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Primary Role</label>
+                <input className="onb-ee-input" value={primaryRole} onChange={e => setPrimaryRole(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Ancillary Role</label>
+                <input className="onb-ee-input" value={ancillaryRole} onChange={e => setAncillaryRole(e.target.value)} placeholder="Optional" />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Reporting Manager</label>
+                <input className="onb-ee-input" value={reportingMgr} onChange={e => setReportingMgr(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Work Type</label>
+                <MasterSelect value={workType} onChange={setWorkType} options={EDIT_WORK_TYPE_OPTIONS} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Joining Date</label>
+                <MasterDatePicker value={joinDate} onChange={setJoinDate} placeholder={emp.joinDate || 'Select date'} />
+              </Col>
+            </Row>
+          </div>
+        </div>
+
+        <div className="onb-ee-footer">
+          <button type="button" className="onb-ee-cancel" onClick={onClose}>Cancel</button>
+          <button type="button" className="onb-ee-save" onClick={onClose}>
+            <i className="ri-save-line" style={{ fontSize: 15 }} /> Save Changes
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
   );
 }
 
@@ -974,46 +1023,15 @@ function VaultModal({
       size="lg"
       contentClassName="vault-modal-content border-0"
       modalClassName="vault-modal-wide"
-      scrollable
       backdrop="static"
       keyboard={false}
     >
-      <style>{`
-        .vault-modal-wide .modal-dialog { max-width: min(1080px, 94vw); }
-        .vault-modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
-        .vault-pill { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: rgba(255,255,255,0.18); color: #fff; }
-        .vault-kpi-card { background: #ffffff; border-radius: 16px; padding: 20px 20px 16px; box-shadow: 0 2px 20px rgba(0,0,0,0.06); border: 1px solid var(--vz-border-color); position: relative; overflow: hidden; height: 100%; cursor: pointer; transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; }
-        .vault-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(18,38,63,0.12); border-color: rgba(99,102,241,0.30); }
-        .vault-kpi-card:hover .vault-kpi-icon { transform: scale(1.08); }
-        .vault-kpi-card .vault-kpi-icon { transition: transform .25s ease; }
-        [data-bs-theme="dark"] .vault-kpi-card { background: #1c2531; }
-        [data-bs-theme="dark"] .vault-kpi-card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.45); }
-        .vault-kpi-card .vault-kpi-strip { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
-        .vault-kpi-card .vault-kpi-icon { width: 46px; height: 46px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .vault-kpi-card .vault-kpi-icon i { color: #fff; font-size: 20px; }
-        .vault-kpi-card .vault-kpi-label { font-size: 11px; font-weight: 700; color: var(--vz-secondary-color); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 10px; }
-        .vault-kpi-card .vault-kpi-num { font-size: 28px; font-weight: 800; line-height: 1; margin: 0; color: var(--vz-heading-color, var(--vz-body-color)); }
-        .vault-tab-btn { background: transparent; border: none; padding: 12px 18px; font-size: 13.5px; font-weight: 600; color: var(--vz-secondary-color); display: inline-flex; align-items: center; gap: 6px; border-bottom: 2px solid transparent; transition: color .15s ease, border-color .15s ease; }
-        .vault-tab-btn:hover { color: #5a3fd1; }
-        .vault-tab-btn.is-active { color: #5a3fd1; border-bottom-color: #7c5cfc; }
-        .vault-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 18px; padding: 0 6px; border-radius: 999px; background: var(--vz-light); color: var(--vz-secondary-color); font-size: 10.5px; font-weight: 700; }
-        .vault-tab-btn.is-active .vault-tab-count { background: #ece6ff; color: #5a3fd1; }
-        .vault-doc-row { display: flex; align-items: center; gap: 14px; padding: 14px 4px; border-bottom: 1px solid var(--vz-border-color); }
-        .vault-doc-row:last-child { border-bottom: none; }
-        .vault-doc-icon { width: 40px; height: 40px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
-        .vault-doc-meta { min-width: 0; flex: 1; }
-        .vault-doc-name { font-size: 14px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color)); }
-        .vault-doc-desc { font-size: 12px; color: var(--vz-secondary-color); margin-top: 2px; }
-        .vault-status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-        .vault-status-dot { width: 6px; height: 6px; border-radius: 50%; }
-        .vault-action-view { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: #fff; color: #374151; border: 1px solid #e5e7eb; transition: border-color .15s ease, color .15s ease; }
-        .vault-action-view:hover { color: #5a3fd1; border-color: #c4b5fd; }
-        .vault-action-download { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border: none; box-shadow: 0 4px 10px rgba(124,92,252,0.25); }
-        .vault-action-download:hover { box-shadow: 0 6px 14px rgba(124,92,252,0.35); }
-      `}</style>
 
-      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
-        {/* Header — indigo gradient with status ring */}
+      <ModalBody
+        className="p-0 d-flex flex-column"
+        style={{ background: 'var(--vz-card-bg)', maxHeight: '90vh' }}
+      >
+        {/* Header — indigo gradient with status ring (fixed, non-scrolling) */}
         <div
           style={{
             padding: '22px 26px',
@@ -1021,6 +1039,7 @@ function VaultModal({
             color: '#fff',
             position: 'relative',
             overflow: 'hidden',
+            flexShrink: 0,
           }}
         >
           <div style={{ position: 'absolute', top: -50, right: -40, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
@@ -1085,8 +1104,8 @@ function VaultModal({
           </div>
         </div>
 
-        {/* KPI strip */}
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--vz-border-color)' }}>
+        {/* KPI strip (fixed, non-scrolling) */}
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--vz-border-color)', flexShrink: 0 }}>
           <Row className="g-3 align-items-stretch">
             {[
               { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
@@ -1113,8 +1132,8 @@ function VaultModal({
           </Row>
         </div>
 
-        {/* Tabs */}
-        <div className="d-flex" style={{ padding: '0 24px', borderBottom: '1px solid var(--vz-border-color)' }}>
+        {/* Tabs (fixed, non-scrolling) */}
+        <div className="d-flex" style={{ padding: '0 24px', borderBottom: '1px solid var(--vz-border-color)', flexShrink: 0 }}>
           <button
             type="button"
             className={`vault-tab-btn${tab === 'employee' ? ' is-active' : ''}`}
@@ -1133,8 +1152,8 @@ function VaultModal({
           </button>
         </div>
 
-        {/* Section list */}
-        <div style={{ padding: '8px 24px 22px' }}>
+        {/* Section list — only this region scrolls */}
+        <div style={{ padding: '8px 24px 22px', flex: '1 1 auto', overflowY: 'auto', minHeight: 0 }}>
           {sections.map(section => (
             <div key={section.title} style={{ paddingTop: 16 }}>
               <div className="d-flex align-items-center justify-content-between mb-2">
@@ -1200,28 +1219,31 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
   const [level, setLevel] = useState<string>('all');
   const [empType, setEmpType] = useState<string>('all');
 
-  // Compute filtered checklist by level + employee type. The filter is purely
-  // visual — every checkpoint always renders, but matching badges decide which
-  // ones get highlighted vs. greyed. Counts in the header reflect the visible set.
+  // Compute filtered checklist by level + employee type. ALL-tagged checkpoints
+  // always pass; otherwise both filters must match. Counts in the header reflect
+  // the visible set so users see exactly what their filters returned.
   const visibleStages = useMemo(() => {
+    const levelMap: Record<string, CheckpointBadgeKind[]> = {
+      hod:    ['HOD REQUIRED', 'HOD OPTIONAL'],
+      tl:     ['TL REQUIRED', 'TL OPTIONAL'],
+      exec:   ['EXEC REQUIRED', 'EXEC OPTIONAL'],
+      emp:    ['EMP REQUIRED', 'EMP OPTIONAL'],
+      intern: ['INTERN REQUIRED', 'INTERN OPTIONAL'],
+    };
+    const empMap: Record<string, CheckpointBadgeKind[]> = {
+      it:       ['IT REQUIRED', 'IT OPTIONAL'],
+      'non-it': ['NON-IT REQUIRED', 'NON-IT OPTIONAL'],
+    };
     return CHECKLIST_STAGES.map(s => {
       const checkpoints = s.checkpoints.filter(cp => {
-        // If the checkpoint is tagged ALL, include for all designation levels.
         const isAll = cp.badges.includes('ALL');
-        if (level === 'all' || isAll) return true;
-        const map: Record<string, CheckpointBadgeKind[]> = {
-          hod:    ['HOD REQUIRED', 'HOD OPTIONAL'],
-          tl:     ['TL REQUIRED', 'TL OPTIONAL'],
-          exec:   ['EXEC REQUIRED', 'EXEC OPTIONAL'],
-          emp:    ['EMP REQUIRED', 'EMP OPTIONAL'],
-          intern: ['INTERN REQUIRED', 'INTERN OPTIONAL'],
-        };
-        const want = map[level] || [];
-        return cp.badges.some(b => want.includes(b));
+        const levelOk = level === 'all'   || isAll || (levelMap[level]   || []).some(b => cp.badges.includes(b));
+        const empOk   = empType === 'all' || isAll || (empMap[empType]   || []).some(b => cp.badges.includes(b));
+        return levelOk && empOk;
       });
       return { ...s, checkpoints };
     }).filter(s => s.checkpoints.length > 0);
-  }, [level]);
+  }, [level, empType]);
 
   const totalCheckpoints = useMemo(
     () => visibleStages.reduce((acc, s) => acc + s.checkpoints.length, 0),
@@ -1252,7 +1274,7 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
 
           <div className="onb-cl-titlewrap">
             <span className="onb-cl-icon">
-              <i className="ri-checkbox-multiple-line" style={{ fontSize: 16 }} />
+              <i className="ri-checkbox-line" style={{ fontSize: 22 }} />
             </span>
             <div className="min-w-0">
               <h5 className="onb-cl-title">Employee Onboarding Checklist</h5>
@@ -1467,485 +1489,6 @@ function InitiateOnboardingModal({
       keyboard={false}
       scrollable
     >
-      <style>{`
-        .onb-init-modal .modal-dialog { max-width: min(1280px, 96vw); }
-        .onb-init-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
-
-        /* Header */
-        .onb-init-header { background: linear-gradient(135deg,#3b0764,#4c1d95 35%,#6d28d9 70%,#7c3aed); color: #fff; padding: 14px 22px 0; position: relative; }
-        .onb-init-header .close-btn { position: absolute; top: 14px; right: 14px; width: 26px; height: 26px; border-radius: 7px; background: rgba(255,255,255,0.18); border: none; color: #fff; display: inline-flex; align-items: center; justify-content: center; }
-        .onb-init-header .close-btn:hover { background: rgba(255,255,255,0.30); }
-        .onb-init-emp-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-right: 38px; }
-        .onb-init-avatar { width: 44px; height: 44px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 14px; flex-shrink: 0; box-shadow: 0 4px 10px rgba(0,0,0,0.20); }
-        .onb-init-name { font-size: 17px; font-weight: 800; margin: 0; letter-spacing: -0.01em; }
-        .onb-init-sub { font-size: 11px; color: rgba(255,255,255,0.78); margin-top: 2px; }
-        .onb-init-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(255,255,255,0.18); color: #fff; margin-left: 8px; }
-        .onb-init-status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #ffffff; color: #4c1d95; }
-        .onb-init-prod { font-size: 9.5px; letter-spacing: 0.10em; text-transform: uppercase; color: rgba(255,255,255,0.72); margin: 0; text-align: right; }
-        .onb-init-prod-name { font-size: 12.5px; font-weight: 700; color: #fff; }
-
-        /* Stepper */
-        .onb-init-stepper { display: flex; align-items: center; gap: 4px; padding: 10px 0 12px; flex-wrap: wrap; }
-        .onb-init-step { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 11px; font-weight: 600; background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.78); border: 1px solid rgba(255,255,255,0.20); cursor: pointer; transition: all .15s ease; }
-        .onb-init-step:hover { background: rgba(255,255,255,0.18); color: #fff; }
-        .onb-init-step.is-active { background: #ffffff; color: #4c1d95; border-color: #ffffff; font-weight: 700; }
-        .onb-init-step .num { width: 18px; height: 18px; border-radius: 50%; background: rgba(255,255,255,0.20); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
-        .onb-init-step.is-active .num { background: #4c1d95; color: #fff; }
-        .onb-init-step-sep { color: rgba(255,255,255,0.40); font-size: 11px; }
-
-        /* Body layout */
-        .onb-init-body { display: flex; gap: 0; background: #f7f5fc; max-height: 64vh; overflow: hidden; }
-        [data-bs-theme="dark"] .onb-init-body { background: #1f2630; }
-
-        /* Sidebar */
-        .onb-init-side { width: 270px; flex-shrink: 0; padding: 14px 14px 14px 18px; overflow-y: auto; border-right: 1px solid #ece9f6; }
-        [data-bs-theme="dark"] .onb-init-side { border-color: var(--vz-border-color); }
-        .onb-init-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-        .onb-init-side-title { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0; }
-        .onb-init-side-pct { font-size: 11px; font-weight: 800; color: #4c1d95; }
-        .onb-init-side-bar { height: 4px; background: #ece9f6; border-radius: 999px; overflow: hidden; margin-bottom: 12px; }
-        .onb-init-side-fill { height: 100%; background: linear-gradient(90deg,#7c3aed,#4c1d95); border-radius: 999px; }
-        .onb-init-stage-card { display: flex; gap: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; margin-bottom: 6px; background: transparent; transition: all .15s ease; }
-        .onb-init-stage-card:hover { background: #fff; border-color: #ece9f6; }
-        .onb-init-stage-card.is-active { background: #ffffff; border-color: #c4b5fd; box-shadow: 0 4px 12px rgba(124,92,252,0.15); }
-        .onb-init-stage-num { width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: #ece9f6; color: var(--vz-secondary-color); }
-        .onb-init-stage-card.is-active .onb-init-stage-num { background: linear-gradient(135deg,#7c3aed,#4c1d95); color: #fff; }
-        .onb-init-stage-name { font-size: 12px; font-weight: 700; color: #1f2937; margin: 0; line-height: 1.3; }
-        [data-bs-theme="dark"] .onb-init-stage-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-init-stage-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; font-size: 10px; }
-        .onb-init-stage-status { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; }
-        .onb-init-stage-status.in-progress { color: #7c3aed; }
-        .onb-init-stage-status.pending { color: var(--vz-secondary-color); }
-        .onb-init-stage-status.completed { color: #108548; }
-        .onb-init-stage-status .dot { width: 5px; height: 5px; border-radius: 50%; }
-        .onb-init-stage-status.in-progress .dot { background: #7c3aed; }
-        .onb-init-stage-status.pending .dot { background: #cbd2dc; }
-        .onb-init-stage-status.completed .dot { background: #10b981; }
-        .onb-init-stage-num.is-done { background: linear-gradient(135deg,#0ab39c,#108548); color: #fff; }
-        .onb-init-stage-pct { font-weight: 700; color: var(--vz-secondary-color); }
-        .onb-init-stage-card.is-active .onb-init-stage-pct { color: #7c3aed; }
-
-        /* Main content */
-        .onb-init-main { flex: 1; min-width: 0; padding: 16px 22px; overflow-y: auto; }
-        .onb-init-stage-banner { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-        [data-bs-theme="dark"] .onb-init-stage-banner { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-init-banner-icon { width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(135deg,#7c3aed,#4c1d95); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-init-banner-meta { font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0; }
-        .onb-init-banner-title { font-size: 14.5px; font-weight: 800; color: #1f2937; margin: 1px 0 0; letter-spacing: -0.01em; }
-        [data-bs-theme="dark"] .onb-init-banner-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-init-banner-sub { font-size: 11px; color: var(--vz-secondary-color); margin-top: 1px; }
-        .onb-init-banner-state { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: #7c3aed; }
-        .onb-init-banner-state .dot { width: 6px; height: 6px; border-radius: 50%; background: #7c3aed; }
-
-        /* Profile completion banner */
-        .onb-init-profile-bar { background: #f3edff; border: 1px solid #e3d6ff; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; }
-        [data-bs-theme="dark"] .onb-init-profile-bar { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.28); }
-        .onb-init-profile-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-        .onb-init-profile-label { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #4c1d95; margin: 0; }
-        .onb-init-profile-pct { font-size: 18px; font-weight: 800; color: #f06548; }
-        .onb-init-profile-track { height: 6px; background: #ffffff; border-radius: 999px; overflow: hidden; }
-        .onb-init-profile-fill { height: 100%; background: linear-gradient(90deg,#f06548,#f7b84b); border-radius: 999px; }
-        .onb-init-profile-help { font-size: 10.5px; color: #5b3fd1; margin-top: 6px; }
-
-        /* Sub-step section */
-        .onb-init-section { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
-        [data-bs-theme="dark"] .onb-init-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-init-section-head { display: flex; align-items: center; gap: 11px; padding: 12px 16px; border-bottom: 1px solid #ece9f6; }
-        [data-bs-theme="dark"] .onb-init-section-head { border-color: var(--vz-border-color); }
-        .onb-init-section-num { width: 26px; height: 26px; border-radius: 7px; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; }
-        .onb-init-section-num.basic { background: linear-gradient(135deg,#7c3aed,#5b21b6); }
-        .onb-init-section-num.job { background: linear-gradient(135deg,#3b82f6,#1d4ed8); }
-        .onb-init-section-num.work { background: linear-gradient(135deg,#0ab39c,#0a8a72); }
-        .onb-init-section-num.comp { background: linear-gradient(135deg,#f59e0b,#b45309); }
-        .onb-init-section-title { font-size: 13.5px; font-weight: 800; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .onb-init-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-init-section-sub { font-size: 11px; color: var(--vz-secondary-color); margin: 1px 0 0; }
-        .onb-init-section-step { margin-left: auto; padding: 3px 9px; border-radius: 999px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.06em; }
-        .onb-init-section-step.basic { background: #ece6ff; color: #5a3fd1; }
-        .onb-init-section-step.job { background: #dceefe; color: #0c63b0; }
-        .onb-init-section-step.work { background: #d3f0ee; color: #0a716a; }
-        .onb-init-section-step.comp { background: #fde8c4; color: #a4661c; }
-        .onb-init-section-body { padding: 14px 16px; }
-
-        .onb-init-subgroup { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 10px; }
-        .onb-init-subgroup + .onb-init-subgroup { margin-top: 16px; }
-
-        .onb-init-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #374151; margin: 0 0 5px; display: flex; align-items: center; gap: 5px; }
-        [data-bs-theme="dark"] .onb-init-label { color: var(--vz-body-color); }
-        .onb-init-label .req { color: #f06548; font-weight: 700; }
-        .onb-init-label .auto { font-size: 8.5px; padding: 1px 6px; border-radius: 4px; background: #d6f4e3; color: #108548; letter-spacing: 0.04em; }
-        .onb-init-input, .onb-init-select { width: 100%; height: 36px; padding: 6px 10px; font-size: 12px; color: #1f2937; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; transition: all .15s ease; }
-        .onb-init-input::placeholder { color: #9ca3af; }
-        .onb-init-input:focus, .onb-init-select:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
-        .onb-init-input.is-required { border-color: #f4a8a0; background: #fff6f5; }
-        .onb-init-input.is-autofilled { border-color: #b6e4be; background: #f5fcf6; }
-        [data-bs-theme="dark"] .onb-init-input, [data-bs-theme="dark"] .onb-init-select { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
-
-        .onb-init-toggle-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; background: #ecfdf3; border: 1px solid #bbf7d0; margin: 10px 0; }
-        [data-bs-theme="dark"] .onb-init-toggle-row { background: rgba(16,133,72,0.16); border-color: rgba(16,133,72,0.40); }
-        .onb-init-toggle { width: 36px; height: 20px; border-radius: 999px; background: #10b981; position: relative; cursor: pointer; flex-shrink: 0; }
-        .onb-init-toggle::after { content: ''; position: absolute; top: 2px; left: 18px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.20); }
-        .onb-init-toggle.off { background: #d1d5db; }
-        .onb-init-toggle.off::after { left: 2px; }
-        .onb-init-toggle-label { font-size: 12.5px; font-weight: 700; color: #108548; }
-        [data-bs-theme="dark"] .onb-init-toggle-label { color: #4ade80; }
-
-        .onb-init-info-banner { background: #d3f0ee; border: 1px solid #a8e0d6; border-radius: 9px; padding: 9px 14px; font-size: 11px; color: #0a716a; margin: 10px 0; display: flex; align-items: center; gap: 8px; }
-        [data-bs-theme="dark"] .onb-init-info-banner { background: rgba(10,113,106,0.16); border-color: rgba(10,179,156,0.36); color: #4dd4be; }
-
-        .onb-init-check-row { display: flex; gap: 18px; flex-wrap: wrap; margin: 6px 0 10px; }
-        .onb-init-check { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #1f2937; cursor: pointer; }
-        [data-bs-theme="dark"] .onb-init-check { color: var(--vz-body-color); }
-        .onb-init-check input { width: 14px; height: 14px; }
-
-        .onb-init-add-btn { padding: 6px 14px; border-radius: 8px; font-size: 11.5px; font-weight: 600; color: #a4661c; background: #fffbe7; border: 1px dashed #f7c069; margin-right: 6px; cursor: pointer; transition: all .15s ease; }
-        .onb-init-add-btn:hover { background: #fff5d1; border-color: #f0a13c; }
-
-        .onb-init-breakup { background: #fff; border: 1px solid #ece9f6; border-radius: 10px; margin-top: 10px; }
-        .onb-init-breakup-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #ece9f6; font-size: 12.5px; font-weight: 800; color: #1f2937; }
-        [data-bs-theme="dark"] .onb-init-breakup-head { color: var(--vz-heading-color, var(--vz-body-color)); border-color: var(--vz-border-color); }
-        .onb-init-breakup-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--vz-secondary-color); }
-        .onb-init-breakup-body { padding: 12px 14px; }
-        .onb-init-breakup-sub { font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 8px; }
-        .onb-init-breakup-grid { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 10px; align-items: center; }
-        .onb-init-breakup-cell { background: #f7f5fc; border-radius: 9px; padding: 12px 14px; text-align: center; }
-        [data-bs-theme="dark"] .onb-init-breakup-cell { background: rgba(124,92,252,0.10); }
-        .onb-init-breakup-cell.total { background: #ece6ff; }
-        [data-bs-theme="dark"] .onb-init-breakup-cell.total { background: rgba(124,92,252,0.22); }
-        .onb-init-breakup-cell .l { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); }
-        .onb-init-breakup-cell .v { font-size: 16px; font-weight: 800; color: #1f2937; margin-top: 4px; }
-        [data-bs-theme="dark"] .onb-init-breakup-cell .v { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-init-breakup-cell.total .v { color: #4c1d95; }
-        .onb-init-breakup-op { font-size: 16px; font-weight: 800; color: var(--vz-secondary-color); }
-
-        /* ── Stage 6 — Final Verification & Activation ── */
-        .onb-ver-progress { background: #ecfdf3; border: 1px solid #bbf7d0; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 12px; }
-        [data-bs-theme="dark"] .onb-ver-progress { background: rgba(16,133,72,0.16); border-color: rgba(16,133,72,0.40); }
-        .onb-ver-progress-icon { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg,#0ab39c,#108548); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-ver-progress-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-        .onb-ver-progress-title { font-size: 13px; font-weight: 700; color: #108548; margin: 0; }
-        [data-bs-theme="dark"] .onb-ver-progress-title { color: #4ade80; }
-        .onb-ver-progress-count { font-size: 12.5px; font-weight: 800; color: #108548; }
-        .onb-ver-progress-bar { height: 4px; background: #ffffff; border-radius: 999px; overflow: hidden; margin: 6px 0; }
-        .onb-ver-progress-fill { height: 100%; background: linear-gradient(90deg,#0ab39c,#108548); border-radius: 999px; }
-        .onb-ver-progress-help { font-size: 10.5px; color: #108548; margin: 0; }
-        [data-bs-theme="dark"] .onb-ver-progress-help { color: #4ade80; }
-
-        .onb-ver-info-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-        @media (max-width: 720px) { .onb-ver-info-row { grid-template-columns: 1fr; } }
-        .onb-ver-info-card { background: #fff; border: 1px solid #ece9f6; border-radius: 11px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
-        [data-bs-theme="dark"] .onb-ver-info-card { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-ver-info-avatar { width: 36px; height: 36px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 12px; flex-shrink: 0; }
-        .onb-ver-info-name { font-size: 12.5px; font-weight: 800; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .onb-ver-info-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-ver-info-sub { font-size: 11px; color: var(--vz-secondary-color); margin: 1px 0 0; }
-        .onb-ver-info-label { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 3px; }
-        .onb-ver-info-track { flex-grow: 1; height: 6px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }
-        .onb-ver-info-fill { height: 100%; background: linear-gradient(90deg,#f59e0b,#fcd34d); border-radius: 999px; }
-        .onb-ver-info-pct { font-size: 13px; font-weight: 800; color: #f59e0b; }
-
-        .onb-ver-section { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        [data-bs-theme="dark"] .onb-ver-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-ver-section-head { display: flex; align-items: center; gap: 11px; padding: 12px 16px; border-bottom: 1px solid #f1eff7; }
-        [data-bs-theme="dark"] .onb-ver-section-head { border-color: var(--vz-border-color); }
-        .onb-ver-section-icon { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-ver-section-icon.summary { background: #d6f4e3; color: #108548; }
-        .onb-ver-section-icon.action { background: #ece6ff; color: #5a3fd1; }
-        .onb-ver-section-title { font-size: 13.5px; font-weight: 700; color: #1f2937; margin: 0; flex-grow: 1; }
-        [data-bs-theme="dark"] .onb-ver-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-ver-section-pill { padding: 3px 10px; border-radius: 999px; background: #d6f4e3; color: #108548; font-size: 10.5px; font-weight: 800; }
-
-        .onb-ver-stage-row { display: flex; align-items: center; gap: 11px; padding: 11px 16px; border-bottom: 1px solid #f1eff7; }
-        [data-bs-theme="dark"] .onb-ver-stage-row { border-color: var(--vz-border-color); }
-        .onb-ver-stage-row:last-child { border-bottom: none; }
-        .onb-ver-stage-icon { width: 34px; height: 34px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
-        .onb-ver-stage-icon.s1 { background: #ece6ff; color: #5a3fd1; }
-        .onb-ver-stage-icon.s2 { background: #dceefe; color: #0c63b0; }
-        .onb-ver-stage-icon.s3 { background: #d3f0ee; color: #0a716a; }
-        .onb-ver-stage-icon.s4 { background: #fef3c7; color: #b45309; }
-        .onb-ver-stage-icon.s5 { background: #ece6ff; color: #5a3fd1; }
-        .onb-ver-stage-icon.s6 { background: #fdd9ea; color: #a02960; }
-        .onb-ver-stage-name { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .onb-ver-stage-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-ver-stage-sub { font-size: 11px; color: var(--vz-secondary-color); margin: 1px 0 0; }
-        .onb-ver-status-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }
-        .onb-ver-status-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
-        .onb-ver-status-pill.verified { background: #d6f4e3; color: #108548; }
-        .onb-ver-status-pill.verified .dot { background: #10b981; }
-        .onb-ver-status-pill.pending { background: #fde8c4; color: #a4661c; }
-        .onb-ver-status-pill.pending .dot { background: #f59e0b; }
-
-        .onb-ver-action-banner { background: #f3edff; border: 1px solid #e3d6ff; border-radius: 9px; padding: 10px 14px; font-size: 11.5px; color: #4c1d95; display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
-        [data-bs-theme="dark"] .onb-ver-action-banner { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.32); color: #c4b5fd; }
-        .onb-ver-action-banner b, .onb-ver-action-banner strong { font-weight: 800; }
-
-        .onb-ver-action-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
-        @media (max-width: 720px) { .onb-ver-action-buttons { grid-template-columns: 1fr; } }
-        .onb-ver-flag-btn { padding: 14px 20px; border-radius: 11px; font-size: 13px; font-weight: 700; color: #b1401d; background: #fff; border: 1px solid #f4a8a0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: all .15s ease; }
-        .onb-ver-flag-btn:hover { background: #fff6f5; border-color: #f06548; }
-        .onb-ver-activate-btn { padding: 14px 20px; border-radius: 11px; font-size: 13px; font-weight: 700; color: #fff; background: linear-gradient(135deg,#10b981,#059669); border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 8px 18px rgba(5,150,105,0.30); transition: all .15s ease; }
-        .onb-ver-activate-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(5,150,105,0.38); }
-
-        /* ── Flag Issue Modal ── */
-        .onb-flag-modal .modal-dialog { max-width: 520px; }
-        .onb-flag-content { border-radius: 16px; overflow: hidden; border: none; box-shadow: 0 24px 60px rgba(0,0,0,0.30); }
-        .onb-flag-header { background: linear-gradient(135deg,#ef4444 0%,#dc2626 100%); color: #fff; padding: 22px 24px 20px; position: relative; }
-        .onb-flag-header .close-btn { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 8px; background: rgba(255,255,255,0.18); border: none; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s ease; }
-        .onb-flag-header .close-btn:hover { background: rgba(255,255,255,0.30); }
-        .onb-flag-icon { width: 48px; height: 48px; border-radius: 12px; background: rgba(255,255,255,0.22); display: inline-flex; align-items: center; justify-content: center; color: #fff; margin-bottom: 12px; }
-        .onb-flag-title { font-size: 19px; font-weight: 800; margin: 0; color: #fff; }
-        .onb-flag-sub { font-size: 12.5px; color: rgba(255,255,255,0.92); margin: 4px 0 0; }
-        .onb-flag-body { padding: 20px 24px 8px; background: #fff; }
-        [data-bs-theme="dark"] .onb-flag-body { background: var(--vz-card-bg); }
-        .onb-flag-label { font-size: 11px; font-weight: 700; color: var(--vz-secondary-color); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 8px; }
-        .onb-flag-section + .onb-flag-section { margin-top: 16px; }
-        .onb-flag-types { display: flex; flex-wrap: wrap; gap: 8px; }
-        .onb-flag-type { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--vz-border-color); border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--vz-heading-color, var(--vz-body-color)); background: #fff; transition: border-color .15s ease, background .15s ease; }
-        [data-bs-theme="dark"] .onb-flag-type { background: var(--vz-card-bg); }
-        .onb-flag-type:hover { border-color: rgba(239,68,68,0.55); }
-        .onb-flag-type input[type="radio"] { accent-color: #ef4444; cursor: pointer; }
-        .onb-flag-type.is-active { border-color: #ef4444; background: rgba(239,68,68,0.06); color: #b91c1c; }
-        [data-bs-theme="dark"] .onb-flag-type.is-active { background: rgba(239,68,68,0.18); color: #fca5a5; }
-        .onb-flag-textarea { width: 100%; min-height: 96px; padding: 10px 12px; border: 1px solid var(--vz-border-color); border-radius: 8px; font-size: 12.5px; color: var(--vz-heading-color, var(--vz-body-color)); background: #fff; resize: vertical; transition: border-color .15s ease, box-shadow .15s ease; font-family: inherit; }
-        [data-bs-theme="dark"] .onb-flag-textarea { background: var(--vz-card-bg); }
-        .onb-flag-textarea::placeholder { color: var(--vz-secondary-color); opacity: 0.7; }
-        .onb-flag-textarea:focus { outline: none; border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
-        .onb-flag-req { color: #ef4444; margin-left: 2px; }
-        .onb-flag-footer { display: flex; gap: 12px; padding: 16px 24px 22px; background: #fff; }
-        [data-bs-theme="dark"] .onb-flag-footer { background: var(--vz-card-bg); }
-        .onb-flag-cancel { flex: 1; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--vz-border-color); background: #fff; color: var(--vz-heading-color, var(--vz-body-color)); font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
-        [data-bs-theme="dark"] .onb-flag-cancel { background: var(--vz-card-bg); }
-        .onb-flag-cancel:hover { background: var(--vz-light); }
-        .onb-flag-submit { flex: 1.2; padding: 12px 16px; border-radius: 10px; border: none; background: linear-gradient(135deg,#ef4444,#dc2626); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 8px 18px rgba(220,38,38,0.30); transition: transform .15s ease, box-shadow .15s ease; }
-        .onb-flag-submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(220,38,38,0.38); }
-        .onb-flag-submit:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        /* ── Activate Employee Modal ── */
-        .onb-act-modal .modal-dialog { max-width: 500px; }
-        .onb-act-content { border-radius: 16px; overflow: hidden; border: none; box-shadow: 0 24px 60px rgba(0,0,0,0.30); }
-        .onb-act-header { background: linear-gradient(135deg,#10b981 0%,#059669 100%); color: #fff; padding: 22px 24px 20px; position: relative; }
-        .onb-act-header .close-btn { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 8px; background: rgba(255,255,255,0.18); border: none; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s ease; }
-        .onb-act-header .close-btn:hover { background: rgba(255,255,255,0.30); }
-        .onb-act-icon { width: 48px; height: 48px; border-radius: 12px; background: rgba(255,255,255,0.22); display: inline-flex; align-items: center; justify-content: center; color: #fff; margin-bottom: 12px; }
-        .onb-act-title { font-size: 19px; font-weight: 800; margin: 0; color: #fff; }
-        .onb-act-sub { font-size: 12.5px; color: rgba(255,255,255,0.92); margin: 4px 0 0; }
-        .onb-act-body { padding: 18px 24px 4px; background: #fff; }
-        [data-bs-theme="dark"] .onb-act-body { background: var(--vz-card-bg); }
-        .onb-act-empcard { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #b8e8d2; background: #f5fcf8; border-radius: 12px; margin-bottom: 14px; }
-        [data-bs-theme="dark"] .onb-act-empcard { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.32); }
-        .onb-act-empcheck { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg,#10b981,#059669); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-act-empname { font-size: 13.5px; font-weight: 800; color: var(--vz-heading-color, var(--vz-body-color)); margin: 0; }
-        .onb-act-empmeta { font-size: 11.5px; color: var(--vz-secondary-color); margin: 2px 0 0; line-height: 1.45; }
-        .onb-act-list { list-style: none; padding: 0; margin: 0 0 6px; display: flex; flex-direction: column; gap: 8px; }
-        .onb-act-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-act-list li i { color: #10b981; font-size: 14px; margin-top: 1px; flex-shrink: 0; }
-        .onb-act-footer { display: flex; gap: 12px; padding: 16px 24px 22px; background: #fff; }
-        [data-bs-theme="dark"] .onb-act-footer { background: var(--vz-card-bg); }
-        .onb-act-cancel { flex: 1; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--vz-border-color); background: #fff; color: var(--vz-heading-color, var(--vz-body-color)); font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
-        [data-bs-theme="dark"] .onb-act-cancel { background: var(--vz-card-bg); }
-        .onb-act-cancel:hover { background: var(--vz-light); }
-        .onb-act-confirm { flex: 1.2; padding: 12px 16px; border-radius: 10px; border: none; background: linear-gradient(135deg,#10b981,#059669); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 8px 18px rgba(5,150,105,0.30); transition: transform .15s ease, box-shadow .15s ease; }
-        .onb-act-confirm:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(5,150,105,0.38); }
-
-        /* ── Stage 4 — Payroll ── */
-        .onb-pay-progress { background: #fef3c7; border: 1px solid #fde68a; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 12px; }
-        [data-bs-theme="dark"] .onb-pay-progress { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.40); }
-        .onb-pay-progress-icon { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg,#f59e0b,#b45309); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-pay-progress-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-        .onb-pay-progress-title { font-size: 13px; font-weight: 700; color: #92400e; margin: 0; }
-        [data-bs-theme="dark"] .onb-pay-progress-title { color: #fcd34d; }
-        .onb-pay-progress-count { font-size: 12.5px; font-weight: 800; color: #92400e; }
-        .onb-pay-progress-bar { height: 4px; background: #ffffff; border-radius: 999px; overflow: hidden; margin: 6px 0; }
-        .onb-pay-progress-fill { height: 100%; background: linear-gradient(90deg,#f59e0b,#b45309); border-radius: 999px; }
-        .onb-pay-progress-help { font-size: 10.5px; color: #92400e; margin: 0; }
-        [data-bs-theme="dark"] .onb-pay-progress-help { color: #fcd34d; }
-
-        .onb-pay-section { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        [data-bs-theme="dark"] .onb-pay-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-pay-section-head { display: flex; align-items: center; gap: 11px; padding: 11px 16px; }
-        .onb-pay-section-icon { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
-        .onb-pay-section-icon.mode { background: #ece6ff; color: #5a3fd1; }
-        .onb-pay-section-icon.bank { background: #dceefe; color: #0c63b0; }
-        .onb-pay-section-icon.tax  { background: #fef3c7; color: #b45309; }
-        .onb-pay-section-icon.check { background: #d6f4e3; color: #108548; }
-        .onb-pay-section-title { font-size: 13.5px; font-weight: 700; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .onb-pay-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-pay-section-body { padding: 0 16px 14px; }
-        .onb-pay-q { font-size: 12px; color: var(--vz-secondary-color); margin: 0 0 10px; }
-
-        .onb-pay-radio { display: flex; align-items: flex-start; gap: 11px; padding: 11px 14px; border: 1px solid var(--vz-border-color); border-radius: 10px; margin-bottom: 8px; cursor: pointer; transition: all .15s ease; }
-        .onb-pay-radio:hover { border-color: #c4b5fd; background: #faf6ff; }
-        .onb-pay-radio.is-selected { border-color: #7c3aed; background: #f3edff; box-shadow: 0 4px 10px rgba(124,58,237,0.12); }
-        [data-bs-theme="dark"] .onb-pay-radio.is-selected { background: rgba(124,58,237,0.18); }
-        .onb-pay-radio-circle { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #d1d5db; flex-shrink: 0; margin-top: 2px; position: relative; }
-        .onb-pay-radio.is-selected .onb-pay-radio-circle { border-color: #7c3aed; }
-        .onb-pay-radio.is-selected .onb-pay-radio-circle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 8px; height: 8px; border-radius: 50%; background: #7c3aed; }
-        .onb-pay-radio-name { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .onb-pay-radio-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-pay-radio-sub { font-size: 11px; color: var(--vz-secondary-color); margin: 2px 0 0; }
-
-        .onb-pay-check { display: flex; align-items: center; gap: 11px; padding: 10px 14px; border: 1px solid var(--vz-border-color); border-radius: 9px; margin-bottom: 6px; }
-        [data-bs-theme="dark"] .onb-pay-check { border-color: var(--vz-border-color); }
-        .onb-pay-check-icon { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #f59e0b; background: #fffbe7; color: #f59e0b; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-pay-check-name { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; flex-grow: 1; }
-        [data-bs-theme="dark"] .onb-pay-check-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-
-        /* ── Stage 5 — Policies ── */
-        .onb-pol-progress { background: #f3edff; border: 1px solid #e3d6ff; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 12px; }
-        [data-bs-theme="dark"] .onb-pol-progress { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.28); }
-        .onb-pol-progress-icon { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg,#7c3aed,#4c1d95); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-pol-progress-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-        .onb-pol-progress-title { font-size: 13px; font-weight: 700; color: #4c1d95; margin: 0; }
-        [data-bs-theme="dark"] .onb-pol-progress-title { color: #c4b5fd; }
-        .onb-pol-progress-count { font-size: 12.5px; font-weight: 800; color: #4c1d95; }
-        .onb-pol-progress-bar { height: 4px; background: #ffffff; border-radius: 999px; overflow: hidden; margin: 6px 0; }
-        .onb-pol-progress-fill { height: 100%; background: linear-gradient(90deg,#7c3aed,#4c1d95); border-radius: 999px; }
-        .onb-pol-progress-help { font-size: 10.5px; color: #5b3fd1; margin: 0; }
-
-        .onb-pol-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 6px 0 14px; font-size: 11px; color: var(--vz-secondary-color); }
-        .onb-pol-legend-item { display: inline-flex; align-items: center; gap: 5px; }
-        .onb-pol-legend-item .dot { width: 7px; height: 7px; border-radius: 50%; }
-        .onb-pol-legend-link { margin-left: auto; color: #7c3aed; font-weight: 600; }
-
-        .onb-pol-section { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        [data-bs-theme="dark"] .onb-pol-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-pol-section-head { display: flex; align-items: center; gap: 11px; padding: 11px 16px; border-bottom: 1px solid #f1eff7; }
-        [data-bs-theme="dark"] .onb-pol-section-head { border-color: var(--vz-border-color); }
-        .onb-pol-section-icon { width: 32px; height: 32px; border-radius: 8px; background: #ece6ff; color: #5a3fd1; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-pol-section-title { font-size: 13.5px; font-weight: 700; color: #1f2937; margin: 0; flex-grow: 1; }
-        [data-bs-theme="dark"] .onb-pol-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-pol-section-pill { padding: 3px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 10.5px; font-weight: 800; }
-
-        .onb-pol-doc { padding: 12px 16px; border-bottom: 1px solid #f1eff7; background: #fff; }
-        [data-bs-theme="dark"] .onb-pol-doc { border-color: var(--vz-border-color); }
-        .onb-pol-doc:last-child { border-bottom: none; }
-        .onb-pol-doc-row { display: flex; align-items: center; gap: 11px; }
-        .onb-pol-doc-icon { width: 32px; height: 32px; border-radius: 8px; background: #f3edff; color: #7c3aed; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-pol-doc-meta { min-width: 0; flex-grow: 1; }
-        .onb-pol-doc-name { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        [data-bs-theme="dark"] .onb-pol-doc-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-pol-doc-sub { font-size: 11px; color: var(--vz-secondary-color); margin: 1px 0 0; }
-        .onb-pol-doc-status { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: #eef2f6; color: #5b6478; }
-        .onb-pol-doc-status .dot { width: 6px; height: 6px; border-radius: 50%; background: #878a99; }
-        .onb-pol-gen-btn { padding: 6px 13px; border-radius: 8px; font-size: 11.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#0ab39c,#0a8a72); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 3px 8px rgba(10,138,114,0.24); }
-        .onb-pol-gen-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(10,138,114,0.32); }
-        .onb-pol-doc-help { font-size: 10.5px; color: var(--vz-secondary-color); margin: 8px 0 0; padding-left: 43px; display: flex; align-items: center; gap: 5px; }
-
-        /* ── Stage 3 — Provisioning ── */
-        .onb-prov-progress { background: #dceefe; border: 1px solid #b6d6fb; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 12px; }
-        [data-bs-theme="dark"] .onb-prov-progress { background: rgba(12,99,176,0.18); border-color: rgba(12,99,176,0.40); }
-        .onb-prov-progress-icon { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg,#3b82f6,#1d4ed8); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-prov-progress-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-        .onb-prov-progress-title { font-size: 13px; font-weight: 700; color: #0c63b0; margin: 0; }
-        [data-bs-theme="dark"] .onb-prov-progress-title { color: #93c5fd; }
-        .onb-prov-progress-count { font-size: 12.5px; font-weight: 800; color: #0c63b0; }
-        .onb-prov-progress-bar { height: 4px; background: #ffffff; border-radius: 999px; overflow: hidden; margin: 6px 0; }
-        .onb-prov-progress-fill { height: 100%; background: linear-gradient(90deg,#3b82f6,#1d4ed8); border-radius: 999px; }
-        .onb-prov-progress-help { font-size: 10.5px; color: #0c63b0; margin: 0; }
-        [data-bs-theme="dark"] .onb-prov-progress-help { color: #93c5fd; }
-
-        .onb-prov-section { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        [data-bs-theme="dark"] .onb-prov-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-prov-section-head { display: flex; align-items: center; gap: 11px; padding: 11px 16px; }
-        .onb-prov-section-icon { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
-        .onb-prov-section-icon.system { background: #ece6ff; color: #5a3fd1; }
-        .onb-prov-section-icon.device { background: #dceefe; color: #0c63b0; }
-        .onb-prov-section-icon.physical { background: #d3f0ee; color: #0a716a; }
-        .onb-prov-section-title { font-size: 13.5px; font-weight: 700; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .onb-prov-section-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-prov-section-body { padding: 0 16px 14px; }
-        .onb-prov-subgroup { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: #5a3fd1; margin: 0 0 10px; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 6px; background: #f3edff; }
-        [data-bs-theme="dark"] .onb-prov-subgroup { background: rgba(124,92,252,0.18); color: #c4b5fd; }
-        .onb-prov-input { width: 100%; height: 36px; padding: 6px 10px; font-size: 12px; color: #1f2937; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
-        .onb-prov-input.is-required { border-color: #f4a8a0; background: #fff6f5; }
-        .onb-prov-input.is-autofetched { border-color: #b6e4be; background: #f5fcf6; display: flex; align-items: center; gap: 6px; }
-        .onb-prov-input.is-autofetched i { color: #108548; }
-        [data-bs-theme="dark"] .onb-prov-input { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
-
-        /* ── Stage 2 — Documents ── */
-        .onb-init-banner-state.pending { color: #a4661c; }
-        .onb-init-banner-state.pending .dot { background: #f59e0b; }
-
-        .onb-doc-progress { background: #f3edff; border: 1px solid #e3d6ff; border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; display: flex; align-items: flex-start; gap: 12px; }
-        [data-bs-theme="dark"] .onb-doc-progress { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.28); }
-        .onb-doc-progress-icon { width: 36px; height: 36px; border-radius: 9px; background: linear-gradient(135deg,#7c3aed,#4c1d95); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-doc-progress-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-        .onb-doc-progress-title { font-size: 13px; font-weight: 700; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .onb-doc-progress-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-doc-progress-count { font-size: 12.5px; font-weight: 800; color: #4c1d95; }
-        .onb-doc-progress-bar { height: 4px; background: #ffffff; border-radius: 999px; overflow: hidden; margin: 6px 0; }
-        .onb-doc-progress-fill { height: 100%; background: linear-gradient(90deg,#7c3aed,#4c1d95); border-radius: 999px; }
-        .onb-doc-progress-help { font-size: 10.5px; color: #5b3fd1; margin: 0; }
-
-        .onb-doc-legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 14px; }
-        .onb-doc-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--vz-secondary-color); }
-        .onb-doc-legend-item .dot { width: 7px; height: 7px; border-radius: 50%; }
-
-        .onb-doc-cat { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        [data-bs-theme="dark"] .onb-doc-cat { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-doc-cat-head { display: flex; align-items: center; gap: 11px; padding: 10px 14px; }
-        .onb-doc-cat-icon { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
-        .onb-doc-cat-title { font-size: 13px; font-weight: 700; color: #1f2937; margin: 0; flex-grow: 1; }
-        [data-bs-theme="dark"] .onb-doc-cat-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-doc-cat-count { font-size: 11px; color: var(--vz-secondary-color); }
-        .onb-doc-cat-pct { font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: #eef2f6; color: var(--vz-secondary-color); }
-
-        .onb-doc-row { display: flex; align-items: center; gap: 11px; padding: 10px 14px; border-top: 1px solid #f1eff7; }
-        [data-bs-theme="dark"] .onb-doc-row { border-color: var(--vz-border-color); }
-        .onb-doc-row-icon { width: 32px; height: 32px; border-radius: 8px; background: #f3f0ff; color: #7c3aed; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-doc-row-meta { min-width: 0; flex-grow: 1; }
-        .onb-doc-row-name { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        [data-bs-theme="dark"] .onb-doc-row-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-doc-row-sub { font-size: 11px; color: var(--vz-secondary-color); margin: 1px 0 0; }
-        .onb-doc-status-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; }
-        .onb-doc-status-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
-        .onb-doc-tag { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; background: #ece6ff; color: #5a3fd1; text-transform: uppercase; }
-        .onb-doc-upload-btn { padding: 6px 13px; border-radius: 8px; font-size: 11.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#7c3aed,#5b21b6); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 3px 8px rgba(91,33,182,0.24); }
-        .onb-doc-upload-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(91,33,182,0.32); }
-
-        /* Previous Employment companies */
-        .onb-doc-prev { background: #fff; border: 1px solid #fde8c4; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-        .onb-doc-prev-head { display: flex; align-items: center; gap: 11px; padding: 12px 14px; background: linear-gradient(90deg,#fef3c7,#fffbe7); border-bottom: 1px solid #fde8c4; }
-        [data-bs-theme="dark"] .onb-doc-prev { background: var(--vz-card-bg); border-color: rgba(245,158,11,0.40); }
-        [data-bs-theme="dark"] .onb-doc-prev-head { background: rgba(245,158,11,0.16); border-color: rgba(245,158,11,0.40); }
-        .onb-doc-prev-icon { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg,#f59e0b,#b45309); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-doc-prev-title { font-size: 13px; font-weight: 700; color: #1f2937; margin: 0; }
-        [data-bs-theme="dark"] .onb-doc-prev-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-doc-prev-sub { font-size: 11px; color: #92400e; margin: 1px 0 0; }
-        [data-bs-theme="dark"] .onb-doc-prev-sub { color: #fcd34d; }
-        .onb-doc-prev-pill { margin-left: auto; padding: 3px 10px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 10.5px; font-weight: 700; border: 1px solid #fde8c4; }
-
-        .onb-doc-comp { background: #fffbe7; border: 1px solid #fde8c4; border-radius: 10px; margin: 10px 14px; overflow: hidden; }
-        .onb-doc-comp-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #fde8c4; }
-        .onb-doc-comp-num { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(135deg,#f59e0b,#b45309); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; }
-        .onb-doc-comp-name { font-size: 13px; font-weight: 700; color: #1f2937; margin: 0; flex-grow: 1; }
-        [data-bs-theme="dark"] .onb-doc-comp-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-doc-comp-count { font-size: 10px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: #fef3c7; color: #92400e; }
-        .onb-doc-comp-close { width: 24px; height: 24px; border-radius: 7px; border: 1px solid #fde8c4; background: #fff; color: #b45309; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-        .onb-doc-comp-body { padding: 12px 14px; background: #fff; }
-        [data-bs-theme="dark"] .onb-doc-comp { background: rgba(245,158,11,0.10); }
-        [data-bs-theme="dark"] .onb-doc-comp-body { background: var(--vz-card-bg); }
-        .onb-doc-comp-section { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: #b45309; display: inline-flex; align-items: center; gap: 5px; margin: 0 0 8px; }
-        .onb-doc-comp-section + .onb-doc-comp-section { margin-top: 14px; }
-        .onb-doc-comp-doc { display: flex; align-items: center; gap: 11px; padding: 8px 12px; border: 1px solid #fde8c4; border-radius: 9px; margin-bottom: 6px; background: #fffdf5; }
-        [data-bs-theme="dark"] .onb-doc-comp-doc { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.30); }
-        .onb-doc-comp-doc-icon { width: 26px; height: 26px; border-radius: 7px; background: #fef3c7; color: #b45309; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .onb-doc-comp-doc-name { font-size: 12px; font-weight: 700; color: #1f2937; margin: 0; flex-grow: 1; display: flex; align-items: center; gap: 6px; }
-        [data-bs-theme="dark"] .onb-doc-comp-doc-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-doc-bgv-banner { background: #dceefe; border: 1px solid #b6d6fb; border-radius: 9px; padding: 8px 12px; font-size: 11px; color: #0c63b0; display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
-        [data-bs-theme="dark"] .onb-doc-bgv-banner { background: rgba(12,99,176,0.18); border-color: rgba(12,99,176,0.40); color: #93c5fd; }
-
-        /* Footer */
-        .onb-init-footer { background: #fff; border-top: 1px solid #ece9f6; padding: 12px 22px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-        [data-bs-theme="dark"] .onb-init-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .onb-init-footer-meta { font-size: 11px; color: var(--vz-secondary-color); display: inline-flex; align-items: center; gap: 6px; }
-        .onb-init-btn-ghost { padding: 7px 14px; border-radius: 8px; font-size: 11.5px; font-weight: 600; background: transparent; color: var(--vz-secondary-color); border: 1px solid var(--vz-border-color); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
-        .onb-init-btn-ghost:hover { color: #1f2937; border-color: #9ca3af; }
-        .onb-init-btn-outline { padding: 7px 14px; border-radius: 8px; font-size: 11.5px; font-weight: 600; background: #fff; color: #374151; border: 1px solid #d1d5db; cursor: pointer; }
-        .onb-init-btn-outline:hover { border-color: #7c3aed; color: #4c1d95; }
-        .onb-init-btn-next { padding: 7px 16px; border-radius: 9px; font-size: 11.5px; font-weight: 700; background: linear-gradient(135deg,#7c3aed,#4c1d95); color: #fff; border: none; cursor: pointer; box-shadow: 0 6px 14px rgba(76,29,149,0.30); display: inline-flex; align-items: center; gap: 5px; }
-        .onb-init-btn-next:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(76,29,149,0.38); }
-      `}</style>
 
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
         {/* Header */}
@@ -2314,9 +1857,15 @@ function InitiateOnboardingModal({
               <i className="ri-arrow-left-s-line" /> Previous
             </button>
             <button type="button" className="onb-init-btn-outline">Save Draft</button>
-            <button type="button" className="onb-init-btn-next" onClick={() => setActiveStage(Math.min(6, activeStage + 1))}>
-              Next Stage <i className="ri-arrow-right-s-line" />
-            </button>
+            {activeStage < 6 ? (
+              <button type="button" className="onb-init-btn-next" onClick={() => setActiveStage(activeStage + 1)}>
+                Next Stage <i className="ri-arrow-right-s-line" />
+              </button>
+            ) : (
+              <button type="button" className="onb-init-btn-complete" onClick={onClose}>
+                <i className="ri-checkbox-circle-line" /> Complete Onboarding
+              </button>
+            )}
           </div>
         </div>
       </ModalBody>

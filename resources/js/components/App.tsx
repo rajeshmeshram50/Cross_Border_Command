@@ -41,7 +41,7 @@ import HrDashboard from '../pages/HrDashboard';
 import HrEmployees from '../pages/HrEmployees';
 import HrRecruitment from '../pages/HrRecruitment';
 import HrCandidates from '../pages/HrCandidates';
-import HrEmployeeOnboarding from '../pages/HrEmployeeOnboarding';
+import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
 import EmployeePermissions from '../pages/EmployeePermissions';
 import EmployeeProfile from '../pages/EmployeeProfile';
 
