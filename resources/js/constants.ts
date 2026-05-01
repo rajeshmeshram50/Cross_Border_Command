@@ -1,4 +1,4 @@
-import type { MenuItem, MenuGroup } from './types';
+import type { MenuItem, MenuGroup, UserRole } from './types';
 
 export const MASTER_GROUPS: MenuGroup[] = [
   {
@@ -163,9 +163,15 @@ export const HR_GROUPS: MenuGroup[] = [
   },
 ];
 
+// Role alias — keeps menu-item declarations readable. Covers every tenant
+// user type plus super_admin, so any item declared with this role list is
+// visible to everyone (visibility within the group is then narrowed by
+// per-module permission flags inside Sidebar.canView).
+const ALL_TENANT_ROLES: UserRole[] = ['super_admin', 'client_admin', 'client_user', 'branch_user', 'employee'];
+
 export const MENU_ITEMS: MenuItem[] = [
-  { id: '', section: 'MAIN', label: '', icon: '', roles: ['super_admin', 'client_admin', 'branch_user'] },
-  { id: 'dashboard', icon: 'LayoutGrid', label: 'Dashboard', roles: ['super_admin', 'client_admin', 'branch_user'] },
+  { id: '', section: 'MAIN', label: '', icon: '', roles: ALL_TENANT_ROLES },
+  { id: 'dashboard', icon: 'LayoutGrid', label: 'Dashboard', roles: ALL_TENANT_ROLES },
 
   { id: '', section: 'MANAGEMENT', label: '', icon: '', roles: ['super_admin'] },
   { id: 'clients', icon: 'Building2', label: 'Clients', roles: ['super_admin'] },
@@ -174,33 +180,36 @@ export const MENU_ITEMS: MenuItem[] = [
   { id: 'plans', icon: 'CreditCard', label: 'Plans', roles: ['super_admin'] },
   { id: 'payments', icon: 'IndianRupee', label: 'Payments', roles: ['super_admin'] },
 
-  { id: '', section: 'OPERATIONS', label: '', icon: '', roles: ['client_admin', 'branch_user'] },
+  { id: '', section: 'OPERATIONS', label: '', icon: '', roles: ['client_admin'] },
   { id: 'branches', icon: 'GitBranch', label: 'Branches', roles: ['client_admin'] },
-  { id: 'employees', icon: 'UserCheck', label: 'Employees', roles: ['client_admin', 'branch_user'] },
+  // Legacy top-level "Employees" menu was removed — HR > Employees (under
+  // the HR group) is the single source of truth now.
 
   { id: '', section: 'BILLING', label: '', icon: '', roles: ['client_admin'] },
   { id: 'my-plan', icon: 'CreditCard', label: 'My Plan', roles: ['client_admin'] },
 
-  { id: '', section: 'MASTER DATA', label: '', icon: '', roles: ['super_admin', 'client_admin', 'branch_user'] },
+  { id: '', section: 'MASTER DATA', label: '', icon: '', roles: ALL_TENANT_ROLES },
   {
     id: 'master',
     icon: 'Database',
     label: 'Master',
-    roles: ['super_admin', 'client_admin', 'branch_user'],
+    roles: ALL_TENANT_ROLES,
     groups: MASTER_GROUPS,
   },
   {
     id: 'hr',
     icon: 'Users',
     label: 'HR',
-    roles: ['super_admin', 'client_admin', 'branch_user'],
+    roles: ALL_TENANT_ROLES,
     groups: HR_GROUPS,
   },
 
+  // Permissions panel — only admins should grant. Employees never manage
+  // their peers' access, so no `employee` here.
   { id: '', section: 'ACCESS CONTROL', label: '', icon: '', roles: ['super_admin', 'client_admin', 'branch_user'] },
   { id: 'permissions', icon: 'ShieldCheck', label: 'Permissions', roles: ['super_admin', 'client_admin', 'branch_user'] },
 
-  { id: '', section: 'SYSTEM', label: '', icon: '', roles: ['super_admin', 'client_admin', 'branch_user'] },
+  { id: '', section: 'SYSTEM', label: '', icon: '', roles: ALL_TENANT_ROLES },
   { id: 'settings', icon: 'Settings', label: 'Settings', roles: ['super_admin'] },
-  { id: 'profile', icon: 'UserCircle', label: 'Profile', roles: ['super_admin', 'client_admin', 'branch_user'] },
+  { id: 'profile', icon: 'UserCircle', label: 'Profile', roles: ALL_TENANT_ROLES },
 ];

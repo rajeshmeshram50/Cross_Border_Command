@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
+use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OrganizationTypeController;
 use App\Http\Controllers\Api\PlanController;
@@ -54,9 +55,19 @@ Route::middleware('auth:sanctum')->group(function () {
     // GET    /api/master/{slug}/{id}     show
     // PUT    /api/master/{slug}/{id}     update
     // DELETE /api/master/{slug}/{id}     delete
-    Route::get   ('/master/{slug}',         [MasterController::class, 'list']);
-    Route::post  ('/master/{slug}',         [MasterController::class, 'store']);
-    Route::get   ('/master/{slug}/{id}',    [MasterController::class, 'show']);
+    // Employees — full CRUD + auto-numbered EMP-### + welcome-mail provisioning.
+    // Declared BEFORE the generic /master/{slug} routes so apiResource params
+    // resolve cleanly.
+    Route::get   ('/employees/next-code', [EmployeeController::class, 'nextCode']);
+    Route::get   ('/employees/managers',  [EmployeeController::class, 'managers']);
+    Route::apiResource('employees', EmployeeController::class);
+
+    Route::get   ('/master/{slug}',           [MasterController::class, 'list']);
+    Route::post  ('/master/{slug}',           [MasterController::class, 'store']);
+    // Next auto-generated code for masters that use a prefixed sequence (e.g. DEPT-001).
+    // Must be declared BEFORE `/master/{slug}/{id}` so `next-code` isn't captured as an id.
+    Route::get   ('/master/{slug}/next-code', [MasterController::class, 'nextCode']);
+    Route::get   ('/master/{slug}/{id}',      [MasterController::class, 'show']);
     Route::put   ('/master/{slug}/{id}',    [MasterController::class, 'update']);
     Route::delete('/master/{slug}/{id}',    [MasterController::class, 'destroy']);
 

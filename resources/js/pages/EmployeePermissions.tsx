@@ -16,7 +16,7 @@ const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permi
 // EmployeeRow is duplicated here so this page has zero hard dependency on the
 // HR module's internal types — keeps it usable from any caller.
 export interface EmployeePermsTarget {
-  id: string;          // EMP-1063 — string for mock parity; numeric portion is what hits the backend
+  id: string;          // EMP-1063 — display identifier; not used to address the backend.
   name: string;
   email: string;
   initials?: string;
@@ -26,6 +26,11 @@ export interface EmployeePermsTarget {
   primaryRole?: string;
   ancillaryRole?: string | string[] | null;
   manager?: string;
+  // Backend identifiers — required for permission save to target the correct
+  // user. `user_id` is the FK to the login account; `_raw` is the original
+  // ApiEmployee shape smuggled through by HrEmployees apiToRow().
+  user_id?: number;
+  _raw?: { user_id?: number | null } & Record<string, any>;
 }
 
 interface Props {
@@ -41,8 +46,19 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // EMP-1063 → 1063. If the id has no digits, the backend call is skipped.
-  const numericId = Number(String(employeeId).replace(/\D/g, ''));
+  // The backend permission API targets the LOGIN user id (users.id), not
+  // the employee row id. Source priority:
+  //   1) employee.user_id            — explicit field if caller set it
+  //   2) employee._raw.user_id       — what HrEmployees.apiToRow() smuggles
+  //   3) digit-strip of the URL slug — last-resort fallback for legacy
+  //      mock pages that pass numeric ids in the URL.
+  // Without (1) or (2) the save call hits the wrong user and the backend
+  // rejects with "You can only assign permissions to users you manage".
+  const numericId = Number(
+    employee?.user_id
+      ?? employee?._raw?.user_id
+      ?? String(employeeId).replace(/\D/g, '')
+  );
 
   useEffect(() => {
     let cancelled = false;

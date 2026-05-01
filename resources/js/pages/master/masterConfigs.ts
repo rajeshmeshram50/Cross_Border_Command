@@ -18,6 +18,8 @@ export type FieldDef = {
   auto?: boolean;           // server-generated value (e.g. auto-numbered code); rendered read-only
   hint?: string;            // small italic helper text shown next to the label
   autogen?: (rows: any[]) => string; // optional client-side preview of an auto-generated value
+  autogenApi?: boolean;     // when true, MasterPage fetches `/master/{slug}/next-code` on form-open
+                            // and uses that value (DB-derived, tenant-scoped) instead of `autogen()`
   noneLabel?: string;       // explicit "none/empty" option label for ref dropdowns (e.g. "— None (Top Level) —")
   accept?: string;          // file input accept attribute, e.g. ".pdf,.jpg,.jpeg,.png"
   maxMb?: number;           // file input max size in MB (rendered as hint, validated client-side)
@@ -245,6 +247,10 @@ const C: Record<string, MasterConfig> = {
     fields: [
       { n: 'name', l: 'Department Name', t: 'text', r: true, p: 'e.g. Software Development' },
       { n: 'code', l: 'Department Code', t: 'text', r: true, p: 'e.g. DEPT-001',
+        autogenApi: true,
+        // Fallback used until /next-code resolves (or if it errors out). Same
+        // formula the backend applies, but computed against the rows already
+        // loaded into the page.
         autogen: (records: any[]) => {
           const max = records.reduce((m: number, r: any) => {
             const match = /^DEPT-(\d+)$/i.exec(String(r.code || '').trim());

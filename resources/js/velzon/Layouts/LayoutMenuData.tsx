@@ -42,7 +42,6 @@ const slugToPath = (slug: string): string => {
     case "plans":       return "/plans";
     case "payments":    return "/payments";
     case "branches":    return "/branches";
-    case "employees":   return "/employees";
     case "my-plan":     return "/my-plan";
     case "permissions": return "/permissions";
     case "settings":    return "/settings";
@@ -61,6 +60,7 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.employee":    return "/hr/employees";
     case "hr.recruitment": return "/hr/recruitment";
     case "hr.exit":        return "/hr/exit-management";
+    case "hr.onboarding":  return "/hr/employee-onboarding";
     default:               return "/hr";
   }
 };
@@ -76,9 +76,15 @@ const Navdata = () => {
   const toggle = toggleMenu;
 
   const isSuperAdmin = user?.user_type === "super_admin";
-  const isClient = user?.user_type === "client_admin" || user?.user_type === "branch_user";
+  // Any non-super tenant user — they all inherit the org's plan, so an
+  // expired plan blocks all of them equally. Includes employees + client
+  // users that were previously omitted.
+  const isTenantUser = user?.user_type === "client_admin"
+    || user?.user_type === "client_user"
+    || user?.user_type === "branch_user"
+    || user?.user_type === "employee";
   const planExpiredOrMissing =
-    isClient && user?.plan && (!user.plan.has_plan || user.plan.expired);
+    isTenantUser && user?.plan && (!user.plan.has_plan || user.plan.expired);
   const perms = user?.permissions || {};
   const defaultSlugs = ["dashboard", "profile", "my-plan"];
   const roleOnlySlugs = ["clients", "plans", "payments", "settings", "permissions"];

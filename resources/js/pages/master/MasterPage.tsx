@@ -74,6 +74,11 @@ function MasterPageInner({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Server-derived auto-generated values (e.g. next DEPT-### code) keyed by
+  // field name. Populated when openAdd() fires for any field with
+  // `autogenApi: true`. Cleared on master switch / modal close so a stale
+  // value doesn't bleed into the next form open.
+  const [apiAutogen, setApiAutogen] = useState<Record<string, string>>({});
   const [searchInput, setSearchInput] = useState('');
   // Designation-master-specific filter state. Only used when cfg.slug === 'designations'.
   const [dsnStatusFilter, setDsnStatusFilter] = useState<string>('all');
@@ -230,6 +235,7 @@ function MasterPageInner({
     setViewOnly(false);
     setModalOpen(false);
     setRecords([]);
+    setApiAutogen({});
 
     const loadRecords = api.get(masterEndpoint(cfg)).then(r => {
       if (!aborted) setRecords(Array.isArray(r.data) ? r.data : []);
@@ -364,9 +370,28 @@ function MasterPageInner({
     setEditingId(null);
     setViewOnly(false);
     setSublistValues({});
+    setApiAutogen({});
     setModalOpen(true);
     // Refresh referenced masters so dropdowns reflect anything added elsewhere.
     fetchRefs();
+    // Pre-fill any field flagged `autogenApi` from the server. The backend
+    // returns a tenant-scoped next code (e.g. DEPT-001) computed straight
+    // from the DB, so the value reflects what `store()` will accept rather
+    // than what the page happens to have loaded.
+    const apiFields = cfg.fields.filter(f => (f as any).autogenApi);
+    if (apiFields.length > 0) {
+      api.get(`${masterEndpoint(cfg)}/next-code`)
+        .then(r => {
+          const code = r?.data?.code;
+          if (!code) return;
+          // Currently only one such field per master ('code'); apply the
+          // returned value to every autogenApi field by name.
+          const next: Record<string, string> = {};
+          for (const f of apiFields) next[f.n] = String(code);
+          setApiAutogen(next);
+        })
+        .catch(() => { /* fall back to client-side autogen() */ });
+    }
   };
   const openEdit = (row: any, readonly = false) => {
     setFieldErrors({});
@@ -1339,7 +1364,7 @@ function MasterPageInner({
                   style={{
                     borderRadius: 12,
                     border: '1px solid var(--vz-border-color)',
-                    background: '#ffffff',
+                    background: 'var(--vz-card-bg)',
                     boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
                     padding: '14px 16px',
                     position: 'relative',
@@ -1635,7 +1660,7 @@ function MasterPageInner({
                     </div>
                   )}
                   <Row className="g-2">
-                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next }))))}
+                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next })), apiAutogen))}
                   </Row>
                 </div>
               );
@@ -3159,6 +3184,7 @@ function renderField(
   allRecords: any[] = [],
   sublistValues: Record<string, any[]> = {},
   onSublistChange: (field: FieldDef, next: any[]) => void = () => {},
+  apiAutogen: Record<string, string> = {},
 ): React.ReactNode {
   if (f.sec) {
     return (
@@ -3197,8 +3223,14 @@ function renderField(
   // value is computed from existing records, on edit we keep whatever was
   // saved. Either way the input is rendered read-only so users can't override
   // the auto-managed value.
-  const isAutogen = !!f.autogen && !viewOnly;
-  const autogenVal = (isAutogen && editing == null) ? f.autogen!(allRecords) : '';
+  const isAutogen = (!!f.autogen || !!f.autogenApi) && !viewOnly;
+  // Server-derived value (from /master/{slug}/next-code) wins when present.
+  // Otherwise fall back to the client-side autogen() preview so the field
+  // never renders empty between modal-open and the API response.
+  const apiAutogenVal = apiAutogen[f.n];
+  const autogenVal = (isAutogen && editing == null)
+    ? (apiAutogenVal || (f.autogen ? f.autogen(allRecords) : ''))
+    : '';
   const defaultVal = (isAutogen && editing == null) ? autogenVal : (editing?.[f.n] ?? '');
   const err = fieldErrors[f.n];
   const onFieldChange = () => clearFieldError(f.n);

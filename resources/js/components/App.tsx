@@ -21,7 +21,6 @@ import Clients from '../pages/Clients';
 import ClientForm from '../pages/ClientForm';
 import Branches from '../pages/Branches';
 import UsersPage from '../pages/UsersPage';
-import Employees from '../pages/Employees';
 import Plans from '../pages/Plans';
 import Payments from '../pages/Payments';
 import Permissions from '../pages/Permissions';
@@ -43,6 +42,7 @@ import HrEmployees from '../pages/HrEmployees';
 import HrRecruitment from '../pages/HrRecruitment';
 import HrCandidates from '../pages/HrCandidates';
 import HrExitManagement from '../pages/HrExitManagement';
+import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
 import EmployeePermissions from '../pages/EmployeePermissions';
 import EmployeeProfile from '../pages/EmployeeProfile';
 
@@ -73,9 +73,9 @@ const getPagePath = (page: string, data?: any): string => {
     case 'branch-view': return `/branches/${data?.branchId}`;
     case 'branch-users': return '/branches/users';
     case 'client-users': return '/clients/users';
-    case 'employees': return '/employees';
     case 'hr-employees': return '/hr/employees';
     case 'hr-recruitment': return '/hr/recruitment';
+    case 'hr-employee-onboarding': return '/hr/employee-onboarding';
     case 'employee-permissions': return `/hr/employees/${data?.employeeId}/permissions`;
     case 'employee-profile':     return `/hr/employees/${data?.employeeId}/profile`;
     case 'plans': return '/plans';
@@ -275,7 +275,6 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/branches/:id/edit" element={<BranchFormWrapper />} />
               <Route path="/branches/users" element={<UsersPage />} />
               <Route path="/clients/users" element={<UsersPage />} />
-              <Route path="/employees" element={<Employees />} />
               <Route path="/plans" element={<Plans onNavigate={navigateFn} />} />
               <Route path="/plans/new" element={<AddPlanWrapper />} />
               <Route path="/plans/:id/edit" element={<AddPlanWrapper />} />
@@ -308,6 +307,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr/recruitment" element={<HrRecruitment />} />
               <Route path="/hr/recruitment/:id/candidates" element={<HrCandidates />} />
               <Route path="/hr/exit-management" element={<HrExitManagement />} />
+              <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
               <Route path="/hr/employees/:id/profile" element={<EmployeeProfileWrapper />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

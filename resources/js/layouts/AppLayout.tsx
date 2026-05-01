@@ -29,7 +29,6 @@ const getPageFromPath = (pathname: string): string => {
     'dashboard': 'dashboard',
     'clients': 'clients',
     'branches': 'branches',
-    'employees': 'employees',
     'plans': 'plans',
     'payments': 'payments',
     'permissions': 'permissions',

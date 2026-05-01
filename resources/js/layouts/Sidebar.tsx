@@ -39,8 +39,14 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perms = user?.permissions || {};
   const defaultSlugs = ['dashboard', 'profile', 'my-plan'];
-  const isClient = user?.user_type === 'client_admin' || user?.user_type === 'branch_user';
-  const planExpiredOrMissing = isClient && user?.plan && (!user.plan.has_plan || user.plan.expired);
+  // Any non-super tenant user — client_admin, client_user, branch_user, or
+  // employee. They all inherit the organization's plan, so when the plan
+  // lapses they all lose access in the same way.
+  const isTenantUser = user?.user_type === 'client_admin'
+    || user?.user_type === 'client_user'
+    || user?.user_type === 'branch_user'
+    || user?.user_type === 'employee';
+  const planExpiredOrMissing = isTenantUser && user?.plan && (!user.plan.has_plan || user.plan.expired);
 
   const canView = (id: string) => {
     if (!id) return false;

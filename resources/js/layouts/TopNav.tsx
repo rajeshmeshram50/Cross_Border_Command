@@ -30,8 +30,11 @@ export default function TopNav({ current, onNavigate }: Props) {
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perms = user?.permissions || {};
   const defaultSlugs = ['dashboard', 'profile', 'my-plan'];
-  const isClient = user?.user_type === 'client_admin' || user?.user_type === 'branch_user';
-  const planExpiredOrMissing = isClient && user?.plan && (!user.plan.has_plan || user.plan.expired);
+  const isTenantUser = user?.user_type === 'client_admin'
+    || user?.user_type === 'client_user'
+    || user?.user_type === 'branch_user'
+    || user?.user_type === 'employee';
+  const planExpiredOrMissing = isTenantUser && user?.plan && (!user.plan.has_plan || user.plan.expired);
 
   const canView = (id: string) => {
     if (!id) return false;
