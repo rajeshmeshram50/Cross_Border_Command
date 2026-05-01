@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Button, Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
+import ComingSoonShell from '../components/ComingSoonShell';
 
 // Custom portal-based modal — renders directly to document.body so it always
 // escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
@@ -2246,9 +2247,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         </>
       )}
 
-      {/* ── Tab: Attendance ── */}
+      {/* ── Tab: Attendance — Coming Soon ── */}
       {tab === 'attendance' && (
-        <>
+        <ComingSoonShell title="Attendance" subtitle="Punch-in, biometric sync, compliance score">
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl><KpiTile label="Present Days"    value={<AnimatedNumber value={14} />}            sub="This month"      icon="ri-checkbox-circle-line" gradient={GRAD_SUCCESS} tint="#ecfaf3" /></Col>
             <Col xl><KpiTile label="Late Marks"      value={<AnimatedNumber value={1} />}             sub="This month"      icon="ri-time-line"            gradient={GRAD_WARNING} tint="#fff7e6" /></Col>
@@ -2549,12 +2550,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </Col>
           </Row>
-        </>
+        </ComingSoonShell>
       )}
 
       {/* ── Tab: Evidence Vault ── */}
       {tab === 'vault' && (
-        <>
+        <ComingSoonShell title="Evidence Vault" subtitle="Document repository, signed agreements, ID uploads">
           {/* Hero strip — "Evidence Vault — {Name} Document Repository" + KPIs */}
           <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
             <div
@@ -2814,12 +2815,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </div>
           ))}
-        </>
+        </ComingSoonShell>
       )}
 
       {/* ── Tab: Payroll Details ── */}
       {tab === 'payroll' && (
-        <>
+        <ComingSoonShell title="Payroll" subtitle="Salary breakdown, payment history, tax sheets">
           {/* Sub-tab pill — Payroll Summary (indigo) | Payment Details (green).
               Same compact strap shape as the Evidence Vault subtabs. */}
           <Row className="g-2 mb-3">
@@ -3299,12 +3300,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </>
           )}
-        </>
+        </ComingSoonShell>
       )}
 
       {/* ── Tab: Expense Details ── */}
       {tab === 'expense' && (
-        <>
+        <ComingSoonShell title="Expense Reports" subtitle="Reimbursement requests, approvals, audit trail">
           {/* Expense Overview hero — same shape as Evidence Vault / Payroll Summary. */}
           <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
             <div
@@ -3614,7 +3615,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </div>
           </div>
-        </>
+        </ComingSoonShell>
       )}
 
       </div>

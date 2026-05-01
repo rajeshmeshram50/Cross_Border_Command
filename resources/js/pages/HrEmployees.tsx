@@ -288,13 +288,18 @@ const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { bg: string; fg: stri
 // Reuse the Clients KPI card recipe — gradient strip on top + 44×44 icon box,
 // 11px uppercase label, 26px value. Keep gradients distinct per status so the
 // 6 tiles read at a glance.
+// `comingSoon` flag taggs tiles whose underlying signal isn't wired to a real
+// subsystem yet — On Leave needs a Leave module; High Attention / Probation
+// need attendance + probation tracking. The list keeps the visual at six
+// tiles (the design call) and renders a small "SOON" badge on those three so
+// users know why they always read 0.
 const KPI_CARDS = [
-  { key: 'total',          label: 'Total Employees', icon: 'ri-team-line',           gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
-  { key: 'active',         label: 'Active',          icon: 'ri-checkbox-circle-fill',gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-  { key: 'on_leave',       label: 'On Leave',        icon: 'ri-time-line',           gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-  { key: 'high_attention', label: 'High Attention',  icon: 'ri-error-warning-fill',  gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
-  { key: 'probation',      label: 'Probation',       icon: 'ri-shield-check-fill',   gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)' },
-  { key: 'inactive',       label: 'Inactive',        icon: 'ri-close-circle-fill',   gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+  { key: 'total',          label: 'Total Employees', icon: 'ri-team-line',           gradient: 'linear-gradient(135deg,#405189,#6691e7)', comingSoon: false },
+  { key: 'active',         label: 'Active',          icon: 'ri-checkbox-circle-fill',gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)', comingSoon: false },
+  { key: 'on_leave',       label: 'On Leave',        icon: 'ri-time-line',           gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', comingSoon: true },
+  { key: 'high_attention', label: 'High Attention',  icon: 'ri-error-warning-fill',  gradient: 'linear-gradient(135deg,#f06548,#f4907b)', comingSoon: true },
+  { key: 'probation',      label: 'Probation',       icon: 'ri-shield-check-fill',   gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)', comingSoon: true },
+  { key: 'inactive',       label: 'Inactive',        icon: 'ri-close-circle-fill',   gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)', comingSoon: false },
 ] as const;
 
 type ExpiryDays = 3 | 7 | 15;
@@ -1511,16 +1516,40 @@ export default function HrEmployees() {
                     }}
                   >
                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                    {/* "SOON" pill — pinned to the top-right corner of tiles
+                        whose underlying signal isn't wired yet (Leave,
+                        Attendance, Probation). Lets users see the slot
+                        without pretending the 0 is real. */}
+                    {(k as any).comingSoon && (
+                      <span
+                        title="Awaiting backend — counts will start populating once the related module ships"
+                        style={{
+                          position: 'absolute', top: 8, right: 8,
+                          background: 'linear-gradient(135deg,#f06548,#ff8a5b)',
+                          color: '#fff', fontSize: 9, fontWeight: 800,
+                          letterSpacing: '0.12em', textTransform: 'uppercase',
+                          padding: '3px 7px', borderRadius: 999,
+                          boxShadow: '0 2px 6px rgba(240,101,72,0.35)',
+                        }}
+                      >
+                        Soon
+                      </span>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
                       <div className="min-w-0">
                         <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
                           {k.label}
                         </p>
-                        <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                        <h3 style={{
+                          fontSize: 26, fontWeight: 800,
+                          color: 'var(--vz-heading-color, var(--vz-body-color))',
+                          margin: 0, lineHeight: 1,
+                          opacity: (k as any).comingSoon ? 0.55 : 1,
+                        }}>
                           <AnimatedNumber value={(counts as any)[k.key]} />
                         </h3>
                       </div>
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)', opacity: (k as any).comingSoon ? 0.6 : 1 }}>
                         <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
                       </div>
                     </div>
