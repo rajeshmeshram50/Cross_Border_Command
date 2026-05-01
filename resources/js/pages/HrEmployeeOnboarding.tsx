@@ -1,6 +1,33 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
-import { MasterSelect, MasterFormStyles } from './master/masterFormKit';
+import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
+
+// ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
+const OPT = (...vals: string[]) => vals.map(v => ({ value: v, label: v }));
+const ONB_GENDER       = OPT('Male', 'Female', 'Other');
+const ONB_NATIONALITY  = OPT('Indian', 'Other');
+const ONB_NUMBER_SERIES = OPT('Default Number Series');
+const ONB_EMP_STATUS   = OPT('Active', 'On Probation');
+const ONB_LEGAL_ENTITY = OPT('Cross Border Command Pvt Ltd', 'CBC International LLP');
+const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
+const ONB_PROBATION    = OPT('Default Probation Policy', '3 Months', '6 Months');
+const ONB_NOTICE       = OPT('Default Notice Period', '30 Days', '60 Days', '90 Days');
+const ONB_LEAVE_PLAN   = OPT('Leave Policy');
+const ONB_HOLIDAY      = OPT('Holiday Calendar');
+const ONB_SHIFT        = OPT('General Shift', 'Morning Shift', 'Night Shift');
+const ONB_WEEKLY_OFF   = OPT('Week Off Policy');
+const ONB_TIME_TRACK   = OPT('Attendance Capture');
+const ONB_PENALIZE     = OPT('Tracking Policy');
+const ONB_OVERTIME     = OPT('Not applicable', 'Applicable');
+const ONB_EXPENSE      = OPT('Default Expense Policy');
+const ONB_YES_NO       = OPT('No', 'Yes');
+const ONB_ACCESS_CARD  = OPT('Not Issued', 'Issued');
+const ONB_PAY_GROUP    = OPT('Default pay group');
+const ONB_PERIOD       = OPT('Per annum', 'Per month');
+const ONB_SAL_STRUCT   = OPT('Range Based', 'Fixed');
+const ONB_TAX_REGIME   = OPT('New Regime (115BAC)', 'Old Regime');
+const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
+const ONB_PF_DEDUCT    = OPT('Employee + Employer', 'Employee only');
 
 // ── Evidence Vault — mock document catalogue (mirrors HrEmployees) ──────────
 type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
@@ -1659,6 +1686,67 @@ function InitiateOnboardingModal({
         .onb-ver-activate-btn { padding: 14px 20px; border-radius: 11px; font-size: 13px; font-weight: 700; color: #fff; background: linear-gradient(135deg,#10b981,#059669); border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 8px 18px rgba(5,150,105,0.30); transition: all .15s ease; }
         .onb-ver-activate-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(5,150,105,0.38); }
 
+        /* ── Flag Issue Modal ── */
+        .onb-flag-modal .modal-dialog { max-width: 520px; }
+        .onb-flag-content { border-radius: 16px; overflow: hidden; border: none; box-shadow: 0 24px 60px rgba(0,0,0,0.30); }
+        .onb-flag-header { background: linear-gradient(135deg,#ef4444 0%,#dc2626 100%); color: #fff; padding: 22px 24px 20px; position: relative; }
+        .onb-flag-header .close-btn { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 8px; background: rgba(255,255,255,0.18); border: none; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s ease; }
+        .onb-flag-header .close-btn:hover { background: rgba(255,255,255,0.30); }
+        .onb-flag-icon { width: 48px; height: 48px; border-radius: 12px; background: rgba(255,255,255,0.22); display: inline-flex; align-items: center; justify-content: center; color: #fff; margin-bottom: 12px; }
+        .onb-flag-title { font-size: 19px; font-weight: 800; margin: 0; color: #fff; }
+        .onb-flag-sub { font-size: 12.5px; color: rgba(255,255,255,0.92); margin: 4px 0 0; }
+        .onb-flag-body { padding: 20px 24px 8px; background: #fff; }
+        [data-bs-theme="dark"] .onb-flag-body { background: var(--vz-card-bg); }
+        .onb-flag-label { font-size: 11px; font-weight: 700; color: var(--vz-secondary-color); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 8px; }
+        .onb-flag-section + .onb-flag-section { margin-top: 16px; }
+        .onb-flag-types { display: flex; flex-wrap: wrap; gap: 8px; }
+        .onb-flag-type { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border: 1px solid var(--vz-border-color); border-radius: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600; color: var(--vz-heading-color, var(--vz-body-color)); background: #fff; transition: border-color .15s ease, background .15s ease; }
+        [data-bs-theme="dark"] .onb-flag-type { background: var(--vz-card-bg); }
+        .onb-flag-type:hover { border-color: rgba(239,68,68,0.55); }
+        .onb-flag-type input[type="radio"] { accent-color: #ef4444; cursor: pointer; }
+        .onb-flag-type.is-active { border-color: #ef4444; background: rgba(239,68,68,0.06); color: #b91c1c; }
+        [data-bs-theme="dark"] .onb-flag-type.is-active { background: rgba(239,68,68,0.18); color: #fca5a5; }
+        .onb-flag-textarea { width: 100%; min-height: 96px; padding: 10px 12px; border: 1px solid var(--vz-border-color); border-radius: 8px; font-size: 12.5px; color: var(--vz-heading-color, var(--vz-body-color)); background: #fff; resize: vertical; transition: border-color .15s ease, box-shadow .15s ease; font-family: inherit; }
+        [data-bs-theme="dark"] .onb-flag-textarea { background: var(--vz-card-bg); }
+        .onb-flag-textarea::placeholder { color: var(--vz-secondary-color); opacity: 0.7; }
+        .onb-flag-textarea:focus { outline: none; border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
+        .onb-flag-req { color: #ef4444; margin-left: 2px; }
+        .onb-flag-footer { display: flex; gap: 12px; padding: 16px 24px 22px; background: #fff; }
+        [data-bs-theme="dark"] .onb-flag-footer { background: var(--vz-card-bg); }
+        .onb-flag-cancel { flex: 1; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--vz-border-color); background: #fff; color: var(--vz-heading-color, var(--vz-body-color)); font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
+        [data-bs-theme="dark"] .onb-flag-cancel { background: var(--vz-card-bg); }
+        .onb-flag-cancel:hover { background: var(--vz-light); }
+        .onb-flag-submit { flex: 1.2; padding: 12px 16px; border-radius: 10px; border: none; background: linear-gradient(135deg,#ef4444,#dc2626); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 8px 18px rgba(220,38,38,0.30); transition: transform .15s ease, box-shadow .15s ease; }
+        .onb-flag-submit:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(220,38,38,0.38); }
+        .onb-flag-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        /* ── Activate Employee Modal ── */
+        .onb-act-modal .modal-dialog { max-width: 500px; }
+        .onb-act-content { border-radius: 16px; overflow: hidden; border: none; box-shadow: 0 24px 60px rgba(0,0,0,0.30); }
+        .onb-act-header { background: linear-gradient(135deg,#10b981 0%,#059669 100%); color: #fff; padding: 22px 24px 20px; position: relative; }
+        .onb-act-header .close-btn { position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 8px; background: rgba(255,255,255,0.18); border: none; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s ease; }
+        .onb-act-header .close-btn:hover { background: rgba(255,255,255,0.30); }
+        .onb-act-icon { width: 48px; height: 48px; border-radius: 12px; background: rgba(255,255,255,0.22); display: inline-flex; align-items: center; justify-content: center; color: #fff; margin-bottom: 12px; }
+        .onb-act-title { font-size: 19px; font-weight: 800; margin: 0; color: #fff; }
+        .onb-act-sub { font-size: 12.5px; color: rgba(255,255,255,0.92); margin: 4px 0 0; }
+        .onb-act-body { padding: 18px 24px 4px; background: #fff; }
+        [data-bs-theme="dark"] .onb-act-body { background: var(--vz-card-bg); }
+        .onb-act-empcard { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid #b8e8d2; background: #f5fcf8; border-radius: 12px; margin-bottom: 14px; }
+        [data-bs-theme="dark"] .onb-act-empcard { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.32); }
+        .onb-act-empcheck { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg,#10b981,#059669); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .onb-act-empname { font-size: 13.5px; font-weight: 800; color: var(--vz-heading-color, var(--vz-body-color)); margin: 0; }
+        .onb-act-empmeta { font-size: 11.5px; color: var(--vz-secondary-color); margin: 2px 0 0; line-height: 1.45; }
+        .onb-act-list { list-style: none; padding: 0; margin: 0 0 6px; display: flex; flex-direction: column; gap: 8px; }
+        .onb-act-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--vz-heading-color, var(--vz-body-color)); }
+        .onb-act-list li i { color: #10b981; font-size: 14px; margin-top: 1px; flex-shrink: 0; }
+        .onb-act-footer { display: flex; gap: 12px; padding: 16px 24px 22px; background: #fff; }
+        [data-bs-theme="dark"] .onb-act-footer { background: var(--vz-card-bg); }
+        .onb-act-cancel { flex: 1; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--vz-border-color); background: #fff; color: var(--vz-heading-color, var(--vz-body-color)); font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
+        [data-bs-theme="dark"] .onb-act-cancel { background: var(--vz-card-bg); }
+        .onb-act-cancel:hover { background: var(--vz-light); }
+        .onb-act-confirm { flex: 1.2; padding: 12px 16px; border-radius: 10px; border: none; background: linear-gradient(135deg,#10b981,#059669); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 8px 18px rgba(5,150,105,0.30); transition: transform .15s ease, box-shadow .15s ease; }
+        .onb-act-confirm:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(5,150,105,0.38); }
+
         /* ── Stage 4 — Payroll ── */
         .onb-pay-progress { background: #fef3c7; border: 1px solid #fde68a; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 12px; }
         [data-bs-theme="dark"] .onb-pay-progress { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.40); }
@@ -2026,15 +2114,15 @@ function InitiateOnboardingModal({
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Gender</label>
-                    <select className="onb-init-select"><option>Select gender</option><option>Male</option><option>Female</option><option>Other</option></select>
+                    <MasterSelect options={ONB_GENDER} placeholder="Select gender" />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Date of Birth <span className="req">*</span></label>
-                    <input className="onb-init-input is-required" placeholder="mm/dd/yyyy" />
+                    <MasterDatePicker placeholder="Select date of birth" />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Nationality</label>
-                    <select className="onb-init-select"><option>Indian</option><option>Other</option></select>
+                    <MasterSelect options={ONB_NATIONALITY} defaultValue="Indian" />
                   </Col>
                 </Row>
 
@@ -2050,7 +2138,7 @@ function InitiateOnboardingModal({
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Number Series</label>
-                    <select className="onb-init-select"><option>Default Number Series</option></select>
+                    <MasterSelect options={ONB_NUMBER_SERIES} defaultValue="Default Number Series" />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Employee ID <span className="auto">AUTO-FILLED</span></label>
@@ -2058,7 +2146,7 @@ function InitiateOnboardingModal({
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Employee Status</label>
-                    <select className="onb-init-select"><option>Active</option><option>On Probation</option></select>
+                    <MasterSelect options={ONB_EMP_STATUS} defaultValue="Active" />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Blood Group</label>
@@ -2091,15 +2179,15 @@ function InitiateOnboardingModal({
 
                 <p className="onb-init-subgroup">Organisational Details</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Legal Entity</label><select className="onb-init-select"><option>Select entity</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Location</label><select className="onb-init-select"><option>Pune HQ</option><option>Mumbai</option><option>Bengaluru</option></select></Col>
+                  <Col md={4}><label className="onb-init-label">Legal Entity</label><MasterSelect options={ONB_LEGAL_ENTITY} placeholder="Select entity" /></Col>
+                  <Col md={4}><label className="onb-init-label">Location</label><MasterSelect options={ONB_LOCATION} defaultValue="Pune HQ" /></Col>
                   <Col md={4}><label className="onb-init-label">Reporting Manager <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue={emp.managerName} /></Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Probation Policy</label><select className="onb-init-select"><option>Default Probation Policy</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Notice Period</label><select className="onb-init-select"><option>Default Notice Period</option></select></Col>
+                  <Col md={4}><label className="onb-init-label">Probation Policy</label><MasterSelect options={ONB_PROBATION} defaultValue="Default Probation Policy" /></Col>
+                  <Col md={4}><label className="onb-init-label">Notice Period</label><MasterSelect options={ONB_NOTICE} defaultValue="Default Notice Period" /></Col>
                   <Col md={4}><label className="onb-init-label">Work Mode <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue="On-site" /></Col>
                 </Row>
               </div>
@@ -2118,15 +2206,15 @@ function InitiateOnboardingModal({
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan</label><select className="onb-init-select"><option>Leave Policy</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Holiday List</label><select className="onb-init-select"><option>Holiday Calendar</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Shift</label><select className="onb-init-select"><option>General Shift</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Weekly Off</label><select className="onb-init-select"><option>Week Off Policy</option></select></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan</label><MasterSelect options={ONB_LEAVE_PLAN} defaultValue="Leave Policy" /></Col>
+                  <Col md={4}><label className="onb-init-label">Holiday List</label><MasterSelect options={ONB_HOLIDAY} defaultValue="Holiday Calendar" /></Col>
+                  <Col md={4}><label className="onb-init-label">Shift</label><MasterSelect options={ONB_SHIFT} defaultValue="General Shift" /></Col>
+                  <Col md={4}><label className="onb-init-label">Weekly Off</label><MasterSelect options={ONB_WEEKLY_OFF} defaultValue="Week Off Policy" /></Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" /></Col>
-                  <Col md={4}><label className="onb-init-label">Time Tracking Policy</label><select className="onb-init-select"><option>Attendance Capture</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Penalization Policy</label><select className="onb-init-select"><option>Tracking Policy</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Overtime</label><select className="onb-init-select"><option>Not applicable</option><option>Applicable</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Expense Policy</label><select className="onb-init-select"><option>Select policy</option></select></Col>
+                  <Col md={4}><label className="onb-init-label">Time Tracking Policy</label><MasterSelect options={ONB_TIME_TRACK} defaultValue="Attendance Capture" /></Col>
+                  <Col md={4}><label className="onb-init-label">Penalization Policy</label><MasterSelect options={ONB_PENALIZE} defaultValue="Tracking Policy" /></Col>
+                  <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} defaultValue="Not applicable" /></Col>
+                  <Col md={4}><label className="onb-init-label">Expense Policy</label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" /></Col>
                 </Row>
 
                 <div className="onb-init-toggle-row">
@@ -2136,11 +2224,11 @@ function InitiateOnboardingModal({
 
                 <p className="onb-init-subgroup">Assets &amp; Security</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Laptop Assigned</label><select className="onb-init-select"><option>No</option><option>Yes</option></select></Col>
+                  <Col md={4}><label className="onb-init-label">Laptop Assigned</label><MasterSelect options={ONB_YES_NO} defaultValue="No" /></Col>
                   <Col md={4}><label className="onb-init-label">Laptop Asset ID</label><input className="onb-init-input" placeholder="e.g. LAP-0042" /></Col>
                   <Col md={4}><label className="onb-init-label">Mobile Device</label><input className="onb-init-input" placeholder="e.g. iPhone 15" /></Col>
                   <Col md={4}><label className="onb-init-label">Other Assets</label><input className="onb-init-input" placeholder="Monitor, Keyboard..." /></Col>
-                  <Col md={4}><label className="onb-init-label">Access Card</label><select className="onb-init-select"><option>Not Issued</option><option>Issued</option></select></Col>
+                  <Col md={4}><label className="onb-init-label">Access Card</label><MasterSelect options={ONB_ACCESS_CARD} defaultValue="Not Issued" /></Col>
                   <Col md={4}><label className="onb-init-label">Desk / Workstation</label><input className="onb-init-input" placeholder="e.g. A-12" /></Col>
                 </Row>
               </div>
@@ -2164,12 +2252,12 @@ function InitiateOnboardingModal({
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Pay Group</label><select className="onb-init-select"><option>Default pay group</option></select></Col>
+                  <Col md={4}><label className="onb-init-label">Pay Group</label><MasterSelect options={ONB_PAY_GROUP} defaultValue="Default pay group" /></Col>
                   <Col md={4}><label className="onb-init-label">Annual Salary <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="Enter amount" /></Col>
-                  <Col md={4}><label className="onb-init-label">Period</label><select className="onb-init-select"><option>Per annum</option><option>Per month</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Salary Effective From <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="mm/dd/yyyy" /></Col>
-                  <Col md={4}><label className="onb-init-label">Salary Structure Type</label><select className="onb-init-select"><option>Range Based</option><option>Fixed</option></select></Col>
-                  <Col md={4}><label className="onb-init-label">Tax Regime</label><select className="onb-init-select"><option>New Regime (115BAC)</option><option>Old Regime</option></select></Col>
+                  <Col md={4}><label className="onb-init-label">Period</label><MasterSelect options={ONB_PERIOD} defaultValue="Per annum" /></Col>
+                  <Col md={4}><label className="onb-init-label">Salary Effective From <span className="req">*</span></label><MasterDatePicker placeholder="Select effective date" /></Col>
+                  <Col md={4}><label className="onb-init-label">Salary Structure Type</label><MasterSelect options={ONB_SAL_STRUCT} defaultValue="Range Based" /></Col>
+                  <Col md={4}><label className="onb-init-label">Tax Regime</label><MasterSelect options={ONB_TAX_REGIME} defaultValue="New Regime (115BAC)" /></Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Bonus, Perks &amp; Statutory</p>
@@ -2347,11 +2435,11 @@ function Stage2Documents() {
                 </Col>
                 <Col md={6}>
                   <label className="onb-init-label">Employment Start Date <span className="req">*</span></label>
-                  <input className="onb-init-input is-required" placeholder="MM/YYYY" />
+                  <MasterDatePicker placeholder="Select start date" />
                 </Col>
                 <Col md={6}>
                   <label className="onb-init-label">Employment End Date <span className="req">*</span></label>
-                  <input className="onb-init-input is-required" placeholder="MM/YYYY" />
+                  <MasterDatePicker placeholder="Select end date" />
                 </Col>
               </Row>
 
@@ -2594,7 +2682,7 @@ function Stage4Payroll() {
             <Col md={4}><label className="onb-init-label">IFSC Code <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. HDFC0001234" /></Col>
             <Col md={4}><label className="onb-init-label">Name on the Account <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="Full legal name as per bank" /></Col>
             <Col md={4}><label className="onb-init-label">Branch <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. Baner, Pune" /></Col>
-            <Col md={4}><label className="onb-init-label">Account Type</label><select className="onb-init-select"><option>Salary</option><option>Savings</option><option>Current</option></select></Col>
+            <Col md={4}><label className="onb-init-label">Account Type</label><MasterSelect options={ONB_ACCOUNT_TYPE} defaultValue="Salary" /></Col>
             <Col md={4}><label className="onb-init-label">UAN Number (PF)</label><input className="onb-init-input" placeholder="12-digit UAN" /></Col>
           </Row>
         </div>
@@ -2609,9 +2697,9 @@ function Stage4Payroll() {
         <div className="onb-pay-section-body">
           <Row className="g-3">
             <Col md={4}><label className="onb-init-label">PAN Number <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="AAAZZ9999A" /></Col>
-            <Col md={4}><label className="onb-init-label">Tax Regime</label><select className="onb-init-select"><option>New Regime (115BAC)</option><option>Old Regime</option></select></Col>
-            <Col md={4}><label className="onb-init-label">PF Deduction</label><select className="onb-init-select"><option>Employee + Employer</option><option>Employee only</option></select></Col>
-            <Col md={4}><label className="onb-init-label">ESI Applicable</label><select className="onb-init-select"><option>No</option><option>Yes</option></select></Col>
+            <Col md={4}><label className="onb-init-label">Tax Regime</label><MasterSelect options={ONB_TAX_REGIME} defaultValue="New Regime (115BAC)" /></Col>
+            <Col md={4}><label className="onb-init-label">PF Deduction</label><MasterSelect options={ONB_PF_DEDUCT} defaultValue="Employee + Employer" /></Col>
+            <Col md={4}><label className="onb-init-label">ESI Applicable</label><MasterSelect options={ONB_YES_NO} defaultValue="No" /></Col>
             <Col md={4}><label className="onb-init-label">Gratuity Nominee Name</label><input className="onb-init-input" placeholder="Full legal name" /></Col>
             <Col md={4}><label className="onb-init-label">Agreed CTC (LPA) <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. 12" /></Col>
           </Row>
@@ -2715,7 +2803,156 @@ function Stage5Policies() {
 }
 
 // ── Stage 6 — Final Verification & Activation ─────────────────────────────
+// ── Flag Issue modal — opens from Stage 6 "Flag Issue" button ───────────────
+const FLAG_STAGE_OPTIONS = [
+  { value: 'stage1', label: 'Stage 1 — Employee Onboarding Setup' },
+  { value: 'stage2', label: 'Stage 2 — Document Management' },
+  { value: 'stage3', label: 'Stage 3 — Provisioning & Asset Setup' },
+  { value: 'stage4', label: 'Stage 4 — Payroll & Finance Setup' },
+  { value: 'stage5', label: 'Stage 5 — Policies & Agreements' },
+  { value: 'stage6', label: 'Stage 6 — HR Final Approval' },
+];
+const FLAG_ISSUE_TYPES = ['Missing Documents', 'Verification Failed', 'Approval Pending', 'Other'] as const;
+type FlagIssueType = typeof FLAG_ISSUE_TYPES[number];
+
+function FlagIssueModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [stage, setStage] = useState<string>('stage1');
+  const [issueType, setIssueType] = useState<FlagIssueType | ''>('');
+  const [description, setDescription] = useState<string>('');
+
+  const handleSubmit = () => {
+    if (!description.trim()) return;
+    // In real wiring, dispatch to API. For now just close.
+    onClose();
+    setIssueType('');
+    setDescription('');
+    setStage('stage1');
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      toggle={onClose}
+      centered
+      contentClassName="onb-flag-content"
+      modalClassName="onb-flag-modal"
+      backdrop="static"
+      keyboard
+    >
+      <ModalBody className="p-0">
+        <div className="onb-flag-header">
+          <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
+            <i className="ri-close-line" style={{ fontSize: 14 }} />
+          </button>
+          <span className="onb-flag-icon">
+            <i className="ri-error-warning-line" style={{ fontSize: 22 }} />
+          </span>
+          <h5 className="onb-flag-title">Flag Issue</h5>
+          <p className="onb-flag-sub">Raise a concern to block employee activation until resolved</p>
+        </div>
+
+        <div className="onb-flag-body">
+          <div className="onb-flag-section">
+            <p className="onb-flag-label">Issue Stage</p>
+            <MasterSelect value={stage} onChange={setStage} options={FLAG_STAGE_OPTIONS} />
+          </div>
+
+          <div className="onb-flag-section">
+            <p className="onb-flag-label">Issue Type</p>
+            <div className="onb-flag-types">
+              {FLAG_ISSUE_TYPES.map(t => (
+                <label key={t} className={`onb-flag-type${issueType === t ? ' is-active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="flag-issue-type"
+                    checked={issueType === t}
+                    onChange={() => setIssueType(t)}
+                  />
+                  {t}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="onb-flag-section">
+            <p className="onb-flag-label">Issue Description <span className="onb-flag-req">*</span></p>
+            <textarea
+              className="onb-flag-textarea"
+              placeholder="Describe the issue clearly — e.g. PAN number mismatch, documents not uploaded, bank details incomplete..."
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="onb-flag-footer">
+          <button type="button" className="onb-flag-cancel" onClick={onClose}>Cancel</button>
+          <button type="button" className="onb-flag-submit" onClick={handleSubmit} disabled={!description.trim()}>
+            <i className="ri-error-warning-line" style={{ fontSize: 16 }} /> Submit Flag
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
+  );
+}
+
+function ActivateEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose: () => void; emp: OnboardRow }) {
+  return (
+    <Modal
+      isOpen={isOpen}
+      toggle={onClose}
+      centered
+      contentClassName="onb-act-content"
+      modalClassName="onb-act-modal"
+      backdrop="static"
+      keyboard
+    >
+      <ModalBody className="p-0">
+        <div className="onb-act-header">
+          <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
+            <i className="ri-close-line" style={{ fontSize: 14 }} />
+          </button>
+          <span className="onb-act-icon">
+            <i className="ri-user-follow-line" style={{ fontSize: 22 }} />
+          </span>
+          <h5 className="onb-act-title">Activate Employee</h5>
+          <p className="onb-act-sub">This action is final — please confirm all stages are complete</p>
+        </div>
+
+        <div className="onb-act-body">
+          <div className="onb-act-empcard">
+            <span className="onb-act-empcheck"><i className="ri-check-line" style={{ fontSize: 20 }} /></span>
+            <div className="min-w-0">
+              <h6 className="onb-act-empname">{emp.name}</h6>
+              <p className="onb-act-empmeta">
+                {emp.department} · {emp.designation}<br />
+                Joined: {emp.joinDate}
+              </p>
+            </div>
+          </div>
+
+          <ul className="onb-act-list">
+            <li><i className="ri-checkbox-circle-fill" /> Employee status will be set to <b style={{ marginLeft: 4 }}>Active / Completed</b></li>
+            <li><i className="ri-checkbox-circle-fill" /> Reporting Manager will be notified via email</li>
+            <li><i className="ri-checkbox-circle-fill" /> Full system access will be granted</li>
+            <li><i className="ri-checkbox-circle-fill" /> Evidence Vault will be marked as Ready</li>
+          </ul>
+        </div>
+
+        <div className="onb-act-footer">
+          <button type="button" className="onb-act-cancel" onClick={onClose}>Cancel</button>
+          <button type="button" className="onb-act-confirm" onClick={onClose}>
+            <i className="ri-check-line" style={{ fontSize: 16 }} /> Confirm Activate
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
+  );
+}
+
 function Stage6Verify({ emp }: { emp: OnboardRow }) {
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [activateOpen, setActivateOpen] = useState(false);
   const stageRows: { num: number; name: string; sub: string; icon: string; cls: string; verified: boolean }[] = [
     { num: 1, name: 'Employee Onboarding Setup',     sub: 'Basic details, job info & compensation · Stage 1', icon: 'ri-user-line',          cls: 's1', verified: true  },
     { num: 2, name: 'Document Management',           sub: 'Identity, education & employment docs · Stage 2',  icon: 'ri-file-list-3-line',  cls: 's2', verified: true  },
@@ -2809,15 +3046,18 @@ function Stage6Verify({ emp }: { emp: OnboardRow }) {
             </span>
           </div>
           <div className="onb-ver-action-buttons">
-            <button type="button" className="onb-ver-flag-btn">
+            <button type="button" className="onb-ver-flag-btn" onClick={() => setFlagOpen(true)}>
               <i className="ri-error-warning-line" style={{ fontSize: 16 }} /> Flag Issue
             </button>
-            <button type="button" className="onb-ver-activate-btn">
+            <button type="button" className="onb-ver-activate-btn" onClick={() => setActivateOpen(true)}>
               <i className="ri-checkbox-circle-line" style={{ fontSize: 16 }} /> Activate Employee
             </button>
           </div>
         </div>
       </div>
+
+      <FlagIssueModal isOpen={flagOpen} onClose={() => setFlagOpen(false)} />
+      <ActivateEmployeeModal isOpen={activateOpen} onClose={() => setActivateOpen(false)} emp={emp} />
     </>
   );
 }
