@@ -13,15 +13,31 @@ type WorkMode = 'On-site' | 'Remote' | 'Hybrid' | 'Flexible';
 type EmployType = 'Full Time' | 'Part Time' | 'Contract' | 'Internship';
 
 interface RecruitmentRow {
-  id: string;
+  id: string;            // numeric DB id, stringified — used as the React key
+  code: string;          // REC-### shown in the table pill
   jobTitle: string;
+
+  // Display labels (resolved from the backend's eager-loaded relations).
   department: string;
   designation: string;
+  primaryRole: string;
+
+  // Backing master IDs — populated from the API so the edit modal can
+  // pre-select the dropdowns instead of trying to match by name.
+  departmentId: number | null;
+  designationId: number | null;
+  primaryRoleId: number | null;
+  hiringManagerId: number | null;
+  assignedHrId: number | null;
+
   employmentType: EmployType;
   openings: number;
   experience: string;
   workMode: WorkMode;
+  ctcRange: string;
   priority: Priority;
+
+  // Manager + HR display fields (avatar initials, accent and label).
   hiringManagerName: string;
   hiringManagerRole: string;
   hiringManagerInitials: string;
@@ -29,9 +45,96 @@ interface RecruitmentRow {
   assignedHrName: string;
   assignedHrInitials: string;
   assignedHrAccent: string;
+
   startDate: string;
   deadline: string;
+
+  // Job description + requirements + toggles — pre-filled into the edit modal.
+  jobDescription: string;
+  requirements: string;
+  postOnPortal: boolean;
+  notifyTeamLeads: boolean;
+  enableReferralBonus: boolean;
+
   status: RecruitmentStatus;
+}
+
+/* ── Backend → UI row converter ──────────────────────────────────────────────
+ * The /recruitments API returns snake_case fields with eager-loaded relation
+ * objects (department, designation, primaryRole, hiringManager, assignedHr).
+ * We flatten that into the RecruitmentRow shape the table + filters expect,
+ * synthesising avatar initials/accents from the manager/HR display name.
+ */
+const ROW_PALETTE = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
+function pickAccent(seed: string | number): string {
+  const s = String(seed ?? '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return ROW_PALETTE[h % ROW_PALETTE.length];
+}
+function initialsOf(name: string): string {
+  if (!name) return '–';
+  const dashSplit = name.split('–').map((s) => s.trim()).filter(Boolean);
+  const display = dashSplit.length > 1 ? dashSplit[1] : name;
+  return display
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+function apiToRow(api: any): RecruitmentRow {
+  const dept = api?.department?.name || '';
+  const desig = api?.designation?.name || '';
+  const role = api?.primary_role?.name || '';
+
+  const mgrEmp = api?.hiring_manager;
+  const mgrName = mgrEmp?.display_name || [mgrEmp?.first_name, mgrEmp?.last_name].filter(Boolean).join(' ') || '';
+  const hrEmp = api?.assigned_hr;
+  const hrName = hrEmp?.display_name || [hrEmp?.first_name, hrEmp?.last_name].filter(Boolean).join(' ') || '';
+
+  return {
+    id: String(api?.id ?? ''),
+    code: api?.code || `REC-${api?.id ?? ''}`,
+    jobTitle: api?.job_title || '',
+
+    department: dept,
+    designation: desig,
+    primaryRole: role,
+
+    departmentId:    api?.department_id ?? null,
+    designationId:   api?.designation_id ?? null,
+    primaryRoleId:   api?.primary_role_id ?? null,
+    hiringManagerId: api?.hiring_manager_id ?? null,
+    assignedHrId:    api?.assigned_hr_id ?? null,
+
+    employmentType: (api?.employment_type || 'Full Time') as EmployType,
+    openings:       Number(api?.openings) || 1,
+    experience:     api?.experience || '',
+    workMode:       (api?.work_mode || 'Hybrid') as WorkMode,
+    ctcRange:       api?.ctc_range || '',
+    priority:       (api?.priority || 'Medium') as Priority,
+
+    hiringManagerName:     mgrName,
+    hiringManagerRole:     '', // backend doesn't carry a separate "role" label
+    hiringManagerInitials: initialsOf(mgrName),
+    hiringManagerAccent:   pickAccent(api?.hiring_manager_id ?? mgrName),
+    assignedHrName:        hrName,
+    assignedHrInitials:    initialsOf(hrName),
+    assignedHrAccent:      pickAccent(api?.assigned_hr_id ?? hrName),
+
+    startDate: api?.start_date || '',
+    deadline:  api?.deadline   || '',
+
+    jobDescription:      api?.job_description || '',
+    requirements:        api?.requirements    || '',
+    postOnPortal:        !!api?.post_on_portal,
+    notifyTeamLeads:     !!api?.notify_team_leads,
+    enableReferralBonus: !!api?.enable_referral_bonus,
+
+    status: (api?.status || 'In Progress') as RecruitmentStatus,
+  };
 }
 
 // ── Date formatting helper ─────────────────────────────────────────────────
@@ -72,40 +175,6 @@ interface HiringRequestRow {
   requestDate: string;
   targetJoinDate: string;
 }
-
-// ── Mock data — 25 recruitments split across the 3 status tabs ──────────────
-const RECRUITMENTS: RecruitmentRow[] = [
-  // ── In Progress (19) ──
-  { id: 'REC-1001', jobTitle: 'Senior Backend Engineer',  department: 'Engineering',     designation: 'Senior Software Engineer', employmentType: 'Full Time', openings: 2, experience: '5 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'Vishal Rao',     hiringManagerRole: 'CEO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Sneha Chavan', assignedHrInitials: 'SC', assignedHrAccent: '#0ab39c', startDate: '05 Mar 2026', deadline: '20 May 2026', status: 'In Progress' },
-  { id: 'REC-1002', jobTitle: 'Product Designer',         department: 'Design',          designation: 'Sr. Designer',             employmentType: 'Full Time', openings: 1, experience: '3 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'Amit Shah',      hiringManagerRole: 'HOD',                  hiringManagerInitials: 'H',  hiringManagerAccent: '#f06548', assignedHrName: 'Pooja Mehta',  assignedHrInitials: 'PM', assignedHrAccent: '#7c5cfc', startDate: '12 Mar 2026', deadline: '30 May 2026', status: 'In Progress' },
-  { id: 'REC-1003', jobTitle: 'Sales Executive',          department: 'Sales',           designation: 'Executive',                employmentType: 'Full Time', openings: 4, experience: '1 yr+', workMode: 'On-site', priority: 'High',   hiringManagerName: 'Priya Iyer',     hiringManagerRole: 'Sales Lead',           hiringManagerInitials: 'SL', hiringManagerAccent: '#0ab39c', assignedHrName: 'Rahul Verma',  assignedHrInitials: 'RV', assignedHrAccent: '#f7b84b', startDate: '18 Feb 2026', deadline: '25 Apr 2026', status: 'In Progress' },
-  { id: 'REC-1004', jobTitle: 'HR Intern',                department: 'HR',              designation: 'Intern',                   employmentType: 'Internship',openings: 2, experience: '0 yr+', workMode: 'On-site', priority: 'Low',    hiringManagerName: 'Sneha Chavan',   hiringManagerRole: 'HR Head',              hiringManagerInitials: 'HH', hiringManagerAccent: '#0ab39c', assignedHrName: 'Anjali Rao',   assignedHrInitials: 'AR', assignedHrAccent: '#e83e8c', startDate: '20 Mar 2026', deadline: '01 May 2026', status: 'In Progress' },
-  { id: 'REC-1007', jobTitle: 'DevOps Engineer',          department: 'Engineering',     designation: 'Software Engineer',        employmentType: 'Full Time', openings: 1, experience: '4 yr+', workMode: 'Remote',  priority: 'High',   hiringManagerName: 'Arun Gupta',     hiringManagerRole: 'CTO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Sneha Chavan', assignedHrInitials: 'SC', assignedHrAccent: '#0ab39c', startDate: '25 Mar 2026', deadline: '05 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1008', jobTitle: 'Frontend Engineer',        department: 'Engineering',     designation: 'Software Engineer',        employmentType: 'Full Time', openings: 2, experience: '3 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'Arun Gupta',     hiringManagerRole: 'CTO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Sneha Chavan', assignedHrInitials: 'SC', assignedHrAccent: '#0ab39c', startDate: '28 Mar 2026', deadline: '10 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1009', jobTitle: 'QA Automation Engineer',   department: 'Engineering',     designation: 'Senior QA Engineer',       employmentType: 'Full Time', openings: 2, experience: '4 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'Arun Gupta',     hiringManagerRole: 'CTO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Karan Singh',  assignedHrInitials: 'KS', assignedHrAccent: '#0ea5e9', startDate: '01 Apr 2026', deadline: '20 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1010', jobTitle: 'Data Engineer',            department: 'Engineering',     designation: 'Data Engineer',            employmentType: 'Full Time', openings: 1, experience: '5 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'Arun Gupta',     hiringManagerRole: 'CTO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Sneha Chavan', assignedHrInitials: 'SC', assignedHrAccent: '#0ab39c', startDate: '02 Apr 2026', deadline: '15 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1011', jobTitle: 'UI/UX Designer',           department: 'Design',          designation: 'Designer',                 employmentType: 'Full Time', openings: 1, experience: '2 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'Neha Kulkarni',  hiringManagerRole: 'Design Head',          hiringManagerInitials: 'DH', hiringManagerAccent: '#f06548', assignedHrName: 'Pooja Mehta',  assignedHrInitials: 'PM', assignedHrAccent: '#7c5cfc', startDate: '18 Mar 2026', deadline: '25 May 2026', status: 'In Progress' },
-  { id: 'REC-1012', jobTitle: 'Business Development Manager', department: 'Sales',       designation: 'Manager',                  employmentType: 'Full Time', openings: 1, experience: '7 yr+', workMode: 'On-site', priority: 'High',   hiringManagerName: 'Priya Iyer',     hiringManagerRole: 'Sales Lead',           hiringManagerInitials: 'SL', hiringManagerAccent: '#0ab39c', assignedHrName: 'Rahul Verma',  assignedHrInitials: 'RV', assignedHrAccent: '#f7b84b', startDate: '22 Mar 2026', deadline: '30 May 2026', status: 'In Progress' },
-  { id: 'REC-1013', jobTitle: 'Mobile App Developer',     department: 'Engineering',     designation: 'Software Engineer',        employmentType: 'Full Time', openings: 2, experience: '3 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'Arun Gupta',     hiringManagerRole: 'CTO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Sneha Chavan', assignedHrInitials: 'SC', assignedHrAccent: '#0ab39c', startDate: '06 Apr 2026', deadline: '18 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1014', jobTitle: 'Customer Support Lead',    department: 'Operations',      designation: 'Lead',                     employmentType: 'Full Time', openings: 1, experience: '4 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'Ritu Khanna',    hiringManagerRole: 'COO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#0ea5e9', assignedHrName: 'Anjali Rao',   assignedHrInitials: 'AR', assignedHrAccent: '#e83e8c', startDate: '10 Apr 2026', deadline: '22 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1015', jobTitle: 'Cloud Architect',          department: 'Engineering',     designation: 'Architect',                employmentType: 'Full Time', openings: 1, experience: '8 yr+', workMode: 'Remote',  priority: 'Critical', hiringManagerName: 'Arun Gupta', hiringManagerRole: 'CTO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Sneha Chavan', assignedHrInitials: 'SC', assignedHrAccent: '#0ab39c', startDate: '15 Apr 2026', deadline: '15 Jul 2026', status: 'In Progress' },
-  { id: 'REC-1016', jobTitle: 'Content Marketing Lead',   department: 'Marketing',       designation: 'Lead',                     employmentType: 'Full Time', openings: 1, experience: '5 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'Ritu Khanna',    hiringManagerRole: 'CMO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#0ea5e9', assignedHrName: 'Pooja Mehta',  assignedHrInitials: 'PM', assignedHrAccent: '#7c5cfc', startDate: '12 Apr 2026', deadline: '28 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1017', jobTitle: 'Account Manager',          department: 'Sales',           designation: 'Manager',                  employmentType: 'Full Time', openings: 2, experience: '4 yr+', workMode: 'On-site', priority: 'High',   hiringManagerName: 'Priya Iyer',     hiringManagerRole: 'Sales Lead',           hiringManagerInitials: 'SL', hiringManagerAccent: '#0ab39c', assignedHrName: 'Rahul Verma',  assignedHrInitials: 'RV', assignedHrAccent: '#f7b84b', startDate: '08 Apr 2026', deadline: '20 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1018', jobTitle: 'Recruitment Specialist',   department: 'HR',              designation: 'Specialist',               employmentType: 'Full Time', openings: 1, experience: '3 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'Sneha Chavan',   hiringManagerRole: 'HR Head',              hiringManagerInitials: 'HH', hiringManagerAccent: '#0ab39c', assignedHrName: 'Anjali Rao',   assignedHrInitials: 'AR', assignedHrAccent: '#e83e8c', startDate: '14 Apr 2026', deadline: '30 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1019', jobTitle: 'Finance Manager',          department: 'Finance',         designation: 'Manager',                  employmentType: 'Full Time', openings: 1, experience: '6 yr+', workMode: 'On-site', priority: 'High',   hiringManagerName: 'Nikhil Mehra',   hiringManagerRole: 'CFO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#f7b84b', assignedHrName: 'Karan Singh',  assignedHrInitials: 'KS', assignedHrAccent: '#0ea5e9', startDate: '05 Apr 2026', deadline: '15 Jun 2026', status: 'In Progress' },
-  { id: 'REC-1020', jobTitle: 'Logistics Coordinator',    department: 'Operations',      designation: 'Coordinator',              employmentType: 'Full Time', openings: 2, experience: '2 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'Ritu Khanna',    hiringManagerRole: 'COO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#0ea5e9', assignedHrName: 'Anjali Rao',   assignedHrInitials: 'AR', assignedHrAccent: '#e83e8c', startDate: '18 Apr 2026', deadline: '02 Jul 2026', status: 'In Progress' },
-  { id: 'REC-1021', jobTitle: 'Solutions Architect',      department: 'Engineering',     designation: 'Architect',                employmentType: 'Full Time', openings: 1, experience: '7 yr+', workMode: 'Hybrid',  priority: 'Critical', hiringManagerName: 'Arun Gupta', hiringManagerRole: 'CTO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Sneha Chavan', assignedHrInitials: 'SC', assignedHrAccent: '#0ab39c', startDate: '20 Apr 2026', deadline: '10 Jul 2026', status: 'In Progress' },
-
-  // ── Completed (4) ──
-  { id: 'REC-1005', jobTitle: 'Finance Analyst',          department: 'Finance',         designation: 'Analyst',                  employmentType: 'Full Time', openings: 1, experience: '2 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'Nikhil Mehra',   hiringManagerRole: 'CFO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#f7b84b', assignedHrName: 'Karan Singh',  assignedHrInitials: 'KS', assignedHrAccent: '#0ea5e9', startDate: '10 Jan 2026', deadline: '15 Mar 2026', status: 'Completed' },
-  { id: 'REC-1022', jobTitle: 'Technical Writer',         department: 'Engineering',     designation: 'Writer',                   employmentType: 'Contract', openings: 1, experience: '3 yr+', workMode: 'Remote',  priority: 'Low',    hiringManagerName: 'Arun Gupta',     hiringManagerRole: 'CTO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Sneha Chavan', assignedHrInitials: 'SC', assignedHrAccent: '#0ab39c', startDate: '25 Jan 2026', deadline: '20 Mar 2026', status: 'Completed' },
-  { id: 'REC-1023', jobTitle: 'Legal Counsel',            department: 'HR',              designation: 'Counsel',                  employmentType: 'Full Time', openings: 1, experience: '6 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'Vishal Rao',     hiringManagerRole: 'CEO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Anjali Rao',   assignedHrInitials: 'AR', assignedHrAccent: '#e83e8c', startDate: '05 Feb 2026', deadline: '10 Apr 2026', status: 'Completed' },
-  { id: 'REC-1024', jobTitle: 'Customer Success Lead',    department: 'Sales',           designation: 'Lead',                     employmentType: 'Full Time', openings: 1, experience: '5 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'Priya Iyer',     hiringManagerRole: 'Sales Lead',           hiringManagerInitials: 'SL', hiringManagerAccent: '#0ab39c', assignedHrName: 'Rahul Verma',  assignedHrInitials: 'RV', assignedHrAccent: '#f7b84b', startDate: '12 Feb 2026', deadline: '18 Apr 2026', status: 'Completed' },
-
-  // ── Cancelled (2) ──
-  { id: 'REC-1006', jobTitle: 'Marketing Manager',        department: 'Marketing',       designation: 'Manager',                  employmentType: 'Full Time', openings: 1, experience: '6 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'Ritu Khanna',    hiringManagerRole: 'CMO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#0ea5e9', assignedHrName: 'Pooja Mehta',  assignedHrInitials: 'PM', assignedHrAccent: '#7c5cfc', startDate: '01 Feb 2026', deadline: '30 Mar 2026', status: 'Cancelled' },
-  { id: 'REC-1025', jobTitle: 'SRE Engineer',             department: 'Engineering',     designation: 'Software Engineer',        employmentType: 'Full Time', openings: 2, experience: '4 yr+', workMode: 'Remote',  priority: 'Medium', hiringManagerName: 'Arun Gupta',     hiringManagerRole: 'CTO',                  hiringManagerInitials: 'C',  hiringManagerAccent: '#7c5cfc', assignedHrName: 'Sneha Chavan', assignedHrInitials: 'SC', assignedHrAccent: '#0ab39c', startDate: '20 Jan 2026', deadline: '25 Mar 2026', status: 'Cancelled' },
-];
 
 // ── Hiring Requests (mock) ──
 const HIRING_REQUESTS: HiringRequestRow[] = [
@@ -275,29 +344,20 @@ export default function HrRecruitment() {
   // Reset page when tab / filters change
   useEffect(() => { setPage(1); }, [tab, q, deptFilter, priorityFilter, jobTypeFilter]);
 
-  // Initial load — pull all recruitments from the backend.
+  // Initial load — pull all recruitments from the backend and convert each
+  // row into the UI shape (label-resolved + initials + accent).
   const fetchRecruitments = async () => {
-    // ── DUMMY DATA START — remove this whole block once the `/recruitments`
-    //    backend API is wired up and uncomment the original `api.get` call
-    //    below. ─────────────────────────────────────────────────────────
-    setLoadingList(true);
-    setRecruitments(buildDummyRecruitments());
-    setLoadingList(false);
-    return;
-    // ── DUMMY DATA END ────────────────────────────────────────────────
-
-    /* Real API call — restore when backend is ready
     try {
       setLoadingList(true);
       const { data } = await api.get('/recruitments');
-      setRecruitments(Array.isArray(data) ? data : []);
+      const rows: any[] = Array.isArray(data) ? data : [];
+      setRecruitments(rows.map(apiToRow));
     } catch (err: any) {
       toast.error('Could not load recruitments', err?.response?.data?.message || 'Please try again.');
       setRecruitments([]);
     } finally {
       setLoadingList(false);
     }
-    */
   };
   useEffect(() => { fetchRecruitments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
@@ -337,7 +397,7 @@ export default function HrRecruitment() {
         if (!needle) return true;
         return (
           String(r.id).toLowerCase().includes(needle) ||
-          String((r as any).code || '').toLowerCase().includes(needle) ||
+          (r.code || '').toLowerCase().includes(needle) ||
           r.jobTitle.toLowerCase().includes(needle) ||
           (r.department || '').toLowerCase().includes(needle) ||
           (r.assignedHrName || '').toLowerCase().includes(needle) ||
@@ -543,7 +603,7 @@ export default function HrRecruitment() {
                         return (
                           <tr key={r.id}>
                             <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
-                            <td><span className="rec-id-pill">{(r as any).code || r.id}</span></td>
+                            <td><span className="rec-id-pill">{r.code || r.id}</span></td>
                             <td className="fw-bold fs-13" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{r.jobTitle}</td>
                             <td className="fs-13">{r.department}</td>
                             <td className="fs-13">{r.designation}</td>
@@ -700,12 +760,19 @@ export default function HrRecruitment() {
       <CancelConfirmModal
         target={cancelTarget}
         onClose={() => setCancelTarget(null)}
-        onConfirm={async () => {
+        onConfirm={async (reason, notes) => {
           if (!cancelTarget) return;
           try {
-            const { data } = await api.patch(`/recruitments/${cancelTarget.id}/status`, { status: 'Cancelled' });
-            setRecruitments(prev => prev.map(r => String(r.id) === String(data.id) ? data : r));
-            toast.success('Recruitment cancelled', `${data.code || data.id} has been moved to Cancelled.`);
+            // Backend exposes a single PUT for updates — we flip status to
+            // Cancelled and stash the reason/notes alongside for audit.
+            const { data } = await api.put(`/recruitments/${cancelTarget.id}`, {
+              status: 'Cancelled',
+              cancel_reason: reason,
+              cancel_notes:  notes || null,
+            });
+            const row = apiToRow(data);
+            setRecruitments(prev => prev.map(r => String(r.id) === String(row.id) ? row : r));
+            toast.success('Recruitment cancelled', `${row.code || row.id} has been moved to Cancelled.`);
           } catch (err: any) {
             toast.error('Could not cancel', err?.response?.data?.message || 'Please try again.');
           } finally {
@@ -1598,97 +1665,118 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
   const toast = useToast();
   const editing = mode === 'edit' && editingId ? recruitments.find(r => String(r.id) === String(editingId)) : null;
 
+  // ── Form state ─────────────────────────────────────────────────────────
+  // Department / Designation / Primary Role / Hiring Manager / Assigned HR
+  // hold backing-master IDs as strings (MasterSelect emits strings); names
+  // are looked up from the option lists for display only.
   const [jobTitle, setJobTitle]               = useState('');
-  const [department, setDepartment]           = useState('');
-  const [designation, setDesignation]         = useState('');
-  const [employmentType, setEmploymentType]   = useState('Full Time');
+  const [departmentId, setDepartmentId]       = useState('');
+  const [designationId, setDesignationId]     = useState('');
+  const [primaryRoleId, setPrimaryRoleId]     = useState('');
+  const [employmentType, setEmploymentType]   = useState<EmployType>('Full Time');
   const [openings, setOpenings]               = useState('1');
   const [experience, setExperience]           = useState('');
-  const [workMode, setWorkMode]               = useState('Hybrid');
+  const [workMode, setWorkMode]               = useState<WorkMode>('Hybrid');
   const [priority, setPriority]               = useState<Priority>('Medium');
-  const [hiringManager, setHiringManager]     = useState('');
-  const [assignedHr, setAssignedHr]           = useState('');
+  const [hiringManagerId, setHiringManagerId] = useState('');
+  const [assignedHrId, setAssignedHrId]       = useState('');
   const [startDate, setStartDate]             = useState('');
   const [deadline, setDeadline]               = useState('');
-  const [linkedRequest, setLinkedRequest]     = useState('');
   const [jobDescription, setJobDescription]   = useState('');
   const [requirements, setRequirements]       = useState('');
-  const [primaryRole, setPrimaryRole]         = useState('');
   const [ctcRange, setCtcRange]               = useState('');
   const [postOnPortal, setPostOnPortal]       = useState(true);
   const [notifyTeamLeads, setNotifyTeamLeads] = useState(true);
   const [enableReferralBonus, setEnableReferralBonus] = useState(false);
 
-  // Load Department + Designation options from the master APIs so the
-  // dropdowns reflect what's actually configured in Master → Departments /
-  // Designations (and stay in sync as new ones are added).
-  const [deptOptions, setDeptOptions] = useState<{ value: string; label: string }[]>([]);
+  // ── Master dropdown options — values are master IDs (stringified) so the
+  // payload can send the FK without name-matching. Labels come from the
+  // master tables and remain user-friendly.
+  const [deptOptions, setDeptOptions]   = useState<{ value: string; label: string }[]>([]);
   const [desigOptions, setDesigOptions] = useState<{ value: string; label: string }[]>([]);
-  const [desigByDept, setDesigByDept] = useState<Record<string, string[]>>({});
-  const [roleOptions, setRoleOptions] = useState<{ value: string; label: string }[]>([]);
+  const [desigByDept, setDesigByDept]   = useState<Record<string, { value: string; label: string }[]>>({});
+  const [roleOptions, setRoleOptions]   = useState<{ value: string; label: string }[]>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<{ value: string; label: string }[]>([]);
 
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
     (async () => {
       try {
-        const [deptRes, desigRes, roleRes] = await Promise.all([
+        const [deptRes, desigRes, roleRes, empRes] = await Promise.all([
           api.get('/master/departments'),
           api.get('/master/designations'),
           api.get('/master/roles'),
+          api.get('/employees'),
         ]);
         if (cancelled) return;
 
-        const deptRows: any[] = Array.isArray(deptRes.data) ? deptRes.data : [];
+        const deptRows: any[]  = Array.isArray(deptRes.data)  ? deptRes.data  : [];
         const desigRows: any[] = Array.isArray(desigRes.data) ? desigRes.data : [];
-        const roleRows: any[] = Array.isArray(roleRes.data) ? roleRes.data : [];
+        const roleRows: any[]  = Array.isArray(roleRes.data)  ? roleRes.data  : [];
+        const empRows: any[]   = Array.isArray(empRes.data)   ? empRes.data   : [];
 
-        // Active-only, name-sorted lists for the selects.
-        const isActive = (r: any) => !r.status || String(r.status).toLowerCase() === 'active';
+        // Active-only filter — masters and employees both expose a 'status'
+        // column; treat missing/blank status as active so older rows show up.
+        const isActiveLower = (r: any) => !r.status || String(r.status).toLowerCase() === 'active';
+
+        // ── Departments — { id => name } pairs.
         const deptList = deptRows
-          .filter(isActive)
+          .filter(isActiveLower)
           .map(r => ({ id: r.id, name: r.name }))
           .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-        setDeptOptions(deptList.map(d => ({ value: d.name, label: d.name })));
+        setDeptOptions(deptList.map(d => ({ value: String(d.id), label: d.name })));
 
-        // Build a department→[designations] map so picking a department can
-        // narrow the designation list — we use designation.department_id to
-        // group, but fall back to "all" if a row has no department.
-        const deptIdToName: Record<string, string> = {};
-        deptRows.forEach(r => { deptIdToName[String(r.id)] = r.name; });
-
-        const groups: Record<string, Set<string>> = {};
-        const allNames = new Set<string>();
-        desigRows.filter(isActive).forEach(r => {
+        // ── Designations — group by department_id (string-keyed map) so
+        // picking a department narrows the list. Fall back to the full list
+        // when a department has no children.
+        const groups: Record<string, { value: string; label: string }[]> = {};
+        const allDesig: { value: string; label: string }[] = [];
+        desigRows.filter(isActiveLower).forEach(r => {
           if (!r.name) return;
-          allNames.add(r.name);
-          const deptName = r.department_id != null ? deptIdToName[String(r.department_id)] : null;
-          if (deptName) {
-            if (!groups[deptName]) groups[deptName] = new Set();
-            groups[deptName].add(r.name);
+          const opt = { value: String(r.id), label: r.name };
+          allDesig.push(opt);
+          if (r.department_id != null) {
+            const k = String(r.department_id);
+            if (!groups[k]) groups[k] = [];
+            groups[k].push(opt);
           }
         });
+        Object.keys(groups).forEach(k => groups[k].sort((a, b) => a.label.localeCompare(b.label)));
+        setDesigByDept(groups);
+        setDesigOptions(allDesig.sort((a, b) => a.label.localeCompare(b.label)));
 
-        const groupedObj: Record<string, string[]> = {};
-        Object.keys(groups).forEach(k => { groupedObj[k] = Array.from(groups[k]).sort(); });
-        setDesigByDept(groupedObj);
-        setDesigOptions(Array.from(allNames).sort().map(n => ({ value: n, label: n })));
-
-        // Roles master → Primary Role dropdown.
+        // ── Roles master → Primary Role dropdown.
         setRoleOptions(
           roleRows
-            .filter(isActive)
-            .map(r => ({ value: r.name, label: r.name }))
+            .filter(isActiveLower)
+            .map(r => ({ value: String(r.id), label: r.name }))
             .sort((a, b) => a.label.localeCompare(b.label)),
         );
+
+        // ── Employees → Hiring Manager + Assigned HR dropdowns. Show the
+        // employee's display_name and EMP-### so a recruiter can pick the
+        // right person even when two share a name.
+        const empOpts = empRows
+          .map(e => {
+            const name = e.display_name
+              || [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')
+              || `Employee #${e.id}`;
+            const desig = e?.designation?.name ? ` — ${e.designation.name}` : '';
+            const code  = e.emp_code ? ` (${e.emp_code})` : '';
+            return { value: String(e.id), label: `${name}${desig}${code}` };
+          })
+          .sort((a, b) => a.label.localeCompare(b.label));
+        setEmployeeOptions(empOpts);
       } catch {
-        // Soft-fail — leave the options empty; user sees an empty dropdown
+        // Soft-fail — leave the options empty; user sees empty dropdowns
         // rather than a broken modal.
         if (!cancelled) {
           setDeptOptions([]);
           setDesigOptions([]);
           setDesigByDept({});
           setRoleOptions([]);
+          setEmployeeOptions([]);
         }
       }
     })();
@@ -1698,11 +1786,11 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
   // When the user picks a department, narrow the designation list to that
   // department's designations (falling back to the full list if none).
   const filteredDesigOptions = useMemo(() => {
-    if (department && desigByDept[department]?.length) {
-      return desigByDept[department].map(n => ({ value: n, label: n }));
+    if (departmentId && desigByDept[departmentId]?.length) {
+      return desigByDept[departmentId];
     }
     return desigOptions;
-  }, [department, desigByDept, desigOptions]);
+  }, [departmentId, desigByDept, desigOptions]);
 
   type CreateErrors = Partial<Record<
     'jobTitle' | 'department' | 'designation' | 'primaryRole' | 'employmentType' | 'openings' | 'experience'
@@ -1716,32 +1804,33 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
     if (!isOpen) return;
     if (editing) {
       setJobTitle(editing.jobTitle);
-      setDepartment(editing.department);
-      setDesignation(editing.designation);
-      setPrimaryRole('');
-      setCtcRange('');
+      setDepartmentId(editing.departmentId != null ? String(editing.departmentId) : '');
+      setDesignationId(editing.designationId != null ? String(editing.designationId) : '');
+      setPrimaryRoleId(editing.primaryRoleId != null ? String(editing.primaryRoleId) : '');
+      setCtcRange(editing.ctcRange || '');
       setEmploymentType(editing.employmentType);
       setOpenings(String(editing.openings));
-      setExperience(editing.experience);
+      setExperience(editing.experience || '');
       setWorkMode(editing.workMode);
       setPriority(editing.priority);
-      setHiringManager(`${editing.hiringManagerRole} – ${editing.hiringManagerName}`);
-      setAssignedHr(editing.assignedHrName);
-      setStartDate('');
-      setDeadline('');
-      setLinkedRequest('');
-      setJobDescription('');
-      setRequirements('');
-      setPostOnPortal(true);
-      setNotifyTeamLeads(true);
-      setEnableReferralBonus(false);
+      setHiringManagerId(editing.hiringManagerId != null ? String(editing.hiringManagerId) : '');
+      setAssignedHrId(editing.assignedHrId != null ? String(editing.assignedHrId) : '');
+      // Dates from the API arrive as ISO strings (YYYY-MM-DD or full ISO);
+      // MasterDatePicker accepts the ISO date prefix, so slice safely.
+      setStartDate(editing.startDate ? String(editing.startDate).slice(0, 10) : '');
+      setDeadline(editing.deadline ? String(editing.deadline).slice(0, 10) : '');
+      setJobDescription(editing.jobDescription || '');
+      setRequirements(editing.requirements || '');
+      setPostOnPortal(editing.postOnPortal);
+      setNotifyTeamLeads(editing.notifyTeamLeads);
+      setEnableReferralBonus(editing.enableReferralBonus);
       setErrors({});
     } else {
-      setJobTitle(''); setDepartment(''); setDesignation(''); setPrimaryRole('');
+      setJobTitle(''); setDepartmentId(''); setDesignationId(''); setPrimaryRoleId('');
       setCtcRange(''); setEmploymentType('Full Time');
       setOpenings('1'); setExperience(''); setWorkMode('Hybrid'); setPriority('Medium');
-      setHiringManager(''); setAssignedHr(''); setStartDate(''); setDeadline('');
-      setLinkedRequest(''); setJobDescription(''); setRequirements('');
+      setHiringManagerId(''); setAssignedHrId(''); setStartDate(''); setDeadline('');
+      setJobDescription(''); setRequirements('');
       setPostOnPortal(true); setNotifyTeamLeads(true); setEnableReferralBonus(false);
       setErrors({});
     }
@@ -1753,14 +1842,14 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
   const validate = (): CreateErrors => {
     const e: CreateErrors = {};
     if (!jobTitle.trim())        e.jobTitle        = 'Job title is required';
-    if (!department)             e.department      = 'Department is required';
-    if (!designation)            e.designation     = 'Designation is required';
-    if (!primaryRole)            e.primaryRole     = 'Primary role is required';
+    if (!departmentId)           e.department      = 'Department is required';
+    if (!designationId)          e.designation     = 'Designation is required';
+    if (!primaryRoleId)          e.primaryRole     = 'Primary role is required';
     if (!employmentType)         e.employmentType  = 'Employment type is required';
     if (!openings.trim() || Number(openings) <= 0) e.openings = 'Openings must be at least 1';
     if (!priority)               e.priority        = 'Priority is required';
-    if (!hiringManager)          e.hiringManager   = 'Hiring manager is required';
-    if (!assignedHr)             e.assignedHr      = 'Assigned HR is required';
+    if (!hiringManagerId)        e.hiringManager   = 'Hiring manager is required';
+    if (!assignedHrId)           e.assignedHr      = 'Assigned HR is required';
     if (!startDate)              e.startDate       = 'Start date is required';
     if (!deadline)               e.deadline        = 'TAT/Deadline is required';
     return e;
@@ -1776,20 +1865,20 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
       return;
     }
 
-    // Backend payload — snake_case columns, properly typed values.
+    // Backend payload — snake_case keys, FK ids cast back to integers.
     const payload = {
-      job_title:             jobTitle,
-      department,
-      designation,
-      primary_role:          primaryRole || null,
+      job_title:             jobTitle.trim(),
+      department_id:         Number(departmentId),
+      designation_id:        Number(designationId),
+      primary_role_id:       primaryRoleId ? Number(primaryRoleId) : null,
       employment_type:       employmentType,
       openings:              Number(openings) || 1,
       experience:            experience || null,
       work_mode:             workMode || null,
       ctc_range:             ctcRange || null,
       priority,
-      hiring_manager:        hiringManager,
-      assigned_hr:           assignedHr,
+      hiring_manager_id:     hiringManagerId ? Number(hiringManagerId) : null,
+      assigned_hr_id:        assignedHrId ? Number(assignedHrId) : null,
       start_date:            startDate || null,
       deadline:              deadline || null,
       job_description:       jobDescription || null,
@@ -1807,15 +1896,18 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
         : await api.post('/recruitments', payload);
       toast.success(isEdit ? 'Recruitment updated' : 'Recruitment created',
         isEdit ? 'Changes saved successfully.' : `${data.code || 'New recruitment'} is now live.`);
-      onSaved(data);
+      // The backend returns the saved row with eager-loaded relations —
+      // convert into the UI shape so the parent list updates without a refetch.
+      onSaved(apiToRow(data));
     } catch (err: any) {
       // Surface any per-field validation errors back into the form.
       if (err?.response?.status === 422 && err?.response?.data?.errors) {
         const serverErrs = err.response.data.errors as Record<string, string | string[]>;
         const mapped: Record<string, string> = {};
         const fieldMap: Record<string, string> = {
-          job_title: 'jobTitle', employment_type: 'employmentType', primary_role: 'primaryRole',
-          hiring_manager: 'hiringManager', assigned_hr: 'assignedHr',
+          job_title: 'jobTitle', employment_type: 'employmentType',
+          department_id: 'department', designation_id: 'designation', primary_role_id: 'primaryRole',
+          hiring_manager_id: 'hiringManager', assigned_hr_id: 'assignedHr',
           start_date: 'startDate', deadline: 'deadline', work_mode: 'workMode',
         };
         for (const k of Object.keys(serverErrs)) {
@@ -1895,13 +1987,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
               <Col md={4}>
                 <label className="rec-form-label"><i className="ri-building-2-line" />Department<span className="req">*</span></label>
                 <MasterSelect
-                  value={department}
+                  value={departmentId}
                   onChange={(v) => {
-                    setDepartment(v);
+                    setDepartmentId(v);
                     clear('department');
                     // Clear designation when department changes so the user
                     // re-picks from the now-narrowed list.
-                    if (designation) setDesignation('');
+                    if (designationId) setDesignationId('');
                   }}
                   options={deptOptions}
                   placeholder={deptOptions.length === 0 ? 'Loading…' : '— Select —'}
@@ -1912,12 +2004,12 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
               <Col md={4}>
                 <label className="rec-form-label"><i className="ri-medal-line" />Designation<span className="req">*</span></label>
                 <MasterSelect
-                  value={designation}
-                  onChange={(v) => { setDesignation(v); clear('designation'); }}
+                  value={designationId}
+                  onChange={(v) => { setDesignationId(v); clear('designation'); }}
                   options={filteredDesigOptions}
                   placeholder={
                     filteredDesigOptions.length === 0
-                      ? (department ? 'No designations for this department' : 'Loading…')
+                      ? (departmentId ? 'No designations for this department' : 'Loading…')
                       : '— Select —'
                   }
                   invalid={!!errors.designation}
@@ -1927,17 +2019,19 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
               <Col md={4}>
                 <label className="rec-form-label"><i className="ri-user-star-line" />Primary Role<span className="req">*</span></label>
                 <MasterSelect
-                  value={primaryRole}
-                  onChange={(v) => { setPrimaryRole(v); clear('primaryRole' as any); }}
+                  value={primaryRoleId}
+                  onChange={(v) => { setPrimaryRoleId(v); clear('primaryRole' as any); }}
                   options={roleOptions}
                   placeholder={roleOptions.length === 0 ? 'Loading…' : '— Select —'}
+                  invalid={!!errors.primaryRole}
                 />
+                {errors.primaryRole && <div className="rec-error"><i className="ri-error-warning-line" />{errors.primaryRole}</div>}
               </Col>
               <Col md={4}>
                 <label className="rec-form-label"><i className="ri-time-line" />Employment Type<span className="req">*</span></label>
                 <MasterSelect
                   value={employmentType}
-                  onChange={(v) => { setEmploymentType(v); clear('employmentType'); }}
+                  onChange={(v) => { setEmploymentType(v as EmployType); clear('employmentType'); }}
                   options={REC_EMPLOYMENT_OPTIONS}
                   placeholder="Select"
                   invalid={!!errors.employmentType}
@@ -1970,7 +2064,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
                 <label className="rec-form-label"><i className="ri-map-pin-line" />Work Mode</label>
                 <MasterSelect
                   value={workMode}
-                  onChange={(v) => { setWorkMode(v); clear('workMode'); }}
+                  onChange={(v) => { setWorkMode(v as WorkMode); clear('workMode'); }}
                   options={WORK_MODE_OPTIONS}
                   placeholder="Select"
                   invalid={!!errors.workMode}
@@ -2025,10 +2119,10 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
               <Col md={3}>
                 <label className="rec-form-label"><i className="ri-user-settings-line" />Hiring Manager<span className="req">*</span></label>
                 <MasterSelect
-                  value={hiringManager}
-                  onChange={(v) => { setHiringManager(v); clear('hiringManager'); }}
-                  options={HIRING_MANAGER_OPTIONS}
-                  placeholder="— Select —"
+                  value={hiringManagerId}
+                  onChange={(v) => { setHiringManagerId(v); clear('hiringManager'); }}
+                  options={employeeOptions}
+                  placeholder={employeeOptions.length === 0 ? 'Loading employees…' : '— Select —'}
                   invalid={!!errors.hiringManager}
                 />
                 {errors.hiringManager && <div className="rec-error"><i className="ri-error-warning-line" />{errors.hiringManager}</div>}
@@ -2036,10 +2130,10 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
               <Col md={3}>
                 <label className="rec-form-label"><i className="ri-user-2-line" />Assigned HR<span className="req">*</span></label>
                 <MasterSelect
-                  value={assignedHr}
-                  onChange={(v) => { setAssignedHr(v); clear('assignedHr'); }}
-                  options={ASSIGNED_HR_OPTIONS}
-                  placeholder="— Select —"
+                  value={assignedHrId}
+                  onChange={(v) => { setAssignedHrId(v); clear('assignedHr'); }}
+                  options={employeeOptions}
+                  placeholder={employeeOptions.length === 0 ? 'Loading employees…' : '— Select —'}
                   invalid={!!errors.assignedHr}
                 />
                 {errors.assignedHr && <div className="rec-error"><i className="ri-error-warning-line" />{errors.assignedHr}</div>}
@@ -2176,7 +2270,7 @@ const CANCEL_REASONS = [
 
 function CancelConfirmModal({
   target, candidateCount, onClose, onConfirm,
-}: { target: RecruitmentRow | null; candidateCount?: number; onClose: () => void; onConfirm: () => void }) {
+}: { target: RecruitmentRow | null; candidateCount?: number; onClose: () => void; onConfirm: (reason: string, notes: string) => void }) {
   const [reason, setReason]   = useState<string>('');
   const [notes, setNotes]     = useState<string>('');
   const [reasonErr, setReasonErr] = useState<boolean>(false);
@@ -2188,7 +2282,7 @@ function CancelConfirmModal({
 
   const handleConfirm = () => {
     if (!reason) { setReasonErr(true); return; }
-    onConfirm();
+    onConfirm(reason, notes);
   };
 
   const countLabel = candidateCount != null
@@ -2401,62 +2495,3 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
   return <>{prefix}{display}{suffix}</>;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// ─── DUMMY DATA — REMOVE WHEN BACKEND APIs ARE READY ────────────────────────
-// ════════════════════════════════════════════════════════════════════════════
-// Placeholder recruitments so the Recruitment Management page renders with
-// realistic content while the backend dev builds the `/recruitments` API.
-// To remove: delete this whole block AND restore the real `api.get` call
-// inside `fetchRecruitments()` near the top of this file.
-// ════════════════════════════════════════════════════════════════════════════
-
-function buildDummyRecruitments(): RecruitmentRow[] {
-  const palette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
-  const initialsOf = (name: string) => {
-    // For names like "CEO – Vishal Rao" pick the role abbreviation; for
-    // simple names pick first letters of each word.
-    const dashSplit = name.split('–').map(s => s.trim());
-    const display = dashSplit.length > 1 ? dashSplit[1] : name;
-    return display.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
-  };
-
-  type Seed = {
-    id: string; jobTitle: string; department: string; designation: string;
-    employmentType: EmployType; openings: number; experience: string;
-    workMode: WorkMode; priority: Priority;
-    hiringManagerName: string; hiringManagerRole: string;
-    assignedHrName: string;
-    startDate: string; deadline: string;
-    status: RecruitmentStatus;
-  };
-
-  const seeds: Seed[] = [
-    { id: 'REC-1001', jobTitle: 'Senior Backend Engineer',     department: 'Engineering', designation: 'Senior Software Engineer', employmentType: 'Full Time',  openings: 2, experience: '5 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CEO – Vishal Rao',           hiringManagerRole: 'CEO', assignedHrName: 'Sneha Chavan', startDate: '2026-03-05', deadline: '2026-05-20', status: 'In Progress' },
-    { id: 'REC-1002', jobTitle: 'Product Designer',            department: 'Design',      designation: 'Sr. Designer',             employmentType: 'Full Time',  openings: 1, experience: '3 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'HOD – Amit Shah',            hiringManagerRole: 'HOD', assignedHrName: 'Pooja Mehta',  startDate: '2026-03-12', deadline: '2026-05-30', status: 'In Progress' },
-    { id: 'REC-1003', jobTitle: 'Sales Executive',             department: 'Sales',       designation: 'Executive',                employmentType: 'Full Time',  openings: 4, experience: '1 yr+', workMode: 'On-site', priority: 'High',   hiringManagerName: 'Sales Lead – Priya Iyer',    hiringManagerRole: 'SL',  assignedHrName: 'Rahul Verma',  startDate: '2026-02-18', deadline: '2026-04-25', status: 'In Progress' },
-    { id: 'REC-1004', jobTitle: 'HR Intern',                   department: 'HR',          designation: 'Intern',                   employmentType: 'Internship', openings: 2, experience: '0 yr+', workMode: 'On-site', priority: 'Low',    hiringManagerName: 'HR Head – Sneha Chavan',     hiringManagerRole: 'HR',  assignedHrName: 'Anjali Rao',   startDate: '2026-03-20', deadline: '2026-05-01', status: 'In Progress' },
-    { id: 'REC-1005', jobTitle: 'Mobile App Developer',        department: 'Engineering', designation: 'Software Engineer',        employmentType: 'Full Time',  openings: 1, experience: '3 yr+', workMode: 'Remote',  priority: 'Medium', hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Sneha Chavan', startDate: '2026-02-10', deadline: '2026-04-15', status: 'Completed' },
-    { id: 'REC-1006', jobTitle: 'Marketing Manager',           department: 'Marketing',   designation: 'Manager',                  employmentType: 'Full Time',  openings: 1, experience: '6 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CMO – Ritu Khanna',          hiringManagerRole: 'CMO', assignedHrName: 'Pooja Mehta',  startDate: '2026-01-15', deadline: '2026-03-30', status: 'Completed' },
-    { id: 'REC-1007', jobTitle: 'DevOps Engineer',             department: 'Engineering', designation: 'Software Engineer',        employmentType: 'Full Time',  openings: 1, experience: '4 yr+', workMode: 'Remote',  priority: 'High',   hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Sneha Chavan', startDate: '2026-03-25', deadline: '2026-06-05', status: 'In Progress' },
-    { id: 'REC-1008', jobTitle: 'Frontend Engineer',           department: 'Engineering', designation: 'Software Engineer',        employmentType: 'Full Time',  openings: 2, experience: '3 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Sneha Chavan', startDate: '2026-03-28', deadline: '2026-06-10', status: 'In Progress' },
-    { id: 'REC-1009', jobTitle: 'QA Automation Engineer',      department: 'Engineering', designation: 'Senior QA Engineer',       employmentType: 'Full Time',  openings: 2, experience: '4 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Karan Singh',  startDate: '2026-04-01', deadline: '2026-06-20', status: 'In Progress' },
-    { id: 'REC-1010', jobTitle: 'Data Engineer',               department: 'Engineering', designation: 'Data Engineer',            employmentType: 'Full Time',  openings: 1, experience: '5 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CTO – Arun Gupta',           hiringManagerRole: 'CTO', assignedHrName: 'Sneha Chavan', startDate: '2026-04-02', deadline: '2026-06-15', status: 'In Progress' },
-    { id: 'REC-1011', jobTitle: 'UI/UX Designer',              department: 'Design',      designation: 'Designer',                 employmentType: 'Full Time',  openings: 1, experience: '2 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'Design Head – Neha Kulkarni',hiringManagerRole: 'DH',  assignedHrName: 'Pooja Mehta',  startDate: '2026-03-18', deadline: '2026-05-25', status: 'In Progress' },
-    { id: 'REC-1012', jobTitle: 'Business Development Manager',department: 'Sales',       designation: 'Manager',                  employmentType: 'Full Time',  openings: 1, experience: '7 yr+', workMode: 'On-site', priority: 'High',   hiringManagerName: 'Sales Lead – Priya Iyer',    hiringManagerRole: 'SL',  assignedHrName: 'Rahul Verma',  startDate: '2026-03-22', deadline: '2026-05-30', status: 'In Progress' },
-    { id: 'REC-1013', jobTitle: 'Customer Success Lead',       department: 'Operations',  designation: 'Lead',                     employmentType: 'Full Time',  openings: 1, experience: '5 yr+', workMode: 'Remote',  priority: 'Medium', hiringManagerName: 'COO – Ritu Khanna',          hiringManagerRole: 'COO', assignedHrName: 'Anjali Rao',   startDate: '2026-04-05', deadline: '2026-06-25', status: 'In Progress' },
-    { id: 'REC-1014', jobTitle: 'Finance Analyst',             department: 'Finance',     designation: 'Analyst',                  employmentType: 'Full Time',  openings: 2, experience: '3 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'CFO – Nikhil Mehra',         hiringManagerRole: 'CFO', assignedHrName: 'Karan Singh',  startDate: '2026-03-08', deadline: '2026-05-15', status: 'In Progress' },
-    { id: 'REC-1015', jobTitle: 'Content Writer',              department: 'Marketing',   designation: 'Writer',                   employmentType: 'Contract',   openings: 2, experience: '2 yr+', workMode: 'Remote',  priority: 'Low',    hiringManagerName: 'CMO – Ritu Khanna',          hiringManagerRole: 'CMO', assignedHrName: 'Pooja Mehta',  startDate: '2026-04-10', deadline: '2026-07-10', status: 'In Progress' },
-    { id: 'REC-1016', jobTitle: 'Technical Recruiter',         department: 'HR',          designation: 'Recruiter',                employmentType: 'Full Time',  openings: 1, experience: '3 yr+', workMode: 'Hybrid',  priority: 'Medium', hiringManagerName: 'HR Head – Sneha Chavan',     hiringManagerRole: 'HR',  assignedHrName: 'Anjali Rao',   startDate: '2026-02-25', deadline: '2026-04-20', status: 'Cancelled' },
-    { id: 'REC-1017', jobTitle: 'Product Manager',             department: 'Engineering', designation: 'Manager',                  employmentType: 'Full Time',  openings: 1, experience: '6 yr+', workMode: 'Hybrid',  priority: 'High',   hiringManagerName: 'CEO – Vishal Rao',           hiringManagerRole: 'CEO', assignedHrName: 'Sneha Chavan', startDate: '2026-01-20', deadline: '2026-03-15', status: 'Completed' },
-    { id: 'REC-1018', jobTitle: 'Graphic Designer',            department: 'Design',      designation: 'Designer',                 employmentType: 'Part Time', openings: 1, experience: '2 yr+', workMode: 'Flexible', priority: 'Low',    hiringManagerName: 'Design Head – Neha Kulkarni',hiringManagerRole: 'DH',  assignedHrName: 'Pooja Mehta',  startDate: '2026-04-12', deadline: '2026-06-30', status: 'In Progress' },
-    { id: 'REC-1019', jobTitle: 'Account Executive',           department: 'Sales',       designation: 'Executive',                employmentType: 'Full Time',  openings: 3, experience: '2 yr+', workMode: 'On-site', priority: 'Medium', hiringManagerName: 'Sales Lead – Priya Iyer',    hiringManagerRole: 'SL',  assignedHrName: 'Rahul Verma',  startDate: '2026-04-15', deadline: '2026-07-01', status: 'In Progress' },
-  ];
-
-  return seeds.map((s, idx) => ({
-    ...s,
-    hiringManagerInitials: initialsOf(s.hiringManagerName),
-    hiringManagerAccent:   palette[idx % palette.length],
-    assignedHrInitials:    initialsOf(s.assignedHrName),
-    assignedHrAccent:      palette[(idx + 3) % palette.length],
-  }));
-}

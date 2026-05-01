@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OrganizationTypeController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PermissionController;
+use App\Http\Controllers\Api\RecruitmentController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RazorpayWebhookController;
@@ -70,6 +71,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // Admin issues a self-service onboarding invite + emails the link.
     Route::post  ('/employees/onboarding-invite', [OnboardingController::class, 'createInvite']);
     Route::apiResource('employees', EmployeeController::class);
+
+    // Recruitments — full CRUD + auto-numbered REC-### scoped per tenant.
+    // Declared BEFORE the generic /master/{slug} routes so apiResource params
+    // resolve cleanly (mirrors the employees registration above).
+    Route::get   ('/recruitments/next-code', [RecruitmentController::class, 'nextCode']);
+    Route::apiResource('recruitments', RecruitmentController::class);
 
     Route::get   ('/master/{slug}',           [MasterController::class, 'list']);
     Route::post  ('/master/{slug}',           [MasterController::class, 'store']);
