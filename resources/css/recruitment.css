@@ -4912,14 +4912,12 @@
     0 12px 24px rgba(15,23,42,0.18);
 }
 
-/* Header — violet gradient banner with employee meta + dial */
+/* Header — calm violet banner with employee meta + dial */
 .ev-head {
   position: relative;
   display: flex; align-items: flex-start; gap: 14px;
-  padding: 14px 20px;
-  background:
-    radial-gradient(900px 280px at 100% 0%, rgba(255,255,255,0.16) 0%, transparent 60%),
-    linear-gradient(130deg, #2d1f6e 0%, #4c2d9c 40%, #6d28d9 75%, #7c3aed 100%);
+  padding: 16px 22px;
+  background: linear-gradient(135deg, #4c2d9c 0%, #6d28d9 100%);
   color: #ffffff;
 }
 .ev-head-icon {
@@ -4955,10 +4953,7 @@
 
 .ev-head-status {
   display: flex; align-items: center; gap: 10px;
-  background: rgba(255,255,255,0.10);
-  border: 1px solid rgba(255,255,255,0.18);
-  border-radius: 12px;
-  padding: 6px 14px 6px 6px;
+  padding: 0;
   flex-shrink: 0;
 }
 .ev-head-status-text { display: flex; flex-direction: column; }
@@ -4983,36 +4978,17 @@
 .ev-close:hover { background: rgba(255,255,255,0.30); }
 .ev-close i { font-size: 18px; }
 
-/* KPI strip */
+/* KPI strip — uses the .rec-kpi-card system from the main page so the
+   visual language stays consistent. */
 .ev-kpis {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 20px;
   background: #ffffff;
   border-bottom: 1px solid #ececf2;
 }
 [data-bs-theme="dark"] .ev-kpis { background: var(--vz-card-bg); border-bottom-color: var(--vz-border-color); }
-.ev-kpi {
-  display: flex; flex-direction: column; align-items: center;
-  padding: 14px;
-  border-right: 1px solid #ececf2;
-}
-.ev-kpi:last-child { border-right: 0; }
-[data-bs-theme="dark"] .ev-kpi { border-right-color: var(--vz-border-color); }
-.ev-kpi-num {
-  font-size: 24px;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: -0.02em;
-}
-.ev-kpi-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.10em;
-  color: #6b7280;
-  text-transform: uppercase;
-  margin-top: 5px;
-}
-[data-bs-theme="dark"] .ev-kpi-label { color: rgba(255,255,255,0.60); }
 
 /* Tabs */
 .ev-tabs {
@@ -5060,24 +5036,41 @@
 }
 [data-bs-theme="dark"] .ev-body { background: color-mix(in srgb, #ffffff 4%, var(--vz-card-bg)); }
 
-/* Group section */
-.ev-group { margin-bottom: 18px; }
+/* Group card — clean white card grouping a header + its docs.
+   No accent strip; the icon does the categorisation work. */
+.ev-group {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+  transition: border-color .15s ease;
+}
 .ev-group:last-child { margin-bottom: 0; }
+.ev-group:hover { border-color: #d1d5db; }
+[data-bs-theme="dark"] .ev-group {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+}
+
 .ev-group-head {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px;
-  background: linear-gradient(180deg, #ede9fe 0%, #f5f3ff 100%);
-  border: 1px solid #ddd6fe;
-  border-radius: 10px;
-  margin-bottom: 8px;
+  background: #ffffff;
+  border-bottom: 1px solid #f1f2f4;
+}
+[data-bs-theme="dark"] .ev-group-head {
+  background: var(--vz-card-bg);
+  border-bottom-color: var(--vz-border-color);
 }
 .ev-group-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px;
-  border-radius: 8px;
+  width: 28px; height: 28px;
+  border-radius: 7px;
   flex-shrink: 0;
 }
-.ev-group-icon i { font-size: 15px; }
+.ev-group-icon i { font-size: 14px; }
 .ev-group-title {
   flex: 1;
   font-size: 13px;
@@ -5088,34 +5081,32 @@
 [data-bs-theme="dark"] .ev-group-title { color: #ffffff; }
 .ev-group-count {
   display: inline-flex; align-items: center;
-  padding: 3px 10px;
+  padding: 2px 9px;
   border-radius: 999px;
-  background: #ddd6fe;
-  color: #5b3fd1;
+  background: #f3f4f6;
+  color: #6b7280;
   font-size: 10px;
-  font-weight: 700;
-}
-[data-bs-theme="dark"] .ev-group-head {
-  background: rgba(124,92,252,0.10);
-  border-color: rgba(124,92,252,0.36);
+  font-weight: 600;
 }
 [data-bs-theme="dark"] .ev-group-count {
-  background: rgba(124,92,252,0.28);
-  color: #c4b5fd;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.70);
 }
 
-/* Document list */
-.ev-doc-list { display: flex; flex-direction: column; gap: 6px; }
+/* Document list — flat rows inside the group card, separated by 1px lines */
+.ev-doc-list { display: flex; flex-direction: column; }
 .ev-doc {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 12px;
-  background: #ffffff;
-  border: 1px solid #ececf2;
-  border-radius: 9px;
-  transition: border-color .15s ease, box-shadow .15s ease;
+  padding: 10px 16px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background .15s ease;
 }
-.ev-doc:hover { border-color: #ddd6fe; box-shadow: 0 3px 8px rgba(91,63,209,0.08); }
-[data-bs-theme="dark"] .ev-doc { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+.ev-doc:last-child { border-bottom: 0; }
+.ev-doc:hover { background: #f9fafb; }
+[data-bs-theme="dark"] .ev-doc { border-bottom-color: color-mix(in srgb, #ffffff 6%, transparent); }
+[data-bs-theme="dark"] .ev-doc:hover { background: rgba(255,255,255,0.03); }
 .ev-doc-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 36px; height: 36px;
@@ -5191,30 +5182,39 @@
 .ev-doc-btn i { font-size: 13px; }
 .ev-doc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .ev-doc-btn--view {
-  background: #ede9fe;
-  color: #5b3fd1;
-  border-color: #ddd6fe;
+  background: #ffffff;
+  color: #4b5563;
+  border-color: #e5e7eb;
 }
 .ev-doc-btn--view:hover:not(:disabled) {
-  background: #ddd6fe;
-  transform: translateY(-1px);
+  background: #f9fafb;
+  border-color: #d1d5db;
+  color: #1f2937;
 }
-.ev-doc-btn--preview { background: #dcfce7; color: #047857; border-color: #a7f3d0; }
-.ev-doc-btn--preview:hover:not(:disabled) { background: #a7f3d0; }
+.ev-doc-btn--preview {
+  background: #ffffff;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+.ev-doc-btn--preview:hover:not(:disabled) { background: #ecfdf5; }
 .ev-doc-btn--download {
-  background: linear-gradient(130deg, #2d1f6e 0%, #4c2d9c 40%, #6d28d9 75%, #7c3aed 100%);
+  background: #6d28d9;
   color: #ffffff;
-  box-shadow: 0 3px 8px rgba(45,31,110,0.30);
+  border-color: #6d28d9;
 }
 .ev-doc-btn--download:hover:not(:disabled) {
-  transform: translateY(-1px);
-  filter: brightness(1.05);
-  box-shadow: 0 5px 12px rgba(45,31,110,0.40);
+  background: #5b21b6;
+  border-color: #5b21b6;
 }
 [data-bs-theme="dark"] .ev-doc-btn--view {
-  background: rgba(124,92,252,0.18);
-  color: #c4b5fd;
-  border-color: rgba(124,92,252,0.40);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.78);
+  border-color: rgba(255,255,255,0.12);
+}
+[data-bs-theme="dark"] .ev-doc-btn--view:hover:not(:disabled) {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.18);
+  color: #ffffff;
 }
 
 /* Responsive — Evidence Vault */
@@ -5225,11 +5225,6 @@
   .ev-head { flex-wrap: wrap; }
   .ev-head-status { order: 3; flex: 1; }
   .ev-kpis { grid-template-columns: repeat(3, 1fr); }
-  .ev-kpi:nth-child(3) { border-right: 0; }
-  .ev-kpi:nth-child(n+4) {
-    border-top: 1px solid #ececf2;
-  }
-  [data-bs-theme="dark"] .ev-kpi:nth-child(n+4) { border-top-color: var(--vz-border-color); }
 }
 @media (max-width: 767px) {
   .modal-dialog:has(> .ev-modal) {
@@ -5251,9 +5246,6 @@
   .ev-head, .ev-kpis, .ev-tabs { flex-shrink: 0; }
   .ev-body { flex: 1; min-height: 0; max-height: none; }
   .ev-kpis { grid-template-columns: repeat(2, 1fr); }
-  .ev-kpi:nth-child(odd) { border-right: 1px solid #ececf2; }
-  .ev-kpi { border-right: 0; }
-  .ev-kpi:nth-child(n+3) { border-top: 1px solid #ececf2; }
   .ev-tabs { padding: 0 12px; overflow-x: auto; flex-wrap: nowrap; white-space: nowrap; }
   .ev-tab { flex-shrink: 0; padding: 10px 12px; font-size: 11.5px; }
   .ev-doc { flex-wrap: wrap; }

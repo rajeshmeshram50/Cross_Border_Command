@@ -1485,13 +1485,26 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
           </button>
         </div>
 
-        {/* KPI strip */}
-        <div className="ev-kpis">
-          <div className="ev-kpi"><span className="ev-kpi-num" style={{ color: '#7c3aed' }}>{total}</span><span className="ev-kpi-label">Total Docs</span></div>
-          <div className="ev-kpi"><span className="ev-kpi-num" style={{ color: '#15803d' }}>{verified}</span><span className="ev-kpi-label">Verified</span></div>
-          <div className="ev-kpi"><span className="ev-kpi-num" style={{ color: '#7c3aed' }}>{signed}</span><span className="ev-kpi-label">Signed</span></div>
-          <div className="ev-kpi"><span className="ev-kpi-num" style={{ color: '#c2410c' }}>{pending}</span><span className="ev-kpi-label">Pending</span></div>
-          <div className="ev-kpi"><span className="ev-kpi-num" style={{ color: '#6b7280' }}>{notGen}</span><span className="ev-kpi-label">Not Generated</span></div>
+        {/* KPI strip — same gradient-strip + icon-tile language as main page */}
+        <div className="ev-kpis rec-page-kpis">
+          {[
+            { label: 'Total Docs',      value: total,    icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
+            { label: 'Verified',        value: verified, icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
+            { label: 'Signed',          value: signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg, #6d28d9 0%, #7c3aed 60%, #a78bfa 100%)', deep: '#6d28d9' },
+            { label: 'Pending',         value: pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
+            { label: 'Not Generated',   value: notGen,   icon: 'ri-file-forbid-line',     gradient: 'linear-gradient(135deg, #475569 0%, #64748b 60%, #94a3b8 100%)', deep: '#475569' },
+          ].map(k => (
+            <div key={k.label} className="rec-kpi-card">
+              <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+              <div className="rec-kpi-text">
+                <span className="rec-kpi-label">{k.label}</span>
+                <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
+              </div>
+              <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                <i className={k.icon} />
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* Tabs */}
@@ -1564,18 +1577,18 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
 const VAULT_BY_TAB: Record<VaultTab, VaultGroup[]> = {
   employee: [
     {
-      title: 'Identity Documents', icon: 'ri-id-card-line', iconBg: '#ede9fe', iconFg: '#5b3fd1',
+      title: 'Identity Documents', icon: 'ri-shield-user-line', iconBg: '#ede9fe', iconFg: '#5b3fd1',
       docs: [
-        { icon: 'ri-id-card-line',     iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Aadhaar Card',     sub: 'Government issued 12-digit unique identity', category: 'Identity', status: 'Verified' },
-        { icon: 'ri-bank-card-2-line', iconBg: '#fef3c7', iconFg: '#92400e', name: 'PAN Card',         sub: 'Permanent Account Number for taxation',    category: 'Identity', status: 'Verified' },
-        { icon: 'ri-camera-line',      iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Passport Photo',   sub: 'Recent passport-size photograph',          category: 'Identity', status: 'Uploaded' },
+        { icon: 'ri-fingerprint-line',  iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Aadhaar Card',     sub: 'Government issued 12-digit unique identity', category: 'Identity', status: 'Verified' },
+        { icon: 'ri-bank-card-2-line',  iconBg: '#fef3c7', iconFg: '#92400e', name: 'PAN Card',         sub: 'Permanent Account Number for taxation',    category: 'Identity', status: 'Verified' },
+        { icon: 'ri-camera-line',       iconBg: '#ede9fe', iconFg: '#5b3fd1', name: 'Passport Photo',   sub: 'Recent passport-size photograph',          category: 'Identity', status: 'Uploaded' },
       ],
     },
     {
-      title: 'Address Proof', icon: 'ri-home-4-line', iconBg: '#dcfce7', iconFg: '#15803d',
+      title: 'Address Proof', icon: 'ri-home-line', iconBg: '#dcfce7', iconFg: '#15803d',
       docs: [
-        { icon: 'ri-home-4-line',    iconBg: '#dcfce7', iconFg: '#15803d', name: 'Current Address Proof',   sub: 'Utility bill or bank statement (last 3 months)', category: 'Address', status: 'Uploaded' },
-        { icon: 'ri-map-pin-2-line', iconBg: '#fee2e2', iconFg: '#b91c1c', name: 'Permanent Address Proof', sub: 'Aadhaar / Voter ID as permanent address proof',  category: 'Address', status: 'Verified' },
+        { icon: 'ri-home-line',       iconBg: '#dcfce7', iconFg: '#15803d', name: 'Current Address Proof',   sub: 'Utility bill or bank statement (last 3 months)', category: 'Address', status: 'Uploaded' },
+        { icon: 'ri-map-pin-line',    iconBg: '#fee2e2', iconFg: '#b91c1c', name: 'Permanent Address Proof', sub: 'Aadhaar / Voter ID as permanent address proof',  category: 'Address', status: 'Verified' },
       ],
     },
     {
