@@ -45,6 +45,7 @@ import HrExitManagement from '../pages/HrExitManagement';
 import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
 import EmployeePermissions from '../pages/EmployeePermissions';
 import EmployeeProfile from '../pages/EmployeeProfile';
+import PublicOnboarding from '../pages/PublicOnboarding';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -323,6 +324,17 @@ function DashboardRoutes({ user }: { user: any }) {
 function Router() {
   const { user } = useAuth();
   const location = useLocation();
+
+  // Public onboarding flow — token-protected, accessible without login.
+  // Matched first so candidates clicking the email link don't bounce to
+  // /login when no session is active.
+  if (location.pathname.startsWith('/onboarding/')) {
+    return (
+      <Routes>
+        <Route path="/onboarding/:token" element={<PublicOnboarding />} />
+      </Routes>
+    );
+  }
 
   if (!user) {
     // Allow auth routes even when not logged in
