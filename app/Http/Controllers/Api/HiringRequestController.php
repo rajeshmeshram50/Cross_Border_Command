@@ -4,41 +4,42 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\HiringRequest;
 use App\Models\Module;
 use App\Models\Permission;
-use App\Models\Recruitment;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-class RecruitmentController extends Controller
+class HiringRequestController extends Controller
 {
     /**
      * Eager-loads used by every read endpoint so the SPA gets nested names
-     * (department.name, designation.name, hiringManager.display_name, …)
-     * without extra round-trips. Mirrors EmployeeController::WITH.
+     * (department.name, creator.name, …) without extra round-trips.
+     * Mirrors RecruitmentController::WITH.
      */
     private const WITH = [
         'client:id,org_name',
         'branch:id,name,is_main',
         'creator:id,name,user_type',
         'department:id,name,code',
-        'designation:id,name',
-        'primaryRole:id,name',
-        'hiringManager:id,emp_code,display_name,first_name,last_name',
-        'assignedHr:id,emp_code,display_name,first_name,last_name',
     ];
 
-    /** Module slug used for permission checks — matches ModuleSeeder. */
+    /**
+     * The hiring-request screen lives inside the recruitment module — there
+     * is no separate `hr.hiring_requests` slug, so permission checks reuse
+     * the recruitment module's row.
+     */
     private const MODULE_SLUG = 'hr.recruitment';
 
-    /** Whitelisted enum values — keep in sync with the frontend dropdowns. */
-    private const EMPLOYMENT_TYPES = ['Full Time', 'Part Time', 'Contract', 'Internship'];
-    private const WORK_MODES       = ['On-site', 'Remote', 'Hybrid', 'Flexible'];
-    private const PRIORITIES       = ['Critical', 'High', 'Medium', 'Low'];
-    private const STATUSES         = ['In Progress', 'Completed', 'Cancelled'];
+    /** Whitelisted enums — keep in sync with the front-end form options. */
+    private const EMPLOYMENT_TYPES   = ['Full-time', 'Part-time', 'Contract', 'Intern'];
+    private const WORK_MODES         = ['Onsite', 'Remote', 'Hybrid', 'Flexible'];
+    private const URGENCIES          = ['Low', 'Medium', 'High', 'Critical'];
+    private const REQUEST_TYPES      = ['New Position', 'Replacement Hiring', 'Backfill', 'Expansion Hiring', 'Intern Requirement', 'Urgent Temporary Support'];
+    private const STATUSES           = ['Draft', 'Submitted', 'Under Review', 'Approved', 'Sent Back', 'Rejected'];
 
     /* ─────────────────────────────────────────────────────────────────
      *  LIST / SHOW / NEXT-CODE
@@ -48,26 +49,24 @@ class RecruitmentController extends Controller
     {
         $this->authorize($request, 'can_view');
 
-        $q = Recruitment::query()->with(self::WITH);
+        $q = HiringRequest::query()->with(self::WITH);
         $this->applyScope($q, $request->user());
 
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
-                $w->where('job_title', 'ilike', "%{$search}%")
+                $w->where('title', 'ilike', "%{$search}%")
+                  ->orWhere('job_role', 'ilike', "%{$search}%")
                   ->orWhere('code', 'ilike', "%{$search}%");
             });
         }
         if ($status = $request->query('status')) {
             $q->where('status', $status);
         }
+        if ($urgency = $request->query('urgency')) {
+            $q->where('urgency', $urgency);
+        }
         if ($dept = $request->query('department_id')) {
             $q->where('department_id', $dept);
-        }
-        if ($priority = $request->query('priority')) {
-            $q->where('priority', $priority);
-        }
-        if ($empType = $request->query('employment_type')) {
-            $q->where('employment_type', $empType);
         }
 
         return response()->json($q->orderByDesc('id')->get());
@@ -80,18 +79,15 @@ class RecruitmentController extends Controller
         return response()->json($row);
     }
 
-    /**
-     * Returns the next REC-### code for the tenant the new row would be
-     * stamped under. Sequence is isolated per (client_id, branch_id) just
-     * like employees and the auto-coded master tables.
-     */
     public function nextCode(Request $request)
     {
         $this->authorize($request, 'can_view');
         [$clientId, $branchId] = $this->resolveOwnership($request);
 
-        $code = $this->peekNextCode($clientId, $branchId);
-        return response()->json(['code' => $code, 'prefix' => 'REC-']);
+        return response()->json([
+            'code'   => $this->peekNextCode($clientId, $branchId),
+            'prefix' => 'HRQ-',
+        ]);
     }
 
     /* ─────────────────────────────────────────────────────────────────
@@ -107,9 +103,9 @@ class RecruitmentController extends Controller
             $auth = $request->user();
             [$clientId, $branchId] = $this->resolveOwnership($request);
 
-            // Reject duplicates BEFORE allocating the next REC code so we
+            // Reject duplicates BEFORE allocating the next HRQ code so we
             // don't burn a sequence number on a request that's about to be
-            // rejected. Surfaces inline on the `job_title` field.
+            // rejected. Surfaces inline on the `title` field.
             $this->guardDuplicate($data, $clientId, $branchId, null);
 
             $payload = array_merge($data, [
@@ -117,9 +113,11 @@ class RecruitmentController extends Controller
                 'branch_id'  => $branchId,
                 'created_by' => $auth?->id,
                 'code'       => $this->allocateCode($clientId, $branchId),
-                'status'     => $data['status'] ?? 'In Progress',
+                // Saved-as-draft rows arrive with status=Draft; submitted
+                // rows arrive with status=Submitted from the frontend.
+                'status'     => $data['status'] ?? 'Submitted',
             ]);
-            $row = Recruitment::create($payload);
+            $row = HiringRequest::create($payload);
             $row->load(self::WITH);
 
             return response()->json($row, 201);
@@ -132,9 +130,9 @@ class RecruitmentController extends Controller
         $row = $this->resolveRow($request, (int) $id);
 
         $data = $this->validatePayload($request, $row->id);
-        // Block edits that would collide with another row's (job_title +
-        // department) within the same tenant — ignore the row being
-        // updated itself so re-saves don't trip the guard.
+        // Block edits that would collide with another row's (title +
+        // department) within the same tenant, but ignore the row being
+        // updated itself.
         $this->guardDuplicate($data, $row->client_id, $row->branch_id, $row->id);
 
         $row->update($data);
@@ -145,21 +143,20 @@ class RecruitmentController extends Controller
 
     /**
      * Reject duplicates within the same tenant. The signature key is
-     * (job_title, department_id) — two open recruitments with the exact
-     * same job title for the same department are almost always an
-     * accidental double-submit.
+     * (title, department_id) — two requests with the exact same title for
+     * the same department are almost always an accidental double-submit.
      *
-     * Skips when either field is missing so partial PATCH updates that
-     * don't change those columns aren't blocked.
+     * Skips when either field is missing (e.g. a half-baked draft) so the
+     * Save-as-Draft path stays usable.
      */
     private function guardDuplicate(array $data, $clientId, $branchId, ?int $excludeId): void
     {
-        $title  = trim((string) ($data['job_title'] ?? ''));
+        $title = trim((string) ($data['title'] ?? ''));
         $deptId = $data['department_id'] ?? null;
         if ($title === '' || $deptId === null) return;
 
-        $q = Recruitment::query()
-            ->whereRaw('LOWER(job_title) = ?', [mb_strtolower($title)])
+        $q = HiringRequest::query()
+            ->whereRaw('LOWER(title) = ?', [mb_strtolower($title)])
             ->where('department_id', $deptId);
 
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
@@ -169,8 +166,8 @@ class RecruitmentController extends Controller
         $existing = $q->first(['id', 'code']);
         if ($existing) {
             throw ValidationException::withMessages([
-                'job_title' => [sprintf(
-                    'A recruitment with this job title already exists for the selected department (%s).',
+                'title' => [sprintf(
+                    'A hiring request with this title already exists for the selected department (%s).',
                     $existing->code ?: ('#' . $existing->id),
                 )],
             ]);
@@ -184,14 +181,13 @@ class RecruitmentController extends Controller
         $this->guardHierarchicalAction($request->user(), $row, 'delete');
 
         $row->delete();
-        return response()->json(['message' => 'Recruitment removed.']);
+        return response()->json(['message' => 'Hiring request removed.']);
     }
 
     /* ─────────────────────────────────────────────────────────────────
-     *  HELPERS — mirror EmployeeController/MasterController patterns
+     *  HELPERS — same shape as RecruitmentController
      * ───────────────────────────────────────────────────────────────── */
 
-    /** Cap the granular permission check to the 'hr.recruitment' module. */
     private function authorize(Request $request, string $perm): void
     {
         $user = $request->user();
@@ -200,8 +196,6 @@ class RecruitmentController extends Controller
 
         $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
         if (!$moduleId) {
-            // First-run: module row not seeded yet. Fall back to plan-default
-            // (allow client_admin / branch_user; deny others).
             if (in_array($user->user_type, ['client_admin', 'branch_user'], true)) return;
             abort(403, 'Recruitment module not enabled.');
         }
@@ -213,7 +207,6 @@ class RecruitmentController extends Controller
         if (!$allowed) abort(403, "Missing {$perm} on " . self::MODULE_SLUG);
     }
 
-    /** Pick (client_id, branch_id) for a new row. */
     private function resolveOwnership(Request $request): array
     {
         $user = $request->user();
@@ -229,7 +222,6 @@ class RecruitmentController extends Controller
         return [null, null];
     }
 
-    /** Tenant scoping — same rules used everywhere else. */
     private function applyScope($q, $user): void
     {
         if (!$user) return;
@@ -270,14 +262,14 @@ class RecruitmentController extends Controller
         $q->whereRaw('1 = 0');
     }
 
-    private function resolveRow(Request $request, int $id): Recruitment
+    private function resolveRow(Request $request, int $id): HiringRequest
     {
-        $q = Recruitment::query()->with(self::WITH);
+        $q = HiringRequest::query()->with(self::WITH);
         $this->applyScope($q, $request->user());
         return $q->findOrFail($id);
     }
 
-    private function guardHierarchicalAction($user, Recruitment $row, string $verb): void
+    private function guardHierarchicalAction($user, HiringRequest $row, string $verb): void
     {
         if (!$user || $user->user_type === 'super_admin' || !$row->created_by) return;
         if ($row->created_by === $user->id) return;
@@ -292,66 +284,82 @@ class RecruitmentController extends Controller
         };
         $creator = User::find($row->created_by);
         if ($creator && $rank($creator->user_type) > $rank($user->user_type)) {
-            abort(403, "You cannot {$verb} this recruitment — created by a higher-privileged user.");
+            abort(403, "You cannot {$verb} this hiring request — created by a higher-privileged user.");
         }
     }
 
     /**
-     * Validation rules. Required fields mirror the frontend's required-* labels:
-     * job_title, department_id, designation_id, primary_role_id, employment_type,
-     * openings, priority, hiring_manager_id, assigned_hr_id, start_date, deadline.
-     * Everything else is optional.
+     * Validation rules.
+     *
+     * The frontend has TWO submit paths:
+     *   - "Save as Draft"  → status='Draft'; the strict required fields are
+     *     relaxed so a partial form can still be persisted.
+     *   - "Submit to HR"   → status='Submitted'; everything the form marks
+     *     with a red asterisk is required.
+     *
+     * We don't differentiate at the schema level — whichever required
+     * fields the frontend chooses to omit it'll send as empty strings, and
+     * the request validates either way.
      */
     private function validatePayload(Request $request, ?int $id = null): array
     {
         $isUpdate = $id !== null;
-        $req = fn (string $extra = '') => ($isUpdate ? 'sometimes|' : '') . 'required' . ($extra ? "|{$extra}" : '');
+        $isDraft  = strtolower((string) $request->input('status')) === 'draft';
+
+        // Strict-mode = the user clicked Submit to HR. Draft mode relaxes
+        // every required field down to nullable so half-finished forms can
+        // be saved.
+        $req = fn () => $isUpdate || $isDraft ? 'nullable' : 'required';
 
         return $request->validate([
-            'job_title'         => ($isUpdate ? 'sometimes|' : '') . 'required|string|max:191',
-            'department_id'     => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_departments,id',
-            'designation_id'    => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_designations,id',
-            'primary_role_id'   => 'nullable|integer|exists:master_roles,id',
+            // Section 1
+            'title'             => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191'],
+            'job_role'          => [$isUpdate || $isDraft ? 'nullable' : 'required', 'string', 'max:191'],
+            'department_id'     => [$isUpdate || $isDraft ? 'nullable' : 'required', 'integer', 'exists:master_departments,id'],
+            'team'              => 'nullable|string|max:100',
+            'requested_by_name' => 'nullable|string|max:150',
+            'request_date'      => 'nullable|date',
 
-            'employment_type'   => ['nullable', Rule::in(self::EMPLOYMENT_TYPES)],
-            'openings'          => 'nullable|integer|min:1|max:9999',
-            'experience'        => 'nullable|string|max:30',
-            'work_mode'         => ['nullable', Rule::in(self::WORK_MODES)],
-            'ctc_range'         => 'nullable|string|max:50',
-            'priority'          => ['nullable', Rule::in(self::PRIORITIES)],
+            // Section 2
+            'openings'          => [$req(), 'integer', 'min:1', 'max:9999'],
+            'employment_type'   => [$req(), Rule::in(self::EMPLOYMENT_TYPES)],
+            'work_mode'         => [$req(), Rule::in(self::WORK_MODES)],
+            'urgency'           => [$req(), Rule::in(self::URGENCIES)],
 
-            'hiring_manager_id' => 'nullable|integer|exists:employees,id',
-            'assigned_hr_id'    => 'nullable|integer|exists:employees,id',
-            'start_date'        => 'nullable|date',
-            'deadline'          => 'nullable|date|after_or_equal:start_date',
+            // Section 3
+            'job_description'        => [$req(), 'string'],
+            'daily_responsibilities' => 'nullable|string',
+            'required_skills'        => [$req(), 'string', 'max:255'],
+            'required_experience'    => [$req(), 'string', 'max:30'],
+            'required_qualification' => 'nullable|string|max:100',
+            'preferred_profile'      => 'nullable|string|max:191',
 
-            'job_description'   => 'nullable|string',
-            'requirements'      => 'nullable|string',
+            // Section 4
+            'request_type'           => [$req(), Rule::in(self::REQUEST_TYPES)],
+            'business_justification' => [$req(), 'string'],
+            'hiring_need_reason'     => [$req(), 'string'],
+            'current_team_gap'       => 'nullable|string',
+            'what_if_not_filled'     => 'nullable|string',
 
-            'post_on_portal'        => 'nullable|boolean',
-            'notify_team_leads'     => 'nullable|boolean',
-            'enable_referral_bonus' => 'nullable|boolean',
-
-            'status'        => ['nullable', Rule::in(self::STATUSES)],
-            'cancel_reason' => 'nullable|string|max:100',
-            'cancel_notes'  => 'nullable|string',
+            'target_join_date' => 'nullable|date',
+            'status'           => ['nullable', Rule::in(self::STATUSES)],
         ]);
     }
 
-    /** Compute the next REC-### atomically inside the create transaction. */
+    /** Compute the next HRQ-### atomically inside the create transaction. */
     private function allocateCode($clientId, $branchId): string
     {
-        $q = Recruitment::query()->withTrashed()->lockForUpdate();
+        $q = HiringRequest::query()->withTrashed()->lockForUpdate();
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
         $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
 
         return $this->buildNext($q->pluck('code'));
     }
 
-    /** Same logic as allocateCode but without the row lock, for read-only previews. */
+    /** Same logic without the row lock, for read-only previews. */
     private function peekNextCode($clientId, $branchId): string
     {
-        $q = Recruitment::query()->withTrashed();
+        $q = HiringRequest::query()->withTrashed();
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
         $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
 
@@ -362,11 +370,11 @@ class RecruitmentController extends Controller
     {
         $max = 0;
         foreach ($codes as $c) {
-            if (preg_match('/^REC-(\d+)$/i', (string) $c, $m)) {
+            if (preg_match('/^HRQ-(\d+)$/i', (string) $c, $m)) {
                 $n = (int) $m[1];
                 if ($n > $max) $max = $n;
             }
         }
-        return 'REC-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
+        return 'HRQ-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 }
