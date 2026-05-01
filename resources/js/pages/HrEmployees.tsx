@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
@@ -716,6 +716,32 @@ export default function HrEmployees() {
   // gets full screen real estate. The route reads the row from navigation
   // state; falling back to just the id if landed on directly.
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // ── Cross-page Edit hand-off ────────────────────────────────────────
+  // Other pages (e.g. HrEmployeeOnboarding) push the full 4-step wizard
+  // open by navigating here with state.openEditEmpCode. We watch for it
+  // once the API rows are loaded, find the matching row by emp_code, pop
+  // the wizard, and clear the state so a subsequent re-render or refresh
+  // doesn't keep re-opening it.
+  useEffect(() => {
+    const incoming = (location.state as any)?.openEditEmpCode as string | undefined;
+    if (!incoming) return;
+    if (apiRows.length === 0) return; // wait for fetch to land
+    const match = apiRows.find(r => r.id === incoming);
+    if (match) {
+      // Stash the originating URL so closing the wizard (after save or
+      // manual close) bounces the user back to it. Without this they'd
+      // be stranded on /hr/employees after editing from the onboarding
+      // page.
+      const back = (location.state as any)?.returnTo as string | undefined;
+      if (back) setReturnToOnClose(back);
+      openEditEmployee(match);
+    }
+    // Clear state so the modal isn't reopened on the next render.
+    navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiRows, location.state]);
   const openPermissions = (row: EmployeeRow) => {
     navigate(`/hr/employees/${encodeURIComponent(row.id)}/permissions`, { state: { employee: row } });
   };
@@ -804,7 +830,19 @@ export default function HrEmployees() {
     setEErrors({});
   };
 
-  const closeEmp = () => { setEmpOpen(false); resetEmpForm(); };
+  // When the wizard was popped from another page (e.g. /hr/employee-onboarding),
+  // closing it sends the user back to that page so they don't get stranded
+  // on the HR Employees list. Cleared after consumption.
+  const [returnToOnClose, setReturnToOnClose] = useState<string | null>(null);
+  const closeEmp = () => {
+    setEmpOpen(false);
+    resetEmpForm();
+    if (returnToOnClose) {
+      const target = returnToOnClose;
+      setReturnToOnClose(null);
+      navigate(target);
+    }
+  };
 
   // Db id of the employee currently being edited. Null in add mode. Stored
   // on the row by apiToRow() as `_dbId`.

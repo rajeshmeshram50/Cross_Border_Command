@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
+import { useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
+import api from '../../api';
 import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
@@ -129,11 +131,83 @@ interface OnboardRow {
   managerAccent: string;
   profile: number;          // 0..100
   status: OnboardStatus;
+  /** Real wizard progress (0-4) carried through from /api/employees so the
+   *  Initiate Onboarding modal can mark Stage 1 (Employee Onboarding Setup)
+   *  as Completed once all 4 wizard steps are saved. */
+  wizardStep?: number;
 }
 
-// ── Mock data ────────────────────────────────────────────────────────────────
-// 13 pending new joiners + 6 completed (matches the screenshot counts).
-const PENDING: OnboardRow[] = [
+// ── Helpers — bridge API rows to the OnboardRow shape this page expects ────
+const ACCENT_PALETTE = ['#0ab39c','#7c5cfc','#f7b84b','#0ea5e9','#e83e8c','#299cdb','#f06548','#405189','#d63384','#108548'];
+const _hash = (s: string): number => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+};
+const _accent = (s: string) => ACCENT_PALETTE[_hash(s) % ACCENT_PALETTE.length];
+const _initials = (s: string) =>
+  s.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('') || '—';
+const _formatDate = (iso: string | null | undefined): string => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso).slice(0, 10);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+/**
+ * Map the wizard's progress + employee status to one of the existing
+ * OnboardStatus pill values. The page already styles all of these — we
+ * just route to the right one based on real server state instead of
+ * hard-coded mock entries.
+ *
+ *   wizard_step = 4 + status='Active'         → Completed
+ *   wizard_step = 4 + status='Inactive' (etc) → Document Pending  (waiting for admin to activate)
+ *   wizard_step = 1-3                          → In Progress
+ *   wizard_step = 0                            → Not Started
+ */
+const _mapOnboardStatus = (raw: any): OnboardStatus => {
+  const step = Number(raw?.wizard_step_completed ?? 0);
+  const stat = String(raw?.status ?? '').toLowerCase();
+  if (step >= 4 && stat === 'active') return 'Completed';
+  if (step >= 4) return 'Document Pending';
+  if (step > 0) return 'In Progress';
+  return 'Not Started';
+};
+
+const apiToOnboardRow = (e: any): OnboardRow => {
+  const name = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || '—';
+  const accent = _accent(name);
+  const mgr = e.reporting_manager;
+  const mgrName = mgr?.display_name
+    || (mgr ? [mgr.first_name, mgr.last_name].filter(Boolean).join(' ').trim() : '')
+    || '—';
+  return {
+    id: e.emp_code || `EMP-${e.id}`,
+    empId: e.emp_code || `EMP-${e.id}`,
+    name,
+    initials: _initials(name),
+    accent,
+    joinDate: _formatDate(e.date_of_joining),
+    department: e.department?.name || '—',
+    designation: e.designation?.name || '—',
+    primaryRole: e.primary_role?.name || '—',
+    ancillaryRole: e.ancillary_role?.name || '',
+    managerName: mgrName,
+    managerInitials: _initials(mgrName),
+    managerAccent: _accent(mgrName || 'manager'),
+    // Profile % matches the HR list: 4 wizard steps capped at 50% (rest
+    // of profile completion lives outside the wizard).
+    profile: Math.min(50, Math.max(0, Number(e.wizard_step_completed ?? 0) * 12.5)),
+    status: _mapOnboardStatus(e),
+    wizardStep: Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0))),
+  };
+};
+
+// ── Legacy seed (no longer used at runtime) ─────────────────────────────────
+// The page now hydrates its rows from /api/employees on mount. The arrays
+// below are kept as a typing reference / future demo seed only.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _PENDING_LEGACY: OnboardRow[] = [
   { id: 'OB-001', empId: 'EMP-2399', name: 'Vikram Nair',       initials: 'VN', accent: '#7c5cfc', joinDate: 'Apr 22, 2026', department: 'Engineering', designation: 'Principal Engineer',     primaryRole: 'Backend Architect',   ancillaryRole: 'Tech Strategy',     managerName: 'Atharv Patekar', managerInitials: 'AP', managerAccent: '#0ea5e9', profile: 45, status: 'Document Pending' },
   { id: 'OB-002', empId: 'EMP-2400', name: 'Priyanka Deshmukh', initials: 'PD', accent: '#0ab39c', joinDate: 'Apr 21, 2026', department: 'Finance',     designation: 'Senior Finance Manager', primaryRole: 'FP&A Lead',           ancillaryRole: 'Risk & Compliance', managerName: 'Nikhil Mehra',   managerInitials: 'NM', managerAccent: '#f7b84b', profile: 38, status: 'In Progress' },
   { id: 'OB-003', empId: 'EMP-2401', name: 'Riya Sharma',       initials: 'RS', accent: '#f06548', joinDate: 'Apr 14, 2026', department: 'Engineering', designation: 'Senior Developer',       primaryRole: 'Full Stack Engineer', ancillaryRole: 'Tech Lead Backup',  managerName: 'Atharv Patekar', managerInitials: 'AP', managerAccent: '#0ea5e9', profile: 82, status: 'IT Setup' },
@@ -149,7 +223,8 @@ const PENDING: OnboardRow[] = [
   { id: 'OB-013', empId: 'EMP-2411', name: 'Manasi Patil',      initials: 'MP', accent: '#f06548', joinDate: 'Apr 25, 2026', department: 'Mobile',      designation: 'Flutter Developer',      primaryRole: 'Mobile App Developer',ancillaryRole: 'QA Tester',         managerName: 'Mayur Thorat',   managerInitials: 'MT', managerAccent: '#0ab39c', profile: 20, status: 'Not Started' },
 ];
 
-const COMPLETED: OnboardRow[] = [
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _COMPLETED_LEGACY: OnboardRow[] = [
   { id: 'OB-091', empId: 'EMP-2390', name: 'Divya Iyer',      initials: 'DI', accent: '#7c5cfc', joinDate: 'Mar 1, 2026',  department: 'Engineering', designation: 'DevOps Engineer',      primaryRole: 'DevOps Engineer',       ancillaryRole: 'SRE Support',          managerName: 'Arun Gupta',     managerInitials: 'AG', managerAccent: '#108548', profile: 100, status: 'Completed' },
   { id: 'OB-092', empId: 'EMP-2391', name: 'Siddharth Jain',  initials: 'SJ', accent: '#0ab39c', joinDate: 'Mar 8, 2026',  department: 'Finance',     designation: 'Senior Finance Analyst', primaryRole: 'FP&A Analyst',          ancillaryRole: 'Budget Coordinator',   managerName: 'Nikhil Mehra',   managerInitials: 'NM', managerAccent: '#f7b84b', profile: 100, status: 'Completed' },
   { id: 'OB-093', empId: 'EMP-2392', name: 'Ishita Verma',    initials: 'IV', accent: '#0c63b0', joinDate: 'Feb 22, 2026', department: 'HR',          designation: 'HR Specialist',          primaryRole: 'Recruitment Specialist',ancillaryRole: 'Learning & Dev',       managerName: 'Priya Mehta',    managerInitials: 'PM', managerAccent: '#7c5cfc', profile: 100, status: 'Completed' },
@@ -367,11 +442,43 @@ const EMPLOYEE_TYPES = [
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrEmployeeOnboarding() {
+  // Redirects to /hr/employees with a hint so the destination page can
+  // open the full 4-step wizard for the chosen row.
+  const navigate = useNavigate();
+
   const [tab, setTab] = useState<'pending' | 'completed'>('pending');
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [checklistOpen, setChecklistOpen] = useState(false);
+
+  // ── Live employee rows (replaces the old PENDING / COMPLETED mocks) ──
+  // Fetched once on mount; split into pending vs completed below based on
+  // wizard progress + status. Empty array on error so the page still
+  // renders (shows zero counts + empty table) instead of crashing.
+  const [apiRows, setApiRows] = useState<OnboardRow[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/employees')
+      .then(r => {
+        if (cancelled) return;
+        const list = Array.isArray(r.data) ? r.data : [];
+        setApiRows(list.map(apiToOnboardRow));
+      })
+      .catch(() => { if (!cancelled) setApiRows([]); });
+    return () => { cancelled = true; };
+  }, []);
+  // Split by status pill so the Pending tab keeps showing only employees
+  // who still need attention; Completed tab shows fully-onboarded rows.
+  const liveSplit = useMemo(() => {
+    const pending: OnboardRow[]   = [];
+    const completed: OnboardRow[] = [];
+    for (const row of apiRows) {
+      if (row.status === 'Completed') completed.push(row);
+      else pending.push(row);
+    }
+    return { pending, completed };
+  }, [apiRows]);
 
   // Evidence Vault modal — opened from the Action column on the Completed tab
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -393,7 +500,25 @@ export default function HrEmployeeOnboarding() {
   // Edit Employee modal — opened from the Action column pencil button
   const [editOpen, setEditOpen] = useState(false);
   const [editRow,  setEditRow]  = useState<OnboardRow | null>(null);
-  const openEdit  = (row: OnboardRow) => { setEditRow(row); setEditOpen(true); };
+  // Edit redirects to the HR Employees list with a navigation-state hint
+  // so the destination page can pop the full 4-step Add/Edit wizard for
+  // the chosen row. `returnTo` carries the path we came from so save/close
+  // sends the user straight back here instead of stranding them on the
+  // employees list. Falls back to the legacy inline modal only if the
+  // row's emp_code is missing (shouldn't happen for live API rows).
+  const openEdit  = (row: OnboardRow) => {
+    if (row?.empId) {
+      navigate('/hr/employees', {
+        state: {
+          openEditEmpCode: row.empId,
+          returnTo: '/hr/employee-onboarding',
+        },
+      });
+      return;
+    }
+    setEditRow(row);
+    setEditOpen(true);
+  };
   const closeEdit = () => { setEditOpen(false); setEditRow(null); };
 
   // Pagination — match the master tables (7 per page).
@@ -406,18 +531,20 @@ export default function HrEmployeeOnboarding() {
   useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter]);
 
   const counts = useMemo(() => {
-    const all = [...PENDING, ...COMPLETED];
+    const pendingRows   = liveSplit.pending;
+    const completedRows = liveSplit.completed;
+    const all = [...pendingRows, ...completedRows];
     return {
       total:     all.length,
-      progress:  PENDING.filter(r => r.status === 'In Progress' || r.status === 'IT Setup' || r.status === 'Orientation' || r.status === 'Document Pending').length,
-      completed: COMPLETED.length,
-      notStart:  PENDING.filter(r => r.status === 'Not Started').length,
-      missing:   PENDING.filter(r => r.profile < 60).length,
-      pending:   PENDING.length,
+      progress:  pendingRows.filter(r => r.status === 'In Progress' || r.status === 'IT Setup' || r.status === 'Orientation' || r.status === 'Document Pending').length,
+      completed: completedRows.length,
+      notStart:  pendingRows.filter(r => r.status === 'Not Started').length,
+      missing:   pendingRows.filter(r => r.profile < 60).length,
+      pending:   pendingRows.length,
     };
-  }, []);
+  }, [liveSplit]);
 
-  const rows = tab === 'pending' ? PENDING : COMPLETED;
+  const rows = tab === 'pending' ? liveSplit.pending : liveSplit.completed;
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -1464,12 +1591,23 @@ function InitiateOnboardingModal({
   const firstName = emp.name.split(' ')[0] ?? '';
   const lastName  = emp.name.split(' ').slice(1).join(' ') ?? '';
 
-  // Derive a per-stage status that respects the user's progression.
-  // Stages before the active one are "Completed", the active one is "In
-  // Progress", and the ones after are "Pending".
+  // Per-stage status. Stage 1 is special: it represents the 4-step wizard
+  // we already persist on /api/employees, so its progress comes straight
+  // from `emp.wizardStep` (0-4 → 0-100%) and stays Completed once the
+  // wizard is fully saved — even if the user navigates back to Stage 1
+  // to review. Stages 2-6 keep the old "based on user navigation" logic
+  // because they don't have backend persistence yet.
+  const wizardStep = Math.max(0, Math.min(4, Number(emp.wizardStep ?? 0)));
+  const stage1Pct = wizardStep * 25;
+  const stage1Done = wizardStep >= 4;
+
   const stagesView = ONB_STAGES.map(s => {
     let status: StageStatus, progress: number;
-    if (s.num < activeStage)      { status = 'Completed';   progress = 100; }
+    if (s.num === 1) {
+      // Anchored to real wizard state — completion can't roll back.
+      progress = stage1Pct;
+      status   = stage1Done ? 'Completed' : (wizardStep > 0 ? 'In Progress' : 'Pending');
+    } else if (s.num < activeStage)      { status = 'Completed';   progress = 100; }
     else if (s.num === activeStage) { status = 'In Progress'; progress = s.progress || 35; }
     else                           { status = 'Pending';     progress = 0;   }
     return { ...s, status, progress };
