@@ -388,6 +388,15 @@ export default function HrEmployees() {
   const [onbDept, setOnbDept] = useState('');
   const [onbDate, setOnbDate] = useState('');
   const [onbExpiry, setOnbExpiry] = useState<ExpiryDays>(15);
+  // After a successful invite the URL is stashed here so the modal can
+  // show the copy-link panel instead of immediately closing. `null` = the
+  // modal is still in "fill in candidate details" mode.
+  const [generatedInviteUrl, setGeneratedInviteUrl] = useState<string | null>(null);
+  const [copiedAt, setCopiedAt] = useState<number>(0);
+  // True while the POST is in flight. Disables the submit button and
+  // swaps its icon to a spinner so impatient admins don't fire the same
+  // invite multiple times.
+  const [generatingInvite, setGeneratingInvite] = useState(false);
 
   // Onboarding form — inline validation. Mirrors the pattern used by the
   // master/client forms: per-field error map cleared as the user fixes the
@@ -412,16 +421,63 @@ export default function HrEmployees() {
     if (!onbDate)         errs.date  = 'Please pick the expected joining date';
     return errs;
   };
-  const handleGenerateOnboarding = () => {
+  const handleGenerateOnboarding = async () => {
+    // Idempotency guard — clicking the button while a request is already
+    // in flight would otherwise create duplicate invites + duplicate
+    // emails. The disabled+spinner styling on the button is a UX hint;
+    // this early return is the actual safety belt.
+    if (generatingInvite) return;
+
     const errs = validateOnboarding();
     if (Object.keys(errs).length > 0) {
       setOnbErrors(errs);
       toast.error('Please fix the highlighted fields', `${Object.keys(errs).length} field${Object.keys(errs).length === 1 ? '' : 's'} need${Object.keys(errs).length === 1 ? 's' : ''} attention.`);
       return;
     }
-    // TODO: wire to backend — generate signed onboarding link for {onbName, onbEmail, onbDept, onbDate, onbExpiry}
-    toast.success('Onboarding link generated', `A ${onbExpiry}-day link will be sent to ${onbEmail}.`);
-    closeOnboard();
+    // Map the dropdown's department label back to its master id (the
+    // backend expects the FK, not the label).
+    const deptId = mDepts.find(d => d.name === onbDept)?.id;
+    setGeneratingInvite(true);
+    try {
+      const r = await api.post('/employees/onboarding-invite', {
+        invitee_name:       onbName.trim(),
+        invitee_email:      onbEmail.trim(),
+        department_id:      deptId ?? null,
+        expected_join_date: onbDate || null,
+        expiry_days:        onbExpiry,
+        // Pin the link to the SPA the admin is using right now, regardless
+        // of what APP_URL is set to in .env. Without this, links open
+        // whatever URL the .env points at — typically the Apache path,
+        // which serves a different bundle and bounces the candidate back
+        // to the login screen.
+        app_origin:         typeof window !== 'undefined' ? window.location.origin : undefined,
+      });
+      const inviteUrl = r?.data?.invite?.url;
+      toast.success(
+        'Onboarding link sent',
+        `${onbExpiry}-day link emailed to ${onbEmail}.`,
+      );
+      // Hold the modal open and show a copy-link panel — the admin can
+      // copy the URL and share it elsewhere (Slack, WhatsApp, etc.) or
+      // close. The form is hidden once the link is generated.
+      if (inviteUrl) setGeneratedInviteUrl(inviteUrl);
+      else closeOnboard();
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors;
+      if (apiErrors) {
+        // Map backend keys back onto the modal's local error map.
+        const next: OnbErrors = {};
+        if (apiErrors.invitee_email) next.email = apiErrors.invitee_email[0];
+        if (apiErrors.invitee_name)  next.name  = apiErrors.invitee_name[0];
+        if (apiErrors.department_id) next.dept  = apiErrors.department_id[0];
+        if (apiErrors.expected_join_date) next.date = apiErrors.expected_join_date[0];
+        setOnbErrors(next);
+      }
+      const msg = err?.response?.data?.message || err?.message || 'Failed to send invite';
+      toast.error('Could not send onboarding link', String(msg));
+    } finally {
+      setGeneratingInvite(false);
+    }
   };
 
   const closeOnboard = () => {
@@ -432,6 +488,31 @@ export default function HrEmployees() {
     setOnbDate('');
     setOnbExpiry(15);
     setOnbErrors({});
+    setGeneratedInviteUrl(null);
+    setCopiedAt(0);
+  };
+
+  /** Copy the generated invite URL to the clipboard. Falls back to a
+   *  programmatic textarea-select when the modern Clipboard API isn't
+   *  available (older browsers / non-secure contexts). */
+  const copyGeneratedUrl = async () => {
+    if (!generatedInviteUrl) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(generatedInviteUrl);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = generatedInviteUrl;
+        ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopiedAt(Date.now());
+      toast.success('Link copied', 'Paste it anywhere to share with the candidate.');
+    } catch {
+      toast.error('Copy failed', 'Select the link and copy manually.');
+    }
   };
 
   // Triggered from the disabled-tab person icon — pre-fills the onboarding link
@@ -1820,7 +1901,9 @@ export default function HrEmployees() {
           [data-bs-theme="dark"] .onb-expiry-pill { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); color: var(--vz-secondary-color); }
           [data-bs-theme="dark"] .onb-expiry-pill.is-active { background: rgba(124,92,252,0.18); border-color: #a78bfa; color: #c4b5fd; }
           .onb-submit-btn { padding: 16px 22px; border-radius: 16px; font-size: 15px; color: #fff; border: none; background: linear-gradient(90deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%); box-shadow: 0 10px 22px rgba(124,58,237,0.32); transition: transform .15s ease, box-shadow .15s ease; }
-          .onb-submit-btn:hover { transform: translateY(-1px); box-shadow: 0 14px 28px rgba(124,58,237,0.38); }
+          .onb-submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 28px rgba(124,58,237,0.38); }
+          .onb-submit-btn:disabled { transform: none; box-shadow: 0 6px 14px rgba(124,58,237,0.20); }
+          @keyframes onb-spin { to { transform: rotate(360deg); } }
           .onb-close-btn { width: 32px; height: 32px; border-radius: 10px; background: transparent; border: none; color: #6b7280; transition: background .15s ease, color .15s ease; }
           .onb-close-btn:hover { background: #f3f4f6; color: #1f2937; }
         `}</style>
@@ -1860,99 +1943,199 @@ export default function HrEmployees() {
           {/* Divider */}
           <div style={{ height: 1, background: '#eef0f4', margin: '0 28px' }} />
 
-          {/* Form body */}
-          <div style={{ padding: '22px 28px 10px' }}>
-            <Row className="g-3">
-              <Col md={6}>
-                <label className="onb-label" htmlFor="onb-name">Employee Name<span className="onb-req">*</span></label>
-                <input
-                  id="onb-name"
-                  type="text"
-                  className={`onb-input${onbErrors.name ? ' is-invalid' : ''}`}
-                  placeholder="Full name"
-                  value={onbName}
-                  onChange={e => { setOnbName(e.target.value); clearOnbError('name'); }}
-                />
-                {onbErrors.name && (
-                  <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.name}</div>
-                )}
-              </Col>
-              <Col md={6}>
-                <label className="onb-label" htmlFor="onb-email">Email Address<span className="onb-req">*</span></label>
-                <input
-                  id="onb-email"
-                  type="email"
-                  className={`onb-input${onbErrors.email ? ' is-invalid' : ''}`}
-                  placeholder="name@company.com"
-                  value={onbEmail}
-                  onChange={e => { setOnbEmail(e.target.value); clearOnbError('email'); }}
-                />
-                {onbErrors.email && (
-                  <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.email}</div>
-                )}
-              </Col>
-              <Col md={6}>
-                <label className="onb-label">Department<span className="onb-req">*</span></label>
-                <MasterSelect
-                  value={onbDept}
-                  onChange={(v) => { setOnbDept(v); clearOnbError('dept'); }}
-                  placeholder="Select department"
-                  options={departments
-                    .filter(d => d !== 'All Depts')
-                    .map(d => ({ value: d, label: d }))}
-                  invalid={!!onbErrors.dept}
-                />
-                {onbErrors.dept && (
-                  <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.dept}</div>
-                )}
-              </Col>
-              <Col md={6}>
-                <label className="onb-label">Expected Joining Date<span className="onb-req">*</span></label>
-                <MasterDatePicker
-                  value={onbDate}
-                  onChange={(v) => { setOnbDate(v); clearOnbError('date'); }}
-                  placeholder="dd-mm-yyyy"
-                  invalid={!!onbErrors.date}
-                />
-                {onbErrors.date && (
-                  <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.date}</div>
-                )}
-              </Col>
-            </Row>
+          {generatedInviteUrl ? (
+            // ── Success state — invite created, show copy panel ──
+            <>
+              <div style={{ padding: '24px 28px 6px' }}>
+                <div style={{
+                  background: 'linear-gradient(135deg,#ecfaf3,#d6f4e3)',
+                  border: '1px solid #b6e9d9', borderRadius: 12,
+                  padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14,
+                }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 12,
+                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                    color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
+                  }}>
+                    <i className="ri-check-line" />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#0a8a78' }}>Invite link generated</div>
+                    <div style={{ fontSize: 12.5, color: '#0a6e5d' }}>
+                      Sent to <strong>{onbEmail}</strong>. Expires in {onbExpiry} days.
+                    </div>
+                  </div>
+                </div>
 
-            {/* Link expiry */}
-            <div className="mt-4">
-              <label className="onb-label">Link Expiry</label>
-              <div className="d-flex flex-wrap gap-2">
-                {([3, 7, 15] as ExpiryDays[]).map(days => {
-                  const active = onbExpiry === days;
-                  return (
-                    <button
-                      key={days}
-                      type="button"
-                      onClick={() => setOnbExpiry(days)}
-                      className={`onb-expiry-pill${active ? ' is-active' : ''}`}
-                    >
-                      <i className="ri-time-line" style={{ fontSize: 16 }} />
-                      {days} Days
-                    </button>
-                  );
-                })}
+                <label className="onb-label" style={{ marginTop: 18 }}>Onboarding URL</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                  <input
+                    type="text"
+                    readOnly
+                    value={generatedInviteUrl}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="onb-input"
+                    style={{ background: '#f7f8fc', flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={copyGeneratedUrl}
+                    className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
+                    style={{
+                      fontSize: 13, color: '#fff', border: 'none',
+                      background: copiedAt ? 'linear-gradient(135deg,#0ab39c,#02c8a7)' : 'linear-gradient(135deg,#7c5cfc,#a78bfa)',
+                      boxShadow: '0 4px 12px rgba(124,92,252,0.30)',
+                      whiteSpace: 'nowrap', minWidth: 120,
+                    }}
+                  >
+                    <i className={copiedAt ? 'ri-check-line' : 'ri-file-copy-line'} />
+                    {copiedAt ? 'Copied' : 'Copy link'}
+                  </button>
+                </div>
+                <p style={{ fontSize: 11.5, color: '#6b7280', marginTop: 8, marginBottom: 0 }}>
+                  Share this link if the email doesn't arrive. The link is single-use — it stops working as soon as the candidate submits the form.
+                </p>
               </div>
-            </div>
-          </div>
 
-          {/* Footer / submit */}
-          <div style={{ padding: '20px 28px 26px' }}>
-            <button
-              type="button"
-              className="onb-submit-btn w-100 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-              onClick={handleGenerateOnboarding}
-            >
-              <i className="ri-link" style={{ fontSize: 18 }} />
-              Generate Onboarding Link
-            </button>
-          </div>
+              <div style={{ padding: '20px 28px 26px', display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Reset to the form so admin can issue another invite
+                    // without leaving the modal.
+                    setGeneratedInviteUrl(null);
+                    setCopiedAt(0);
+                    setOnbName(''); setOnbEmail(''); setOnbDept(''); setOnbDate(''); setOnbExpiry(15); setOnbErrors({});
+                  }}
+                  className="btn fw-semibold rounded-pill flex-grow-1"
+                  style={{ fontSize: 13, background: '#fff', color: '#475569', border: '1px solid #e5e7eb', padding: '10px 16px' }}
+                >
+                  Send another invite
+                </button>
+                <button
+                  type="button"
+                  onClick={closeOnboard}
+                  className="btn fw-semibold rounded-pill flex-grow-1"
+                  style={{
+                    fontSize: 13, color: '#fff', border: 'none',
+                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                    boxShadow: '0 4px 12px rgba(10,179,156,0.30)',
+                    padding: '10px 16px',
+                  }}
+                >
+                  Done
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Form body */}
+              <div style={{ padding: '22px 28px 10px' }}>
+                <Row className="g-3">
+                  <Col md={6}>
+                    <label className="onb-label" htmlFor="onb-name">Employee Name<span className="onb-req">*</span></label>
+                    <input
+                      id="onb-name"
+                      type="text"
+                      className={`onb-input${onbErrors.name ? ' is-invalid' : ''}`}
+                      placeholder="Full name"
+                      value={onbName}
+                      onChange={e => { setOnbName(e.target.value); clearOnbError('name'); }}
+                    />
+                    {onbErrors.name && (
+                      <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.name}</div>
+                    )}
+                  </Col>
+                  <Col md={6}>
+                    <label className="onb-label" htmlFor="onb-email">Email Address<span className="onb-req">*</span></label>
+                    <input
+                      id="onb-email"
+                      type="email"
+                      className={`onb-input${onbErrors.email ? ' is-invalid' : ''}`}
+                      placeholder="name@company.com"
+                      value={onbEmail}
+                      onChange={e => { setOnbEmail(e.target.value); clearOnbError('email'); }}
+                    />
+                    {onbErrors.email && (
+                      <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.email}</div>
+                    )}
+                  </Col>
+                  <Col md={6}>
+                    <label className="onb-label">Department<span className="onb-req">*</span></label>
+                    <MasterSelect
+                      value={onbDept}
+                      onChange={(v) => { setOnbDept(v); clearOnbError('dept'); }}
+                      placeholder="Select department"
+                      options={departments
+                        .filter(d => d !== 'All Depts')
+                        .map(d => ({ value: d, label: d }))}
+                      invalid={!!onbErrors.dept}
+                    />
+                    {onbErrors.dept && (
+                      <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.dept}</div>
+                    )}
+                  </Col>
+                  <Col md={6}>
+                    <label className="onb-label">Expected Joining Date<span className="onb-req">*</span></label>
+                    <MasterDatePicker
+                      value={onbDate}
+                      onChange={(v) => { setOnbDate(v); clearOnbError('date'); }}
+                      placeholder="dd-mm-yyyy"
+                      invalid={!!onbErrors.date}
+                    />
+                    {onbErrors.date && (
+                      <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.date}</div>
+                    )}
+                  </Col>
+                </Row>
+
+                {/* Link expiry */}
+                <div className="mt-4">
+                  <label className="onb-label">Link Expiry</label>
+                  <div className="d-flex flex-wrap gap-2">
+                    {([3, 7, 15] as ExpiryDays[]).map(days => {
+                      const active = onbExpiry === days;
+                      return (
+                        <button
+                          key={days}
+                          type="button"
+                          onClick={() => setOnbExpiry(days)}
+                          className={`onb-expiry-pill${active ? ' is-active' : ''}`}
+                        >
+                          <i className="ri-time-line" style={{ fontSize: 16 }} />
+                          {days} Days
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer / submit */}
+              <div style={{ padding: '20px 28px 26px' }}>
+                <button
+                  type="button"
+                  className="onb-submit-btn w-100 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
+                  onClick={handleGenerateOnboarding}
+                  disabled={generatingInvite}
+                  aria-busy={generatingInvite}
+                  style={{
+                    opacity: generatingInvite ? 0.7 : 1,
+                    cursor: generatingInvite ? 'progress' : 'pointer',
+                  }}
+                >
+                  <i
+                    className={generatingInvite ? 'ri-loader-4-line' : 'ri-link'}
+                    style={{
+                      fontSize: 18,
+                      animation: generatingInvite ? 'onb-spin 0.8s linear infinite' : undefined,
+                    }}
+                  />
+                  {generatingInvite ? 'Generating link…' : 'Generate Onboarding Link'}
+                </button>
+              </div>
+            </>
+          )}
         </ModalBody>
       </Modal>
 

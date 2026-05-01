@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\MasterController;
+use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OrganizationTypeController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PermissionController;
@@ -15,6 +16,12 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RazorpayWebhookController;
 use App\Http\Controllers\Api\SubscriptionController;
 use Illuminate\Support\Facades\Route;
+
+// Public — onboarding flow. Token is the only auth: GET previews the invite,
+// POST submits the candidate's completed form. Both fail with 410 if the
+// invite has been used / cancelled / expired.
+Route::get ('/onboarding/{token}',          [OnboardingController::class, 'show']);
+Route::post('/onboarding/{token}/complete', [OnboardingController::class, 'complete']);
 
 // Public
 Route::post('/login', [AuthController::class, 'login']);
@@ -58,8 +65,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Employees — full CRUD + auto-numbered EMP-### + welcome-mail provisioning.
     // Declared BEFORE the generic /master/{slug} routes so apiResource params
     // resolve cleanly.
-    Route::get   ('/employees/next-code', [EmployeeController::class, 'nextCode']);
-    Route::get   ('/employees/managers',  [EmployeeController::class, 'managers']);
+    Route::get   ('/employees/next-code',         [EmployeeController::class, 'nextCode']);
+    Route::get   ('/employees/managers',          [EmployeeController::class, 'managers']);
+    // Admin issues a self-service onboarding invite + emails the link.
+    Route::post  ('/employees/onboarding-invite', [OnboardingController::class, 'createInvite']);
     Route::apiResource('employees', EmployeeController::class);
 
     Route::get   ('/master/{slug}',           [MasterController::class, 'list']);
