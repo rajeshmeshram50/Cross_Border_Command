@@ -209,6 +209,10 @@ type CheckpointBadgeKind =
   | 'EMP OPTIONAL'
   | 'INTERN REQUIRED'
   | 'INTERN OPTIONAL'
+  | 'IT REQUIRED'
+  | 'IT OPTIONAL'
+  | 'NON-IT REQUIRED'
+  | 'NON-IT OPTIONAL'
   | 'OPTIONAL'
   | 'ALL';
 
@@ -224,6 +228,10 @@ const BADGE_TONES: Record<CheckpointBadgeKind, { bg: string; fg: string }> = {
   'EMP OPTIONAL':    { bg: '#e7f7ee', fg: '#1a9c5c' },
   'INTERN REQUIRED': { bg: '#fdf3d6', fg: '#a06f00' },
   'INTERN OPTIONAL': { bg: '#fff5dd', fg: '#bd8400' },
+  'IT REQUIRED':     { bg: '#dceefe', fg: '#1d4ed8' },
+  'IT OPTIONAL':     { bg: '#e8f0ff', fg: '#3b82f6' },
+  'NON-IT REQUIRED': { bg: '#ffe4d4', fg: '#a4661c' },
+  'NON-IT OPTIONAL': { bg: '#fff0e2', fg: '#c87837' },
   'OPTIONAL':        { bg: '#eef2f6', fg: '#5b6478' },
   'ALL':             { bg: '#eef2f6', fg: '#5b6478' },
 };
@@ -246,85 +254,75 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
     title: 'Employee Onboarding Setup',
     subtitle: 'Basic details, job info, work details & compensation',
     checkpoints: [
-      { title: 'Employee basic details verified', desc: 'First name, last name, display name, employee ID, work country, gender', badges: ['REQUIRED', 'ALL'] },
-      { title: 'Contact & identity filled',       desc: 'Work email, mobile number, DOB, blood group, number series',           badges: ['REQUIRED', 'ALL'] },
-      { title: 'Job details confirmed',           desc: 'Joining date, department, designation, primary role, ancillary role, work type', badges: ['REQUIRED', 'ALL'] },
-      { title: 'Organisational details assigned', desc: 'Legal entity, work location, reporting manager selected',              badges: ['REQUIRED', 'ALL'] },
-      { title: 'Work & attendance policy set',    desc: 'Leave plan, holiday list, shift, weekly off, time tracking, penalization policy', badges: ['REQUIRED', 'ALL'] },
-      { title: 'Compensation details configured', desc: 'Salary payment mode, pay group, CTC, tax regime, payroll enabled',     badges: ['REQUIRED', 'ALL'] },
-      { title: 'Department authority letter issued', desc: 'Authority matrix signed, KRA targets set, department scope defined', badges: ['HOD REQUIRED'] },
-      { title: 'Budget access & approval limits configured', desc: 'Departmental budget view, purchase approval threshold set in system', badges: ['HOD REQUIRED'] },
-      { title: 'Org chart updated with HOD mapped', desc: 'All direct reportees linked, org chart reviewed and approved by HR', badges: ['HOD REQUIRED'] },
-      { title: 'Executive introduction & cross-functional briefing', desc: 'Intro call with Director/CEO, peer HODs, and cross-functional heads', badges: ['HOD OPTIONAL'] },
-      { title: 'Team members mapped under Team Leader', desc: 'All direct reportees linked to Team Leader in org structure',   badges: ['TL REQUIRED'] },
-      { title: 'Sprint / project board access granted', desc: 'Project management access configured, current sprint briefed',  badges: ['TL REQUIRED'] },
-      { title: 'Reporting structure intro & team meet done', desc: 'TL introduced to HOD, peers, and team members',            badges: ['TL OPTIONAL'] },
-      { title: 'Role clarity session with reporting manager', desc: 'KPIs, deliverables, probation targets, and review schedule set', badges: ['EXEC REQUIRED'] },
-      { title: 'Cross-department introduction completed', desc: 'Introduced to key stakeholders and peer executives',           badges: ['EXEC OPTIONAL'] },
-      { title: 'Buddy / buddy-employee assigned',  desc: 'Experienced peer assigned to guide new employee through first 30 days', badges: ['EMP REQUIRED'] },
-      { title: 'First week schedule & induction plan shared', desc: 'Day-by-day plan, training schedule, key contacts list provided', badges: ['EMP REQUIRED'] },
-      { title: 'Asset allocation recorded',        desc: 'Laptop assigned, asset ID, mobile device, other assets',              badges: ['OPTIONAL', 'ALL'] },
-      { title: 'Internship agreement & offer letter signed', desc: 'Duration, stipend, NDA, and project scope confirmed',       badges: ['INTERN REQUIRED'] },
-      { title: 'Mentor / supervisor assigned',     desc: 'Dedicated mentor identified, first week schedule shared',             badges: ['INTERN REQUIRED'] },
+      { title: 'Employee basic details verified',        desc: 'First name, last name, display name, employee ID, work country, gender',                 badges: ['REQUIRED', 'ALL'] },
+      { title: 'Contact & identity filled',              desc: 'Work email, mobile number, DOB, blood group, number series',                              badges: ['REQUIRED', 'ALL'] },
+      { title: 'Job details confirmed',                  desc: 'Joining date, department, designation, primary role, ancillary role, work type',          badges: ['REQUIRED', 'ALL'] },
+      { title: 'Organisational details assigned',        desc: 'Legal entity, work location, reporting manager selected',                                 badges: ['REQUIRED', 'ALL'] },
+      { title: 'Work & attendance policy set',           desc: 'Leave plan, holiday list, shift, weekly off, time tracking, penalization policy',         badges: ['REQUIRED', 'ALL'] },
+      { title: 'Compensation details configured',        desc: 'Salary payment mode, pay group, CTC, tax regime, payroll enabled',                        badges: ['REQUIRED', 'ALL'] },
+      { title: 'Asset allocation recorded',              desc: 'Laptop assigned, asset ID, mobile device, other assets',                                  badges: ['OPTIONAL', 'ALL'] },
+      { title: 'Internship agreement & offer letter signed', desc: 'Duration, stipend, NDA, and project scope confirmed',                                 badges: ['INTERN REQUIRED'] },
+      { title: 'Mentor / supervisor assigned',           desc: 'Dedicated mentor identified, first week schedule shared',                                 badges: ['INTERN REQUIRED'] },
+      { title: 'Learning & project plan shared',         desc: 'Goals, milestones, and evaluation criteria documented',                                   badges: ['INTERN OPTIONAL'] },
     ],
   },
   {
     num: 2,
-    title: 'Documentation & Compliance',
-    subtitle: 'Identity verification, agreements, and policy acknowledgements',
+    title: 'Document Management',
+    subtitle: 'Identity, education, address & employment documents',
     checkpoints: [
-      { title: 'Government ID proofs uploaded', desc: 'Aadhaar, PAN, passport (if applicable) — uploaded and verified',         badges: ['REQUIRED', 'ALL'] },
-      { title: 'Address proofs verified',       desc: 'Current and permanent address proofs (utility bill, voter ID, etc.)',   badges: ['REQUIRED', 'ALL'] },
-      { title: 'Education certificates collected', desc: '10th, 12th, graduation, post-graduation certificates uploaded',      badges: ['REQUIRED', 'ALL'] },
-      { title: 'Previous employment proofs',    desc: 'Relieving letter, experience letter, last 3 pay slips',                  badges: ['OPTIONAL', 'ALL'] },
-      { title: 'NDA & employment agreement signed', desc: 'Non-disclosure agreement and offer/appointment letter executed',     badges: ['REQUIRED', 'ALL'] },
-      { title: 'Code of conduct acknowledgement', desc: 'Company ethics, behaviour, and conduct policy acknowledged',           badges: ['REQUIRED', 'ALL'] },
-      { title: 'Background verification initiated', desc: 'BGV vendor briefed; checks scheduled (employment, education, address)', badges: ['REQUIRED', 'ALL'] },
+      { title: 'Aadhaar Card uploaded',                          desc: 'Front & back, PDF or image, max 5 MB',                                            badges: ['REQUIRED', 'ALL'] },
+      { title: 'PAN Card uploaded',                              desc: 'PDF or image, max 5 MB',                                                          badges: ['REQUIRED', 'ALL'] },
+      { title: 'Passport-size Photograph uploaded',              desc: 'JPG/PNG, max 2 MB, white background preferred',                                   badges: ['REQUIRED', 'ALL'] },
+      { title: 'Current & permanent address proof submitted',    desc: 'Utility bill or rent agreement (max 6 months old)',                               badges: ['REQUIRED', 'ALL'] },
+      { title: '10th & 12th marksheets uploaded',                desc: 'SSC/HSC board certificates with marksheets',                                      badges: ['REQUIRED', 'ALL'] },
+      { title: 'Graduation / Degree certificate uploaded',       desc: 'Official degree or provisional certificate',                                      badges: ['REQUIRED', 'ALL'] },
+      { title: 'College ID / enrollment letter uploaded',        desc: 'Current semester enrollment proof from college/university',                       badges: ['INTERN REQUIRED'] },
+      { title: 'NOC from college / faculty submitted',           desc: 'If required by institution — No Objection Certificate for internship',            badges: ['INTERN OPTIONAL'] },
     ],
   },
   {
     num: 3,
-    title: 'IT & Workstation Setup',
-    subtitle: 'Hardware, software access, and security provisioning',
+    title: 'Provisioning & Asset Setup',
+    subtitle: 'Email, system access, devices, physical setup',
     checkpoints: [
-      { title: 'Laptop / workstation assigned',  desc: 'Hardware allocated, asset tag recorded, handover form signed',           badges: ['REQUIRED', 'ALL'] },
-      { title: 'Email & SSO accounts created',   desc: 'Corporate email, SSO/Okta account provisioned with default groups',      badges: ['REQUIRED', 'ALL'] },
-      { title: 'Project / repo access granted',  desc: 'Source-control, ticketing, and project board access mapped to role',     badges: ['REQUIRED', 'ALL'] },
-      { title: 'VPN & security tools installed', desc: 'VPN client, MDM, EDR, and password manager installed and tested',        badges: ['REQUIRED', 'ALL'] },
-      { title: 'Access card / biometric enrolled', desc: 'Office access card issued, biometric/fingerprint enrolled at security desk', badges: ['OPTIONAL', 'ALL'] },
+      { title: 'Official email address created',          desc: 'firstname.lastname@company.com format, verified and active',                             badges: ['REQUIRED', 'ALL'] },
+      { title: 'Employee code confirmed',                 desc: 'Unique employee code auto-fetched from number series',                                   badges: ['REQUIRED', 'ALL'] },
+      { title: 'Biometric registration completed',        desc: 'Fingerprint/face registration at biometric device on Day 1',                             badges: ['REQUIRED', 'ALL'] },
+      { title: 'ID card issued',                          desc: 'Photo ID card printed and handed over to employee',                                      badges: ['REQUIRED', 'ALL'] },
+      { title: 'ERP / CRM access configured',             desc: 'SAP/Salesforce/Zoho role-based access granted per department',                           badges: ['NON-IT REQUIRED'] },
+      { title: 'Role-specific tools & stationery issued', desc: 'Uniform, visiting cards, SIM card, field/sales kit as applicable',                       badges: ['NON-IT REQUIRED'] },
     ],
   },
   {
     num: 4,
-    title: 'Orientation & Induction',
-    subtitle: 'Company introduction, team meet, and first-week walkthrough',
+    title: 'Payroll & Finance Setup',
+    subtitle: 'Bank details, PAN, PF/ESIC, salary structure',
     checkpoints: [
-      { title: 'Company orientation session attended', desc: 'Vision, mission, values, and org structure walkthrough by HR',     badges: ['REQUIRED', 'ALL'] },
-      { title: 'HR policies briefing completed',       desc: 'Leave, attendance, expense, and grievance redressal policies covered', badges: ['REQUIRED', 'ALL'] },
-      { title: 'Team introduction & meet completed',   desc: 'Reporting manager and peer team formally introduced',               badges: ['REQUIRED', 'ALL'] },
-      { title: 'Office tour & facilities briefing',    desc: 'Workstation, cafeteria, meeting rooms, and emergency exits walkthrough', badges: ['OPTIONAL', 'ALL'] },
+      { title: 'PAN number verified',                desc: '10-digit PAN confirmed, cross-checked with ID documents',                                     badges: ['REQUIRED', 'ALL'] },
+      { title: 'Stipend payment details collected',  desc: 'Bank account / UPI details for stipend transfer. PF/ESIC not applicable',                     badges: ['INTERN REQUIRED'] },
     ],
   },
   {
     num: 5,
-    title: 'Payroll & Benefits Enrollment',
-    subtitle: 'Bank, tax, statutory, and benefit registrations',
+    title: 'Policies & Agreements',
+    subtitle: 'Document generation, signing & digital acknowledgement',
     checkpoints: [
-      { title: 'Bank account & salary mode captured', desc: 'Bank account, IFSC, and salary credit mode confirmed in payroll',   badges: ['REQUIRED', 'ALL'] },
-      { title: 'Tax regime selection submitted',      desc: 'Old vs new tax regime selected; investment declarations captured',  badges: ['REQUIRED', 'ALL'] },
-      { title: 'PF / ESI / gratuity enrolment done',  desc: 'Statutory enrolments raised; UAN / ESIC numbers recorded',          badges: ['REQUIRED', 'ALL'] },
-      { title: 'Insurance & wellness benefits opted', desc: 'Health insurance dependents added; wellness programs enrolled',     badges: ['OPTIONAL', 'ALL'] },
+      { title: 'NDA generated & signed',                  desc: 'Employee → HR Manager → Legal · Must be completed before Day 1',                         badges: ['REQUIRED', 'ALL'] },
+      { title: 'Internship agreement signed',             desc: 'Duration, deliverables, stipend, IP ownership, NDA — all parties signed',                badges: ['INTERN REQUIRED'] },
+      { title: 'Code of Conduct Policy acknowledged',     desc: 'Employee → HR Manager · Digital acknowledgement',                                        badges: ['REQUIRED', 'ALL'] },
+      { title: 'Leave & Attendance Policy acknowledged',  desc: 'Sign-off on leave types, attendance tracking & WFH policy',                              badges: ['REQUIRED', 'ALL'] },
+      { title: 'Confidentiality Agreement signed',        desc: 'Employee → HR Manager · Binding throughout employment duration',                         badges: ['REQUIRED', 'ALL'] },
     ],
   },
   {
     num: 6,
-    title: 'Probation & First-Month Review',
-    subtitle: 'Goal setting, check-ins, and probation roadmap',
+    title: 'Final Verification & Activation',
+    subtitle: 'HR review, stage validation & employee activation',
     checkpoints: [
-      { title: 'Probation period & terms acknowledged', desc: 'Probation duration, criteria, and confirmation policy shared',    badges: ['REQUIRED', 'ALL'] },
-      { title: 'KRAs & first-quarter goals locked',     desc: 'Reporting manager records KRAs and Q1 deliverables in HRMS',      badges: ['REQUIRED', 'ALL'] },
-      { title: '15-day buddy check-in completed',       desc: 'Buddy meets new joiner and logs feedback to HR',                  badges: ['EMP REQUIRED'] },
-      { title: '30-day reporting-manager review',       desc: 'First formal 1:1 review captured; action plan shared with HR',    badges: ['REQUIRED', 'ALL'] },
+      { title: 'All 5 stages verified by HR',  desc: 'Setup, Documents, Provisioning, Payroll, Policies — each confirmed Verified',                       badges: ['REQUIRED', 'ALL'] },
+      { title: 'HR final sign-off obtained',   desc: 'Onboarding Coordinator / HR Manager final approval — no pending issues',                            badges: ['REQUIRED', 'ALL'] },
+      { title: 'Employee activated in system', desc: 'Status set to Active · Reporting manager notified · Full system access granted',                    badges: ['REQUIRED', 'ALL'] },
     ],
   },
 ];
@@ -607,7 +605,8 @@ export default function HrEmployeeOnboarding() {
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th scope="col" className="ps-3">Employee</th>
+                        <th scope="col" className="ps-3" style={{ width: 60 }}>Sr. No.</th>
+                        <th scope="col">Employee</th>
                         <th scope="col">Emp ID</th>
                         <th scope="col">Department</th>
                         <th scope="col">Designation</th>
@@ -622,16 +621,17 @@ export default function HrEmployeeOnboarding() {
                     <tbody>
                       {filtered.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="text-center py-5 text-muted">
+                          <td colSpan={11} className="text-center py-5 text-muted">
                             <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                             No onboarding records match your filters
                           </td>
                         </tr>
-                      ) : visible.map(r => {
+                      ) : visible.map((r, idx) => {
                         const tone = STATUS_TONES[r.status];
                         return (
                           <tr key={r.id}>
-                            <td className="ps-3">
+                            <td className="ps-3 fw-semibold text-muted">{sliceFrom + idx + 1}</td>
+                            <td>
                               <div className="d-flex align-items-center gap-2">
                                 <div
                                   className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -1023,13 +1023,15 @@ function VaultModal({
       size="lg"
       contentClassName="vault-modal-content border-0"
       modalClassName="vault-modal-wide"
-      scrollable
       backdrop="static"
       keyboard={false}
     >
 
-      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
-        {/* Header — indigo gradient with status ring */}
+      <ModalBody
+        className="p-0 d-flex flex-column"
+        style={{ background: 'var(--vz-card-bg)', maxHeight: '90vh' }}
+      >
+        {/* Header — indigo gradient with status ring (fixed, non-scrolling) */}
         <div
           style={{
             padding: '22px 26px',
@@ -1037,6 +1039,7 @@ function VaultModal({
             color: '#fff',
             position: 'relative',
             overflow: 'hidden',
+            flexShrink: 0,
           }}
         >
           <div style={{ position: 'absolute', top: -50, right: -40, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
@@ -1101,8 +1104,8 @@ function VaultModal({
           </div>
         </div>
 
-        {/* KPI strip */}
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--vz-border-color)' }}>
+        {/* KPI strip (fixed, non-scrolling) */}
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--vz-border-color)', flexShrink: 0 }}>
           <Row className="g-3 align-items-stretch">
             {[
               { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
@@ -1129,8 +1132,8 @@ function VaultModal({
           </Row>
         </div>
 
-        {/* Tabs */}
-        <div className="d-flex" style={{ padding: '0 24px', borderBottom: '1px solid var(--vz-border-color)' }}>
+        {/* Tabs (fixed, non-scrolling) */}
+        <div className="d-flex" style={{ padding: '0 24px', borderBottom: '1px solid var(--vz-border-color)', flexShrink: 0 }}>
           <button
             type="button"
             className={`vault-tab-btn${tab === 'employee' ? ' is-active' : ''}`}
@@ -1149,8 +1152,8 @@ function VaultModal({
           </button>
         </div>
 
-        {/* Section list */}
-        <div style={{ padding: '8px 24px 22px' }}>
+        {/* Section list — only this region scrolls */}
+        <div style={{ padding: '8px 24px 22px', flex: '1 1 auto', overflowY: 'auto', minHeight: 0 }}>
           {sections.map(section => (
             <div key={section.title} style={{ paddingTop: 16 }}>
               <div className="d-flex align-items-center justify-content-between mb-2">
@@ -1216,28 +1219,31 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
   const [level, setLevel] = useState<string>('all');
   const [empType, setEmpType] = useState<string>('all');
 
-  // Compute filtered checklist by level + employee type. The filter is purely
-  // visual — every checkpoint always renders, but matching badges decide which
-  // ones get highlighted vs. greyed. Counts in the header reflect the visible set.
+  // Compute filtered checklist by level + employee type. ALL-tagged checkpoints
+  // always pass; otherwise both filters must match. Counts in the header reflect
+  // the visible set so users see exactly what their filters returned.
   const visibleStages = useMemo(() => {
+    const levelMap: Record<string, CheckpointBadgeKind[]> = {
+      hod:    ['HOD REQUIRED', 'HOD OPTIONAL'],
+      tl:     ['TL REQUIRED', 'TL OPTIONAL'],
+      exec:   ['EXEC REQUIRED', 'EXEC OPTIONAL'],
+      emp:    ['EMP REQUIRED', 'EMP OPTIONAL'],
+      intern: ['INTERN REQUIRED', 'INTERN OPTIONAL'],
+    };
+    const empMap: Record<string, CheckpointBadgeKind[]> = {
+      it:       ['IT REQUIRED', 'IT OPTIONAL'],
+      'non-it': ['NON-IT REQUIRED', 'NON-IT OPTIONAL'],
+    };
     return CHECKLIST_STAGES.map(s => {
       const checkpoints = s.checkpoints.filter(cp => {
-        // If the checkpoint is tagged ALL, include for all designation levels.
         const isAll = cp.badges.includes('ALL');
-        if (level === 'all' || isAll) return true;
-        const map: Record<string, CheckpointBadgeKind[]> = {
-          hod:    ['HOD REQUIRED', 'HOD OPTIONAL'],
-          tl:     ['TL REQUIRED', 'TL OPTIONAL'],
-          exec:   ['EXEC REQUIRED', 'EXEC OPTIONAL'],
-          emp:    ['EMP REQUIRED', 'EMP OPTIONAL'],
-          intern: ['INTERN REQUIRED', 'INTERN OPTIONAL'],
-        };
-        const want = map[level] || [];
-        return cp.badges.some(b => want.includes(b));
+        const levelOk = level === 'all'   || isAll || (levelMap[level]   || []).some(b => cp.badges.includes(b));
+        const empOk   = empType === 'all' || isAll || (empMap[empType]   || []).some(b => cp.badges.includes(b));
+        return levelOk && empOk;
       });
       return { ...s, checkpoints };
     }).filter(s => s.checkpoints.length > 0);
-  }, [level]);
+  }, [level, empType]);
 
   const totalCheckpoints = useMemo(
     () => visibleStages.reduce((acc, s) => acc + s.checkpoints.length, 0),
@@ -1268,7 +1274,7 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
 
           <div className="onb-cl-titlewrap">
             <span className="onb-cl-icon">
-              <i className="ri-checkbox-multiple-line" style={{ fontSize: 16 }} />
+              <i className="ri-checkbox-line" style={{ fontSize: 22 }} />
             </span>
             <div className="min-w-0">
               <h5 className="onb-cl-title">Employee Onboarding Checklist</h5>
