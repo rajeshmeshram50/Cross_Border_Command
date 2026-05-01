@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import { useToast } from '../contexts/ToastContext';
+import api from '../api';
 
 // ── Evidence Vault — mock document catalogue (per-employee view) ────────────
 type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
@@ -78,77 +79,18 @@ const VAULT_STATUS_TONE: Record<VaultStatus, { bg: string; fg: string; dot: stri
   'Not Generated': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
 };
 
-// Shared option lists for the master-style dropdowns used in the onboarding /
-// employee modals. Kept module-scoped so they're created once.
-const COUNTRY_OPTIONS = [
-  { value: 'India',          label: 'India' },
-  { value: 'United States',  label: 'United States' },
-  { value: 'United Kingdom', label: 'United Kingdom' },
-  { value: 'Singapore',      label: 'Singapore' },
-  { value: 'UAE',            label: 'UAE' },
-];
-const NATIONALITY_OPTIONS = [
-  { value: 'Indian',      label: 'Indian' },
-  { value: 'American',    label: 'American' },
-  { value: 'British',     label: 'British' },
-  { value: 'Singaporean', label: 'Singaporean' },
-  { value: 'Emirati',     label: 'Emirati' },
-  { value: 'Other',       label: 'Other' },
-];
+// Static option lists. Country / nationality / state / department /
+// designation / role / legal-entity dropdowns are now sourced from the
+// master tables (countryOptions, designationOptions, …) inside the
+// component, so the only constants kept here are the ones that have no
+// master backing.
 const GENDER_OPTIONS = [
   { value: 'Male',              label: 'Male' },
   { value: 'Female',            label: 'Female' },
   { value: 'Other',             label: 'Other' },
   { value: 'Prefer not to say', label: 'Prefer not to say' },
 ];
-const STATE_OPTIONS = [
-  { value: 'Maharashtra', label: 'Maharashtra' },
-  { value: 'Karnataka',   label: 'Karnataka' },
-  { value: 'Delhi',       label: 'Delhi' },
-  { value: 'Tamil Nadu',  label: 'Tamil Nadu' },
-  { value: 'Gujarat',     label: 'Gujarat' },
-];
-
-const EMP_STATUS_OPTIONS = [
-  { value: 'Active',    label: 'Active' },
-  { value: 'On Leave',  label: 'On Leave' },
-  { value: 'Probation', label: 'Probation' },
-  { value: 'Inactive',  label: 'Inactive' },
-];
-
-// Step 2 — Job Details option lists
-const DEPARTMENT_OPTIONS = [
-  'Accounts','Mobile Application Development','Software Testing','Recruiter','International Sales',
-  'UI/UX Designing','CNS','Software Development','Logistics','Logistic','Legal','Journalism',
-  'Management','Product Design',
-].map(d => ({ value: d, label: d }));
-const DESIGNATION_OPTIONS = [
-  'Associate Engineer','Sr. Business Analyst','Data Analyst','Platform Engineer','QA Testing Lead II',
-  'Lead Business Analyst','Quality Engineer','Team Lead II','VP Engineering','Jr. Software Engineer',
-  'Account Manager','Product Designer','Sr. QA Engineer','Accounts Head I','Accounts Manager II',
-  'Cloud Engineer','Scrum Master I','Data Analyst I','UI/UX Designer II','Coordinator I',
-  'Engineer II','C-Suite Executive','Sr. CEO','Lead I','Sr. Software Engineer','Developer I','Design Head I',
-].map(d => ({ value: d, label: d }));
-const PRIMARY_ROLE_OPTIONS = Array.from(new Set([
-  'Associate','Business Analyst','Analyst','DevOps Engineer','QA Testing Lead','QA Engineer',
-  'Team Lead','Executive','Software Engineer','Sales Manager','Designer','Accounts Head',
-  'Accounts Manager','Scrum Master','Data Analyst','UI/UX Designer','Coordinator','Engineer',
-  'CEO','Lead','Sr. Software Engineer','Developer','Design Head',
-])).map(r => ({ value: r, label: r }));
-// Ancillary role list — multi-select supports any combination of these.
-const ANCILLARY_ROLE_OPTIONS = [
-  'Training Coordinator','Project Coordinator','Security Analyst','Mentor','Brand Consultant',
-  'Test Automation Lead','Board Member',
-].map(r => ({ value: r, label: r }));
 const WORK_TYPE_OPTIONS = ['Full Time','Part Time','Contract','Intern','Consultant'].map(w => ({ value: w, label: w }));
-// Legal entity options + each entity's registered office. Picking a legal
-// entity in Step 2 auto-populates the read-only Location input from this map.
-const LEGAL_ENTITY_TO_LOCATION: Record<string, string> = {
-  'Enterprise India Pvt. Ltd.': 'Pune HQ',
-  'Enterprise Global Holdings': 'Singapore Office',
-  'Enterprise Solutions LLP':   'Mumbai Office',
-};
-const LEGAL_ENTITY_OPTIONS = Object.keys(LEGAL_ENTITY_TO_LOCATION).map(e => ({ value: e, label: e }));
 // Sentinel values used by the dropdowns to flag "open the custom field below".
 const CUSTOM_PROBATION_VALUE = '__custom_probation__';
 const CUSTOM_NOTICE_VALUE    = '__custom_notice__';
@@ -201,41 +143,99 @@ interface EmployeeRow {
   enabled: boolean;
 }
 
-const EMPLOYEES: EmployeeRow[] = [
-  { id: 'EMP-1063', name: 'Aarav Kale',       email: 'aarav.kale@enterprise.com',       initials: 'AK', accent: '#0ab39c', department: 'Accounts',              designation: 'Associate Engineer',    primaryRole: 'Associate',         ancillaryRole: 'Training Coordinator', manager: 'Deepa Kulkarni',  profile: 83, onboarding: 'Completed', status: 'active',  enabled: true },
-  { id: 'EMP-1068', name: 'Aditi Singh',      email: 'aditi.singh@enterprise.com',      initials: 'AS', accent: '#7c5cfc', department: 'Mobile Application D…', designation: 'Sr. Business Analyst',  primaryRole: 'Business Analyst',  ancillaryRole: 'Project Coordinator',  manager: 'Priya Kapoor',    profile: 95, onboarding: 'Completed', status: 'active',  enabled: true },
-  { id: 'EMP-1064', name: 'Ananya Deshmukh',  email: 'ananya.deshmukh@enterprise.com',  initials: 'AD', accent: '#f7b84b', department: 'Accounts',              designation: 'Data Analyst',          primaryRole: 'Analyst',           ancillaryRole: null,                    manager: 'Deepa Kulkarni',  profile: 96, onboarding: 'Completed', status: 'active',  enabled: true },
-  { id: 'EMP-1070', name: 'Anjali Joshi',     email: 'anjali.joshi@enterprise.com',     initials: 'AJ', accent: '#0ea5e9', department: 'Software Testing',      designation: 'Platform Engineer',     primaryRole: 'DevOps Engineer',   ancillaryRole: 'Security Analyst',     manager: 'Atharv Patekar',  profile: 89, onboarding: 'Completed', status: 'active',  enabled: true },
-  { id: 'EMP-1029', name: 'Atharv Patekar',   email: 'atharv.patekar@enterprise.com',   initials: 'AP', accent: '#e83e8c', department: 'Software Testing',      designation: 'QA Testing Lead II',    primaryRole: 'QA Testing Lead',   ancillaryRole: null,                    manager: 'Rahul Verma',     profile: 86, onboarding: 'Completed', status: 'active',  enabled: true },
-  { id: 'EMP-1035', name: 'Bhavna Mehta',     email: 'bhavna.mehta@enterprise.com',     initials: 'BM', accent: '#299cdb', department: 'Recruiter',             designation: 'Lead Business Analyst', primaryRole: 'Business Analyst',  ancillaryRole: 'Project Coordinator',  manager: 'Priya Kapoor',    profile: 86, onboarding: 'Completed', status: 'active',  enabled: true },
-  { id: 'EMP-1036', name: 'Chirag Reddy',     email: 'chirag.reddy@enterprise.com',     initials: 'CR', accent: '#f06548', department: 'International Sales',   designation: 'Quality Engineer',      primaryRole: 'QA Engineer',       ancillaryRole: null,                    manager: 'Gaurav Jagtap',   profile: 97, onboarding: 'Completed', status: 'active',  enabled: true },
-  { id: 'EMP-1083', name: 'Dhruv Verma',      email: 'dhruv.verma@enterprise.com',      initials: 'DV', accent: '#405189', department: 'UI/UX Designing',       designation: 'Team Lead II',          primaryRole: 'Team Lead',         ancillaryRole: null,                    manager: 'Parth Lakare',    profile: 91, onboarding: 'Completed', status: 'active',  enabled: true },
-  { id: 'EMP-1046', name: 'Divya Desai',      email: 'divya.desai@enterprise.com',      initials: 'DD', accent: '#d63384', department: 'CNS',                   designation: 'Lead Business Analyst', primaryRole: 'Business Analyst',  ancillaryRole: 'Project Coordinator',  manager: 'Atharv Patekar',  profile: 95, onboarding: 'Completed', status: 'active',  enabled: true },
+// API-shaped row returned by /api/employees. Kept loose ('any' on relations)
+// so we don't have to mirror every nested model — only the fields the page
+// actually reads. Frontend EmployeeRow stays for the legacy display helpers
+// below; the page now bridges between the two with `apiToRow()`.
+interface ApiEmployee {
+  id: number;
+  emp_code: string | null;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
+  email: string | null;
+  mobile: string | null;
+  gender: string | null;
+  date_of_birth: string | null;
+  status: string | null;
+  date_of_joining: string | null;
+  department_id: number | null;
+  designation_id: number | null;
+  primary_role_id: number | null;
+  ancillary_role_id: number | null;
+  reporting_manager_id: number | null;
+  legal_entity_id: number | null;
+  location: string | null;
+  user_id: number | null;
+  // Laravel serializes relations to snake_case. Keep these aligned with the
+  // wire format — using camelCase names here would silently drop into the
+  // `[k: string]: any` index signature and resolve to `undefined`, which is
+  // what made Primary Role / Ancillary Role / Manager render as "—" in the
+  // list even when the backend had values.
+  department?: { id: number; name: string; code?: string } | null;
+  designation?: { id: number; name: string } | null;
+  primary_role?: { id: number; name: string } | null;
+  ancillary_role?: { id: number; name: string } | null;
+  reporting_manager?: { id: number; display_name?: string | null; emp_code?: string | null; first_name?: string | null; last_name?: string | null } | null;
+  legal_entity?: { id: number; entity_name?: string; city?: string | null } | null;
+  work_country?: { id: number; name: string } | null;
+  nationality_country?: { id: number; name: string } | null;
+  country?: { id: number; name: string } | null;
+  state?: { id: number; name: string; country_id?: number | null } | null;
+  user?: { id: number; email: string; status?: string; last_login_at?: string | null } | null;
+  [k: string]: any;
+}
 
-  // ── Disabled employees (visible under the "Disabled Employees" tab) ──
-  // Same row schema, just `enabled: false`. Onboarding mostly "In Progress"
-  // since these are profiles that haven't completed setup yet.
-  { id: 'EMP-1073', name: 'Aarav Patel',      email: 'aarav.patel@enterprise.com',      initials: 'AP', accent: '#7c5cfc', department: 'Software Development',  designation: 'VP Engineering',         primaryRole: 'Executive',         ancillaryRole: null,                    manager: 'Gaurav Jagtap',  profile: 74, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1031', name: 'Aditi Singh',      email: 'aditi.singh@enterprise.com',      initials: 'AS', accent: '#0ab39c', department: 'CNS',                   designation: 'Jr. Software Engineer',  primaryRole: 'Software Engineer', ancillaryRole: 'Mentor',                manager: 'Atharv Patekar', profile: 79, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1026', name: 'Amit Deshpande',   email: 'amit.deshpande@enterprise.com',   initials: 'AD', accent: '#f7b84b', department: 'International Sales',   designation: 'Account Manager',        primaryRole: 'Sales Manager',     ancillaryRole: null,                    manager: 'Rahul Verma',    profile: 78, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1072', name: 'Ananya Sharma',    email: 'ananya.sharma@enterprise.com',    initials: 'AS', accent: '#0ea5e9', department: 'Software Development',  designation: 'Product Designer',       primaryRole: 'Designer',          ancillaryRole: 'Brand Consultant',     manager: 'Gaurav Jagtap',  profile: 73, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1069', name: 'Anil Gupta',       email: 'anil.gupta@enterprise.com',       initials: 'AG', accent: '#e83e8c', department: 'Software Development',  designation: 'Sr. QA Engineer',        primaryRole: 'QA Engineer',       ancillaryRole: 'Test Automation Lead', manager: 'Gaurav Jagtap',  profile: 74, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1030', name: 'Deepa Kulkarni',   email: 'deepa.kulkarni@enterprise.com',   initials: 'DK', accent: '#299cdb', department: 'Accounts',              designation: 'Accounts Head I',        primaryRole: 'Accounts Head',     ancillaryRole: null,                    manager: 'Rahul Verma',    profile: 79, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1023', name: 'Deepa Patil',      email: 'deepa.patil@enterprise.com',      initials: 'DP', accent: '#f06548', department: 'Accounts',              designation: 'Accounts Manager II',    primaryRole: 'Accounts Manager',  ancillaryRole: null,                    manager: 'Rahul Verma',    profile: 77, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1037', name: 'Deepa Shah',       email: 'deepa.shah@enterprise.com',       initials: 'DS', accent: '#405189', department: 'Journalism',            designation: 'Cloud Engineer',         primaryRole: 'DevOps Engineer',   ancillaryRole: null,                    manager: 'Atharv Patekar', profile: 76, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1082', name: 'Deepa Shah',       email: 'deepa.shah2@enterprise.com',      initials: 'DS', accent: '#d63384', department: 'Software Testing',      designation: 'Scrum Master I',         primaryRole: 'Scrum Master',      ancillaryRole: null,                    manager: 'Atharv Patekar', profile: 75, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1038', name: 'Dhruv Verma',      email: 'dhruv.verma2@enterprise.com',     initials: 'DV', accent: '#0ab39c', department: 'Legal',                 designation: 'Data Analyst I',         primaryRole: 'Data Analyst',      ancillaryRole: null,                    manager: 'Parth Lakare',   profile: 75, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1039', name: 'Esha Agrawal',     email: 'esha.agrawal@enterprise.com',     initials: 'EA', accent: '#0ea5e9', department: 'Logistic',              designation: 'UI/UX Designer II',      primaryRole: 'UI/UX Designer',    ancillaryRole: null,                    manager: 'Sneha Sharma',   profile: 75, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1047', name: 'Ishaan More',      email: 'ishaan.more@enterprise.com',      initials: 'IM', accent: '#0ab39c', department: 'Accounts',              designation: 'Coordinator I',          primaryRole: 'Coordinator',       ancillaryRole: null,                    manager: 'Deepa Kulkarni', profile: 74, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1066', name: 'Kavita Singh',     email: 'kavita.singh@enterprise.com',     initials: 'KS', accent: '#7c5cfc', department: 'Software Development',  designation: 'Engineer II',            primaryRole: 'Engineer',          ancillaryRole: null,                    manager: 'Gaurav Jagtap',  profile: 72, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1050', name: 'Nikhil Gawade',    email: 'nikhil.gawade@enterprise.com',    initials: 'NG', accent: '#299cdb', department: 'Logistics',             designation: 'C-Suite Executive',      primaryRole: 'Executive',         ancillaryRole: 'Board Member',          manager: 'Manoj Gawade',   profile: 77, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1085', name: 'Rahul Verma',      email: 'rahul.verma@enterprise.com',      initials: 'RV', accent: '#f7b84b', department: 'Management',            designation: 'Sr. CEO',                primaryRole: 'CEO',               ancillaryRole: null,                    manager: '—',              profile: 79, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1052', name: 'Rohan Deshmukh',   email: 'rohan.deshmukh@enterprise.com',   initials: 'RD', accent: '#f06548', department: 'Software Development',  designation: 'Lead I',                 primaryRole: 'Lead',              ancillaryRole: null,                    manager: 'Gaurav Jagtap',  profile: 76, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1054', name: 'Simran Sharma',    email: 'simran.sharma@enterprise.com',    initials: 'SS', accent: '#0ab39c', department: 'Software Development',  designation: 'Product Designer',       primaryRole: 'Designer',          ancillaryRole: null,                    manager: 'Gaurav Jagtap',  profile: 79, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1015', name: 'Sneha Kulkarni',   email: 'sneha.kulkarni@enterprise.com',   initials: 'SK', accent: '#0ea5e9', department: 'Software Development',  designation: 'Sr. Software Engineer',  primaryRole: 'Sr. Software Engineer', ancillaryRole: null,                manager: 'Gaurav Jagtap',  profile: 75, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1056', name: 'Sneha More',       email: 'sneha.more@enterprise.com',       initials: 'SM', accent: '#0ab39c', department: 'Software Testing',      designation: 'Developer I',            primaryRole: 'Developer',         ancillaryRole: null,                    manager: 'Atharv Patekar', profile: 77, onboarding: 'In Progress', status: 'inactive', enabled: false },
-  { id: 'EMP-1044', name: 'Sneha Patil',      email: 'sneha.patil@enterprise.com',      initials: 'SP', accent: '#f7b84b', department: 'Product Design',        designation: 'Design Head I',          primaryRole: 'Design Head',       ancillaryRole: null,                    manager: 'Rahul Verma',    profile: 72, onboarding: 'In Progress', status: 'inactive', enabled: false },
-];
+// Map a server-side ApiEmployee into the existing UI row shape so the legacy
+// list/render code keeps working while we cut over.
+const accentFromName = (name: string): string => {
+  const palette = ['#0ab39c','#7c5cfc','#f7b84b','#0ea5e9','#e83e8c','#299cdb','#f06548','#405189','#d63384'];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length];
+};
+const initialsFromName = (name: string): string =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('') || '?';
+
+const apiToRow = (e: ApiEmployee): EmployeeRow => {
+  const name = (e.display_name || `${e.first_name} ${e.last_name || ''}`).trim();
+  const enabled = (e.status || 'Active').toLowerCase() !== 'inactive'
+    && (e.status || 'Active').toLowerCase() !== 'terminated'
+    && (e.status || 'Active').toLowerCase() !== 'resigned';
+  // Map server status → UI status bucket. Anything not in the mapping falls
+  // back to 'active' so the row still renders cleanly.
+  const statusMap: Record<string, EmployeeRow['status']> = {
+    'Active': 'active', 'Inactive': 'inactive',
+    'On Leave': 'on_leave', 'Probation': 'probation',
+    'Notice Period': 'high_attention', 'Resigned': 'inactive', 'Terminated': 'inactive',
+  };
+  return {
+    id: e.emp_code || `EMP-${e.id}`,
+    name,
+    email: e.email || '',
+    initials: initialsFromName(name),
+    accent: accentFromName(name),
+    department: e.department?.name || '—',
+    designation: e.designation?.name || '—',
+    primaryRole: e.primary_role?.name || '—',
+    ancillaryRole: e.ancillary_role?.name || null,
+    manager: e.reporting_manager?.display_name
+      || (e.reporting_manager
+          ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
+          : '')
+      || '—',
+    profile: 100,
+    onboarding: 'Completed',
+    status: statusMap[e.status || 'Active'] || 'active',
+    enabled,
+    // Smuggle the DB id + raw row through so handlers can act on the API row
+    // without re-fetching.
+    _dbId: e.id,
+    _raw: e,
+  } as any;
+};
+
 
 // Soft tonal palette for the role pills.
 const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
@@ -282,11 +282,8 @@ const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { bg: string; fg: stri
   'Pending':     { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
 };
 
-// Reporting-manager options — derived from the active employee directory so
-// the dropdown reads "{Name} ({Designation})" and stays in sync with mock data.
-const REPORTING_MANAGER_OPTIONS = EMPLOYEES
-  .filter(e => e.enabled)
-  .map(e => ({ value: e.name, label: `${e.name} (${e.designation})` }));
+// Reporting-manager options are computed inside the component now (from the
+// fetched employee list) so they stay in sync with whatever's persisted.
 
 // Reuse the Clients KPI card recipe — gradient strip on top + 44×44 icon box,
 // 11px uppercase label, 26px value. Keep gradients distinct per status so the
@@ -307,6 +304,82 @@ export default function HrEmployees() {
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<'Active' | 'All'>('Active');
   const [deptFilter, setDeptFilter] = useState<string>('All Depts');
+
+  // ── Server-backed state ─────────────────────────────────────────────
+  // employees:  raw API rows + a UI-shaped projection. We keep the raw
+  //             rows around so handlers can read foreign-key ids without
+  //             reverse-mapping label strings.
+  const [apiEmployees, setApiEmployees] = useState<ApiEmployee[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  // Master dropdown rows — fetched once on mount, reused across the wizard.
+  // Each is the raw API row; option-mapping happens at render-time.
+  const [mDepts, setMDepts] = useState<any[]>([]);
+  const [mDesignations, setMDesignations] = useState<any[]>([]);
+  const [mRoles, setMRoles] = useState<any[]>([]);
+  const [mLegalEntities, setMLegalEntities] = useState<any[]>([]);
+  const [mCountries, setMCountries] = useState<any[]>([]);
+  const [mStates, setMStates] = useState<any[]>([]);
+
+  // Pre-built options derived from the masters above.
+  const departmentOptions = useMemo(
+    () => mDepts.map(d => ({ value: String(d.id), label: d.name })),
+    [mDepts],
+  );
+  const designationOptions = useMemo(
+    () => mDesignations.map(d => ({ value: String(d.id), label: d.name })),
+    [mDesignations],
+  );
+  const primaryRoleOptions = useMemo(
+    () => mRoles.map(r => ({ value: String(r.id), label: r.name })),
+    [mRoles],
+  );
+  const ancillaryRoleOptions = primaryRoleOptions;
+  const legalEntityOptions = useMemo(
+    () => mLegalEntities.map(le => ({ value: String(le.id), label: le.entity_name })),
+    [mLegalEntities],
+  );
+  const countryOptions = useMemo(
+    () => mCountries.map(c => ({ value: String(c.id), label: c.name })),
+    [mCountries],
+  );
+  // States filtered by a chosen country id. Country must be picked first;
+  // until then the picker is empty, which makes the "country before state"
+  // ordering a hard requirement (UX matches GST/address forms across the app).
+  // The two memoized lists (currentAddressStates / permanentAddressStates)
+  // are computed below, AFTER the eCurCountry / ePermCountry state vars are
+  // declared.
+  const statesForCountry = useCallback((countryId: string) => {
+    if (!countryId) return [] as { value: string; label: string }[];
+    return mStates
+      .filter(s => String(s.country_id) === String(countryId))
+      .map(s => ({ value: String(s.id), label: s.name }));
+  }, [mStates]);
+  const reloadEmployees = useCallback(async () => {
+    try {
+      const r = await api.get('/employees');
+      setApiEmployees(Array.isArray(r.data) ? r.data : []);
+    } catch {
+      setApiEmployees([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadEmployees();
+    // Fire master fetches in parallel — they're independent of each other.
+    Promise.allSettled([
+      api.get('/master/departments').then(r => setMDepts(Array.isArray(r.data) ? r.data : [])),
+      api.get('/master/designations').then(r => setMDesignations(Array.isArray(r.data) ? r.data : [])),
+      api.get('/master/roles').then(r => setMRoles(Array.isArray(r.data) ? r.data : [])),
+      api.get('/master/legal_entities').then(r => setMLegalEntities(Array.isArray(r.data) ? r.data : [])),
+      api.get('/master/countries').then(r => setMCountries(Array.isArray(r.data) ? r.data : [])),
+      api.get('/master/states').then(r => setMStates(Array.isArray(r.data) ? r.data : [])),
+    ]);
+  }, [reloadEmployees]);
+
+  // UI-shaped rows derived from `apiEmployees`. Carries `_dbId` + `_raw` so
+  // edit/delete handlers can act on the server row without re-fetching.
+  const apiRows = useMemo(() => apiEmployees.map(apiToRow), [apiEmployees]);
 
   // Onboarding link modal state
   const [onboardOpen, setOnboardOpen] = useState(false);
@@ -379,7 +452,10 @@ export default function HrEmployees() {
   const [empEditingName, setEmpEditingName] = useState<string>('');
   const [empStep, setEmpStep] = useState<1 | 2 | 3 | 4>(1);
   // Step 1 — Employee Details
-  const [eWorkCountry, setEWorkCountry]   = useState('India');
+  // Country/state state holds the master-row ID (as a string) so the API
+  // payload can ship `work_country_id` / `country_id` / `state_id` directly.
+  // Empty string = "not yet picked".
+  const [eWorkCountry, setEWorkCountry]   = useState('');
   const [eFirstName, setEFirstName]       = useState('');
   const [eMiddleName, setEMiddleName]     = useState('');
   const [eLastName, setELastName]         = useState('');
@@ -390,7 +466,7 @@ export default function HrEmployees() {
   const [eActualName, setEActualName]     = useState('');
   const [eGender, setEGender]             = useState('');
   const [eDob, setEDob]                   = useState('');
-  const [eNationality, setENationality]   = useState('Indian');
+  const [eNationality, setENationality]   = useState('');
   // Step 1 — Contact & Identity
   const [eWorkEmail, setEWorkEmail]       = useState('');
   const [eMobile, setEMobile]             = useState('');
@@ -401,14 +477,18 @@ export default function HrEmployees() {
   const [eCurAddr2, setECurAddr2]   = useState('');
   const [eCurCity, setECurCity]     = useState('');
   const [eCurState, setECurState]   = useState('');
-  const [eCurCountry, setECurCountry] = useState('India');
+  const [eCurCountry, setECurCountry] = useState('');
   const [eCurPin, setECurPin]       = useState('');
   const [eSameAsCurrent, setESameAsCurrent] = useState(false);
   const [ePermAddr1, setEPermAddr1] = useState('');
   const [ePermAddr2, setEPermAddr2] = useState('');
   const [ePermCity, setEPermCity]   = useState('');
   const [ePermState, setEPermState] = useState('');
-  const [ePermCountry, setEPermCountry] = useState('India');
+  const [ePermCountry, setEPermCountry] = useState('');
+  // Country-filtered state lists for the two address rows. Compute here,
+  // after the country state vars have been declared.
+  const currentAddressStates   = useMemo(() => statesForCountry(eCurCountry),  [statesForCountry, eCurCountry]);
+  const permanentAddressStates = useMemo(() => statesForCountry(ePermCountry), [statesForCountry, ePermCountry]);
   const [ePermPin, setEPermPin]     = useState('');
   // Step 2 — Job Details
   const [eJoinDate, setEJoinDate]                = useState('');
@@ -566,8 +646,20 @@ export default function HrEmployees() {
     setTogglePending({ employee, next, commit });
   };
   const cancelToggle  = () => setTogglePending(null);
-  const confirmToggle = () => {
-    togglePending?.commit();
+  const confirmToggle = async () => {
+    const pending = togglePending;
+    if (!pending) return;
+    // Disable = soft-delete on the server (employee + linked user). Enable
+    // doesn't have an inverse endpoint yet (we'd need to flip status back to
+    // 'Active' via PUT /employees/{id}); leave that as a no-op besides the
+    // local toggle for now.
+    if (pending.next === false) {
+      const dbId = (pending.employee as any)._dbId as number | undefined;
+      if (dbId) {
+        await handleDeleteEmployee(dbId, pending.employee.name);
+      }
+    }
+    pending.commit();
     setTogglePending(null);
   };
   // Step 4 — Compensation
@@ -584,15 +676,15 @@ export default function HrEmployees() {
 
   const resetEmpForm = () => {
     setEmpStep(1);
-    setEWorkCountry('India');
+    setEWorkCountry('');
     setEFirstName(''); setEMiddleName(''); setELastName('');
     setEDisplayName(''); setEDisplayNameTouched(false); setEActualName('');
-    setEGender(''); setEDob(''); setENationality('Indian');
+    setEGender(''); setEDob(''); setENationality('');
     setEWorkEmail(''); setEMobile('');
     setEEmpId(''); setEStatus('Active');
-    setECurAddr1(''); setECurAddr2(''); setECurCity(''); setECurState(''); setECurCountry('India'); setECurPin('');
+    setECurAddr1(''); setECurAddr2(''); setECurCity(''); setECurState(''); setECurCountry(''); setECurPin('');
     setESameAsCurrent(false);
-    setEPermAddr1(''); setEPermAddr2(''); setEPermCity(''); setEPermState(''); setEPermCountry('India'); setEPermPin('');
+    setEPermAddr1(''); setEPermAddr2(''); setEPermCity(''); setEPermState(''); setEPermCountry(''); setEPermPin('');
     // Step 2
     setEJoinDate(''); setEDept(''); setEDesignation('');
     setEPrimaryRole(''); setEAncillaryRole([]); setEWorkType('Full Time');
@@ -612,40 +704,560 @@ export default function HrEmployees() {
     setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
     setESalaryStructure('Range Based'); setETaxRegime('New Regime (115BAC)');
     setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(false);
+    setEErrors({});
   };
 
   const closeEmp = () => { setEmpOpen(false); resetEmpForm(); };
 
-  const openAddEmployee = () => {
+  // Db id of the employee currently being edited. Null in add mode. Stored
+  // on the row by apiToRow() as `_dbId`.
+  const [editingDbId, setEditingDbId] = useState<number | null>(null);
+
+  // Inline field-level validation. Keyed by API payload name so the same map
+  // can drive both red borders on inputs and the toast summary on submit.
+  const [eErrors, setEErrors] = useState<Record<string, string>>({});
+  const clearEErr = (key: string) => {
+    setEErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  // ── Add Employee — draft persistence ─────────────────────────────────
+  // localStorage key. Bump the suffix when the draft shape changes so old
+  // drafts can't crash hydrate.
+  const ADD_DRAFT_KEY = 'cbc:hr-employees:add-draft:v1';
+
+  /** Snapshot every wizard field into a single plain object. */
+  const collectDraft = () => ({
+    empStep,
+    eWorkCountry, eFirstName, eMiddleName, eLastName,
+    eDisplayName, eDisplayNameTouched, eActualName,
+    eGender, eDob, eNationality,
+    eWorkEmail, eMobile, eEmpId, eStatus,
+    eCurAddr1, eCurAddr2, eCurCity, eCurState, eCurCountry, eCurPin,
+    eSameAsCurrent,
+    ePermAddr1, ePermAddr2, ePermCity, ePermState, ePermCountry, ePermPin,
+    eJoinDate, eDept, eDesignation, ePrimaryRole, eAncillaryRole, eWorkType,
+    eLegalEntity, eLocation, eReportingMgr,
+    eProbationPolicy, eNoticePeriod, eCustomProbation, eCustomNotice,
+    eLeavePlan, eHolidayList, eAttendanceTracking, eShift, eWeeklyOff,
+    eAttendanceNumber, eTimeTracking, ePenalizationPolicy, eOvertime, eExpensePolicy,
+    eLaptopAssigned, eLaptopAssetId, eMobileDevice, eOtherAssets,
+    eEnablePayroll, ePayGroup, eAnnualSalary, eSalaryFreq, eSalaryFrom,
+    eSalaryStructure, eTaxRegime, eBonusInAnnual, ePfEligible, eDetailedBreakup,
+  });
+
+  /** Apply a previously-saved draft back onto state. Quietly skips unknown keys. */
+  const applyDraft = (d: Record<string, any>) => {
+    if (typeof d !== 'object' || !d) return;
+    if (d.empStep === 1 || d.empStep === 2 || d.empStep === 3 || d.empStep === 4) setEmpStep(d.empStep);
+    if (d.eWorkCountry !== undefined) setEWorkCountry(d.eWorkCountry || '');
+    if (d.eFirstName !== undefined) setEFirstName(d.eFirstName || '');
+    if (d.eMiddleName !== undefined) setEMiddleName(d.eMiddleName || '');
+    if (d.eLastName !== undefined) setELastName(d.eLastName || '');
+    if (d.eDisplayName !== undefined) setEDisplayName(d.eDisplayName || '');
+    if (d.eDisplayNameTouched !== undefined) setEDisplayNameTouched(!!d.eDisplayNameTouched);
+    if (d.eActualName !== undefined) setEActualName(d.eActualName || '');
+    if (d.eGender !== undefined) setEGender(d.eGender || '');
+    if (d.eDob !== undefined) setEDob(d.eDob || '');
+    if (d.eNationality !== undefined) setENationality(d.eNationality || '');
+    if (d.eWorkEmail !== undefined) setEWorkEmail(d.eWorkEmail || '');
+    if (d.eMobile !== undefined) setEMobile(d.eMobile || '');
+    if (d.eEmpId !== undefined) setEEmpId(d.eEmpId || '');
+    if (d.eStatus !== undefined) setEStatus(d.eStatus || 'Active');
+    if (d.eCurAddr1 !== undefined) setECurAddr1(d.eCurAddr1 || '');
+    if (d.eCurAddr2 !== undefined) setECurAddr2(d.eCurAddr2 || '');
+    if (d.eCurCity !== undefined)  setECurCity(d.eCurCity || '');
+    if (d.eCurState !== undefined) setECurState(d.eCurState || '');
+    if (d.eCurCountry !== undefined) setECurCountry(d.eCurCountry || '');
+    if (d.eCurPin !== undefined)   setECurPin(d.eCurPin || '');
+    if (d.eSameAsCurrent !== undefined) setESameAsCurrent(!!d.eSameAsCurrent);
+    if (d.ePermAddr1 !== undefined) setEPermAddr1(d.ePermAddr1 || '');
+    if (d.ePermAddr2 !== undefined) setEPermAddr2(d.ePermAddr2 || '');
+    if (d.ePermCity !== undefined)  setEPermCity(d.ePermCity || '');
+    if (d.ePermState !== undefined) setEPermState(d.ePermState || '');
+    if (d.ePermCountry !== undefined) setEPermCountry(d.ePermCountry || '');
+    if (d.ePermPin !== undefined)   setEPermPin(d.ePermPin || '');
+    if (d.eJoinDate !== undefined) setEJoinDate(d.eJoinDate || '');
+    if (d.eDept !== undefined) setEDept(d.eDept || '');
+    if (d.eDesignation !== undefined) setEDesignation(d.eDesignation || '');
+    if (d.ePrimaryRole !== undefined) setEPrimaryRole(d.ePrimaryRole || '');
+    if (Array.isArray(d.eAncillaryRole)) setEAncillaryRole(d.eAncillaryRole);
+    if (d.eWorkType !== undefined) setEWorkType(d.eWorkType || 'Full Time');
+    if (d.eLegalEntity !== undefined) setELegalEntity(d.eLegalEntity || '');
+    if (d.eLocation !== undefined) setELocation(d.eLocation || '');
+    if (d.eReportingMgr !== undefined) setEReportingMgr(d.eReportingMgr || '');
+    if (d.eProbationPolicy !== undefined) setEProbationPolicy(d.eProbationPolicy || 'Default Probation Policy');
+    if (d.eNoticePeriod !== undefined) setENoticePeriod(d.eNoticePeriod || 'Default Notice Period');
+    if (d.eCustomProbation !== undefined) setECustomProbation(d.eCustomProbation || '');
+    if (d.eCustomNotice !== undefined) setECustomNotice(d.eCustomNotice || '');
+    if (d.eLeavePlan !== undefined) setELeavePlan(d.eLeavePlan || 'Leave Policy');
+    if (d.eHolidayList !== undefined) setEHolidayList(d.eHolidayList || 'Holiday Calendar');
+    if (d.eAttendanceTracking !== undefined) setEAttendanceTracking(!!d.eAttendanceTracking);
+    if (d.eShift !== undefined) setEShift(d.eShift || 'General Shift');
+    if (d.eWeeklyOff !== undefined) setEWeeklyOff(d.eWeeklyOff || 'Week Off Policy');
+    if (d.eAttendanceNumber !== undefined) setEAttendanceNumber(d.eAttendanceNumber || '');
+    if (d.eTimeTracking !== undefined) setETimeTracking(d.eTimeTracking || 'Manual');
+    if (d.ePenalizationPolicy !== undefined) setEPenalizationPolicy(d.ePenalizationPolicy || 'Tracking Policy');
+    if (d.eOvertime !== undefined) setEOvertime(d.eOvertime || 'Not applicable');
+    if (d.eExpensePolicy !== undefined) setEExpensePolicy(d.eExpensePolicy || '');
+    if (d.eLaptopAssigned !== undefined) setELaptopAssigned(d.eLaptopAssigned || 'No');
+    if (d.eLaptopAssetId !== undefined) setELaptopAssetId(d.eLaptopAssetId || '');
+    if (d.eMobileDevice !== undefined) setEMobileDevice(d.eMobileDevice || '');
+    if (d.eOtherAssets !== undefined) setEOtherAssets(d.eOtherAssets || '');
+    if (d.eEnablePayroll !== undefined) setEEnablePayroll(!!d.eEnablePayroll);
+    if (d.ePayGroup !== undefined) setEPayGroup(d.ePayGroup || 'Default pay group');
+    if (d.eAnnualSalary !== undefined) setEAnnualSalary(d.eAnnualSalary || '');
+    if (d.eSalaryFreq !== undefined) setESalaryFreq(d.eSalaryFreq || 'Per annum');
+    if (d.eSalaryFrom !== undefined) setESalaryFrom(d.eSalaryFrom || '');
+    if (d.eSalaryStructure !== undefined) setESalaryStructure(d.eSalaryStructure || 'Range Based');
+    if (d.eTaxRegime !== undefined) setETaxRegime(d.eTaxRegime || 'New Regime (115BAC)');
+    if (d.eBonusInAnnual !== undefined) setEBonusInAnnual(!!d.eBonusInAnnual);
+    if (d.ePfEligible !== undefined) setEPfEligible(!!d.ePfEligible);
+    if (d.eDetailedBreakup !== undefined) setEDetailedBreakup(!!d.eDetailedBreakup);
+  };
+
+  const clearDraft = () => {
+    try { localStorage.removeItem(ADD_DRAFT_KEY); } catch { /* noop */ }
+  };
+
+  /**
+   * Persist draft on every relevant change while the modal is open in ADD
+   * mode. Edit-mode changes never overwrite the draft — that would mix two
+   * unrelated employees' data. Only saves when the user has typed at least
+   * one field of substance (empty drafts add noise to localStorage).
+   */
+  const draftSnapshot = JSON.stringify(collectDraft());
+  useEffect(() => {
+    if (!empOpen || empMode !== 'add') return;
+    const hasContent = !!(eFirstName.trim() || eLastName.trim() || eWorkEmail.trim()
+      || eMobile.trim() || empStep > 1);
+    if (!hasContent) return;
+    try {
+      localStorage.setItem(ADD_DRAFT_KEY, JSON.stringify({ ...JSON.parse(draftSnapshot), _ts: Date.now() }));
+    } catch { /* quota / private mode — silently skip */ }
+  }, [empOpen, empMode, draftSnapshot, eFirstName, eLastName, eWorkEmail, eMobile, empStep]);
+
+  const openAddEmployee = async () => {
     resetEmpForm();
     setEmpMode('add');
     setEmpEditingName('');
+    setEditingDbId(null);
     setEmpOpen(true);
+
+    // Hydrate from saved draft if one exists. Anything in the draft wins
+    // over the freshly-reset state, so the user lands on whichever step
+    // they last reached with all their typed values intact.
+    let restored = false;
+    let restoredStep: 1 | 2 | 3 | 4 = 1;
+    try {
+      const raw = localStorage.getItem(ADD_DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw);
+        applyDraft(draft);
+        restored = true;
+        restoredStep = (draft.empStep as 1 | 2 | 3 | 4) || 1;
+      }
+    } catch { /* corrupt draft — ignore, fall through to fresh state */ }
+
+    if (restored) {
+      // Brief toast so the user knows why their fields are pre-populated.
+      toast.success(
+        'Draft restored',
+        `Resumed at step ${restoredStep}. Use "Discard draft" in the header to start over.`,
+      );
+    } else {
+      // Pre-fill the EMP-### code from the server only on a fresh start —
+      // when restoring a draft we keep the previously-shown code so the
+      // displayed value matches what the user saw before closing.
+      try {
+        const r = await api.get('/employees/next-code');
+        if (r?.data?.code) setEEmpId(r.data.code);
+      } catch {
+        /* server will still allocate at create time */
+      }
+    }
+  };
+
+  /** Discard the saved draft and reset the form to a clean step 1. */
+  const discardAddDraft = () => {
+    clearDraft();
+    resetEmpForm();
+    // Re-prime the EMP-### field so the user still sees the next code.
+    api.get('/employees/next-code')
+      .then(r => { if (r?.data?.code) setEEmpId(r.data.code); })
+      .catch(() => { /* noop */ });
+    toast.success('Draft discarded', 'Form reset to a fresh start.');
   };
 
   const openEditEmployee = (row: EmployeeRow) => {
+    const raw = (row as any)._raw as ApiEmployee | undefined;
+    const dbId = (row as any)._dbId as number | undefined;
     resetEmpForm();
     setEmpMode('edit');
     setEmpEditingName(row.name);
-    const parts = row.name.split(' ');
-    setEFirstName(parts[0] || '');
-    setELastName(parts.slice(1).join(' ') || '');
-    setEDisplayName(row.name);
-    // In edit mode the display name is already populated from the row, so
-    // treat it as user-touched to avoid the auto-fill clobbering it on first
-    // First-name/Last-name edit.
-    setEDisplayNameTouched(true);
-    setEActualName(row.name);
-    setEWorkEmail(row.email);
-    setEEmpId(row.id);
-    setEStatus(row.enabled ? 'Active' : 'Inactive');
-    // Step 2 — pre-fill from row
-    setEDept(row.department);
-    setEDesignation(row.designation);
-    setEPrimaryRole(row.primaryRole);
-    setEAncillaryRole(row.ancillaryRole ? [row.ancillaryRole] : []);
-    setEReportingMgr(row.manager);
+    setEditingDbId(dbId ?? null);
+
+    // Hydrate from the raw API row when present so step-2 selects map back
+    // to ids (not labels). Falls back to the projected row when not.
+    if (raw) {
+      setEFirstName(raw.first_name || '');
+      setEMiddleName(raw.middle_name || '');
+      setELastName(raw.last_name || '');
+      setEDisplayName(raw.display_name || row.name);
+      setEDisplayNameTouched(true);
+      setEActualName(raw.display_name || row.name);
+      setEWorkEmail(raw.email || '');
+      setEMobile(raw.mobile || '');
+      setEEmpId(raw.emp_code || '');
+      setEStatus(raw.status || 'Active');
+      setEGender(raw.gender || '');
+      setEDob(raw.date_of_birth ? String(raw.date_of_birth).slice(0, 10) : '');
+      // Identity FKs — country master ids
+      setEWorkCountry(raw.work_country_id ? String(raw.work_country_id) : '');
+      setENationality(raw.nationality_country_id ? String(raw.nationality_country_id) : '');
+      // Current address — saved on the employees row
+      setECurAddr1(raw.address_line1 || '');
+      setECurAddr2(raw.address_line2 || '');
+      setECurCity(raw.city || '');
+      setECurCountry(raw.country_id ? String(raw.country_id) : '');
+      setECurState(raw.state_id ? String(raw.state_id) : '');
+      setECurPin(raw.pincode || '');
+      // Job
+      setEJoinDate(raw.date_of_joining ? String(raw.date_of_joining).slice(0, 10) : '');
+      setEDept(raw.department_id ? String(raw.department_id) : '');
+      setEDesignation(raw.designation_id ? String(raw.designation_id) : '');
+      setEPrimaryRole(raw.primary_role_id ? String(raw.primary_role_id) : '');
+      setEAncillaryRole(raw.ancillary_role_id ? [String(raw.ancillary_role_id)] : []);
+      setELegalEntity(raw.legal_entity_id ? String(raw.legal_entity_id) : '');
+      setELocation(raw.location || '');
+      setEReportingMgr(raw.reporting_manager_id ? `employee:${raw.reporting_manager_id}` : '');
+      setEProbationPolicy(raw.probation_policy || 'Default Probation Policy');
+      setENoticePeriod(raw.notice_period || 'Default Notice Period');
+
+      // Permanent address
+      setEPermAddr1(raw.perm_address_line1 || '');
+      setEPermAddr2(raw.perm_address_line2 || '');
+      setEPermCity(raw.perm_city || '');
+      setEPermCountry(raw.perm_country_id ? String(raw.perm_country_id) : '');
+      setEPermState(raw.perm_state_id ? String(raw.perm_state_id) : '');
+      setEPermPin(raw.perm_pincode || '');
+      // If the saved permanent address mirrors the current address, pre-tick
+      // the "Same as Current" checkbox so the UI reflects the original intent.
+      setESameAsCurrent(
+        !!raw.perm_address_line1 && raw.perm_address_line1 === raw.address_line1
+        && raw.perm_pincode === raw.pincode
+        && String(raw.perm_country_id ?? '') === String(raw.country_id ?? '')
+      );
+
+      // Step 3 — Work Details
+      if (raw.leave_plan !== undefined && raw.leave_plan !== null) setELeavePlan(raw.leave_plan);
+      if (raw.holiday_list !== undefined && raw.holiday_list !== null) setEHolidayList(raw.holiday_list);
+      if (raw.attendance_tracking !== undefined && raw.attendance_tracking !== null) setEAttendanceTracking(!!raw.attendance_tracking);
+      if (raw.shift !== undefined && raw.shift !== null) setEShift(raw.shift);
+      if (raw.weekly_off !== undefined && raw.weekly_off !== null) setEWeeklyOff(raw.weekly_off);
+      if (raw.attendance_number !== undefined && raw.attendance_number !== null) setEAttendanceNumber(raw.attendance_number);
+      if (raw.time_tracking !== undefined && raw.time_tracking !== null) setETimeTracking(raw.time_tracking);
+      if (raw.penalization_policy !== undefined && raw.penalization_policy !== null) setEPenalizationPolicy(raw.penalization_policy);
+      if (raw.overtime !== undefined && raw.overtime !== null) setEOvertime(raw.overtime);
+      if (raw.expense_policy !== undefined && raw.expense_policy !== null) setEExpensePolicy(raw.expense_policy);
+      if (raw.laptop_assigned !== undefined && raw.laptop_assigned !== null) setELaptopAssigned(raw.laptop_assigned);
+      if (raw.laptop_asset_id !== undefined && raw.laptop_asset_id !== null) setELaptopAssetId(raw.laptop_asset_id);
+      if (raw.mobile_device !== undefined && raw.mobile_device !== null) setEMobileDevice(raw.mobile_device);
+      if (raw.other_assets !== undefined && raw.other_assets !== null) setEOtherAssets(raw.other_assets);
+
+      // Step 4 — Compensation
+      if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
+      if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
+      if (raw.annual_salary !== undefined && raw.annual_salary !== null) setEAnnualSalary(String(raw.annual_salary));
+      if (raw.salary_frequency !== undefined && raw.salary_frequency !== null) setESalaryFreq(raw.salary_frequency);
+      if (raw.salary_effective_from) setESalaryFrom(String(raw.salary_effective_from).slice(0, 10));
+      if (raw.salary_structure !== undefined && raw.salary_structure !== null) setESalaryStructure(raw.salary_structure);
+      if (raw.tax_regime !== undefined && raw.tax_regime !== null) setETaxRegime(raw.tax_regime);
+      if (raw.bonus_in_annual !== undefined && raw.bonus_in_annual !== null) setEBonusInAnnual(!!raw.bonus_in_annual);
+      if (raw.pf_eligible !== undefined && raw.pf_eligible !== null) setEPfEligible(!!raw.pf_eligible);
+      if (raw.detailed_breakup !== undefined && raw.detailed_breakup !== null) setEDetailedBreakup(!!raw.detailed_breakup);
+    } else {
+      const parts = row.name.split(' ');
+      setEFirstName(parts[0] || '');
+      setELastName(parts.slice(1).join(' ') || '');
+      setEDisplayName(row.name);
+      setEDisplayNameTouched(true);
+      setEActualName(row.name);
+      setEWorkEmail(row.email);
+      setEEmpId(row.id);
+      setEStatus(row.enabled ? 'Active' : 'Inactive');
+    }
     setEmpOpen(true);
+  };
+
+  /**
+   * POST or PUT the wizard's accumulated state to the server. All known fields
+   * are mapped to API-shaped keys; ones the API doesn't yet accept (work
+   * details, compensation) are sent through but ignored by the controller.
+   */
+  // Per-step validators. Each returns a (key → message) map for the fields
+  // owned by that step. Keys are the API payload names so server-side 422
+  // errors and client-side errors share the same key space and the same
+  // red-border rendering path.
+  const validateStep1 = useCallback((): Record<string, string> => {
+    const e: Record<string, string> = {};
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Identity
+    if (!eWorkCountry)        e.work_country_id = 'Work country is required';
+    if (!eFirstName.trim())   e.first_name      = 'First name is required';
+    if (!eLastName.trim())    e.last_name       = 'Last name is required';
+    if (!eDisplayName.trim()) e.display_name    = 'Display name is required';
+    if (!eGender)             e.gender          = 'Gender is required';
+    if (!eDob)                e.date_of_birth   = 'Date of birth is required';
+    if (!eNationality)        e.nationality_country_id = 'Nationality is required';
+    // Contact
+    if (!eWorkEmail.trim())   e.email           = 'Email is required';
+    else if (!emailRe.test(eWorkEmail.trim())) e.email = 'Enter a valid email address';
+    if (!eMobile.trim())      e.mobile          = 'Mobile is required';
+    // Address (current)
+    if (!eCurAddr1.trim())    e.address_line1   = 'Address Line 1 is required';
+    if (!eCurCity.trim())     e.city            = 'City is required';
+    if (!eCurCountry)         e.country_id      = 'Country is required';
+    if (!eCurState)           e.state_id        = 'State is required';
+    if (!eCurPin.trim())      e.pincode         = 'Pincode is required';
+    else if (!/^\d{4,10}$/.test(eCurPin.trim())) e.pincode = 'Enter a valid pincode';
+    return e;
+  }, [eWorkCountry, eFirstName, eLastName, eDisplayName, eGender, eDob, eNationality,
+      eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin]);
+
+  const validateStep2 = useCallback((): Record<string, string> => {
+    const e: Record<string, string> = {};
+    if (!eJoinDate)        e.date_of_joining   = 'Joining date is required';
+    if (!eDept)            e.department_id     = 'Department is required';
+    if (!eDesignation)     e.designation_id    = 'Designation is required';
+    if (!ePrimaryRole)     e.primary_role_id   = 'Primary role is required';
+    if (!eLegalEntity)     e.legal_entity_id   = 'Legal entity is required';
+    if (!eProbationPolicy) e.probation_policy  = 'Probation policy is required';
+    if (eProbationPolicy === CUSTOM_PROBATION_VALUE && !eCustomProbation.trim()) {
+      e.probation_policy = 'Please describe the custom probation policy';
+    }
+    if (!eNoticePeriod)    e.notice_period     = 'Notice period is required';
+    if (eNoticePeriod === CUSTOM_NOTICE_VALUE && !eCustomNotice.trim()) {
+      e.notice_period = 'Please describe the custom notice period';
+    }
+    return e;
+  }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eLegalEntity,
+      eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
+
+  // Steps 3 and 4 only have soft-required fields (defaults pre-filled), so
+  // their validators currently no-op. Adding them here keeps the contract
+  // uniform — wire field-level checks into them as those steps grow real
+  // mandatory inputs (e.g. Aadhar/Pan upload requirements).
+  const validateStep3 = useCallback((): Record<string, string> => ({}), []);
+  const validateStep4 = useCallback((): Record<string, string> => ({}), []);
+
+  // First step that contains any of the given error keys. Used to jump-back
+  // when a deeper step's submit surfaces a problem in an earlier step.
+  const firstStepWithErrors = (errs: Record<string, string>): 1 | 2 | 3 | 4 | null => {
+    if (Object.keys(errs).length === 0) return null;
+    const k = Object.keys(errs);
+    const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
+      { step: 1, keys: new Set(['work_country_id','first_name','last_name','display_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
+      { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
+    ];
+    for (const s of STEP_KEYS) {
+      if (k.some(x => s.keys.has(x))) return s.step;
+    }
+    return 1;
+  };
+
+  /** "Next" button → validate the CURRENT step; advance only when clean. */
+  const handleNextStep = () => {
+    const errs = empStep === 1 ? validateStep1()
+               : empStep === 2 ? validateStep2()
+               : empStep === 3 ? validateStep3()
+               : validateStep4();
+    if (Object.keys(errs).length > 0) {
+      setEErrors(errs);
+      const count = Object.keys(errs).length;
+      toast.error(
+        'Please fix the highlighted fields',
+        `${count} field${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} attention before continuing.`,
+      );
+      return;
+    }
+    // Clear stale errors and advance.
+    setEErrors({});
+    setEmpStep((s) => ((s + 1) as 1 | 2 | 3 | 4));
+  };
+
+  const handleSaveEmployee = async () => {
+    if (saving) return;
+    // Run validators for every step so submit catches problems anywhere,
+    // not just the current step.
+    const errs: Record<string, string> = {
+      ...validateStep1(),
+      ...validateStep2(),
+      ...validateStep3(),
+      ...validateStep4(),
+    };
+
+    if (Object.keys(errs).length > 0) {
+      setEErrors(errs);
+      const jumpTo = firstStepWithErrors(errs);
+      if (jumpTo) setEmpStep(jumpTo);
+      const count = Object.keys(errs).length;
+      toast.error(
+        'Please fix the highlighted fields',
+        `${count} field${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} attention.`,
+      );
+      return;
+    }
+
+    const intOrNull = (s: string | undefined | null) => {
+      const n = parseInt(String(s ?? ''), 10);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const payload: Record<string, any> = {
+      first_name:  eFirstName.trim(),
+      middle_name: eMiddleName.trim() || null,
+      last_name:   eLastName.trim() || null,
+      gender:      eGender || null,
+      date_of_birth: eDob || null,
+      nationality_country_id: intOrNull(eNationality),
+      work_country_id:        intOrNull(eWorkCountry),
+      email:       eWorkEmail.trim(),
+      mobile:      eMobile.trim() || null,
+
+      // Current address
+      address_line1: eCurAddr1.trim() || null,
+      address_line2: eCurAddr2.trim() || null,
+      city:          eCurCity.trim() || null,
+      state_id:      intOrNull(eCurState),
+      country_id:    intOrNull(eCurCountry),
+      pincode:       eCurPin.trim() || null,
+
+      // Permanent address — when "Same as Current" is checked we ship the
+      // current values so the saved row matches the rendered form.
+      perm_address_line1: (eSameAsCurrent ? eCurAddr1 : ePermAddr1).trim() || null,
+      perm_address_line2: (eSameAsCurrent ? eCurAddr2 : ePermAddr2).trim() || null,
+      perm_city:          (eSameAsCurrent ? eCurCity  : ePermCity).trim()  || null,
+      perm_state_id:      intOrNull(eSameAsCurrent ? eCurState   : ePermState),
+      perm_country_id:    intOrNull(eSameAsCurrent ? eCurCountry : ePermCountry),
+      perm_pincode:       (eSameAsCurrent ? eCurPin  : ePermPin).trim()    || null,
+
+      department_id:   intOrNull(eDept),
+      designation_id:  intOrNull(eDesignation),
+      primary_role_id: intOrNull(ePrimaryRole),
+      ancillary_role_id: intOrNull(eAncillaryRole[0]),
+      legal_entity_id: intOrNull(eLegalEntity),
+      location:        eLocation || null,
+      // `eReportingMgr` is a composite "kind:id" — only persist the id when
+      // the picked candidate is an actual employee row (the FK column
+      // expects employees.id). When the user picks a client_admin or
+      // branch_user, store their display name in `location`-style fields
+      // is overkill; for now just leave the FK null and skip the user
+      // pointer until a dedicated reporting_manager_user_id column lands.
+      reporting_manager_id: (() => {
+        if (!eReportingMgr) return null;
+        const [kind, idStr] = String(eReportingMgr).split(':');
+        if (kind !== 'employee') return null;
+        return intOrNull(idStr);
+      })(),
+      date_of_joining: eJoinDate || null,
+
+      probation_policy: eProbationPolicy === CUSTOM_PROBATION_VALUE ? (eCustomProbation || 'Custom') : eProbationPolicy,
+      notice_period:    eNoticePeriod === CUSTOM_NOTICE_VALUE ? (eCustomNotice || 'Custom') : eNoticePeriod,
+
+      // Snapshot the designation label onto the user record too — the user
+      // controller reads it verbatim when displaying who's logged in.
+      designation_name: mDesignations.find(d => String(d.id) === String(eDesignation))?.name,
+
+      // Step 3 — Work Details
+      leave_plan:           eLeavePlan || null,
+      holiday_list:         eHolidayList || null,
+      attendance_tracking:  !!eAttendanceTracking,
+      shift:                eShift || null,
+      weekly_off:           eWeeklyOff || null,
+      attendance_number:    eAttendanceNumber.trim() || null,
+      time_tracking:        eTimeTracking || null,
+      penalization_policy:  ePenalizationPolicy || null,
+      overtime:             eOvertime || null,
+      expense_policy:       eExpensePolicy || null,
+      laptop_assigned:      eLaptopAssigned || null,
+      laptop_asset_id:      eLaptopAssetId.trim() || null,
+      mobile_device:        eMobileDevice.trim() || null,
+      other_assets:         eOtherAssets.trim() || null,
+
+      // Step 4 — Compensation
+      enable_payroll:        !!eEnablePayroll,
+      pay_group:             ePayGroup || null,
+      annual_salary:         eAnnualSalary === '' ? null : Number(eAnnualSalary),
+      salary_frequency:      eSalaryFreq || null,
+      salary_effective_from: eSalaryFrom || null,
+      salary_structure:      eSalaryStructure || null,
+      tax_regime:            eTaxRegime || null,
+      bonus_in_annual:       !!eBonusInAnnual,
+      pf_eligible:           !!ePfEligible,
+      detailed_breakup:      !!eDetailedBreakup,
+
+      status: eStatus || 'Active',
+    };
+
+    setSaving(true);
+    try {
+      if (empMode === 'edit' && editingDbId) {
+        await api.put(`/employees/${editingDbId}`, payload);
+        toast.success('Employee updated', `${eFirstName} ${eLastName}`.trim());
+      } else {
+        const r = await api.post('/employees', payload);
+        const emp = r?.data?.employee;
+        toast.success(
+          'Employee created',
+          `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`,
+        );
+      }
+      // Wipe the saved draft now that the data is committed — no risk of
+      // resurrecting it on the next Add open.
+      clearDraft();
+      await reloadEmployees();
+      await reloadManagers();
+      closeEmp();
+    } catch (err: any) {
+      // Surface server-side 422 errors as inline field errors so the same
+      // red-border treatment applies. Falls back to a top-level toast if
+      // the response is shaped differently.
+      const fieldErrors = err?.response?.data?.errors;
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const flat: Record<string, string> = {};
+        for (const k of Object.keys(fieldErrors)) {
+          flat[k] = (Array.isArray(fieldErrors[k]) ? fieldErrors[k][0] : fieldErrors[k]) || 'Invalid';
+        }
+        setEErrors(flat);
+        toast.error('Could not save employee', err?.response?.data?.message || 'Please correct the highlighted fields.');
+      } else {
+        const apiMsg = err?.response?.data?.message || err?.message || 'Save failed';
+        toast.error('Could not save employee', String(apiMsg));
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * Soft-delete an employee row + disable their login account. Wired to the
+   * existing toggle-confirm modal: clicking "Confirm" on a row's enable
+   * switch fires this when the action is "disable".
+   */
+  const handleDeleteEmployee = async (dbId: number, name: string) => {
+    try {
+      await api.delete(`/employees/${dbId}`);
+      toast.success('Employee removed', `${name} removed and login disabled.`);
+      await reloadEmployees();
+    } catch (err: any) {
+      const apiMsg = err?.response?.data?.message || err?.message || 'Delete failed';
+      toast.error('Could not delete employee', String(apiMsg));
+    }
   };
 
   // When "Same as Current Address" is checked, mirror the current address.
@@ -662,24 +1274,61 @@ export default function HrEmployees() {
   };
 
   const departments = useMemo(
-    () => ['All Depts', ...Array.from(new Set(EMPLOYEES.map(e => e.department)))],
-    []
+    () => ['All Depts', ...Array.from(new Set(apiRows.map(e => e.department).filter(d => d && d !== '—')))],
+    [apiRows]
   );
 
-  const counts = useMemo(() => ({
-    total: EMPLOYEES.length + 72,
-    active: EMPLOYEES.filter(e => e.enabled).length + 38,
-    on_leave: 2,
-    high_attention: 2,
-    probation: 3,
-    inactive: 6,
-    activeTab: 47,
-    disabledTab: 34,
-  }), []);
+  // KPI counts derived from real data. Tiles for metrics that aren't yet
+  // sourced from a real subsystem (high_attention / probation / on_leave)
+  // stay in the strip but render 0 — they'll switch on once those modules
+  // (Leave, Probation) start writing rows that can be queried.
+  const counts = useMemo(() => {
+    const total = apiRows.length;
+    const active = apiRows.filter(e => e.enabled && e.status === 'active').length;
+    const inactive = apiRows.filter(e => !e.enabled).length;
+    const probation = apiRows.filter(e => e.status === 'probation').length;
+    const onLeave = apiRows.filter(e => e.status === 'on_leave').length;
+    const highAttention = apiRows.filter(e => e.status === 'high_attention').length;
+    return {
+      total,
+      active,
+      on_leave: onLeave,
+      high_attention: highAttention,
+      probation,
+      inactive,
+      activeTab: apiRows.filter(e => e.enabled).length,
+      disabledTab: apiRows.filter(e => !e.enabled).length,
+    };
+  }, [apiRows]);
+
+  // Reporting-manager dropdown — fetched from the backend so brand-new
+  // tenants (with zero employees yet) still get a non-empty list: the
+  // backend falls back to client/branch admins. The picker stores a
+  // composite "kind:id" string so the API payload can split it into either
+  // `reporting_manager_id` (employee FK) or `reporting_manager_user_id`
+  // (login-user reference) at submit time.
+  const [managerCandidates, setManagerCandidates] = useState<{ id: number; kind: string; label: string }[]>([]);
+  const reloadManagers = useCallback(async () => {
+    try {
+      const r = await api.get('/employees/managers');
+      const merged = [
+        ...((r?.data?.employees   ?? []) as { id: number; kind: string; label: string }[]),
+        ...((r?.data?.login_users ?? []) as { id: number; kind: string; label: string }[]),
+      ];
+      setManagerCandidates(merged);
+    } catch {
+      setManagerCandidates([]);
+    }
+  }, []);
+  useEffect(() => { reloadManagers(); }, [reloadManagers]);
+  const reportingManagerOptions = useMemo(
+    () => managerCandidates.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })),
+    [managerCandidates]
+  );
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return EMPLOYEES.filter(e => {
+    return apiRows.filter(e => {
       if (tab === 'active' && !e.enabled) return false;
       if (tab === 'disabled' && e.enabled) return false;
       if (deptFilter !== 'All Depts' && e.department !== deptFilter) return false;
@@ -687,7 +1336,11 @@ export default function HrEmployees() {
       return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
         .some(v => v.toLowerCase().includes(s));
     });
-  }, [q, tab, deptFilter]);
+    // `apiRows` MUST be in the dep list — without it, the memo holds the
+    // initial empty-array filter result forever and only re-runs when one of
+    // the other deps (q / tab / deptFilter) changes. That's why the table
+    // looked empty on first load and only populated after a tab switch.
+  }, [q, tab, deptFilter, apiRows]);
 
   return (
     <>
@@ -1127,7 +1780,7 @@ export default function HrEmployees() {
                 {/* Footer count — matches the rhythm of the Clients table */}
                 <div className="d-flex align-items-center justify-content-between mt-3 pt-2 border-top">
                   <div className="text-muted" style={{ fontSize: 12 }}>
-                    Showing <span className="fw-bold text-body">{filtered.length}</span> of <span className="fw-bold text-body">{EMPLOYEES.filter(e => tab === 'active' ? e.enabled : !e.enabled).length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
+                    Showing <span className="fw-bold text-body">{filtered.length}</span> of <span className="fw-bold text-body">{apiRows.filter(e => tab === 'active' ? e.enabled : !e.enabled).length}</span> {tab === 'active' ? 'Active' : 'Disabled'} Employees
                   </div>
                 </div>
               </CardBody>
@@ -1573,6 +2226,8 @@ export default function HrEmployees() {
           .emp-input::placeholder { color: #9ca3af; }
           .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
           .emp-input.is-readonly { background: #f5f1ff; border-color: #d6c9ff; color: #5a3fd1; font-weight: 600; }
+          .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
+          .emp-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
           [data-bs-theme="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
           [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
           .emp-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
@@ -1659,6 +2314,26 @@ export default function HrEmployees() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                {/* Discard-draft chip — only visible in Add mode while a
+                    draft is in progress. Lets the user toss the saved state
+                    and start fresh without having to clear localStorage. */}
+                {empMode === 'add' && (eFirstName || eLastName || eWorkEmail || empStep > 1) && (
+                  <button
+                    type="button"
+                    onClick={discardAddDraft}
+                    title="Discard the saved draft and reset the form"
+                    className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
+                    style={{
+                      fontSize: 11,
+                      background: 'rgba(255,255,255,0.18)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.28)',
+                      padding: '4px 10px',
+                    }}
+                  >
+                    <i className="ri-eraser-line" /> Discard draft
+                  </button>
+                )}
                 <span
                   className="badge rounded-pill"
                   style={{
@@ -1734,50 +2409,62 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     <Col md={4}>
-                      <label className="emp-label">Work Country</label>
-                      <MasterSelect value={eWorkCountry} onChange={setEWorkCountry} options={COUNTRY_OPTIONS} />
+                      <label className="emp-label">Work Country<span className="req">*</span></label>
+                      <MasterSelect value={eWorkCountry} onChange={(v) => { setEWorkCountry(v); clearEErr('work_country_id'); }} placeholder="Select work country" options={countryOptions} invalid={!!eErrors.work_country_id} />
+                      {eErrors.work_country_id && <small className="emp-err">{eErrors.work_country_id}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">First Name<span className="req">*</span></label>
                       <input
-                        className="emp-input"
+                        className={`emp-input${eErrors.first_name ? ' is-invalid' : ''}`}
                         type="text"
                         placeholder="e.g. Aarav"
                         value={eFirstName}
                         onChange={e => {
                           const v = e.target.value;
                           setEFirstName(v);
-                          if (!eDisplayNameTouched) setEDisplayName(`${v} ${eLastName}`.trim());
+                          if (!eDisplayNameTouched) setEDisplayName(`${v} ${eMiddleName} ${eLastName}`.replace(/\s+/g,' ').trim());
+                          clearEErr('first_name');
+                          clearEErr('display_name');
                         }}
                       />
+                      {eErrors.first_name && <small className="emp-err">{eErrors.first_name}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Middle Name</label>
-                      <input className="emp-input" type="text" placeholder="Middle name (optional)" value={eMiddleName} onChange={e => setEMiddleName(e.target.value)} />
+                      <input className="emp-input" type="text" placeholder="Middle name (optional)" value={eMiddleName} onChange={e => {
+                        const v = e.target.value;
+                        setEMiddleName(v);
+                        if (!eDisplayNameTouched) setEDisplayName(`${eFirstName} ${v} ${eLastName}`.replace(/\s+/g,' ').trim());
+                      }} />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Last Name<span className="req">*</span></label>
                       <input
-                        className="emp-input"
+                        className={`emp-input${eErrors.last_name ? ' is-invalid' : ''}`}
                         type="text"
                         placeholder="e.g. Kale"
                         value={eLastName}
                         onChange={e => {
                           const v = e.target.value;
                           setELastName(v);
-                          if (!eDisplayNameTouched) setEDisplayName(`${eFirstName} ${v}`.trim());
+                          if (!eDisplayNameTouched) setEDisplayName(`${eFirstName} ${eMiddleName} ${v}`.replace(/\s+/g,' ').trim());
+                          clearEErr('last_name');
+                          clearEErr('display_name');
                         }}
                       />
+                      {eErrors.last_name && <small className="emp-err">{eErrors.last_name}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Display Name<span className="req">*</span></label>
                       <input
-                        className="emp-input"
+                        className={`emp-input${eErrors.display_name ? ' is-invalid' : ''}`}
                         type="text"
                         placeholder="e.g. Aarav Kale (auto-filled)"
                         value={eDisplayName}
-                        onChange={e => { setEDisplayName(e.target.value); setEDisplayNameTouched(true); }}
+                        onChange={e => { setEDisplayName(e.target.value); setEDisplayNameTouched(true); clearEErr('display_name'); }}
                       />
+                      {eErrors.display_name && <small className="emp-err">{eErrors.display_name}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Employee Actual Name<span className="req">*</span></label>
@@ -1785,15 +2472,18 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Gender<span className="req">*</span></label>
-                      <MasterSelect value={eGender} onChange={setEGender} placeholder="Select gender" options={GENDER_OPTIONS} />
+                      <MasterSelect value={eGender} onChange={(v) => { setEGender(v); clearEErr('gender'); }} placeholder="Select gender" options={GENDER_OPTIONS} invalid={!!eErrors.gender} />
+                      {eErrors.gender && <small className="emp-err">{eErrors.gender}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Date of Birth<span className="req">*</span></label>
-                      <MasterDatePicker value={eDob} onChange={setEDob} placeholder="dd-mm-yyyy" />
+                      <MasterDatePicker value={eDob} onChange={(v) => { setEDob(v); clearEErr('date_of_birth'); }} placeholder="dd-mm-yyyy" invalid={!!eErrors.date_of_birth} />
+                      {eErrors.date_of_birth && <small className="emp-err">{eErrors.date_of_birth}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Nationality<span className="req">*</span></label>
-                      <MasterSelect value={eNationality} onChange={setENationality} options={NATIONALITY_OPTIONS} />
+                      <MasterSelect value={eNationality} onChange={(v) => { setENationality(v); clearEErr('nationality_country_id'); }} placeholder="Select nationality" options={countryOptions} invalid={!!eErrors.nationality_country_id} />
+                      {eErrors.nationality_country_id && <small className="emp-err">{eErrors.nationality_country_id}</small>}
                     </Col>
                   </Row>
                 </div>
@@ -1806,11 +2496,25 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={4}>
                       <label className="emp-label">Personal Email<span className="req">*</span></label>
-                      <input className="emp-input" type="email" placeholder="name@enterprise.com" value={eWorkEmail} onChange={e => setEWorkEmail(e.target.value)} />
+                      <input
+                        className={`emp-input${eErrors.email ? ' is-invalid' : ''}`}
+                        type="email"
+                        placeholder="name@enterprise.com"
+                        value={eWorkEmail}
+                        onChange={e => { setEWorkEmail(e.target.value); clearEErr('email'); }}
+                      />
+                      {eErrors.email && <small className="emp-err">{eErrors.email}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Mobile Number<span className="req">*</span></label>
-                      <input className="emp-input" type="tel" placeholder="10-digit mobile number" value={eMobile} onChange={e => setEMobile(e.target.value)} />
+                      <input
+                        className={`emp-input${eErrors.mobile ? ' is-invalid' : ''}`}
+                        type="tel"
+                        placeholder="10-digit mobile number"
+                        value={eMobile}
+                        onChange={e => { setEMobile(e.target.value); clearEErr('mobile'); }}
+                      />
+                      {eErrors.mobile && <small className="emp-err">{eErrors.mobile}</small>}
                     </Col>
                     
                     <Col md={4}>
@@ -1835,7 +2539,14 @@ export default function HrEmployees() {
                   <Row className="g-3 mb-3">
                     <Col md={6}>
                       <label className="emp-label">Address Line 1<span className="req">*</span></label>
-                      <input className="emp-input" type="text" placeholder="House / Flat No., Building, Street" value={eCurAddr1} onChange={e => setECurAddr1(e.target.value)} />
+                      <input
+                        className={`emp-input${eErrors.address_line1 ? ' is-invalid' : ''}`}
+                        type="text"
+                        placeholder="House / Flat No., Building, Street"
+                        value={eCurAddr1}
+                        onChange={e => { setECurAddr1(e.target.value); clearEErr('address_line1'); }}
+                      />
+                      {eErrors.address_line1 && <small className="emp-err">{eErrors.address_line1}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Address Line 2</label>
@@ -1843,19 +2554,55 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={3}>
                       <label className="emp-label">City<span className="req">*</span></label>
-                      <input className="emp-input" type="text" placeholder="e.g. Pune" value={eCurCity} onChange={e => setECurCity(e.target.value)} />
-                    </Col>
-                    <Col md={3}>
-                      <label className="emp-label">State<span className="req">*</span></label>
-                      <MasterSelect value={eCurState} onChange={setECurState} placeholder="Select state" options={STATE_OPTIONS} />
+                      <input
+                        className={`emp-input${eErrors.city ? ' is-invalid' : ''}`}
+                        type="text"
+                        placeholder="e.g. Pune"
+                        value={eCurCity}
+                        onChange={e => { setECurCity(e.target.value); clearEErr('city'); }}
+                      />
+                      {eErrors.city && <small className="emp-err">{eErrors.city}</small>}
                     </Col>
                     <Col md={3}>
                       <label className="emp-label">Country<span className="req">*</span></label>
-                      <MasterSelect value={eCurCountry} onChange={setECurCountry} options={COUNTRY_OPTIONS} />
+                      <MasterSelect
+                        value={eCurCountry}
+                        onChange={(v) => {
+                          setECurCountry(v);
+                          // Clear state when country changes — keeps the
+                          // state value valid against the new country list.
+                          if (eCurState) setECurState('');
+                          clearEErr('country_id');
+                          clearEErr('state_id');
+                        }}
+                        placeholder="Select country"
+                        options={countryOptions}
+                        invalid={!!eErrors.country_id}
+                      />
+                      {eErrors.country_id && <small className="emp-err">{eErrors.country_id}</small>}
+                    </Col>
+                    <Col md={3}>
+                      <label className="emp-label">State<span className="req">*</span></label>
+                      <MasterSelect
+                        value={eCurState}
+                        onChange={(v) => { setECurState(v); clearEErr('state_id'); }}
+                        placeholder={eCurCountry ? 'Select state' : 'Pick country first'}
+                        options={currentAddressStates}
+                        disabled={!eCurCountry}
+                        invalid={!!eErrors.state_id}
+                      />
+                      {eErrors.state_id && <small className="emp-err">{eErrors.state_id}</small>}
                     </Col>
                     <Col md={3}>
                       <label className="emp-label">Pincode<span className="req">*</span></label>
-                      <input className="emp-input" type="text" placeholder="6-digit pincode" value={eCurPin} onChange={e => setECurPin(e.target.value)} />
+                      <input
+                        className={`emp-input${eErrors.pincode ? ' is-invalid' : ''}`}
+                        type="text"
+                        placeholder="6-digit pincode"
+                        value={eCurPin}
+                        onChange={e => { setECurPin(e.target.value); clearEErr('pincode'); }}
+                      />
+                      {eErrors.pincode && <small className="emp-err">{eErrors.pincode}</small>}
                     </Col>
                   </Row>
 
@@ -1888,12 +2635,24 @@ export default function HrEmployees() {
                       <input className="emp-input" type="text" placeholder="e.g. Pune" value={ePermCity} onChange={e => setEPermCity(e.target.value)} disabled={eSameAsCurrent} />
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">State<span className="req">*</span></label>
-                      <MasterSelect value={ePermState} onChange={setEPermState} placeholder="Select state" options={STATE_OPTIONS} disabled={eSameAsCurrent} />
+                      <label className="emp-label">Country<span className="req">*</span></label>
+                      <MasterSelect
+                        value={ePermCountry}
+                        onChange={(v) => { setEPermCountry(v); if (ePermState) setEPermState(''); }}
+                        placeholder="Select country"
+                        options={countryOptions}
+                        disabled={eSameAsCurrent}
+                      />
                     </Col>
                     <Col md={3}>
-                      <label className="emp-label">Country<span className="req">*</span></label>
-                      <MasterSelect value={ePermCountry} onChange={setEPermCountry} options={COUNTRY_OPTIONS} disabled={eSameAsCurrent} />
+                      <label className="emp-label">State<span className="req">*</span></label>
+                      <MasterSelect
+                        value={ePermState}
+                        onChange={setEPermState}
+                        placeholder={ePermCountry ? 'Select state' : 'Pick country first'}
+                        options={permanentAddressStates}
+                        disabled={eSameAsCurrent || !ePermCountry}
+                      />
                     </Col>
                     <Col md={3}>
                       <label className="emp-label">Pincode<span className="req">*</span></label>
@@ -1914,26 +2673,30 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={4}>
                       <label className="emp-label">Joining Date<span className="req">*</span></label>
-                      <MasterDatePicker value={eJoinDate} onChange={setEJoinDate} placeholder="dd-mm-yyyy" />
+                      <MasterDatePicker value={eJoinDate} onChange={(v) => { setEJoinDate(v); clearEErr('date_of_joining'); }} placeholder="dd-mm-yyyy" invalid={!!eErrors.date_of_joining} />
+                      {eErrors.date_of_joining && <small className="emp-err">{eErrors.date_of_joining}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Department<span className="req">*</span></label>
-                      <MasterSelect value={eDept} onChange={setEDept} placeholder="Select department" options={DEPARTMENT_OPTIONS} />
+                      <MasterSelect value={eDept} onChange={(v) => { setEDept(v); clearEErr('department_id'); }} placeholder="Select department" options={departmentOptions} invalid={!!eErrors.department_id} />
+                      {eErrors.department_id && <small className="emp-err">{eErrors.department_id}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Designation<span className="req">*</span></label>
-                      <MasterSelect value={eDesignation} onChange={setEDesignation} placeholder="Select designation" options={DESIGNATION_OPTIONS} />
+                      <MasterSelect value={eDesignation} onChange={(v) => { setEDesignation(v); clearEErr('designation_id'); }} placeholder="Select designation" options={designationOptions} invalid={!!eErrors.designation_id} />
+                      {eErrors.designation_id && <small className="emp-err">{eErrors.designation_id}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Primary Role<span className="req">*</span></label>
-                      <MasterSelect value={ePrimaryRole} onChange={setEPrimaryRole} placeholder="Select role" options={PRIMARY_ROLE_OPTIONS} />
+                      <MasterSelect value={ePrimaryRole} onChange={(v) => { setEPrimaryRole(v); clearEErr('primary_role_id'); }} placeholder="Select role" options={primaryRoleOptions} invalid={!!eErrors.primary_role_id} />
+                      {eErrors.primary_role_id && <small className="emp-err">{eErrors.primary_role_id}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Ancillary Role <span className="hint">(select multiple)</span></label>
                       <MultiSelectChips
                         value={eAncillaryRole}
                         onChange={setEAncillaryRole}
-                        options={ANCILLARY_ROLE_OPTIONS}
+                        options={ancillaryRoleOptions}
                         placeholder="Select one or more roles"
                       />
                     </Col>
@@ -1956,11 +2719,16 @@ export default function HrEmployees() {
                         value={eLegalEntity}
                         onChange={(v) => {
                           setELegalEntity(v);
-                          setELocation(LEGAL_ENTITY_TO_LOCATION[v] || '');
+                          // Default Location to the entity's city — user can edit.
+                          const entity = mLegalEntities.find(le => String(le.id) === String(v));
+                          setELocation(entity?.city || entity?.address_line1 || '');
+                          clearEErr('legal_entity_id');
                         }}
                         placeholder="Select entity"
-                        options={LEGAL_ENTITY_OPTIONS}
+                        options={legalEntityOptions}
+                        invalid={!!eErrors.legal_entity_id}
                       />
+                      {eErrors.legal_entity_id && <small className="emp-err">{eErrors.legal_entity_id}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">
@@ -1981,7 +2749,7 @@ export default function HrEmployees() {
                         value={eReportingMgr}
                         onChange={setEReportingMgr}
                         placeholder="Select manager"
-                        options={REPORTING_MANAGER_OPTIONS}
+                        options={reportingManagerOptions}
                       />
                     </Col>
                   </Row>
@@ -1995,31 +2763,33 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={6}>
                       <label className="emp-label">Probation Policy<span className="req">*</span></label>
-                      <MasterSelect value={eProbationPolicy} onChange={setEProbationPolicy} options={PROBATION_POLICY_OPTIONS} />
+                      <MasterSelect value={eProbationPolicy} onChange={(v) => { setEProbationPolicy(v); clearEErr('probation_policy'); }} options={PROBATION_POLICY_OPTIONS} invalid={!!eErrors.probation_policy} />
                       {eProbationPolicy === CUSTOM_PROBATION_VALUE && (
                         <input
-                          className="emp-input mt-2"
+                          className={`emp-input mt-2${eErrors.probation_policy ? ' is-invalid' : ''}`}
                           type="text"
                           placeholder="e.g. 4-month probation, monthly review"
                           value={eCustomProbation}
-                          onChange={e => setECustomProbation(e.target.value)}
+                          onChange={e => { setECustomProbation(e.target.value); clearEErr('probation_policy'); }}
                           autoFocus
                         />
                       )}
+                      {eErrors.probation_policy && <small className="emp-err">{eErrors.probation_policy}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Notice Period<span className="req">*</span></label>
-                      <MasterSelect value={eNoticePeriod} onChange={setENoticePeriod} options={NOTICE_PERIOD_OPTIONS} />
+                      <MasterSelect value={eNoticePeriod} onChange={(v) => { setENoticePeriod(v); clearEErr('notice_period'); }} options={NOTICE_PERIOD_OPTIONS} invalid={!!eErrors.notice_period} />
                       {eNoticePeriod === CUSTOM_NOTICE_VALUE && (
                         <input
-                          className="emp-input mt-2"
+                          className={`emp-input mt-2${eErrors.notice_period ? ' is-invalid' : ''}`}
                           type="text"
                           placeholder="e.g. 45 Days, 2 months, etc."
                           value={eCustomNotice}
-                          onChange={e => setECustomNotice(e.target.value)}
+                          onChange={e => { setECustomNotice(e.target.value); clearEErr('notice_period'); }}
                           autoFocus
                         />
                       )}
+                      {eErrors.notice_period && <small className="emp-err">{eErrors.notice_period}</small>}
                     </Col>
                   </Row>
                 </div>
@@ -2429,7 +3199,7 @@ export default function HrEmployees() {
               {empStep < 4 ? (
                 <button
                   type="button"
-                  onClick={() => setEmpStep((s) => ((s + 1) as 1 | 2 | 3 | 4))}
+                  onClick={handleNextStep}
                   className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
                   style={{
                     fontSize: 13,
@@ -2445,26 +3215,23 @@ export default function HrEmployees() {
                 <>
                   <button
                     type="button"
-                    onClick={() => {
-                      // TODO: wire to backend — save without compensation
-                      closeEmp();
-                    }}
+                    disabled={saving}
+                    onClick={handleSaveEmployee}
                     className="btn fw-semibold rounded-pill px-3"
                     style={{
                       fontSize: 13,
                       background: '#fff',
                       color: 'var(--vz-secondary-color)',
                       border: '1px solid var(--vz-border-color)',
+                      opacity: saving ? 0.6 : 1,
                     }}
                   >
                     Skip this Step
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      // TODO: wire to backend — create / update employee
-                      closeEmp();
-                    }}
+                    disabled={saving}
+                    onClick={handleSaveEmployee}
                     className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
                     style={{
                       fontSize: 13,
@@ -2472,9 +3239,10 @@ export default function HrEmployees() {
                       border: 'none',
                       background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
                       boxShadow: '0 6px 16px rgba(10,179,156,0.30)',
+                      opacity: saving ? 0.6 : 1,
                     }}
                   >
-                    <i className="ri-check-line" /> Save Employee
+                    <i className={saving ? 'ri-loader-4-line' : 'ri-check-line'} /> {saving ? 'Saving…' : (empMode === 'edit' ? 'Update Employee' : 'Save Employee')}
                   </button>
                 </>
               )}

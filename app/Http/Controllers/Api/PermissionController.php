@@ -62,21 +62,30 @@ class PermissionController extends Controller
                 ->with(['client:id,org_name,status'])
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } elseif ($authUser->isClientAdmin()) {
-            // Same logic for branch users — only those whose branch is active
+            // Client admin can manage both branch_users (whose branch is active)
+            // AND employees under their client. Employees don't always carry a
+            // branch_id, so we don't gate them on branch.status.
             $users = User::where('client_id', $authUser->client_id)
-                ->where('user_type', 'branch_user')
+                ->whereIn('user_type', ['branch_user', 'employee'])
                 ->where('status', 'active')
-                ->whereHas('branch', fn($q) => $q->where('status', 'active'))
+                ->where(function ($q) {
+                    // branch_user must have an active branch; employees pass through.
+                    $q->where('user_type', 'employee')
+                      ->orWhere(function ($qq) {
+                          $qq->where('user_type', 'branch_user')
+                             ->whereHas('branch', fn($qb) => $qb->where('status', 'active'));
+                      });
+                })
                 ->with('branch:id,name,status')
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } elseif ($authUser->isMainBranchUser()) {
             // Main-branch user can manage permissions for OTHER active users in
-            // their own branch (excluding themselves). They cannot reach into
-            // other branches.
+            // their own branch (excluding themselves) — branch_users and any
+            // employees stamped with the same branch.
             $users = User::where('client_id', $authUser->client_id)
                 ->where('branch_id', $authUser->branch_id)
                 ->where('id', '!=', $authUser->id)
-                ->where('user_type', 'branch_user')
+                ->whereIn('user_type', ['branch_user', 'employee'])
                 ->where('status', 'active')
                 ->with('branch:id,name,status')
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
@@ -116,13 +125,16 @@ class PermissionController extends Controller
                 return response()->json(['message' => 'Cannot assign permissions to super admin'], 403);
             }
         } elseif ($authUser->isClientAdmin() || $authUser->isMainBranchUser()) {
-            // Client admin grants to any branch_user in their client. Main branch
-            // user grants only to other branch_users in their own branch.
+            // Client admin grants to any branch_user OR employee under their
+            // client. Main branch user grants to branch_users / employees in
+            // their own branch (not themselves).
+            $manageableTypes = ['branch_user', 'employee'];
             $allowed = $authUser->isClientAdmin()
-                ? ($targetUser->client_id === $authUser->client_id && $targetUser->user_type === 'branch_user')
+                ? ($targetUser->client_id === $authUser->client_id
+                    && in_array($targetUser->user_type, $manageableTypes, true))
                 : ($targetUser->client_id === $authUser->client_id
                     && $targetUser->branch_id === $authUser->branch_id
-                    && $targetUser->user_type === 'branch_user'
+                    && in_array($targetUser->user_type, $manageableTypes, true)
                     && $targetUser->id !== $authUser->id);
 
             if (!$allowed) {
@@ -248,8 +260,11 @@ class PermissionController extends Controller
             ->get(['module_id', ...$fields])
             ->keyBy('module_id');
 
+        // Cascade applies to BOTH branch users and employees under this client
+        // — both are granted by the admin, so both must be downgraded if the
+        // admin's flags shrink.
         $branchUserIds = User::where('client_id', $clientId)
-            ->where('user_type', 'branch_user')
+            ->whereIn('user_type', ['branch_user', 'employee'])
             ->pluck('id');
 
         $affected = 0;
