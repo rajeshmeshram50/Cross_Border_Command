@@ -760,44 +760,75 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     onClose();
   };
 
-  const caseId = `EX-${employee.empId.replace(/[^0-9]/g, '')}-${(2000 + employee.id * 31 % 999).toString().padStart(4, '0')}`;
   const current = EXIT_STAGES[stage - 1];
   const isLastStage = stage === EXIT_STAGES.length;
 
   return (
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ep-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        {/* Header */}
+        {/* Header — onboarding-style with avatar, stage pills, status chips */}
         <div className="ep-head">
-          <span className="ep-head-icon"><i className="ri-logout-box-r-line" /></span>
-          <div className="ep-head-text">
-            <div className="ep-head-title">Employee Exit Process</div>
-            <div className="ep-head-meta">
-              <span className="ep-head-name">{employee.name}</span>
-              <span className="rec-id-pill">{employee.empId}</span>
-              <span className="rec-id-pill">{employee.department.toUpperCase()}</span>
-              <span className="rec-id-pill">{caseId}</span>
+          <div className="ep-head-top">
+            <span className="ep-head-avatar" style={{ background: `linear-gradient(135deg, ${employee.accent}, ${employee.accent}cc)` }}>
+              {employee.initials}
+            </span>
+            <div className="ep-head-text">
+              <div className="ep-head-title-row">
+                <div className="ep-head-title">{employee.name}</div>
+              </div>
+              <div className="ep-head-sub">
+                {employee.empId} · {employee.department} · {employee.designation}
+              </div>
+              {/* Stage stepper pills — rounded chips with checkmark / number
+                  + label, current pill highlighted in white. */}
+              <div className="ep-step-strip">
+                {EXIT_STAGES.map(s => {
+                  const st = statusOf(s.num);
+                  const isCurrent = stage === s.num;
+                  const isDone = st === 'Completed';
+                  return (
+                    <button
+                      key={s.num}
+                      type="button"
+                      className={`ep-step-pill${isCurrent ? ' is-current' : ''}${isDone ? ' is-done' : ''}`}
+                      onClick={() => { setStage(s.num); setStageStatus(prev => ({ ...prev, [s.num]: prev[s.num] === 'Completed' ? 'Completed' : 'In Progress' })); }}
+                    >
+                      {isDone ? <i className="ri-check-line" /> : <span className="ep-step-pill-num">{s.num}</span>}
+                      <span className="ep-step-pill-label">{shortStageLabel(s.num)}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="ep-progress-mini">
-              <i className="ri-checkbox-circle-line" />
-              <span>Stage {stage} of {EXIT_STAGES.length}</span>
-              <span className="ep-progress-mini-dot">·</span>
-              <span className="ep-progress-mini-pct">{progressPct}% Complete</span>
+            <div className="ep-head-right">
+              <div className="ep-head-chips">
+                <span className="ep-head-chip"><i className="ri-time-line" />Status: {statusOf(stage)}</span>
+                <span className="ep-head-chip ep-head-chip--profile">
+                  <MiniProgressRing value={progressPct} />
+                  <span className="ep-head-chip-profile-text">
+                    <span className="ep-head-chip-profile-label">Profile</span>
+                    <span className="ep-head-chip-profile-sub">Completion</span>
+                  </span>
+                </span>
+              </div>
+              <div className="ep-head-brand">
+                <div className="ep-head-brand-top">EMPLOYEE EXIT PROCESS</div>
+                <div className="ep-head-brand-bot">Manage end-to-end exit workflow</div>
+              </div>
             </div>
+            <button type="button" className="ep-close" onClick={onClose} aria-label="Close">
+              <i className="ri-close-line" />
+            </button>
           </div>
-          <ExitProgressDial value={progressPct} />
-          <button type="button" className="ep-close" onClick={onClose} aria-label="Close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
         <div className="ep-body">
           {/* Sidebar */}
           <aside className="ep-sidebar">
-            <div className="ep-sidebar-label"><i className="ri-list-check-2" />Exit Stages</div>
             {EXIT_STAGES.map(s => {
               const st = statusOf(s.num);
+              const stagePct = st === 'Completed' ? 100 : st === 'In Progress' ? (s.num === stage ? 35 : 0) : 0;
               return (
                 <button
                   key={s.num}
@@ -812,7 +843,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     <span className="ep-stage-title">{s.short}</span>
                     <span className="ep-stage-status">{st}</span>
                   </span>
-                  <i className="ri-arrow-right-s-line ep-stage-chev" />
+                  <span className="ep-stage-pct">{stagePct}%</span>
                 </button>
               );
             })}
@@ -1177,17 +1208,17 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
 
         {/* Footer */}
         <div className="ep-footer">
-          <div className="d-flex gap-2">
-            <button type="button" className="ep-btn ep-btn--ghost"><i className="ri-save-3-line" />Save Draft</button>
-            <button type="button" className="ep-btn ep-btn--reject"><i className="ri-close-circle-line" />Reject</button>
+          <div className="ep-footer-info">
+            <i className="ri-information-line" />
+            Stage {stage} of {EXIT_STAGES.length} — {current.title}
           </div>
           <div className="d-flex gap-2">
-            <button type="button" className="ep-btn ep-btn--approve"><i className="ri-check-line" />Approve</button>
             {stage > 1 && (
               <button type="button" className="ep-btn ep-btn--prev" onClick={goBack}><i className="ri-arrow-left-s-line" />Previous</button>
             )}
+            <button type="button" className="ep-btn ep-btn--ghost"><i className="ri-save-3-line" />Save Draft</button>
             {isLastStage ? (
-              <button type="button" className="ep-btn ep-btn--complete" onClick={closeAll}><i className="ri-check-double-line" />Close &amp; Complete</button>
+              <button type="button" className="ep-btn ep-btn--complete" onClick={closeAll}><i className="ri-check-double-line" />Complete Exit</button>
             ) : (
               <button type="button" className="ep-btn ep-btn--next" onClick={advance}>Next Stage<i className="ri-arrow-right-s-line" /></button>
             )}
@@ -1327,6 +1358,51 @@ function EpFnfRow({ label, amount, tone }: { label: string; amount: string; tone
     </div>
   );
 }
+// Profile completion ring — clean, premium SVG meter inspired by classic
+// dashboard rings (HTML/CSS/JS skill cards). Thick emerald arc on a soft
+// white track, live percent rendered in the centre. Sits as the visual
+// anchor of the "Profile: X% complete" chip in the modal header.
+function MiniProgressRing({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, value));
+  const RADIUS = 16;
+  const CIRC = 2 * Math.PI * RADIUS;
+  const offset = CIRC * (1 - pct / 100);
+  return (
+    <span className="ep-mini-ring">
+      <svg width="44" height="44" viewBox="0 0 44 44">
+        <circle cx="22" cy="22" r={RADIUS} fill="none" stroke="rgba(255,255,255,0.20)" strokeWidth="3.5" />
+        <circle
+          cx="22" cy="22" r={RADIUS}
+          fill="none"
+          stroke="#34d399"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeDasharray={CIRC}
+          strokeDashoffset={offset}
+          transform="rotate(-90 22 22)"
+          style={{ transition: 'stroke-dashoffset .5s cubic-bezier(.4,0,.2,1)' }}
+        />
+      </svg>
+      <span className="ep-mini-ring-pct">{pct}%</span>
+    </span>
+  );
+}
+
+// Compact label for the header stepper pills — keeps each stage chip
+// short so all 7 fit horizontally in the banner.
+function shortStageLabel(num: number): string {
+  switch (num) {
+    case 1: return 'Initiation';
+    case 2: return 'Notice';
+    case 3: return 'Clearance';
+    case 4: return 'Assets';
+    case 5: return 'FnF';
+    case 6: return 'Documents';
+    case 7: return 'Closure';
+    default: return `Stage ${num}`;
+  }
+}
+
 // Compute remaining days between two ISO dates — used in Stage 2.
 function calcRemaining(start: string, end: string): number {
   if (!start || !end) return 0;

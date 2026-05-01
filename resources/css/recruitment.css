@@ -3851,8 +3851,10 @@
 
 /* ════════════════════════════════════════════════════════════════════════
    Employee Exit Process modal — 7-stage wizard with sidebar
+   Onboarding-style header with avatar tile, stage stepper pills,
+   status chips, sidebar progress bar, and clean footer.
    ════════════════════════════════════════════════════════════════════════ */
-.modal-dialog:has(> .ep-modal) { max-width: 1180px; }
+.modal-dialog:has(> .ep-modal) { max-width: 1400px; }
 .ep-modal {
   border-radius: 16px !important;
   overflow: hidden;
@@ -3861,45 +3863,248 @@
     0 12px 24px rgba(15,23,42,0.18);
 }
 
-/* Header — compact violet banner */
+/* Header — onboarding-style violet banner */
 .ep-head {
   position: relative;
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 18px;
+  padding: 14px 18px;
   background:
     radial-gradient(900px 280px at 100% 0%, rgba(255,255,255,0.16) 0%, transparent 60%),
     linear-gradient(130deg, #2d1f6e 0%, #4c2d9c 40%, #6d28d9 75%, #7c3aed 100%);
   color: #ffffff;
 }
-.ep-head-icon {
+.ep-head-top { display: flex; align-items: flex-start; gap: 14px; }
+.ep-head-avatar {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px;
-  border-radius: 10px;
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.28);
+  width: 48px; height: 48px;
+  border-radius: 11px;
+  border: 1px solid rgba(255,255,255,0.30);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   flex-shrink: 0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.30);
+  box-shadow: 0 4px 12px rgba(15,23,42,0.20), inset 0 1px 0 rgba(255,255,255,0.22);
 }
-.ep-head-icon i { font-size: 18px; color: #ffffff; }
 .ep-head-text { flex: 1; min-width: 0; }
-.ep-head-title { font-size: 15px; font-weight: 700; letter-spacing: -0.005em; line-height: 1.2; }
-.ep-head-meta {
-  display: flex; align-items: center; gap: 7px;
+.ep-head-title-row {
+  display: flex; align-items: center; gap: 10px;
   flex-wrap: wrap;
+}
+.ep-head-title { font-size: 17px; font-weight: 700; letter-spacing: -0.005em; line-height: 1.2; }
+.ep-head-status-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(34,211,238,0.20);
+  color: #67e8f9;
+  border: 1px solid rgba(34,211,238,0.36);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ep-head-status-pill .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #22d3ee;
+  box-shadow: 0 0 0 2px rgba(34,211,238,0.30);
+}
+.ep-head-sub {
+  font-size: 11.5px;
+  color: rgba(255,255,255,0.78);
   margin-top: 3px;
 }
-.ep-head-name {
-  font-size: 12px;
-  font-weight: 500;
-  color: rgba(255,255,255,0.88);
-  letter-spacing: 0.005em;
+
+/* Stage stepper pills — rounded chips with checkmark / number + label */
+.ep-step-strip {
+  display: flex; align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
 }
-.ep-head-meta .rec-id-pill {
-  background: rgba(255,255,255,0.18);
-  color: #ffffff;
-  border: 1px solid rgba(255,255,255,0.25);
+.ep-step-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 30px;
+  padding: 0 13px 0 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.80);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+  white-space: nowrap;
+}
+.ep-step-pill:hover { background: rgba(255,255,255,0.18); color: #ffffff; transform: translateY(-1px); }
+.ep-step-pill-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.80);
   font-size: 10px;
-  padding: 2px 8px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.ep-step-pill > i {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #22c55e, #15803d);
+  color: #ffffff;
+  font-size: 12px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(34,197,94,0.40);
+}
+.ep-step-pill.is-done {
+  background: rgba(34,197,94,0.22);
+  border-color: rgba(34,197,94,0.45);
+  color: #d1fae5;
+}
+.ep-step-pill.is-current {
+  background: #ffffff;
+  color: #4c2d9c;
+  border-color: #ffffff;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.20), 0 0 0 4px rgba(255,255,255,0.12);
+}
+.ep-step-pill.is-current .ep-step-pill-num {
+  background: linear-gradient(135deg, #6d28d9, #7c3aed);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(124,58,237,0.40);
+}
+.ep-flow-node {
+  position: relative;
+  z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+.ep-flow-dot {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #4c2d9c 0%, #3a1f7a 100%);
+  border: 2px solid rgba(255,255,255,0.30);
+  color: rgba(255,255,255,0.85);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: transform .18s cubic-bezier(.4,0,.2,1), box-shadow .18s cubic-bezier(.4,0,.2,1), background .18s ease, border-color .18s ease;
+}
+.ep-flow-dot i { font-size: 14px; line-height: 1; }
+.ep-flow-node:hover .ep-flow-dot {
+  transform: translateY(-2px);
+  border-color: rgba(255,255,255,0.55);
+}
+.ep-flow-node.is-done .ep-flow-dot {
+  background: linear-gradient(135deg, #22c55e, #15803d);
+  border-color: rgba(255,255,255,0.50);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(34,197,94,0.45), inset 0 1px 0 rgba(255,255,255,0.30);
+}
+.ep-flow-node.is-current .ep-flow-dot {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #4c2d9c;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.22), 0 0 0 5px rgba(255,255,255,0.14);
+  transform: scale(1.12) translateY(-1px);
+}
+.ep-flow-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  transition: color .15s ease;
+}
+.ep-flow-node.is-done .ep-flow-label { color: #d1fae5; }
+.ep-flow-node.is-current .ep-flow-label {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+/* Right-side header chips + brand text */
+.ep-head-right {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  flex-shrink: 0;
+}
+.ep-head-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.ep-head-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.20);
+  color: #ffffff;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.ep-head-chip i { font-size: 12px; color: rgba(255,255,255,0.70); }
+
+/* Profile chip — circular ring + stacked label */
+.ep-head-chip--profile {
+  padding: 4px 14px 4px 4px;
+  gap: 8px;
+}
+.ep-head-chip-profile-text {
+  display: flex; flex-direction: column;
+  line-height: 1.1;
+}
+.ep-head-chip-profile-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+}
+.ep-head-chip-profile-sub {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.62);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 1px;
+}
+
+/* Mini ring — circular dial with live % inside */
+.ep-mini-ring {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 10px rgba(52,211,153,0.50));
+}
+.ep-mini-ring-pct {
+  position: absolute;
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(15,23,42,0.45);
+}
+.ep-head-brand { text-align: right; margin-top: 2px; }
+.ep-head-brand-top {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  color: rgba(255,255,255,0.62);
+  text-transform: uppercase;
+}
+.ep-head-brand-bot {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  margin-top: 1px;
 }
 /* Inline mini progress line — replaces the old thin bar so the visual
    hierarchy stays "title → meta → status" and the circular dial on the
@@ -3987,23 +4192,57 @@
 
 /* Sidebar */
 .ep-sidebar {
-  width: 290px;
+  width: 300px;
   flex-shrink: 0;
   padding: 14px 14px 14px 18px;
   border-right: 1px solid #ececf2;
   overflow-y: auto;
 }
 [data-bs-theme="dark"] .ep-sidebar { border-right-color: var(--vz-border-color); }
-.ep-sidebar-label {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.10em;
-  color: #7c3aed;
-  text-transform: uppercase;
+
+/* Sidebar progress block — sits above the stage cards */
+.ep-sidebar-progress {
+  padding: 10px 12px 12px;
+  background: linear-gradient(180deg, #faf5ff 0%, #f5f3ff 100%);
+  border: 1px solid #ddd6fe;
+  border-radius: 11px;
   margin-bottom: 10px;
 }
-.ep-sidebar-label i { font-size: 12px; }
+[data-bs-theme="dark"] .ep-sidebar-progress {
+  background: rgba(124,92,252,0.10);
+  border-color: rgba(124,92,252,0.40);
+}
+.ep-sidebar-progress-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.ep-sidebar-progress-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  color: #6d28d9;
+  text-transform: uppercase;
+}
+.ep-sidebar-progress-pct {
+  font-size: 14px;
+  font-weight: 800;
+  color: #6d28d9;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.ep-sidebar-progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(124,92,252,0.18);
+  overflow: hidden;
+}
+.ep-sidebar-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #22c55e, #34d399);
+  transition: width .5s cubic-bezier(.4,0,.2,1);
+}
 
 /* Stage card in the sidebar */
 .ep-stage-card {
@@ -4064,6 +4303,18 @@
 }
 .ep-stage-chev { font-size: 16px; color: #c4b5fd; flex-shrink: 0; opacity: 0; transition: opacity .15s ease; }
 .ep-stage-card.is-current .ep-stage-chev { opacity: 1; }
+
+/* Per-stage completion percentage (right side of card) */
+.ep-stage-pct {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b7280;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.ep-stage-card--completed .ep-stage-pct { color: #047857; }
+.ep-stage-card--in-progress.is-current .ep-stage-pct { color: #ffffff; }
 
 /* Stage state variants */
 .ep-stage-card--in-progress.is-current {
@@ -4545,7 +4796,7 @@
 [data-bs-theme="dark"] .ep-close-case-title { color: #6ee7b7; }
 [data-bs-theme="dark"] .ep-close-case-sub { color: #a7f3d0; }
 
-/* Footer buttons */
+/* Footer with stage info on left + actions on right */
 .ep-footer {
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px;
@@ -4553,6 +4804,14 @@
   background: #ffffff;
   border-top: 1px solid #ececf2;
 }
+.ep-footer-info {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.ep-footer-info i { font-size: 14px; color: #9ca3af; }
+[data-bs-theme="dark"] .ep-footer-info { color: rgba(255,255,255,0.65); }
 [data-bs-theme="dark"] .ep-footer {
   background: var(--vz-card-bg);
   border-top-color: var(--vz-border-color);
@@ -4612,15 +4871,15 @@
 }
 .ep-btn--next:focus-visible { box-shadow: 0 0 0 3px rgba(124,58,237,0.30), 0 4px 10px rgba(45,31,110,0.34); }
 .ep-btn--complete {
-  background: linear-gradient(135deg, #1f2937, #0f172a);
+  background: linear-gradient(135deg, #22c55e, #15803d);
   color: #ffffff;
   border-color: transparent;
-  box-shadow: 0 4px 12px rgba(15,23,42,0.30), inset 0 1px 0 rgba(255,255,255,0.10);
+  box-shadow: 0 4px 12px rgba(34,197,94,0.30), inset 0 1px 0 rgba(255,255,255,0.22);
 }
 .ep-btn--complete:hover {
   transform: translateY(-2px);
-  filter: brightness(1.10);
-  box-shadow: 0 8px 18px rgba(15,23,42,0.40), inset 0 1px 0 rgba(255,255,255,0.14);
+  filter: brightness(1.05);
+  box-shadow: 0 8px 18px rgba(34,197,94,0.42), inset 0 1px 0 rgba(255,255,255,0.28);
 }
 
 /* Vault button on Exited rows — soft mint chip with shield icon. */
@@ -5012,9 +5271,12 @@
 /* Tablet (≤ 1199px) */
 @media (max-width: 1199px) {
   .modal-dialog:has(> .ep-modal) { max-width: 96vw; }
-  .ep-sidebar { width: 240px; padding: 12px 12px 12px 14px; }
+  .ep-sidebar { width: 260px; padding: 12px 12px 12px 14px; }
   .ep-content { padding: 14px 18px; }
   .ep-stage-title { font-size: 11.5px; }
+  .ep-head-right { display: none; }
+  .ep-step-pill-label { display: none; }
+  .ep-step-pill { padding: 0 5px; }
 }
 
 /* Tablet portrait / large mobile (≤ 991px) */
