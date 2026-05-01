@@ -21,6 +21,10 @@ const dropdownClass = (extra = "") =>
 
 const HorizontalLayout = (props : any) => {
     const [isMoreMenu, setIsMoreMenu] = useState(false);
+    // Tracks which HR category strip is currently expanded. Single-select:
+    // clicking a different category swaps the visible leaf row; clicking the
+    // same one collapses it back to just the strip.
+    const [openHrCat, setOpenHrCat] = useState<string | null>(null);
     // Re-render whenever any sidebar dropdown is toggled. Open/closed state
     // lives in a module-level Set (see ../menuState.ts); without this the
     // layout never sees toggleMenu() updates and the Collapse stays stale.
@@ -148,10 +152,65 @@ const HorizontalLayout = (props : any) => {
                                     </Link>
                                     {item.stateVariables && (
                                     <div
-                                        className={dropdownClass(item.id === "baseUi" && item.subItems.length > 13 ? "mega-dropdown-menu" : "")}
+                                        className={dropdownClass(
+                                            (item.id === "baseUi" && item.subItems.length > 13) ||
+                                            item.id === "hr" || item.id === "more"
+                                                ? "mega-dropdown-menu hr-mega-menu"
+                                                : ""
+                                        )}
                                         id={item.id}>
-                                        {/* subItems  */}
-                                        {item.id === "baseUi" && item.subItems.length > 13 ? (
+                                        {/* Horizontal mega-menu used for both HR and More.
+                                            Strip rendering supports a mix of:
+                                              • category buttons (isChildItem with childItems) — click
+                                                expands the category's leaves in a horizontal row below
+                                              • plain links — direct navigation, no expand
+                                            Only one category is expanded at a time. */}
+                                        {(item.id === "hr" || item.id === "more") ? (
+                                            (() => {
+                                                const items = item.subItems || [];
+                                                const activeCat = items.find((c: any) => c.isChildItem && c.id === openHrCat) || null;
+                                                return (
+                                                    <div className="hr-mega-wrap">
+                                                        <div className="hr-mega-cats">
+                                                            {items.map((entry: any, ei: number) => (
+                                                                entry.isChildItem ? (
+                                                                    <button
+                                                                        key={ei}
+                                                                        type="button"
+                                                                        className={`hr-mega-cat-btn${openHrCat === entry.id ? ' is-active' : ''}`}
+                                                                        onClick={() => setOpenHrCat(prev => prev === entry.id ? null : entry.id)}
+                                                                    >
+                                                                        {props.t(entry.label)}
+                                                                        <i className="ri-arrow-down-s-line hr-mega-cat-caret" />
+                                                                    </button>
+                                                                ) : (
+                                                                    <Link
+                                                                        key={ei}
+                                                                        to={entry.link ? entry.link : "/#"}
+                                                                        className="hr-mega-cat-btn is-link"
+                                                                    >
+                                                                        {props.t(entry.label)}
+                                                                    </Link>
+                                                                )
+                                                            ))}
+                                                        </div>
+                                                        {activeCat && (
+                                                            <div className="hr-mega-leaves">
+                                                                {(activeCat.childItems || []).map((leaf: any, li: number) => (
+                                                                    <Link
+                                                                        key={li}
+                                                                        to={leaf.link ? leaf.link : "/#"}
+                                                                        className="hr-mega-leaf-link"
+                                                                    >
+                                                                        {props.t(leaf.label)}
+                                                                    </Link>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()
+                                        ) : item.id === "baseUi" && item.subItems.length > 13 ? (
                                             <React.Fragment>
                                                 <Row>
                                                     {item.subItems && ((item.subItems || []).map((subItem : any, key : number) => (

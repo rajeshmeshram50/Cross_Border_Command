@@ -1887,3 +1887,153 @@ body .modal.cbc-payment-modal .modal-dialog {
   color: var(--vz-heading-color, var(--vz-body-color));
 }
 .pmt-section-hint { line-height: 1.2; }
+/* ────────────────────────────────────────────────────────────────────────
+   HR mega-menu (horizontal navbar dropdown — 2-step expand)
+   Step 1: only the category strip is shown.
+   Step 2: clicking a category reveals its leaves in a horizontal row below.
+   The whole menu sizes to its content and is centered under HR so the
+   4 categories visually split around the HR menu item (2 left / 2 right).
+   ──────────────────────────────────────────────────────────────────────── */
+.hr-mega-menu {
+  width: auto !important;
+  min-width: max-content !important;
+  max-width: 94vw !important;
+  padding: 0 !important;
+  left: 50% !important;
+  right: auto !important;
+  transform: translateX(-50%);
+  margin-top: 10px;
+  /* Wrapper itself is transparent — each inner row paints its own card so
+     the strip and the leaves look like two separate floating panels. */
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.hr-mega-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;  /* keep the leaves panel centered under the strip */
+  gap: 6px;
+}
+
+.hr-mega-cats {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 8px 10px;
+  background: #ffffff;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid var(--vz-border-color);
+  border-radius: 15px;
+  box-shadow: 0 8px 24px rgba(18,38,63,0.14);
+  backdrop-filter: none;
+}
+[data-bs-theme="dark"] .hr-mega-cats { background: #1c2531; }
+.hr-mega-cat-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.hr-mega-cat-btn:hover {
+  background: rgba(124,92,252,0.08);
+  color: var(--vz-heading-color, var(--vz-body-color));
+}
+.hr-mega-cat-btn.is-active {
+  background: rgba(124,92,252,0.14);
+  color: #5a3fd1;
+  border-color: rgba(124,92,252,0.30);
+}
+.hr-mega-cat-btn .hr-mega-cat-caret {
+  font-size: 14px;
+  transition: transform .18s ease;
+  opacity: 0.65;
+}
+.hr-mega-cat-btn.is-active .hr-mega-cat-caret { transform: rotate(180deg); opacity: 1; }
+
+/* Plain-link variant of the strip button (used by More for items that have
+   no expandable sub-tree — they navigate directly on click). */
+.hr-mega-cat-btn.is-link {
+  text-decoration: none;
+  color: var(--vz-secondary-color);
+}
+.hr-mega-cat-btn.is-link:hover {
+  background: rgba(124,92,252,0.10);
+  color: #5a3fd1;
+  border-color: rgba(124,92,252,0.20);
+}
+[data-bs-theme="dark"] .hr-mega-cat-btn.is-link:hover {
+  background: rgba(124,92,252,0.18);
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .hr-mega-cat-btn:hover { background: rgba(255,255,255,0.06); }
+[data-bs-theme="dark"] .hr-mega-cat-btn.is-active {
+  background: rgba(124,92,252,0.22);
+  color: #c4b5fd;
+  border-color: rgba(124,92,252,0.45);
+}
+
+.hr-mega-leaves {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 8px;
+  padding: 8px 12px;
+  background: #ffffff;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(18,38,63,0.14);
+  backdrop-filter: none;
+}
+[data-bs-theme="dark"] .hr-mega-leaves { background: #1c2531; }
+[data-bs-theme="dark"] .hr-mega-leaves { background: rgba(124,92,252,0.10); }
+.hr-mega-leaf-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border-radius: 6px;
+  color: var(--vz-body-color);
+  text-decoration: none;
+  transition: background .15s ease, color .15s ease;
+  white-space: nowrap;
+}
+.hr-mega-leaf-link:hover {
+  background: rgba(124,92,252,0.18);
+  color: #5a3fd1;
+}
+[data-bs-theme="dark"] .hr-mega-leaf-link { color: var(--vz-body-color); }
+[data-bs-theme="dark"] .hr-mega-leaf-link:hover {
+  background: rgba(124,92,252,0.28);
+  color: #c4b5fd;
+}
+
+/* On small screens, stack the category strip vertically so the buttons
+   remain tappable rather than being squeezed onto one line. */
+@media (max-width: 1024px) {
+  .hr-mega-menu {
+    width: 100% !important;
+    min-width: 0 !important;
+    left: 0 !important;
+    transform: none;
+  }
+  .hr-mega-cats { flex-direction: column; align-items: stretch; flex-wrap: wrap; width: 100%; }
+  .hr-mega-cat-btn { justify-content: space-between; }
+  .hr-mega-leaves { justify-content: flex-start; }
+}
