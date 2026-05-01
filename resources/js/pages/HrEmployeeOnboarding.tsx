@@ -391,6 +391,12 @@ export default function HrEmployeeOnboarding() {
   const openInitiate = (row: OnboardRow) => { setInitiateRow(row); setInitiateOpen(true); };
   const closeInitiate = () => { setInitiateOpen(false); setInitiateRow(null); };
 
+  // Edit Employee modal — opened from the Action column pencil button
+  const [editOpen, setEditOpen] = useState(false);
+  const [editRow,  setEditRow]  = useState<OnboardRow | null>(null);
+  const openEdit  = (row: OnboardRow) => { setEditRow(row); setEditOpen(true); };
+  const closeEdit = () => { setEditOpen(false); setEditRow(null); };
+
   // Pagination — match the master tables (7 per page).
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 7;
@@ -870,7 +876,12 @@ export default function HrEmployeeOnboarding() {
                                 </button>
                               ) : (
                                 <div className="d-flex align-items-center gap-2">
-                                  <button type="button" className="onb-edit-btn" title="Edit">
+                                  <button
+                                    type="button"
+                                    className="onb-edit-btn"
+                                    title="Edit Employee"
+                                    onClick={() => openEdit(r)}
+                                  >
                                     <i className="ri-pencil-line" style={{ fontSize: 14 }} />
                                   </button>
                                   <button type="button" className="onb-init-btn" title="Initiate Onboarding" onClick={() => openInitiate(r)}>
@@ -939,7 +950,200 @@ export default function HrEmployeeOnboarding() {
         onClose={closeInitiate}
         emp={initiateRow}
       />
+
+      {/* ── Edit Employee Modal ── */}
+      <EditEmployeeModal
+        isOpen={editOpen}
+        onClose={closeEdit}
+        emp={editRow}
+      />
     </>
+  );
+}
+
+// ── Edit Employee modal — opens from the pencil icon in the Action column ──
+const EDIT_DEPT_OPTIONS = DEPT_OPTIONS.filter(o => o.value !== 'All');
+const EDIT_STATUS_OPTIONS = OPT('Active', 'On Probation', 'Inactive');
+const EDIT_WORK_TYPE_OPTIONS = OPT('Full Time', 'Part Time', 'Contract', 'Intern');
+
+function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose: () => void; emp: OnboardRow | null }) {
+  // Local form state — derived from emp on open and reset on close.
+  const [firstName, setFirstName]     = useState('');
+  const [lastName,  setLastName]      = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [workEmail, setWorkEmail]     = useState('');
+  const [mobile,    setMobile]        = useState('');
+  const [empId,     setEmpId]         = useState('');
+  const [status,    setStatus]        = useState('Active');
+  const [department, setDepartment]   = useState('');
+  const [designation, setDesignation] = useState('');
+  const [primaryRole, setPrimaryRole] = useState('');
+  const [ancillaryRole, setAncillaryRole] = useState('');
+  const [reportingMgr, setReportingMgr]   = useState('');
+  const [workType,  setWorkType]      = useState('Full Time');
+  const [joinDate,  setJoinDate]      = useState('');
+
+  useEffect(() => {
+    if (!emp) return;
+    const parts = emp.name.split(' ');
+    setFirstName(parts[0] || '');
+    setLastName(parts.slice(1).join(' ') || '');
+    setDisplayName(emp.name);
+    setWorkEmail(`${emp.name.toLowerCase().replace(/\s+/g, '.')}@enterprise.com`);
+    setMobile('');
+    setEmpId(emp.empId);
+    setStatus('Active');
+    setDepartment(emp.department);
+    setDesignation(emp.designation);
+    setPrimaryRole(emp.primaryRole);
+    setAncillaryRole(emp.ancillaryRole || '');
+    setReportingMgr(emp.managerName);
+    setWorkType('Full Time');
+    setJoinDate('');
+  }, [emp]);
+
+  if (!emp) return null;
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      toggle={onClose}
+      centered
+      size="lg"
+      contentClassName="border-0"
+      modalClassName="onb-edit-emp-modal"
+      scrollable
+      backdrop="static"
+      keyboard={false}
+    >
+      <style>{`
+        .onb-edit-emp-modal .modal-dialog { max-width: min(960px, 95vw); }
+        .onb-edit-emp-modal .modal-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
+        .onb-ee-header { padding: 20px 24px; background: linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%); color: #fff; position: relative; }
+        .onb-ee-header .close-btn { position: absolute; top: 16px; right: 16px; width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,0.18); border: none; color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s ease; }
+        .onb-ee-header .close-btn:hover { background: rgba(255,255,255,0.30); }
+        .onb-ee-icon { width: 42px; height: 42px; border-radius: 11px; background: rgba(255,255,255,0.20); display: inline-flex; align-items: center; justify-content: center; }
+        .onb-ee-title { font-size: 17px; font-weight: 800; color: #fff; margin: 0; letter-spacing: -0.01em; }
+        .onb-ee-sub { font-size: 12px; color: rgba(255,255,255,0.88); margin: 2px 0 0; }
+        .onb-ee-body { background: var(--vz-secondary-bg, #f7f8fc); padding: 18px 22px; }
+        [data-bs-theme="dark"] .onb-ee-body { background: var(--vz-secondary-bg); }
+        .onb-ee-section { background: #fff; border: 1px solid #eef0f4; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
+        [data-bs-theme="dark"] .onb-ee-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .onb-ee-section + .onb-ee-section { margin-top: 14px; }
+        .onb-ee-section-title { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color)); margin: 0 0 14px; }
+        .onb-ee-section-title i { color: #7c5cfc; font-size: 16px; }
+        .onb-ee-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 5px; display: block; }
+        [data-bs-theme="dark"] .onb-ee-label { color: #c4b5fd; }
+        .onb-ee-label .req { color: #f06548; margin-left: 2px; }
+        .onb-ee-input { width: 100%; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; }
+        .onb-ee-input::placeholder { color: #9ca3af; }
+        .onb-ee-input:focus { outline: none; border-color: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
+        .onb-ee-input.is-readonly { background: #f5f1ff; border-color: #d6c9ff; color: #5a3fd1; font-weight: 600; }
+        [data-bs-theme="dark"] .onb-ee-input { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
+        [data-bs-theme="dark"] .onb-ee-input::placeholder { color: var(--vz-secondary-color); }
+        .onb-ee-footer { display: flex; gap: 10px; justify-content: flex-end; padding: 14px 22px 18px; background: var(--vz-secondary-bg, #f7f8fc); border-top: 1px solid var(--vz-border-color); }
+        [data-bs-theme="dark"] .onb-ee-footer { background: var(--vz-secondary-bg); }
+        .onb-ee-cancel { padding: 10px 18px; border-radius: 9px; border: 1px solid var(--vz-border-color); background: #fff; color: var(--vz-heading-color, var(--vz-body-color)); font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
+        [data-bs-theme="dark"] .onb-ee-cancel { background: var(--vz-card-bg); }
+        .onb-ee-cancel:hover { background: var(--vz-light); }
+        .onb-ee-save { padding: 10px 20px; border-radius: 9px; border: none; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 8px 18px rgba(91,63,209,0.30); transition: transform .15s ease, box-shadow .15s ease; }
+        .onb-ee-save:hover { transform: translateY(-1px); box-shadow: 0 12px 22px rgba(91,63,209,0.38); }
+      `}</style>
+
+      <ModalBody className="p-0">
+        <div className="onb-ee-header">
+          <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
+            <i className="ri-close-line" style={{ fontSize: 14 }} />
+          </button>
+          <div className="d-flex align-items-center gap-3">
+            <span className="onb-ee-icon"><i className="ri-user-3-line" style={{ fontSize: 20 }} /></span>
+            <div className="min-w-0">
+              <h5 className="onb-ee-title">Edit Employee</h5>
+              <p className="onb-ee-sub">Update details for {emp.name}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="onb-ee-body">
+          {/* Personal Info */}
+          <div className="onb-ee-section">
+            <h6 className="onb-ee-section-title"><i className="ri-user-line" /> Personal Information</h6>
+            <Row className="g-3">
+              <Col md={4}>
+                <label className="onb-ee-label">First Name <span className="req">*</span></label>
+                <input className="onb-ee-input" value={firstName} onChange={e => setFirstName(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Last Name <span className="req">*</span></label>
+                <input className="onb-ee-input" value={lastName} onChange={e => setLastName(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Display Name</label>
+                <input className="onb-ee-input" value={displayName} onChange={e => setDisplayName(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Work Email <span className="req">*</span></label>
+                <input className="onb-ee-input" value={workEmail} onChange={e => setWorkEmail(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Mobile Number</label>
+                <input className="onb-ee-input" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="+91 XXXXX XXXXX" />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Employee ID</label>
+                <input className="onb-ee-input is-readonly" value={empId} readOnly />
+              </Col>
+            </Row>
+          </div>
+
+          {/* Job Details */}
+          <div className="onb-ee-section">
+            <h6 className="onb-ee-section-title"><i className="ri-briefcase-line" /> Job Details</h6>
+            <Row className="g-3">
+              <Col md={4}>
+                <label className="onb-ee-label">Department <span className="req">*</span></label>
+                <MasterSelect value={department} onChange={setDepartment} options={EDIT_DEPT_OPTIONS} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Designation <span className="req">*</span></label>
+                <input className="onb-ee-input" value={designation} onChange={e => setDesignation(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Employee Status</label>
+                <MasterSelect value={status} onChange={setStatus} options={EDIT_STATUS_OPTIONS} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Primary Role</label>
+                <input className="onb-ee-input" value={primaryRole} onChange={e => setPrimaryRole(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Ancillary Role</label>
+                <input className="onb-ee-input" value={ancillaryRole} onChange={e => setAncillaryRole(e.target.value)} placeholder="Optional" />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Reporting Manager</label>
+                <input className="onb-ee-input" value={reportingMgr} onChange={e => setReportingMgr(e.target.value)} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Work Type</label>
+                <MasterSelect value={workType} onChange={setWorkType} options={EDIT_WORK_TYPE_OPTIONS} />
+              </Col>
+              <Col md={4}>
+                <label className="onb-ee-label">Joining Date</label>
+                <MasterDatePicker value={joinDate} onChange={setJoinDate} placeholder={emp.joinDate || 'Select date'} />
+              </Col>
+            </Row>
+          </div>
+        </div>
+
+        <div className="onb-ee-footer">
+          <button type="button" className="onb-ee-cancel" onClick={onClose}>Cancel</button>
+          <button type="button" className="onb-ee-save" onClick={onClose}>
+            <i className="ri-save-line" style={{ fontSize: 15 }} /> Save Changes
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
   );
 }
 
@@ -1945,6 +2149,8 @@ function InitiateOnboardingModal({
         .onb-init-btn-outline:hover { border-color: #7c3aed; color: #4c1d95; }
         .onb-init-btn-next { padding: 7px 16px; border-radius: 9px; font-size: 11.5px; font-weight: 700; background: linear-gradient(135deg,#7c3aed,#4c1d95); color: #fff; border: none; cursor: pointer; box-shadow: 0 6px 14px rgba(76,29,149,0.30); display: inline-flex; align-items: center; gap: 5px; }
         .onb-init-btn-next:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(76,29,149,0.38); }
+        .onb-init-btn-complete { padding: 7px 16px; border-radius: 9px; font-size: 11.5px; font-weight: 700; background: linear-gradient(135deg,#10b981,#059669); color: #fff; border: none; cursor: pointer; box-shadow: 0 6px 14px rgba(5,150,105,0.30); display: inline-flex; align-items: center; gap: 5px; }
+        .onb-init-btn-complete:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(5,150,105,0.38); }
       `}</style>
 
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
@@ -2314,9 +2520,15 @@ function InitiateOnboardingModal({
               <i className="ri-arrow-left-s-line" /> Previous
             </button>
             <button type="button" className="onb-init-btn-outline">Save Draft</button>
-            <button type="button" className="onb-init-btn-next" onClick={() => setActiveStage(Math.min(6, activeStage + 1))}>
-              Next Stage <i className="ri-arrow-right-s-line" />
-            </button>
+            {activeStage < 6 ? (
+              <button type="button" className="onb-init-btn-next" onClick={() => setActiveStage(activeStage + 1)}>
+                Next Stage <i className="ri-arrow-right-s-line" />
+              </button>
+            ) : (
+              <button type="button" className="onb-init-btn-complete" onClick={onClose}>
+                <i className="ri-checkbox-circle-line" /> Complete Onboarding
+              </button>
+            )}
           </div>
         </div>
       </ModalBody>
