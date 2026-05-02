@@ -613,9 +613,25 @@ function CreateAnnouncementModal({
                                        : `Desig: ${designationIds.length === 0 ? '—' : designations.filter(d => designationIds.includes(d.id)).map(d => d.name).join(', ')}`;
 
   return (
-    <Modal isOpen={isOpen} toggle={onClose} centered size="xl" backdrop="static" keyboard={false} contentClassName="border-0">
-      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 18, overflow: 'hidden' }}>
-        {/* Header */}
+    <Modal
+      isOpen={isOpen}
+      toggle={onClose}
+      centered
+      size="xl"
+      backdrop="static"
+      keyboard={false}
+      // rec-form-modal sizes the dialog (≤1180 / 96vw) so the modal feels
+      // like the recruitment one instead of stretching to xl's default.
+      modalClassName="rec-form-modal broadcast-form-modal"
+      // rec-form-content carries the 18px radius + premium shadow + clip
+      // mask so the gradient header and footer sit cleanly inside the
+      // rounded corners (matches CreateRecruitmentModal's chrome).
+      contentClassName="rec-form-content border-0"
+    >
+      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
+        {/* Header — sky-blue gradient on the broadcast variant. The radius
+            on .rec-form-content + overflow:hidden clips the top corners
+            for us, so we don't need to repeat the radius here. */}
         <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 60%, #7dd3fc 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
