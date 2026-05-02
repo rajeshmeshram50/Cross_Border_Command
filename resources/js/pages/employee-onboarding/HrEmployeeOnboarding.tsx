@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
+import Swal from 'sweetalert2';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
@@ -174,11 +175,12 @@ const _formatDate = (iso: string | null | undefined): string => {
  *   wizard_step = 0                            → Not Started
  */
 const _mapOnboardStatus = (raw: any): OnboardStatus => {
-  const step = Number(raw?.wizard_step_completed ?? 0);
-  const stat = String(raw?.status ?? '').toLowerCase();
-  if (step >= 4 && stat === 'active') return 'Completed';
-  if (step >= 4) return 'Document Pending';
-  if (step > 0) return 'In Progress';
+  const step  = Number(raw?.wizard_step_completed ?? 0);
+  const macro = Number(raw?.onboarding_stage_completed ?? 0);
+  const stat  = String(raw?.status ?? '').toLowerCase();
+  if (macro >= 6 && stat === 'active') return 'Completed';
+  if (macro >= 6) return 'Document Pending';
+  if (macro > 0 || step > 0) return 'In Progress';
   return 'Not Started';
 };
 
@@ -203,9 +205,19 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     managerName: mgrName,
     managerInitials: _initials(mgrName),
     managerAccent: _accent(mgrName || 'manager'),
-    // Profile % matches the HR list: 4 wizard steps capped at 50% (rest
-    // of profile completion lives outside the wizard).
-    profile: Math.min(50, Math.max(0, Number(e.wizard_step_completed ?? 0) * 12.5)),
+    // Profile % spans all six onboarding macro stages. Stage 1 splits
+    // across its 4 internal wizard steps; stages 2-6 each contribute
+    // one sixth on completion. Same formula as HrEmployees so the two
+    // pages stay in sync.
+    profile: ((): number => {
+      const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
+      const macro = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
+      const stage1 = macro >= 1 ? 1 : step / 4;
+      const others = (macro >= 2 ? 1 : 0) + (macro >= 3 ? 1 : 0)
+                   + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
+                   + (macro >= 6 ? 1 : 0);
+      return Math.round(((stage1 + others) / 6) * 100);
+    })(),
     status: _mapOnboardStatus(e),
     wizardStep: Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0))),
     dbId: e.id,
@@ -1899,7 +1911,11 @@ function InitiateOnboardingModal({
       gratuity_nominee_name: trimOrNull(s4.gratuity_nominee_name),
       agreed_ctc_lpa:      s4.agreed_ctc_lpa === '' ? null : Number(s4.agreed_ctc_lpa),
     };
-    if (markComplete) payload.stage4_completed_at = new Date().toISOString();
+    if (markComplete) {
+      payload.stage4_completed_at = new Date().toISOString();
+      // Bump the macro-stage watermark so profile% reflects Stage 4.
+      payload.onboarding_stage_completed = 4;
+    }
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
       onSaved?.();
@@ -1909,6 +1925,19 @@ function InitiateOnboardingModal({
     } finally {
       setS4Saving(false);
     }
+  };
+
+  /** Lightweight PUT used when the user clicks Next Stage on a macro
+   *  stage we don't have dedicated form state for yet (Stage 2/3/5/6).
+   *  Bumps the macro watermark so profile% climbs as the user advances. */
+  const bumpMacroStage = async (n: number) => {
+    if (!emp?.dbId) return;
+    const current = Number(emp.raw?.onboarding_stage_completed ?? 0);
+    if (n <= current) return;
+    try {
+      await api.put(`/employees/${emp.dbId}`, { onboarding_stage_completed: n });
+      onSaved?.();
+    } catch { /* keep modal open; user can retry */ }
   };
 
   if (!emp) return null;
@@ -2518,16 +2547,32 @@ function InitiateOnboardingModal({
                     : undefined
                 }
                 onClick={async () => {
-                  // Stage 1: persist edits before advancing.
+                  // Stage 1: persist edits before advancing. saveStage1
+                  // bumps wizard_step_completed=4; the controller then
+                  // auto-bumps the macro stage to ≥1.
                   if (activeStage === 1) await saveStage1(true);
-                  // Stage 2: gate on required-document completion.
-                  if (activeStage === 2 && !stage2Done) return;
+                  // Stage 2: gate on required-document completion + bump
+                  // the macro watermark to 2.
+                  if (activeStage === 2) {
+                    if (!stage2Done) return;
+                    await bumpMacroStage(2);
+                  }
+                  // Stage 3: provisional — bump on Next without backend
+                  // gating since the form is UI-only for now.
+                  if (activeStage === 3) {
+                    await bumpMacroStage(3);
+                  }
                   // Stage 4: gate on readiness checks + persist with the
-                  // completion stamp before advancing.
+                  // completion stamp before advancing. saveStage4 also
+                  // bumps macro stage to 4.
                   if (activeStage === 4) {
                     if (!stage4Done) return;
                     const ok = await saveStage4(true);
                     if (!ok) return;
+                  }
+                  // Stage 5: provisional macro bump.
+                  if (activeStage === 5) {
+                    await bumpMacroStage(5);
                   }
                   setActiveStage((activeStage + 1) as typeof activeStage);
                 }}
@@ -2535,7 +2580,15 @@ function InitiateOnboardingModal({
                 Next Stage <i className="ri-arrow-right-s-line" />
               </button>
             ) : (
-              <button type="button" className="onb-init-btn-complete" onClick={onClose}>
+              <button
+                type="button"
+                className="onb-init-btn-complete"
+                onClick={async () => {
+                  // Stamp the macro stage at 6 so profile% hits 100%.
+                  await bumpMacroStage(6);
+                  onClose();
+                }}
+              >
                 <i className="ri-checkbox-circle-line" /> Complete Onboarding
               </button>
             )}
@@ -2704,7 +2757,17 @@ function Stage2Documents({ emp, onDocsChanged }: {
     if (!row) return;
     // Prevent accidental loss of data on rows that look filled.
     if (row.id || row.company_name.trim()) {
-      if (!window.confirm(`Remove ${row.company_name || 'this company'}?`)) return;
+      const result = await Swal.fire({
+        title: `Remove ${row.company_name || 'this company'}?`,
+        text: 'This will also delete the documents you uploaded against it.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Remove',
+        confirmButtonColor: '#f06548',
+        cancelButtonColor: '#878a99',
+        reverseButtons: true,
+      });
+      if (!result.isConfirmed) return;
     }
     if (row.id) {
       try {
@@ -2808,7 +2871,17 @@ function Stage2Documents({ emp, onDocsChanged }: {
 
   /** Remove an uploaded document. Confirms first to prevent rage-clicks. */
   const triggerDelete = async (docId: number, docName: string) => {
-    if (!window.confirm(`Remove ${docName}? You can re-upload anytime.`)) return;
+    const result = await Swal.fire({
+      title: `Remove ${docName}?`,
+      text: 'You can re-upload anytime.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Remove',
+      confirmButtonColor: '#f06548',
+      cancelButtonColor: '#878a99',
+      reverseButtons: true,
+    });
+    if (!result.isConfirmed) return;
     try {
       await api.delete(`/documents/${docId}`);
       await reloadDocs();
@@ -2962,7 +3035,6 @@ function Stage2Documents({ emp, onDocsChanged }: {
           <span className="onb-doc-prev-icon"><i className="ri-briefcase-line" style={{ fontSize: 14 }} /></span>
           <div className="min-w-0 flex-grow-1">
             <h6 className="onb-doc-prev-title">Previous Employment Documents</h6>
-            <div className="onb-doc-prev-sub">7 Years Experience · Required for each previous company</div>
           </div>
           <span className="onb-doc-prev-pill">{prevCompanies.length} {prevCompanies.length === 1 ? 'Company' : 'Companies'}</span>
         </div>

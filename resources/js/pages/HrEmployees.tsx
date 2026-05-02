@@ -163,6 +163,10 @@ interface ApiEmployee {
    *  4 = all 4 steps completed. Used by openEditEmployee to resume
    *  at the first unfilled step. */
   wizard_step_completed: number | null;
+  /** Macro-stage watermark for the 6-stage onboarding flow (0-6). 0
+   *  = nothing done, 1 = Stage 1 (Setup) done, … 6 = Stage 6 (Final
+   *  Verification) done. Drives the profile % across all six stages. */
+  onboarding_stage_completed: number | null;
   date_of_joining: string | null;
   department_id: number | null;
   designation_id: number | null;
@@ -229,18 +233,27 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
           ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
           : '')
       || '—',
-    // Profile % maps to wizard progress, with 4 steps capped at 50%.
-    // The 4-step wizard is intentionally treated as half the data — the
-    // remaining 50% comes from later admin work (assets, payroll review,
-    // permissions, etc.). Each step = 12.5%; step 4 = 50%.
-    profile: Math.min(50, Math.max(0, Number(e.wizard_step_completed ?? 0) * 12.5)),
-    // Onboarding pill mirrors wizard progress: Completed when all 4 steps
-    // are saved; "In Progress" while still filling; "Pending" if no save
-    // has happened yet.
+    // Profile % spans all six onboarding macro stages. Stage 1 is split
+    // across its 4 internal wizard steps; stages 2-6 each contribute one
+    // sixth on completion (osc bumps to N as the admin clicks Next Stage
+    // out of stage N). Brand-new row = 0%, Stage 1 wizard step 2 = 8%,
+    // Stage 1 done = 17%, Stage 4 done = 67%, Stage 6 done = 100%.
+    profile: ((): number => {
+      const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
+      const macro = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
+      const stage1 = macro >= 1 ? 1 : step / 4;
+      const others = (macro >= 2 ? 1 : 0) + (macro >= 3 ? 1 : 0)
+                   + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
+                   + (macro >= 6 ? 1 : 0);
+      return Math.round(((stage1 + others) / 6) * 100);
+    })(),
+    // Onboarding pill: Completed once macro stage hits 6, In Progress
+    // while the admin is partway through, Pending if nothing started.
     onboarding: ((): 'Completed' | 'In Progress' | 'Pending' => {
-      const step = Number(e.wizard_step_completed ?? 0);
-      if (step >= 4) return 'Completed';
-      if (step > 0) return 'In Progress';
+      const macro = Number(e.onboarding_stage_completed ?? 0);
+      const step  = Number(e.wizard_step_completed ?? 0);
+      if (macro >= 6) return 'Completed';
+      if (macro > 0 || step > 0) return 'In Progress';
       return 'Pending';
     })(),
     status: statusMap[e.status || 'Active'] || 'active',

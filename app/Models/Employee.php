@@ -61,7 +61,7 @@ class Employee extends Model
         'gratuity_nominee_name', 'agreed_ctc_lpa',
         'stage4_completed_at',
 
-        'assets', 'status', 'wizard_step_completed',
+        'assets', 'status', 'wizard_step_completed', 'onboarding_stage_completed',
     ];
 
     protected $casts = [
@@ -80,6 +80,7 @@ class Employee extends Model
         'agreed_ctc_lpa' => 'decimal:2',
         'stage4_completed_at' => 'datetime',
         'wizard_step_completed' => 'integer',
+        'onboarding_stage_completed' => 'integer',
     ];
 
     /**
