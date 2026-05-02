@@ -176,6 +176,10 @@ interface HiringRequestRow {
   status: RequestStatus;
   requestDate: string;
   targetJoinDate: string;
+  // Original API row — stashed so consumers (e.g. the "Create Recruitment
+  // from Hiring Request" prefill flow) can read fields that the row
+  // interface doesn't surface (job_description, required_skills, etc.).
+  _raw?: any;
 }
 
 /* ── Backend → UI converter for hiring requests ──────────────────────────────
@@ -237,6 +241,7 @@ function apiToHiringRequestRow(api: any): HiringRequestRow {
     // include the time portion.
     requestDate:    (api?.created_at ? String(api.created_at).slice(0, 10) : api?.request_date) || '',
     targetJoinDate: api?.target_join_date || '',
+    _raw:           api,
   };
 }
 
@@ -500,6 +505,12 @@ export default function HrRecruitment() {
   // Bumped after a Raise Hiring Request submit so the list modal refetches
   // the next time it's opened (or while it's already open).
   const [hiringRefreshKey, setHiringRefreshKey]     = useState(0);
+  // When the user clicks "Create Recruitment" on a row inside the Hiring
+  // Requests modal, we stash the source row here so the Create Recruitment
+  // form opens pre-filled with the request's department / openings / target
+  // date / job description / etc. Cleared when the modal closes or the row
+  // is saved.
+  const [createPrefillFromHr, setCreatePrefillFromHr] = useState<any | null>(null);
 
   // Pagination helpers
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
@@ -818,13 +829,18 @@ export default function HrRecruitment() {
         refreshKey={hiringRefreshKey}
         onClose={() => setRequestsOpen(false)}
         onRaiseNew={() => { setRequestsOpen(false); setRaiseOpen(true); }}
-        onCreateRecruitment={() => {
-          // Close the Hiring Requests modal and open Create Recruitment.
-          // (The form's defaults can be wired in a follow-up to pre-fill from
-          // the request's department/position/openings, etc.)
+        onCreateRecruitment={(req) => {
+          // Close the Hiring Requests modal and open Create Recruitment
+          // pre-filled with everything the hiring request already captured.
+          // The user fills in the recruitment-specific extras (designation,
+          // primary role, hiring manager, assigned HR, dates).
           setRequestsOpen(false);
           setCreateMode('add');
           setCreateEditingId(null);
+          // _raw carries the full API payload including job_description,
+          // required_skills, target_join_date, etc. — fields that the
+          // trimmed HiringRequestRow doesn't surface on its own.
+          setCreatePrefillFromHr(req?._raw || null);
           setCreateOpen(true);
         }}
       />
@@ -834,7 +850,8 @@ export default function HrRecruitment() {
         mode={createMode}
         editingId={createEditingId}
         recruitments={recruitments}
-        onClose={() => setCreateOpen(false)}
+        prefillFromHr={createPrefillFromHr}
+        onClose={() => { setCreateOpen(false); setCreatePrefillFromHr(null); }}
         onSaved={(row) => {
           setRecruitments(prev => {
             const idx = prev.findIndex(r => String(r.id) === String(row.id));
@@ -846,6 +863,7 @@ export default function HrRecruitment() {
             return [row, ...prev];
           });
           setCreateOpen(false);
+          setCreatePrefillFromHr(null);
         }}
       />
 
@@ -1861,11 +1879,35 @@ interface CreateRecruitmentModalProps {
   mode: 'add' | 'edit';
   editingId: string | null;
   recruitments: RecruitmentRow[];
+  // Optional raw hiring-request API row. When provided in 'add' mode the
+  // form pre-fills with values mapped from the request — the user only
+  // has to fill in the recruitment-specific extras (designation, primary
+  // role, hiring manager, assigned HR, dates). Ignored in 'edit' mode.
+  prefillFromHr?: any | null;
   onSaved: (row: RecruitmentRow) => void;
   onClose: () => void;
 }
 
-function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved, onClose }: CreateRecruitmentModalProps) {
+
+const HR_TO_REC_EMP_TYPE: Record<string, EmployType> = {
+  'Full-time':  'Full Time',
+  'Part-time':  'Part Time',
+  'Contract':   'Contract',
+  'Intern':     'Internship',
+  // Pass-through if the value is already in the recruitment shape.
+  'Full Time':  'Full Time',
+  'Part Time':  'Part Time',
+  'Internship': 'Internship',
+};
+const HR_TO_REC_WORK_MODE: Record<string, WorkMode> = {
+  'Onsite':   'On-site',
+  'Remote':   'Remote',
+  'Hybrid':   'Hybrid',
+  'Flexible': 'Flexible',
+  'On-site':  'On-site',
+};
+
+function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefillFromHr, onSaved, onClose }: CreateRecruitmentModalProps) {
   const toast = useToast();
   const editing = mode === 'edit' && editingId ? recruitments.find(r => String(r.id) === String(editingId)) : null;
 
@@ -2029,6 +2071,40 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
       setNotifyTeamLeads(editing.notifyTeamLeads);
       setEnableReferralBonus(editing.enableReferralBonus);
       setErrors({});
+    } else if (prefillFromHr) {
+      // "Create Recruitment" was clicked from a hiring request — seed the
+      // form with everything the request already captured. The user still
+      // has to pick the recruitment-only fields (designation / primary
+      // role / hiring manager / assigned HR / dates).
+      const hr = prefillFromHr;
+      setJobTitle((hr.job_role || hr.title || '') as string);
+      setDepartmentId(hr.department_id != null ? String(hr.department_id) : '');
+      // Designation and primary role aren't captured on the hiring request
+      // — leave blank so the user is forced to make an explicit choice.
+      setDesignationId('');
+      setPrimaryRoleId('');
+      setCtcRange('');
+      setEmploymentType((HR_TO_REC_EMP_TYPE[hr.employment_type] || 'Full Time') as EmployType);
+      setOpenings(String(hr.openings || 1));
+      setExperience((hr.required_experience || '') as string);
+      setWorkMode((HR_TO_REC_WORK_MODE[hr.work_mode] || 'Hybrid') as WorkMode);
+      // urgency on the request maps directly to priority on the recruitment
+      // (same Critical / High / Medium / Low vocabulary).
+      setPriority((hr.urgency || 'Medium') as Priority);
+      setHiringManagerId('');
+      setAssignedHrId('');
+      // Start date is "now" semantically; the request only captures a
+      // target join date, which feeds the recruitment's TAT/deadline.
+      setStartDate('');
+      setDeadline(hr.target_join_date ? String(hr.target_join_date).slice(0, 10) : '');
+      setJobDescription((hr.job_description || '') as string);
+      // Combine skills + qualifications into the recruitment's single
+      // Requirements field — the request splits them, the recruitment
+      // doesn't.
+      const reqParts = [hr.required_skills, hr.required_qualification].filter(Boolean);
+      setRequirements(reqParts.join('\n'));
+      setPostOnPortal(true); setNotifyTeamLeads(true); setEnableReferralBonus(false);
+      setErrors({});
     } else {
       setJobTitle(''); setDepartmentId(''); setDesignationId(''); setPrimaryRoleId('');
       setCtcRange(''); setEmploymentType('Full Time');
@@ -2038,7 +2114,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
       setPostOnPortal(true); setNotifyTeamLeads(true); setEnableReferralBonus(false);
       setErrors({});
     }
-  }, [isOpen, editingId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, editingId, prefillFromHr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clear = (k: keyof CreateErrors) =>
     setErrors(prev => { if (!prev[k]) return prev; const n = { ...prev }; delete n[k]; return n; });
@@ -2162,6 +2238,32 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, onSaved
         {/* Body — all 3 sections live inside ONE card so they read as a
             single, continuous form rather than 3 separate panels. */}
         <div className="rec-form-body">
+          {/* Source banner — only shown when this Create Recruitment was
+              opened from a hiring request, so the recruiter knows where the
+              prefilled values came from. */}
+          {mode === 'add' && prefillFromHr && (
+            <div
+              style={{
+                padding: '10px 14px',
+                marginBottom: 10,
+                borderRadius: 10,
+                background: '#eef2ff',
+                border: '1px solid #c7d2fe',
+                color: '#3730a3',
+                fontSize: 13,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <i className="ri-link" />
+              <span>
+                Prefilled from hiring request <strong>{prefillFromHr.code || `HRQ-${prefillFromHr.id}`}</strong>
+                {prefillFromHr.title ? <> — {prefillFromHr.title}</> : null}
+                . Pick the recruitment-only fields (Designation, Primary Role, Hiring Manager, Assigned HR, dates) and save.
+              </span>
+            </div>
+          )}
           <div className="rec-form-card">
           {/* Position Details */}
           <div className="rec-form-section">
