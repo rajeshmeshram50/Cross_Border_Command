@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Facades\Storage;
 
 class Candidate extends Model
 {
@@ -64,15 +63,19 @@ class Candidate extends Model
     // ── Computed accessors ──────────────────────────────────────────────
 
     /**
-     * Public URL the frontend uses for the green "CV" download chip.
-     * Returns null when no CV was uploaded so the table renders an em-dash.
+     * URL the frontend uses for the green "CV" download chip. Returns the
+     * Laravel route that streams the file rather than a direct /storage/
+     * link — that way the download works regardless of whether the
+     * environment's webserver has DocumentRoot=public/ or not.
+     *
+     * The frontend appends `?token=<sanctum>` at click-time so the route
+     * (which lives outside sanctum middleware) can authorise the request.
+     * Returns null when no CV was uploaded.
      */
     public function getCvUrlAttribute(): ?string
     {
-        if (empty($this->cv_path)) return null;
-        // Honour the storage symlink — assumes the file lives on the public
-        // disk (Storage::disk('public')->url(...) prefixes /storage/).
-        return Storage::disk('public')->url($this->cv_path);
+        if (empty($this->cv_path) || empty($this->id)) return null;
+        return url("/api/candidates/{$this->id}/cv");
     }
 
     /** Two-letter initials for the avatar bubble in the candidate table. */

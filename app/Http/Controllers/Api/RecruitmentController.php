@@ -136,11 +136,48 @@ class RecruitmentController extends Controller
         // department) within the same tenant — ignore the row being
         // updated itself so re-saves don't trip the guard.
         $this->guardDuplicate($data, $row->client_id, $row->branch_id, $row->id);
+        // Block "Mark as Completed" until every opening has a selected
+        // candidate — otherwise the recruitment's promise to fill N seats
+        // is silently broken.
+        $this->guardStatusTransition($row, $data);
 
         $row->update($data);
 
         $row->load(self::WITH);
         return response()->json($row);
+    }
+
+    /**
+     * Reject impossible status transitions before the row is saved.
+     *
+     * The only state we currently gate is `Completed` — the recruitment
+     * must have at least as many `Selected` candidates as openings before
+     * it can be closed out as filled. `Cancelled` is always allowed (the
+     * cancel modal captures a reason for audit), and any other transition
+     * (back to `In Progress`, etc.) is unrestricted.
+     */
+    private function guardStatusTransition(Recruitment $row, array $data): void
+    {
+        $newStatus = $data['status'] ?? null;
+        if ($newStatus === null || $newStatus === $row->status) return;
+
+        if ($newStatus === 'Completed') {
+            $selected = \App\Models\Candidate::query()
+                ->where('recruitment_id', $row->id)
+                ->where('status', 'Selected')
+                ->count();
+            $required = (int) $row->openings;
+            if ($selected < $required) {
+                throw ValidationException::withMessages([
+                    'status' => [sprintf(
+                        'Cannot mark as Completed — only %d of %d opening(s) filled. Select %d more candidate(s) first.',
+                        $selected,
+                        $required,
+                        max(0, $required - $selected),
+                    )],
+                ]);
+            }
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\CandidateController;
@@ -112,7 +113,20 @@ Route::middleware('auth:sanctum')->group(function () {
     // uploads go via multipart/form-data on store/update.
     Route::get  ('/recruitments/{recruitment}/candidates/summary', [CandidateController::class, 'recruitmentSummary']);
     Route::patch('/candidates/{candidate}/status',                 [CandidateController::class, 'updateStatus']);
+    // Bulk operations + stats — declared BEFORE apiResource so the literal
+    // paths /sample, /import, /export, /stats aren't captured as `{candidate}` ids.
+    Route::get ('/candidates/stats',  [CandidateController::class, 'stats']);
+    Route::get ('/candidates/sample', [CandidateController::class, 'sample']);
+    Route::post('/candidates/import', [CandidateController::class, 'import']);
+    Route::get ('/candidates/export', [CandidateController::class, 'export']);
     Route::apiResource('candidates', CandidateController::class);
+
+    // Broadcast Centre announcements — company-wide announcements with
+    // audience targeting, scheduling and acknowledgement tracking. Stats /
+    // next-code declared BEFORE apiResource so they aren't captured as ids.
+    Route::get('/announcements/stats',     [AnnouncementController::class, 'stats']);
+    Route::get('/announcements/next-code', [AnnouncementController::class, 'nextCode']);
+    Route::apiResource('announcements', AnnouncementController::class);
 
     Route::get   ('/master/{slug}',           [MasterController::class, 'list']);
     Route::post  ('/master/{slug}',           [MasterController::class, 'store']);
@@ -145,5 +159,11 @@ Route::middleware('auth:sanctum')->group(function () {
 // Invoice routes (auth via query token, outside sanctum middleware)
 Route::get('/payments/{payment}/invoice/download', [PaymentController::class, 'downloadInvoice']);
 Route::get('/payments/{payment}/invoice/view', [PaymentController::class, 'viewInvoice']);
+
+// Candidate CV download — query-token auth so plain <a download> works
+// regardless of whether Apache's DocumentRoot is public/ (the storage
+// symlink isn't reliable in XAMPP setups).
+Route::get('/candidates/{candidate}/cv', [CandidateController::class, 'downloadCv'])
+    ->name('candidates.cv');
 
 Route::apiResource('dummy-items', DummyItemController::class);

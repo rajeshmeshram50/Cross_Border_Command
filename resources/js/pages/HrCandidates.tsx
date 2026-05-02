@@ -211,7 +211,12 @@ export default function HrCandidates() {
       setCandidates(prev => prev.map(r => r.id === c.id ? data : r));
       toast.success(next, `${data.name} → ${next}`);
     } catch (err: any) {
-      toast.error('Could not update', err?.response?.data?.message || 'Please try again.');
+      // The backend rejects a 6th selection on a 5-opening recruitment with
+      // a 422 + message attached to the `status` field. Surface that verbatim
+      // so the recruiter knows exactly why it was blocked.
+      const fieldErr = err?.response?.data?.errors?.status?.[0];
+      const message  = fieldErr || err?.response?.data?.message || 'Please try again.';
+      toast.error(next === 'Selected' ? 'Cannot mark as Selected' : 'Could not update', message);
     }
   };
 
@@ -356,9 +361,9 @@ export default function HrCandidates() {
             <div className="mb-2">
               <div className="rec-tab-track">
                 {([
-                  { key: 'final' as const,    label: 'Active Candidates',   count: totals.active,                    icon: 'ri-user-search-line',     variant: 'in-progress' },
-                  { key: 'selected' as const, label: 'Selected Candidates', count: totals.selected + totals.offered, icon: 'ri-checkbox-circle-line', variant: 'completed' },
-                  { key: 'rejected' as const, label: 'Rejected Candidates', count: totals.rejected,                  icon: 'ri-close-circle-line',    variant: 'cancelled' },
+                  { key: 'final' as const,    label: 'Final Round Selected', count: totals.active,                    icon: 'ri-user-search-line',     variant: 'in-progress' },
+                  { key: 'selected' as const, label: 'Selected Candidates',  count: totals.selected + totals.offered, icon: 'ri-checkbox-circle-line', variant: 'completed' },
+                  { key: 'rejected' as const, label: 'Rejected Candidates',  count: totals.rejected,                  icon: 'ri-close-circle-line',    variant: 'cancelled' },
                 ]).map(t => (
                   <button
                     key={t.key}
@@ -447,11 +452,10 @@ export default function HrCandidates() {
                             <td className="fs-13">{c.notice_period || '—'}</td>
                             <td className="fs-13">{c.source || '—'}</td>
                             <td className="text-center">
-                              {c.cv_url ? (
-                                <a href={c.cv_url} target="_blank" rel="noreferrer" className="cand-cv-chip" download>
-                                  <i className="ri-download-line" /><span>CV</span>
-                                </a>
-                              ) : <span className="text-muted">—</span>}
+                              <CvCell
+                                candidate={c}
+                                onUploaded={(updated) => setCandidates(prev => prev.map(r => r.id === updated.id ? updated : r))}
+                              />
                             </td>
                             <td>
                               <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: tone.bg, color: tone.fg }}>
@@ -554,10 +558,45 @@ export default function HrCandidates() {
         open={importOpen}
         recruitment={recruitment}
         onClose={() => setImportOpen(false)}
-        onImport={(file, recruitmentCode) => {
-          // Hook this up to the real /candidates/import endpoint when ready.
-          toast.success('Import queued', `${file.name} → ${recruitmentCode}`);
-          setImportOpen(false);
+        onImport={async (file) => {
+          if (!recruitmentId) {
+            toast.error('Cannot import', 'No recruitment selected.');
+            return;
+          }
+          // POST the file to /candidates/import with the parent recruitment id.
+          // The backend validates each row and returns a per-row error list
+          // so the user sees exactly what's wrong with which line.
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('recruitment_id', String(recruitmentId));
+
+          try {
+            const { data } = await api.post('/candidates/import', fd, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            const created = Number(data?.created || 0);
+            const skipped = Number(data?.skipped || 0);
+            const errors  = Array.isArray(data?.errors) ? data.errors : [];
+
+            if (created > 0) {
+              toast.success('Import complete', `${created} candidate${created === 1 ? '' : 's'} added${skipped ? ` · ${skipped} skipped` : ''}.`);
+              // Refresh the list so the new rows appear immediately.
+              fetchAll();
+            } else {
+              toast.error('Nothing imported', skipped > 0 ? `${skipped} row${skipped === 1 ? '' : 's'} skipped — see errors below.` : 'No valid rows found in the file.');
+            }
+            // Surface the first few row-level errors so users know what to fix.
+            if (errors.length > 0) {
+              const sample = errors.slice(0, 3).map((e: any) => `Row ${e.row}: ${e.message}`).join('\n');
+              console.warn('[Candidate import] errors:\n' + errors.map((e: any) => `Row ${e.row}: ${e.message}`).join('\n'));
+              toast.error('Some rows skipped', sample + (errors.length > 3 ? `\n…and ${errors.length - 3} more.` : ''));
+            }
+            setImportOpen(false);
+          } catch (err: any) {
+            toast.error('Import failed', err?.response?.data?.message
+              || err?.response?.data?.errors?.file?.[0]
+              || 'Please upload a CSV that matches the Sample template.');
+          }
         }}
       />
 
@@ -566,11 +605,25 @@ export default function HrCandidates() {
         totalCount={candidates.length}
         filteredCount={filtered.length}
         onClose={() => setExportOpen(false)}
-        onExport={(scope: 'all' | 'view') => {
-          const rows = scope === 'all' ? candidates : filtered;
-          downloadCandidatesXlsx(rows);
-          toast.success('Export ready', `${rows.length} candidate${rows.length === 1 ? '' : 's'} downloaded`);
-          setExportOpen(false);
+        onExport={async (scope: 'all' | 'view') => {
+          // 'all' → entire candidate list scoped to this recruitment.
+          // 'view' → just the rows currently visible after filters/tabs;
+          //          we send the id list explicitly so the backend exports
+          //          exactly what the SPA is showing.
+          const params: Record<string, string> = {};
+          if (recruitmentId) params.recruitment_id = String(recruitmentId);
+          if (scope === 'view') {
+            params.ids = filtered.map(c => c.id).join(',');
+          }
+          try {
+            const res = await api.get('/candidates/export', { params, responseType: 'blob' });
+            triggerBlobDownload(res.data, 'candidates_export.csv');
+            const count = scope === 'view' ? filtered.length : candidates.length;
+            toast.success('Export ready', `${count} candidate${count === 1 ? '' : 's'} downloaded`);
+            setExportOpen(false);
+          } catch (err: any) {
+            toast.error('Could not export', err?.response?.data?.message || 'Please try again.');
+          }
         }}
       />
 
@@ -681,32 +734,14 @@ function ExportCandidatesModal({
   );
 }
 
-// Build a CSV (Excel-compatible) from the candidate list and trigger download.
-function downloadCandidatesXlsx(rows: CandidateRow[]) {
-  const COLUMNS = [
-    'Name', 'Email', 'Mobile', 'Experience',
-    'Current Salary', 'Expected Salary', 'Notice Period',
-    'Source', 'Status', 'Recruitment ID',
-  ];
-  const escape = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  const data = rows.map(c => [
-    c.name,
-    c.email || '',
-    c.mobile || '',
-    String(c.experience_years ?? ''),
-    c.current_salary_lpa != null ? String(c.current_salary_lpa) : '',
-    c.expected_salary_lpa != null ? String(c.expected_salary_lpa) : '',
-    c.notice_period || '',
-    c.source || '',
-    c.status,
-    c.recruitment_code || '',
-  ]);
-  const csv = [COLUMNS, ...data].map(r => r.map(escape).join(',')).join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
+// Trigger a browser download for an arbitrary Blob (CSV, XLSX, …) from an
+// authenticated API response. Used by the Sample / Export endpoints so the
+// generated file is always whatever the backend returned.
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
   a.href = url;
-  a.download = 'candidates_export.csv';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -720,19 +755,24 @@ function ImportCandidatesModal({
   open: boolean;
   recruitment: RecruitmentInfo | null;
   onClose: () => void;
-  onImport: (file: File, recruitmentCode: string) => void;
+  // Returns a promise so the parent can await the upload (the modal stays
+  // open so the user can see in-flight state, but right now we just close it
+  // when the parent finishes).
+  onImport: (file: File) => Promise<void> | void;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [linkedCode, setLinkedCode] = useState<string>('');
+  const [importing, setImporting]   = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Reset on each open and prefill the linked recruitment to the currently
-  // viewed one — the user can still override per-row via a "Recruitment ID"
-  // column inside the file.
+  // viewed one — the dropdown is read-only because the import is always
+  // scoped to the recruitment whose page the user is on.
   useEffect(() => {
     if (open) {
       setFile(null);
       setLinkedCode(recruitment?.code || '');
+      setImporting(false);
     }
   }, [open, recruitment]);
 
@@ -744,10 +784,14 @@ function ImportCandidatesModal({
     setFile(f);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!file) { alert('Please choose a file to import.'); return; }
-    if (!linkedCode) { alert('Please choose a recruitment to link to.'); return; }
-    onImport(file, linkedCode);
+    setImporting(true);
+    try {
+      await onImport(file);
+    } finally {
+      setImporting(false);
+    }
   };
 
   // The dropdown only knows the currently-loaded recruitment. The user can
@@ -834,8 +878,9 @@ function ImportCandidatesModal({
         {/* Footer */}
         <div className="cand-import-footer">
           <button type="button" className="rec-btn-ghost" onClick={onClose}>Close</button>
-          <button type="button" className="cand-import-submit" onClick={handleSubmit} disabled={!file || !linkedCode}>
-            <i className="ri-upload-2-line" />Import
+          <button type="button" className="cand-import-submit" onClick={handleSubmit} disabled={!file || !linkedCode || importing}>
+            {importing ? <Spinner size="sm" style={{ width: 14, height: 14 }} /> : <i className="ri-upload-2-line" />}
+            {importing ? 'Importing…' : 'Import'}
           </button>
         </div>
       </ModalBody>
@@ -845,30 +890,26 @@ function ImportCandidatesModal({
 
 // ─── Sample Import Format modal ──────────────────────────────────────────────
 function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const toast = useToast();
+
+  // Display-only preview shown inside the modal — the actual file the user
+  // downloads is generated by the backend (`GET /candidates/sample`) so
+  // there's a single source of truth for the column names + dummy row.
   const COLUMNS = [
     'Name', 'Email', 'Mobile', 'Experience',
     'Current Salary', 'Expected Salary', 'Notice Period', 'Source',
   ];
   const SAMPLE_ROWS: string[][] = [
     ['Priya Sharma', 'priya.s@example.com', '+91 9812345678', '5',  '15', '22', '30 Days',  'LinkedIn'],
-    ['Rahul Kumar',  'rahul.k@example.com', '+91 9887654321', '3',  '10', '16', 'Immediate', 'Referral'],
-    ['Neha Patel',   'neha.p@example.com',  '+91 9765432109', '7',  '20', '30', '60 Days',   'Naukri'],
   ];
 
-  const handleDownload = () => {
-    // Build a CSV string from the columns + sample rows so the user has a
-    // working template they can populate and re-upload.
-    const escape = (s: string) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    const rows = [COLUMNS, ...SAMPLE_ROWS].map(r => r.map(escape).join(',')).join('\r\n');
-    const blob = new Blob([rows], { type: 'text/csv;charset=utf-8' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = 'candidates_sample.csv';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownload = async () => {
+    try {
+      const res = await api.get('/candidates/sample', { responseType: 'blob' });
+      triggerBlobDownload(res.data, 'candidates_sample.csv');
+    } catch (err: any) {
+      toast.error('Could not download sample', err?.response?.data?.message || 'Please try again.');
+    }
   };
 
   return (
@@ -932,6 +973,98 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+/* ── CV cell ─────────────────────────────────────────────────────────────────
+ * Renders one of two states inside the table's CV column:
+ *
+ *   - Upload chip (↑ arrow) when the candidate has no CV — clicking it opens
+ *     a hidden <input type="file"> and PATCHes the row with the chosen file.
+ *   - Download chip (↓ arrow) once a CV is on file — links straight to the
+ *     server-rendered cv_url.
+ *
+ * Upload state is local to the cell so two rows can upload in parallel
+ * without one cell's spinner bleeding into another.
+ */
+function CvCell({
+  candidate, onUploaded,
+}: {
+  candidate: CandidateRow;
+  onUploaded: (updated: CandidateRow) => void;
+}) {
+  const toast = useToast();
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Already-uploaded → render the green download chip. The cv_url points
+  // at the Laravel route /api/candidates/{id}/cv (works regardless of
+  // Apache's DocumentRoot); we append the sanctum token here so a plain
+  // anchor click can authenticate without an Authorization header.
+  if (candidate.cv_url) {
+    const token = localStorage.getItem('cbc_token') || '';
+    const sep   = candidate.cv_url.includes('?') ? '&' : '?';
+    const href  = `${candidate.cv_url}${sep}token=${encodeURIComponent(token)}`;
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className="cand-cv-chip" download>
+        <i className="ri-download-line" /><span>CV</span>
+      </a>
+    );
+  }
+
+  const handleFile = async (file: File | null | undefined) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File too large', 'CV must be under 10 MB.');
+      return;
+    }
+    setUploading(true);
+    try {
+      // FormData + _method=PUT is Laravel's pattern for multipart updates.
+      const fd = new FormData();
+      fd.append('_method', 'PUT');
+      fd.append('cv', file);
+      const { data } = await api.post(`/candidates/${candidate.id}`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      onUploaded(data);
+      toast.success('CV uploaded', `${candidate.name}'s CV saved.`);
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message
+        || err?.response?.data?.errors?.cv?.[0]
+        || 'Please try a PDF/DOC/DOCX under 10 MB.');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <label
+      className="cand-cv-chip"
+      // Override the green "downloaded" tone so the upload state reads as a
+      // clear call-to-action, not a "CV already attached" affordance.
+      style={{
+        cursor: uploading ? 'progress' : 'pointer',
+        background: uploading ? '#e0e7ff' : '#eef2ff',
+        color: '#4338ca',
+        border: '1px dashed #c7d2fe',
+      }}
+      title="Upload CV"
+    >
+      {uploading
+        ? <Spinner size="sm" style={{ width: 12, height: 12 }} />
+        : <i className="ri-upload-2-line" />}
+      <span>{uploading ? 'Uploading…' : 'Upload'}</span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".pdf,.doc,.docx"
+        style={{ display: 'none' }}
+        disabled={uploading}
+        onChange={e => handleFile(e.target.files?.[0])}
+      />
+    </label>
+  );
+}
+
 function Field({ label, value }: { label: string; value: any }) {
   return (
     <div className="cand-field">
