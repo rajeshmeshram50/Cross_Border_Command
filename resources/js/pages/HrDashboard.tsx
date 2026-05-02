@@ -14,6 +14,7 @@ const HR_LEAF_ROUTES: Record<string, string> = {
   'hr.recruitment': '/hr/recruitment',
   'hr.exit':        '/hr/exit-management',
   'hr.onboarding':  '/hr/employee-onboarding',
+  'hr.broadcast':   '/hr/broadcast',
 };
 
 interface CategoryStyle { color: string; icon: string; gradient: string; }

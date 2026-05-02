@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\CandidateController;
@@ -116,6 +117,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/candidates/import', [CandidateController::class, 'import']);
     Route::get ('/candidates/export', [CandidateController::class, 'export']);
     Route::apiResource('candidates', CandidateController::class);
+
+    // Broadcast Centre announcements — company-wide announcements with
+    // audience targeting, scheduling and acknowledgement tracking. Stats /
+    // next-code declared BEFORE apiResource so they aren't captured as ids.
+    Route::get('/announcements/stats',     [AnnouncementController::class, 'stats']);
+    Route::get('/announcements/next-code', [AnnouncementController::class, 'nextCode']);
+    Route::apiResource('announcements', AnnouncementController::class);
 
     Route::get   ('/master/{slug}',           [MasterController::class, 'list']);
     Route::post  ('/master/{slug}',           [MasterController::class, 'store']);
