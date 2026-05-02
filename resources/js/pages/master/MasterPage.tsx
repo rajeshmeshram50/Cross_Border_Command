@@ -501,11 +501,15 @@ function MasterPageInner({
       // their own state and are validated by the sub-modal at add/edit time.
       if (f.t === 'sublist') continue;
       // File inputs: required check uses File.size; skip the rest of validation.
+      // On EDIT the existing file already lives on the server, so we don't
+      // force a re-upload — only the size cap (when a new file is chosen)
+      // and the required check on CREATE stay active.
       if (f.t === 'file') {
         const v = fd.get(f.n);
         const file = v instanceof File ? v : null;
         const hasFile = !!file && file.size > 0;
-        if (f.r && !hasFile) {
+        const isEdit = editingId != null;
+        if (f.r && !hasFile && !isEdit) {
           errs[f.n] = `${f.l} is required`;
         } else if (hasFile && f.maxMb && file!.size > f.maxMb * 1024 * 1024) {
           errs[f.n] = `${f.l} must be under ${f.maxMb}MB`;
@@ -3323,6 +3327,10 @@ function renderField(
     // Custom-styled file picker — replaces the native browser input. Actual
     // upload to backend storage is not wired yet; the picker is purely UI for
     // now (submit skips files).
+    // The HTML `required` attribute is only set on CREATE — on EDIT the existing
+    // file already lives on the server, so the native browser validation must
+    // not block submit when the user hasn't re-selected a file.
+    const isEdit = !!editing;
     const hintParts: string[] = [];
     if (f.accept) hintParts.push(f.accept);
     if (f.maxMb) hintParts.push(`Max ${f.maxMb}MB`);
@@ -3331,7 +3339,7 @@ function renderField(
         <MasterFileInput
           name={f.n}
           accept={f.accept}
-          required={f.r}
+          required={f.r && !isEdit}
           disabled={viewOnly}
           invalid={!!err}
           onChange={() => onFieldChange()}
