@@ -23,7 +23,7 @@ const iconMap: Record<string, string> = {
   LayoutGrid: "ri-dashboard-2-line",
   Building2: "ri-building-line",
   CreditCard: "ri-bank-card-line",
-  IndianRupee: "ri-money-rupee-circle-line",
+  IndianRupee: "ri-secure-payment-line",
   GitBranch: "ri-git-branch-line",
   UserCheck: "ri-user-settings-line",
   ShieldCheck: "ri-shield-check-line",
