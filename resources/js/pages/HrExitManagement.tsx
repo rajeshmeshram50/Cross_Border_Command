@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Input } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
+import api from '../api';
 import '../../css/recruitment.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,14 +61,20 @@ export default function HrExitManagement() {
   // Evidence Vault — opens for an Exited employee to view all archived docs.
   const [vault, setVault] = useState<EmployeeRow | null>(null);
 
-  // ── Initial load ─────────────────────────────────────────────────────────
+  // ── Initial load — pulls every employee in the tenant scope from
+  //    /api/employees (the same endpoint the HR list / onboarding pages
+  //    use). Soft-deleted rows are surfaced as "Exited" so all three
+  //    tabs stay populated without a separate exit endpoint.
   useEffect(() => {
-    // ── DUMMY DATA — remove this when the `/exit/employees` API is wired
-    //    up and replace with `api.get('/exit/employees')`. ─────────────
-    setEmployees(buildDummyEmployees());
-    /* Real API call — restore when backend is ready
-    api.get('/exit/employees').then(({ data }) => setEmployees(Array.isArray(data) ? data : []));
-    */
+    let cancelled = false;
+    api.get('/employees')
+      .then(({ data }) => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        setEmployees(list.map(apiToExitRow));
+      })
+      .catch(() => { if (!cancelled) setEmployees([]); });
+    return () => { cancelled = true; };
   }, []);
 
   // Reset page when filters change
@@ -654,14 +661,15 @@ const OWNER_LABEL: Record<RoleOwner, string> = {
 // ─────────────────────────────────────────────────────────────────────────────
 type StageStatus = 'Completed' | 'In Progress' | 'Pending';
 
+// Notice Period Management was previously Stage 2 — removed per
+// product call. Stages 3-7 shift up so the wizard now runs 1-6.
 const EXIT_STAGES = [
   { num: 1, title: 'Exit Initiation & Approval',         short: 'Exit Initiation & Approval',         sub: 'Record exit details, reason, dates, and collect approvals.', icon: 'ri-clipboard-line' },
-  { num: 2, title: 'Notice Period Management',           short: 'Notice Period Management',           sub: 'Track notice period, attendance, KT and handover completion.', icon: 'ri-time-line' },
-  { num: 3, title: 'Clearance & Handover',               short: 'Clearance & Handover',               sub: 'All departmental clearances must be approved before proceeding.', icon: 'ri-checkbox-line' },
-  { num: 4, title: 'Asset Recovery & Access Revocation', short: 'Asset Recovery & Access Revocation', sub: 'Track all company assets and revoke system access.', icon: 'ri-lock-2-line' },
-  { num: 5, title: 'Full & Final Settlement (FnF)',      short: 'Full & Final Settlement (FnF)',      sub: 'Calculate final settlement amount, deductions, and process payment.', icon: 'ri-money-rupee-circle-line' },
-  { num: 6, title: 'Exit Documents Management',          short: 'Exit Documents Management',          sub: 'Generate each document, then track the signing workflow for every stakeholder.', icon: 'ri-file-text-line' },
-  { num: 7, title: 'Final Deactivation & Closure',       short: 'Final Deactivation & Closure',       sub: 'Complete final validation, lock profile, and close the exit case.', icon: 'ri-flag-line' },
+  { num: 2, title: 'Clearance & Handover',               short: 'Clearance & Handover',               sub: 'All departmental clearances must be approved before proceeding.', icon: 'ri-checkbox-line' },
+  { num: 3, title: 'Asset Recovery & Access Revocation', short: 'Asset Recovery & Access Revocation', sub: 'Track all company assets and revoke system access.', icon: 'ri-lock-2-line' },
+  { num: 4, title: 'Full & Final Settlement (FnF)',      short: 'Full & Final Settlement (FnF)',      sub: 'Calculate final settlement amount, deductions, and process payment.', icon: 'ri-money-rupee-circle-line' },
+  { num: 5, title: 'Exit Documents Management',          short: 'Exit Documents Management',          sub: 'Generate each document, then track the signing workflow for every stakeholder.', icon: 'ri-file-text-line' },
+  { num: 6, title: 'Final Deactivation & Closure',       short: 'Final Deactivation & Closure',       sub: 'Complete final validation, lock profile, and close the exit case.', icon: 'ri-flag-line' },
 ] as const;
 
 function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
@@ -683,16 +691,10 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const [businessImpact, setBusinessImpact] = useState('Low');
   const [replacementNeeded, setReplacementNeeded] = useState('Yes — Immediate');
 
-  // Stage 2
-  const [noticePeriodDays, setNoticePeriodDays] = useState('30');
-  const [daysPresent, setDaysPresent]   = useState('0');
-  const [leavesAvailed, setLeavesAvailed] = useState('0');
-  const [leaveBalance, setLeaveBalance] = useState('12');
-  const [ktItems, setKtItems] = useState<boolean[]>([false, false, false, false]);
-  const [handoverPct, setHandoverPct] = useState('0');
-  const [ktSignOff, setKtSignOff] = useState('Pending');
+  // Stage 2 (Notice Period Management) was removed per product call;
+  // the related state lived here and is gone with it.
 
-  // Stage 3
+  // Stage 2 — Clearance & Handover (was Stage 3 before renumber).
   const [clearances, setClearances] = useState<{ checked: boolean; status: string }[]>([
     { checked: false, status: 'Pending' },
     { checked: false, status: 'Pending' },
@@ -888,60 +890,8 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </>
             )}
 
-            {/* ── STAGE 2 ── */}
+            {/* ── STAGE 2 — Clearance & Handover ── */}
             {stage === 2 && (
-              <>
-                <div className="ep-section-label">Notice Period Details</div>
-                <Row className="g-2 mb-2">
-                  <Col md={6}><EpField label="Notice Start Date"><EpInput type="date" value={noticeDate} onChange={setNoticeDate} /></EpField></Col>
-                  <Col md={6}><EpField label="Last Working Day"><EpInput type="date" value={lwd} onChange={setLwd} /></EpField></Col>
-                  <Col md={6}><EpField label="Remaining Days"><EpInput value={`${calcRemaining(noticeDate, lwd)} days`} onChange={() => {}} disabled /></EpField></Col>
-                  <Col md={6}><EpField label="Notice Period (Days)"><EpInput type="number" value={noticePeriodDays} onChange={setNoticePeriodDays} /></EpField></Col>
-                </Row>
-
-                <div className="ep-section-label">Attendance & Leave</div>
-                <Row className="g-2 mb-2">
-                  <Col md={4}><EpField label="Days Present"><EpInput type="number" value={daysPresent} onChange={setDaysPresent} /></EpField></Col>
-                  <Col md={4}><EpField label="Leaves Availed"><EpInput type="number" value={leavesAvailed} onChange={setLeavesAvailed} /></EpField></Col>
-                  <Col md={4}><EpField label="Leave Balance"><EpInput type="number" value={leaveBalance} onChange={setLeaveBalance} /></EpField></Col>
-                </Row>
-
-                <div className="ep-section-label">Knowledge Transfer & Handover</div>
-                <div className="ep-checklist mb-3">
-                  {[
-                    'KT Plan document created & shared',
-                    'Daily handover sessions scheduled',
-                    'KT tasks assigned to replacement/team',
-                    'Manager confirmed KT completion',
-                  ].map((label, idx) => (
-                    <label key={idx} className="ep-check-row">
-                      <input
-                        type="checkbox"
-                        checked={ktItems[idx]}
-                        onChange={() => setKtItems(prev => prev.map((v, i) => i === idx ? !v : v))}
-                      />
-                      <span className="ep-check-box"><i className="ri-check-line" /></span>
-                      <span className="ep-check-label">{label}</span>
-                      <span className={`ep-status-pill ep-status-pill--${ktItems[idx] ? 'done' : 'pending'}`}>{ktItems[idx] ? 'Completed' : 'Pending'}</span>
-                    </label>
-                  ))}
-                </div>
-
-                <Row className="g-2">
-                  <Col md={6}><EpField label="Handover % Complete"><EpInput type="number" value={handoverPct} onChange={setHandoverPct} /></EpField></Col>
-                  <Col md={6}><EpField label="KT Sign-off by Manager"><EpSelect value={ktSignOff} onChange={setKtSignOff} options={['Pending','Approved','Rejected']} /></EpField></Col>
-                </Row>
-
-                {(Number(handoverPct) < 100 || ktSignOff !== 'Approved') && (
-                  <div className="ep-alert ep-alert--warning mt-3">
-                    <i className="ri-error-warning-line" />Cannot proceed until KT is 100% complete and Manager has approved handover.
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* ── STAGE 3 ── */}
-            {stage === 3 && (
               <>
                 <div className="ep-section-label">Clearance Status</div>
                 <div className="ep-checklist mb-2">
@@ -984,8 +934,8 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </>
             )}
 
-            {/* ── STAGE 4 ── */}
-            {stage === 4 && (
+            {/* ── STAGE 3 — Asset Recovery & Access Revocation ── */}
+            {stage === 3 && (
               <>
                 <div className="ep-section-label">Asset Return Tracking</div>
                 <div className="ep-checklist mb-3">
@@ -1035,8 +985,8 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </>
             )}
 
-            {/* ── STAGE 5 ── */}
-            {stage === 5 && (
+            {/* ── STAGE 4 — Full & Final Settlement (FnF) ── */}
+            {stage === 4 && (
               <>
                 <div className="ep-section-label">Earnings & Deductions</div>
                 <div className="ep-fnf-table mb-3">
@@ -1064,8 +1014,8 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </>
             )}
 
-            {/* ── STAGE 6 ── */}
-            {stage === 6 && (() => {
+            {/* ── STAGE 5 — Exit Documents Management ── */}
+            {stage === 5 && (() => {
               const generatedCount = docs.filter(Boolean).length;
               const docList = [
                 { icon: 'ri-file-text-line',          name: 'Relieving Letter',     sub: 'Confirms last working day and relieving from duties', signers: ['HR Manager','Department Head','Employee'] },
@@ -1167,8 +1117,8 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               );
             })()}
 
-            {/* ── STAGE 7 ── */}
-            {stage === 7 && (
+            {/* ── STAGE 6 — Final Deactivation & Closure ── */}
+            {stage === 6 && (
               <>
                 <div className="ep-section-label">Final Validation Checklist</div>
                 <div className="ep-checklist mb-3">
@@ -1424,15 +1374,6 @@ function shortStageLabel(num: number): string {
   }
 }
 
-// Compute remaining days between two ISO dates — used in Stage 2.
-function calcRemaining(start: string, end: string): number {
-  if (!start || !end) return 0;
-  const s = new Date(start).getTime();
-  const e = new Date(end).getTime();
-  if (isNaN(s) || isNaN(e)) return 0;
-  return Math.max(0, Math.round((e - s) / 86400000));
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Evidence Vault — opens for an Exited employee to view all archived docs.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1658,6 +1599,74 @@ const VAULT_BY_TAB: Record<VaultTab, VaultGroup[]> = {
     },
   ],
 };
+
+// ─── ApiEmployee → EmployeeRow projector ────────────────────────────────────
+// Pulls the same /api/employees response shape the HR list + onboarding
+// pages use, then maps it onto the row shape this page renders. Status
+// rules:
+//   - deleted_at != null            → "Exited"
+//   - status = Resigned/Notice Period → "Exit In Progress"
+//   - missing critical fields        → "Missing Details"
+//   - everything else                → "Active"
+const _exitAccentPalette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
+function _exitAccent(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return _exitAccentPalette[h % _exitAccentPalette.length];
+}
+function _exitInitials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('') || '?';
+}
+
+function apiToExitRow(e: any): EmployeeRow {
+  const name = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || '—';
+  const mgr  = e.reporting_manager;
+  const mgrName = mgr?.display_name
+    || (mgr ? [mgr.first_name, mgr.last_name].filter(Boolean).join(' ').trim() : '')
+    || '—';
+
+  // Map server status → ExitStatus bucket. Soft-deleted rows take
+  // priority over the status string so a "deleted" employee always
+  // shows up in the Exited tab regardless of their last status.
+  const trashed   = !!e.deleted_at;
+  const rawStatus = String(e.status ?? 'Active');
+  let status: ExitStatus;
+  if (trashed)                                                  status = 'Exited';
+  else if (rawStatus === 'Resigned' || rawStatus === 'Notice Period') status = 'Exit In Progress';
+  else if (!e.email || !e.department_id || !e.designation_id)   status = 'Missing Details';
+  else                                                          status = 'Active';
+
+  // Exit readiness — soft proxy until the dedicated checklist endpoint
+  // exists. Active = wizard progress (50% from Stage 1 + bumps from the
+  // 6-stage onboarding); Exited = 100; In Progress = 60.
+  const wizardStep  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
+  const macroStage  = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
+  const stage1Frac  = macroStage >= 1 ? 1 : wizardStep / 4;
+  const others      = (macroStage >= 2 ? 1 : 0) + (macroStage >= 3 ? 1 : 0)
+                    + (macroStage >= 4 ? 1 : 0) + (macroStage >= 5 ? 1 : 0)
+                    + (macroStage >= 6 ? 1 : 0);
+  const onboardPct  = Math.round(((stage1Frac + others) / 6) * 100);
+  const exitReadiness = status === 'Exited' ? 100
+    : status === 'Exit In Progress' ? Math.max(60, onboardPct)
+    : onboardPct;
+
+  return {
+    id:         Number(e.id) || 0,
+    empId:      e.emp_code || `EMP-${e.id}`,
+    name,
+    initials:   _exitInitials(name),
+    accent:     _exitAccent(name),
+    department: e.department?.name   || '—',
+    designation: e.designation?.name || '—',
+    primaryRole:   e.primary_role?.name   || '—',
+    ancillaryRole: e.ancillary_role?.name || '',
+    managerName:     mgrName,
+    managerInitials: _exitInitials(mgrName),
+    managerAccent:   _exitAccent(mgrName || 'manager'),
+    exitReadiness,
+    status,
+  };
+}
 
 function buildDummyEmployees(): EmployeeRow[] {
   const palette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
