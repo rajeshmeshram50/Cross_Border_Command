@@ -5,6 +5,7 @@ import Swal from 'sweetalert2';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
+import ComingSoonShell from '../../components/ComingSoonShell';
 import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
@@ -1266,110 +1267,122 @@ function VaultModal({
           </div>
         </div>
 
-        {/* KPI strip (fixed, non-scrolling) */}
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--vz-border-color)', flexShrink: 0 }}>
-          <Row className="g-3 align-items-stretch">
-            {[
-              { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
-              { key: 'verified', label: 'Verified',      value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-              { key: 'signed',   label: 'Signed',        value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
-              { key: 'pending',  label: 'Pending',       value: counts.pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-              { key: 'notgen',   label: 'Not Generated', value: counts.notGen,   icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
-            ].map(k => (
-              <Col key={k.key} xl md={4} sm={6} xs={12}>
-                <div className="vault-kpi-card">
-                  <div className="vault-kpi-strip" style={{ background: k.gradient }} />
-                  <div className="d-flex align-items-start justify-content-between">
-                    <div className="min-w-0">
-                      <p className="vault-kpi-label">{k.label}</p>
-                      <h3 className="vault-kpi-num">{k.value.toLocaleString()}</h3>
-                    </div>
-                    <div className="vault-kpi-icon" style={{ background: k.gradient }}>
-                      <i className={k.icon} />
-                    </div>
-                  </div>
-                </div>
-              </Col>
-            ))}
-          </Row>
-        </div>
-
-        {/* Tabs (fixed, non-scrolling) */}
-        <div className="d-flex" style={{ padding: '0 24px', borderBottom: '1px solid var(--vz-border-color)', flexShrink: 0 }}>
-          <button
-            type="button"
-            className={`vault-tab-btn${tab === 'employee' ? ' is-active' : ''}`}
-            onClick={() => onTabChange('employee')}
+        {/* Body — wrapped in ComingSoonShell since the document
+            catalogue, signing flow and download links aren't backed
+            by a real backend yet. The header (with the close button
+            + status ring) stays fully interactive so the user can
+            preview the layout and dismiss the modal. */}
+        <div style={{ padding: '16px 24px 22px', flex: '1 1 auto', overflowY: 'auto', minHeight: 0 }}>
+          <ComingSoonShell
+            title="Evidence Vault"
+            subtitle="Document repository, signed agreements, and ID uploads"
           >
-            <i className="ri-user-line" /> Employee Documents
-            <span className="vault-tab-count">{empCount}</span>
-          </button>
-          <button
-            type="button"
-            className={`vault-tab-btn${tab === 'organizational' ? ' is-active' : ''}`}
-            onClick={() => onTabChange('organizational')}
-          >
-            <i className="ri-building-line" /> Organizational Documents
-            <span className="vault-tab-count">{orgCount}</span>
-          </button>
-        </div>
-
-        {/* Section list — only this region scrolls */}
-        <div style={{ padding: '8px 24px 22px', flex: '1 1 auto', overflowY: 'auto', minHeight: 0 }}>
-          {sections.map(section => (
-            <div key={section.title} style={{ paddingTop: 16 }}>
-              <div className="d-flex align-items-center justify-content-between mb-2">
-                <div>
-                  <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                    {section.title}
-                  </div>
-                  <div className="text-muted" style={{ fontSize: 11.5 }}>
-                    {section.docs.length} document{section.docs.length === 1 ? '' : 's'} in this category
-                  </div>
-                </div>
-                <span
-                  className="d-inline-flex align-items-center"
-                  style={{ padding: '4px 12px', borderRadius: 999, background: '#f5f0ff', color: '#5a3fd1', fontSize: 11.5, fontWeight: 600 }}
-                >
-                  {section.docs.length} docs
-                </span>
-              </div>
-              <div>
-                {section.docs.map(doc => {
-                  const dt = VAULT_STATUS_TONE[doc.status];
-                  return (
-                    <div key={doc.id} className="vault-doc-row flex-wrap">
-                      <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
-                        <i className={doc.icon} />
+            {/* KPI strip */}
+            <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--vz-border-color)' }}>
+              <Row className="g-3 align-items-stretch">
+                {[
+                  { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+                  { key: 'verified', label: 'Verified',      value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+                  { key: 'signed',   label: 'Signed',        value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
+                  { key: 'pending',  label: 'Pending',       value: counts.pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
+                  { key: 'notgen',   label: 'Not Generated', value: counts.notGen,   icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+                ].map(k => (
+                  <Col key={k.key} xl md={4} sm={6} xs={12}>
+                    <div className="vault-kpi-card">
+                      <div className="vault-kpi-strip" style={{ background: k.gradient }} />
+                      <div className="d-flex align-items-start justify-content-between">
+                        <div className="min-w-0">
+                          <p className="vault-kpi-label">{k.label}</p>
+                          <h3 className="vault-kpi-num">{k.value.toLocaleString()}</h3>
+                        </div>
+                        <div className="vault-kpi-icon" style={{ background: k.gradient }}>
+                          <i className={k.icon} />
+                        </div>
                       </div>
-                      <div className="vault-doc-meta">
-                        <div className="vault-doc-name">{doc.name}</div>
-                        <div className="vault-doc-desc">{doc.desc}</div>
-                      </div>
-                      {doc.category && (
-                        <span
-                          className="d-inline-flex align-items-center"
-                          style={{ padding: '4px 10px', borderRadius: 999, background: '#eef2f6', color: '#475569', fontSize: 11, fontWeight: 600 }}
-                        >
-                          {doc.category}
-                        </span>
-                      )}
-                      <span className="vault-status-pill" style={{ background: dt.bg, color: dt.fg }}>
-                        <span className="vault-status-dot" style={{ background: dt.dot }} />
-                        {doc.status}
-                      </span>
-                      <button type="button" className="vault-action-view">
-                        <i className="ri-eye-line" /> View
-                      </button>
-                      <button type="button" className="vault-action-download">
-                        <i className="ri-download-2-line" /> Download
-                      </button>
                     </div>
-                  );
-                })}
-              </div>
+                  </Col>
+                ))}
+              </Row>
             </div>
-          ))}
+
+            {/* Tabs */}
+            <div className="d-flex" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+              <button
+                type="button"
+                className={`vault-tab-btn${tab === 'employee' ? ' is-active' : ''}`}
+                onClick={() => onTabChange('employee')}
+              >
+                <i className="ri-user-line" /> Employee Documents
+                <span className="vault-tab-count">{empCount}</span>
+              </button>
+              <button
+                type="button"
+                className={`vault-tab-btn${tab === 'organizational' ? ' is-active' : ''}`}
+                onClick={() => onTabChange('organizational')}
+              >
+                <i className="ri-building-line" /> Organizational Documents
+                <span className="vault-tab-count">{orgCount}</span>
+              </button>
+            </div>
+
+            {/* Section list */}
+            <div>
+              {sections.map(section => (
+                <div key={section.title} style={{ paddingTop: 16 }}>
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div>
+                      <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                        {section.title}
+                      </div>
+                      <div className="text-muted" style={{ fontSize: 11.5 }}>
+                        {section.docs.length} document{section.docs.length === 1 ? '' : 's'} in this category
+                      </div>
+                    </div>
+                    <span
+                      className="d-inline-flex align-items-center"
+                      style={{ padding: '4px 12px', borderRadius: 999, background: '#f5f0ff', color: '#5a3fd1', fontSize: 11.5, fontWeight: 600 }}
+                    >
+                      {section.docs.length} docs
+                    </span>
+                  </div>
+                  <div>
+                    {section.docs.map(doc => {
+                      const dt = VAULT_STATUS_TONE[doc.status];
+                      return (
+                        <div key={doc.id} className="vault-doc-row flex-wrap">
+                          <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
+                            <i className={doc.icon} />
+                          </div>
+                          <div className="vault-doc-meta">
+                            <div className="vault-doc-name">{doc.name}</div>
+                            <div className="vault-doc-desc">{doc.desc}</div>
+                          </div>
+                          {doc.category && (
+                            <span
+                              className="d-inline-flex align-items-center"
+                              style={{ padding: '4px 10px', borderRadius: 999, background: '#eef2f6', color: '#475569', fontSize: 11, fontWeight: 600 }}
+                            >
+                              {doc.category}
+                            </span>
+                          )}
+                          <span className="vault-status-pill" style={{ background: dt.bg, color: dt.fg }}>
+                            <span className="vault-status-dot" style={{ background: dt.dot }} />
+                            {doc.status}
+                          </span>
+                          <button type="button" className="vault-action-view">
+                            <i className="ri-eye-line" /> View
+                          </button>
+                          <button type="button" className="vault-action-download">
+                            <i className="ri-download-2-line" /> Download
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ComingSoonShell>
         </div>
       </ModalBody>
     </Modal>
@@ -3850,7 +3863,15 @@ function Stage5Policies() {
   ];
 
   return (
-    <>
+    // Stage 5 backend (digital signing, doc generation, audit trail)
+    // isn't wired yet, so the whole pane is wrapped in ComingSoonShell.
+    // The Next Stage button in the modal footer stays clickable —
+    // ComingSoonShell only blocks pointer events INSIDE the shell, so
+    // the user can preview the layout and skip ahead.
+    <ComingSoonShell
+      title="Policies & Agreements"
+      subtitle="Digital signing, doc generation, and audit trail"
+    >
       {/* Signing progress */}
       <div className="onb-pol-progress">
         <span className="onb-pol-progress-icon"><i className="ri-shield-check-line" style={{ fontSize: 16 }} /></span>
@@ -3906,7 +3927,7 @@ function Stage5Policies() {
           </div>
         ))}
       </div>
-    </>
+    </ComingSoonShell>
   );
 }
 
