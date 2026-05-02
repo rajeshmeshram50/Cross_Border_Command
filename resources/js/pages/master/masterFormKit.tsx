@@ -303,6 +303,7 @@ export function MasterDatePicker({
   onChange,
   placeholder = 'Select date',
   minDate,
+  maxDate,
   disabled,
   invalid,
 }: {
@@ -312,6 +313,7 @@ export function MasterDatePicker({
   onChange?: (v: string) => void;
   placeholder?: string;
   minDate?: string;
+  maxDate?: string;
   disabled?: boolean;
   invalid?: boolean;
 }) {
@@ -322,7 +324,15 @@ export function MasterDatePicker({
   const currentValue = value !== undefined ? value : internal;
 
   const [open, setOpen] = useState(false);
-  const [viewDate, setViewDate] = useState<Date>(() => currentValue ? new Date(currentValue) : new Date());
+  // When no value is set, anchor the view on maxDate (or minDate) so a bounded
+  // picker (e.g. DOB ≥ 18 years ago) opens on a usable month instead of a fully
+  // disabled "today" view.
+  const [viewDate, setViewDate] = useState<Date>(() => {
+    if (currentValue) return new Date(currentValue);
+    if (maxDate)      return new Date(maxDate);
+    if (minDate)      return new Date(minDate);
+    return new Date();
+  });
   const [popupPos, setPopupPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -376,8 +386,15 @@ export function MasterDatePicker({
 
   const pad = (n: number) => String(n).padStart(2, '0');
   const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const minD = minDate ? new Date(minDate) : null;
+  // Normalize to midnight so day-level comparisons aren't thrown off by the
+  // "now" time-of-day that `new Date()` carries.
+  const dayOnly = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const minD = minDate ? dayOnly(new Date(minDate)) : null;
+  const maxD = maxDate ? dayOnly(new Date(maxDate)) : null;
   const today = new Date();
+  const todayDisabled =
+    (!!minD && dayOnly(today) < minD) ||
+    (!!maxD && dayOnly(today) > maxD);
   const selected = currentValue ? new Date(currentValue) : null;
   const display = currentValue
     ? new Date(currentValue).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -513,7 +530,9 @@ export function MasterDatePicker({
                   const d = new Date(year, month, day);
                   const isToday = sameDay(today, d);
                   const isSelected = sameDay(selected, d);
-                  const isDisabled = minD ? d < new Date(minD.getFullYear(), minD.getMonth(), minD.getDate()) : false;
+                  const isDisabled =
+                    (!!minD && d < minD) ||
+                    (!!maxD && d > maxD);
                   const cls = [
                     'master-datepicker-day',
                     isSelected && 'is-selected',
@@ -543,6 +562,13 @@ export function MasterDatePicker({
                 const isCurrentView = i === month;
                 const isSelectedMonth =
                   !!selected && selected.getFullYear() === year && selected.getMonth() === i;
+                // A whole month is unreachable when its last day is before
+                // minDate or its first day is after maxDate.
+                const monthFirst = new Date(year, i, 1);
+                const monthLast  = new Date(year, i + 1, 0);
+                const isDisabled =
+                  (!!minD && monthLast < minD) ||
+                  (!!maxD && monthFirst > maxD);
                 const cls = [
                   'master-datepicker-cell',
                   isSelectedMonth && 'is-selected',
@@ -552,6 +578,7 @@ export function MasterDatePicker({
                   <button
                     key={m}
                     type="button"
+                    disabled={isDisabled}
                     onClick={() => { setViewDate(new Date(year, i, 1)); setView('days'); }}
                     className={cls}
                   >
@@ -570,6 +597,13 @@ export function MasterDatePicker({
                 const y = yearBlockStart + i;
                 const isCurrentView = y === year;
                 const isSelectedYear = !!selected && selected.getFullYear() === y;
+                // A whole year is unreachable when its last day is before
+                // minDate or its first day is after maxDate.
+                const yearFirst = new Date(y, 0, 1);
+                const yearLast  = new Date(y, 11, 31);
+                const isDisabled =
+                  (!!minD && yearLast < minD) ||
+                  (!!maxD && yearFirst > maxD);
                 const cls = [
                   'master-datepicker-cell',
                   isSelectedYear && 'is-selected',
@@ -579,6 +613,7 @@ export function MasterDatePicker({
                   <button
                     key={y}
                     type="button"
+                    disabled={isDisabled}
                     onClick={() => { setViewDate(new Date(y, month, 1)); setView('months'); }}
                     className={cls}
                   >
@@ -600,6 +635,7 @@ export function MasterDatePicker({
             </button>
             <button
               type="button"
+              disabled={todayDisabled}
               onClick={() => { commit(fmt(today)); setViewDate(today); setOpen(false); }}
               className="today-btn"
             >

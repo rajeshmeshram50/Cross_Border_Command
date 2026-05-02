@@ -211,6 +211,14 @@ const accentFromName = (name: string): string => {
 const initialsFromName = (name: string): string =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('') || '?';
 
+// ISO (YYYY-MM-DD) for the same calendar day, N years before today. Used as
+// the DOB upper bound (18 years) to enforce minimum employee age in the picker.
+const isoYearsAgo = (n: number): string => {
+  const t = new Date();
+  const pad = (x: number) => String(x).padStart(2, '0');
+  return `${t.getFullYear() - n}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+};
+
 const apiToRow = (e: ApiEmployee): EmployeeRow => {
   const name = (e.display_name || `${e.first_name} ${e.last_name || ''}`).trim();
   // Disabled = soft-deleted (deleted_at non-null) OR status reads as
@@ -2920,7 +2928,13 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Date of Birth<span className="req">*</span></label>
-                      <MasterDatePicker value={eDob} onChange={(v) => { setEDob(v); clearEErr('date_of_birth'); }} placeholder="dd-mm-yyyy" invalid={!!eErrors.date_of_birth} />
+                      <MasterDatePicker
+                        value={eDob}
+                        onChange={(v) => { setEDob(v); clearEErr('date_of_birth'); }}
+                        placeholder="dd-mm-yyyy"
+                        invalid={!!eErrors.date_of_birth}
+                        maxDate={isoYearsAgo(18)}
+                      />
                       {eErrors.date_of_birth && <small className="emp-err">{eErrors.date_of_birth}</small>}
                     </Col>
                     <Col md={4}>
