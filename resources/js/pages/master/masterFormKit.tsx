@@ -116,6 +116,179 @@ export function MasterSelect({
 }
 
 /**
+ * Multi-select sibling of `MasterSelect`. Mirrors the styling 1:1 so the
+ * two read as a single visual family. The picker is fully controlled —
+ * `value` is an array of selected values, `onChange` returns a new
+ * array. Items toggle on click; the toggle pill shows a chip strip
+ * with the selected labels (truncates with `+N more` when crowded).
+ */
+export function MasterMultiSelect({
+  name,
+  value,
+  options,
+  placeholder = 'Select…',
+  disabled,
+  invalid,
+  onChange,
+  maxChips = 3,
+}: {
+  name?: string;
+  value: string[];
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+  invalid?: boolean;
+  onChange?: (value: string[]) => void;
+  maxChips?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  useEffect(() => { if (!open) setSearch(''); }, [open]);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [dropDir, setDropDir] = useState<'up' | 'down'>('down');
+  useEffect(() => {
+    if (!open || !wrapRef.current) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const ESTIMATED_HEIGHT = 240;
+    setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
+  }, [open]);
+
+  const selectedSet = new Set(value);
+  const selectedOptions = options.filter(o => selectedSet.has(o.value));
+  const showSearch = options.length > 4;
+  const filtered = search.trim()
+    ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
+    : options;
+  const toggleVal = (v: string) => {
+    const next = selectedSet.has(v) ? value.filter(x => x !== v) : [...value, v];
+    onChange?.(next);
+  };
+  const removeVal = (v: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange?.(value.filter(x => x !== v));
+  };
+
+  return (
+    <div ref={wrapRef}>
+      <Dropdown
+        isOpen={open && !disabled}
+        toggle={() => { if (!disabled) setOpen(v => !v); }}
+        direction={dropDir}
+        className={`master-select-wrap${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}`}
+      >
+        <DropdownToggle
+          tag="button"
+          type="button"
+          disabled={disabled}
+          className="master-select-toggle"
+          style={{ minHeight: 38, padding: '4px 30px 4px 12px' }}
+        >
+          {selectedOptions.length === 0 ? (
+            <span className="master-select-placeholder">{placeholder}</span>
+          ) : (
+            <span className="d-inline-flex align-items-center flex-wrap gap-1" style={{ overflow: 'hidden' }}>
+              {selectedOptions.slice(0, maxChips).map(o => (
+                <span
+                  key={o.value}
+                  className="d-inline-flex align-items-center"
+                  style={{
+                    background: '#eef2ff',
+                    color: '#4338ca',
+                    padding: '2px 6px 2px 8px',
+                    borderRadius: 12,
+                    fontSize: 12,
+                    fontWeight: 500,
+                    maxWidth: 180,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {o.label}
+                  <span
+                    role="button"
+                    onClick={(e) => removeVal(o.value, e)}
+                    style={{ marginLeft: 4, cursor: 'pointer', lineHeight: 1, fontSize: 14 }}
+                    aria-label={`Remove ${o.label}`}
+                  >
+                    ×
+                  </span>
+                </span>
+              ))}
+              {selectedOptions.length > maxChips && (
+                <span style={{ fontSize: 11.5, color: '#6b7280', fontWeight: 600 }}>
+                  +{selectedOptions.length - maxChips} more
+                </span>
+              )}
+            </span>
+          )}
+          <i className="ri-arrow-down-s-line master-select-chev" />
+        </DropdownToggle>
+        <DropdownMenu className="master-select-menu">
+          {showSearch && (
+            <div
+              className="master-select-search"
+              onClick={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+            >
+              <i className="ri-search-line master-select-search-icon" />
+              <input
+                type="text"
+                className="master-select-search-input"
+                placeholder="Search…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => e.stopPropagation()}
+                autoFocus
+              />
+            </div>
+          )}
+          <div className="master-select-list" style={{ maxHeight: 200 }}>
+            {filtered.length === 0 ? (
+              <div className="master-select-empty">
+                {options.length === 0 ? 'No options' : 'No results'}
+              </div>
+            ) : filtered.map(opt => {
+              const checked = selectedSet.has(opt.value);
+              return (
+                <DropdownItem
+                  key={opt.value}
+                  toggle={false}
+                  active={checked}
+                  onClick={() => toggleVal(opt.value)}
+                  className="master-select-item d-flex align-items-center"
+                >
+                  <span
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: 4,
+                      border: '1.5px solid ' + (checked ? '#7c5cfc' : '#cbd5e1'),
+                      background: checked ? '#7c5cfc' : '#fff',
+                      marginRight: 8,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {checked && <i className="ri-check-line" style={{ color: '#fff', fontSize: 12 }} />}
+                  </span>
+                  {opt.label}
+                </DropdownItem>
+              );
+            })}
+          </div>
+        </DropdownMenu>
+      </Dropdown>
+      {name !== undefined && <input type="hidden" name={name} value={value.join(',')} />}
+    </div>
+  );
+}
+
+/**
  * Compact themed date picker — same visual language as MasterSelect.
  *   - Click-to-open toggle (looks like an input, 38px height, 10px radius)
  *   - 240px compact calendar popup

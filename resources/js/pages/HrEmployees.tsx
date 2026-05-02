@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
+import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
+import ComingSoonShell from '../components/ComingSoonShell';
 
 // ── Evidence Vault — mock document catalogue (per-employee view) ────────────
 type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
@@ -167,6 +168,10 @@ interface ApiEmployee {
    *  = nothing done, 1 = Stage 1 (Setup) done, … 6 = Stage 6 (Final
    *  Verification) done. Drives the profile % across all six stages. */
   onboarding_stage_completed: number | null;
+  /** Soft-delete timestamp. Non-null means the row was disabled via
+   *  the per-row toggle. We surface these in the API's `withTrashed`
+   *  list so the SPA's Disabled Employees tab can render them. */
+  deleted_at: string | null;
   date_of_joining: string | null;
   department_id: number | null;
   designation_id: number | null;
@@ -208,7 +213,13 @@ const initialsFromName = (name: string): string =>
 
 const apiToRow = (e: ApiEmployee): EmployeeRow => {
   const name = (e.display_name || `${e.first_name} ${e.last_name || ''}`).trim();
-  const enabled = (e.status || 'Active').toLowerCase() !== 'inactive'
+  // Disabled = soft-deleted (deleted_at non-null) OR status reads as
+  // inactive/terminated/resigned. The per-row toggle path soft-deletes,
+  // so deleted_at is the primary signal — we still honour the legacy
+  // status strings for any rows that were flipped via PUT alone.
+  const isTrashed = !!e.deleted_at;
+  const enabled = !isTrashed
+    && (e.status || 'Active').toLowerCase() !== 'inactive'
     && (e.status || 'Active').toLowerCase() !== 'terminated'
     && (e.status || 'Active').toLowerCase() !== 'resigned';
   // Map server status → UI status bucket. Anything not in the mapping falls
@@ -630,99 +641,122 @@ export default function HrEmployees() {
   const [eLaptopAssetId, setELaptopAssetId]      = useState('');
   const [eMobileDevice, setEMobileDevice]        = useState('');
   const [eOtherAssets, setEOtherAssets]          = useState('');
+  // Asset FK pickers (Step 3). Replace the legacy free-text fields above
+  // — those still hydrate for backwards-compat but the UI now writes to
+  // these. Uniqueness across employees is enforced by the backend.
+  const [eLaptopMasterAssetId, setELaptopMasterAssetId] = useState('');
+  const [eMobileAssigned,      setEMobileAssigned]      = useState('No');
+  const [eMobileMasterAssetId, setEMobileMasterAssetId] = useState('');
+  const [eOtherMasterAssetIds, setEOtherMasterAssetIds] = useState<string[]>([]);
+  // Available-asset pools per category. Refilled when the wizard opens
+  // and excludes assets booked by other employees (the row being edited
+  // is excluded from the booked-set so the admin can keep their pick).
+  type AssetOpt = { value: string; label: string };
+  const [laptopAssetOpts, setLaptopAssetOpts] = useState<AssetOpt[]>([]);
+  const [mobileAssetOpts, setMobileAssetOpts] = useState<AssetOpt[]>([]);
+  const [otherAssetOpts,  setOtherAssetOpts]  = useState<AssetOpt[]>([]);
   const [eAadharFile, setEAadharFile]            = useState<File | null>(null);
   const [ePanFile, setEPanFile]                  = useState<File | null>(null);
   const [ePhotoFile, setEPhotoFile]              = useState<File | null>(null);
+  // Server-side documents already on this employee. Keyed by
+  // document_key ('aadhaar' | 'pan' | 'photo') so the Documents row
+  // can show the saved file name + a view link instead of an empty
+  // "Choose file" tile when re-opening Edit. Matches the keys used
+  // by the bigger Stage 2 onboarding modal.
+  type ServerDoc = { id: number; document_key: string; original_name: string | null; status: string; url: string | null };
+  const [eExistingDocs, setEExistingDocs] = useState<Record<string, ServerDoc>>({});
+  const [eDocBusy, setEDocBusy]           = useState<Record<string, boolean>>({});
 
-  // Assign Assets modal (opened by the per-row Workstation icon)
+  // Assign Assets modal (opened by the per-row Workstation icon).
+  // Single-purpose now: pick laptop / mobile / other assets and persist
+  // them onto the employee row. Security + HR Record tabs were removed
+  // — those flows belong elsewhere.
   const [assignOpen, setAssignOpen]   = useState(false);
   const [assignEmp, setAssignEmp]     = useState<EmployeeRow | null>(null);
-  const [assignTab, setAssignTab]     = useState<'it' | 'security' | 'hr'>('it');
-  // IT Assets fields
-  const [aLaptopAssigned, setALaptopAssigned] = useState('No');
-  const [aLaptopAssetId, setALaptopAssetId]   = useState('');
-  const [aMobileDevice, setAMobileDevice]     = useState('');
-  const [aOtherAssets, setAOtherAssets]       = useState('');
-  // Security fields
-  const [aAccessCard, setAAccessCard]     = useState('');
-  const [aSecurityLevel, setASecurityLevel] = useState('Level 1 — Basic');
-  const [aVpnAccess, setAVpnAccess]       = useState('Not Required');
-  // HR Record fields
-  const [aIssueDate, setAIssueDate] = useState('');
-  const [aIssuedBy, setAIssuedBy]   = useState('');
-  const [aNotes, setANotes]         = useState('');
+  const [aLaptopAssigned, setALaptopAssigned]           = useState('No');
+  const [aLaptopMasterAssetId, setALaptopMasterAssetId] = useState('');
+  const [aMobileAssigned, setAMobileAssigned]           = useState('No');
+  const [aMobileMasterAssetId, setAMobileMasterAssetId] = useState('');
+  const [aOtherMasterAssetIds, setAOtherMasterAssetIds] = useState<string[]>([]);
+  const [aSaving, setASaving] = useState(false);
+  // Available-asset pools for the Assign modal. Refilled when the modal
+  // opens; current employee is excluded from the booked-set so the
+  // admin can keep their own pre-existing pick.
+  const [aLaptopOpts, setALaptopOpts] = useState<AssetOpt[]>([]);
+  const [aMobileOpts, setAMobileOpts] = useState<AssetOpt[]>([]);
+  const [aOtherOpts,  setAOtherOpts]  = useState<AssetOpt[]>([]);
 
   const openAssignAssets = (row: EmployeeRow) => {
     setAssignEmp(row);
-    setAssignTab('it');
-    setALaptopAssigned('No'); setALaptopAssetId(''); setAMobileDevice(''); setAOtherAssets('');
-    setAAccessCard(''); setASecurityLevel('Level 1 — Basic'); setAVpnAccess('Not Required');
-    setAIssueDate(''); setAIssuedBy(''); setANotes('');
-    setAssignErrors({});
+    const raw = (row as any)._raw || {};
+    // Hydrate from the row so already-issued assets are pre-selected.
+    setALaptopAssigned(raw.laptop_master_asset_id ? 'Yes' : 'No');
+    setALaptopMasterAssetId(raw.laptop_master_asset_id ? String(raw.laptop_master_asset_id) : '');
+    setAMobileAssigned(raw.mobile_master_asset_id ? 'Yes' : 'No');
+    setAMobileMasterAssetId(raw.mobile_master_asset_id ? String(raw.mobile_master_asset_id) : '');
+    setAOtherMasterAssetIds(Array.isArray(raw.other_master_asset_ids)
+      ? raw.other_master_asset_ids.map((n: any) => String(n))
+      : []);
     setAssignOpen(true);
   };
-  // Assign Assets — validation state. Pattern matches the master/onboarding
-  // forms: per-field error map, cleared as the user fixes each field, with a
-  // toast on submit if anything is still invalid.
-  type AssignErrors = {
-    laptopAssetId?: string;
-    mobileDevice?: string;
-    accessCard?: string;
-    issueDate?: string;
-    issuedBy?: string;
-  };
-  const [assignErrors, setAssignErrors] = useState<AssignErrors>({});
-  const clearAssignError = (key: keyof AssignErrors) => {
-    setAssignErrors(prev => {
-      if (!prev[key]) return prev;
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-  };
-  const validateAssign = (): { errors: AssignErrors; firstTab?: 'it' | 'security' | 'hr' } => {
-    const errs: AssignErrors = {};
-    // IT Assets — Asset ID is required when a laptop is assigned.
-    if (aLaptopAssigned === 'Yes' && !aLaptopAssetId.trim()) {
-      errs.laptopAssetId = 'Laptop Asset ID is required when a laptop is assigned';
-    }
-    if (aMobileDevice.trim() && aMobileDevice.trim().length < 2) {
-      errs.mobileDevice = 'Please enter a valid device name';
-    }
-    // Security — access card format check (only if filled).
-    if (aAccessCard.trim() && !/^[A-Za-z0-9-]{4,}$/.test(aAccessCard.trim())) {
-      errs.accessCard = 'Access card must be at least 4 alphanumeric characters';
-    }
-    // HR Record — issue date and issuer are mandatory for any assignment.
-    if (!aIssueDate)         errs.issueDate = 'Issue date is required';
-    if (!aIssuedBy.trim())   errs.issuedBy  = 'Issued by is required';
 
-    let firstTab: 'it' | 'security' | 'hr' | undefined;
-    if (errs.laptopAssetId || errs.mobileDevice) firstTab = 'it';
-    else if (errs.accessCard)                    firstTab = 'security';
-    else if (errs.issueDate || errs.issuedBy)    firstTab = 'hr';
-    return { errors: errs, firstTab };
-  };
-  const handleSaveAssign = () => {
-    const { errors, firstTab } = validateAssign();
-    if (Object.keys(errors).length > 0) {
-      setAssignErrors(errors);
-      if (firstTab && firstTab !== assignTab) setAssignTab(firstTab);
-      toast.error(
-        'Please fix the highlighted fields',
-        `${Object.keys(errors).length} field${Object.keys(errors).length === 1 ? '' : 's'} need${Object.keys(errors).length === 1 ? 's' : ''} attention.`
-      );
+  // Fetch the available pools whenever the Assign modal opens.
+  useEffect(() => {
+    if (!assignOpen) return;
+    const dbId = (assignEmp as any)?._dbId as number | undefined;
+    if (!dbId) return;
+    let cancelled = false;
+    const exclude = `&exclude_employee_id=${dbId}`;
+    const fetchCat = (cat: string, setter: (opts: AssetOpt[]) => void) =>
+      api.get(`/employees/available-assets?category=${cat}${exclude}`)
+        .then(r => { if (!cancelled) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); })
+        .catch(() => { if (!cancelled) setter([]); });
+    Promise.allSettled([
+      fetchCat('laptop', setALaptopOpts),
+      fetchCat('mobile', setAMobileOpts),
+      fetchCat('other',  setAOtherOpts),
+    ]);
+    return () => { cancelled = true; };
+  }, [assignOpen, assignEmp]);
+
+  const handleSaveAssign = async () => {
+    if (!assignEmp) return;
+    const dbId = (assignEmp as any)._dbId as number | undefined;
+    if (!dbId) {
+      toast.error('Cannot save', 'Employee record not found.');
       return;
     }
-    // TODO: wire to backend — POST asset assignment for assignEmp
-    toast.success('Assets saved', `Asset assignment recorded for ${assignEmp?.name || 'this employee'}.`);
-    closeAssign();
+    setASaving(true);
+    const intOrNull = (s: string) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) ? n : null;
+    };
+    try {
+      await api.put(`/employees/${dbId}`, {
+        laptop_master_asset_id: aLaptopAssigned === 'Yes' ? intOrNull(aLaptopMasterAssetId) : null,
+        mobile_master_asset_id: aMobileAssigned === 'Yes' ? intOrNull(aMobileMasterAssetId) : null,
+        other_master_asset_ids: aOtherMasterAssetIds.map(v => parseInt(v, 10)).filter(n => Number.isFinite(n)),
+      });
+      toast.success('Assets saved', `Updated assignments for ${assignEmp.name}.`);
+      closeAssign();
+      // Refresh the list so the row reflects the new assets next time
+      // the user opens the modal.
+      try { await reloadEmployees(); } catch { /* best-effort */ }
+    } catch (err: any) {
+      // Backend's assertAssetsNotDoubleBooked() returns 422 with the
+      // conflicting employee's name — surface that verbatim so the
+      // admin knows which device clashed.
+      const errors = err?.response?.data?.errors;
+      const firstMsg = errors ? Object.values(errors).flat()[0] : null;
+      toast.error('Could not save', String(firstMsg || err?.response?.data?.message || err?.message || 'Try again'));
+    } finally {
+      setASaving(false);
+    }
   };
 
   const closeAssign = () => {
     setAssignOpen(false);
     setAssignEmp(null);
-    setAssignErrors({});
   };
 
   // Manage Permissions — opens a dedicated page (not a modal) so the matrix
@@ -785,14 +819,23 @@ export default function HrEmployees() {
   const confirmToggle = async () => {
     const pending = togglePending;
     if (!pending) return;
-    // Disable = soft-delete on the server (employee + linked user). Enable
-    // doesn't have an inverse endpoint yet (we'd need to flip status back to
-    // 'Active' via PUT /employees/{id}); leave that as a no-op besides the
-    // local toggle for now.
+    const dbId = (pending.employee as any)._dbId as number | undefined;
     if (pending.next === false) {
-      const dbId = (pending.employee as any)._dbId as number | undefined;
+      // Disable = soft-delete on the server (employee + linked user).
+      if (dbId) await handleDeleteEmployee(dbId, pending.employee.name);
+    } else {
+      // Enable = restore the row + flip status back to Active +
+      // re-enable the paired login user. PATCH /employees/{id}/restore.
       if (dbId) {
-        await handleDeleteEmployee(dbId, pending.employee.name);
+        try {
+          await api.patch(`/employees/${dbId}/restore`);
+          toast.success('Employee enabled', `${pending.employee.name} can sign in again.`);
+          await reloadEmployees();
+        } catch (err: any) {
+          toast.error('Could not enable employee', err?.response?.data?.message || err?.message || 'Try again');
+          setTogglePending(null);
+          return;  // bail before commit so the row's local toggle stays disabled
+        }
       }
     }
     pending.commit();
@@ -834,7 +877,9 @@ export default function HrEmployees() {
     setETimeTracking('Manual'); setEPenalizationPolicy('Tracking Policy');
     setEOvertime('Not applicable'); setEExpensePolicy('');
     setELaptopAssigned('No'); setELaptopAssetId(''); setEMobileDevice(''); setEOtherAssets('');
+    setELaptopMasterAssetId(''); setEMobileAssigned('No'); setEMobileMasterAssetId(''); setEOtherMasterAssetIds([]);
     setEAadharFile(null); setEPanFile(null); setEPhotoFile(null);
+    setEExistingDocs({}); setEDocBusy({});
     // Step 4
     setEEnablePayroll(true); setEPayGroup('Default pay group');
     setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
@@ -860,6 +905,81 @@ export default function HrEmployees() {
   // Db id of the employee currently being edited. Null in add mode. Stored
   // on the row by apiToRow() as `_dbId`.
   const [editingDbId, setEditingDbId] = useState<number | null>(null);
+
+  // ── Step 3 asset pools — laptop / mobile / other. Refetched whenever
+  //    the wizard opens (add or edit). The backend filter excludes
+  //    devices booked by other employees, so each select only shows
+  //    free hardware. The current row is excluded from the booked-set
+  //    so the admin can keep their existing pick on edit.
+  useEffect(() => {
+    if (!empOpen) return;
+    let cancelled = false;
+    const exclude = editingDbId ? `&exclude_employee_id=${editingDbId}` : '';
+    const fetchCat = (cat: string, setter: (opts: AssetOpt[]) => void) =>
+      api.get(`/employees/available-assets?category=${cat}${exclude}`)
+        .then(r => { if (!cancelled) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); })
+        .catch(() => { if (!cancelled) setter([]); });
+    Promise.allSettled([
+      fetchCat('laptop', setLaptopAssetOpts),
+      fetchCat('mobile', setMobileAssetOpts),
+      fetchCat('other',  setOtherAssetOpts),
+    ]);
+    return () => { cancelled = true; };
+  }, [empOpen, editingDbId]);
+
+  // ── Documents — hydrate already-uploaded files when editing. The
+  //    Stage 2 / public-onboarding flows use the same /documents
+  //    endpoints, so the keys here ('aadhaar' / 'pan' / 'photo') match
+  //    what those flows already write. Add-mode (no employee id yet)
+  //    starts with an empty map.
+  useEffect(() => {
+    if (!empOpen) return;
+    if (!editingDbId) { setEExistingDocs({}); return; }
+    let cancelled = false;
+    api.get(`/employees/${editingDbId}/documents`)
+      .then(r => {
+        if (cancelled) return;
+        const map: Record<string, ServerDoc> = {};
+        for (const d of (r.data ?? [])) map[d.document_key] = d;
+        setEExistingDocs(map);
+      })
+      .catch(() => { if (!cancelled) setEExistingDocs({}); });
+    return () => { cancelled = true; };
+  }, [empOpen, editingDbId]);
+
+  /** Upload a chosen file straight to the document catalogue endpoint
+   *  and refresh `eExistingDocs` with the server's row. Used for both
+   *  first-time upload and replace — the backend already deletes the
+   *  prior file when the same key is uploaded again. */
+  const uploadEmpDoc = async (docKey: string, docName: string, file: File) => {
+    if (!editingDbId) {
+      toast.error('Save the employee first', `Add the basic details, then come back to upload ${docName}.`);
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('File too large', `${docName} must be ≤ 8 MB`);
+      return;
+    }
+    setEDocBusy(p => ({ ...p, [docKey]: true }));
+    try {
+      const fd = new FormData();
+      fd.append('document_key', docKey);
+      fd.append('document_name', docName);
+      fd.append('file', file);
+      const r = await api.post(`/employees/${editingDbId}/documents`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const saved = r.data?.document ?? r.data;
+      if (saved?.document_key) {
+        setEExistingDocs(p => ({ ...p, [saved.document_key]: saved }));
+      }
+      toast.success(`${docName} uploaded`, file.name);
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message || err?.message || 'Try again');
+    } finally {
+      setEDocBusy(p => ({ ...p, [docKey]: false }));
+    }
+  };
 
   // Inline field-level validation. Keyed by API payload name so the same map
   // can drive both red borders on inputs and the toast summary on submit.
@@ -1116,6 +1236,15 @@ export default function HrEmployees() {
       if (raw.laptop_asset_id !== undefined && raw.laptop_asset_id !== null) setELaptopAssetId(raw.laptop_asset_id);
       if (raw.mobile_device !== undefined && raw.mobile_device !== null) setEMobileDevice(raw.mobile_device);
       if (raw.other_assets !== undefined && raw.other_assets !== null) setEOtherAssets(raw.other_assets);
+      // Asset FK assignments. Treat presence-of-id as "Yes" for the
+      // mobile toggle — there's no separate `mobile_assigned` column
+      // since the legacy schema didn't have one.
+      setELaptopMasterAssetId(raw.laptop_master_asset_id ? String(raw.laptop_master_asset_id) : '');
+      setEMobileAssigned(raw.mobile_master_asset_id ? 'Yes' : (raw.mobile_device ? 'Yes' : 'No'));
+      setEMobileMasterAssetId(raw.mobile_master_asset_id ? String(raw.mobile_master_asset_id) : '');
+      setEOtherMasterAssetIds(Array.isArray(raw.other_master_asset_ids)
+        ? raw.other_master_asset_ids.map((n: any) => String(n))
+        : []);
 
       // Step 4 — Compensation
       if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
@@ -1295,6 +1424,11 @@ export default function HrEmployees() {
       laptop_asset_id:      eLaptopAssetId.trim() || null,
       mobile_device:        eMobileDevice.trim() || null,
       other_assets:         eOtherAssets.trim() || null,
+      // Asset FK assignments. Skip the laptop / mobile id when the
+      // Yes/No flag is "No" so an explicit unassign actually clears it.
+      laptop_master_asset_id: eLaptopAssigned === 'Yes' ? intOrNull(eLaptopMasterAssetId) : null,
+      mobile_master_asset_id: eMobileAssigned === 'Yes' ? intOrNull(eMobileMasterAssetId) : null,
+      other_master_asset_ids: eOtherMasterAssetIds.map(v => parseInt(v, 10)).filter(n => Number.isFinite(n)),
 
       enable_payroll:        !!eEnablePayroll,
       pay_group:             ePayGroup || null,
@@ -3186,7 +3320,16 @@ export default function HrEmployees() {
                   </Row>
                 </div>
 
-                {/* Assets & Security */}
+                {/* Assets & Security — Step 3.
+                    Laptop / Mobile work in two stages:
+                      1. Yes/No flag (always shown).
+                      2. When Yes, a category-scoped picker appears
+                         showing "Serial Number — Asset Name" only for
+                         devices that aren't currently issued to another
+                         employee. Flipping back to No clears the FK on
+                         save.
+                    Other Assets is a multi-select over every remaining
+                    master asset and is optional. */}
                 <div className="emp-section">
                   <div className="emp-section-title" style={{ color: '#0c63b0' }}>
                     <i className="ri-computer-line" style={{ color: '#299cdb' }} /> Assets &amp; Security
@@ -3194,63 +3337,171 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={4}>
                       <label className="emp-label">Laptop Assigned</label>
-                      <MasterSelect value={eLaptopAssigned} onChange={setELaptopAssigned} options={LAPTOP_OPTIONS} />
+                      <MasterSelect
+                        value={eLaptopAssigned}
+                        onChange={(v) => {
+                          setELaptopAssigned(v);
+                          if (v !== 'Yes') setELaptopMasterAssetId('');
+                        }}
+                        options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
+                      />
                     </Col>
+                    {eLaptopAssigned === 'Yes' && (
+                      <Col md={4}>
+                        <label className="emp-label">Laptop Device</label>
+                        <MasterSelect
+                          value={eLaptopMasterAssetId}
+                          onChange={setELaptopMasterAssetId}
+                          options={laptopAssetOpts}
+                          placeholder={laptopAssetOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
+                          disabled={laptopAssetOpts.length === 0}
+                        />
+                      </Col>
+                    )}
+
                     <Col md={4}>
-                      <label className="emp-label">Laptop Asset ID</label>
-                      <input className="emp-input" type="text" placeholder="e.g. LAP-0042" value={eLaptopAssetId} onChange={e => setELaptopAssetId(e.target.value)} />
+                      <label className="emp-label">Mobile Assigned</label>
+                      <MasterSelect
+                        value={eMobileAssigned}
+                        onChange={(v) => {
+                          setEMobileAssigned(v);
+                          if (v !== 'Yes') setEMobileMasterAssetId('');
+                        }}
+                        options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
+                      />
                     </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Mobile Device</label>
-                      <input className="emp-input" type="text" placeholder="e.g. iPhone 15" value={eMobileDevice} onChange={e => setEMobileDevice(e.target.value)} />
-                    </Col>
+                    {eMobileAssigned === 'Yes' && (
+                      <Col md={4}>
+                        <label className="emp-label">Mobile Device</label>
+                        <MasterSelect
+                          value={eMobileMasterAssetId}
+                          onChange={setEMobileMasterAssetId}
+                          options={mobileAssetOpts}
+                          placeholder={mobileAssetOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
+                          disabled={mobileAssetOpts.length === 0}
+                        />
+                      </Col>
+                    )}
+
                     <Col md={12}>
-                      <label className="emp-label">Other Assets</label>
-                      <input className="emp-input" type="text" placeholder="e.g. Monitor, Keyboard, Headset" value={eOtherAssets} onChange={e => setEOtherAssets(e.target.value)} />
+                      <label className="emp-label">Other Assets <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span></label>
+                      <MasterMultiSelect
+                        value={eOtherMasterAssetIds}
+                        onChange={setEOtherMasterAssetIds}
+                        options={otherAssetOpts}
+                        placeholder={otherAssetOpts.length === 0 ? 'No other assets available' : 'Pick one or more'}
+                        disabled={otherAssetOpts.length === 0}
+                      />
                     </Col>
                   </Row>
                 </div>
 
-                {/* Documents */}
+                {/* Documents — keyed by `aadhaar` / `pan` / `photo` so
+                    they match the catalogue used by the public
+                    onboarding flow + Stage 2 modal. Files upload
+                    immediately on selection; on edit-open we hydrate
+                    the tiles from /api/employees/{id}/documents so the
+                    admin can see what's already there. */}
                 <div className="emp-section">
                   <div className="emp-section-title">
                     <i className="ri-file-text-line" /> Documents
                   </div>
                   <Row className="g-3">
                     {[
-                      { label: 'Aadhar Card',         required: true,  file: eAadharFile, set: setEAadharFile, accept: '.pdf,.jpg,.jpeg,.png',                hint: '' as string },
-                      { label: 'Pan Card',            required: true,  file: ePanFile,    set: setEPanFile,    accept: '.pdf,.jpg,.jpeg,.png',                hint: '' as string },
-                      { label: 'Passport Size Photo', required: false, file: ePhotoFile,  set: setEPhotoFile,  accept: 'image/jpeg,image/png,.jpg,.jpeg,.png', hint: '(format .jpg, .png)' },
-                    ].map(d => (
-                      <Col md={4} key={d.label}>
-                        <label className="emp-label">
-                          {d.label}{d.required && <span className="req">*</span>}
-                          {d.hint && <span className="hint">{d.hint}</span>}
-                        </label>
-                        <label
-                          className="d-flex align-items-center justify-content-center gap-2"
-                          style={{
-                            height: 38,
-                            border: '1.5px dashed #a78bfa',
-                            borderRadius: 8,
-                            background: '#f5f0ff',
-                            cursor: 'pointer',
-                            color: '#7c5cfc',
-                            fontSize: 12.5,
-                            fontWeight: 600,
-                          }}
-                        >
-                          <i className="ri-upload-2-line" />
-                          {d.file ? d.file.name : 'Choose file'}
-                          <input
-                            type="file"
-                            accept={d.accept}
-                            style={{ display: 'none' }}
-                            onChange={e => d.set(e.target.files?.[0] || null)}
-                          />
-                        </label>
-                      </Col>
-                    ))}
+                      { key: 'aadhaar', label: 'Aadhar Card',         required: true,  file: eAadharFile, set: setEAadharFile, accept: '.pdf,.jpg,.jpeg,.png',                hint: '' as string },
+                      { key: 'pan',     label: 'Pan Card',             required: true,  file: ePanFile,    set: setEPanFile,    accept: '.pdf,.jpg,.jpeg,.png',                hint: '' as string },
+                      { key: 'photo',   label: 'Passport Size Photo',  required: false, file: ePhotoFile,  set: setEPhotoFile,  accept: 'image/jpeg,image/png,.jpg,.jpeg,.png', hint: '(format .jpg, .png)' },
+                    ].map(d => {
+                      const srv = eExistingDocs[d.key];
+                      const busy = !!eDocBusy[d.key];
+                      const hasUpload = !!srv;
+                      return (
+                        <Col md={4} key={d.key}>
+                          <label className="emp-label">
+                            {d.label}{d.required && <span className="req">*</span>}
+                            {d.hint && <span className="hint">{d.hint}</span>}
+                          </label>
+
+                          {hasUpload ? (
+                            <div
+                              style={{
+                                border: '1.5px solid #c4eedc',
+                                background: '#e6f7f1',
+                                borderRadius: 8,
+                                padding: '8px 12px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                fontSize: 12.5,
+                                minHeight: 38,
+                              }}
+                            >
+                              <i className="ri-checkbox-circle-line" style={{ color: '#10b981' }} />
+                              <span style={{ flexGrow: 1, color: '#065f46', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {srv.original_name || `${d.label} uploaded`}
+                              </span>
+                              {srv.url && (
+                                <a
+                                  href={srv.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="View document"
+                                  style={{ color: '#0c63b0', fontSize: 16, lineHeight: 1 }}
+                                >
+                                  <i className="ri-eye-line" />
+                                </a>
+                              )}
+                              <label
+                                title="Replace"
+                                style={{ color: '#7c5cfc', cursor: busy ? 'wait' : 'pointer', fontSize: 16, lineHeight: 1, opacity: busy ? 0.5 : 1 }}
+                              >
+                                <i className={busy ? 'ri-loader-line' : 'ri-refresh-line'} />
+                                <input
+                                  type="file"
+                                  accept={d.accept}
+                                  disabled={busy}
+                                  style={{ display: 'none' }}
+                                  onChange={e => {
+                                    const f = e.target.files?.[0];
+                                    e.target.value = '';
+                                    if (f) { d.set(f); uploadEmpDoc(d.key, d.label, f); }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          ) : (
+                            <label
+                              className="d-flex align-items-center justify-content-center gap-2"
+                              style={{
+                                height: 38,
+                                border: '1.5px dashed #a78bfa',
+                                borderRadius: 8,
+                                background: '#f5f0ff',
+                                cursor: busy ? 'wait' : 'pointer',
+                                color: '#7c5cfc',
+                                fontSize: 12.5,
+                                fontWeight: 600,
+                                opacity: busy ? 0.6 : 1,
+                              }}
+                            >
+                              <i className={busy ? 'ri-loader-line' : 'ri-upload-2-line'} />
+                              {busy ? 'Uploading…' : (d.file ? d.file.name : 'Choose file')}
+                              <input
+                                type="file"
+                                accept={d.accept}
+                                disabled={busy}
+                                style={{ display: 'none' }}
+                                onChange={e => {
+                                  const f = e.target.files?.[0];
+                                  e.target.value = '';
+                                  if (f) { d.set(f); uploadEmpDoc(d.key, d.label, f); }
+                                }}
+                              />
+                            </label>
+                          )}
+                        </Col>
+                      );
+                    })}
                   </Row>
                 </div>
               </>
@@ -3677,203 +3928,74 @@ export default function HrEmployees() {
             </div>
           </div>
 
-          {/* Tabs */}
-          <div className="assign-tabs">
-            {[
-              { key: 'it'       as const, label: 'IT Assets', icon: 'ri-computer-line' },
-              { key: 'security' as const, label: 'Security',  icon: 'ri-lock-2-line' },
-              { key: 'hr'       as const, label: 'HR Record', icon: 'ri-file-text-line' },
-            ].map(t => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setAssignTab(t.key)}
-                className={`assign-tab-btn${assignTab === t.key ? ' is-active' : ''}`}
-              >
-                <i className={t.icon} style={{ fontSize: 15 }} /> {t.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Body */}
+          {/* Body — single IT Assets section. Same picker design as
+              Step 3 of the Add/Edit wizard, hydrated from the selected
+              employee's row on open. Devices already booked by other
+              employees are filtered out by the backend. */}
           <div style={{ padding: '20px 24px 8px' }}>
-            {assignTab === 'it' && (
-              <>
-                <div className="assign-section-title mb-3">
-                  <i className="ri-computer-line" /> Assets &amp; Security
-                </div>
-                <Row className="g-3">
-                  <Col md={4}>
-                    <label htmlFor="a-laptop">Laptop Assigned</label>
-                    <MasterSelect
-                      value={aLaptopAssigned}
-                      onChange={setALaptopAssigned}
-                      options={[
-                        { value: 'Yes', label: 'Yes' },
-                        { value: 'No', label: 'No' },
-                        { value: 'Pending', label: 'Pending' },
-                      ]}
-                    />
-                  </Col>
-                  <Col md={4}>
-                    <label htmlFor="a-laptop-id">
-                      Laptop Asset ID
-                      {aLaptopAssigned === 'Yes' && <span className="req-star">*</span>}
-                    </label>
-                    <div className="master-field">
-                      <i className="ri-hashtag master-field-icon" />
-                      <Input
-                        id="a-laptop-id"
-                        type="text"
-                        placeholder="e.g. LAP-0042"
-                        value={aLaptopAssetId}
-                        onChange={e => { setALaptopAssetId(e.target.value); clearAssignError('laptopAssetId'); }}
-                        invalid={!!assignErrors.laptopAssetId}
-                      />
-                    </div>
-                    {assignErrors.laptopAssetId && (
-                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.laptopAssetId}</div>
-                    )}
-                  </Col>
-                  <Col md={4}>
-                    <label htmlFor="a-mobile">Mobile Device</label>
-                    <div className="master-field">
-                      <i className="ri-smartphone-line master-field-icon" />
-                      <Input
-                        id="a-mobile"
-                        type="text"
-                        placeholder="e.g. iPhone 15"
-                        value={aMobileDevice}
-                        onChange={e => { setAMobileDevice(e.target.value); clearAssignError('mobileDevice'); }}
-                        invalid={!!assignErrors.mobileDevice}
-                      />
-                    </div>
-                    {assignErrors.mobileDevice && (
-                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.mobileDevice}</div>
-                    )}
-                  </Col>
-                  <Col md={12}>
-                    <label htmlFor="a-other">Other Assets</label>
-                    <div className="master-field">
-                      <i className="ri-archive-line master-field-icon" />
-                      <Input
-                        id="a-other"
-                        type="text"
-                        placeholder="e.g. Monitor, Keyboard, Headset"
-                        value={aOtherAssets}
-                        onChange={e => setAOtherAssets(e.target.value)}
-                      />
-                    </div>
-                  </Col>
-                </Row>
-              </>
-            )}
+            <div className="assign-section-title mb-3">
+              <i className="ri-computer-line" /> Assets &amp; Security
+            </div>
+            <Row className="g-3">
+              <Col md={4}>
+                <label>Laptop Assigned</label>
+                <MasterSelect
+                  value={aLaptopAssigned}
+                  onChange={(v) => {
+                    setALaptopAssigned(v);
+                    if (v !== 'Yes') setALaptopMasterAssetId('');
+                  }}
+                  options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
+                />
+              </Col>
+              {aLaptopAssigned === 'Yes' && (
+                <Col md={4}>
+                  <label>Laptop Device</label>
+                  <MasterSelect
+                    value={aLaptopMasterAssetId}
+                    onChange={setALaptopMasterAssetId}
+                    options={aLaptopOpts}
+                    placeholder={aLaptopOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
+                    disabled={aLaptopOpts.length === 0}
+                  />
+                </Col>
+              )}
 
-            {assignTab === 'security' && (
-              <>
-                <div className="assign-section-title mb-3">
-                  <i className="ri-lock-2-line" /> Security &amp; Access
-                </div>
-                <Row className="g-3">
-                  <Col md={6}>
-                    <label htmlFor="a-card">Access Card</label>
-                    <div className="master-field">
-                      <i className="ri-bank-card-line master-field-icon" />
-                      <Input
-                        id="a-card"
-                        type="text"
-                        placeholder="e.g. AC-8821"
-                        value={aAccessCard}
-                        onChange={e => { setAAccessCard(e.target.value); clearAssignError('accessCard'); }}
-                        invalid={!!assignErrors.accessCard}
-                      />
-                    </div>
-                    {assignErrors.accessCard && (
-                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.accessCard}</div>
-                    )}
-                  </Col>
-                  <Col md={6}>
-                    <label>Security Level</label>
-                    <MasterSelect
-                      value={aSecurityLevel}
-                      onChange={setASecurityLevel}
-                      options={[
-                        { value: 'Level 1 — Basic', label: 'Level 1 — Basic' },
-                        { value: 'Level 2 — Standard', label: 'Level 2 — Standard' },
-                        { value: 'Level 3 — Privileged', label: 'Level 3 — Privileged' },
-                        { value: 'Level 4 — Admin', label: 'Level 4 — Admin' },
-                      ]}
-                    />
-                  </Col>
-                  <Col md={12}>
-                    <label>VPN / Remote Access</label>
-                    <MasterSelect
-                      value={aVpnAccess}
-                      onChange={setAVpnAccess}
-                      options={[
-                        { value: 'Not Required', label: 'Not Required' },
-                        { value: 'Standard VPN', label: 'Standard VPN' },
-                        { value: 'Privileged VPN', label: 'Privileged VPN' },
-                        { value: 'Always-On VPN', label: 'Always-On VPN' },
-                      ]}
-                    />
-                  </Col>
-                </Row>
-              </>
-            )}
+              <Col md={4}>
+                <label>Mobile Assigned</label>
+                <MasterSelect
+                  value={aMobileAssigned}
+                  onChange={(v) => {
+                    setAMobileAssigned(v);
+                    if (v !== 'Yes') setAMobileMasterAssetId('');
+                  }}
+                  options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
+                />
+              </Col>
+              {aMobileAssigned === 'Yes' && (
+                <Col md={4}>
+                  <label>Mobile Device</label>
+                  <MasterSelect
+                    value={aMobileMasterAssetId}
+                    onChange={setAMobileMasterAssetId}
+                    options={aMobileOpts}
+                    placeholder={aMobileOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
+                    disabled={aMobileOpts.length === 0}
+                  />
+                </Col>
+              )}
 
-            {assignTab === 'hr' && (
-              <>
-                <div className="assign-section-title mb-3">
-                  <i className="ri-file-text-line" /> HR Record Notes
-                </div>
-                <Row className="g-3">
-                  <Col md={6}>
-                    <label>Issue Date<span className="req-star">*</span></label>
-                    <MasterDatePicker
-                      value={aIssueDate}
-                      onChange={(v) => { setAIssueDate(v); clearAssignError('issueDate'); }}
-                      placeholder="dd-mm-yyyy"
-                      invalid={!!assignErrors.issueDate}
-                    />
-                    {assignErrors.issueDate && (
-                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.issueDate}</div>
-                    )}
-                  </Col>
-                  <Col md={6}>
-                    <label htmlFor="a-issued-by">Issued By<span className="req-star">*</span></label>
-                    <div className="master-field">
-                      <i className="ri-user-line master-field-icon" />
-                      <Input
-                        id="a-issued-by"
-                        type="text"
-                        placeholder="Manager name"
-                        value={aIssuedBy}
-                        onChange={e => { setAIssuedBy(e.target.value); clearAssignError('issuedBy'); }}
-                        invalid={!!assignErrors.issuedBy}
-                      />
-                    </div>
-                    {assignErrors.issuedBy && (
-                      <div className="assign-error"><i className="ri-error-warning-line" />{assignErrors.issuedBy}</div>
-                    )}
-                  </Col>
-                  <Col md={12}>
-                    <label htmlFor="a-notes">Notes</label>
-                    <div className="master-field ta">
-                      <i className="ri-chat-3-line master-field-icon" />
-                      <Input
-                        id="a-notes"
-                        type="textarea"
-                        rows={3}
-                        placeholder="Additional notes about asset assignment…"
-                        value={aNotes}
-                        onChange={e => setANotes(e.target.value)}
-                      />
-                    </div>
-                  </Col>
-                </Row>
-              </>
-            )}
+              <Col md={12}>
+                <label>Other Assets <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span></label>
+                <MasterMultiSelect
+                  value={aOtherMasterAssetIds}
+                  onChange={setAOtherMasterAssetIds}
+                  options={aOtherOpts}
+                  placeholder={aOtherOpts.length === 0 ? 'No other assets available' : 'Pick one or more'}
+                  disabled={aOtherOpts.length === 0}
+                />
+              </Col>
+            </Row>
           </div>
 
           {/* Footer — required-fields hint on the left, action buttons on the right */}
@@ -4114,118 +4236,133 @@ export default function HrEmployees() {
                 </div>
               </div>
 
-              {/* KPI strip — dashboard-style cards (gradient top + gradient icon tile) */}
-              <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--vz-border-color)' }}>
-                <Row className="g-3 align-items-stretch">
-                  {[
-                    { key: 'total',    label: 'Total Docs',     value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
-                    { key: 'verified', label: 'Verified',       value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-                    { key: 'signed',   label: 'Signed',         value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
-                    { key: 'pending',  label: 'Pending',        value: counts.pending,  icon: 'ri-time-line',             gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-                    { key: 'notgen',   label: 'Not Generated',  value: counts.notGen,   icon: 'ri-close-circle-line',     gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
-                  ].map(k => (
-                    <Col key={k.key} xl md={4} sm={6} xs={12}>
-                      <div className="vault-kpi-card">
-                        <div className="vault-kpi-strip" style={{ background: k.gradient }} />
-                        <div className="d-flex align-items-start justify-content-between">
-                          <div className="min-w-0">
-                            <p className="vault-kpi-label">{k.label}</p>
-                            <h3 className="vault-kpi-num">{k.value.toLocaleString()}</h3>
-                          </div>
-                          <div className="vault-kpi-icon" style={{ background: k.gradient }}>
-                            <i className={k.icon} />
-                          </div>
-                        </div>
-                      </div>
-                    </Col>
-                  ))}
-                </Row>
-              </div>
-
-              {/* Tabs */}
-              <div className="d-flex" style={{ padding: '0 24px', borderBottom: '1px solid var(--vz-border-color)' }}>
-                <button
-                  type="button"
-                  className={`vault-tab-btn${vaultTab === 'employee' ? ' is-active' : ''}`}
-                  onClick={() => setVaultTab('employee')}
+              {/* Body — wrapped in ComingSoonShell since the document
+                  catalogue, signing flow, and download links aren't
+                  wired to a real backend yet. The shell keeps the
+                  full design visible (KPI strip + tabs + sections)
+                  so reviewers can preview the layout but blocks
+                  interactions with the mock buttons. The header
+                  above stays interactive so the user can still
+                  read the employee context and close the modal. */}
+              <div style={{ padding: '16px 24px 22px' }}>
+                <ComingSoonShell
+                  title="Evidence Vault"
+                  subtitle="Document repository, signed agreements, and ID uploads"
                 >
-                  <i className="ri-user-line" /> Employee Documents
-                  <span className="vault-tab-count">{empCount}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`vault-tab-btn${vaultTab === 'organizational' ? ' is-active' : ''}`}
-                  onClick={() => setVaultTab('organizational')}
-                >
-                  <i className="ri-building-line" /> Organizational Documents
-                  <span className="vault-tab-count">{orgCount}</span>
-                </button>
-              </div>
-
-              {/* Section list */}
-              <div style={{ padding: '8px 24px 22px' }}>
-                {sections.map(section => (
-                  <div key={section.title} style={{ paddingTop: 16 }}>
-                    <div className="d-flex align-items-center justify-content-between mb-2">
-                      <div>
-                        <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                          {section.title}
-                        </div>
-                        <div className="text-muted" style={{ fontSize: 11.5 }}>
-                          {section.docs.length} document{section.docs.length === 1 ? '' : 's'} in this category
-                        </div>
-                      </div>
-                      <span
-                        className="d-inline-flex align-items-center"
-                        style={{
-                          padding: '4px 12px', borderRadius: 999,
-                          background: '#f5f0ff', color: '#5a3fd1',
-                          fontSize: 11.5, fontWeight: 600,
-                        }}
-                      >
-                        {section.docs.length} docs
-                      </span>
-                    </div>
-                    <div>
-                      {section.docs.map(doc => {
-                        const tone = VAULT_STATUS_TONE[doc.status];
-                        return (
-                          <div key={doc.id} className="vault-doc-row flex-wrap">
-                            <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
-                              <i className={doc.icon} />
+                  {/* KPI strip — dashboard-style cards (gradient top + gradient icon tile) */}
+                  <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--vz-border-color)' }}>
+                    <Row className="g-3 align-items-stretch">
+                      {[
+                        { key: 'total',    label: 'Total Docs',     value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+                        { key: 'verified', label: 'Verified',       value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+                        { key: 'signed',   label: 'Signed',         value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
+                        { key: 'pending',  label: 'Pending',        value: counts.pending,  icon: 'ri-time-line',             gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
+                        { key: 'notgen',   label: 'Not Generated',  value: counts.notGen,   icon: 'ri-close-circle-line',     gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+                      ].map(k => (
+                        <Col key={k.key} xl md={4} sm={6} xs={12}>
+                          <div className="vault-kpi-card">
+                            <div className="vault-kpi-strip" style={{ background: k.gradient }} />
+                            <div className="d-flex align-items-start justify-content-between">
+                              <div className="min-w-0">
+                                <p className="vault-kpi-label">{k.label}</p>
+                                <h3 className="vault-kpi-num">{k.value.toLocaleString()}</h3>
+                              </div>
+                              <div className="vault-kpi-icon" style={{ background: k.gradient }}>
+                                <i className={k.icon} />
+                              </div>
                             </div>
-                            <div className="vault-doc-meta">
-                              <div className="vault-doc-name">{doc.name}</div>
-                              <div className="vault-doc-desc">{doc.desc}</div>
-                            </div>
-                            {doc.category && (
-                              <span
-                                className="d-inline-flex align-items-center"
-                                style={{
-                                  padding: '4px 10px', borderRadius: 999,
-                                  background: '#eef2f6', color: '#475569',
-                                  fontSize: 11, fontWeight: 600,
-                                }}
-                              >
-                                {doc.category}
-                              </span>
-                            )}
-                            <span className="vault-status-pill" style={{ background: tone.bg, color: tone.fg }}>
-                              <span className="vault-status-dot" style={{ background: tone.dot }} />
-                              {doc.status}
-                            </span>
-                            <button type="button" className="vault-action-view" onClick={() => { /* TODO: view doc */ }}>
-                              <i className="ri-eye-line" /> View
-                            </button>
-                            <button type="button" className="vault-action-download" onClick={() => { /* TODO: download doc */ }}>
-                              <i className="ri-download-2-line" /> Download
-                            </button>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </Col>
+                      ))}
+                    </Row>
                   </div>
-                ))}
+
+                  {/* Tabs */}
+                  <div className="d-flex" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+                    <button
+                      type="button"
+                      className={`vault-tab-btn${vaultTab === 'employee' ? ' is-active' : ''}`}
+                      onClick={() => setVaultTab('employee')}
+                    >
+                      <i className="ri-user-line" /> Employee Documents
+                      <span className="vault-tab-count">{empCount}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`vault-tab-btn${vaultTab === 'organizational' ? ' is-active' : ''}`}
+                      onClick={() => setVaultTab('organizational')}
+                    >
+                      <i className="ri-building-line" /> Organizational Documents
+                      <span className="vault-tab-count">{orgCount}</span>
+                    </button>
+                  </div>
+
+                  {/* Section list */}
+                  <div>
+                    {sections.map(section => (
+                      <div key={section.title} style={{ paddingTop: 16 }}>
+                        <div className="d-flex align-items-center justify-content-between mb-2">
+                          <div>
+                            <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                              {section.title}
+                            </div>
+                            <div className="text-muted" style={{ fontSize: 11.5 }}>
+                              {section.docs.length} document{section.docs.length === 1 ? '' : 's'} in this category
+                            </div>
+                          </div>
+                          <span
+                            className="d-inline-flex align-items-center"
+                            style={{
+                              padding: '4px 12px', borderRadius: 999,
+                              background: '#f5f0ff', color: '#5a3fd1',
+                              fontSize: 11.5, fontWeight: 600,
+                            }}
+                          >
+                            {section.docs.length} docs
+                          </span>
+                        </div>
+                        <div>
+                          {section.docs.map(doc => {
+                            const tone = VAULT_STATUS_TONE[doc.status];
+                            return (
+                              <div key={doc.id} className="vault-doc-row flex-wrap">
+                                <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
+                                  <i className={doc.icon} />
+                                </div>
+                                <div className="vault-doc-meta">
+                                  <div className="vault-doc-name">{doc.name}</div>
+                                  <div className="vault-doc-desc">{doc.desc}</div>
+                                </div>
+                                {doc.category && (
+                                  <span
+                                    className="d-inline-flex align-items-center"
+                                    style={{
+                                      padding: '4px 10px', borderRadius: 999,
+                                      background: '#eef2f6', color: '#475569',
+                                      fontSize: 11, fontWeight: 600,
+                                    }}
+                                  >
+                                    {doc.category}
+                                  </span>
+                                )}
+                                <span className="vault-status-pill" style={{ background: tone.bg, color: tone.fg }}>
+                                  <span className="vault-status-dot" style={{ background: tone.dot }} />
+                                  {doc.status}
+                                </span>
+                                <button type="button" className="vault-action-view" onClick={() => { /* TODO: view doc */ }}>
+                                  <i className="ri-eye-line" /> View
+                                </button>
+                                <button type="button" className="vault-action-download" onClick={() => { /* TODO: download doc */ }}>
+                                  <i className="ri-download-2-line" /> Download
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ComingSoonShell>
               </div>
             </ModalBody>
           </Modal>

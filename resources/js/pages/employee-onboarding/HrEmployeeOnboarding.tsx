@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
-import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
+import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import './HrEmployeeOnboarding.css';
@@ -1674,6 +1674,28 @@ function InitiateOnboardingModal({
   const roleOpts        = mRoles.map(r => ({ value: String(r.id), label: r.name }));
   const legalEntityOpts = mLegalEntities.map(le => ({ value: String(le.id), label: le.entity_name }));
 
+  // ── Asset pickers (Step 3) ─────────────────────────────────────────
+  // Three independent lists — Laptop / Mobile / Other. We fetch the
+  // available pool from the server so devices already booked by other
+  // employees stay out, but the asset currently on THIS employee's
+  // row (exclude_employee_id=...) remains visible so the admin can
+  // keep their selection on edit.
+  type AssetOpt = { value: string; label: string };
+  const [laptopAssets, setLaptopAssets] = useState<AssetOpt[]>([]);
+  const [mobileAssets, setMobileAssets] = useState<AssetOpt[]>([]);
+  const [otherAssets, setOtherAssets]   = useState<AssetOpt[]>([]);
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) return;
+    let cancelled = false;
+    const url = (cat: string) => `/employees/available-assets?category=${cat}&exclude_employee_id=${emp.dbId}`;
+    Promise.allSettled([
+      api.get(url('laptop')).then(r => { if (!cancelled) setLaptopAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
+      api.get(url('mobile')).then(r => { if (!cancelled) setMobileAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
+      api.get(url('other')) .then(r => { if (!cancelled) setOtherAssets ((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
+    ]);
+    return () => { cancelled = true; };
+  }, [isOpen, emp?.dbId]);
+
   // ── Stage 1 form state — every field that maps to a column on
   //    /api/employees lives here. Hydrated from `emp.raw` whenever the
   //    modal opens for a new employee so the inputs always reflect what
@@ -1707,7 +1729,21 @@ function InitiateOnboardingModal({
     leave_plan: '', holiday_list: '', shift: '', weekly_off: '',
     attendance_number: '', time_tracking: '', penalization_policy: '',
     overtime: '', expense_policy: '',
+    // Legacy free-text asset fields kept for backwards-compat hydration
+    // only — UI now drives the FK columns below.
     laptop_assigned: '', laptop_asset_id: '', mobile_device: '', other_assets: '',
+    // Stage 1 Step 3 — asset FK assignments. `laptop_master_asset_id` /
+    // `mobile_master_asset_id` are single ids (string for select binding),
+    // `other_master_asset_ids` is an array of ids. `mobile_assigned`
+    // mirrors `laptop_assigned` so we can show/hide the picker.
+    laptop_master_asset_id: '',
+    mobile_assigned: '',
+    mobile_master_asset_id: '',
+    other_master_asset_ids: [] as string[],
+    // Stage 3 — Physical Setup & Identification.
+    biometric_status:    'Not Registered',
+    desk_workstation_no: '',
+    id_card_status:      'Not Printed',
     attendance_tracking: true,
 
     enable_payroll: true,
@@ -1755,6 +1791,17 @@ function InitiateOnboardingModal({
       laptop_asset_id:     String(x.laptop_asset_id     ?? ''),
       mobile_device:       String(x.mobile_device       ?? ''),
       other_assets:        String(x.other_assets        ?? ''),
+      laptop_master_asset_id: x.laptop_master_asset_id ? String(x.laptop_master_asset_id) : '',
+      // No legacy free-text "Mobile Assigned" column — derive Yes/No
+      // from whether a mobile asset is currently selected.
+      mobile_assigned:     x.mobile_master_asset_id ? 'Yes' : (x.mobile_device ? 'Yes' : ''),
+      mobile_master_asset_id: x.mobile_master_asset_id ? String(x.mobile_master_asset_id) : '',
+      other_master_asset_ids: Array.isArray(x.other_master_asset_ids)
+        ? x.other_master_asset_ids.map((n: any) => String(n))
+        : [],
+      biometric_status:    String(x.biometric_status    ?? 'Not Registered'),
+      desk_workstation_no: String(x.desk_workstation_no ?? ''),
+      id_card_status:      String(x.id_card_status      ?? 'Not Printed'),
       attendance_tracking: x.attendance_tracking !== undefined ? !!x.attendance_tracking : true,
 
       enable_payroll: x.enable_payroll !== undefined ? !!x.enable_payroll : true,
@@ -1809,9 +1856,18 @@ function InitiateOnboardingModal({
       last_name:   s1.last_name.trim()   || null,
       email:       s1.email.trim()       || null,
       mobile:      s1.mobile.trim()      || null,
+      // Asset FK assignments. Skip the laptop / mobile FK when the
+      // Yes/No flag is "No" so an explicit unassign actually clears it.
+      laptop_master_asset_id: s1.laptop_assigned === 'Yes' ? intOrNull(s1.laptop_master_asset_id) : null,
+      mobile_master_asset_id: s1.mobile_assigned === 'Yes' ? intOrNull(s1.mobile_master_asset_id) : null,
+      other_master_asset_ids: s1.other_master_asset_ids
+        .map(v => parseInt(v, 10))
+        .filter(n => Number.isFinite(n)),
     };
     // Strip the composite picker key — backend doesn't know about it.
     delete payload.reporting_manager;
+    // The Mobile Yes/No toggle is a UI helper; backend has no column.
+    delete payload.mobile_assigned;
     if (markComplete) payload.wizard_step_completed = 4;
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
@@ -2183,7 +2239,16 @@ function InitiateOnboardingModal({
                 onDocsChanged={(rows) => setStage2Docs(rows)}
               />
             )}
-            {activeStage === 3 && <Stage3Provisioning emp={emp} />}
+            {activeStage === 3 && (
+              <Stage3Provisioning
+                emp={emp}
+                s1={s1}
+                setS1={setS1}
+                laptopAssets={laptopAssets}
+                mobileAssets={mobileAssets}
+                otherAssets={otherAssets}
+              />
+            )}
             {activeStage === 4 && (
               <Stage4Payroll
                 s4={s4}
@@ -2332,15 +2397,15 @@ function InitiateOnboardingModal({
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan</label><MasterSelect options={ONB_LEAVE_PLAN} defaultValue="Leave Policy" /></Col>
-                  <Col md={4}><label className="onb-init-label">Holiday List</label><MasterSelect options={ONB_HOLIDAY} defaultValue="Holiday Calendar" /></Col>
-                  <Col md={4}><label className="onb-init-label">Shift</label><MasterSelect options={ONB_SHIFT} defaultValue="General Shift" /></Col>
-                  <Col md={4}><label className="onb-init-label">Weekly Off</label><MasterSelect options={ONB_WEEKLY_OFF} defaultValue="Week Off Policy" /></Col>
-                  <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" /></Col>
-                  <Col md={4}><label className="onb-init-label">Time Tracking Policy</label><MasterSelect options={ONB_TIME_TRACK} defaultValue="Attendance Capture" /></Col>
-                  <Col md={4}><label className="onb-init-label">Penalization Policy</label><MasterSelect options={ONB_PENALIZE} defaultValue="Tracking Policy" /></Col>
-                  <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} defaultValue="Not applicable" /></Col>
-                  <Col md={4}><label className="onb-init-label">Expense Policy</label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan</label><MasterSelect options={ONB_LEAVE_PLAN} value={s1.leave_plan || 'Leave Policy'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Holiday List</label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list || 'Holiday Calendar'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Shift</label><MasterSelect options={ONB_SHIFT} value={s1.shift || 'General Shift'} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Weekly Off</label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off || 'Week Off Policy'} onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Time Tracking Policy</label><MasterSelect options={ONB_TIME_TRACK} value={s1.time_tracking || 'Attendance Capture'} onChange={(v) => setS1(p => ({ ...p, time_tracking: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Penalization Policy</label><MasterSelect options={ONB_PENALIZE} value={s1.penalization_policy || 'Tracking Policy'} onChange={(v) => setS1(p => ({ ...p, penalization_policy: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} value={s1.overtime || 'Not applicable'} onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Expense Policy</label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} onChange={(v) => setS1(p => ({ ...p, expense_policy: v }))} /></Col>
                 </Row>
 
                 <div
@@ -2357,10 +2422,77 @@ function InitiateOnboardingModal({
 
                 <p className="onb-init-subgroup">Assets &amp; Security</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Laptop Assigned</label><MasterSelect options={ONB_YES_NO} defaultValue="No" /></Col>
-                  <Col md={4}><label className="onb-init-label">Laptop Asset ID</label><input className="onb-init-input" placeholder="e.g. LAP-0042" /></Col>
-                  <Col md={4}><label className="onb-init-label">Mobile Device</label><input className="onb-init-input" placeholder="e.g. iPhone 15" /></Col>
-                  <Col md={4}><label className="onb-init-label">Other Assets</label><input className="onb-init-input" placeholder="Monitor, Keyboard..." /></Col>
+                  {/* Laptop — Yes/No flag + (when Yes) device picker.
+                      The picker label shows "Serial Number — Asset Name"
+                      and only lists devices not already issued to another
+                      employee. */}
+                  <Col md={4}>
+                    <label className="onb-init-label">Laptop Assigned</label>
+                    <MasterSelect
+                      options={ONB_YES_NO}
+                      value={s1.laptop_assigned || 'No'}
+                      onChange={(v) => setS1(p => ({
+                        ...p,
+                        laptop_assigned: v,
+                        // Drop the FK when the admin flips back to No.
+                        laptop_master_asset_id: v === 'Yes' ? p.laptop_master_asset_id : '',
+                      }))}
+                    />
+                  </Col>
+                  {s1.laptop_assigned === 'Yes' && (
+                    <Col md={4}>
+                      <label className="onb-init-label">Laptop Device</label>
+                      <MasterSelect
+                        options={laptopAssets}
+                        placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
+                        value={s1.laptop_master_asset_id}
+                        onChange={(v) => setS1(p => ({ ...p, laptop_master_asset_id: v }))}
+                        disabled={laptopAssets.length === 0}
+                      />
+                    </Col>
+                  )}
+
+                  {/* Mobile — same Yes/No + picker pattern. */}
+                  <Col md={4}>
+                    <label className="onb-init-label">Mobile Assigned</label>
+                    <MasterSelect
+                      options={ONB_YES_NO}
+                      value={s1.mobile_assigned || 'No'}
+                      onChange={(v) => setS1(p => ({
+                        ...p,
+                        mobile_assigned: v,
+                        mobile_master_asset_id: v === 'Yes' ? p.mobile_master_asset_id : '',
+                      }))}
+                    />
+                  </Col>
+                  {s1.mobile_assigned === 'Yes' && (
+                    <Col md={4}>
+                      <label className="onb-init-label">Mobile Device</label>
+                      <MasterSelect
+                        options={mobileAssets}
+                        placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
+                        value={s1.mobile_master_asset_id}
+                        onChange={(v) => setS1(p => ({ ...p, mobile_master_asset_id: v }))}
+                        disabled={mobileAssets.length === 0}
+                      />
+                    </Col>
+                  )}
+
+                  {/* Other Assets — multi-select, optional. Lists every
+                      master asset NOT in the Laptop / Mobile system
+                      categories and not already booked by another
+                      employee. */}
+                  <Col md={8}>
+                    <label className="onb-init-label">Other Assets</label>
+                    <MasterMultiSelect
+                      options={otherAssets}
+                      placeholder={otherAssets.length === 0 ? 'No other assets available' : 'Pick one or more (optional)'}
+                      value={s1.other_master_asset_ids}
+                      onChange={(vs) => setS1(p => ({ ...p, other_master_asset_ids: vs }))}
+                      disabled={otherAssets.length === 0}
+                    />
+                  </Col>
+
                   <Col md={4}><label className="onb-init-label">Access Card</label><MasterSelect options={ONB_ACCESS_CARD} defaultValue="Not Issued" /></Col>
                   <Col md={4}><label className="onb-init-label">Desk / Workstation</label><input className="onb-init-input" placeholder="e.g. A-12" /></Col>
                 </Row>
@@ -2392,18 +2524,56 @@ function InitiateOnboardingModal({
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Pay Group</label><MasterSelect options={ONB_PAY_GROUP} defaultValue="Default pay group" /></Col>
-                  <Col md={4}><label className="onb-init-label">Annual Salary <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="Enter amount" /></Col>
-                  <Col md={4}><label className="onb-init-label">Period</label><MasterSelect options={ONB_PERIOD} defaultValue="Per annum" /></Col>
-                  <Col md={4}><label className="onb-init-label">Salary Effective From <span className="req">*</span></label><MasterDatePicker placeholder="Select effective date" /></Col>
-                  <Col md={4}><label className="onb-init-label">Salary Structure Type</label><MasterSelect options={ONB_SAL_STRUCT} defaultValue="Range Based" /></Col>
-                  <Col md={4}><label className="onb-init-label">Tax Regime</label><MasterSelect options={ONB_TAX_REGIME} defaultValue="New Regime (115BAC)" /></Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Pay Group</label>
+                    <MasterSelect options={ONB_PAY_GROUP} value={s1.pay_group || 'Default pay group'} onChange={(v) => setS1(p => ({ ...p, pay_group: v }))} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Annual Salary <span className="req">*</span></label>
+                    <input
+                      className="onb-init-input is-required"
+                      placeholder="Enter amount"
+                      inputMode="decimal"
+                      value={s1.annual_salary}
+                      onChange={e => setS1(p => ({ ...p, annual_salary: e.target.value.replace(/[^0-9.]/g, '') }))}
+                    />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Period</label>
+                    <MasterSelect options={ONB_PERIOD} value={s1.salary_frequency || 'Per annum'} onChange={(v) => setS1(p => ({ ...p, salary_frequency: v }))} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Salary Effective From <span className="req">*</span></label>
+                    <MasterDatePicker placeholder="Select effective date" value={s1.salary_effective_from} onChange={(v) => setS1(p => ({ ...p, salary_effective_from: v }))} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Salary Structure Type</label>
+                    <MasterSelect options={ONB_SAL_STRUCT} value={s1.salary_structure || 'Range Based'} onChange={(v) => setS1(p => ({ ...p, salary_structure: v }))} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Tax Regime</label>
+                    <MasterSelect options={ONB_TAX_REGIME} value={s1.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS1(p => ({ ...p, tax_regime: v }))} />
+                  </Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Bonus, Perks &amp; Statutory</p>
                 <div className="onb-init-check-row">
-                  <label className="onb-init-check"><input type="checkbox" /> Bonus included in annual salary</label>
-                  <label className="onb-init-check"><input type="checkbox" /> Provident Fund (PF) Eligible</label>
+                  <label className="onb-init-check">
+                    <input
+                      type="checkbox"
+                      checked={s1.bonus_in_annual}
+                      onChange={e => setS1(p => ({ ...p, bonus_in_annual: e.target.checked }))}
+                    />
+                    {' '}Bonus included in annual salary
+                  </label>
+                  <label className="onb-init-check">
+                    <input
+                      type="checkbox"
+                      checked={s1.pf_eligible}
+                      onChange={e => setS1(p => ({ ...p, pf_eligible: e.target.checked }))}
+                    />
+                    {' '}Provident Fund (PF) Eligible
+                  </label>
                 </div>
                 <div>
                   <button type="button" className="onb-init-add-btn">+ Add Bonus</button>
@@ -2513,15 +2683,19 @@ function InitiateOnboardingModal({
               className="onb-init-btn-outline"
               disabled={
                 (activeStage === 1 && s1Saving) ||
+                (activeStage === 3 && s1Saving) ||
                 (activeStage === 4 && s4Saving) ||
-                (activeStage !== 1 && activeStage !== 4)
+                (activeStage !== 1 && activeStage !== 3 && activeStage !== 4)
               }
               onClick={() => {
                 if (activeStage === 1) return saveStage1(true);
+                // Stage 3 saves the asset edits too (no wizard bump).
+                if (activeStage === 3) return saveStage1(false);
                 if (activeStage === 4) return saveStage4(stage4Pass === stage4Total4);
               }}
             >
               {activeStage === 1 ? (s1Saving ? 'Saving…' : 'Save Draft')
+                : activeStage === 3 ? (s1Saving ? 'Saving…' : 'Save Draft')
                 : activeStage === 4 ? (s4Saving ? 'Saving…' : 'Save Draft')
                 : 'Save Draft'}
             </button>
@@ -2557,9 +2731,13 @@ function InitiateOnboardingModal({
                     if (!stage2Done) return;
                     await bumpMacroStage(2);
                   }
-                  // Stage 3: provisional — bump on Next without backend
-                  // gating since the form is UI-only for now.
+                  // Stage 3: persist any asset-allocation edits (the
+                  // Device & Asset section binds straight to s1) and
+                  // then bump the macro watermark. saveStage1(false)
+                  // skips the wizard_step_completed bump so reopening
+                  // the modal still shows Stage 1 as fully done.
                   if (activeStage === 3) {
+                    await saveStage1(false);
                     await bumpMacroStage(3);
                   }
                   // Stage 4: gate on readiness checks + persist with the
@@ -3226,13 +3404,39 @@ function Stage2Documents({ emp, onDocsChanged }: {
 }
 
 // ── Stage 3 — Provisioning & Asset Setup ────────────────────────────────────
-function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
+/** Stage 3 — Provisioning. Reads/writes the SAME `s1` state as the
+ *  Stage 1 wizard so the asset selections stay in lock-step (the row's
+ *  `laptop_master_asset_id` / `mobile_master_asset_id` / `other_master_asset_ids`
+ *  are the only persisted FK columns). Saving Stage 3 reuses
+ *  `saveStage1(false)` from the modal scope. */
+function Stage3Provisioning({
+  emp, s1, setS1, laptopAssets, mobileAssets, otherAssets,
+}: {
+  emp: OnboardRow;
+  s1: any;
+  setS1: React.Dispatch<React.SetStateAction<any>>;
+  laptopAssets: { value: string; label: string }[];
+  mobileAssets: { value: string; label: string }[];
+  otherAssets:  { value: string; label: string }[];
+}) {
+  // Cosmetic progress meter — counts each provisioning area that has
+  // at least one filled value. Keeps the banner moving as the admin
+  // works through the section.
   const tasksTotal = 4;
-  const tasksDone  = 0;
+  const tasksDone  =
+    (s1.laptop_assigned === 'Yes' && s1.laptop_master_asset_id ? 1 : 0)
+    + (s1.mobile_assigned === 'Yes' && s1.mobile_master_asset_id ? 1 : 0)
+    + ((s1.other_master_asset_ids?.length ?? 0) > 0 ? 1 : 0)
+    + (
+      (s1.biometric_status && s1.biometric_status !== 'Not Registered') ||
+      !!s1.desk_workstation_no?.trim() ||
+      (s1.id_card_status && s1.id_card_status !== 'Not Printed')
+        ? 1 : 0
+    );
   const pct = Math.round((tasksDone / tasksTotal) * 100);
 
   const autoLabel = (
-    <span className="auto" style={{ background: '#d6f4e3', color: '#108548' }}>AUTO-FETCHED</span>
+    <span className="auto" style={{ background: '#d6f4e3', color: '#108548' }}>EDITABLE</span>
   );
 
   return (
@@ -3273,7 +3477,11 @@ function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
         </div>
       </div>
 
-      {/* Device & Asset Allocation */}
+      {/* Device & Asset Allocation — fully editable. Bound to the same
+          `s1` state used by the Stage 1 wizard, so changes here ride
+          along on the next Save Draft / Next Stage. The pickers come
+          from /employees/available-assets (booked devices on other
+          employees are filtered out by the backend). */}
       <div className="onb-prov-section">
         <div className="onb-prov-section-head">
           <span className="onb-prov-section-icon device"><i className="ri-computer-line" /></span>
@@ -3284,37 +3492,71 @@ function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
           <Row className="g-3">
             <Col md={4}>
               <label className="onb-init-label">Laptop Assigned {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span>No</span>
-              </div>
+              <MasterSelect
+                options={ONB_YES_NO}
+                value={s1.laptop_assigned || 'No'}
+                onChange={(v) => setS1((p: any) => ({
+                  ...p,
+                  laptop_assigned: v,
+                  laptop_master_asset_id: v === 'Yes' ? p.laptop_master_asset_id : '',
+                }))}
+              />
             </Col>
+            {s1.laptop_assigned === 'Yes' && (
+              <Col md={4}>
+                <label className="onb-init-label">Laptop Device {autoLabel}</label>
+                <MasterSelect
+                  options={laptopAssets}
+                  placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
+                  value={s1.laptop_master_asset_id}
+                  onChange={(v) => setS1((p: any) => ({ ...p, laptop_master_asset_id: v }))}
+                  disabled={laptopAssets.length === 0}
+                />
+              </Col>
+            )}
             <Col md={4}>
-              <label className="onb-init-label">Laptop Asset ID {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>
-              </div>
+              <label className="onb-init-label">Mobile Assigned {autoLabel}</label>
+              <MasterSelect
+                options={ONB_YES_NO}
+                value={s1.mobile_assigned || 'No'}
+                onChange={(v) => setS1((p: any) => ({
+                  ...p,
+                  mobile_assigned: v,
+                  mobile_master_asset_id: v === 'Yes' ? p.mobile_master_asset_id : '',
+                }))}
+              />
             </Col>
-            <Col md={4}>
-              <label className="onb-init-label">Mobile Device {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>
-              </div>
-            </Col>
+            {s1.mobile_assigned === 'Yes' && (
+              <Col md={4}>
+                <label className="onb-init-label">Mobile Device {autoLabel}</label>
+                <MasterSelect
+                  options={mobileAssets}
+                  placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
+                  value={s1.mobile_master_asset_id}
+                  onChange={(v) => setS1((p: any) => ({ ...p, mobile_master_asset_id: v }))}
+                  disabled={mobileAssets.length === 0}
+                />
+              </Col>
+            )}
             <Col md={12}>
-              <label className="onb-init-label">Other Assets {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>
-              </div>
+              <label className="onb-init-label">
+                Other Assets {autoLabel}
+                <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span>
+              </label>
+              <MasterMultiSelect
+                options={otherAssets}
+                placeholder={otherAssets.length === 0 ? 'No other assets available' : 'Pick one or more'}
+                value={s1.other_master_asset_ids}
+                onChange={(vs) => setS1((p: any) => ({ ...p, other_master_asset_ids: vs }))}
+                disabled={otherAssets.length === 0}
+              />
             </Col>
           </Row>
         </div>
       </div>
 
-      {/* Physical Setup & Identification */}
+      {/* Physical Setup & Identification — bound to s1 so saves ride
+          along with the rest of the wizard / Stage 3 PUT. */}
       <div className="onb-prov-section">
         <div className="onb-prov-section-head">
           <span className="onb-prov-section-icon physical"><i className="ri-shield-check-line" /></span>
@@ -3324,24 +3566,39 @@ function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
           <Row className="g-3">
             <Col md={4}>
               <label className="onb-init-label">Biometric Status {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span>Not Registered</span>
-              </div>
+              <MasterSelect
+                options={[
+                  { value: 'Not Registered', label: 'Not Registered' },
+                  { value: 'Pending',        label: 'Pending' },
+                  { value: 'Registered',     label: 'Registered' },
+                  { value: 'Failed',         label: 'Failed' },
+                ]}
+                value={s1.biometric_status || 'Not Registered'}
+                onChange={(v) => setS1((p: any) => ({ ...p, biometric_status: v }))}
+              />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Desk / Workstation No {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>
-              </div>
+              <input
+                className="onb-init-input"
+                placeholder="e.g. WS-204, Floor 3 / Bay B"
+                value={s1.desk_workstation_no}
+                onChange={e => setS1((p: any) => ({ ...p, desk_workstation_no: e.target.value }))}
+              />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">ID Card Status {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span>Not Printed</span>
-              </div>
+              <MasterSelect
+                options={[
+                  { value: 'Not Printed', label: 'Not Printed' },
+                  { value: 'Printed',     label: 'Printed' },
+                  { value: 'Issued',      label: 'Issued' },
+                  { value: 'Lost',        label: 'Lost' },
+                  { value: 'Reissued',    label: 'Reissued' },
+                ]}
+                value={s1.id_card_status || 'Not Printed'}
+                onChange={(v) => setS1((p: any) => ({ ...p, id_card_status: v }))}
+              />
             </Col>
           </Row>
         </div>

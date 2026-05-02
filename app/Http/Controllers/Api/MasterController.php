@@ -233,6 +233,15 @@ class MasterController extends Controller
         }
 
         $data = $this->validatePayload($request, $slug, $id);
+
+        // System-seeded asset categories (Laptop, Mobile) keep their name
+        // locked — Stage 1 Step 3 reads them by name to populate the
+        // laptop / mobile dropdowns. Status + depreciation/useful_life
+        // are still editable.
+        if ($slug === 'asset_categories' && !empty($row->is_system)) {
+            unset($data['name']);
+        }
+
         $row->update($data);
 
         // Sync any embedded sublist payloads (e.g. legal_entities → banks).
@@ -350,6 +359,15 @@ class MasterController extends Controller
                     ], 403);
                 }
             }
+        }
+
+        // System-seeded rows are pinned. Stage 1 of employee onboarding
+        // pulls Laptop / Mobile asset lists by category name; deleting
+        // the underlying category would silently break that screen.
+        if ($slug === 'asset_categories' && !empty($row->is_system)) {
+            return response()->json([
+                'message' => 'This category is system-managed and cannot be deleted.',
+            ], 403);
         }
 
         $row->delete();

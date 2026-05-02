@@ -52,6 +52,15 @@ class Employee extends Model
         'salary_effective_from', 'salary_structure', 'tax_regime',
         'bonus_in_annual', 'pf_eligible', 'detailed_breakup',
 
+        // Stage 1 Step 3 — asset assignments (added 2026-05-03). FKs into
+        // master_assets; uniqueness across employees enforced in
+        // EmployeeController so the same physical device can't be issued
+        // to two people at once.
+        'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids',
+
+        // Stage 3 — Physical Setup & Identification (added 2026-05-03).
+        'biometric_status', 'desk_workstation_no', 'id_card_status',
+
         // Stage 4 — Payroll & Finance Setup (added 2026-05-03)
         'salary_payment_mode',
         'bank_name', 'bank_account_number', 'ifsc_code',
@@ -64,11 +73,17 @@ class Employee extends Model
         'assets', 'status', 'wizard_step_completed', 'onboarding_stage_completed',
     ];
 
+    /** Accessors auto-included on every JSON serialization. The
+     *  `other_assets_resolved` accessor short-circuits when the array
+     *  is empty, so rows without assets pay no DB cost. */
+    protected $appends = ['other_assets_resolved'];
+
     protected $casts = [
         'date_of_birth'  => 'date',
         'date_of_joining' => 'date',
         'salary_effective_from' => 'date',
         'assets' => 'array',
+        'other_master_asset_ids' => 'array',
         'probation_months' => 'integer',
         'notice_period_days' => 'integer',
         'attendance_tracking' => 'boolean',
@@ -113,6 +128,31 @@ class Employee extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    // ── Asset assignments (Stage 1 Step 3) ──────────────────────────────
+    // Single-row FKs go through plain BelongsTo; the `other_master_asset_ids`
+    // array is exposed via the `other_assets_resolved` accessor so the
+    // controller can return one consistent shape regardless of column type.
+
+    public function laptopAsset(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Masters\Assets::class, 'laptop_master_asset_id');
+    }
+
+    public function mobileAsset(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Masters\Assets::class, 'mobile_master_asset_id');
+    }
+
+    /** Resolve the JSON-array of master_asset ids into full asset rows. */
+    public function getOtherAssetsResolvedAttribute(): \Illuminate\Support\Collection
+    {
+        $ids = (array) ($this->other_master_asset_ids ?? []);
+        if (empty($ids)) return collect();
+        return \App\Models\Masters\Assets::query()
+            ->whereIn('id', $ids)
+            ->get(['id', 'asset_name', 'code', 'asset_number']);
     }
 
     // ── Master refs ─────────────────────────────────────────────────────

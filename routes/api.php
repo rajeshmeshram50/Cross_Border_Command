@@ -72,8 +72,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // resolve cleanly.
     Route::get   ('/employees/next-code',         [EmployeeController::class, 'nextCode']);
     Route::get   ('/employees/managers',          [EmployeeController::class, 'managers']);
+    Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
     // Admin issues a self-service onboarding invite + emails the link.
     Route::post  ('/employees/onboarding-invite', [OnboardingController::class, 'createInvite']);
+    // Re-enable a soft-deleted employee (inverse of DELETE /employees/{id}).
+    Route::patch ('/employees/{id}/restore',      [EmployeeController::class, 'restore']);
     Route::apiResource('employees', EmployeeController::class);
 
     // Stage 2 — Document Management. List + upload are nested under the
