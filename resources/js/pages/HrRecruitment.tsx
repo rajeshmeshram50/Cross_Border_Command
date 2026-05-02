@@ -398,47 +398,71 @@ export default function HrRecruitment() {
   // Reset page when tab / filters change
   useEffect(() => { setPage(1); }, [tab, q, deptFilter, priorityFilter, jobTypeFilter]);
 
-  // Initial load — pull all recruitments from the backend and convert each
-  // row into the UI shape (label-resolved + initials + accent).
+  // Aggregate candidate counts driving the KPI strip — fetched in parallel
+  // with the recruitments list and re-fetched whenever the list changes
+  // (status flips on a row may add a Selected / Rejected somewhere upstream).
+  type CandidateStats = {
+    total: number;
+    applied: number;
+    shortlisted: number;
+    in_interview: number;
+    final_interview: number;
+    selected: number;
+    offered: number;
+    rejected: number;
+    on_hold: number;
+  };
+  const ZERO_STATS: CandidateStats = {
+    total: 0, applied: 0, shortlisted: 0, in_interview: 0, final_interview: 0,
+    selected: 0, offered: 0, rejected: 0, on_hold: 0,
+  };
+  const [candidateStats, setCandidateStats] = useState<CandidateStats>(ZERO_STATS);
+
+  // Initial load — pull all recruitments + the aggregate candidate counts
+  // in parallel. Two endpoints, one render.
   const fetchRecruitments = async () => {
     try {
       setLoadingList(true);
-      const { data } = await api.get('/recruitments');
-      const rows: any[] = Array.isArray(data) ? data : [];
+      const [listRes, statsRes] = await Promise.all([
+        api.get('/recruitments'),
+        // Stats may 404 in environments that haven't run the latest
+        // routes — fall back to zeros instead of breaking the whole list.
+        api.get('/candidates/stats').catch(() => ({ data: ZERO_STATS })),
+      ]);
+      const rows: any[] = Array.isArray(listRes.data) ? listRes.data : [];
       setRecruitments(rows.map(apiToRow));
+      setCandidateStats({ ...ZERO_STATS, ...(statsRes.data || {}) });
     } catch (err: any) {
       toast.error('Could not load recruitments', err?.response?.data?.message || 'Please try again.');
       setRecruitments([]);
+      setCandidateStats(ZERO_STATS);
     } finally {
       setLoadingList(false);
     }
   };
   useEffect(() => { fetchRecruitments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  // Counts — derived from the fetched list so KPI badges update on every change.
-  // Candidate-based KPIs (candidates/selected/rejected/pending) will be wired
-  // up once the candidate pipeline is built; for now they reflect the actual
-  // current data, which is 0.
+  // Counts — derived from the fetched list (recruitment-based) and the
+  // /candidates/stats payload (candidate-based). KPI cards stay in sync
+  // with whatever the server actually has, no client-side aggregation.
   const counts = useMemo(() => {
     const total = recruitments.length;
     const inProgress = recruitments.filter(r => r.status === 'In Progress').length;
     const completed  = recruitments.filter(r => r.status === 'Completed').length;
     const cancelled  = recruitments.filter(r => r.status === 'Cancelled').length;
-    // Sum openings across active recruitments — gives a meaningful "total
-    // open positions" number until candidates are tracked.
-    const openings = recruitments
-      .filter(r => r.status === 'In Progress')
-      .reduce((sum, r) => sum + (Number(r.openings) || 0), 0);
     return {
       total,
-      active: inProgress,
-      candidates: 0,
-      selected: 0,
-      rejected: 0,
-      pending: openings,
+      active:     inProgress,
+      candidates: candidateStats.total,
+      selected:   candidateStats.selected,
+      rejected:   candidateStats.rejected,
+      // "Pending Interviews" = candidates at the Final Interview stage —
+      // i.e. the final-round-selected bucket the user wants to surface
+      // here. Earlier rounds are tracked separately in candidateStats.
+      pending:    candidateStats.final_interview,
       tabs: { 'In Progress': inProgress, Completed: completed, Cancelled: cancelled },
     };
-  }, [recruitments]);
+  }, [recruitments, candidateStats]);
 
   // Filtered rows
   const filtered = useMemo(() => {
@@ -712,10 +736,17 @@ export default function HrRecruitment() {
                                   onClick={() => navigate(`/hr/recruitment/${r.id}/candidates`)}
                                 />
                                 <ActionBtn
-                                  title={r.status === 'Cancelled' ? 'Already Cancelled' : 'Cancel Recruitment'}
+                                  // Same icon now opens a Cancel/Complete chooser.
+                                  // Disabled only once the recruitment reaches a
+                                  // terminal state (Cancelled or Completed).
+                                  title={
+                                    r.status === 'Cancelled' ? 'Already Cancelled'
+                                    : r.status === 'Completed' ? 'Already Completed'
+                                    : 'Cancel or Mark Completed'
+                                  }
                                   icon="ri-close-circle-line"
                                   color="danger"
-                                  disabled={r.status === 'Cancelled'}
+                                  disabled={r.status === 'Cancelled' || r.status === 'Completed'}
                                   onClick={() => setCancelTarget(r)}
                                 />
                               </div>
@@ -821,23 +852,36 @@ export default function HrRecruitment() {
       <CancelConfirmModal
         target={cancelTarget}
         onClose={() => setCancelTarget(null)}
-        onConfirm={async (reason, notes) => {
+        onConfirm={async (action, reason, notes) => {
           if (!cancelTarget) return;
+          const isComplete = action === 'complete';
+          // Single PUT endpoint — payload differs only in `status` and
+          // whether the cancellation reason is included.
+          const payload: Record<string, any> = {
+            status:       isComplete ? 'Completed' : 'Cancelled',
+            cancel_notes: notes || null,
+          };
+          if (!isComplete) payload.cancel_reason = reason;
+
           try {
-            // Backend exposes a single PUT for updates — we flip status to
-            // Cancelled and stash the reason/notes alongside for audit.
-            const { data } = await api.put(`/recruitments/${cancelTarget.id}`, {
-              status: 'Cancelled',
-              cancel_reason: reason,
-              cancel_notes:  notes || null,
-            });
+            const { data } = await api.put(`/recruitments/${cancelTarget.id}`, payload);
             const row = apiToRow(data);
             setRecruitments(prev => prev.map(r => String(r.id) === String(row.id) ? row : r));
-            toast.success('Recruitment cancelled', `${row.code || row.id} has been moved to Cancelled.`);
-          } catch (err: any) {
-            toast.error('Could not cancel', err?.response?.data?.message || 'Please try again.');
-          } finally {
+            toast.success(
+              isComplete ? 'Recruitment completed' : 'Recruitment cancelled',
+              `${row.code || row.id} has been moved to ${isComplete ? 'Completed' : 'Cancelled'}.`,
+            );
             setCancelTarget(null);
+          } catch (err: any) {
+            // The backend's `guardStatusTransition` returns a 422 with the
+            // message attached to the `status` field when an opening
+            // requirement isn't met — surface that verbatim in a toast so
+            // the user knows exactly how many more selections are needed.
+            const fieldErr = err?.response?.data?.errors?.status?.[0];
+            const message  = fieldErr || err?.response?.data?.message || 'Please try again.';
+            toast.error(isComplete ? 'Cannot mark as Completed' : 'Could not cancel', message);
+            // Keep the modal open on validation errors so the user can pick
+            // the other action without re-clicking the row icon.
           }
         }}
       />
@@ -2428,26 +2472,40 @@ const CANCEL_REASONS = [
   { value: 'Other',                         label: 'Other (add notes below)' },
 ];
 
+type StatusAction = 'cancel' | 'complete';
+
 function CancelConfirmModal({
   target, candidateCount, onClose, onConfirm,
-}: { target: RecruitmentRow | null; candidateCount?: number; onClose: () => void; onConfirm: (reason: string, notes: string) => void }) {
+}: {
+  target: RecruitmentRow | null;
+  candidateCount?: number;
+  onClose: () => void;
+  // Returns the chosen action so the parent can flip the status to either
+  // 'Cancelled' or 'Completed'. The reason field is only meaningful for
+  // cancellations and is sent as an empty string for completions.
+  onConfirm: (action: StatusAction, reason: string, notes: string) => void;
+}) {
+  const [action, setAction]   = useState<StatusAction>('cancel');
   const [reason, setReason]   = useState<string>('');
   const [notes, setNotes]     = useState<string>('');
   const [reasonErr, setReasonErr] = useState<boolean>(false);
 
-  // Reset form whenever a new target is selected / modal closes
+  // Reset form whenever a new target is selected / modal closes. Default
+  // to 'cancel' since the trigger is the existing × icon on the row.
   useEffect(() => {
-    if (target) { setReason(''); setNotes(''); setReasonErr(false); }
+    if (target) { setAction('cancel'); setReason(''); setNotes(''); setReasonErr(false); }
   }, [target]);
 
   const handleConfirm = () => {
-    if (!reason) { setReasonErr(true); return; }
-    onConfirm(reason, notes);
+    if (action === 'cancel' && !reason) { setReasonErr(true); return; }
+    onConfirm(action, action === 'cancel' ? reason : '', notes);
   };
 
   const countLabel = candidateCount != null
     ? `${candidateCount} candidate record${candidateCount === 1 ? '' : '(s)'}`
     : 'Candidate records';
+
+  const isComplete = action === 'complete';
 
   return (
     <Modal isOpen={!!target} toggle={onClose} centered size="md" backdrop="static" keyboard={false}
@@ -2456,16 +2514,23 @@ function CancelConfirmModal({
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 18, overflow: 'hidden' }}>
         {target && (
           <>
-            {/* Header — vivid orange gradient banner */}
-            <div className="rec-cancel-head">
+            {/* Header — colour swaps to green when the user selects Complete
+                so the gradient telegraphs the destructive vs. happy-path
+                outcome. */}
+            <div
+              className="rec-cancel-head"
+              style={isComplete ? { background: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)' } : undefined}
+            >
               <div className="rec-cancel-head-inner">
                 <span className="rec-cancel-head-icon">
-                  <i className="ri-forbid-2-line" />
+                  <i className={isComplete ? 'ri-checkbox-circle-line' : 'ri-forbid-2-line'} />
                 </span>
                 <div className="rec-cancel-head-text">
-                  <h5 className="mb-0">Cancel Recruitment</h5>
+                  <h5 className="mb-0">{isComplete ? 'Mark Recruitment Completed' : 'Cancel Recruitment'}</h5>
                   <div className="rec-cancel-head-sub">
-                    This action will move the recruitment to the Cancelled tab
+                    {isComplete
+                      ? 'Closes the requisition once every opening has been filled'
+                      : 'This action will move the recruitment to the Cancelled tab'}
                   </div>
                 </div>
                 <button type="button" onClick={onClose} aria-label="Close" className="rec-cancel-close">
@@ -2476,10 +2541,47 @@ function CancelConfirmModal({
 
             {/* Body */}
             <div className="rec-cancel-body">
+              {/* Action picker — two pill buttons. Sits at the top so the
+                  rest of the body re-renders to match the chosen path
+                  (e.g. the cancellation reason hides when Complete is on). */}
+              <div className="rec-cancel-field">
+                <label className="rec-cancel-label">Action<span className="req">*</span></label>
+                <div className="d-flex gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setAction('cancel')}
+                    className="flex-fill"
+                    style={{
+                      padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+                      border: action === 'cancel' ? '1px solid #f06548' : '1px solid #e5e7eb',
+                      background: action === 'cancel' ? '#fff5f3' : '#fff',
+                      color: action === 'cancel' ? '#b1401d' : '#475569',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}
+                  >
+                    <i className="ri-forbid-2-line" />Cancel Recruitment
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAction('complete')}
+                    className="flex-fill"
+                    style={{
+                      padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+                      border: action === 'complete' ? '1px solid #10b981' : '1px solid #e5e7eb',
+                      background: action === 'complete' ? '#ecfdf5' : '#fff',
+                      color: action === 'complete' ? '#047857' : '#475569',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    }}
+                  >
+                    <i className="ri-checkbox-circle-line" />Mark as Completed
+                  </button>
+                </div>
+              </div>
+
               {/* Recruitment summary card */}
               <div className="rec-cancel-summary">
                 <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
-                  <span className="rec-id-pill">{target.id}</span>
+                  <span className="rec-id-pill">{target.code || target.id}</span>
                   <span className="rec-cancel-summary-title">{target.jobTitle}</span>
                 </div>
                 <div className="rec-cancel-summary-meta">
@@ -2491,36 +2593,52 @@ function CancelConfirmModal({
                 </div>
               </div>
 
-              {/* Impact warning */}
-              <div className="rec-cancel-impact">
-                <i className="ri-alert-line" />
+              {/* Impact warning — distinct copy per action so the user
+                  understands what each option actually does. */}
+              <div className="rec-cancel-impact" style={isComplete ? { background: '#ecfdf5', color: '#065f46', borderColor: '#a7f3d0' } : undefined}>
+                <i className={isComplete ? 'ri-information-line' : 'ri-alert-line'} />
                 <div>
-                  <strong>Impact:</strong> {countLabel} linked to this recruitment will be preserved
-                  but no longer actionable. This cannot be undone from the UI.
+                  {isComplete ? (
+                    <>
+                      <strong>Heads-up:</strong> The server will only accept this if the recruitment has
+                      enough <em>Selected</em> candidates to cover every opening — otherwise you'll see
+                      a validation error and the requisition stays open.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Impact:</strong> {countLabel} linked to this recruitment will be preserved
+                      but no longer actionable. This cannot be undone from the UI.
+                    </>
+                  )}
                 </div>
               </div>
 
-              {/* Reason for cancellation */}
-              <div className="rec-cancel-field">
-                <label className="rec-cancel-label">
-                  Reason for Cancellation<span className="req">*</span>
-                </label>
-                <div className={`rec-cancel-select${reasonErr ? ' is-invalid' : ''}`}>
-                  <MasterSelect
-                    value={reason}
-                    onChange={(v) => { setReason(v); if (v) setReasonErr(false); }}
-                    options={CANCEL_REASONS}
-                    placeholder="— Select a reason —"
-                  />
-                </div>
-                {reasonErr && (
-                  <div className="rec-cancel-error">
-                    <i className="ri-error-warning-line" />Please select a reason before confirming
+              {/* Reason — only relevant for cancellations. Hidden on the
+                  complete path so the user isn't asked for a justification
+                  they don't need to provide. */}
+              {!isComplete && (
+                <div className="rec-cancel-field">
+                  <label className="rec-cancel-label">
+                    Reason for Cancellation<span className="req">*</span>
+                  </label>
+                  <div className={`rec-cancel-select${reasonErr ? ' is-invalid' : ''}`}>
+                    <MasterSelect
+                      value={reason}
+                      onChange={(v) => { setReason(v); if (v) setReasonErr(false); }}
+                      options={CANCEL_REASONS}
+                      placeholder="— Select a reason —"
+                    />
                   </div>
-                )}
-              </div>
+                  {reasonErr && (
+                    <div className="rec-cancel-error">
+                      <i className="ri-error-warning-line" />Please select a reason before confirming
+                    </div>
+                  )}
+                </div>
+              )}
 
-              {/* Additional notes */}
+              {/* Additional notes — kept on both paths since the audit
+                  trail benefits from a free-form note either way. */}
               <div className="rec-cancel-field">
                 <label className="rec-cancel-label">
                   Additional Notes <span className="opt">(OPTIONAL)</span>
@@ -2528,20 +2646,28 @@ function CancelConfirmModal({
                 <textarea
                   className="rec-cancel-textarea"
                   rows={3}
-                  placeholder="Add context for the audit trail — stakeholders informed, next steps, etc."
+                  placeholder={isComplete
+                    ? 'Add context — final headcount, joining dates, etc.'
+                    : 'Add context for the audit trail — stakeholders informed, next steps, etc.'}
                   value={notes}
                   onChange={e => setNotes(e.target.value)}
                 />
               </div>
             </div>
 
-            {/* Footer */}
+            {/* Footer — confirm button colour + label flips to match action. */}
             <div className="rec-cancel-footer">
               <button type="button" className="rec-btn-ghost" onClick={onClose}>
                 Keep Active
               </button>
-              <button type="button" className="rec-cancel-confirm" onClick={handleConfirm}>
-                <i className="ri-forbid-2-line" />Confirm Cancellation
+              <button
+                type="button"
+                className="rec-cancel-confirm"
+                onClick={handleConfirm}
+                style={isComplete ? { background: 'linear-gradient(135deg, #047857 0%, #10b981 100%)' } : undefined}
+              >
+                <i className={isComplete ? 'ri-checkbox-circle-line' : 'ri-forbid-2-line'} />
+                {isComplete ? 'Confirm Completion' : 'Confirm Cancellation'}
               </button>
             </div>
           </>
