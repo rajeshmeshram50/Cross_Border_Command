@@ -7,6 +7,8 @@ use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\EmployeeController;
+use App\Http\Controllers\Api\EmployeeDocumentController;
+use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OnboardingController;
@@ -73,6 +75,23 @@ Route::middleware('auth:sanctum')->group(function () {
     // Admin issues a self-service onboarding invite + emails the link.
     Route::post  ('/employees/onboarding-invite', [OnboardingController::class, 'createInvite']);
     Route::apiResource('employees', EmployeeController::class);
+
+    // Stage 2 — Document Management. List + upload are nested under the
+    // employee; verify/reject/delete address documents directly by id.
+    Route::get  ('/employees/{employee}/documents', [EmployeeDocumentController::class, 'index']);
+    Route::post ('/employees/{employee}/documents', [EmployeeDocumentController::class, 'store']);
+    Route::patch('/documents/{document}/verify',    [EmployeeDocumentController::class, 'verify']);
+    Route::patch('/documents/{document}/reject',    [EmployeeDocumentController::class, 'reject']);
+    Route::delete('/documents/{document}',          [EmployeeDocumentController::class, 'destroy']);
+
+    // Previous Employment Companies — one row per company the candidate
+    // worked at before. Per-company doc uploads use the
+    // `prev_<id>_<docKey>` namespace via the existing employee_documents
+    // endpoints.
+    Route::get   ('/employees/{employee}/previous-employments', [PreviousEmploymentController::class, 'index']);
+    Route::post  ('/employees/{employee}/previous-employments', [PreviousEmploymentController::class, 'store']);
+    Route::patch ('/previous-employments/{prev}',               [PreviousEmploymentController::class, 'update']);
+    Route::delete('/previous-employments/{prev}',               [PreviousEmploymentController::class, 'destroy']);
 
     // Recruitments — full CRUD + auto-numbered REC-### scoped per tenant.
     // Declared BEFORE the generic /master/{slug} routes so apiResource params

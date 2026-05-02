@@ -557,6 +557,27 @@ class EmployeeController extends Controller
             'pf_eligible'           => 'nullable|boolean',
             'detailed_breakup'      => 'nullable|boolean',
 
+            // Stage 4 — Payroll & Finance Setup
+            'salary_payment_mode'   => 'nullable|in:bank,cheque,cash',
+            'bank_name'             => 'nullable|string|max:150',
+            // PAN-style account number can include letters (e.g. NRE/NRO),
+            // so we don't enforce digits-only.
+            'bank_account_number'   => 'nullable|string|max:30',
+            // IFSC: 4 letters, 0, 6 alphanumeric (case-insensitive).
+            'ifsc_code'             => 'nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/',
+            'account_holder_name'   => 'nullable|string|max:150',
+            'bank_branch'           => 'nullable|string|max:150',
+            'bank_account_type'     => 'nullable|string|max:30',
+            // UAN: exactly 12 digits when present.
+            'uan_number'            => 'nullable|string|regex:/^\d{12}$/',
+            // PAN: 5 letters, 4 digits, 1 letter.
+            'pan_number'            => 'nullable|string|regex:/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/',
+            'pf_deduction'          => 'nullable|string|max:50',
+            'esi_applicable'        => 'nullable|in:Yes,No',
+            'gratuity_nominee_name' => 'nullable|string|max:150',
+            'agreed_ctc_lpa'        => 'nullable|numeric|min:0',
+            'stage4_completed_at'   => 'nullable|date',
+
             'assets'  => 'nullable|array',
             'assets.*' => 'integer',
             'status'  => 'nullable|in:Active,Inactive,On Leave,Probation,Notice Period,Resigned,Terminated',
