@@ -1575,11 +1575,27 @@ const STAGE2_CATEGORIES: DocCategory[] = [
   },
 ];
 
-const STAGE2_PREV_COMPANIES = [
-  { id: 'c1', name: 'Infosys (2017–2020)' },
-  { id: 'c2', name: 'Wipro Digital (2020–2023)' },
-  { id: 'c3', name: 'TCS iON (2023–2025)' },
-];
+interface PrevCompany {
+  id: string;
+  name: string;
+  jobTitle: string;
+  startDate: string;
+  endDate: string;
+  hrEmail1: string;
+  hrEmail2: string;
+  contactNumber: string;
+}
+
+const makePrevCompany = (): PrevCompany => ({
+  id: `pc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  name: '',
+  jobTitle: '',
+  startDate: '',
+  endDate: '',
+  hrEmail1: '',
+  hrEmail2: '',
+  contactNumber: '',
+});
 
 const STAGE2_COMPANY_DOCS: { id: string; name: string; status: DocStatus }[] = [
   { id: 'exp_letter',   name: 'Experience Letter',     status: 'Pending'  },
@@ -2303,8 +2319,16 @@ function InitiateOnboardingModal({
 
 // ── Stage 2 — Document Management view (used inside InitiateOnboardingModal)
 function Stage2Documents() {
+  const [prevCompanies, setPrevCompanies] = useState<PrevCompany[]>(() => [makePrevCompany()]);
+
+  const addCompany = () => setPrevCompanies(prev => [...prev, makePrevCompany()]);
+  const removeCompany = (id: string) =>
+    setPrevCompanies(prev => (prev.length > 1 ? prev.filter(c => c.id !== id) : prev));
+  const updateCompany = (id: string, patch: Partial<PrevCompany>) =>
+    setPrevCompanies(prev => prev.map(c => (c.id === id ? { ...c, ...patch } : c)));
+
   const totalDocs = STAGE2_CATEGORIES.reduce((a, c) => a + c.docs.length, 0)
-                  + STAGE2_PREV_COMPANIES.length * STAGE2_COMPANY_DOCS.length;
+                  + prevCompanies.length * STAGE2_COMPANY_DOCS.length;
   const uploadedDocs = 0;
   const pct = totalDocs ? Math.round((uploadedDocs / totalDocs) * 100) : 0;
 
@@ -2386,29 +2410,46 @@ function Stage2Documents() {
             <h6 className="onb-doc-prev-title">Previous Employment Documents</h6>
             <div className="onb-doc-prev-sub">7 Years Experience · Required for each previous company</div>
           </div>
-          <span className="onb-doc-prev-pill">{STAGE2_PREV_COMPANIES.length} Companies</span>
+          <span className="onb-doc-prev-pill">{prevCompanies.length} {prevCompanies.length === 1 ? 'Company' : 'Companies'}</span>
         </div>
 
-        {STAGE2_PREV_COMPANIES.map((c, idx) => (
+        {prevCompanies.map((c, idx) => (
           <div key={c.id} className="onb-doc-comp">
             <div className="onb-doc-comp-head">
               <span className="onb-doc-comp-num">{idx + 1}</span>
-              <h6 className="onb-doc-comp-name">{c.name}</h6>
+              <h6 className="onb-doc-comp-name">{c.name || `Previous Company ${idx + 1}`}</h6>
               <span className="onb-doc-comp-count">0/4 Docs</span>
-              <button type="button" className="onb-doc-comp-close" aria-label="Remove company">
-                <i className="ri-close-line" style={{ fontSize: 12 }} />
-              </button>
+              {prevCompanies.length > 1 && (
+                <button
+                  type="button"
+                  className="onb-doc-comp-close"
+                  aria-label="Remove company"
+                  onClick={() => removeCompany(c.id)}
+                >
+                  <i className="ri-close-line" style={{ fontSize: 12 }} />
+                </button>
+              )}
             </div>
             <div className="onb-doc-comp-body">
               <p className="onb-doc-comp-section"><i className="ri-building-line" /> Company Information</p>
               <Row className="g-3">
                 <Col md={6}>
                   <label className="onb-init-label">Company Name <span className="req">*</span></label>
-                  <input className="onb-init-input" defaultValue={c.name} />
+                  <input
+                    className="onb-init-input"
+                    placeholder="e.g. Wipro Digital (2020-2023)"
+                    value={c.name}
+                    onChange={e => updateCompany(c.id, { name: e.target.value })}
+                  />
                 </Col>
                 <Col md={6}>
                   <label className="onb-init-label">Job Title / Designation <span className="req">*</span></label>
-                  <input className="onb-init-input" placeholder="e.g. Software Engineer" />
+                  <input
+                    className="onb-init-input"
+                    placeholder="e.g. Software Engineer"
+                    value={c.jobTitle}
+                    onChange={e => updateCompany(c.id, { jobTitle: e.target.value })}
+                  />
                 </Col>
                 <Col md={6}>
                   <label className="onb-init-label">Employment Start Date <span className="req">*</span></label>
@@ -2449,20 +2490,39 @@ function Stage2Documents() {
               <Row className="g-3">
                 <Col md={4}>
                   <label className="onb-init-label">HR Email ID 1 <span className="req">*</span></label>
-                  <input className="onb-init-input is-required" placeholder="hr@company.com" />
+                  <input
+                    className="onb-init-input is-required"
+                    placeholder="hr@company.com"
+                    value={c.hrEmail1}
+                    onChange={e => updateCompany(c.id, { hrEmail1: e.target.value })}
+                  />
                 </Col>
                 <Col md={4}>
                   <label className="onb-init-label">HR Email ID 2 <span className="req">*</span></label>
-                  <input className="onb-init-input is-required" placeholder="hr2@company.com" />
+                  <input
+                    className="onb-init-input is-required"
+                    placeholder="hr2@company.com"
+                    value={c.hrEmail2}
+                    onChange={e => updateCompany(c.id, { hrEmail2: e.target.value })}
+                  />
                 </Col>
                 <Col md={4}>
                   <label className="onb-init-label">Company Contact Number <span className="req">*</span></label>
-                  <input className="onb-init-input is-required" placeholder="+91 XXXXX XXXXX" />
+                  <input
+                    className="onb-init-input is-required"
+                    placeholder="+91 XXXXX XXXXX"
+                    value={c.contactNumber}
+                    onChange={e => updateCompany(c.id, { contactNumber: e.target.value })}
+                  />
                 </Col>
               </Row>
             </div>
           </div>
         ))}
+
+        <button type="button" className="onb-doc-add-comp" onClick={addCompany}>
+          <i className="ri-add-line" /> Add Previous Company
+        </button>
       </div>
     </>
   );

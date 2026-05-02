@@ -230,7 +230,12 @@ function apiToHiringRequestRow(api: any): HiringRequestRow {
     requestType:    (api?.request_type || 'New Position') as RequestType,
     urgency:        (api?.urgency       || 'Medium')      as RequestUrgency,
     status:         (api?.status        || 'Submitted')   as RequestStatus,
-    requestDate:    api?.request_date     || '',
+    // "Req Date" in the list = when the row was actually created on the
+    // server (auto-stamped). The form's date picker now feeds
+    // `target_join_date` instead, shown in the "Target Join" column.
+    // We slice the ISO timestamp to YYYY-MM-DD so formatDate() doesn't
+    // include the time portion.
+    requestDate:    (api?.created_at ? String(api.created_at).slice(0, 10) : api?.request_date) || '',
     targetJoinDate: api?.target_join_date || '',
   };
 }
@@ -891,8 +896,11 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
   const [departmentId, setDepartmentId] = useState('');
   const [team, setTeam]                 = useState('');
   const [requestedBy, setRequestedBy]   = useState('');
-  const today = new Date().toISOString().slice(0, 10);
-  const [reqDate, setReqDate]           = useState(today);
+  // The form's last column was relabelled from Request Date → Target Join
+  // Date. The submission timestamp is now sourced from the row's
+  // server-generated created_at, so this picker captures *when the user
+  // wants the position filled by* and starts blank.
+  const [targetDate, setTargetDate]     = useState('');
 
   // Section 2 — Hiring Need
   const [openings, setOpenings]         = useState('1');
@@ -928,7 +936,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
   // Reset when reopened
   useEffect(() => {
     if (!isOpen) return;
-    setTitle(''); setJobRole(''); setDepartmentId(''); setTeam(''); setRequestedBy(''); setReqDate(today);
+    setTitle(''); setJobRole(''); setDepartmentId(''); setTeam(''); setRequestedBy(''); setTargetDate('');
     setOpenings('1'); setEmployType('Full-time'); setWorkMode('Onsite'); setUrgency('Medium');
     setJobDesc(''); setDailyResp(''); setRequiredSkills(''); setRequiredExp(''); setRequiredQual(''); setPreferred('');
     setNeedReason(''); setRequestType('New Position'); setBusinessJust(''); setTeamGap(''); setWhatIfNot('');
@@ -975,7 +983,10 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
       department_id:          departmentId ? Number(departmentId) : null,
       team:                   team || null,
       requested_by_name:      requestedBy || null,
-      request_date:           reqDate || null,
+      // The picker now captures the desired target join date; the
+      // server-generated created_at is used for the list's "Req Date"
+      // column, so request_date is intentionally not sent.
+      target_join_date:       targetDate || null,
       openings:               Number(openings) || 1,
       employment_type:        employType || null,
       work_mode:              workMode || null,
@@ -1124,10 +1135,10 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
               </Col>
               <Col md={4}>
-                <label className="rec-form-label">Request Date</label>
+                <label className="rec-form-label">Target Join Date</label>
                 <MasterDatePicker
-                  value={reqDate}
-                  onChange={setReqDate}
+                  value={targetDate}
+                  onChange={setTargetDate}
                   placeholder="dd-mm-yyyy"
                 />
               </Col>
