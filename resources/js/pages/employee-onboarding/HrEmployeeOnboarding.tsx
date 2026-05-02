@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
+import Swal from 'sweetalert2';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
+import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import './HrEmployeeOnboarding.css';
 
@@ -173,11 +175,12 @@ const _formatDate = (iso: string | null | undefined): string => {
  *   wizard_step = 0                            → Not Started
  */
 const _mapOnboardStatus = (raw: any): OnboardStatus => {
-  const step = Number(raw?.wizard_step_completed ?? 0);
-  const stat = String(raw?.status ?? '').toLowerCase();
-  if (step >= 4 && stat === 'active') return 'Completed';
-  if (step >= 4) return 'Document Pending';
-  if (step > 0) return 'In Progress';
+  const step  = Number(raw?.wizard_step_completed ?? 0);
+  const macro = Number(raw?.onboarding_stage_completed ?? 0);
+  const stat  = String(raw?.status ?? '').toLowerCase();
+  if (macro >= 6 && stat === 'active') return 'Completed';
+  if (macro >= 6) return 'Document Pending';
+  if (macro > 0 || step > 0) return 'In Progress';
   return 'Not Started';
 };
 
@@ -202,9 +205,19 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     managerName: mgrName,
     managerInitials: _initials(mgrName),
     managerAccent: _accent(mgrName || 'manager'),
-    // Profile % matches the HR list: 4 wizard steps capped at 50% (rest
-    // of profile completion lives outside the wizard).
-    profile: Math.min(50, Math.max(0, Number(e.wizard_step_completed ?? 0) * 12.5)),
+    // Profile % spans all six onboarding macro stages. Stage 1 splits
+    // across its 4 internal wizard steps; stages 2-6 each contribute
+    // one sixth on completion. Same formula as HrEmployees so the two
+    // pages stay in sync.
+    profile: ((): number => {
+      const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
+      const macro = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
+      const stage1 = macro >= 1 ? 1 : step / 4;
+      const others = (macro >= 2 ? 1 : 0) + (macro >= 3 ? 1 : 0)
+                   + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
+                   + (macro >= 6 ? 1 : 0);
+      return Math.round(((stage1 + others) / 6) * 100);
+    })(),
     status: _mapOnboardStatus(e),
     wizardStep: Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0))),
     dbId: e.id,
@@ -1811,6 +1824,122 @@ function InitiateOnboardingModal({
     }
   };
 
+  // ── Stage 2 — document state lifted to the modal scope ──────────────
+  // MUST run on every render (not after the `if (!emp) return null` early
+  // exit below). Hooks have to be in the same order across renders or
+  // React fires the "change in the order of Hooks" warning we hit when
+  // emp went from null → populated.
+  const [stage2Docs, setStage2Docs] = useState<{ document_key: string; status: string }[]>([]);
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) return;
+    let cancelled = false;
+    api.get(`/employees/${emp.dbId}/documents`)
+      .then(r => { if (!cancelled) setStage2Docs(Array.isArray(r.data) ? r.data : []); })
+      .catch(() => { if (!cancelled) setStage2Docs([]); });
+    return () => { cancelled = true; };
+  }, [isOpen, emp?.dbId]);
+
+  // ── Stage 4 — Payroll & Finance Setup state (lifted to modal so the
+  //    sidebar progress + footer gating + Save Draft button can read it).
+  const [s4Saving, setS4Saving] = useState(false);
+  const [s4, setS4] = useState({
+    salary_payment_mode: 'bank' as 'bank' | 'cheque' | 'cash',
+    bank_name: '',
+    bank_account_number: '',
+    ifsc_code: '',
+    account_holder_name: '',
+    bank_branch: '',
+    bank_account_type: 'Salary',
+    uan_number: '',
+    pan_number: '',
+    tax_regime: '',
+    pf_deduction: '',
+    esi_applicable: 'No',
+    gratuity_nominee_name: '',
+    agreed_ctc_lpa: '',
+  });
+  // Hydrate s4 whenever a different employee opens. Like s1 we always
+  // re-seed on (isOpen, emp.id) so navigating between employees never
+  // shows stale finance details.
+  useEffect(() => {
+    if (!isOpen || !emp?.raw) return;
+    const x = emp.raw;
+    const mode = String(x.salary_payment_mode ?? 'bank').toLowerCase();
+    setS4({
+      salary_payment_mode: (mode === 'cheque' || mode === 'cash') ? mode as any : 'bank',
+      bank_name:           String(x.bank_name           ?? ''),
+      bank_account_number: String(x.bank_account_number ?? ''),
+      ifsc_code:           String(x.ifsc_code           ?? ''),
+      account_holder_name: String(x.account_holder_name ?? ''),
+      bank_branch:         String(x.bank_branch         ?? ''),
+      bank_account_type:   String(x.bank_account_type   ?? 'Salary'),
+      uan_number:          String(x.uan_number          ?? ''),
+      pan_number:          String(x.pan_number          ?? ''),
+      tax_regime:          String(x.tax_regime          ?? ''),
+      pf_deduction:        String(x.pf_deduction        ?? ''),
+      esi_applicable:      String(x.esi_applicable      ?? 'No'),
+      gratuity_nominee_name: String(x.gratuity_nominee_name ?? ''),
+      agreed_ctc_lpa:      x.agreed_ctc_lpa != null ? String(x.agreed_ctc_lpa) : '',
+    });
+  }, [isOpen, emp?.id, emp?.raw]);
+
+  /** PUT s4 fields back to the employee row. `markComplete` stamps
+   *  `stage4_completed_at` so the sidebar marks Stage 4 done and Next
+   *  Stage gets unblocked. We never clear the timestamp from here — once
+   *  Stage 4 is complete, edits keep the row marked complete (matches
+   *  the wizard_step_completed high-watermark behaviour). */
+  const saveStage4 = async (markComplete: boolean): Promise<boolean> => {
+    if (!emp?.dbId || s4Saving) return false;
+    setS4Saving(true);
+    const trimOrNull = (v: string) => {
+      const t = (v ?? '').trim();
+      return t === '' ? null : t;
+    };
+    const payload: Record<string, any> = {
+      salary_payment_mode: s4.salary_payment_mode,
+      bank_name:           trimOrNull(s4.bank_name),
+      bank_account_number: trimOrNull(s4.bank_account_number),
+      ifsc_code:           s4.ifsc_code.trim() ? s4.ifsc_code.trim().toUpperCase() : null,
+      account_holder_name: trimOrNull(s4.account_holder_name),
+      bank_branch:         trimOrNull(s4.bank_branch),
+      bank_account_type:   trimOrNull(s4.bank_account_type),
+      uan_number:          trimOrNull(s4.uan_number),
+      pan_number:          s4.pan_number.trim() ? s4.pan_number.trim().toUpperCase() : null,
+      tax_regime:          trimOrNull(s4.tax_regime),
+      pf_deduction:        trimOrNull(s4.pf_deduction),
+      esi_applicable:      trimOrNull(s4.esi_applicable),
+      gratuity_nominee_name: trimOrNull(s4.gratuity_nominee_name),
+      agreed_ctc_lpa:      s4.agreed_ctc_lpa === '' ? null : Number(s4.agreed_ctc_lpa),
+    };
+    if (markComplete) {
+      payload.stage4_completed_at = new Date().toISOString();
+      // Bump the macro-stage watermark so profile% reflects Stage 4.
+      payload.onboarding_stage_completed = 4;
+    }
+    try {
+      await api.put(`/employees/${emp.dbId}`, payload);
+      onSaved?.();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setS4Saving(false);
+    }
+  };
+
+  /** Lightweight PUT used when the user clicks Next Stage on a macro
+   *  stage we don't have dedicated form state for yet (Stage 2/3/5/6).
+   *  Bumps the macro watermark so profile% climbs as the user advances. */
+  const bumpMacroStage = async (n: number) => {
+    if (!emp?.dbId) return;
+    const current = Number(emp.raw?.onboarding_stage_completed ?? 0);
+    if (n <= current) return;
+    try {
+      await api.put(`/employees/${emp.dbId}`, { onboarding_stage_completed: n });
+      onSaved?.();
+    } catch { /* keep modal open; user can retry */ }
+  };
+
   if (!emp) return null;
 
   // Pre-fill values from the row (legacy variables kept for the existing
@@ -1830,12 +1959,83 @@ function InitiateOnboardingModal({
   const stage1Pct = wizardStep * 25;
   const stage1Done = wizardStep >= 4;
 
+  // Stage 2 progress is anchored to the document upload count. Counts
+  // BOTH catalogue docs (Aadhaar, PAN, …) AND per-company docs (one set
+  // of 4 per persisted previous-employment row). Required-only — Optional
+  // catalogue rows are excluded from `total` so an "Optional" never
+  // permanently caps the percentage below 100%.
+  const stage2RequiredCatalogueKeys = STAGE2_CATEGORIES.flatMap(cat =>
+    cat.docs.filter(d => d.status !== 'Optional').map(d => d.id),
+  );
+  // Per-company doc keys live under prev_<id>_<key>. We pull the unique
+  // company ids straight from the document rows themselves so the modal
+  // doesn't need its own copy of `prevCompanies` here.
+  const stage2PerCompanyIds = Array.from(new Set(
+    stage2Docs
+      .map(d => d.document_key.match(/^prev_(\d+)_/)?.[1])
+      .filter((x): x is string => !!x),
+  ));
+  const stage2RequiredCompanyKeys = stage2PerCompanyIds.flatMap(id =>
+    STAGE2_COMPANY_DOCS
+      .filter(d => d.status !== 'Optional')
+      .map(d => `prev_${id}_${d.id}`),
+  );
+  const stage2AllKeys = [...stage2RequiredCatalogueKeys, ...stage2RequiredCompanyKeys];
+  const stage2Total = stage2AllKeys.length;
+  const stage2Uploaded = stage2AllKeys.filter(k => {
+    const s = stage2Docs.find(d => d.document_key === k)?.status;
+    return s === 'uploaded' || s === 'verified';
+  }).length;
+  const stage2Pct = stage2Total ? Math.round((stage2Uploaded / stage2Total) * 100) : 0;
+  const stage2Done = stage2Total > 0 && stage2Uploaded >= stage2Total;
+
+  // Stage 4 readiness — same shape as the four checks rendered inside
+  // `Stage4Payroll`, derived from the live s4 form state. Bank check
+  // auto-passes for cheque/cash since no account is needed.
+  const PAN_RE  = /^[A-Z]{5}[0-9]{4}[A-Z]$/i;
+  const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/i;
+  const UAN_RE  = /^\d{12}$/;
+  const stage4BankOk =
+    s4.salary_payment_mode !== 'bank' || (
+      !!s4.bank_name.trim() &&
+      !!s4.bank_account_number.trim() &&
+      IFSC_RE.test(s4.ifsc_code.trim()) &&
+      !!s4.account_holder_name.trim() &&
+      !!s4.bank_branch.trim()
+    );
+  const stage4PanOk = PAN_RE.test(s4.pan_number.trim());
+  const stage4UanOk = !s4.uan_number.trim() || UAN_RE.test(s4.uan_number.trim());
+  // Salary structure check passes once Stage 4's Agreed CTC is set. We
+  // don't couple this to Stage 1's annual_salary — admins often record
+  // a negotiated CTC at Stage 4 that's distinct from the wizard's
+  // initial salary input, and gating on both made the pill stay
+  // Pending after a clean fill.
+  const stage4SalaryOk = Number(s4.agreed_ctc_lpa) > 0;
+  const stage4PfOk = !!s4.pf_deduction.trim();
+  const stage4Checks = [stage4BankOk, stage4PanOk, stage4SalaryOk, stage4PfOk];
+  const stage4Pass   = stage4Checks.filter(Boolean).length;
+  const stage4Total4 = stage4Checks.length;
+  // Stage 4 is locked done once the row has been stamped. We *also* allow
+  // an in-session completion when all four checks pass + UAN format is
+  // valid, so the progress meter updates immediately after Save Draft.
+  const stage4Stamped = !!emp?.raw?.stage4_completed_at;
+  const stage4Done    = stage4Stamped || (stage4Pass === stage4Total4 && stage4UanOk);
+  const stage4Pct     = stage4Stamped ? 100 : Math.round((stage4Pass / stage4Total4) * 100);
+
   const stagesView = ONB_STAGES.map(s => {
     let status: StageStatus, progress: number;
     if (s.num === 1) {
       // Anchored to real wizard state — completion can't roll back.
       progress = stage1Pct;
       status   = stage1Done ? 'Completed' : (wizardStep > 0 ? 'In Progress' : 'Pending');
+    } else if (s.num === 2) {
+      // Anchored to real document upload state.
+      progress = stage2Pct;
+      status   = stage2Done ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
+    } else if (s.num === 4) {
+      // Anchored to live Stage 4 readiness checks + persisted stamp.
+      progress = stage4Pct;
+      status   = stage4Done ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
     } else if (s.num < activeStage)      { status = 'Completed';   progress = 100; }
     else if (s.num === activeStage) { status = 'In Progress'; progress = s.progress || 35; }
     else                           { status = 'Pending';     progress = 0;   }
@@ -1977,9 +2177,22 @@ function InitiateOnboardingModal({
               </>
             )}
 
-            {activeStage === 2 && <Stage2Documents />}
+            {activeStage === 2 && (
+              <Stage2Documents
+                emp={emp}
+                onDocsChanged={(rows) => setStage2Docs(rows)}
+              />
+            )}
             {activeStage === 3 && <Stage3Provisioning emp={emp} />}
-            {activeStage === 4 && <Stage4Payroll />}
+            {activeStage === 4 && (
+              <Stage4Payroll
+                s4={s4}
+                setS4={setS4}
+                checks={{ bank: stage4BankOk, pan: stage4PanOk, salary: stage4SalaryOk, pf: stage4PfOk }}
+                pass={stage4Pass}
+                total={stage4Total4}
+              />
+            )}
             {activeStage === 5 && <Stage5Policies />}
             {activeStage === 6 && <Stage6Verify emp={emp} />}
 
@@ -2275,38 +2488,107 @@ function InitiateOnboardingModal({
           <span className="onb-init-footer-meta">
             <i className="ri-information-line" />
             Stage {activeStage} of 6 — {ONB_STAGES[activeStage - 1].stage}
+            {activeStage === 2 && (
+              <span style={{ marginLeft: 10, fontSize: 11.5, color: stage2Done ? '#0a8a78' : '#a4661c' }}>
+                · {stage2Uploaded}/{stage2Total} required documents {stage2Done ? '✓' : ''}
+              </span>
+            )}
+            {activeStage === 4 && (
+              <span style={{ marginLeft: 10, fontSize: 11.5, color: stage4Done ? '#0a8a78' : '#a4661c' }}>
+                · {stage4Pass}/{stage4Total4} readiness checks {stage4Done ? '✓' : ''}
+              </span>
+            )}
           </span>
           <div className="d-flex align-items-center gap-2">
             <button type="button" className="onb-init-btn-ghost" onClick={() => setActiveStage(Math.max(1, activeStage - 1))}>
               <i className="ri-arrow-left-s-line" /> Previous
             </button>
-            {/* Save Draft — only Stage 1 has bound state today, so the
-                button only writes when the user is on that stage. Marks
-                the wizard fully complete (step 4) so the row's profile %
-                + status pill catch up. */}
+            {/* Save Draft — Stage 1 saves the wizard payload + bumps
+                wizard_step_completed to 4. Stage 4 saves the finance
+                payload + stamps stage4_completed_at when all readiness
+                checks pass. Other stages have no bound state yet, so
+                the button is disabled there. */}
             <button
               type="button"
               className="onb-init-btn-outline"
-              disabled={s1Saving || activeStage !== 1}
-              onClick={() => saveStage1(true)}
+              disabled={
+                (activeStage === 1 && s1Saving) ||
+                (activeStage === 4 && s4Saving) ||
+                (activeStage !== 1 && activeStage !== 4)
+              }
+              onClick={() => {
+                if (activeStage === 1) return saveStage1(true);
+                if (activeStage === 4) return saveStage4(stage4Pass === stage4Total4);
+              }}
             >
-              {s1Saving ? 'Saving…' : 'Save Draft'}
+              {activeStage === 1 ? (s1Saving ? 'Saving…' : 'Save Draft')
+                : activeStage === 4 ? (s4Saving ? 'Saving…' : 'Save Draft')
+                : 'Save Draft'}
             </button>
             {activeStage < 6 ? (
               <button
                 type="button"
                 className="onb-init-btn-next"
+                disabled={
+                  (activeStage === 2 && !stage2Done) ||
+                  (activeStage === 4 && !stage4Done) ||
+                  (activeStage === 4 && s4Saving)
+                }
+                title={
+                  activeStage === 2 && !stage2Done
+                    ? `Upload all required documents (${stage2Uploaded}/${stage2Total}) to proceed`
+                    : activeStage === 4 && !stage4Done
+                    ? `Complete all readiness checks (${stage4Pass}/${stage4Total4}) to proceed`
+                    : undefined
+                }
+                style={
+                  ((activeStage === 2 && !stage2Done) || (activeStage === 4 && !stage4Done))
+                    ? { opacity: 0.55, cursor: 'not-allowed' }
+                    : undefined
+                }
                 onClick={async () => {
-                  // On Stage 1, persist edits before advancing so what the
-                  // user sees on Stage 2+ stays in sync with the server.
+                  // Stage 1: persist edits before advancing. saveStage1
+                  // bumps wizard_step_completed=4; the controller then
+                  // auto-bumps the macro stage to ≥1.
                   if (activeStage === 1) await saveStage1(true);
-                  setActiveStage(activeStage + 1);
+                  // Stage 2: gate on required-document completion + bump
+                  // the macro watermark to 2.
+                  if (activeStage === 2) {
+                    if (!stage2Done) return;
+                    await bumpMacroStage(2);
+                  }
+                  // Stage 3: provisional — bump on Next without backend
+                  // gating since the form is UI-only for now.
+                  if (activeStage === 3) {
+                    await bumpMacroStage(3);
+                  }
+                  // Stage 4: gate on readiness checks + persist with the
+                  // completion stamp before advancing. saveStage4 also
+                  // bumps macro stage to 4.
+                  if (activeStage === 4) {
+                    if (!stage4Done) return;
+                    const ok = await saveStage4(true);
+                    if (!ok) return;
+                  }
+                  // Stage 5: provisional macro bump.
+                  if (activeStage === 5) {
+                    await bumpMacroStage(5);
+                  }
+                  setActiveStage((activeStage + 1) as typeof activeStage);
                 }}
               >
                 Next Stage <i className="ri-arrow-right-s-line" />
               </button>
             ) : (
-              <button type="button" className="onb-init-btn-complete" onClick={onClose}>
+              <button
+                type="button"
+                className="onb-init-btn-complete"
+                onClick={async () => {
+                  // Stamp the macro stage at 6 so profile% hits 100%.
+                  await bumpMacroStage(6);
+                  onClose();
+                }}
+              >
                 <i className="ri-checkbox-circle-line" /> Complete Onboarding
               </button>
             )}
@@ -2318,18 +2600,316 @@ function InitiateOnboardingModal({
 }
 
 // ── Stage 2 — Document Management view (used inside InitiateOnboardingModal)
-function Stage2Documents() {
-  const [prevCompanies, setPrevCompanies] = useState<PrevCompany[]>(() => [makePrevCompany()]);
+/** Server-side document row returned by /api/employees/{id}/documents. */
+interface ApiDocument {
+  id: number;
+  document_key: string;
+  status: 'pending' | 'uploaded' | 'verified' | 'rejected';
+  original_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  rejection_reason: string | null;
+  uploaded_at: string | null;
+  verified_at: string | null;
+  uploader: { id: number; name: string } | null;
+  verifier: { id: number; name: string } | null;
+  url: string | null;
+}
 
-  const addCompany = () => setPrevCompanies(prev => [...prev, makePrevCompany()]);
-  const removeCompany = (id: string) =>
-    setPrevCompanies(prev => (prev.length > 1 ? prev.filter(c => c.id !== id) : prev));
-  const updateCompany = (id: string, patch: Partial<PrevCompany>) =>
-    setPrevCompanies(prev => prev.map(c => (c.id === id ? { ...c, ...patch } : c)));
+/** Map server status → existing UI pill tone key (case difference + Optional fallback). */
+const _serverStatusToUi = (s: string): DocStatus => {
+  switch (s) {
+    case 'verified': return 'Verified';
+    case 'uploaded': return 'Uploaded';
+    case 'rejected': return 'Rejected';
+    default:         return 'Pending';
+  }
+};
 
-  const totalDocs = STAGE2_CATEGORIES.reduce((a, c) => a + c.docs.length, 0)
-                  + prevCompanies.length * STAGE2_COMPANY_DOCS.length;
-  const uploadedDocs = 0;
+/** Server caps + accepted MIME list. Mirrors EmployeeDocumentController so
+ *  the user gets a friendly error before the round-trip. Bump together. */
+const DOC_MAX_MB = 8;
+const DOC_ACCEPTED_MIME = new Set([
+  'application/pdf',
+  'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+]);
+
+function Stage2Documents({ emp, onDocsChanged }: {
+  emp: OnboardRow;
+  /** Fires whenever the document list changes (after upload / replace).
+   *  The parent modal uses it to update Stage 2's side-rail progress
+   *  without doing its own duplicate fetch. */
+  onDocsChanged?: (rows: { document_key: string; status: string }[]) => void;
+}) {
+  const toast = useToast();
+
+  // ── Previous Employment Companies — backed by /api/employees/{id}/previous-employments
+  // Each row owns its own server id (or `null` while it's a draft the
+  // user is still typing into; we persist via POST when company_name is
+  // entered, then PATCH on subsequent edits). This keeps the UX feeling
+  // immediate without needing an explicit "Save" button per row.
+  interface PrevCompanyRow {
+    id: number | null;            // null = unsaved draft
+    company_name: string;
+    job_title: string;
+    start_date: string;
+    end_date: string;
+    hr_email_1: string;
+    hr_email_2: string;
+    contact_number: string;
+    _busy?: boolean;              // disable inputs while a save/delete is in flight
+    _localKey: string;            // stable React key independent of server id
+  }
+  const newDraft = (): PrevCompanyRow => ({
+    id: null, company_name: '', job_title: '',
+    start_date: '', end_date: '',
+    hr_email_1: '', hr_email_2: '', contact_number: '',
+    _localKey: `pc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  });
+  const [prevCompanies, setPrevCompanies] = useState<PrevCompanyRow[]>([newDraft()]);
+
+  // Hydrate from server when the modal opens for this employee.
+  useEffect(() => {
+    if (!emp?.dbId) return;
+    let cancelled = false;
+    api.get(`/employees/${emp.dbId}/previous-employments`).then(r => {
+      if (cancelled) return;
+      const list: any[] = Array.isArray(r.data) ? r.data : [];
+      if (list.length === 0) {
+        // Always render at least one empty row so the user has somewhere
+        // to type. The form persists as soon as company_name is filled.
+        setPrevCompanies([newDraft()]);
+        return;
+      }
+      setPrevCompanies(list.map(p => ({
+        id: p.id,
+        company_name:   p.company_name   ?? '',
+        job_title:      p.job_title      ?? '',
+        start_date:     p.start_date     ?? '',
+        end_date:       p.end_date       ?? '',
+        hr_email_1:     p.hr_email_1     ?? '',
+        hr_email_2:     p.hr_email_2     ?? '',
+        contact_number: p.contact_number ?? '',
+        _localKey:      `pc_${p.id}`,
+      })));
+    }).catch(() => { /* keep empty draft on error */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emp?.dbId]);
+
+  const updateCompany = (key: string, patch: Partial<PrevCompanyRow>) =>
+    setPrevCompanies(prev => prev.map(c => (c._localKey === key ? { ...c, ...patch } : c)));
+
+  const addCompany = () => setPrevCompanies(prev => [...prev, newDraft()]);
+
+  /** PATCH/POST a single company row to the server. Called onBlur from
+   *  every input so the user never has to click "Save" — typing alone
+   *  persists once company_name is non-empty. Returns the canonical
+   *  server id, attaches it back to local state. */
+  const persistCompany = async (key: string) => {
+    if (!emp?.dbId) return;
+    const row = prevCompanies.find(c => c._localKey === key);
+    if (!row || row._busy) return;
+    if (!row.company_name.trim()) return; // need a name before we can save
+    // Quick email + date sanity checks before round-tripping.
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (row.hr_email_1 && !emailRe.test(row.hr_email_1)) {
+      toast.error('Invalid HR Email 1', `Please enter a valid email address.`);
+      return;
+    }
+    if (row.hr_email_2 && !emailRe.test(row.hr_email_2)) {
+      toast.error('Invalid HR Email 2', `Please enter a valid email address.`);
+      return;
+    }
+    if (row.start_date && row.end_date && row.end_date < row.start_date) {
+      toast.error('Invalid date range', 'End date cannot be before start date.');
+      return;
+    }
+    const payload = {
+      company_name:   row.company_name.trim(),
+      job_title:      row.job_title.trim() || null,
+      start_date:     row.start_date || null,
+      end_date:       row.end_date   || null,
+      hr_email_1:     row.hr_email_1.trim() || null,
+      hr_email_2:     row.hr_email_2.trim() || null,
+      contact_number: row.contact_number.trim() || null,
+    };
+    updateCompany(key, { _busy: true });
+    try {
+      if (row.id) {
+        await api.patch(`/previous-employments/${row.id}`, payload);
+      } else {
+        const r = await api.post(`/employees/${emp.dbId}/previous-employments`, payload);
+        const newId = r?.data?.previous_employment?.id ?? null;
+        updateCompany(key, { id: newId });
+      }
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors;
+      const firstMsg = apiErrors ? Object.values(apiErrors).flat()[0] : null;
+      toast.error('Could not save company', String(firstMsg || err?.response?.data?.message || err?.message || 'Save failed'));
+    } finally {
+      updateCompany(key, { _busy: false });
+    }
+  };
+
+  const removeCompany = async (key: string) => {
+    const row = prevCompanies.find(c => c._localKey === key);
+    if (!row) return;
+    // Prevent accidental loss of data on rows that look filled.
+    if (row.id || row.company_name.trim()) {
+      const result = await Swal.fire({
+        title: `Remove ${row.company_name || 'this company'}?`,
+        text: 'This will also delete the documents you uploaded against it.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Remove',
+        confirmButtonColor: '#f06548',
+        cancelButtonColor: '#878a99',
+        reverseButtons: true,
+      });
+      if (!result.isConfirmed) return;
+    }
+    if (row.id) {
+      try {
+        await api.delete(`/previous-employments/${row.id}`);
+      } catch (err: any) {
+        toast.error('Could not remove', String(err?.response?.data?.message || err?.message || 'Delete failed'));
+        return;
+      }
+    }
+    setPrevCompanies(prev => {
+      const next = prev.filter(c => c._localKey !== key);
+      return next.length === 0 ? [newDraft()] : next;
+    });
+  };
+
+  // ── Server-backed document state ─────────────────────────────────────
+  // Keyed by document_key so each catalogue card can look itself up in
+  // O(1). Refreshed after every upload/verify/reject so the pill colours
+  // and progress bar stay in sync with the backend.
+  const [docsByKey, setDocsByKey] = useState<Record<string, ApiDocument>>({});
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const reloadDocs = async () => {
+    if (!emp?.dbId) return;
+    try {
+      const r = await api.get(`/employees/${emp.dbId}/documents`);
+      const list: ApiDocument[] = Array.isArray(r.data) ? r.data : [];
+      const map: Record<string, ApiDocument> = {};
+      for (const d of list) map[d.document_key] = d;
+      setDocsByKey(map);
+      // Bubble the list up so the modal's Stage 2 rail progress + count
+      // header refresh together.
+      onDocsChanged?.(list.map(d => ({ document_key: d.document_key, status: d.status })));
+    } catch { /* keep stale on error */ }
+  };
+  useEffect(() => { reloadDocs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [emp?.dbId]);
+
+  /** Open a hidden file picker, validate locally, then POST as multipart.
+   *  Validates BEFORE upload so the user gets immediate feedback on
+   *  oversized/unsupported files instead of a server round-trip. */
+  const triggerUpload = (docKey: string, docName: string, accept: string) => {
+    if (!emp?.dbId) {
+      toast.error('Cannot upload', 'Save the employee first — no record id yet.');
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.style.display = 'none';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      try { document.body.removeChild(input); } catch { /* already removed */ }
+      if (!file) return;
+
+      // ── Client-side validation (mirrors backend) ──────────────────
+      const maxBytes = DOC_MAX_MB * 1024 * 1024;
+      if (file.size > maxBytes) {
+        toast.error(
+          `${docName} is too large`,
+          `Max allowed is ${DOC_MAX_MB} MB. Selected file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`,
+        );
+        return;
+      }
+      // The browser-supplied MIME isn't 100% reliable; fall back to
+      // extension when blank.
+      const mime = (file.type || '').toLowerCase();
+      const ext  = (file.name.split('.').pop() || '').toLowerCase();
+      const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+      const mimeOk = mime ? DOC_ACCEPTED_MIME.has(mime) : false;
+      const extOk  = allowedExts.includes(ext);
+      if (!mimeOk && !extOk) {
+        toast.error(
+          `Unsupported file type`,
+          `Only PDF, JPG, PNG and WEBP files are allowed. (got "${mime || ext || 'unknown'}")`,
+        );
+        return;
+      }
+
+      setUploadingKey(docKey);
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('document_key', docKey);
+        await api.post(`/employees/${emp.dbId}/documents`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        await reloadDocs();
+        toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
+      } catch (err: any) {
+        const msg = err?.response?.data?.message
+          || (err?.response?.data?.errors?.file?.[0])
+          || err?.message
+          || 'Upload failed';
+        toast.error(`${docName} upload failed`, String(msg));
+      } finally {
+        setUploadingKey(null);
+      }
+    };
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  /** Remove an uploaded document. Confirms first to prevent rage-clicks. */
+  const triggerDelete = async (docId: number, docName: string) => {
+    const result = await Swal.fire({
+      title: `Remove ${docName}?`,
+      text: 'You can re-upload anytime.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Remove',
+      confirmButtonColor: '#f06548',
+      cancelButtonColor: '#878a99',
+      reverseButtons: true,
+    });
+    if (!result.isConfirmed) return;
+    try {
+      await api.delete(`/documents/${docId}`);
+      await reloadDocs();
+      toast.success(`${docName} removed`, 'You can upload a fresh copy whenever you’re ready.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Delete failed';
+      toast.error(`${docName} could not be removed`, String(msg));
+    }
+  };
+
+  /** All catalogue keys (across categories + prev-company docs) — drives totals. */
+  // ── Total / uploaded counts ────────────────────────────────────────
+  // Catalogue docs (always 10) + per-company docs (4 × companies that
+  // are persisted on the server). Draft companies (no id yet) don't add
+  // to the total because their docs can't be uploaded yet — they'd
+  // permanently bring the % down through no fault of the user.
+  const catalogueKeys: string[] = [
+    ...STAGE2_CATEGORIES.flatMap(cat => cat.docs.map(d => d.id)),
+  ];
+  const savedCompanies = prevCompanies.filter(c => c.id !== null);
+  const perCompanyKeys: string[] = savedCompanies.flatMap(c =>
+    STAGE2_COMPANY_DOCS.map(d => `prev_${c.id}_${d.id}`)
+  );
+  const allKeys = [...catalogueKeys, ...perCompanyKeys];
+  const totalDocs = allKeys.length;
+  const uploadedDocs = allKeys
+    .map(k => docsByKey[k]?.status)
+    .filter(s => s === 'uploaded' || s === 'verified').length;
   const pct = totalDocs ? Math.round((uploadedDocs / totalDocs) * 100) : 0;
 
   return (
@@ -2366,6 +2946,11 @@ function Stage2Documents() {
       {/* Document categories */}
       {STAGE2_CATEGORIES.map(cat => {
         const upTotal = cat.docs.length;
+        const upUploaded = cat.docs.filter(d => {
+          const srv = docsByKey[d.id]?.status;
+          return srv === 'uploaded' || srv === 'verified';
+        }).length;
+        const catPct = upTotal ? Math.round((upUploaded / upTotal) * 100) : 0;
         return (
           <div key={cat.id} className="onb-doc-cat">
             <div className="onb-doc-cat-head">
@@ -2373,11 +2958,20 @@ function Stage2Documents() {
                 <i className={cat.icon} />
               </span>
               <h6 className="onb-doc-cat-title">{cat.title}</h6>
-              <span className="onb-doc-cat-count">0 / {upTotal} uploaded</span>
-              <span className="onb-doc-cat-pct">0%</span>
+              <span className="onb-doc-cat-count">{upUploaded} / {upTotal} uploaded</span>
+              <span className="onb-doc-cat-pct">{catPct}%</span>
             </div>
             {cat.docs.map(d => {
-              const tone = DOC_STATUS_TONE[d.status];
+              // Effective status — server row wins, falls back to the
+              // catalogue's intrinsic state ("Optional" rows stay Optional
+              // until uploaded; everything else defaults to Pending).
+              const srv = docsByKey[d.id];
+              const effective: DocStatus = srv
+                ? _serverStatusToUi(srv.status)
+                : (d.status === 'Optional' ? 'Optional' : 'Pending');
+              const tone = DOC_STATUS_TONE[effective];
+              const accept = /photo|cheque/i.test(d.id) ? 'image/jpeg,image/png,application/pdf' : 'application/pdf,image/*';
+              const isBusy = uploadingKey === d.id;
               return (
                 <div key={d.id} className="onb-doc-row">
                   <span className="onb-doc-row-icon"><i className="ri-file-text-line" /></span>
@@ -2386,15 +2980,48 @@ function Stage2Documents() {
                       {d.name}
                       {d.status === 'Optional' && <span className="onb-doc-tag">Optional</span>}
                     </h6>
-                    <p className="onb-doc-row-sub">{d.sub}</p>
+                    <p className="onb-doc-row-sub">
+                      {d.sub}
+                      {srv?.original_name && <> · <strong>{srv.original_name}</strong></>}
+                      {srv?.rejection_reason && <> · <span style={{ color: '#b1401d' }}>Reason: {srv.rejection_reason}</span></>}
+                    </p>
                   </div>
                   <span className="onb-doc-status-pill" style={{ background: tone.bg, color: tone.fg }}>
                     <span className="dot" style={{ background: tone.dot }} />
-                    {d.status}
+                    {effective}
                   </span>
-                  <button type="button" className="onb-doc-upload-btn">
-                    <i className="ri-upload-cloud-2-line" /> Upload
+                  {srv?.url && (
+                    <a
+                      href={srv.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="onb-doc-upload-btn"
+                      style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
+                    >
+                      <i className="ri-eye-line" /> View
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className="onb-doc-upload-btn"
+                    onClick={() => triggerUpload(d.id, d.name, accept)}
+                    disabled={isBusy}
+                    style={isBusy ? { opacity: 0.6, cursor: 'progress' } : undefined}
+                  >
+                    <i className={isBusy ? 'ri-loader-4-line' : 'ri-upload-cloud-2-line'} />
+                    {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                   </button>
+                  {srv && (
+                    <button
+                      type="button"
+                      className="onb-doc-upload-btn"
+                      onClick={() => triggerDelete(srv.id, d.name)}
+                      title="Remove this document"
+                      style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
+                    >
+                      <i className="ri-delete-bin-line" />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -2408,23 +3035,34 @@ function Stage2Documents() {
           <span className="onb-doc-prev-icon"><i className="ri-briefcase-line" style={{ fontSize: 14 }} /></span>
           <div className="min-w-0 flex-grow-1">
             <h6 className="onb-doc-prev-title">Previous Employment Documents</h6>
-            <div className="onb-doc-prev-sub">7 Years Experience · Required for each previous company</div>
           </div>
           <span className="onb-doc-prev-pill">{prevCompanies.length} {prevCompanies.length === 1 ? 'Company' : 'Companies'}</span>
         </div>
 
-        {prevCompanies.map((c, idx) => (
-          <div key={c.id} className="onb-doc-comp">
+        {prevCompanies.map((c, idx) => {
+          // Per-company doc upload key — namespaced so each row has its
+          // own slots in the employee_documents table without colliding
+          // with the catalogue keys.
+          const docKeyFor = (k: string) => c.id ? `prev_${c.id}_${k}` : '';
+          const compDocsTotal = STAGE2_COMPANY_DOCS.length;
+          const compDocsUploaded = c.id
+            ? STAGE2_COMPANY_DOCS.filter(d => {
+                const srv = docsByKey[docKeyFor(d.id)]?.status;
+                return srv === 'uploaded' || srv === 'verified';
+              }).length
+            : 0;
+          return (
+          <div key={c._localKey} className="onb-doc-comp">
             <div className="onb-doc-comp-head">
               <span className="onb-doc-comp-num">{idx + 1}</span>
-              <h6 className="onb-doc-comp-name">{c.name || `Previous Company ${idx + 1}`}</h6>
-              <span className="onb-doc-comp-count">0/4 Docs</span>
+              <h6 className="onb-doc-comp-name">{c.company_name || `Previous Company ${idx + 1}`}</h6>
+              <span className="onb-doc-comp-count">{compDocsUploaded}/{compDocsTotal} Docs</span>
               {prevCompanies.length > 1 && (
                 <button
                   type="button"
                   className="onb-doc-comp-close"
                   aria-label="Remove company"
-                  onClick={() => removeCompany(c.id)}
+                  onClick={() => removeCompany(c._localKey)}
                 >
                   <i className="ri-close-line" style={{ fontSize: 12 }} />
                 </button>
@@ -2438,46 +3076,99 @@ function Stage2Documents() {
                   <input
                     className="onb-init-input"
                     placeholder="e.g. Wipro Digital (2020-2023)"
-                    value={c.name}
-                    onChange={e => updateCompany(c.id, { name: e.target.value })}
+                    value={c.company_name}
+                    onChange={e => updateCompany(c._localKey, { company_name: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
                 <Col md={6}>
-                  <label className="onb-init-label">Job Title / Designation <span className="req">*</span></label>
+                  <label className="onb-init-label">Job Title / Designation</label>
                   <input
                     className="onb-init-input"
                     placeholder="e.g. Software Engineer"
-                    value={c.jobTitle}
-                    onChange={e => updateCompany(c.id, { jobTitle: e.target.value })}
+                    value={c.job_title}
+                    onChange={e => updateCompany(c._localKey, { job_title: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
                 <Col md={6}>
-                  <label className="onb-init-label">Employment Start Date <span className="req">*</span></label>
-                  <MasterDatePicker placeholder="Select start date" />
+                  <label className="onb-init-label">Employment Start Date</label>
+                  <MasterDatePicker
+                    placeholder="Select start date"
+                    value={c.start_date}
+                    onChange={(v) => { updateCompany(c._localKey, { start_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
+                  />
                 </Col>
                 <Col md={6}>
-                  <label className="onb-init-label">Employment End Date <span className="req">*</span></label>
-                  <MasterDatePicker placeholder="Select end date" />
+                  <label className="onb-init-label">Employment End Date</label>
+                  <MasterDatePicker
+                    placeholder="Select end date"
+                    value={c.end_date}
+                    onChange={(v) => { updateCompany(c._localKey, { end_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
+                  />
                 </Col>
               </Row>
 
               <p className="onb-doc-comp-section" style={{ marginTop: 14 }}><i className="ri-file-list-line" /> Document Upload</p>
+              {!c.id && (
+                <div style={{ fontSize: 11.5, color: '#a4661c', background: '#fde8c4', padding: '6px 10px', borderRadius: 8, marginBottom: 6 }}>
+                  Save the company name first to enable document uploads.
+                </div>
+              )}
               {STAGE2_COMPANY_DOCS.map(d => {
-                const tone = DOC_STATUS_TONE[d.status];
+                const fullKey = docKeyFor(d.id);
+                const srv = fullKey ? docsByKey[fullKey] : undefined;
+                const effective: DocStatus = srv
+                  ? _serverStatusToUi(srv.status)
+                  : (d.status === 'Optional' ? 'Optional' : 'Pending');
+                const tone = DOC_STATUS_TONE[effective];
+                const isBusy = uploadingKey === fullKey;
                 return (
                   <div key={d.id} className="onb-doc-comp-doc">
                     <span className="onb-doc-comp-doc-icon"><i className="ri-file-text-line" /></span>
                     <h6 className="onb-doc-comp-doc-name">
                       {d.name}
                       {d.status === 'Optional' && <span className="onb-doc-tag">Optional</span>}
+                      {srv?.original_name && <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>· {srv.original_name}</span>}
                     </h6>
                     <span className="onb-doc-status-pill" style={{ background: tone.bg, color: tone.fg }}>
                       <span className="dot" style={{ background: tone.dot }} />
-                      {d.status}
+                      {effective}
                     </span>
-                    <button type="button" className="onb-doc-upload-btn">
-                      <i className="ri-upload-cloud-2-line" /> Upload
+                    {srv?.url && (
+                      <a
+                        href={srv.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="onb-doc-upload-btn"
+                        style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
+                      >
+                        <i className="ri-eye-line" /> View
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      className="onb-doc-upload-btn"
+                      disabled={!c.id || isBusy}
+                      onClick={() => triggerUpload(fullKey, d.name, 'application/pdf,image/*')}
+                      style={(!c.id || isBusy) ? { opacity: 0.6, cursor: c.id ? 'progress' : 'not-allowed' } : undefined}
+                    >
+                      <i className={isBusy ? 'ri-loader-4-line' : 'ri-upload-cloud-2-line'} />
+                      {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                     </button>
+                    {srv && (
+                      <button
+                        type="button"
+                        className="onb-doc-upload-btn"
+                        onClick={() => triggerDelete(srv.id, d.name)}
+                        title="Remove this document"
+                        style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
+                      >
+                        <i className="ri-delete-bin-line" />
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -2489,36 +3180,42 @@ function Stage2Documents() {
               </div>
               <Row className="g-3">
                 <Col md={4}>
-                  <label className="onb-init-label">HR Email ID 1 <span className="req">*</span></label>
+                  <label className="onb-init-label">HR Email ID 1</label>
                   <input
-                    className="onb-init-input is-required"
+                    className="onb-init-input"
                     placeholder="hr@company.com"
-                    value={c.hrEmail1}
-                    onChange={e => updateCompany(c.id, { hrEmail1: e.target.value })}
+                    value={c.hr_email_1}
+                    onChange={e => updateCompany(c._localKey, { hr_email_1: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
                 <Col md={4}>
-                  <label className="onb-init-label">HR Email ID 2 <span className="req">*</span></label>
+                  <label className="onb-init-label">HR Email ID 2</label>
                   <input
-                    className="onb-init-input is-required"
+                    className="onb-init-input"
                     placeholder="hr2@company.com"
-                    value={c.hrEmail2}
-                    onChange={e => updateCompany(c.id, { hrEmail2: e.target.value })}
+                    value={c.hr_email_2}
+                    onChange={e => updateCompany(c._localKey, { hr_email_2: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
                 <Col md={4}>
-                  <label className="onb-init-label">Company Contact Number <span className="req">*</span></label>
+                  <label className="onb-init-label">Company Contact Number</label>
                   <input
-                    className="onb-init-input is-required"
+                    className="onb-init-input"
                     placeholder="+91 XXXXX XXXXX"
-                    value={c.contactNumber}
-                    onChange={e => updateCompany(c.id, { contactNumber: e.target.value })}
+                    value={c.contact_number}
+                    onChange={e => updateCompany(c._localKey, { contact_number: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
               </Row>
             </div>
           </div>
-        ))}
+        );})}
 
         <button type="button" className="onb-doc-add-comp" onClick={addCompany}>
           <i className="ri-add-line" /> Add Previous Company
@@ -2654,27 +3351,59 @@ function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
 }
 
 // ── Stage 4 — Payroll & Finance Setup ──────────────────────────────────────
-function Stage4Payroll() {
-  const [mode, setMode] = useState<'bank' | 'cheque' | 'cash'>('bank');
-  const checks: { id: string; name: string }[] = [
-    { id: 'bank', name: 'Bank details complete' },
-    { id: 'pan',  name: 'PAN verified' },
-    { id: 'sal',  name: 'Salary structure confirmed' },
-    { id: 'pf',   name: 'PF / ESIC setup complete' },
+/** Bound to the modal-level `s4` state so all Stage 4 progress, check-pills,
+ *  Save Draft button, and Next-Stage gating share one source of truth. */
+type S4State = {
+  salary_payment_mode: 'bank' | 'cheque' | 'cash';
+  bank_name: string;
+  bank_account_number: string;
+  ifsc_code: string;
+  account_holder_name: string;
+  bank_branch: string;
+  bank_account_type: string;
+  uan_number: string;
+  pan_number: string;
+  tax_regime: string;
+  pf_deduction: string;
+  esi_applicable: string;
+  gratuity_nominee_name: string;
+  agreed_ctc_lpa: string;
+};
+
+function Stage4Payroll({
+  s4, setS4, checks, pass, total,
+}: {
+  s4: S4State;
+  setS4: React.Dispatch<React.SetStateAction<S4State>>;
+  checks: { bank: boolean; pan: boolean; salary: boolean; pf: boolean };
+  pass: number;
+  total: number;
+}) {
+  const checkRows: { id: keyof typeof checks; name: string }[] = [
+    { id: 'bank',   name: 'Bank details complete' },
+    { id: 'pan',    name: 'PAN verified' },
+    { id: 'salary', name: 'Salary structure confirmed' },
+    { id: 'pf',     name: 'PF / ESIC setup complete' },
   ];
+  const pct = total ? Math.round((pass / total) * 100) : 0;
+  const allDone = pass === total;
 
   return (
     <>
-      {/* Progress banner (amber) */}
-      <div className="onb-pay-progress">
-        <span className="onb-pay-progress-icon"><i className="ri-money-dollar-circle-line" style={{ fontSize: 16 }} /></span>
+      {/* Progress banner — flips green once every readiness check passes. */}
+      <div className="onb-pay-progress" style={allDone ? { background: '#e6f7f1', borderColor: '#c4eedc' } : undefined}>
+        <span className="onb-pay-progress-icon" style={allDone ? { background: '#10b981' } : undefined}><i className="ri-money-dollar-circle-line" style={{ fontSize: 16 }} /></span>
         <div className="flex-grow-1 min-w-0">
           <div className="onb-pay-progress-row">
             <h6 className="onb-pay-progress-title">Payroll &amp; Finance Setup</h6>
-            <span className="onb-pay-progress-count">0 / 4 Checks</span>
+            <span className="onb-pay-progress-count">{pass} / {total} Checks</span>
           </div>
-          <div className="onb-pay-progress-bar"><div className="onb-pay-progress-fill" style={{ width: '0%' }} /></div>
-          <p className="onb-pay-progress-help">Fill all required fields and complete readiness checks before proceeding to Stage 5.</p>
+          <div className="onb-pay-progress-bar"><div className="onb-pay-progress-fill" style={{ width: `${pct}%`, background: allDone ? '#10b981' : undefined }} /></div>
+          <p className="onb-pay-progress-help">
+            {allDone
+              ? 'All readiness checks passed. Click Save Draft to lock Stage 4 and continue to Stage 5.'
+              : 'Fill all required fields and complete readiness checks before proceeding to Stage 5.'}
+          </p>
         </div>
       </div>
 
@@ -2693,8 +3422,8 @@ function Stage4Payroll() {
           ] as const).map(opt => (
             <div
               key={opt.id}
-              className={`onb-pay-radio ${mode === opt.id ? 'is-selected' : ''}`}
-              onClick={() => setMode(opt.id)}
+              className={`onb-pay-radio ${s4.salary_payment_mode === opt.id ? 'is-selected' : ''}`}
+              onClick={() => setS4(p => ({ ...p, salary_payment_mode: opt.id }))}
             >
               <span className="onb-pay-radio-circle" />
               <div className="min-w-0">
@@ -2706,7 +3435,9 @@ function Stage4Payroll() {
         </div>
       </div>
 
-      {/* Bank Details */}
+      {/* Bank Details — only collected for `bank` mode. Cheque/cash skip
+          straight to Tax & Statutory since no account is needed. */}
+      {s4.salary_payment_mode === 'bank' && (
       <div className="onb-pay-section">
         <div className="onb-pay-section-head">
           <span className="onb-pay-section-icon bank"><i className="ri-money-dollar-circle-line" /></span>
@@ -2714,16 +3445,56 @@ function Stage4Payroll() {
         </div>
         <div className="onb-pay-section-body">
           <Row className="g-3">
-            <Col md={4}><label className="onb-init-label">Bank Name <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. HDFC Bank" /></Col>
-            <Col md={4}><label className="onb-init-label">Account Number <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="16-digit account number" /></Col>
-            <Col md={4}><label className="onb-init-label">IFSC Code <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. HDFC0001234" /></Col>
-            <Col md={4}><label className="onb-init-label">Name on the Account <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="Full legal name as per bank" /></Col>
-            <Col md={4}><label className="onb-init-label">Branch <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. Baner, Pune" /></Col>
-            <Col md={4}><label className="onb-init-label">Account Type</label><MasterSelect options={ONB_ACCOUNT_TYPE} defaultValue="Salary" /></Col>
-            <Col md={4}><label className="onb-init-label">UAN Number (PF)</label><input className="onb-init-input" placeholder="12-digit UAN" /></Col>
+            <Col md={4}>
+              <label className="onb-init-label">Bank Name <span className="req">*</span></label>
+              <input className="onb-init-input is-required" placeholder="e.g. HDFC Bank" value={s4.bank_name} onChange={e => setS4(p => ({ ...p, bank_name: e.target.value }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Account Number <span className="req">*</span></label>
+              <input className="onb-init-input is-required" placeholder="Account number" value={s4.bank_account_number} onChange={e => setS4(p => ({ ...p, bank_account_number: e.target.value.replace(/\s+/g, '') }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">IFSC Code <span className="req">*</span></label>
+              <input
+                className="onb-init-input is-required"
+                placeholder="e.g. HDFC0001234"
+                maxLength={11}
+                value={s4.ifsc_code}
+                onChange={e => setS4(p => ({ ...p, ifsc_code: e.target.value.toUpperCase() }))}
+              />
+              {s4.ifsc_code && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(s4.ifsc_code) && (
+                <small style={{ color: '#dc2626', fontSize: 11.5 }}>11 chars: 4 letters + 0 + 6 alphanum</small>
+              )}
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Name on the Account <span className="req">*</span></label>
+              <input className="onb-init-input is-required" placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Branch <span className="req">*</span></label>
+              <input className="onb-init-input is-required" placeholder="e.g. Baner, Pune" value={s4.bank_branch} onChange={e => setS4(p => ({ ...p, bank_branch: e.target.value }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Account Type</label>
+              <MasterSelect options={ONB_ACCOUNT_TYPE} value={s4.bank_account_type} onChange={(v) => setS4(p => ({ ...p, bank_account_type: v }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">UAN Number (PF)</label>
+              <input
+                className="onb-init-input"
+                placeholder="12-digit UAN"
+                maxLength={12}
+                value={s4.uan_number}
+                onChange={e => setS4(p => ({ ...p, uan_number: e.target.value.replace(/\D/g, '') }))}
+              />
+              {s4.uan_number && s4.uan_number.length !== 12 && (
+                <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN must be exactly 12 digits</small>
+              )}
+            </Col>
           </Row>
         </div>
       </div>
+      )}
 
       {/* Tax & Statutory Details */}
       <div className="onb-pay-section">
@@ -2733,12 +3504,45 @@ function Stage4Payroll() {
         </div>
         <div className="onb-pay-section-body">
           <Row className="g-3">
-            <Col md={4}><label className="onb-init-label">PAN Number <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="AAAZZ9999A" /></Col>
-            <Col md={4}><label className="onb-init-label">Tax Regime</label><MasterSelect options={ONB_TAX_REGIME} defaultValue="New Regime (115BAC)" /></Col>
-            <Col md={4}><label className="onb-init-label">PF Deduction</label><MasterSelect options={ONB_PF_DEDUCT} defaultValue="Employee + Employer" /></Col>
-            <Col md={4}><label className="onb-init-label">ESI Applicable</label><MasterSelect options={ONB_YES_NO} defaultValue="No" /></Col>
-            <Col md={4}><label className="onb-init-label">Gratuity Nominee Name</label><input className="onb-init-input" placeholder="Full legal name" /></Col>
-            <Col md={4}><label className="onb-init-label">Agreed CTC (LPA) <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. 12" /></Col>
+            <Col md={4}>
+              <label className="onb-init-label">PAN Number <span className="req">*</span></label>
+              <input
+                className="onb-init-input is-required"
+                placeholder="AAAZZ9999A"
+                maxLength={10}
+                value={s4.pan_number}
+                onChange={e => setS4(p => ({ ...p, pan_number: e.target.value.toUpperCase() }))}
+              />
+              {s4.pan_number && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(s4.pan_number) && (
+                <small style={{ color: '#dc2626', fontSize: 11.5 }}>PAN format: 5 letters + 4 digits + 1 letter</small>
+              )}
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Tax Regime</label>
+              <MasterSelect options={ONB_TAX_REGIME} value={s4.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS4(p => ({ ...p, tax_regime: v }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">PF Deduction <span className="req">*</span></label>
+              <MasterSelect options={ONB_PF_DEDUCT} value={s4.pf_deduction} onChange={(v) => setS4(p => ({ ...p, pf_deduction: v }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">ESI Applicable</label>
+              <MasterSelect options={ONB_YES_NO} value={s4.esi_applicable || 'No'} onChange={(v) => setS4(p => ({ ...p, esi_applicable: v }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Gratuity Nominee Name</label>
+              <input className="onb-init-input" placeholder="Full legal name" value={s4.gratuity_nominee_name} onChange={e => setS4(p => ({ ...p, gratuity_nominee_name: e.target.value }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Agreed CTC (LPA) <span className="req">*</span></label>
+              <input
+                className="onb-init-input is-required"
+                placeholder="e.g. 12"
+                inputMode="decimal"
+                value={s4.agreed_ctc_lpa}
+                onChange={e => setS4(p => ({ ...p, agreed_ctc_lpa: e.target.value.replace(/[^0-9.]/g, '') }))}
+              />
+            </Col>
           </Row>
         </div>
       </div>
@@ -2750,16 +3554,26 @@ function Stage4Payroll() {
           <h6 className="onb-pay-section-title">Payroll Readiness Check</h6>
         </div>
         <div className="onb-pay-section-body">
-          {checks.map(c => (
-            <div key={c.id} className="onb-pay-check">
-              <span className="onb-pay-check-icon"><i className="ri-loader-line" /></span>
-              <h6 className="onb-pay-check-name">{c.name}</h6>
-              <span className="onb-doc-status-pill" style={{ background: '#fde8c4', color: '#a4661c' }}>
-                <span className="dot" style={{ background: '#f59e0b' }} />
-                Pending
-              </span>
-            </div>
-          ))}
+          {checkRows.map(c => {
+            const ok = checks[c.id];
+            return (
+              <div key={c.id} className="onb-pay-check">
+                <span className="onb-pay-check-icon" style={ok ? { background: '#10b981', color: '#fff' } : undefined}>
+                  <i className={ok ? 'ri-check-line' : 'ri-loader-line'} />
+                </span>
+                <h6 className="onb-pay-check-name">{c.name}</h6>
+                <span
+                  className="onb-doc-status-pill"
+                  style={ok
+                    ? { background: '#d1fae5', color: '#065f46' }
+                    : { background: '#fde8c4', color: '#a4661c' }}
+                >
+                  <span className="dot" style={{ background: ok ? '#10b981' : '#f59e0b' }} />
+                  {ok ? 'Verified' : 'Pending'}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </>

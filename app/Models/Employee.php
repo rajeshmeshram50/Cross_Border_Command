@@ -52,7 +52,16 @@ class Employee extends Model
         'salary_effective_from', 'salary_structure', 'tax_regime',
         'bonus_in_annual', 'pf_eligible', 'detailed_breakup',
 
-        'assets', 'status', 'wizard_step_completed',
+        // Stage 4 — Payroll & Finance Setup (added 2026-05-03)
+        'salary_payment_mode',
+        'bank_name', 'bank_account_number', 'ifsc_code',
+        'account_holder_name', 'bank_branch', 'bank_account_type',
+        'uan_number',
+        'pan_number', 'pf_deduction', 'esi_applicable',
+        'gratuity_nominee_name', 'agreed_ctc_lpa',
+        'stage4_completed_at',
+
+        'assets', 'status', 'wizard_step_completed', 'onboarding_stage_completed',
     ];
 
     protected $casts = [
@@ -68,7 +77,10 @@ class Employee extends Model
         'pf_eligible' => 'boolean',
         'detailed_breakup' => 'boolean',
         'annual_salary' => 'decimal:2',
+        'agreed_ctc_lpa' => 'decimal:2',
+        'stage4_completed_at' => 'datetime',
         'wizard_step_completed' => 'integer',
+        'onboarding_stage_completed' => 'integer',
     ];
 
     /**
