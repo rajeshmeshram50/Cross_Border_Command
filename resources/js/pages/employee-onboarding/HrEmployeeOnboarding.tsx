@@ -135,6 +135,13 @@ interface OnboardRow {
    *  Initiate Onboarding modal can mark Stage 1 (Employee Onboarding Setup)
    *  as Completed once all 4 wizard steps are saved. */
   wizardStep?: number;
+  /** DB primary key — used by the Initiate Onboarding modal to PUT
+   *  edits back to /api/employees/{id}. */
+  dbId?: number;
+  /** Raw ApiEmployee row — carries every field the Stage 1 form needs to
+   *  pre-fill (work_country_id, gender, dob, addresses, payroll, etc.).
+   *  Typed loosely because the modal reads many ad-hoc fields. */
+  raw?: any;
 }
 
 // ── Helpers — bridge API rows to the OnboardRow shape this page expects ────
@@ -200,6 +207,8 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     profile: Math.min(50, Math.max(0, Number(e.wizard_step_completed ?? 0) * 12.5)),
     status: _mapOnboardStatus(e),
     wizardStep: Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0))),
+    dbId: e.id,
+    raw: e,
   };
 };
 
@@ -457,17 +466,15 @@ export default function HrEmployeeOnboarding() {
   // wizard progress + status. Empty array on error so the page still
   // renders (shows zero counts + empty table) instead of crashing.
   const [apiRows, setApiRows] = useState<OnboardRow[]>([]);
-  useEffect(() => {
-    let cancelled = false;
+  const reloadApiRows = () => {
     api.get('/employees')
       .then(r => {
-        if (cancelled) return;
         const list = Array.isArray(r.data) ? r.data : [];
         setApiRows(list.map(apiToOnboardRow));
       })
-      .catch(() => { if (!cancelled) setApiRows([]); });
-    return () => { cancelled = true; };
-  }, []);
+      .catch(() => setApiRows([]));
+  };
+  useEffect(() => { reloadApiRows(); }, []);
   // Split by status pill so the Pending tab keeps showing only employees
   // who still need attention; Completed tab shows fully-onboarded rows.
   const liveSplit = useMemo(() => {
@@ -954,6 +961,21 @@ export default function HrEmployeeOnboarding() {
         isOpen={initiateOpen}
         onClose={closeInitiate}
         emp={initiateRow}
+        onSaved={() => {
+          // Pull fresh data so Stage 1's hydrate effect sees the new
+          // wizard_step / saved fields next render. Also update the row
+          // currently held by `initiateRow` so the modal stays open with
+          // the latest saved snapshot.
+          api.get('/employees').then(r => {
+            const list = Array.isArray(r.data) ? r.data : [];
+            const next = list.map(apiToOnboardRow);
+            setApiRows(next);
+            if (initiateRow?.empId) {
+              const refreshed = next.find(x => x.empId === initiateRow.empId);
+              if (refreshed) setInitiateRow(refreshed);
+            }
+          }).catch(() => { /* keep stale data on error */ });
+        }}
       />
 
       {/* ── Edit Employee Modal ── */}
@@ -1553,11 +1575,27 @@ const STAGE2_CATEGORIES: DocCategory[] = [
   },
 ];
 
-const STAGE2_PREV_COMPANIES = [
-  { id: 'c1', name: 'Infosys (2017–2020)' },
-  { id: 'c2', name: 'Wipro Digital (2020–2023)' },
-  { id: 'c3', name: 'TCS iON (2023–2025)' },
-];
+interface PrevCompany {
+  id: string;
+  name: string;
+  jobTitle: string;
+  startDate: string;
+  endDate: string;
+  hrEmail1: string;
+  hrEmail2: string;
+  contactNumber: string;
+}
+
+const makePrevCompany = (): PrevCompany => ({
+  id: `pc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  name: '',
+  jobTitle: '',
+  startDate: '',
+  endDate: '',
+  hrEmail1: '',
+  hrEmail2: '',
+  contactNumber: '',
+});
 
 const STAGE2_COMPANY_DOCS: { id: string; name: string; status: DocStatus }[] = [
   { id: 'exp_letter',   name: 'Experience Letter',     status: 'Pending'  },
@@ -1575,21 +1613,212 @@ const DOC_STATUS_TONE: Record<DocStatus, { bg: string; fg: string; dot: string }
 };
 
 function InitiateOnboardingModal({
-  isOpen, onClose, emp,
+  isOpen, onClose, emp, onSaved,
 }: {
   isOpen: boolean;
   onClose: () => void;
   emp: OnboardRow | null;
+  onSaved?: () => void;
 }) {
   const [activeStage, setActiveStage] = useState(1);
   // Reset to stage 1 each time a new employee opens
   useEffect(() => { if (isOpen) setActiveStage(1); }, [isOpen, emp?.id]);
 
+  // ── Master data — fetched once when the modal first opens. Everything
+  //    Stage 1 needs to populate its dropdowns: countries (work + nationality),
+  //    departments, designations, roles, legal entities, eligible managers.
+  //    All scoped server-side to the inviting tenant.
+  const [mCountries, setMCountries]       = useState<{ id: number; name: string }[]>([]);
+  const [mDepts, setMDepts]               = useState<{ id: number; name: string }[]>([]);
+  const [mDesignations, setMDesignations] = useState<{ id: number; name: string }[]>([]);
+  const [mRoles, setMRoles]               = useState<{ id: number; name: string }[]>([]);
+  const [mLegalEntities, setMLegalEntities] = useState<{ id: number; entity_name: string; city?: string | null }[]>([]);
+  const [managerOpts, setManagerOpts]       = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    Promise.allSettled([
+      api.get('/master/countries').then(r => { if (!cancelled) setMCountries(Array.isArray(r.data) ? r.data : []); }),
+      api.get('/master/departments').then(r => { if (!cancelled) setMDepts(Array.isArray(r.data) ? r.data : []); }),
+      api.get('/master/designations').then(r => { if (!cancelled) setMDesignations(Array.isArray(r.data) ? r.data : []); }),
+      api.get('/master/roles').then(r => { if (!cancelled) setMRoles(Array.isArray(r.data) ? r.data : []); }),
+      api.get('/master/legal_entities').then(r => { if (!cancelled) setMLegalEntities(Array.isArray(r.data) ? r.data : []); }),
+      api.get('/employees/managers').then(r => {
+        if (cancelled) return;
+        const merged = [
+          ...((r?.data?.employees   ?? []) as any[]),
+          ...((r?.data?.login_users ?? []) as any[]),
+        ];
+        setManagerOpts(merged.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })));
+      }).catch(() => { if (!cancelled) setManagerOpts([]); }),
+    ]);
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  const countryOpts     = mCountries.map(c => ({ value: String(c.id), label: c.name }));
+  const departmentOpts  = mDepts.map(d => ({ value: String(d.id), label: d.name }));
+  const designationOpts = mDesignations.map(d => ({ value: String(d.id), label: d.name }));
+  const roleOpts        = mRoles.map(r => ({ value: String(r.id), label: r.name }));
+  const legalEntityOpts = mLegalEntities.map(le => ({ value: String(le.id), label: le.entity_name }));
+
+  // ── Stage 1 form state — every field that maps to a column on
+  //    /api/employees lives here. Hydrated from `emp.raw` whenever the
+  //    modal opens for a new employee so the inputs always reflect what
+  //    the server actually has. Save Draft pushes the diff back via PUT.
+  const r = emp?.raw || {};
+  const [s1Saving, setS1Saving] = useState(false);
+  const [s1, setS1] = useState({
+    first_name:  '',
+    middle_name: '',
+    last_name:   '',
+    gender:      '',
+    date_of_birth: '',
+    nationality_country_id: '',
+    work_country_id: '',
+    email:       '',
+    mobile:      '',
+
+    department_id:    '',
+    designation_id:   '',
+    primary_role_id:  '',
+    ancillary_role_id: '',
+    legal_entity_id:  '',
+    location:         '',
+    // Composite "kind:id" — picker stores employee:{id} or {kind}:{id}.
+    // Save handler unpacks and only commits the FK when kind === 'employee'.
+    reporting_manager: '',
+    date_of_joining:  '',
+    probation_policy: '',
+    notice_period:    '',
+
+    leave_plan: '', holiday_list: '', shift: '', weekly_off: '',
+    attendance_number: '', time_tracking: '', penalization_policy: '',
+    overtime: '', expense_policy: '',
+    laptop_assigned: '', laptop_asset_id: '', mobile_device: '', other_assets: '',
+    attendance_tracking: true,
+
+    enable_payroll: true,
+    pay_group: '', annual_salary: '', salary_frequency: 'Per annum',
+    salary_effective_from: '', salary_structure: '', tax_regime: '',
+    bonus_in_annual: false, pf_eligible: false, detailed_breakup: false,
+  });
+
+  // Hydrate from raw whenever the modal opens or a different employee is loaded.
+  useEffect(() => {
+    if (!isOpen || !emp?.raw) return;
+    const x = emp.raw;
+    setS1({
+      first_name:  String(x.first_name  ?? ''),
+      middle_name: String(x.middle_name ?? ''),
+      last_name:   String(x.last_name   ?? ''),
+      gender:      String(x.gender ?? ''),
+      date_of_birth: x.date_of_birth ? String(x.date_of_birth).slice(0, 10) : '',
+      nationality_country_id: x.nationality_country_id ? String(x.nationality_country_id) : '',
+      work_country_id:        x.work_country_id        ? String(x.work_country_id)        : '',
+      email:       String(x.email  ?? ''),
+      mobile:      String(x.mobile ?? ''),
+
+      department_id:    x.department_id    ? String(x.department_id)    : '',
+      designation_id:   x.designation_id   ? String(x.designation_id)   : '',
+      primary_role_id:  x.primary_role_id  ? String(x.primary_role_id)  : '',
+      ancillary_role_id: x.ancillary_role_id ? String(x.ancillary_role_id) : '',
+      legal_entity_id:  x.legal_entity_id  ? String(x.legal_entity_id)  : '',
+      location:         String(x.location ?? ''),
+      reporting_manager: x.reporting_manager_id ? `employee:${x.reporting_manager_id}` : '',
+      date_of_joining:  x.date_of_joining ? String(x.date_of_joining).slice(0, 10) : '',
+      probation_policy: String(x.probation_policy ?? ''),
+      notice_period:    String(x.notice_period    ?? ''),
+
+      leave_plan:          String(x.leave_plan          ?? ''),
+      holiday_list:        String(x.holiday_list        ?? ''),
+      shift:               String(x.shift               ?? ''),
+      weekly_off:          String(x.weekly_off          ?? ''),
+      attendance_number:   String(x.attendance_number   ?? ''),
+      time_tracking:       String(x.time_tracking       ?? ''),
+      penalization_policy: String(x.penalization_policy ?? ''),
+      overtime:            String(x.overtime            ?? ''),
+      expense_policy:      String(x.expense_policy      ?? ''),
+      laptop_assigned:     String(x.laptop_assigned     ?? ''),
+      laptop_asset_id:     String(x.laptop_asset_id     ?? ''),
+      mobile_device:       String(x.mobile_device       ?? ''),
+      other_assets:        String(x.other_assets        ?? ''),
+      attendance_tracking: x.attendance_tracking !== undefined ? !!x.attendance_tracking : true,
+
+      enable_payroll: x.enable_payroll !== undefined ? !!x.enable_payroll : true,
+      pay_group:             String(x.pay_group             ?? ''),
+      annual_salary:         x.annual_salary != null ? String(x.annual_salary) : '',
+      salary_frequency:      String(x.salary_frequency      ?? 'Per annum'),
+      salary_effective_from: x.salary_effective_from ? String(x.salary_effective_from).slice(0, 10) : '',
+      salary_structure:      String(x.salary_structure      ?? ''),
+      tax_regime:            String(x.tax_regime            ?? ''),
+      bonus_in_annual:       !!x.bonus_in_annual,
+      pf_eligible:           !!x.pf_eligible,
+      detailed_breakup:      !!x.detailed_breakup,
+    });
+  }, [isOpen, emp?.id, emp?.raw]);
+
+  /** Push the current Stage 1 form values to the backend as a PUT. The
+   *  server already accepts partial PATCHes — fields the wizard hasn't
+   *  saved yet stay null on the row. wizard_step_completed gets bumped
+   *  by the controller's high-watermark logic only if we send a higher
+   *  value, so passing 4 here marks the wizard fully done. */
+  const saveStage1 = async (markComplete: boolean) => {
+    if (!emp?.dbId || s1Saving) return;
+    setS1Saving(true);
+    const intOrNull = (v: string) => {
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? n : null;
+    };
+    // Reporting manager uses a composite "kind:id" so the picker can host
+    // both employees and login users in one list. Only persist the FK when
+    // the candidate is an actual employee (the column expects employees.id).
+    const rmId = (() => {
+      if (!s1.reporting_manager) return null;
+      const [kind, idStr] = String(s1.reporting_manager).split(':');
+      if (kind !== 'employee') return null;
+      return intOrNull(idStr);
+    })();
+
+    const payload: Record<string, any> = {
+      ...s1,
+      nationality_country_id: intOrNull(s1.nationality_country_id),
+      work_country_id:        intOrNull(s1.work_country_id),
+      department_id:    intOrNull(s1.department_id),
+      designation_id:   intOrNull(s1.designation_id),
+      primary_role_id:  intOrNull(s1.primary_role_id),
+      ancillary_role_id: intOrNull(s1.ancillary_role_id),
+      legal_entity_id:  intOrNull(s1.legal_entity_id),
+      reporting_manager_id: rmId,
+      annual_salary:    s1.annual_salary === '' ? null : Number(s1.annual_salary),
+      // Empty strings to null for nullable string columns
+      first_name:  s1.first_name.trim() || null,
+      middle_name: s1.middle_name.trim() || null,
+      last_name:   s1.last_name.trim()   || null,
+      email:       s1.email.trim()       || null,
+      mobile:      s1.mobile.trim()      || null,
+    };
+    // Strip the composite picker key — backend doesn't know about it.
+    delete payload.reporting_manager;
+    if (markComplete) payload.wizard_step_completed = 4;
+    try {
+      await api.put(`/employees/${emp.dbId}`, payload);
+      onSaved?.();
+    } catch {
+      // Network / validation issue — keep the modal open so the user
+      // doesn't lose what they typed.
+    } finally {
+      setS1Saving(false);
+    }
+  };
+
   if (!emp) return null;
 
-  // Pre-fill values from the row
+  // Pre-fill values from the row (legacy variables kept for the existing
+  // header avatar render below).
   const firstName = emp.name.split(' ')[0] ?? '';
   const lastName  = emp.name.split(' ').slice(1).join(' ') ?? '';
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _legacyRefs = { firstName, lastName, r };
 
   // Per-stage status. Stage 1 is special: it represents the 4-step wizard
   // we already persist on /api/employees, so its progress comes straight
@@ -1770,40 +1999,40 @@ function InitiateOnboardingModal({
                 <p className="onb-init-subgroup">Employee Details</p>
                 <Row className="g-3">
                   <Col md={4}>
-                    <label className="onb-init-label">Work Country <span className="auto">AUTO-FILLED</span></label>
-                    <input className="onb-init-input is-autofilled" defaultValue="India" />
+                    <label className="onb-init-label">Work Country</label>
+                    <MasterSelect options={countryOpts} placeholder="Select country" value={s1.work_country_id} onChange={(v) => setS1(p => ({ ...p, work_country_id: v }))} />
                   </Col>
                   <Col md={4}>
-                    <label className="onb-init-label">First Name <span className="auto">AUTO-FILLED</span></label>
-                    <input className="onb-init-input is-autofilled" defaultValue={firstName} />
+                    <label className="onb-init-label">First Name <span className="req">*</span></label>
+                    <input className="onb-init-input" value={s1.first_name} onChange={e => setS1(p => ({ ...p, first_name: e.target.value }))} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Middle Name</label>
-                    <input className="onb-init-input" placeholder="Middle name (optional)" />
+                    <input className="onb-init-input" placeholder="Middle name (optional)" value={s1.middle_name} onChange={e => setS1(p => ({ ...p, middle_name: e.target.value }))} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Last Name <span className="req">*</span></label>
-                    <input className="onb-init-input" defaultValue={lastName} />
+                    <input className="onb-init-input" value={s1.last_name} onChange={e => setS1(p => ({ ...p, last_name: e.target.value }))} />
                   </Col>
                   <Col md={4}>
-                    <label className="onb-init-label">Display Name <span className="auto">AUTO-FILLED</span></label>
-                    <input className="onb-init-input is-autofilled" defaultValue={emp.name} />
+                    <label className="onb-init-label">Display Name <span className="auto">AUTO</span></label>
+                    <input className="onb-init-input is-autofilled" readOnly value={[s1.first_name, s1.middle_name, s1.last_name].filter(Boolean).join(' ').trim() || emp.name} />
                   </Col>
                   <Col md={4}>
-                    <label className="onb-init-label">Employee Actual Name <span className="auto">AUTO-FILLED</span></label>
-                    <input className="onb-init-input is-autofilled" defaultValue={emp.name} />
+                    <label className="onb-init-label">Employee Actual Name <span className="auto">AUTO</span></label>
+                    <input className="onb-init-input is-autofilled" readOnly value={[s1.first_name, s1.middle_name, s1.last_name].filter(Boolean).join(' ').trim() || emp.name} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Gender</label>
-                    <MasterSelect options={ONB_GENDER} placeholder="Select gender" />
+                    <MasterSelect options={ONB_GENDER} placeholder="Select gender" value={s1.gender} onChange={(v) => setS1(p => ({ ...p, gender: v }))} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Date of Birth <span className="req">*</span></label>
-                    <MasterDatePicker placeholder="Select date of birth" />
+                    <MasterDatePicker placeholder="Select date of birth" value={s1.date_of_birth} onChange={(v) => setS1(p => ({ ...p, date_of_birth: v }))} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Nationality</label>
-                    <MasterSelect options={ONB_NATIONALITY} defaultValue="Indian" />
+                    <MasterSelect options={countryOpts} placeholder="Select nationality" value={s1.nationality_country_id} onChange={(v) => setS1(p => ({ ...p, nationality_country_id: v }))} />
                   </Col>
                 </Row>
 
@@ -1811,23 +2040,23 @@ function InitiateOnboardingModal({
                 <Row className="g-3">
                   <Col md={4}>
                     <label className="onb-init-label">Work Email <span className="req">*</span></label>
-                    <input className="onb-init-input is-required" placeholder="name@enterprise.com" />
+                    <input className="onb-init-input is-required" placeholder="name@enterprise.com" value={s1.email} onChange={e => setS1(p => ({ ...p, email: e.target.value }))} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Mobile Number <span className="req">*</span></label>
-                    <input className="onb-init-input is-required" placeholder="+91 XXXXX XXXXX" />
+                    <input className="onb-init-input is-required" placeholder="+91 XXXXX XXXXX" value={s1.mobile} onChange={e => setS1(p => ({ ...p, mobile: e.target.value }))} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Number Series</label>
                     <MasterSelect options={ONB_NUMBER_SERIES} defaultValue="Default Number Series" />
                   </Col>
                   <Col md={4}>
-                    <label className="onb-init-label">Employee ID <span className="auto">AUTO-FILLED</span></label>
-                    <input className="onb-init-input is-autofilled" defaultValue={`${emp.empId} (auto-assigned)`} />
+                    <label className="onb-init-label">Employee ID <span className="auto">AUTO</span></label>
+                    <input className="onb-init-input is-autofilled" readOnly value={`${emp.empId} (auto-assigned)`} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Employee Status</label>
-                    <MasterSelect options={ONB_EMP_STATUS} defaultValue="Active" />
+                    <input className="onb-init-input is-autofilled" readOnly value={r.status || 'Inactive'} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Blood Group</label>
@@ -1850,26 +2079,29 @@ function InitiateOnboardingModal({
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Employment Details</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Joining Date <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue={emp.joinDate} /></Col>
-                  <Col md={4}><label className="onb-init-label">Department <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue={emp.department} /></Col>
-                  <Col md={4}><label className="onb-init-label">Designation <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue={emp.designation} /></Col>
-                  <Col md={4}><label className="onb-init-label">Primary Role <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue={emp.primaryRole} /></Col>
-                  <Col md={4}><label className="onb-init-label">Ancillary Role <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue={emp.ancillaryRole || ''} /></Col>
-                  <Col md={4}><label className="onb-init-label">Work Type <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue="Full Time" /></Col>
+                  <Col md={4}><label className="onb-init-label">Joining Date</label><MasterDatePicker placeholder="dd-mm-yyyy" value={s1.date_of_joining} onChange={(v) => setS1(p => ({ ...p, date_of_joining: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Department</label><MasterSelect options={departmentOpts} placeholder="Select department" value={s1.department_id} onChange={(v) => setS1(p => ({ ...p, department_id: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Designation</label><MasterSelect options={designationOpts} placeholder="Select designation" value={s1.designation_id} onChange={(v) => setS1(p => ({ ...p, designation_id: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Primary Role</label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.primary_role_id} onChange={(v) => setS1(p => ({ ...p, primary_role_id: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Ancillary Role</label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.ancillary_role_id} onChange={(v) => setS1(p => ({ ...p, ancillary_role_id: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Work Type <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="Full Time" /></Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Organisational Details</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Legal Entity</label><MasterSelect options={ONB_LEGAL_ENTITY} placeholder="Select entity" /></Col>
-                  <Col md={4}><label className="onb-init-label">Location</label><MasterSelect options={ONB_LOCATION} defaultValue="Pune HQ" /></Col>
-                  <Col md={4}><label className="onb-init-label">Reporting Manager <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue={emp.managerName} /></Col>
+                  <Col md={4}><label className="onb-init-label">Legal Entity</label><MasterSelect options={legalEntityOpts} placeholder="Select entity" value={s1.legal_entity_id} onChange={(v) => {
+                    const ent = mLegalEntities.find(le => String(le.id) === String(v));
+                    setS1(p => ({ ...p, legal_entity_id: v, location: p.location || (ent?.city || '') }));
+                  }} /></Col>
+                  <Col md={4}><label className="onb-init-label">Location</label><input className="onb-init-input" value={s1.location} onChange={e => setS1(p => ({ ...p, location: e.target.value }))} placeholder="Office / city" /></Col>
+                  <Col md={4}><label className="onb-init-label">Reporting Manager</label><MasterSelect options={managerOpts} placeholder="Select manager" value={s1.reporting_manager} onChange={(v) => setS1(p => ({ ...p, reporting_manager: v }))} /></Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Probation Policy</label><MasterSelect options={ONB_PROBATION} defaultValue="Default Probation Policy" /></Col>
-                  <Col md={4}><label className="onb-init-label">Notice Period</label><MasterSelect options={ONB_NOTICE} defaultValue="Default Notice Period" /></Col>
-                  <Col md={4}><label className="onb-init-label">Work Mode <span className="auto">AUTO-FILLED</span></label><input className="onb-init-input is-autofilled" defaultValue="On-site" /></Col>
+                  <Col md={4}><label className="onb-init-label">Probation Policy</label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy || 'Default Probation Policy'} onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Notice Period</label><MasterSelect options={ONB_NOTICE} value={s1.notice_period || 'Default Notice Period'} onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
                 </Row>
               </div>
             </div>
@@ -1898,9 +2130,16 @@ function InitiateOnboardingModal({
                   <Col md={4}><label className="onb-init-label">Expense Policy</label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" /></Col>
                 </Row>
 
-                <div className="onb-init-toggle-row">
-                  <span className="onb-init-toggle" />
-                  <span className="onb-init-toggle-label">Attendance Tracking Enabled</span>
+                <div
+                  className="onb-init-toggle-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setS1(p => ({ ...p, attendance_tracking: !p.attendance_tracking }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setS1(p => ({ ...p, attendance_tracking: !p.attendance_tracking })); } }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <span className={`onb-init-toggle${s1.attendance_tracking ? '' : ' off'}`} aria-pressed={s1.attendance_tracking} />
+                  <span className="onb-init-toggle-label">Attendance Tracking {s1.attendance_tracking ? 'Enabled' : 'Disabled'}</span>
                 </div>
 
                 <p className="onb-init-subgroup">Assets &amp; Security</p>
@@ -1926,9 +2165,16 @@ function InitiateOnboardingModal({
                 <span className="onb-init-section-step comp">STEP 4 OF 4</span>
               </div>
               <div className="onb-init-section-body">
-                <div className="onb-init-toggle-row">
-                  <span className="onb-init-toggle" />
-                  <span className="onb-init-toggle-label">Enable payroll for this employee</span>
+                <div
+                  className="onb-init-toggle-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setS1(p => ({ ...p, enable_payroll: !p.enable_payroll }))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setS1(p => ({ ...p, enable_payroll: !p.enable_payroll })); } }}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <span className={`onb-init-toggle${s1.enable_payroll ? '' : ' off'}`} aria-pressed={s1.enable_payroll} />
+                  <span className="onb-init-toggle-label">{s1.enable_payroll ? 'Payroll enabled for this employee' : 'Enable payroll for this employee'}</span>
                 </div>
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
@@ -1960,18 +2206,58 @@ function InitiateOnboardingModal({
                   <div className="onb-init-breakup-head">
                     <i className="ri-grid-line" style={{ color: '#7c3aed' }} />
                     Salary Breakup
-                    <span className="onb-init-breakup-toggle">
+                    {/* Toggle is now interactive — was previously a bare
+                        decorative span with no click handler, so flipping
+                        it had no effect. Bound to s1.detailed_breakup so
+                        the state survives Save Draft + survives reload. */}
+                    <span
+                      className="onb-init-breakup-toggle"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setS1(p => ({ ...p, detailed_breakup: !p.detailed_breakup }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setS1(p => ({ ...p, detailed_breakup: !p.detailed_breakup })); } }}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                    >
                       Detailed breakup
-                      <span className="onb-init-toggle off" />
+                      <span
+                        className={`onb-init-toggle${s1.detailed_breakup ? '' : ' off'}`}
+                        aria-pressed={s1.detailed_breakup}
+                      />
                     </span>
                   </div>
                   <div className="onb-init-breakup-body">
                     <p className="onb-init-breakup-sub">Salary Effective From</p>
-                    <div className="text-muted mb-2" style={{ fontSize: 12 }}>—</div>
-                    <div className="onb-init-breakup-grid">
-                      <div className="onb-init-breakup-cell"><div className="l">Regular Salary</div><div className="v">INR 0</div></div>
-                      <span className="onb-init-breakup-op">+</span>
-                      <div className="onb-init-breakup-cell"><div className="l">Bonus</div><div className="v">INR 0</div></div>
+                    <div className="text-muted mb-2" style={{ fontSize: 12 }}>
+                      {s1.salary_effective_from ? new Date(s1.salary_effective_from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                    </div>
+                    {/* Salary breakup is computed live from the entered
+                        Annual Salary. Bonus stays 0 until the "+ Add Bonus"
+                        flow captures real bonus components — when the
+                        "Bonus included in annual salary" flag is on, we
+                        treat the annual figure as the full CTC and split
+                        ~10% as bonus for the visual; everything else stays
+                        regular salary. Refine when real bonus inputs land. */}
+                    {(() => {
+                      const annual = s1.annual_salary === '' ? 0 : Number(s1.annual_salary);
+                      const bonus  = s1.bonus_in_annual ? Math.round(annual * 0.10) : 0;
+                      const regular = annual - bonus;
+                      const total = regular + bonus;
+                      const fmt = (n: number) => `INR ${(Number.isFinite(n) ? n : 0).toLocaleString('en-IN')}`;
+                      return (
+                        <div className="onb-init-breakup-grid">
+                          <div className="onb-init-breakup-cell"><div className="l">Regular Salary</div><div className="v">{fmt(regular)}</div></div>
+                          <span className="onb-init-breakup-op">+</span>
+                          <div className="onb-init-breakup-cell"><div className="l">Bonus</div><div className="v">{fmt(bonus)}</div></div>
+                          <span className="onb-init-breakup-op">=</span>
+                          <div className="onb-init-breakup-cell total"><div className="l">Total CTC</div><div className="v">{fmt(total)}</div></div>
+                        </div>
+                      );
+                    })()}
+                    {/* Static placeholders that follow are no longer needed
+                        — the live grid above replaces the hard-coded
+                        "INR 0" cells. Kept as inert markup below to
+                        preserve the existing closing tags + spacing. */}
+                    <div style={{ display: 'none' }}>
                       <span className="onb-init-breakup-op">=</span>
                       <div className="onb-init-breakup-cell total"><div className="l">Total CTC</div><div className="v">INR 0</div></div>
                     </div>
@@ -1994,9 +2280,29 @@ function InitiateOnboardingModal({
             <button type="button" className="onb-init-btn-ghost" onClick={() => setActiveStage(Math.max(1, activeStage - 1))}>
               <i className="ri-arrow-left-s-line" /> Previous
             </button>
-            <button type="button" className="onb-init-btn-outline">Save Draft</button>
+            {/* Save Draft — only Stage 1 has bound state today, so the
+                button only writes when the user is on that stage. Marks
+                the wizard fully complete (step 4) so the row's profile %
+                + status pill catch up. */}
+            <button
+              type="button"
+              className="onb-init-btn-outline"
+              disabled={s1Saving || activeStage !== 1}
+              onClick={() => saveStage1(true)}
+            >
+              {s1Saving ? 'Saving…' : 'Save Draft'}
+            </button>
             {activeStage < 6 ? (
-              <button type="button" className="onb-init-btn-next" onClick={() => setActiveStage(activeStage + 1)}>
+              <button
+                type="button"
+                className="onb-init-btn-next"
+                onClick={async () => {
+                  // On Stage 1, persist edits before advancing so what the
+                  // user sees on Stage 2+ stays in sync with the server.
+                  if (activeStage === 1) await saveStage1(true);
+                  setActiveStage(activeStage + 1);
+                }}
+              >
                 Next Stage <i className="ri-arrow-right-s-line" />
               </button>
             ) : (
@@ -2013,8 +2319,16 @@ function InitiateOnboardingModal({
 
 // ── Stage 2 — Document Management view (used inside InitiateOnboardingModal)
 function Stage2Documents() {
+  const [prevCompanies, setPrevCompanies] = useState<PrevCompany[]>(() => [makePrevCompany()]);
+
+  const addCompany = () => setPrevCompanies(prev => [...prev, makePrevCompany()]);
+  const removeCompany = (id: string) =>
+    setPrevCompanies(prev => (prev.length > 1 ? prev.filter(c => c.id !== id) : prev));
+  const updateCompany = (id: string, patch: Partial<PrevCompany>) =>
+    setPrevCompanies(prev => prev.map(c => (c.id === id ? { ...c, ...patch } : c)));
+
   const totalDocs = STAGE2_CATEGORIES.reduce((a, c) => a + c.docs.length, 0)
-                  + STAGE2_PREV_COMPANIES.length * STAGE2_COMPANY_DOCS.length;
+                  + prevCompanies.length * STAGE2_COMPANY_DOCS.length;
   const uploadedDocs = 0;
   const pct = totalDocs ? Math.round((uploadedDocs / totalDocs) * 100) : 0;
 
@@ -2096,29 +2410,46 @@ function Stage2Documents() {
             <h6 className="onb-doc-prev-title">Previous Employment Documents</h6>
             <div className="onb-doc-prev-sub">7 Years Experience · Required for each previous company</div>
           </div>
-          <span className="onb-doc-prev-pill">{STAGE2_PREV_COMPANIES.length} Companies</span>
+          <span className="onb-doc-prev-pill">{prevCompanies.length} {prevCompanies.length === 1 ? 'Company' : 'Companies'}</span>
         </div>
 
-        {STAGE2_PREV_COMPANIES.map((c, idx) => (
+        {prevCompanies.map((c, idx) => (
           <div key={c.id} className="onb-doc-comp">
             <div className="onb-doc-comp-head">
               <span className="onb-doc-comp-num">{idx + 1}</span>
-              <h6 className="onb-doc-comp-name">{c.name}</h6>
+              <h6 className="onb-doc-comp-name">{c.name || `Previous Company ${idx + 1}`}</h6>
               <span className="onb-doc-comp-count">0/4 Docs</span>
-              <button type="button" className="onb-doc-comp-close" aria-label="Remove company">
-                <i className="ri-close-line" style={{ fontSize: 12 }} />
-              </button>
+              {prevCompanies.length > 1 && (
+                <button
+                  type="button"
+                  className="onb-doc-comp-close"
+                  aria-label="Remove company"
+                  onClick={() => removeCompany(c.id)}
+                >
+                  <i className="ri-close-line" style={{ fontSize: 12 }} />
+                </button>
+              )}
             </div>
             <div className="onb-doc-comp-body">
               <p className="onb-doc-comp-section"><i className="ri-building-line" /> Company Information</p>
               <Row className="g-3">
                 <Col md={6}>
                   <label className="onb-init-label">Company Name <span className="req">*</span></label>
-                  <input className="onb-init-input" defaultValue={c.name} />
+                  <input
+                    className="onb-init-input"
+                    placeholder="e.g. Wipro Digital (2020-2023)"
+                    value={c.name}
+                    onChange={e => updateCompany(c.id, { name: e.target.value })}
+                  />
                 </Col>
                 <Col md={6}>
                   <label className="onb-init-label">Job Title / Designation <span className="req">*</span></label>
-                  <input className="onb-init-input" placeholder="e.g. Software Engineer" />
+                  <input
+                    className="onb-init-input"
+                    placeholder="e.g. Software Engineer"
+                    value={c.jobTitle}
+                    onChange={e => updateCompany(c.id, { jobTitle: e.target.value })}
+                  />
                 </Col>
                 <Col md={6}>
                   <label className="onb-init-label">Employment Start Date <span className="req">*</span></label>
@@ -2159,20 +2490,39 @@ function Stage2Documents() {
               <Row className="g-3">
                 <Col md={4}>
                   <label className="onb-init-label">HR Email ID 1 <span className="req">*</span></label>
-                  <input className="onb-init-input is-required" placeholder="hr@company.com" />
+                  <input
+                    className="onb-init-input is-required"
+                    placeholder="hr@company.com"
+                    value={c.hrEmail1}
+                    onChange={e => updateCompany(c.id, { hrEmail1: e.target.value })}
+                  />
                 </Col>
                 <Col md={4}>
                   <label className="onb-init-label">HR Email ID 2 <span className="req">*</span></label>
-                  <input className="onb-init-input is-required" placeholder="hr2@company.com" />
+                  <input
+                    className="onb-init-input is-required"
+                    placeholder="hr2@company.com"
+                    value={c.hrEmail2}
+                    onChange={e => updateCompany(c.id, { hrEmail2: e.target.value })}
+                  />
                 </Col>
                 <Col md={4}>
                   <label className="onb-init-label">Company Contact Number <span className="req">*</span></label>
-                  <input className="onb-init-input is-required" placeholder="+91 XXXXX XXXXX" />
+                  <input
+                    className="onb-init-input is-required"
+                    placeholder="+91 XXXXX XXXXX"
+                    value={c.contactNumber}
+                    onChange={e => updateCompany(c.id, { contactNumber: e.target.value })}
+                  />
                 </Col>
               </Row>
             </div>
           </div>
         ))}
+
+        <button type="button" className="onb-doc-add-comp" onClick={addCompany}>
+          <i className="ri-add-line" /> Add Previous Company
+        </button>
       </div>
     </>
   );

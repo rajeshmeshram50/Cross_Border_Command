@@ -112,17 +112,6 @@ export default function HrCandidates() {
 
   const fetchAll = async () => {
     if (!recruitmentId) return;
-    // ── DUMMY DATA START — remove this whole block once the backend APIs
-    //    (`/recruitments/:id/candidates/summary` + `/candidates`) are wired
-    //    up and uncomment the original `Promise.all` fetch below. ───────
-    setLoading(true);
-    setRecruitment(buildDummyRecruitment(recruitmentId));
-    setCandidates(buildDummyCandidates(recruitmentId));
-    setLoading(false);
-    return;
-    // ── DUMMY DATA END ────────────────────────────────────────────────
-
-    /* Real API call — restore when backend is ready
     try {
       setLoading(true);
       const [sumRes, listRes] = await Promise.all([
@@ -133,10 +122,11 @@ export default function HrCandidates() {
       setCandidates(Array.isArray(listRes.data) ? listRes.data : []);
     } catch (err: any) {
       toast.error('Could not load candidates', err?.response?.data?.message || 'Please try again.');
+      setRecruitment(null);
+      setCandidates([]);
     } finally {
       setLoading(false);
     }
-    */
   };
   useEffect(() => { fetchAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [recruitmentId]);
 
@@ -147,14 +137,23 @@ export default function HrCandidates() {
     const selected = candidates.filter(c => c.status === 'Selected').length;
     const rejected = candidates.filter(c => c.status === 'Rejected').length;
     const offered = candidates.filter(c => c.status === 'Offered').length;
-    return { total: t, applied, inInterview, selected, rejected, offered };
+    // "Active" = anyone still in the pipeline (everything except Selected /
+    // Offered / Rejected). Drives the first tab's badge so newly-added
+    // Applied / Shortlisted / On Hold rows show up immediately.
+    const active = candidates.filter(c =>
+      c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected'
+    ).length;
+    return { total: t, applied, inInterview, selected, rejected, offered, active };
   }, [candidates]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return candidates
       .filter(c => {
-        if (tab === 'final')    return c.status === 'In Interview' || c.status === 'Final Interview';
+        // The "final" tab covers the whole active pipeline, not just the
+        // final interview round — otherwise Applied / Shortlisted / On Hold
+        // candidates have nowhere to land.
+        if (tab === 'final')    return c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected';
         if (tab === 'selected') return c.status === 'Selected' || c.status === 'Offered';
         if (tab === 'rejected') return c.status === 'Rejected';
         return true;
@@ -192,23 +191,28 @@ export default function HrCandidates() {
     { key: 'offered',     label: 'Offered',      value: totals.offered,      icon: 'ri-award-line',           gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
   ];
 
-  const handleStatusUpdate = async (c: CandidateRow, next: CandidateStatus) => {
-    // ── DUMMY MODE — local-only state update. Replace with the real
-    //    `api.patch('/candidates/:id/status')` call when the backend is
-    //    ready (commented version is below). ─────────────────────────
-    setCandidates(prev => prev.map(r => r.id === c.id ? { ...r, status: next } : r));
-    toast.success(next, `${c.name} → ${next}`);
-    return;
+  const handleStatusUpdate = async (c: CandidateRow, next: CandidateStatus, reasonOrNote?: string) => {
+    // Build the status payload — when rejecting, the Confirm modal sends
+    // "<reason> — <notes>" which we split back into the two backend fields.
+    const payload: Record<string, any> = { status: next };
+    if (reasonOrNote) {
+      if (next === 'Rejected') {
+        const [reason, ...rest] = reasonOrNote.split(' — ');
+        if (reason) payload.rejection_reason = reason.trim();
+        const notes = rest.join(' — ').trim();
+        if (notes) payload.status_notes = notes;
+      } else {
+        payload.status_notes = reasonOrNote;
+      }
+    }
 
-    /* Real API call — restore when backend is ready
     try {
-      const { data } = await api.patch(`/candidates/${c.id}/status`, { status: next });
+      const { data } = await api.patch(`/candidates/${c.id}/status`, payload);
       setCandidates(prev => prev.map(r => r.id === c.id ? data : r));
       toast.success(next, `${data.name} → ${next}`);
     } catch (err: any) {
       toast.error('Could not update', err?.response?.data?.message || 'Please try again.');
     }
-    */
   };
 
   return (
@@ -352,9 +356,9 @@ export default function HrCandidates() {
             <div className="mb-2">
               <div className="rec-tab-track">
                 {([
-                  { key: 'final' as const,    label: 'Final Interview Round Candidates', count: totals.inInterview, icon: 'ri-user-search-line', variant: 'in-progress' },
-                  { key: 'selected' as const, label: 'Selected Candidates',              count: totals.selected + totals.offered, icon: 'ri-checkbox-circle-line', variant: 'completed' },
-                  { key: 'rejected' as const, label: 'Rejected Candidates',              count: totals.rejected, icon: 'ri-close-circle-line', variant: 'cancelled' },
+                  { key: 'final' as const,    label: 'Active Candidates',   count: totals.active,                    icon: 'ri-user-search-line',     variant: 'in-progress' },
+                  { key: 'selected' as const, label: 'Selected Candidates', count: totals.selected + totals.offered, icon: 'ri-checkbox-circle-line', variant: 'completed' },
+                  { key: 'rejected' as const, label: 'Rejected Candidates', count: totals.rejected,                  icon: 'ri-close-circle-line',    variant: 'cancelled' },
                 ]).map(t => (
                   <button
                     key={t.key}
@@ -576,10 +580,9 @@ export default function HrCandidates() {
         onConfirm={(reasonOrNote: string) => {
           if (!confirming) return;
           const next: CandidateStatus = confirming.mode === 'select' ? 'Selected' : 'Rejected';
-          handleStatusUpdate(confirming.row, next);
-          // `reasonOrNote` is forwarded so when the API is wired you can pass it
-          // along to the backend in the PATCH body — the dummy mode just logs it.
-          if (reasonOrNote) console.debug(`[${next}] note for ${confirming.row.name}:`, reasonOrNote);
+          // Forward the reason/notes so the backend can stash them in
+          // rejection_reason + status_notes for the audit trail.
+          handleStatusUpdate(confirming.row, next, reasonOrNote);
           setConfirming(null);
         }}
       />
@@ -1335,92 +1338,3 @@ function CandidateConfirmModal({
   );
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// ─── DUMMY DATA — REMOVE WHEN BACKEND APIs ARE READY ────────────────────────
-// ════════════════════════════════════════════════════════════════════════════
-// Everything below is placeholder data so the Candidate Management page
-// renders with realistic content while the backend dev builds the APIs.
-// To remove: delete from this banner all the way down to the end of the
-// file, AND restore the real `Promise.all` fetch in `fetchAll()` plus the
-// real `api.patch` call in `handleStatusUpdate()` near the top of this file.
-// ════════════════════════════════════════════════════════════════════════════
-
-function buildDummyRecruitment(id: string | undefined): RecruitmentInfo {
-  return {
-    id: id || '1',
-    code: `REC-${(1000 + Number(id || 1)).toString().padStart(4, '0')}`,
-    jobTitle: 'Senior Backend Engineer',
-    department: 'Engineering',
-    designation: 'Senior Software Engineer',
-    employmentType: 'Full Time',
-    openings: 2,
-    experience: '5 yr+',
-    workMode: 'Hybrid',
-    priority: 'High',
-    hiringManagerRaw: 'CEO – Vishal Rao',
-    assignedHrName: 'Sneha Chavan',
-    startDate: '2026-03-05',
-    deadline: '2026-05-20',
-    status: 'In Progress',
-  };
-}
-
-function buildDummyCandidates(recruitmentId: string | undefined): CandidateRow[] {
-  // Coerce safely — Number('abc') would yield NaN and produce "REC-0NaN"
-  // pills in the table. Fall back to 1 whenever the param isn't a finite
-  // numeric string.
-  const parsed = Number(recruitmentId);
-  const recId = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-  const recCode = `REC-${(1000 + recId).toString().padStart(4, '0')}`;
-  // Stable, downloadable placeholder PDF — every dummy candidate's "CV"
-  // points here so the green CV chip renders and clicking it actually
-  // downloads a file. Replace with the real `c.cv_url` from the API.
-  const dummyCv = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
-  const palette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
-  const initialsOf = (name: string) =>
-    name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase();
-
-  const rows: Array<{
-    name: string; email: string; mobile: string; exp: number;
-    cur: number; exp_lpa: number; notice: string; source: string;
-    status: CandidateStatus;
-  }> = [
-    { name: 'Anjali Deshmukh', email: 'anjali.d@mail.com',  mobile: '+91 9432109013', exp: 5, cur: 19, exp_lpa: 28, notice: '30 Days',   source: 'LinkedIn',           status: 'Final Interview' },
-    { name: 'Vishal Khatri',   email: 'vishal.kh@mail.com', mobile: '+91 9654321031', exp: 6, cur: 22, exp_lpa: 32, notice: '60 Days',   source: 'LinkedIn',           status: 'Final Interview' },
-    { name: 'Swati Agnihotri', email: 'swati.ag@mail.com',  mobile: '+91 9543210032', exp: 5, cur: 19, exp_lpa: 28, notice: '30 Days',   source: 'Naukri',             status: 'Final Interview' },
-    { name: 'Tanmay Acharya',  email: 'tanmay.ac@mail.com', mobile: '+91 9432109033', exp: 7, cur: 27, exp_lpa: 38, notice: '90 Days',   source: 'Referral',           status: 'In Interview' },
-    { name: 'Rashmi Kothari',  email: 'rashmi.ko@mail.com', mobile: '+91 9321098034', exp: 4, cur: 16, exp_lpa: 24, notice: '30 Days',   source: 'Indeed',             status: 'Final Interview' },
-    { name: 'Karan Patel',     email: 'karan.p@mail.com',   mobile: '+91 9876543210', exp: 8, cur: 32, exp_lpa: 45, notice: 'Immediate', source: 'LinkedIn',           status: 'Selected' },
-    { name: 'Pooja Sharma',    email: 'pooja.s@mail.com',   mobile: '+91 9876512340', exp: 3, cur: 12, exp_lpa: 18, notice: '15 Days',   source: 'Company Website',    status: 'Selected' },
-    { name: 'Rahul Verma',     email: 'rahul.v@mail.com',   mobile: '+91 9123456789', exp: 6, cur: 24, exp_lpa: 34, notice: '60 Days',   source: 'Referral',           status: 'Offered' },
-    { name: 'Neha Singh',      email: 'neha.si@mail.com',   mobile: '+91 9988776655', exp: 4, cur: 18, exp_lpa: 26, notice: '30 Days',   source: 'Naukri',             status: 'Rejected' },
-    { name: 'Mihir Joshi',     email: 'mihir.j@mail.com',   mobile: '+91 9988123455', exp: 2, cur: 8,  exp_lpa: 14, notice: '15 Days',   source: 'Walk-in',            status: 'Rejected' },
-    { name: 'Priya Nair',      email: 'priya.n@mail.com',   mobile: '+91 9001122334', exp: 5, cur: 20, exp_lpa: 30, notice: '30 Days',   source: 'LinkedIn',           status: 'Applied' },
-    { name: 'Amit Kulkarni',   email: 'amit.k@mail.com',    mobile: '+91 9002233445', exp: 7, cur: 26, exp_lpa: 36, notice: '60 Days',   source: 'Recruitment Agency', status: 'Shortlisted' },
-  ];
-
-  return rows.map((r, idx) => ({
-    id: idx + 1,
-    recruitment_id: recId,
-    recruitment_code: recCode,
-    recruitment_title: 'Senior Backend Engineer',
-    name: r.name,
-    initials: initialsOf(r.name),
-    accent: palette[idx % palette.length],
-    email: r.email,
-    mobile: r.mobile,
-    current_address: null,
-    qualification: 'B.Tech / M.Tech',
-    experience_years: r.exp,
-    mode_of_transport: null,
-    distance_km: null,
-    current_salary_lpa: r.cur,
-    expected_salary_lpa: r.exp_lpa,
-    notice_period: r.notice,
-    source: r.source,
-    cv_path: 'dummy.pdf',
-    cv_url: dummyCv,
-    status: r.status,
-    created_at: new Date(2026, 2, 10 + idx).toISOString(),
-  }));
-}

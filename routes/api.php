@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
+use App\Http\Controllers\Api\CandidateController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\EmployeeController;
+use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OrganizationTypeController;
@@ -77,6 +79,18 @@ Route::middleware('auth:sanctum')->group(function () {
     // resolve cleanly (mirrors the employees registration above).
     Route::get   ('/recruitments/next-code', [RecruitmentController::class, 'nextCode']);
     Route::apiResource('recruitments', RecruitmentController::class);
+
+    // Hiring requests — internal "raise hiring need" form, gets HR review
+    // before recruitment opens an actual REC requisition. Auto-numbered
+    // HRQ-### per tenant.
+    Route::get   ('/hiring-requests/next-code', [HiringRequestController::class, 'nextCode']);
+    Route::apiResource('hiring-requests', HiringRequestController::class);
+
+    // Candidates — applicants linked to a recruitment requisition. CV
+    // uploads go via multipart/form-data on store/update.
+    Route::get  ('/recruitments/{recruitment}/candidates/summary', [CandidateController::class, 'recruitmentSummary']);
+    Route::patch('/candidates/{candidate}/status',                 [CandidateController::class, 'updateStatus']);
+    Route::apiResource('candidates', CandidateController::class);
 
     Route::get   ('/master/{slug}',           [MasterController::class, 'list']);
     Route::post  ('/master/{slug}',           [MasterController::class, 'store']);

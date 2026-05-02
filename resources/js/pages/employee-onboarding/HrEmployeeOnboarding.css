@@ -660,6 +660,10 @@
         [data-bs-theme="dark"] .onb-doc-comp-doc-name { color: var(--vz-heading-color, var(--vz-body-color)); }
         .onb-doc-bgv-banner { background: #dceefe; border: 1px solid #b6d6fb; border-radius: 9px; padding: 8px 12px; font-size: 11px; color: #0c63b0; display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
         [data-bs-theme="dark"] .onb-doc-bgv-banner { background: rgba(12,99,176,0.18); border-color: rgba(12,99,176,0.40); color: #93c5fd; }
+        .onb-doc-add-comp { display: flex; align-items: center; justify-content: center; gap: 6px; width: calc(100% - 28px); margin: 4px 14px 14px; padding: 12px; border-radius: 10px; background: #fffbe7; border: 1.5px dashed #f7c069; color: #b45309; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s ease; }
+        .onb-doc-add-comp:hover { background: #fff5d1; border-color: #f0a13c; color: #92400e; }
+        [data-bs-theme="dark"] .onb-doc-add-comp { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.45); color: #fcd34d; }
+        [data-bs-theme="dark"] .onb-doc-add-comp:hover { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.65); }
 
         /* Footer */
         .onb-init-footer { background: #fff; border-top: 1px solid #ece9f6; padding: 12px 22px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }

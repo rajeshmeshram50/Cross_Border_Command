@@ -160,11 +160,13 @@ type RequestType =
   | 'Urgent Temporary Support';
 
 interface HiringRequestRow {
-  id: string;
+  id: string;            // numeric DB id, stringified — used as the React key
+  code: string;          // HRQ-### shown in the table pill
   position: string;
   positionType: EmployType | 'Intern';
   positionMode: WorkMode;
   department: string;
+  departmentId: number | null;
   requestedByName: string;
   requestedByInitials: string;
   requestedByAccent: string;
@@ -176,16 +178,68 @@ interface HiringRequestRow {
   targetJoinDate: string;
 }
 
-// ── Hiring Requests (mock) ──
-const HIRING_REQUESTS: HiringRequestRow[] = [
-  { id: 'HRQ-001', position: 'Senior ML Engineer',   positionType: 'Full Time',  positionMode: 'Hybrid',  department: 'Engineering', requestedByName: 'Gaurav Jagtap',  requestedByInitials: 'GJ', requestedByAccent: '#0c63b0', openings: 2, requestType: 'New Position',          urgency: 'High',     status: 'Approved',    requestDate: 'Apr 1, 2026',  targetJoinDate: 'May 15, 2026' },
-  { id: 'HRQ-002', position: 'HR Executive',          positionType: 'Full Time',  positionMode: 'On-site', department: 'HR',          requestedByName: 'Priya Mehta',    requestedByInitials: 'PM', requestedByAccent: '#7c5cfc', openings: 1, requestType: 'Replacement Hiring',    urgency: 'Medium',   status: 'Under Review',requestDate: 'Apr 5, 2026',  targetJoinDate: 'May 1, 2026' },
-  { id: 'HRQ-003', position: 'React Native Intern',   positionType: 'Intern',     positionMode: 'Hybrid',  department: 'Mobile',      requestedByName: 'Mayur Thorat',   requestedByInitials: 'MT', requestedByAccent: '#0ab39c', openings: 3, requestType: 'Intern Requirement',    urgency: 'Low',      status: 'Submitted',   requestDate: 'Apr 7, 2026',  targetJoinDate: 'Jun 1, 2026' },
-  { id: 'HRQ-004', position: 'Finance Analyst',       positionType: 'Full Time',  positionMode: 'On-site', department: 'Finance',     requestedByName: 'Nisha Kapoor',   requestedByInitials: 'NK', requestedByAccent: '#f06548', openings: 1, requestType: 'Backfill',              urgency: 'Critical', status: 'Sent Back',   requestDate: 'Apr 3, 2026',  targetJoinDate: 'Apr 20, 2026' },
-  { id: 'HRQ-005', position: 'QA Lead',               positionType: 'Full Time',  positionMode: 'On-site', department: 'Engineering', requestedByName: 'Atharv Patekar', requestedByInitials: 'AP', requestedByAccent: '#0ea5e9', openings: 1, requestType: 'New Position',          urgency: 'High',     status: 'Draft',       requestDate: 'Apr 9, 2026',  targetJoinDate: 'May 10, 2026' },
-  { id: 'HRQ-006', position: 'Business Analyst',      positionType: 'Contract',   positionMode: 'Remote',  department: 'Product',     requestedByName: 'Rajesh Meshram', requestedByInitials: 'RM', requestedByAccent: '#e83e8c', openings: 1, requestType: 'Expansion Hiring',      urgency: 'Medium',   status: 'Rejected',    requestDate: 'Mar 28, 2026', targetJoinDate: 'Apr 30, 2026' },
-  { id: 'HRQ-007', position: 'DevOps Engineer',       positionType: 'Full Time',  positionMode: 'Hybrid',  department: 'Engineering', requestedByName: 'Atharv Patekar', requestedByInitials: 'AP', requestedByAccent: '#0ea5e9', openings: 1, requestType: 'Urgent Temporary Support', urgency: 'Critical', status: 'Approved',    requestDate: 'Apr 2, 2026',  targetJoinDate: 'Apr 25, 2026' },
-];
+/* ── Backend → UI converter for hiring requests ──────────────────────────────
+ * The API stores `Full-time` / `Part-time` / `Intern` / `Onsite` (matching the
+ * Raise Hiring Request form), but the list table's tone maps key off
+ * `Full Time` / `Part Time` / `Internship` / `On-site` (matching the
+ * Recruitment form). We normalize at the boundary so existing colour lookups
+ * keep working without churn.
+ */
+const HR_EMP_TYPE_MAP: Record<string, EmployType | 'Intern'> = {
+  'Full-time':  'Full Time',
+  'Part-time':  'Part Time',
+  'Contract':   'Contract',
+  'Intern':     'Intern',
+  // Pass-through if the row already arrived in the table's preferred format.
+  'Full Time':  'Full Time',
+  'Part Time':  'Part Time',
+  'Internship': 'Internship' as any,
+};
+const HR_WORK_MODE_MAP: Record<string, WorkMode> = {
+  'Onsite':   'On-site',
+  'Remote':   'Remote',
+  'Hybrid':   'Hybrid',
+  'Flexible': 'Flexible',
+  'On-site':  'On-site',
+};
+
+function apiToHiringRequestRow(api: any): HiringRequestRow {
+  const dept = api?.department?.name || '';
+  const requestedBy = api?.requested_by_name || api?.creator?.name || '';
+
+  return {
+    id: String(api?.id ?? ''),
+    code: api?.code || `HRQ-${api?.id ?? ''}`,
+
+    // The table column is "Position" — we put the form's `job_role` there
+    // (the actual role title), falling back to `title` if a draft only
+    // captured that.
+    position: api?.job_role || api?.title || '',
+
+    positionType: (HR_EMP_TYPE_MAP[api?.employment_type] || 'Full Time') as EmployType | 'Intern',
+    positionMode: (HR_WORK_MODE_MAP[api?.work_mode] || 'Hybrid') as WorkMode,
+
+    department:   dept,
+    departmentId: api?.department_id ?? null,
+
+    requestedByName:     requestedBy,
+    requestedByInitials: initialsOf(requestedBy),
+    requestedByAccent:   pickAccent(api?.id ?? requestedBy),
+
+    openings:       Number(api?.openings) || 1,
+    requestType:    (api?.request_type || 'New Position') as RequestType,
+    urgency:        (api?.urgency       || 'Medium')      as RequestUrgency,
+    status:         (api?.status        || 'Submitted')   as RequestStatus,
+    // "Req Date" in the list = when the row was actually created on the
+    // server (auto-stamped). The form's date picker now feeds
+    // `target_join_date` instead, shown in the "Target Join" column.
+    // We slice the ISO timestamp to YYYY-MM-DD so formatDate() doesn't
+    // include the time portion.
+    requestDate:    (api?.created_at ? String(api.created_at).slice(0, 10) : api?.request_date) || '',
+    targetJoinDate: api?.target_join_date || '',
+  };
+}
+
 
 // ── Lookup palettes ─────────────────────────────────────────────────────────
 const PRIORITY_TONES: Record<Priority, { bg: string; fg: string }> = {
@@ -419,6 +473,9 @@ export default function HrRecruitment() {
   const [requestsOpen, setRequestsOpen]             = useState(false);
   const [cancelTarget, setCancelTarget]             = useState<RecruitmentRow | null>(null);
   const [candidatesTarget, setCandidatesTarget]     = useState<RecruitmentRow | null>(null);
+  // Bumped after a Raise Hiring Request submit so the list modal refetches
+  // the next time it's opened (or while it's already open).
+  const [hiringRefreshKey, setHiringRefreshKey]     = useState(0);
 
   // Pagination helpers
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
@@ -715,15 +772,19 @@ export default function HrRecruitment() {
       <RaiseHiringRequestModal
         isOpen={raiseOpen}
         onClose={() => setRaiseOpen(false)}
-        onSubmit={(asDraft) => {
+        onSubmit={(savedRow, asDraft) => {
           setRaiseOpen(false);
-          if (asDraft) toast.success('Saved as draft', 'Hiring request saved to drafts.');
-          else toast.success('Hiring request submitted', 'HR will review your request shortly.');
+          // Bump the refresh key so the Hiring Requests list re-fetches the
+          // moment the user opens it (or keeps it open across submits).
+          setHiringRefreshKey(k => k + 1);
+          if (asDraft) toast.success('Saved as draft', `${savedRow.code || 'Hiring request'} saved to drafts.`);
+          else toast.success('Hiring request submitted', `${savedRow.code || 'Hiring request'} sent to HR for review.`);
         }}
       />
 
       <HiringRequestsListModal
         isOpen={requestsOpen}
+        refreshKey={hiringRefreshKey}
         onClose={() => setRequestsOpen(false)}
         onRaiseNew={() => { setRequestsOpen(false); setRaiseOpen(true); }}
         onCreateRecruitment={() => {
@@ -796,14 +857,17 @@ export default function HrRecruitment() {
 interface RaiseHiringRequestModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (asDraft: boolean) => void;
+  // Returns the saved row (already converted to UI shape) so the list modal
+  // can prepend it without a refetch. asDraft signals which toast to show.
+  onSubmit: (savedRow: HiringRequestRow, asDraft: boolean) => void;
 }
 
 function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringRequestModalProps) {
   const toast = useToast();
 
   // Department options pulled from the Departments master so the dropdown
-  // mirrors what's actually configured in Master → Departments.
+  // mirrors what's actually configured in Master → Departments. Values are
+  // master IDs (stringified) so the FK can be sent without name-matching.
   const [deptOptions, setDeptOptions] = useState<{ value: string; label: string }[]>([]);
   useEffect(() => {
     if (!isOpen) return;
@@ -816,7 +880,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
         setDeptOptions(
           rows
             .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
-            .map(r => ({ value: r.name, label: r.name }))
+            .map(r => ({ value: String(r.id), label: r.name }))
             .sort((a, b) => a.label.localeCompare(b.label)),
         );
       } catch {
@@ -827,13 +891,16 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
   }, [isOpen]);
 
   // Section 1 — Basics
-  const [title, setTitle]           = useState('');
-  const [jobRole, setJobRole]       = useState('');
-  const [department, setDepartment] = useState('');
-  const [team, setTeam]             = useState('');
-  const [requestedBy, setRequestedBy] = useState('');
-  const today = new Date().toISOString().slice(0, 10);
-  const [reqDate, setReqDate]       = useState(today);
+  const [title, setTitle]               = useState('');
+  const [jobRole, setJobRole]           = useState('');
+  const [departmentId, setDepartmentId] = useState('');
+  const [team, setTeam]                 = useState('');
+  const [requestedBy, setRequestedBy]   = useState('');
+  // The form's last column was relabelled from Request Date → Target Join
+  // Date. The submission timestamp is now sourced from the row's
+  // server-generated created_at, so this picker captures *when the user
+  // wants the position filled by* and starts blank.
+  const [targetDate, setTargetDate]     = useState('');
 
   // Section 2 — Hiring Need
   const [openings, setOpenings]         = useState('1');
@@ -856,6 +923,8 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
   const [teamGap, setTeamGap]             = useState('');
   const [whatIfNot, setWhatIfNot]         = useState('');
 
+  const [saving, setSaving] = useState(false);
+
   // Errors
   type RaiseErrors = Partial<Record<
     'title' | 'jobRole' | 'department' | 'openings' | 'employType' | 'workMode' | 'urgency'
@@ -867,11 +936,11 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
   // Reset when reopened
   useEffect(() => {
     if (!isOpen) return;
-    setTitle(''); setJobRole(''); setDepartment(''); setTeam(''); setRequestedBy(''); setReqDate(today);
+    setTitle(''); setJobRole(''); setDepartmentId(''); setTeam(''); setRequestedBy(''); setTargetDate('');
     setOpenings('1'); setEmployType('Full-time'); setWorkMode('Onsite'); setUrgency('Medium');
     setJobDesc(''); setDailyResp(''); setRequiredSkills(''); setRequiredExp(''); setRequiredQual(''); setPreferred('');
     setNeedReason(''); setRequestType('New Position'); setBusinessJust(''); setTeamGap(''); setWhatIfNot('');
-    setErrors({});
+    setErrors({}); setSaving(false);
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clear = (k: keyof RaiseErrors) =>
@@ -881,7 +950,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
     const e: RaiseErrors = {};
     if (!title.trim())          e.title          = 'Request title is required';
     if (!jobRole.trim())        e.jobRole        = 'Job role is required';
-    if (!department)            e.department     = 'Department is required';
+    if (!departmentId)          e.department     = 'Department is required';
     if (!openings.trim() || Number(openings) <= 0) e.openings = 'Openings must be at least 1';
     if (!employType)            e.employType     = 'Employment type is required';
     if (!workMode)              e.workMode       = 'Work mode is required';
@@ -895,7 +964,9 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
     return e;
   };
 
-  const handleSubmit = (asDraft: boolean) => {
+  const handleSubmit = async (asDraft: boolean) => {
+    // Submit-to-HR enforces the full required-field set; Save-as-Draft
+    // skips validation so partial forms can still be persisted.
     if (!asDraft) {
       const errs = validate();
       if (Object.keys(errs).length > 0) {
@@ -904,7 +975,65 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
         return;
       }
     }
-    onSubmit(asDraft);
+
+    // Build the API payload — snake_case keys matching the controller.
+    const payload: Record<string, any> = {
+      title:                  title.trim() || null,
+      job_role:               jobRole.trim() || null,
+      department_id:          departmentId ? Number(departmentId) : null,
+      team:                   team || null,
+      requested_by_name:      requestedBy || null,
+      // The picker now captures the desired target join date; the
+      // server-generated created_at is used for the list's "Req Date"
+      // column, so request_date is intentionally not sent.
+      target_join_date:       targetDate || null,
+      openings:               Number(openings) || 1,
+      employment_type:        employType || null,
+      work_mode:              workMode || null,
+      urgency,
+      job_description:        jobDesc || null,
+      daily_responsibilities: dailyResp || null,
+      required_skills:        requiredSkills || null,
+      required_experience:    requiredExp || null,
+      required_qualification: requiredQual || null,
+      preferred_profile:      preferred || null,
+      request_type:           requestType,
+      business_justification: businessJust || null,
+      hiring_need_reason:     needReason || null,
+      current_team_gap:       teamGap || null,
+      what_if_not_filled:     whatIfNot || null,
+      status:                 asDraft ? 'Draft' : 'Submitted',
+    };
+
+    setSaving(true);
+    try {
+      const { data } = await api.post('/hiring-requests', payload);
+      onSubmit(apiToHiringRequestRow(data), asDraft);
+    } catch (err: any) {
+      // Surface server-side validation errors back into the form so the user
+      // can correct each field inline rather than chasing a single toast.
+      if (err?.response?.status === 422 && err?.response?.data?.errors) {
+        const serverErrs = err.response.data.errors as Record<string, string | string[]>;
+        const fieldMap: Record<string, keyof RaiseErrors> = {
+          title: 'title', job_role: 'jobRole', department_id: 'department',
+          openings: 'openings', employment_type: 'employType', work_mode: 'workMode', urgency: 'urgency',
+          job_description: 'jobDesc', required_skills: 'requiredSkills', required_experience: 'requiredExp',
+          hiring_need_reason: 'needReason', request_type: 'requestType', business_justification: 'businessJust',
+        };
+        const mapped: RaiseErrors = {};
+        for (const k of Object.keys(serverErrs)) {
+          const v = serverErrs[k];
+          const ui = fieldMap[k];
+          if (ui) mapped[ui] = Array.isArray(v) ? String(v[0]) : String(v);
+        }
+        setErrors(mapped);
+        toast.error('Validation failed', 'Please fix the highlighted fields.');
+      } else {
+        toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -977,8 +1106,8 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
               <Col md={4}>
                 <label className="rec-form-label">Department<span className="req">*</span></label>
                 <MasterSelect
-                  value={department}
-                  onChange={(v) => { setDepartment(v); clear('department'); }}
+                  value={departmentId}
+                  onChange={(v) => { setDepartmentId(v); clear('department'); }}
                   options={deptOptions}
                   placeholder={deptOptions.length === 0 ? 'Loading…' : 'Select Department'}
                   invalid={!!errors.department}
@@ -1006,10 +1135,10 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
               </Col>
               <Col md={4}>
-                <label className="rec-form-label">Request Date</label>
+                <label className="rec-form-label">Target Join Date</label>
                 <MasterDatePicker
-                  value={reqDate}
-                  onChange={setReqDate}
+                  value={targetDate}
+                  onChange={setTargetDate}
                   placeholder="dd-mm-yyyy"
                 />
               </Col>
@@ -1247,11 +1376,14 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
         <div className="rec-form-footer">
           <span className="hint">Fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required</span>
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={() => handleSubmit(true)}>
-              <i className="ri-save-3-line" />Save as Draft
+            <button type="button" className="rec-btn-ghost" onClick={() => handleSubmit(true)} disabled={saving}>
+              {saving ? <Spinner size="sm" style={{ width: 14, height: 14 }} /> : <i className="ri-save-3-line" />}
+              Save as Draft
             </button>
-            <button type="button" className="rec-btn-primary" onClick={() => handleSubmit(false)}>
-              <i className="ri-send-plane-line" />Submit to HR <i className="ri-arrow-right-line" />
+            <button type="button" className="rec-btn-primary" onClick={() => handleSubmit(false)} disabled={saving}>
+              {saving ? <Spinner size="sm" style={{ width: 14, height: 14 }} /> : <i className="ri-send-plane-line" />}
+              Submit to HR
+              {!saving && <i className="ri-arrow-right-line" />}
             </button>
           </div>
         </div>
@@ -1271,7 +1403,9 @@ interface HiringRequestsListModalProps {
   onCreateRecruitment: (req: HiringRequestRow) => void;
 }
 
-function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitment }: HiringRequestsListModalProps) {
+function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitment, refreshKey }: HiringRequestsListModalProps & { refreshKey?: number }) {
+  const toast = useToast();
+
   const [statusFilter, setStatusFilter]   = useState<string>('All');
   const [urgencyFilter, setUrgencyFilter] = useState<string>('All');
   const [q, setQ] = useState('');
@@ -1280,11 +1414,31 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
 
-  // Local copy of requests so action buttons (Approve / Reject / Send Back /
-  // Job Post) can mutate status optimistically. Resets when modal opens so a
-  // fresh view always reflects the latest mock data.
-  const [requests, setRequests] = useState<HiringRequestRow[]>(HIRING_REQUESTS);
-  useEffect(() => { if (isOpen) setRequests([...HIRING_REQUESTS]); }, [isOpen]);
+  // Server-fed list — loaded every time the modal opens (or whenever the
+  // parent bumps `refreshKey` after a new request is submitted).
+  const [requests, setRequests] = useState<HiringRequestRow[]>([]);
+  const [loading, setLoading]   = useState(false);
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const { data } = await api.get('/hiring-requests');
+        if (cancelled) return;
+        const rows: any[] = Array.isArray(data) ? data : [];
+        setRequests(rows.map(apiToHiringRequestRow));
+      } catch (err: any) {
+        if (!cancelled) {
+          toast.error('Could not load hiring requests', err?.response?.data?.message || 'Please try again.');
+          setRequests([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Detail-view sub-modal (when "View" is clicked on a row).
   const [viewing, setViewing] = useState<HiringRequestRow | null>(null);
@@ -1311,7 +1465,7 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
       .filter(r => {
         if (!needle) return true;
         return (
-          r.id.toLowerCase().includes(needle) ||
+          (r.code || '').toLowerCase().includes(needle) ||
           r.position.toLowerCase().includes(needle) ||
           r.department.toLowerCase().includes(needle) ||
           r.requestedByName.toLowerCase().includes(needle)
@@ -1450,11 +1604,17 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={11} className="text-center py-5 text-muted">
+                    <Spinner size="sm" className="me-2" />Loading hiring requests…
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="text-center py-5 text-muted">
                     <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
-                    No requests match your filters
+                    {requests.length === 0 ? 'No hiring requests yet — click Raise New Request to add one' : 'No requests match your filters'}
                   </td>
                 </tr>
               ) : visible.map(r => {
@@ -1462,7 +1622,7 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
                 const s = REQUEST_STATUS_TONES[r.status];
                 return (
                   <tr key={r.id}>
-                    <td className="ps-4"><span className="rec-id-pill">{r.id}</span></td>
+                    <td className="ps-4"><span className="rec-id-pill">{r.code || r.id}</span></td>
                     <td>
                       <span className="fw-bold fs-13">{r.position}</span>
                       <span className="rec-mini-chip" style={{ background: '#eef2f6', color: '#475569' }}>{r.positionType}</span>
@@ -1604,7 +1764,7 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
               </span>
               <div className="min-w-0">
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
-                  {r.position} <span style={{ opacity: 0.8 }}>· {r.id}</span>
+                  {r.position} <span style={{ opacity: 0.8 }}>· {r.code || r.id}</span>
                 </h5>
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   Requested by {r.requestedByName} · {r.department}
