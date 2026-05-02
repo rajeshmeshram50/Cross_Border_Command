@@ -3398,7 +3398,13 @@ export default function HrEmployees() {
                     <div className="emp-section-title mb-0">
                       <i className="ri-calculator-line" style={{ color: '#0c63b0' }} /> Salary Breakup
                     </div>
-                    <label className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)', cursor: 'pointer' }}>
+                    {/* The toggle was previously wrapped in a <label>, which
+                        was eating the click — a label re-fires its click on
+                        the implicit form control inside it (the <button>),
+                        so the state flipped on then off in the same gesture
+                        and never visually changed. Using a <span> keeps the
+                        same layout without the label-relay behavior. */}
+                    <span className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>
                       <button
                         type="button"
                         aria-pressed={eDetailedBreakup}
@@ -3409,6 +3415,7 @@ export default function HrEmployees() {
                           background: eDetailedBreakup ? '#0ab39c' : '#e5e7eb',
                           position: 'relative',
                           transition: 'background .15s ease',
+                          cursor: 'pointer',
                         }}
                       >
                         <span
@@ -3421,8 +3428,13 @@ export default function HrEmployees() {
                           }}
                         />
                       </button>
-                      Detailed breakup
-                    </label>
+                      <span
+                        onClick={() => setEDetailedBreakup(v => !v)}
+                        style={{ cursor: 'pointer', userSelect: 'none' }}
+                      >
+                        Detailed breakup
+                      </span>
+                    </span>
                   </div>
                   <div className="emp-label mb-1">Salary Effective From</div>
                   <div className="text-muted mb-3" style={{ fontSize: 13 }}>
