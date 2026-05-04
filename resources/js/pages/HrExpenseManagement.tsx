@@ -463,6 +463,23 @@ export default function HrExpenseManagement() {
           transform: translateY(-1px);
           box-shadow: 0 12px 22px rgba(91,63,209,0.38) !important;
         }
+        /* Hero-area MasterSelect — matches the violet Export CTA border so
+           the two controls read as a paired set inside the purple card. */
+        .hrexp-hero-select .master-select-toggle {
+          border-color: rgba(124,92,252,0.45) !important;
+          color: #5a3fd1 !important;
+          font-weight: 600 !important;
+        }
+        .hrexp-hero-select .master-select-toggle:hover:not(:disabled) {
+          border-color: #7c5cfc !important;
+          box-shadow: 0 2px 8px rgba(124,92,252,0.18) !important;
+        }
+        .hrexp-hero-select.master-select-wrap.show .master-select-toggle,
+        .hrexp-hero-select .master-select-wrap.show .master-select-toggle {
+          border-color: #7c5cfc !important;
+          box-shadow: 0 0 0 3px rgba(124,92,252,0.18), 0 4px 12px rgba(124,92,252,0.18) !important;
+        }
+        .hrexp-hero-select .master-select-chev { color: #7c5cfc !important; }
         /* Ghost button — All Dates. White surface with violet border on hover. */
         .hrexp-ghost-btn {
           display: inline-flex; align-items: center; gap: 8px;
@@ -515,7 +532,7 @@ export default function HrExpenseManagement() {
             </div>
           </div>
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            <div style={{ minWidth: 160 }}>
+            <div className="hrexp-hero-select" style={{ minWidth: 160 }}>
               <MasterSelect
                 value={dateFilter}
                 onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
