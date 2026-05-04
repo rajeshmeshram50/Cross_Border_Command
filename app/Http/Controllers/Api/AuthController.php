@@ -211,6 +211,16 @@ class AuthController extends Controller
             ];
         }
 
+        // Linked Employee row when the user logs into an employee profile.
+        // Both id (numeric) and emp_code (EMP-### string) are surfaced so the
+        // frontend can detect "is this my own profile?" regardless of which
+        // form the URL slug carries — without an extra round-trip.
+        $linkedEmployee = \App\Models\Employee::where('user_id', $user->id)
+            ->select(['id', 'emp_code'])
+            ->first();
+        $linkedEmployeeId = $linkedEmployee?->id;
+        $linkedEmployeeCode = $linkedEmployee?->emp_code;
+
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -219,6 +229,8 @@ class AuthController extends Controller
             'initials' => $initials,
             'client_id' => $user->client_id,
             'branch_id' => $user->branch_id,
+            'employee_id' => $linkedEmployeeId,
+            'employee_code' => $linkedEmployeeCode,
             'client_name' => $user->client?->org_name,
             'branch_name' => $user->branch?->name,
             'client_logo' => $user->client?->logo,

@@ -646,6 +646,14 @@ class EmployeeController extends Controller
             $ignoreUserId = Employee::withTrashed()->where('id', $employeeId)->value('user_id');
         }
 
+        // Heal dangling asset references before validation runs. Old employee
+        // rows can carry asset IDs that have since been deleted from
+        // master_assets; the `exists:` rule below would otherwise reject the
+        // entire save for a problem the user can't fix from the form. Strip
+        // unknown ids on the way in so the save succeeds and the bad refs
+        // are cleaned up on first edit.
+        $this->stripDanglingAssetRefs($request);
+
         // Email rules: required + unique on store; nullable + still-unique on
         // update so partial step-3/step-4 PATCHes don't fail validation.
         $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
@@ -769,6 +777,52 @@ class EmployeeController extends Controller
             'status'  => 'nullable|in:Active,Inactive,On Leave,Probation,Notice Period,Resigned,Terminated',
             'onboarding_stage_completed' => 'nullable|integer|min:0|max:6',
         ]);
+    }
+
+    /**
+     * Filter the asset-FK fields on the request down to ids that actually
+     * exist in master_assets. Called from validatePayload() so the
+     * `exists:` rules below can stay strict for new picks while old rows
+     * with deleted asset refs still save successfully.
+     */
+    private function stripDanglingAssetRefs(Request $request): void
+    {
+        // Pull the candidate ids from the request without trusting their
+        // shape — the SPA sends ints but PATCH replays could send strings.
+        $candidates = collect();
+        foreach (['laptop_master_asset_id', 'mobile_master_asset_id'] as $f) {
+            $v = $request->input($f);
+            if ($v !== null && $v !== '' && is_numeric($v)) $candidates->push((int) $v);
+        }
+        $others = (array) $request->input('other_master_asset_ids', []);
+        foreach ($others as $v) {
+            if (is_numeric($v)) $candidates->push((int) $v);
+        }
+        if ($candidates->isEmpty()) return;
+
+        $existing = \App\Models\Masters\Assets::query()
+            ->whereIn('id', $candidates->unique()->all())
+            ->pluck('id')
+            ->map(fn ($x) => (int) $x)
+            ->flip();
+
+        $merge = [];
+        foreach (['laptop_master_asset_id', 'mobile_master_asset_id'] as $f) {
+            $v = $request->input($f);
+            if ($v !== null && $v !== '' && is_numeric($v) && !$existing->has((int) $v)) {
+                $merge[$f] = null;
+            }
+        }
+        if (!empty($others)) {
+            $cleaned = array_values(array_filter(
+                array_map(fn ($v) => is_numeric($v) ? (int) $v : null, $others),
+                fn ($v) => $v !== null && $existing->has($v),
+            ));
+            $merge['other_master_asset_ids'] = $cleaned;
+        }
+        if (!empty($merge)) {
+            $request->merge($merge);
+        }
     }
 
     /**

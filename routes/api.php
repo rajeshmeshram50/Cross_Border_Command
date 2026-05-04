@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmployeeDocumentController;
 use App\Http\Controllers\Api\ExitController;
+use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\MasterController;
@@ -127,6 +128,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/candidates/import', [CandidateController::class, 'import']);
     Route::get ('/candidates/export', [CandidateController::class, 'export']);
     Route::apiResource('candidates', CandidateController::class);
+
+    // Expense Claims — two-stage approval workflow (manager → HR/finance).
+    // Scope is selected via ?scope=mine|team|all on the index endpoint so the
+    // same controller serves the employee, manager, and HR list views.
+    Route::get   ('/expense-claims',                          [ExpenseClaimController::class, 'index']);
+    Route::post  ('/expense-claims',                          [ExpenseClaimController::class, 'store']);
+    Route::get   ('/expense-claims/{id}',                     [ExpenseClaimController::class, 'show']);
+    Route::post  ('/expense-claims/{id}/manager-approve',     [ExpenseClaimController::class, 'managerApprove']);
+    Route::post  ('/expense-claims/{id}/manager-reject',      [ExpenseClaimController::class, 'managerReject']);
+    Route::post  ('/expense-claims/{id}/hr-approve',          [ExpenseClaimController::class, 'hrApprove']);
+    Route::post  ('/expense-claims/{id}/hr-reject',           [ExpenseClaimController::class, 'hrReject']);
 
     // Broadcast Centre announcements — company-wide announcements with
     // audience targeting, scheduling and acknowledgement tracking. Stats /

@@ -1,4 +1,5 @@
-import { useState, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext } from 'react';
+import api from '../api';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Provider as ReduxProvider } from 'react-redux';
 import velzonStore from '../velzon/store';
@@ -45,6 +46,7 @@ import HrCandidates from '../pages/HrCandidates';
 import HrExitManagement from '../pages/HrExitManagement';
 import HrAttendance from '../pages/HrAttendance';
 import HrLeave from '../pages/HrLeave';
+import HrExpenseManagement from '../pages/HrExpenseManagement';
 import HrBroadcastCentre from '../pages/HrBroadcastCentre';
 import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
 import EmployeePermissions from '../pages/EmployeePermissions';
@@ -82,6 +84,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'hr-recruitment': return '/hr/recruitment';
     case 'hr-attendance': return '/hr/attendance';
     case 'hr-leave': return '/hr/leave';
+    case 'hr-expense': return '/hr/expense';
     case 'hr-broadcast': return '/hr/broadcast';
     case 'hr-employee-onboarding': return '/hr/employee-onboarding';
     case 'employee-permissions': return `/hr/employees/${data?.employeeId}/permissions`;
@@ -174,6 +177,67 @@ function EmployeeProfileWrapper() {
   const navigateFn = useNavigateContext().navigate;
   const stateEmp = (location.state as any)?.employee;
   return <EmployeeProfile employeeId={String(id)} employee={stateEmp} onBack={() => navigateFn('hr-employees')} />;
+}
+
+/**
+ * /profile route — branches on the logged-in user type:
+ *   employee → renders the EmployeeProfile component preloaded with their
+ *              own Employee record (so they get the same tabs, expense
+ *              raise/list, evidence vault, etc. as an HR-side view).
+ *   anyone   → renders the existing admin/client Profile page.
+ *
+ * The fetch is fire-and-forget; if it fails, EmployeeProfile still renders
+ * with the minimal `{ name, email }` stub built from the auth user.
+ */
+function ProfileRouter() {
+  const { user } = useAuth();
+  const navigateFn = useNavigateContext().navigate;
+  const isEmployee = user?.user_type === 'employee' && !!user?.employee_id;
+  const [stateEmp, setStateEmp] = useState<any>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!isEmployee || !user?.employee_id) return;
+    api.get(`/employees/${user.employee_id}`)
+      .then((res: any) => {
+        if (cancelled) return;
+        const e = res?.data?.employee || res?.data;
+        if (!e) return;
+        const fullName = (e.display_name
+          || [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim())
+          || user.name;
+        setStateEmp({
+          id: e.emp_code || `EMP-${e.id}`,
+          name: fullName,
+          email: e.email || user.email,
+          department: e.department?.name,
+          designation: e.designation?.name,
+          primaryRole: e.primary_role?.name,
+          ancillaryRole: e.ancillary_role?.name,
+          manager: e.reporting_manager?.display_name
+            || [e.reporting_manager?.first_name, e.reporting_manager?.last_name].filter(Boolean).join(' ').trim()
+            || undefined,
+        });
+      })
+      .catch(() => { /* fall back to the minimal stub built below */ });
+    return () => { cancelled = true; };
+  }, [isEmployee, user?.employee_id, user?.name, user?.email]);
+
+  if (!isEmployee) return <Profile />;
+  // Use the EMP- code as the URL slug — matches the convention HrEmployees
+  // uses, so EmployeeProfile's existing employee_code lookup path runs the
+  // same way for both /profile and /hr/employees/:id/profile.
+  const fallback = {
+    id: stateEmp?.id || `EMP-${user!.employee_id}`,
+    name: user!.name,
+    email: user!.email,
+  };
+  return (
+    <EmployeeProfile
+      employeeId={stateEmp?.id || String(user!.employee_id)}
+      employee={stateEmp || fallback}
+      onBack={() => navigateFn('dashboard')}
+    />
+  );
 }
 
 /* ── Auth Pages (Login / Forgot Password / OTP / Reset) ── */
@@ -307,7 +371,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/payments" element={<Payments />} />
               <Route path="/permissions" element={<Permissions />} />
               <Route path="/settings" element={<Settings />} />
-              <Route path="/profile" element={<Profile />} />
+              <Route path="/profile" element={<ProfileRouter />} />
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/hr" element={<HrDashboard />} />
@@ -319,6 +383,7 @@ function DashboardRoutes({ user }: { user: any }) {
                 <Route path="/hr/attendance" element={<HrAttendance />} />
               )}
               <Route path="/hr/leave" element={<HrLeave />} />
+              <Route path="/hr/expense" element={<HrExpenseManagement />} />
               <Route path="/hr/broadcast" element={<HrBroadcastCentre />} />
               <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />

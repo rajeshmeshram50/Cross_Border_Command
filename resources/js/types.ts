@@ -23,6 +23,12 @@ export interface AuthUser {
   initials: string;
   client_id?: number;
   branch_id?: number;
+  // Linked Employee row when this login is also an employee record. Both
+  // forms are surfaced so the frontend can detect "is the profile I'm
+  // viewing my own?" regardless of whether the URL slug carries the
+  // numeric Employee.id or the EMP-### emp_code string.
+  employee_id?: number | null;
+  employee_code?: string | null;
   client_name?: string;
   branch_name?: string;
   client_logo?: string | null;
