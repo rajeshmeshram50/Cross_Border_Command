@@ -1134,7 +1134,7 @@ function EffectiveDonut({ effective, expected }: { effective: number; expected: 
 // Turtle icon — uses lucide-react's professionally-designed Turtle (matches
 // Keka's ki-turtle look). Coloured amber/yellow via stroke, sized via prop.
 function TurtleIcon({ size = 24 }: { size?: number }) {
-  return <Turtle size={size} color="#fbbf24" strokeWidth={2.2} aria-hidden="true" />;
+  return <Turtle size={size} color="#fbbf24" strokeWidth={1.5} aria-hidden="true" />;
 }
 
 function ArrivalIcon({ lateMinutes }: { lateMinutes: number }) {
@@ -1150,11 +1150,11 @@ function ArrivalIcon({ lateMinutes }: { lateMinutes: number }) {
   }
   const h = Math.floor(lateMinutes / 60);
   const m = lateMinutes % 60;
-  const label = `${h}:${String(m).padStart(2, '0')}:00 late`;
+  const label = `${h}:${String(m).padStart(2, '0')}:00`;
   return (
     <span className="att-arrival">
       <span className="att-arrival-icon att-arrival-icon--late">
-        <TurtleIcon size={24} />
+        <TurtleIcon size={20} />
       </span>
       <span className="att-arrival-text att-arrival-text--late">{label}</span>
     </span>

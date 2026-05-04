@@ -7717,47 +7717,75 @@
 }
 .att-log-eff-text { font-weight: 600; color: var(--vz-body-color); }
 
-/* ── Arrival cell — simple icon + label, matches Keka's clean look ── */
+/* ── Arrival cell — small turtle / check + time text, evenly aligned ── */
 .att-arrival {
   display: inline-flex; align-items: center; gap: 8px;
   white-space: nowrap;
 }
 .att-arrival-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px;
-  font-size: 14px;
+  width: 20px; height: 20px;
   flex-shrink: 0;
 }
-.att-arrival-icon--ok { color: #16a34a; }
-.att-arrival-icon--ok i { font-size: 16px; font-weight: 800; }
-.att-arrival-icon--late { width: 26px; height: 24px; }
-.att-arrival-icon--late svg { display: block; }
+.att-arrival-icon--ok i {
+  font-size: 16px;
+  color: #16a34a;
+  font-weight: 700;
+}
+.att-arrival-icon--late { width: 22px; height: 20px; }
+.att-arrival-icon--late svg { display: block; width: 20px; height: 20px; }
+
 .att-arrival-text {
-  font-size: 12.5px;
-  color: var(--vz-secondary-color);
+  font-size: 13px;
+  color: var(--vz-body-color);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.005em;
+}
+.att-arrival-text--late {
+  color: var(--vz-body-color);
   font-weight: 500;
 }
-.att-arrival-text--late { color: #b45309; font-weight: 600; }
-[data-bs-theme="dark"] .att-arrival-text--late { color: #fcd34d; }
-
-/* ── Log status icon button (right-most column) — clean glyph style: no
-   border / no background, just a coloured icon. Hover paints a soft circle
-   halo around it so it still reads as a clickable target. ── */
-.att-log-status-btn {
-  width: 32px; height: 32px;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 50%;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
+.att-arrival-text--late::after {
+  content: 'late';
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
   position: relative;
-  transition: background .15s ease;
+  top: -1px;
 }
-.att-log-status-btn i { font-size: 20px; line-height: 1; }
-.att-log-status-btn.is-ok i { color: #16a34a; }
-.att-log-status-btn.is-warn i { color: #f59e0b; }
+[data-bs-theme="dark"] .att-arrival-text--late::after {
+  background: rgba(245,158,11,0.18);
+  border-color: rgba(245,158,11,0.40);
+  color: #fcd34d;
+}
+
+/* ── Log status icon button (right-most column) — neutral grey button,
+   no semantic colour. Subtle hover wash. ── */
+.att-log-status-btn {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid var(--vz-border-color);
+  color: var(--vz-secondary-color);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.att-log-status-btn i { font-size: 15px; line-height: 1; }
 .att-log-status-btn:hover {
-  background: var(--vz-light, #f3f4f6);
+  background: var(--vz-light, #f9fafb);
+  border-color: #d1d5db;
+  color: var(--vz-body-color);
 }
 .att-log-status-btn:disabled { cursor: not-allowed; opacity: 0.5; }
 
@@ -7800,7 +7828,7 @@
   background: linear-gradient(135deg, #0f766e 0%, #0d9488 50%, #14b8a6 100%);
   color: #ffffff;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 400;
   position: relative;
 }
 .att-log-pop-head--v2::after {
@@ -7829,12 +7857,12 @@
 .att-log-pop-body:last-child { border-bottom: 0; }
 
 .att-log-pop-shift--v2 {
-  font-size: 14.5px; font-weight: 700; color: var(--vz-body-color);
-  letter-spacing: -0.005em;
+  font-size: 14px; font-weight: 500; color: var(--vz-body-color);
+  letter-spacing: 0;
 }
 [data-bs-theme="dark"] .att-log-pop-shift--v2 { color: #ffffff; }
 .att-log-pop-shift-time--v2 {
-  font-size: 13.5px; color: var(--vz-secondary-color); font-weight: 500;
+  font-size: 13px; color: var(--vz-secondary-color); font-weight: 400;
   margin-top: 4px;
   letter-spacing: 0.01em;
 }
@@ -7849,7 +7877,7 @@
   border-radius: 8px;
   color: #0f766e;
   font-size: 12.5px;
-  font-weight: 700;
+  font-weight: 400;
   cursor: pointer;
   transition: background .15s ease, border-color .15s ease;
 }
@@ -7858,8 +7886,8 @@
 
 .att-log-pop-location--v2 {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 14.5px; font-weight: 700; color: var(--vz-body-color);
-  letter-spacing: -0.005em;
+  font-size: 14px; font-weight: 500; color: var(--vz-body-color);
+  letter-spacing: 0;
 }
 .att-log-pop-location--v2::before {
   content: '\ea3a';
@@ -7875,8 +7903,8 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 400;
   align-items: center;
 }
 .att-log-pop-cell {
@@ -8246,4 +8274,117 @@
 .att-reg-table-foot-pageinfo {
   font-size: 12.5px; color: var(--vz-body-color); font-weight: 700;
   padding: 0 8px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   HR Attendance — comprehensive dark-mode overrides.
+   Targets every att-* class with hardcoded light backgrounds / borders so
+   the page renders correctly when [data-bs-theme="dark"] is set on <html>.
+   ════════════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] {
+
+  /* Hover wash — replace #f3f4f6 / #f9fafb with translucent white */
+  .att-emplist-tab:hover:not(.is-active),
+  .att-emp-card:hover,
+  .att-logs-range:hover,
+  .att-date-nav-btn:hover:not(:disabled),
+  .att-page-btn:hover:not(:disabled):not(.is-active),
+  .att-page-btn--text:hover:not(:disabled),
+  .att-logs-monthchip:hover,
+  .att-logs-export:hover,
+  .att-log-action-btn:hover,
+  .att-log-status-btn:hover,
+  .att-aq-btn:hover,
+  .att-aq-filter:hover,
+  .att-emp-corr-pill,
+  .att-reg-table-act:hover,
+  .att-reg-keka-cancel:hover {
+    background: rgba(255,255,255,0.06);
+  }
+
+  /* Inputs, selects, textareas — Bootstrap typically adapts but ensure
+     attendance-specific ones use dark surfaces */
+  .att-emplist-search .form-control,
+  .att-aq-search .form-control,
+  .att-reg-keka-readonly,
+  .att-reg-keka-time,
+  .att-reg-keka-note,
+  .att-reg-keka-loc-pick,
+  .att-logs-foot-rowsel {
+    background: rgba(255,255,255,0.04) !important;
+    border-color: rgba(255,255,255,0.10) !important;
+    color: var(--vz-body-color) !important;
+  }
+  .att-emplist-search .form-control::placeholder,
+  .att-aq-search .form-control::placeholder,
+  .att-reg-keka-note::placeholder {
+    color: rgba(255,255,255,0.40);
+  }
+
+  /* Tables — Bootstrap's table-light header gets a dark variant via Velzon.
+     Add explicit row hover so rows are interactive in dark mode. */
+  .att-logs-table--v2 tbody tr:hover { background: rgba(255,255,255,0.03); }
+  .att-logs-table--v2 tbody tr.is-open { background: rgba(20,184,166,0.10) !important; }
+
+  /* Status pills inside tables — ensure semantic backgrounds stay readable.
+     Pills set their own color via inline style; we just ensure pills like
+     "—" muted ones have proper dark text. */
+  .text-muted { color: rgba(255,255,255,0.40) !important; }
+
+  /* Approval Queue surface */
+  .att-aq-emp-name { color: #ffffff; }
+  .att-aq-emp-meta { color: rgba(255,255,255,0.62); }
+  .att-aq-reason   { color: rgba(255,255,255,0.78); }
+
+  /* Calendar */
+  .att-cal-cell:hover:not(:disabled) { background: rgba(255,255,255,0.04); }
+  .att-cal-summary { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.08); }
+  .att-cal-nav { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.10); color: rgba(255,255,255,0.78); }
+  .att-cal-nav:hover { background: rgba(255,255,255,0.10); }
+
+  /* Regularization modal — dark surface */
+  .att-reg-modal-v3,
+  .att-reg-modal-keka .modal-content { background: var(--vz-card-bg); }
+  .att-reg-keka-foot { background: rgba(255,255,255,0.02); border-top-color: var(--vz-border-color); }
+  .att-reg-keka-cancel {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.10);
+    color: var(--vz-body-color);
+  }
+  .att-reg-keka-radio:hover { background: rgba(255,255,255,0.04); }
+  .att-reg-keka-radio.is-active {
+    background: rgba(20,184,166,0.12);
+    border-color: rgba(20,184,166,0.40);
+  }
+  .att-reg-keka-addlog { background: rgba(20,184,166,0.10); }
+  .att-reg-keka-addlog:hover { background: rgba(20,184,166,0.18); }
+  .att-reg-keka-empty {
+    background: rgba(255,255,255,0.03);
+    border-color: rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.55);
+  }
+  .att-reg-keka-rm:hover { background: rgba(239,68,68,0.10); }
+
+  /* Footer panel of the logs table */
+  .att-logs-foot-info { color: rgba(255,255,255,0.65); }
+  .att-logs-foot-info strong { color: #ffffff; }
+
+  /* Day-detail popover body */
+  .att-log-pop-body { background: var(--vz-card-bg); }
+  .att-log-pop-shift--v2,
+  .att-log-pop-location--v2,
+  .att-log-pop-cell { color: rgba(255,255,255,0.92); }
+  .att-log-pop-shift-time--v2 { color: rgba(255,255,255,0.65); }
+
+  /* Timeline + Today's Record empty / alert states */
+  .att-timeline-empty,
+  .att-logs-empty,
+  .att-cal-cell.is-out { background: rgba(255,255,255,0.02); }
+
+  /* Action button on weekly-off rows + attendance-log info icon */
+  .att-log-action-btn {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.70);
+  }
 }
