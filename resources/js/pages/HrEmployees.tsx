@@ -2729,6 +2729,46 @@ export default function HrEmployees() {
             color: #7c5cfc;
           }
           .emp-stepper-btn:hover { transform: translateY(-1px); }
+
+          /* Dark-mode adapters for the wizard chrome — stepper, footer and
+             accent surfaces. The light theme keeps its hardcoded #fff /
+             pastel mints since that's the brand look; dark theme remaps
+             them to Velzon's card / border tokens so contrast stays
+             readable. */
+          .emp-stepper-bar { background: #fff; }
+          [data-bs-theme="dark"] .emp-stepper-bar { background: var(--vz-card-bg); border-bottom-color: var(--vz-border-color); }
+          [data-bs-theme="dark"] .emp-stepper-circle { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55); border-color: rgba(255,255,255,0.12); }
+          [data-bs-theme="dark"] .emp-stepper-label { color: rgba(255,255,255,0.55); }
+          [data-bs-theme="dark"] .emp-stepper-label.is-active { color: #c4b5fd; }
+          [data-bs-theme="dark"] .emp-stepper-line { background: rgba(255,255,255,0.10); }
+          [data-bs-theme="dark"] .emp-stepper-btn:hover .emp-stepper-circle:not(.is-active):not(.is-done) { background: rgba(124,92,252,0.18); border-color: rgba(124,92,252,0.45); color: #c4b5fd; }
+          [data-bs-theme="dark"] .emp-input.is-readonly { background: rgba(124,92,252,0.14); border-color: rgba(124,92,252,0.35); color: #c4b5fd; }
+          .emp-footer-bar { background: #fff; border-top: 1px solid var(--vz-border-color); }
+          [data-bs-theme="dark"] .emp-footer-bar { background: var(--vz-card-bg); border-top-color: var(--vz-border-color); }
+          .emp-ghost-btn { background: #fff; color: var(--vz-secondary-color); border: 1px solid var(--vz-border-color); }
+          [data-bs-theme="dark"] .emp-ghost-btn { background: rgba(255,255,255,0.04); color: var(--vz-body-color); border-color: var(--vz-border-color); }
+          .emp-ghost-btn:hover { background: var(--vz-light, #f3f4f6); color: var(--vz-body-color); }
+          [data-bs-theme="dark"] .emp-ghost-btn:hover { background: rgba(255,255,255,0.08); }
+          .emp-ctc-card { background: #f8fafc; border: 1px solid #eef0f4; }
+          [data-bs-theme="dark"] .emp-ctc-card { background: rgba(255,255,255,0.03); border-color: var(--vz-border-color); }
+          .emp-ctc-num { color: #1f2937; }
+          [data-bs-theme="dark"] .emp-ctc-num { color: #ffffff; }
+          .emp-ctc-plus { color: #9ca3af; }
+          [data-bs-theme="dark"] .emp-ctc-plus { color: rgba(255,255,255,0.45); }
+          .emp-ctc-total { background: #f5f0ff; }
+          [data-bs-theme="dark"] .emp-ctc-total { background: rgba(124,92,252,0.18); }
+          .emp-ctc-total .emp-label, .emp-ctc-total .emp-ctc-num { color: #5a3fd1; }
+          [data-bs-theme="dark"] .emp-ctc-total .emp-label, [data-bs-theme="dark"] .emp-ctc-total .emp-ctc-num { color: #c4b5fd; }
+          .emp-payroll-banner { background: linear-gradient(135deg, #ddf5ec, #c7efde); border: 1px solid #b6e9d9; }
+          [data-bs-theme="dark"] .emp-payroll-banner { background: linear-gradient(135deg, rgba(10,179,156,0.18), rgba(10,179,156,0.10)); border-color: rgba(10,179,156,0.35); }
+          .emp-payroll-banner-text { color: #0a8a78; }
+          [data-bs-theme="dark"] .emp-payroll-banner-text { color: #5eead4; }
+          .emp-attn-text { color: #374151; }
+          [data-bs-theme="dark"] .emp-attn-text { color: var(--vz-body-color); }
+          .emp-dashed-btn-violet { background: #fff; color: #7c5cfc; border: 1px dashed #a78bfa; }
+          [data-bs-theme="dark"] .emp-dashed-btn-violet { background: rgba(124,92,252,0.10); color: #c4b5fd; border-color: rgba(167,139,250,0.50); }
+          .emp-dashed-btn-teal { background: #fff; color: #0ab39c; border: 1px dashed #2dd4bf; }
+          [data-bs-theme="dark"] .emp-dashed-btn-teal { background: rgba(10,179,156,0.10); color: #5eead4; border-color: rgba(45,212,191,0.50); }
         `}</style>
 
         <ModalBody className="p-0" style={{ background: 'var(--vz-secondary-bg, #f7f8fc)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden' }}>
@@ -2816,7 +2856,7 @@ export default function HrEmployees() {
           </div>
 
           {/* Stepper */}
-          <div style={{ background: '#fff', padding: '16px 28px', borderBottom: '1px solid var(--vz-border-color)' }}>
+          <div className="emp-stepper-bar" style={{ padding: '16px 28px', borderBottom: '1px solid var(--vz-border-color)' }}>
             <div className="d-flex align-items-start">
               {[
                 { n: 1, label: 'Basic Details' },
@@ -3276,7 +3316,7 @@ export default function HrEmployees() {
                         style={{ height: 38, cursor: 'pointer' }}
                         onClick={() => setEAttendanceTracking(v => !v)}
                       >
-                        <span style={{ fontSize: 13, color: '#374151' }}>
+                        <span className="emp-attn-text" style={{ fontSize: 13 }}>
                           {eAttendanceTracking ? 'Enabled' : 'Disabled'}
                         </span>
                         <button
@@ -3529,11 +3569,9 @@ export default function HrEmployees() {
                     <i className="ri-money-dollar-circle-line" /> Payroll Configuration
                   </div>
                   <div
-                    className="d-flex align-items-center gap-2 mb-3"
+                    className="emp-payroll-banner d-flex align-items-center gap-2 mb-3"
                     style={{
                       padding: '10px 14px',
-                      border: '1px solid #b6e9d9',
-                      background: 'linear-gradient(135deg, #ddf5ec, #c7efde)',
                       borderRadius: 10,
                     }}
                   >
@@ -3559,7 +3597,7 @@ export default function HrEmployees() {
                         }}
                       />
                     </button>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#0a8a78' }}>
+                    <span className="emp-payroll-banner-text" style={{ fontSize: 13, fontWeight: 600 }}>
                       Enable payroll for this employee
                     </span>
                   </div>
@@ -3615,28 +3653,22 @@ export default function HrEmployees() {
                   <div className="d-flex flex-wrap gap-2 mb-3">
                     <button
                       type="button"
-                      className="btn d-inline-flex align-items-center gap-1 fw-semibold"
+                      className="btn emp-dashed-btn-violet d-inline-flex align-items-center gap-1 fw-semibold"
                       style={{
                         fontSize: 12.5,
                         padding: '6px 14px',
                         borderRadius: 8,
-                        background: '#fff',
-                        color: '#7c5cfc',
-                        border: '1px dashed #a78bfa',
                       }}
                     >
                       <i className="ri-add-line" /> Add Bonus
                     </button>
                     <button
                       type="button"
-                      className="btn d-inline-flex align-items-center gap-1 fw-semibold"
+                      className="btn emp-dashed-btn-teal d-inline-flex align-items-center gap-1 fw-semibold"
                       style={{
                         fontSize: 12.5,
                         padding: '6px 14px',
                         borderRadius: 8,
-                        background: '#fff',
-                        color: '#0ab39c',
-                        border: '1px dashed #2dd4bf',
                       }}
                     >
                       <i className="ri-add-line" /> Add Perks
@@ -3719,10 +3751,8 @@ export default function HrEmployees() {
                     {eSalaryFrom ? eSalaryFrom : '—'}
                   </div>
                   <div
-                    className="d-flex align-items-center justify-content-between flex-wrap"
+                    className="emp-ctc-card d-flex align-items-center justify-content-between flex-wrap"
                     style={{
-                      background: '#f8fafc',
-                      border: '1px solid #eef0f4',
                       borderRadius: 10,
                       padding: '14px 16px',
                       gap: 12,
@@ -3730,19 +3760,19 @@ export default function HrEmployees() {
                   >
                     <div className="text-center" style={{ flex: 1 }}>
                       <div className="emp-label mb-1">Regular Salary</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: '#1f2937' }}>
+                      <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
                         INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
                       </div>
                     </div>
-                    <div style={{ fontSize: 18, color: '#9ca3af' }}>+</div>
+                    <div className="emp-ctc-plus" style={{ fontSize: 18 }}>+</div>
                     <div className="text-center" style={{ flex: 1 }}>
                       <div className="emp-label mb-1">Bonus</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: '#1f2937' }}>INR 0</div>
+                      <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>INR 0</div>
                     </div>
-                    <div style={{ fontSize: 18, color: '#9ca3af' }}>=</div>
-                    <div className="text-center" style={{ flex: 1, background: '#f5f0ff', borderRadius: 8, padding: '6px 8px' }}>
-                      <div className="emp-label mb-1" style={{ color: '#5a3fd1' }}>Total CTC</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: '#5a3fd1' }}>
+                    <div className="emp-ctc-plus" style={{ fontSize: 18 }}>=</div>
+                    <div className="text-center emp-ctc-total" style={{ flex: 1, borderRadius: 8, padding: '6px 8px' }}>
+                      <div className="emp-label mb-1">Total CTC</div>
+                      <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
                         INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
                       </div>
                     </div>
@@ -3754,25 +3784,16 @@ export default function HrEmployees() {
 
           {/* Footer */}
           <div
-            className="d-flex align-items-center justify-content-between gap-2 flex-wrap"
-            style={{
-              padding: '14px 22px',
-              background: '#fff',
-              borderTop: '1px solid var(--vz-border-color)',
-            }}
+            className="emp-footer-bar d-flex align-items-center justify-content-between gap-2 flex-wrap"
+            style={{ padding: '14px 22px' }}
           >
             {/* Left side — Back button (steps 2+) */}
             {empStep > 1 ? (
               <button
                 type="button"
                 onClick={() => setEmpStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
-                className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                style={{
-                  fontSize: 13,
-                  background: '#fff',
-                  color: 'var(--vz-secondary-color)',
-                  border: '1px solid var(--vz-border-color)',
-                }}
+                className="btn emp-ghost-btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
+                style={{ fontSize: 13 }}
               >
                 <i className="ri-arrow-left-s-line" /> Back
               </button>
@@ -3803,12 +3824,9 @@ export default function HrEmployees() {
                     type="button"
                     disabled={saving}
                     onClick={handleSaveEmployee}
-                    className="btn fw-semibold rounded-pill px-3"
+                    className="btn emp-ghost-btn fw-semibold rounded-pill px-3"
                     style={{
                       fontSize: 13,
-                      background: '#fff',
-                      color: 'var(--vz-secondary-color)',
-                      border: '1px solid var(--vz-border-color)',
                       opacity: saving ? 0.6 : 1,
                     }}
                   >

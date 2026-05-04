@@ -558,7 +558,6 @@ export default function HrAttendance() {
               boxShadow: '0 8px 28px rgba(15,23,42,0.06), 0 2px 6px rgba(15,23,42,0.04)',
               padding: '18px',
               marginBottom: '24px',
-              background: 'linear-gradient(180deg, var(--vz-card-bg, #ffffff) 0%, var(--vz-card-bg, #ffffff) 100%)',
             }}
           >
 
