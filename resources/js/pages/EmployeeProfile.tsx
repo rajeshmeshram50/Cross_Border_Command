@@ -5126,36 +5126,36 @@ function ApplyLeavePanel(props: {
         .lvm-stage.is-done .lvm-stage-status { color: #108548; font-weight: 700; }
 
         /* Main — natural height; the page-level scroll handles overflow. */
-        .lvm-main { flex: 1 1 auto; min-width: 0; padding: 18px 24px 12px; }
+        .lvm-main { flex: 1 1 auto; min-width: 0; padding: 14px 20px 10px; }
 
         /* Profile completion bar */
-        .lvm-profile-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-        .lvm-profile-label { font-size: 11px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); }
-        .lvm-profile-pct { font-size: 18px; font-weight: 800; color: #f06548; }
-        .lvm-profile-track { height: 6px; background: #e9d5ff; border-radius: 999px; overflow: hidden; margin-bottom: 6px; }
+        .lvm-profile-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+        .lvm-profile-label { font-size: 10.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); }
+        .lvm-profile-pct { font-size: 16px; font-weight: 800; color: #f06548; }
+        .lvm-profile-track { height: 5px; background: #e9d5ff; border-radius: 999px; overflow: hidden; margin-bottom: 4px; }
         .lvm-profile-fill { height: 100%; background: linear-gradient(90deg,#f06548 0%,#f59e0b 50%,#0ab39c 100%); border-radius: 999px; transition: width .25s ease; }
-        .lvm-profile-help { font-size: 11.5px; color: var(--vz-secondary-color); margin-bottom: 14px; }
+        .lvm-profile-help { font-size: 11px; color: var(--vz-secondary-color); margin-bottom: 10px; }
 
         /* Stage banner */
         .lvm-banner {
           background: #fff;
           border: 1px solid #ece9f6;
-          border-radius: 12px;
-          padding: 14px 16px;
-          display: flex; align-items: center; gap: 12px;
-          margin-bottom: 14px;
+          border-radius: 10px;
+          padding: 10px 14px;
+          display: flex; align-items: center; gap: 10px;
+          margin-bottom: 10px;
         }
         [data-bs-theme="dark"] .lvm-banner { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .lvm-banner-icon { width: 42px; height: 42px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .lvm-banner-icon i { font-size: 20px; }
+        .lvm-banner-icon { width: 36px; height: 36px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .lvm-banner-icon i { font-size: 18px; }
         .lvm-banner-meta { min-width: 0; flex: 1; }
-        .lvm-banner-title { font-size: 16px; font-weight: 800; color: #1f2937; margin: 0; letter-spacing: -0.01em; }
+        .lvm-banner-title { font-size: 14.5px; font-weight: 800; color: #1f2937; margin: 0; letter-spacing: -0.01em; line-height: 1.2; }
         [data-bs-theme="dark"] .lvm-banner-title { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .lvm-banner-sub { font-size: 12px; color: var(--vz-secondary-color); margin-top: 2px; }
-        .lvm-banner-step { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; flex-shrink: 0; }
+        .lvm-banner-sub { font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 1px; }
+        .lvm-banner-step { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 10px; font-weight: 800; letter-spacing: 0.06em; flex-shrink: 0; }
 
         /* Section heading */
-        .lvm-section-heading { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 12px 0; }
+        .lvm-section-heading { font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 8px 0; }
 
         /* Leave type cards */
         .lvm-type-card {
@@ -5354,28 +5354,44 @@ function ApplyLeavePanel(props: {
         .lvm-impact-value.empty { color: #9ca3af; }
         .lvm-impact-value.ok { color: #15803d; }
 
-        /* Impact preview (stage 6) — KPI tiles + breakdown table */
-        .lvm-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+        /* Impact preview (stage 6) — KPI tiles match the project's onb-kpi-card
+           pattern: white card + coloured gradient strip + tinted icon tile +
+           subtle hover lift. */
+        .lvm-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
         .lvm-kpi {
+          position: relative;
           background: #fff;
-          border: 1px solid #ece9f6;
-          border-radius: 10px;
-          padding: 14px 12px;
-          text-align: center;
+          border: 1px solid var(--vz-border-color);
+          border-radius: 12px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+          padding: 12px 14px;
+          overflow: hidden;
+          display: flex; align-items: flex-start; justify-content: space-between;
+          gap: 8px;
+          transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+          cursor: default;
         }
         [data-bs-theme="dark"] .lvm-kpi { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .lvm-kpi.tone-blue { background: #f0f5ff; border-color: #c5d8ff; }
-        .lvm-kpi.tone-green { background: #f0faf4; border-color: #c0ebd0; }
-        .lvm-kpi.tone-grey { background: #fafafa; border-color: #e5e7eb; }
-        .lvm-kpi.tone-emerald { background: #ecfdf5; border-color: #a7f3d0; }
-        .lvm-kpi-num { font-size: 20px; font-weight: 800; color: var(--vz-body-color); }
+        .lvm-kpi:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(18,38,63,0.10); border-color: rgba(124,92,252,0.28); }
+        .lvm-kpi-strip { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+        .lvm-kpi-text { display: flex; flex-direction: column; min-width: 0; }
+        .lvm-kpi-label { font-size: 10px; font-weight: 700; color: var(--vz-secondary-color); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .lvm-kpi-num { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, var(--vz-body-color)); margin: 0; line-height: 1; letter-spacing: -0.01em; }
         .lvm-kpi-num.muted { color: #9ca3af; }
         .lvm-kpi-num.green { color: #15803d; }
-        .lvm-kpi-label { font-size: 11px; font-weight: 700; color: var(--vz-secondary-color); margin-top: 2px; }
+        .lvm-kpi-icon {
+          width: 34px; height: 34px;
+          border-radius: 9px;
+          display: inline-flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+          transition: transform .25s ease;
+        }
+        .lvm-kpi:hover .lvm-kpi-icon { transform: scale(1.08); }
+        .lvm-kpi-icon i { font-size: 16px; }
 
-        .lvm-breakdown { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; overflow: hidden; }
+        .lvm-breakdown { background: #fff; border: 1px solid #ece9f6; border-radius: 10px; overflow: hidden; }
         [data-bs-theme="dark"] .lvm-breakdown { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .lvm-breakdown-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #f1f2f4; font-size: 13px; }
+        .lvm-breakdown-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; border-bottom: 1px solid #f1f2f4; font-size: 12.5px; }
         [data-bs-theme="dark"] .lvm-breakdown-row { border-color: var(--vz-border-color); }
         .lvm-breakdown-row:last-child { border-bottom: none; }
         .lvm-breakdown-label { color: var(--vz-secondary-color); font-weight: 600; }
@@ -5387,10 +5403,10 @@ function ApplyLeavePanel(props: {
           background: #eff6ff;
           border: 1px solid #bfdbfe;
           color: #1e40af;
-          border-radius: 10px;
-          padding: 10px 14px;
-          font-size: 11.5px;
-          margin-top: 12px;
+          border-radius: 8px;
+          padding: 8px 12px;
+          font-size: 11px;
+          margin-top: 10px;
         }
 
         /* Approval flow (stage 7) */
@@ -5450,19 +5466,19 @@ function ApplyLeavePanel(props: {
         .lvm-footer {
           background: #fff;
           border-top: 1px solid #ece9f6;
-          padding: 12px 22px;
+          padding: 10px 18px;
           display: flex; align-items: center; justify-content: space-between;
-          gap: 12px; flex-wrap: wrap;
+          gap: 10px; flex-wrap: wrap;
         }
         [data-bs-theme="dark"] .lvm-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-        .lvm-footer-meta { font-size: 12px; color: var(--vz-secondary-color); font-weight: 600; }
+        .lvm-footer-meta { font-size: 11.5px; color: var(--vz-secondary-color); font-weight: 600; }
         .lvm-btn-prev, .lvm-btn-draft, .lvm-btn-next {
-          padding: 9px 18px;
-          border-radius: 9px;
-          font-size: 13px; font-weight: 700;
+          padding: 7px 14px;
+          border-radius: 8px;
+          font-size: 12.5px; font-weight: 700;
           cursor: pointer;
           border: 1px solid transparent;
-          display: inline-flex; align-items: center; gap: 6px;
+          display: inline-flex; align-items: center; gap: 5px;
           transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
         }
         .lvm-btn-prev { background: #fff; color: var(--vz-secondary-color); border-color: #e5e7eb; }
@@ -5882,22 +5898,23 @@ function ApplyLeavePanel(props: {
           {stage === 6 && (
             <>
               <div className="lvm-kpi-grid">
-                <div className="lvm-kpi tone-blue">
-                  <div className={`lvm-kpi-num${totalDays === 0 ? ' muted' : ''}`}>{totalDays || 0} days</div>
-                  <div className="lvm-kpi-label">Total Days</div>
-                </div>
-                <div className="lvm-kpi tone-green">
-                  <div className={`lvm-kpi-num${totalDays === 0 ? ' muted' : ''}`}>{totalDays || 0} days</div>
-                  <div className="lvm-kpi-label">Paid Leave</div>
-                </div>
-                <div className="lvm-kpi tone-grey">
-                  <div className="lvm-kpi-num muted">0 days</div>
-                  <div className="lvm-kpi-label">Unpaid Leave</div>
-                </div>
-                <div className="lvm-kpi tone-emerald">
-                  <div className="lvm-kpi-num green">Nil</div>
-                  <div className="lvm-kpi-label">Est. Deduction</div>
-                </div>
+                {[
+                  { label: 'Total Days',    value: `${totalDays || 0} days`, muted: totalDays === 0,           icon: 'ri-calendar-2-line',         strip: 'linear-gradient(90deg,#3b82f6,#60a5fa)', tint: '#dbeafe', fg: '#1d4ed8' },
+                  { label: 'Paid Leave',    value: `${totalDays || 0} days`, muted: totalDays === 0,           icon: 'ri-secure-payment-line',     strip: 'linear-gradient(90deg,#0ab39c,#34d399)', tint: '#dcfce7', fg: '#15803d' },
+                  { label: 'Unpaid Leave',  value: '0 days',                  muted: true,                      icon: 'ri-file-list-3-line',        strip: 'linear-gradient(90deg,#9ca3af,#d1d5db)', tint: '#f3f4f6', fg: '#6b7280' },
+                  { label: 'Est. Deduction',value: 'Nil',                     muted: false, green: true,        icon: 'ri-money-rupee-circle-line', strip: 'linear-gradient(90deg,#f59e0b,#fbcc77)', tint: '#fde8c4', fg: '#a4661c' },
+                ].map(k => (
+                  <div key={k.label} className="lvm-kpi">
+                    <div className="lvm-kpi-strip" style={{ background: k.strip }} />
+                    <div className="lvm-kpi-text">
+                      <span className="lvm-kpi-label">{k.label}</span>
+                      <span className={`lvm-kpi-num${k.muted ? ' muted' : ''}${k.green ? ' green' : ''}`}>{k.value}</span>
+                    </div>
+                    <span className="lvm-kpi-icon" style={{ background: k.tint }}>
+                      <i className={k.icon} style={{ color: k.fg }} />
+                    </span>
+                  </div>
+                ))}
               </div>
 
               <p className="lvm-section-heading">Leave Breakdown</p>
