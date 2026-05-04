@@ -32,7 +32,9 @@ const Ctx = createContext<AuthCtx>({
 // v3 — added `is_main_branch` flag (used for Permissions menu gating).
 // v4 — added `client_logo` / `branch_logo` URLs (sidebar dynamic branding).
 // v5 — added `primary_color` / `secondary_color` (tenant theme override).
-const USER_SCHEMA_VERSION = 5;
+// v6 — added `employee_id` (linked Employee row, used for expense-claim ownership).
+// v7 — added `employee_code` (EMP-### string form, used for own-profile match).
+const USER_SCHEMA_VERSION = 7;
 
 function readCachedUser(): AuthUser | null {
   try {

@@ -5,6 +5,8 @@ import { useToast } from '../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import ComingSoonShell from '../components/ComingSoonShell';
 import api from '../api';
+import { useAuth } from '../contexts/AuthContext';
+import ExpenseClaimsTable from '../components/ExpenseClaimsTable';
 
 // Custom portal-based modal — renders directly to document.body so it always
 // escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
@@ -723,39 +725,164 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
   }, [claimOpen]);
 
-  // Locally-submitted expense claims — appended to the top of the table when
-  // the user clicks "Submit Claim" (or commits drafts via "Save & Add Another"
-  // followed by Submit). Lives in component state since there's no claims API
-  // wired yet; categories are resolved to their human-readable label here so
-  // the table render path doesn't need to know about master ids.
-  type SubmittedClaim = {
-    id: string;
-    category: string;
-    description: string;
-    date: string;
+  // ── Expense Claims — API-backed list ──────────────────────────────────
+  // Shape mirrors what ExpenseClaimController::serialize() returns. The
+  // table renders directly from `apiClaims` (own) and `teamClaims` (when the
+  // current user is the reporting manager for someone). Both are refetched
+  // after a successful submit / approve / reject.
+  type ApiClaim = {
+    id: number;
+    claim_no: string | null;
+    employee_id: number;
+    employee_name: string | null;
+    employee_code: string | null;
+    manager_id: number | null;
+    manager_name: string | null;
+    category_id: number | null;
+    category_name: string | null;
+    currency: string | null;
+    project: string | null;
+    payment_method: string | null;
+    title: string;
     amount: number;
-    receipt: string;
-    status: 'Pending' | 'Approved' | 'Rejected';
+    expense_date: string;
+    vendor: string | null;
+    purpose: string | null;
+    attachments: { name: string; size?: number; url?: string }[];
+    status: 'pending' | 'approved' | 'rejected';
+    manager_status: 'pending' | 'approved' | 'rejected';
+    manager_acted_at: string | null;
+    manager_comment: string | null;
+    hr_status: 'pending' | 'approved' | 'rejected';
+    hr_user_name: string | null;
+    hr_acted_at: string | null;
+    hr_comment: string | null;
+    creator_name: string | null;
+    created_at: string | null;
   };
-  const [submittedClaims, setSubmittedClaims] = useState<SubmittedClaim[]>([]);
-  const submitAllDrafts = () => {
-    const ts = Date.now();
+  const { user: authUser } = useAuth();
+  // The route `/hr/employees/:id/profile` carries the EMP- code (e.g.
+  // "EMP-001") in the URL, NOT the numeric Employee.id. Pass both to the
+  // backend — it will resolve whichever it gets.
+  const profileEmpCode = String(employeeId || '');
+  const profileEmpIdNum = /^\d+$/.test(profileEmpCode) ? Number(profileEmpCode) : null;
+  // "Is this the current user's own profile?" — first try numeric id match,
+  // fall back to the linked Employee.id. We don't have the current user's
+  // emp_code in /me, so when the URL is a code we trust the backend's later
+  // claims API to scope correctly and just compare against the API rows'
+  // employee_id once they load.
+  const [apiClaims, setApiClaims] = useState<ApiClaim[]>([]);
+  const [teamClaims, setTeamClaims] = useState<ApiClaim[]>([]);
+  // Three signals that the profile being viewed belongs to the logged-in user.
+  // Any one is enough: numeric id match, EMP-code match, or one of the loaded
+  // "mine"-scope claims belongs to the auth user (catches edge cases where
+  // /me's employee_code wasn't set yet but the API resolved correctly).
+  const isOwnProfile = !!authUser?.employee_id
+    && (
+      (profileEmpIdNum !== null && Number(authUser.employee_id) === profileEmpIdNum)
+      || (!!authUser?.employee_code && authUser.employee_code === profileEmpCode)
+      || apiClaims.some(c => c.employee_id === authUser.employee_id)
+    );
+  const [loadingClaims, setLoadingClaims] = useState(false);
+  const [expenseSubTab, setExpenseSubTab] = useState<'mine' | 'team'>('mine');
+  // Fetch (or re-fetch) both lists. `mine` is filtered by employee_id so HR /
+  // super-admin viewing someone else's profile sees that employee's claims.
+  // `team` is only meaningful for the current user — backend scopes it to
+  // claims where manager_id = the current user's Employee.id.
+  const refreshClaims = async () => {
+    if (tab !== 'expense' || !profileEmpCode) return;
+    setLoadingClaims(true);
+    try {
+      // Pass both forms — the backend accepts whichever resolves first.
+      const mineRes = await api.get('/expense-claims', {
+        params: {
+          scope: 'mine',
+          ...(profileEmpIdNum !== null
+            ? { employee_id: profileEmpIdNum }
+            : { employee_code: profileEmpCode }),
+        },
+      });
+      setApiClaims(Array.isArray(mineRes.data) ? mineRes.data : []);
+      // Always fetch team claims for the current user — the strip only renders
+      // when the result is non-empty AND this is their own profile.
+      const teamRes = await api.get('/expense-claims', { params: { scope: 'team' } });
+      setTeamClaims(Array.isArray(teamRes.data) ? teamRes.data : []);
+    } catch {
+      setApiClaims([]);
+      setTeamClaims([]);
+    } finally {
+      setLoadingClaims(false);
+    }
+  };
+  // Re-fetch whenever the tab switches to expense, the profile changes, or
+  // ownership changes (e.g. /me re-resolves and we now know the employee_id).
+  useEffect(() => {
+    refreshClaims();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, profileEmpIdNum, isOwnProfile]);
+
+  // POST every draft as multipart/form-data so the optional attachments[]
+  // upload alongside. On success, clear drafts, close modal, refresh list.
+  const submitAllDrafts = async () => {
     const valid = claimDrafts.filter(d => d.title.trim() && d.amount.trim());
     if (valid.length === 0) {
       setClaimOpen(false);
       return;
     }
-    const newClaims: SubmittedClaim[] = valid.map((d, i) => ({
-      id: `EXP-${String(ts).slice(-4)}${String(i + 1).padStart(2, '0')}`,
-      category: categoryLabelById(d.category) || '—',
-      description: d.title.trim(),
-      date: d.date,
-      amount: Number(String(d.amount).replace(/[^\d.]/g, '')) || 0,
-      receipt: `Receipt_${d.title.trim().slice(0, 12) || 'pending'}`,
-      status: 'Pending',
-    }));
-    setSubmittedClaims(prev => [...newClaims, ...prev]);
-    setClaimOpen(false);
+    try {
+      for (const d of valid) {
+        const fd = new FormData();
+        fd.append('title', d.title.trim());
+        fd.append('amount', String(Number(String(d.amount).replace(/[^\d.]/g, '')) || 0));
+        fd.append('expense_date', d.date);
+        if (d.category)       fd.append('category_id', d.category);
+        if (d.currency)       fd.append('currency', d.currency);
+        if (d.project)        fd.append('project', d.project);
+        if (d.payment)        fd.append('payment_method', d.payment);
+        if (d.vendor)         fd.append('vendor', d.vendor);
+        if (d.purpose)        fd.append('purpose', d.purpose);
+        // Always file under the profile we're viewing. The backend resolves
+        // either employee_id (numeric) or employee_code (EMP- string), and
+        // falls back to the current user's linked Employee row if neither is
+        // present. Backend also enforces "non-super-admin can only file under
+        // their own employee record".
+        if (profileEmpIdNum !== null) {
+          fd.append('employee_id', String(profileEmpIdNum));
+        } else if (profileEmpCode) {
+          fd.append('employee_code', profileEmpCode);
+        }
+        for (const f of claimFiles) fd.append('files[]', f);
+        await api.post('/expense-claims', fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+      toast.success('Claim submitted', `${valid.length} claim${valid.length > 1 ? 's' : ''} sent for approval`);
+      setClaimOpen(false);
+      await refreshClaims();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Could not submit the claim. Please try again.';
+      toast.error('Submit failed', msg);
+    }
+  };
+
+  // Audit-log popover state — `auditOpenId` holds the claim id whose 3-dot
+  // dropdown is currently open; null = nothing open.
+  const [auditOpenId, setAuditOpenId] = useState<number | null>(null);
+
+  // Inline manager / HR actions used by the team-tab and HR pages.
+  const actOnClaim = async (
+    claimId: number,
+    action: 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject',
+    comment?: string,
+  ) => {
+    try {
+      await api.post(`/expense-claims/${claimId}/${action}`, comment ? { comment } : {});
+      toast.success('Updated', 'Claim status updated');
+      await refreshClaims();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Action failed.';
+      toast.error('Action failed', msg);
+    }
   };
 
   // Live counts for the Evidence Vault hero KPIs.
@@ -789,21 +916,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     : employee?.onboarding === 'Pending'     ? 25
     :                                          83;
 
-  // Pre-compute counts and the filtered list once per render so the filter
-  // tabs stay in sync with the table. Locally-submitted claims (from the
-  // Raise New Claim modal) are merged on top of the static mock dataset so
-  // newly created entries appear immediately without a backend round-trip.
-  const allExpenseClaims = [...submittedClaims, ...EXPENSE_CLAIMS];
+  // Pre-compute counts and the filtered list from API rows. The list source
+  // depends on the active sub-tab: "mine" → claims this employee raised,
+  // "team" → claims where the current user is the assigned reporting manager.
+  const activeClaimsSource: ApiClaim[] =
+    expenseSubTab === 'team' ? teamClaims : apiClaims;
   const expenseCounts = {
-    all:      allExpenseClaims.length,
-    approved: allExpenseClaims.filter(c => c.status === 'Approved').length,
-    rejected: allExpenseClaims.filter(c => c.status === 'Rejected').length,
-    pending:  allExpenseClaims.filter(c => c.status === 'Pending').length,
+    all:      activeClaimsSource.length,
+    approved: activeClaimsSource.filter(c => c.status === 'approved').length,
+    rejected: activeClaimsSource.filter(c => c.status === 'rejected').length,
+    pending:  activeClaimsSource.filter(c => c.status === 'pending').length,
   };
-  const totalClaimed = allExpenseClaims.reduce((sum, c) => sum + c.amount, 0);
-  const filteredExpenses = expenseFilter === 'all'
-    ? allExpenseClaims
-    : allExpenseClaims.filter(c => c.status.toLowerCase() === expenseFilter);
+  const totalClaimed = activeClaimsSource.reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  const filteredExpenses: ApiClaim[] = expenseFilter === 'all'
+    ? activeClaimsSource
+    : activeClaimsSource.filter(c => c.status === expenseFilter);
 
   return (
     <>
@@ -3720,6 +3847,56 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </div>
             <div className="px-3 pb-3 pt-2">
+              {/* My / Team sub-tabs — only render when the current user is
+                  viewing their own profile AND has a team (i.e. is someone's
+                  reporting manager). For everyone else the table behaves as
+                  a single-list view (the user's own claims). */}
+              {isOwnProfile && teamClaims.length > 0 && (
+                <div className="d-flex gap-1 mb-3" style={{
+                  background: 'var(--vz-secondary-bg)', padding: 4, borderRadius: 10,
+                  border: '1px solid var(--vz-border-color)', width: 'fit-content',
+                }}>
+                  {[
+                    { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line',   count: apiClaims.length },
+                    { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line',   count: teamClaims.length },
+                  ].map(t => {
+                    const on = expenseSubTab === t.key;
+                    return (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => setExpenseSubTab(t.key)}
+                        className="d-inline-flex align-items-center gap-2 fw-semibold"
+                        style={{
+                          fontSize: 12,
+                          padding: '5px 14px',
+                          borderRadius: 8,
+                          border: 'none',
+                          background: on ? 'var(--vz-card-bg)' : 'transparent',
+                          color: on ? '#7c3aed' : 'var(--vz-secondary-color)',
+                          boxShadow: on ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <i className={t.icon} />
+                        {t.label}
+                        <span
+                          className="d-inline-flex align-items-center justify-content-center rounded-pill"
+                          style={{
+                            minWidth: 18, height: 16, padding: '0 6px',
+                            background: on ? 'rgba(124,58,237,0.12)' : 'var(--vz-secondary-bg)',
+                            color: on ? '#7c3aed' : 'var(--vz-secondary-color)',
+                            fontSize: 10, fontWeight: 700,
+                          }}
+                        >
+                          {t.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Filter pills — active = solid filled with colored shadow for
                   strong visibility; inactive = subtle white with border. */}
               <div className="d-flex gap-2 flex-wrap mb-3">
@@ -3764,153 +3941,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 })}
               </div>
 
-              {/* Claims table */}
-              <div className="table-responsive border rounded ep-att-scroll-wrap">
-                <table className="table align-middle table-nowrap ep-att-table mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th>Exp ID</th>
-                      <th>Employee</th>
-                      <th>Category</th>
-                      <th>Description</th>
-                      <th>Expense Date</th>
-                      <th>Amount</th>
-                      <th>Proof of Payment</th>
-                      <th>Payment Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredExpenses.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="text-center py-5 text-muted">
-                          <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                          No claims match this filter.
-                        </td>
-                      </tr>
-                    ) : filteredExpenses.map(c => {
-                      // Fall back to a neutral tone for categories that aren't
-                      // in the hard-coded EXPENSE_CATEGORY_TONE palette (e.g.
-                      // categories created via the expense_category master).
-                      const cat = EXPENSE_CATEGORY_TONE[c.category] ?? {
-                        bg: '#eef2f6', fg: '#5b6478', icon: 'ri-price-tag-3-line',
-                      };
-                      const st = EXPENSE_STATUS_TONE[c.status];
-                      return (
-                        <tr key={c.id}>
-                          <td>
-                            <span
-                              className="font-monospace fw-semibold"
-                              style={{
-                                fontSize: 11, padding: '2px 9px', borderRadius: 999,
-                                background: '#ece6ff', color: '#5a3fd1', letterSpacing: '0.02em',
-                              }}
-                            >
-                              {c.id}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="d-flex align-items-center gap-2">
-                              <div
-                                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                style={{
-                                  width: 24, height: 24, fontSize: 10,
-                                  background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
-                                  boxShadow: `0 2px 6px ${accent}40`,
-                                }}
-                              >
-                                {initials}
-                              </div>
-                              <span className="fw-semibold">{employee?.name || employeeId}</span>
-                            </div>
-                          </td>
-                          <td>
-                            <span
-                              className="d-inline-flex align-items-center gap-1 fw-semibold"
-                              style={{
-                                fontSize: 11, padding: '3px 9px', borderRadius: 999,
-                                background: cat.bg, color: cat.fg,
-                              }}
-                            >
-                              <i className={cat.icon} />
-                              {c.category}
-                            </span>
-                          </td>
-                          <td>
-                            {c.description}
-                          </td>
-                          <td className="text-muted">{c.date}</td>
-                          <td className="fw-bold">₹{c.amount.toLocaleString('en-IN')}</td>
-                          <td>
-                            <a
-                              href="#"
-                              onClick={(e) => { e.preventDefault(); toast.info('Downloading receipt', `${c.receipt} is being prepared…`); }}
-                              className="d-inline-flex align-items-center gap-1 text-decoration-none"
-                              style={{
-                                fontSize: 11,
-                                padding: '3px 9px',
-                                borderRadius: 8,
-                                background: 'rgba(239,68,68,0.10)',
-                                color: '#dc2626',
-                                fontWeight: 600,
-                                border: '1px solid rgba(239,68,68,0.25)',
-                              }}
-                            >
-                              <i className="ri-file-text-line" />
-                              {c.receipt}…
-                            </a>
-                          </td>
-                          <td>
-                            {c.status === 'Pending' ? (
-                              <div className="d-flex gap-1">
-                                <button
-                                  type="button"
-                                  className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
-                                  style={{
-                                    fontSize: 11,
-                                    padding: '3px 10px',
-                                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                                    color: '#fff', border: 'none',
-                                    boxShadow: '0 2px 6px rgba(10,179,156,0.25)',
-                                  }}
-                                >
-                                  <i className="ri-check-line" /> Approve
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
-                                  style={{
-                                    fontSize: 11,
-                                    padding: '3px 10px',
-                                    background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
-                                    color: '#fff', border: 'none',
-                                    boxShadow: '0 2px 6px rgba(240,101,72,0.25)',
-                                  }}
-                                >
-                                  <i className="ri-close-line" /> Reject
-                                </button>
-                              </div>
-                            ) : (
-                              <span
-                                className="d-inline-flex align-items-center gap-1 fw-semibold"
-                                style={{
-                                  fontSize: 11,
-                                  padding: '3px 10px',
-                                  borderRadius: 999,
-                                  background: st.bg,
-                                  color: st.fg,
-                                }}
-                              >
-                                <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot }} />
-                                {c.status}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {/* Claims table — API-backed. Status pill replaces the old
+                  Payment Action column; the 3-dot Action menu opens the audit
+                  log popover (Created → Manager → HR/Finance). When viewing
+                  Team Expenses as the assigned manager, inline Approve/Reject
+                  buttons appear next to the menu. */}
+              <ExpenseClaimsTable
+                rows={filteredExpenses}
+                loading={loadingClaims}
+                accent={accent}
+                fallbackInitials={initials}
+                fallbackName={employee?.name || employeeId}
+                mode={expenseSubTab === 'team' ? 'team' : 'mine'}
+                currentEmployeeId={authUser?.employee_id ?? null}
+                onAct={actOnClaim}
+              />
 
               <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 pt-2 border-top">
                 <small className="text-muted">

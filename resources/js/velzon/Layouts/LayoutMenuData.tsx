@@ -64,6 +64,7 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.attendance":  return "/hr/attendance";
     case "hr.broadcast":   return "/hr/broadcast";
     case "hr.leave":       return "/hr/leave";
+    case "hr.expense":     return "/hr/expense";
     default:               return "/hr";
   }
 };

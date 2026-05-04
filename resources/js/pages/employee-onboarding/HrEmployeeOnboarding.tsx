@@ -1646,6 +1646,7 @@ function InitiateOnboardingModal({
   emp: OnboardRow | null;
   onSaved?: () => void;
 }) {
+  const toast = useToast();
   const [activeStage, setActiveStage] = useState(1);
   // Reset to stage 1 each time a new employee opens
   useEffect(() => { if (isOpen) setActiveStage(1); }, [isOpen, emp?.id]);
@@ -1835,8 +1836,8 @@ function InitiateOnboardingModal({
    *  saved yet stay null on the row. wizard_step_completed gets bumped
    *  by the controller's high-watermark logic only if we send a higher
    *  value, so passing 4 here marks the wizard fully done. */
-  const saveStage1 = async (markComplete: boolean) => {
-    if (!emp?.dbId || s1Saving) return;
+  const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
+    if (!emp?.dbId || s1Saving) return false;
     setS1Saving(true);
     const intOrNull = (v: string) => {
       const n = parseInt(v, 10);
@@ -1885,9 +1886,22 @@ function InitiateOnboardingModal({
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
       onSaved?.();
-    } catch {
-      // Network / validation issue — keep the modal open so the user
-      // doesn't lose what they typed.
+      return true;
+    } catch (err: any) {
+      // Surface the failure so the user knows their edit didn't persist.
+      // Pull the first validation error if present, fall back to the
+      // server's top-level message, then to a generic notice.
+      const errors = err?.response?.data?.errors;
+      const firstFieldMsg = errors && typeof errors === 'object'
+        ? (Object.values(errors)[0] as any[] | undefined)?.[0]
+        : null;
+      const msg = firstFieldMsg
+        || err?.response?.data?.message
+        || err?.message
+        || 'Could not save changes — please try again.';
+      toast.error('Save failed', String(msg));
+      console.error('saveStage1 failed', err?.response?.data || err);
+      return false;
     } finally {
       setS1Saving(false);
     }
@@ -1989,7 +2003,17 @@ function InitiateOnboardingModal({
       await api.put(`/employees/${emp.dbId}`, payload);
       onSaved?.();
       return true;
-    } catch {
+    } catch (err: any) {
+      const errors = err?.response?.data?.errors;
+      const firstFieldMsg = errors && typeof errors === 'object'
+        ? (Object.values(errors)[0] as any[] | undefined)?.[0]
+        : null;
+      const msg = firstFieldMsg
+        || err?.response?.data?.message
+        || err?.message
+        || 'Could not save changes — please try again.';
+      toast.error('Save failed', String(msg));
+      console.error('saveStage4 failed', err?.response?.data || err);
       return false;
     } finally {
       setS4Saving(false);
@@ -2736,8 +2760,13 @@ function InitiateOnboardingModal({
                 onClick={async () => {
                   // Stage 1: persist edits before advancing. saveStage1
                   // bumps wizard_step_completed=4; the controller then
-                  // auto-bumps the macro stage to ≥1.
-                  if (activeStage === 1) await saveStage1(true);
+                  // auto-bumps the macro stage to ≥1. Don't advance to
+                  // the next stage if the save failed — toast already
+                  // surfaced the reason.
+                  if (activeStage === 1) {
+                    const ok = await saveStage1(true);
+                    if (!ok) return;
+                  }
                   // Stage 2: gate on required-document completion + bump
                   // the macro watermark to 2.
                   if (activeStage === 2) {
@@ -2750,7 +2779,8 @@ function InitiateOnboardingModal({
                   // skips the wizard_step_completed bump so reopening
                   // the modal still shows Stage 1 as fully done.
                   if (activeStage === 3) {
-                    await saveStage1(false);
+                    const ok = await saveStage1(false);
+                    if (!ok) return;
                     await bumpMacroStage(3);
                   }
                   // Stage 4: gate on readiness checks + persist with the
