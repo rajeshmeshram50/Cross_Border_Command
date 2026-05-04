@@ -185,4 +185,10 @@ Route::get('/payments/{payment}/invoice/view', [PaymentController::class, 'viewI
 Route::get('/candidates/{candidate}/cv', [CandidateController::class, 'downloadCv'])
     ->name('candidates.cv');
 
+// Expense-claim attachment download — same query-token pattern as the
+// candidate CV route above. Uses the Laravel route instead of /storage/...
+// so file links resolve regardless of whether Apache points at public/.
+Route::get('/expense-claims/{id}/attachments/{index}', [ExpenseClaimController::class, 'downloadAttachment'])
+    ->name('expense-claims.attachment');
+
 Route::apiResource('dummy-items', DummyItemController::class);
