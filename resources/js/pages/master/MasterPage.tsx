@@ -127,30 +127,13 @@ function MasterPageInner({
     });
   };
 
-  // Ownership columns injected by role:
-  //  - super_admin      -> Client | Branch | Created By
-  //  - client_admin/user -> Branch | Created By
-  //  - branch_user      -> Created By
-  // These columns render directly from the API (rows include client_name, branch_name, creator_name).
+  // Ownership columns injected by role: just "Created By" for every role.
+  // Client / Branch columns were removed — the audit log shown in the
+  // Actions column already surfaces that ownership information, so they
+  // were redundant in the table itself.
   const ownershipCols = useMemo<{ key: string; label: string }[]>(() => {
-    const ut = user?.user_type;
-    if (ut === 'super_admin') {
-      return [
-        { key: '__client',  label: 'Client' },
-        { key: '__branch',  label: 'Branch' },
-        { key: '__creator', label: 'Created By' },
-      ];
-    }
-    if (ut === 'client_admin') {
-      return [
-        { key: '__branch',  label: 'Branch' },
-        { key: '__creator', label: 'Created By' },
-      ];
-    }
-    if (ut === 'branch_user') {
-      return [{ key: '__creator', label: 'Created By' }];
-    }
-    return [];
+    if (!user?.user_type) return [];
+    return [{ key: '__creator', label: 'Created By' }];
   }, [user?.user_type]);
 
   // ref masters referenced by this master's fields
@@ -934,23 +917,6 @@ function MasterPageInner({
         cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
       },
     ];
-    // Icon column — hidden on rich masters (designations / roles / kpis /
-    // departments) since the colored type/level/priority/code pills already
-    // give a strong visual cue.
-    if (cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'legal_entities' && cfg.slug !== 'departments') {
-      cols.push({
-        header: 'Icon',
-        accessorKey: '__icon',
-        enableGlobalFilter: false,
-        cell: () => (
-          <div className="avatar-xs">
-            <span className={`avatar-title rounded bg-${cfg.iconBg}-subtle text-${cfg.iconColor} fs-4`}>
-              <i className={cfg.icon}></i>
-            </span>
-          </div>
-        ),
-      });
-    }
     cfg.cols.forEach((colName, idx) => {
       // Centered columns — ones whose cells render visually-centered content
       // (the level rating tile, status pill, etc. read better with a centered

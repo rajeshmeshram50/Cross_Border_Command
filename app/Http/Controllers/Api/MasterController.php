@@ -48,6 +48,7 @@ class MasterController extends Controller
         'compliance_behaviours' => \App\Models\Masters\ComplianceBehaviours::class,
         'assets' => \App\Models\Masters\Assets::class,
         'asset_categories' => \App\Models\Masters\AssetCategories::class,
+        'expense_category' => \App\Models\Masters\ExpenseCategories::class,
         'payment_terms' => \App\Models\Masters\PaymentTerms::class,
         'approval_authority' => \App\Models\Masters\ApprovalAuthority::class,
         'procurement_category' => \App\Models\Masters\ProcurementCategory::class,
@@ -105,6 +106,7 @@ class MasterController extends Controller
         'compliance_behaviours' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'action_required', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'assets' => ['fields' => [['n' => 'asset_name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'asset_type_id', 't' => 'select', 'r' => true, 'ref' => 'asset_categories'], ['n' => 'description', 't' => 'textarea'], ['n' => 'vendor_id', 't' => 'select', 'ref' => 'vendor_directory'], ['n' => 'purchase_date', 't' => 'date'], ['n' => 'warranty_expiry_date', 't' => 'date'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive', 'Under Repair', 'Disposed']]], 'uFields' => ['asset_name']],
         'asset_categories' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'depreciation_rate', 't' => 'number'], ['n' => 'useful_life_years', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
+        'expense_category' => ['fields' => [['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'monthly_limit', 't' => 'number'], ['n' => 'yearly_limit', 't' => 'number'], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code'], 'tenantScoped' => true],
         'payment_terms' =>['fields' => [['n' => 'term_code', 't' => 'text', 'r' => true], ['n' => 'term_name', 't' => 'text', 'r' => true], ['n' => 'credit_days', 't' => 'number', 'r' => true], ['n' => 'advance_pct', 't' => 'number'], ['n' => 'payment_type', 't' => 'select', 'r' => true, 'opts' => ['Full Advance', 'Partial Advance', 'Credit', 'Milestone-Based', 'COD']], ['n' => 'milestone_desc', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['term_code']],
         'approval_authority' => ['fields' => [['n' => 'role_name', 't' => 'text', 'r' => true], ['n' => 'module_scope', 't' => 'select', 'r' => true, 'opts' => ['Purchase Order', 'Payment', 'VTI', 'GRN', 'All']], ['n' => 'min_value', 't' => 'number'], ['n' => 'max_value', 't' => 'number', 'r' => true], ['n' => 'currency', 't' => 'select', 'opts' => ['INR', 'USD', 'EUR', 'GBP']], ['n' => 'escalate_to', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['role_name', 'module_scope']],
         'procurement_category' => ['fields' => [['n' => 'cat_code', 't' => 'text', 'r' => true], ['n' => 'cat_name', 't' => 'text', 'r' => true], ['n' => 'match_logic', 't' => 'select', 'r' => true, 'opts' => ['3-Way Match (PO+VTI+GRN)', '2-Way Match (PO+VTI)', '4-Way Match (PO+VTI+GRN+QC)']], ['n' => 'grn_required', 't' => 'select', 'r' => true, 'opts' => ['Yes — Physical Receipt', 'Yes — Service Confirmation', 'No']], ['n' => 'gst_applicable', 't' => 'select', 'r' => true, 'opts' => ['Yes', 'No', 'Reverse Charge']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['cat_code']],
@@ -259,7 +261,8 @@ class MasterController extends Controller
      * series independently of other tenants.
      */
     private const AUTO_CODES = [
-        'departments' => ['col' => 'code', 'prefix' => 'DEPT-', 'pad' => 3],
+        'departments'      => ['col' => 'code', 'prefix' => 'DEPT-', 'pad' => 3],
+        'expense_category' => ['col' => 'code', 'prefix' => 'EXC-',  'pad' => 2],
     ];
 
     /**

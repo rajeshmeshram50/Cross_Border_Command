@@ -99,8 +99,9 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Compliance Behaviours',  'slug' => 'master.compliance_behaviours',    'icon' => 'Scale',         'description' => 'Rules for regulated substances'],
             ],
             'master.operations' => [
-                ['name' => 'Assets',           'slug' => 'master.assets',            'icon' => 'Briefcase',    'description' => 'Company equipment & assets'],
-                ['name' => 'Asset Categories', 'slug' => 'master.asset_categories',  'icon' => 'Tags',         'description' => 'Group assets by type & depreciation'],
+                ['name' => 'Assets',             'slug' => 'master.assets',             'icon' => 'Briefcase',    'description' => 'Company equipment & assets'],
+                ['name' => 'Asset Categories',   'slug' => 'master.asset_categories',   'icon' => 'Tags',         'description' => 'Group assets by type & depreciation'],
+                ['name' => 'Expense Categories', 'slug' => 'master.expense_category',   'icon' => 'IndianRupee',  'description' => 'Classify expenses with monthly & yearly policy limits'],
             ],
             'master.p2p' => [
                 ['name' => 'Payment Terms',               'slug' => 'master.payment_terms',         'icon' => 'CalendarDays',  'description' => 'Credit days, advance %, milestone structure'],
