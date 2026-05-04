@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\EmployeeController;
 use App\Http\Controllers\Api\EmployeeDocumentController;
+use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\MasterController;
@@ -87,6 +88,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/documents/{document}/verify',    [EmployeeDocumentController::class, 'verify']);
     Route::patch('/documents/{document}/reject',    [EmployeeDocumentController::class, 'reject']);
     Route::delete('/documents/{document}',          [EmployeeDocumentController::class, 'destroy']);
+
+    // Exit Process — Stage 1 currently. One row per employee; the
+    // controller upserts on PUT so the SPA can save partial drafts as
+    // the admin works through the wizard.
+    Route::get('/employees/{employee}/exit', [ExitController::class, 'show']);
+    Route::put('/employees/{employee}/exit', [ExitController::class, 'upsert']);
 
     // Previous Employment Companies — one row per company the candidate
     // worked at before. Per-company doc uploads use the

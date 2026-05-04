@@ -12,6 +12,13 @@ type DesigLevel = 'all' | 'hod' | 'lead' | 'exec' | 'employee' | 'intern';
 type EmpType    = 'all' | 'it' | 'nonit';
 type RoleOwner  = 'hr' | 'it' | 'fin' | 'mgr';
 
+interface AssetMini {
+  id: number;
+  asset_name: string;
+  code: string | null;
+  asset_number: string | null;
+}
+
 interface EmployeeRow {
   id: number;
   empId: string;
@@ -27,6 +34,13 @@ interface EmployeeRow {
   managerAccent: string;
   exitReadiness: number;          // 0–100
   status: ExitStatus;
+  // Asset assignments (Stage 2). Pulled from the eager-loaded
+  // laptopAsset / mobileAsset relations + the resolved JSON array
+  // accessor on the Employee model so Stage 2's "Asset Return
+  // Tracking" list can render the actual devices the employee holds.
+  laptopAsset:  AssetMini | null;
+  mobileAsset:  AssetMini | null;
+  otherAssets:  AssetMini[];
 }
 
 interface ChecklistItem {
@@ -662,11 +676,12 @@ const OWNER_LABEL: Record<RoleOwner, string> = {
 type StageStatus = 'Completed' | 'In Progress' | 'Pending';
 
 // Notice Period Management was previously Stage 2 — removed per
-// product call. Stages 3-7 shift up so the wizard now runs 1-6.
+// product call. Asset Recovery moved up to Stage 2 (Clearance now
+// follows once devices have been collected back).
 const EXIT_STAGES = [
   { num: 1, title: 'Exit Initiation & Approval',         short: 'Exit Initiation & Approval',         sub: 'Record exit details, reason, dates, and collect approvals.', icon: 'ri-clipboard-line' },
-  { num: 2, title: 'Clearance & Handover',               short: 'Clearance & Handover',               sub: 'All departmental clearances must be approved before proceeding.', icon: 'ri-checkbox-line' },
-  { num: 3, title: 'Asset Recovery & Access Revocation', short: 'Asset Recovery & Access Revocation', sub: 'Track all company assets and revoke system access.', icon: 'ri-lock-2-line' },
+  { num: 2, title: 'Asset Recovery & Access Revocation', short: 'Asset Recovery & Access Revocation', sub: 'Track all company assets and revoke system access.', icon: 'ri-lock-2-line' },
+  { num: 3, title: 'Clearance & Handover',               short: 'Clearance & Handover',               sub: 'All departmental clearances must be approved before proceeding.', icon: 'ri-checkbox-line' },
   { num: 4, title: 'Full & Final Settlement (FnF)',      short: 'Full & Final Settlement (FnF)',      sub: 'Calculate final settlement amount, deductions, and process payment.', icon: 'ri-money-rupee-circle-line' },
   { num: 5, title: 'Exit Documents Management',          short: 'Exit Documents Management',          sub: 'Generate each document, then track the signing workflow for every stakeholder.', icon: 'ri-file-text-line' },
   { num: 6, title: 'Final Deactivation & Closure',       short: 'Final Deactivation & Closure',       sub: 'Complete final validation, lock profile, and close the exit case.', icon: 'ri-flag-line' },
@@ -676,20 +691,23 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const [stage, setStage] = useState<number>(1);
   const [stageStatus, setStageStatus] = useState<Record<number, StageStatus>>({});
 
-  // Form state — kept loose because this is dummy mode. When the API is
-  // ready, lift these into a single payload object that the PATCH call
-  // can consume.
-  const [exitType, setExitType]           = useState('Resignation');
+  // Stage 1 form state. All fields ride along on `saveStage1()` —
+  // hydrated from /api/employees/{id}/exit on modal open and persisted
+  // on every Save Draft + Next Stage click. `reportingManagerName` is
+  // read-only (auto-fetched from the employee's reporting_manager
+  // relation); `reportingManagerId` carries the FK we PUT back.
+  const [exitType, setExitType]           = useState('');
   const [initiatedBy, setInitiatedBy]     = useState('Employee');
-  const [reasonForExit, setReasonForExit] = useState('Better Opportunity');
-  const [noticeDate, setNoticeDate]       = useState('2026-04-23');
-  const [lwd, setLwd]                     = useState('2026-05-23');
-  const [reportingManager, setReportingManager] = useState('Atharv Patekar');
+  const [reasonForExit, setReasonForExit] = useState('');
+  const [otherReason, setOtherReason]     = useState('');
+  const [noticeDate, setNoticeDate]       = useState('');
+  const [lwd, setLwd]                     = useState('');
+  const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
+  const [reportingManagerName, setReportingManagerName] = useState('');
   const [comments, setComments]           = useState('');
-  const [mgrApproval, setMgrApproval]     = useState('Pending');
-  const [hrApproval, setHrApproval]       = useState('Pending');
   const [businessImpact, setBusinessImpact] = useState('Low');
   const [replacementNeeded, setReplacementNeeded] = useState('Yes — Immediate');
+  const [stage1Saving, setStage1Saving] = useState(false);
 
   // Stage 2 (Notice Period Management) was removed per product call;
   // the related state lived here and is gone with it.
@@ -705,13 +723,10 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const [handoverNotes, setHandoverNotes] = useState('');
 
   // Stage 4
-  const [assets, setAssets] = useState<{ checked: boolean; status: string }[]>([
-    { checked: false, status: 'Pending' },
-    { checked: false, status: 'Pending' },
-    { checked: true,  status: 'Returned' },
-    { checked: false, status: 'Pending' },
-    { checked: false, status: 'Pending' },
-  ]);
+  // Asset return state — keyed by master_asset_id so it grows /
+  // shrinks naturally with whatever the employee actually has
+  // assigned (no more hard-coded 5-row array).
+  const [assetReturns, setAssetReturns] = useState<Record<number, { checked: boolean; status: string }>>({});
   const [accessRevoke, setAccessRevoke] = useState<string[]>(['Pending','Pending','Pending','Pending','Pending','Pending']);
   const [missingAssets, setMissingAssets] = useState('');
   const [recoveryAction, setRecoveryAction] = useState('None');
@@ -743,6 +758,35 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employee?.id]);
 
+  // ── Hydrate Stage 1 from the backend whenever the modal opens for a
+  //    new employee. show() always returns one row (lazily created on
+  //    first PUT) so the form pre-fills with whatever was last saved,
+  //    or with the employee's existing reporting_manager when blank.
+  //    MUST run before the `if (!employee) return null` below so the
+  //    hook count stays stable across renders (React fires "Rendered
+  //    more hooks…" otherwise).
+  useEffect(() => {
+    if (!employee) return;
+    let cancelled = false;
+    api.get(`/employees/${employee.id}/exit`)
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        setExitType(String(data.exit_type ?? ''));
+        setInitiatedBy(String(data.initiated_by ?? 'Employee'));
+        setReasonForExit(String(data.reason_for_exit ?? ''));
+        setOtherReason(String(data.other_reason ?? ''));
+        setNoticeDate(data.notice_date ? String(data.notice_date) : '');
+        setLwd(data.last_working_day ? String(data.last_working_day) : '');
+        setReportingManagerId(data.reporting_manager_id ?? null);
+        setReportingManagerName(data.reporting_manager?.display_name || '');
+        setComments(String(data.comments ?? ''));
+        setBusinessImpact(String(data.business_impact ?? 'Low'));
+        setReplacementNeeded(String(data.replacement_required ?? 'Yes — Immediate'));
+      })
+      .catch(() => { /* keep blank state — admin will fill from scratch */ });
+    return () => { cancelled = true; };
+  }, [employee?.id]);
+
   if (!employee) return null;
 
   const statusOf = (n: number): StageStatus => stageStatus[n] || (n === stage ? 'In Progress' : 'Pending');
@@ -765,6 +809,32 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const closeAll = () => {
     setStageStatus(prev => ({ ...prev, [stage]: 'Completed' }));
     onClose();
+  };
+
+  /** Persist the Stage 1 fields. Returns true on success so the Next
+   *  Stage handler can gate the advance on a clean save. */
+  const saveStage1 = async (): Promise<boolean> => {
+    if (!employee || stage1Saving) return false;
+    setStage1Saving(true);
+    try {
+      await api.put(`/employees/${employee.id}/exit`, {
+        exit_type:            exitType || null,
+        initiated_by:         initiatedBy || null,
+        reason_for_exit:      reasonForExit || null,
+        other_reason:         (exitType === 'Other' || reasonForExit === 'Other') ? (otherReason.trim() || null) : null,
+        notice_date:          noticeDate || null,
+        last_working_day:     lwd || null,
+        reporting_manager_id: reportingManagerId,
+        comments:             comments.trim() || null,
+        business_impact:      businessImpact || null,
+        replacement_required: replacementNeeded || null,
+      });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setStage1Saving(false);
+    }
   };
 
   const current = EXIT_STAGES[stage - 1];
@@ -866,32 +936,102 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </div>
             </div>
 
-            {/* ── STAGE 1 ── */}
+            {/* ── STAGE 1 — Exit Initiation & Approval ── */}
             {stage === 1 && (
               <>
                 <div className="ep-section-label">Exit Details</div>
                 <Row className="g-2 mb-2">
-                  <Col md={6}><EpField label="Exit Type"><EpSelect value={exitType} onChange={setExitType} options={['Resignation','Termination','Retirement','End of Contract','Absconding']} /></EpField></Col>
-                  <Col md={6}><EpField label="Initiated By"><EpSelect value={initiatedBy} onChange={setInitiatedBy} options={['Employee','HR','Manager']} /></EpField></Col>
-                  <Col md={6}><EpField label="Reason for Exit"><EpSelect value={reasonForExit} onChange={setReasonForExit} options={['Better Opportunity','Personal Reasons','Higher Studies','Relocation','Health','Performance','Other']} /></EpField></Col>
-                  <Col md={6}><EpField label="Notice Date"><EpInput type="date" value={noticeDate} onChange={setNoticeDate} /></EpField></Col>
-                  <Col md={6}><EpField label="Last Working Day"><EpInput type="date" value={lwd} onChange={setLwd} /></EpField></Col>
-                  <Col md={6}><EpField label="Reporting Manager"><EpInput value={reportingManager} onChange={setReportingManager} /></EpField></Col>
-                  <Col xs={12}><EpField label="Comments / Notes"><textarea className="ep-textarea" rows={2} placeholder="Enter any additional comments…" value={comments} onChange={e => setComments(e.target.value)} /></EpField></Col>
+                  <Col md={6}>
+                    <EpField label="Exit Type">
+                      <EpSelect
+                        value={exitType}
+                        onChange={setExitType}
+                        options={['Resignation', 'Termination', 'Retirement', 'End of Contract', 'Absconding', 'Other']}
+                      />
+                    </EpField>
+                  </Col>
+                  <Col md={6}>
+                    <EpField label="Initiated By">
+                      <EpSelect value={initiatedBy} onChange={setInitiatedBy} options={['Employee', 'HR', 'Manager']} />
+                    </EpField>
+                  </Col>
+                  <Col md={6}>
+                    <EpField label="Reason for Exit">
+                      <EpSelect
+                        value={reasonForExit}
+                        onChange={setReasonForExit}
+                        options={['Better Opportunity', 'Personal Reasons', 'Higher Studies', 'Relocation', 'Health', 'Performance', 'Other']}
+                      />
+                    </EpField>
+                  </Col>
+                  <Col md={6}>
+                    <EpField label="Notice Date">
+                      <EpInput type="date" value={noticeDate} onChange={setNoticeDate} />
+                    </EpField>
+                  </Col>
+                  <Col md={6}>
+                    <EpField label="Last Working Day">
+                      <EpInput type="date" value={lwd} onChange={setLwd} />
+                    </EpField>
+                  </Col>
+                  <Col md={6}>
+                    <EpField label="Reporting Manager">
+                      {/* Auto-filled from the employee's
+                          reporting_manager FK. Read-only because the
+                          employee's manager record is the source of
+                          truth — change it on the employee row first. */}
+                      <EpInput
+                        value={reportingManagerName || '— Not set on employee record —'}
+                        onChange={() => {}}
+                        disabled
+                      />
+                    </EpField>
+                  </Col>
+                  {/* Free-text "Other" reason — only visible when either
+                      dropdown picks "Other" so the form stays clean for
+                      the common case. */}
+                  {(exitType === 'Other' || reasonForExit === 'Other') && (
+                    <Col xs={12}>
+                      <EpField label="Other (please specify)">
+                        <EpInput
+                          value={otherReason}
+                          onChange={setOtherReason}
+                          placeholder="Describe the exit type / reason"
+                        />
+                      </EpField>
+                    </Col>
+                  )}
+                  <Col xs={12}>
+                    <EpField label="Comments / Notes">
+                      <textarea
+                        className="ep-textarea"
+                        rows={2}
+                        placeholder="Enter any additional comments…"
+                        value={comments}
+                        onChange={e => setComments(e.target.value)}
+                      />
+                    </EpField>
+                  </Col>
                 </Row>
 
-                <div className="ep-section-label">Approvals</div>
+                <div className="ep-section-label">Impact Assessment</div>
                 <Row className="g-2">
-                  <Col md={6}><EpApprovalCard icon="ri-user-line" title="Manager Approval"><EpSelect value={mgrApproval} onChange={setMgrApproval} options={['Pending','Approved','Rejected']} /></EpApprovalCard></Col>
-                  <Col md={6}><EpApprovalCard icon="ri-user-settings-line" title="HR Approval"><EpSelect value={hrApproval} onChange={setHrApproval} options={['Pending','Approved','Rejected']} /></EpApprovalCard></Col>
-                  <Col md={6}><EpApprovalCard icon="ri-flashlight-line" title="Business Impact"><EpSelect value={businessImpact} onChange={setBusinessImpact} options={['Low','Medium','High','Critical']} /></EpApprovalCard></Col>
-                  <Col md={6}><EpApprovalCard icon="ri-question-line" title="Replacement Required"><EpSelect value={replacementNeeded} onChange={setReplacementNeeded} options={['Yes — Immediate','Yes — Within 30 days','Yes — Within 90 days','No']} /></EpApprovalCard></Col>
+                  <Col md={6}>
+                    <EpApprovalCard icon="ri-flashlight-line" title="Business Impact">
+                      <EpSelect value={businessImpact} onChange={setBusinessImpact} options={['Low', 'Medium', 'High', 'Critical']} />
+                    </EpApprovalCard>
+                  </Col>
+                  <Col md={6}>
+                    <EpApprovalCard icon="ri-question-line" title="Replacement Required">
+                      <EpSelect value={replacementNeeded} onChange={setReplacementNeeded} options={['Yes — Immediate', 'Yes — Within 30 days', 'Yes — Within 90 days', 'No']} />
+                    </EpApprovalCard>
+                  </Col>
                 </Row>
               </>
             )}
 
-            {/* ── STAGE 2 — Clearance & Handover ── */}
-            {stage === 2 && (
+            {/* ── STAGE 3 — Clearance & Handover ── */}
+            {stage === 3 && (
               <>
                 <div className="ep-section-label">Clearance Status</div>
                 <div className="ep-checklist mb-2">
@@ -934,30 +1074,62 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </>
             )}
 
-            {/* ── STAGE 3 — Asset Recovery & Access Revocation ── */}
-            {stage === 3 && (
+            {/* ── STAGE 2 — Asset Recovery & Access Revocation ── */}
+            {stage === 2 && (
               <>
                 <div className="ep-section-label">Asset Return Tracking</div>
-                <div className="ep-checklist mb-3">
-                  {[
-                    { name: 'Laptop / MacBook',     code: 'ASSET-L042' },
-                    { name: 'Company Mobile Phone', code: 'ASSET-M017' },
-                    { name: 'Access Card / Key Fob',code: 'ASSET-K009' },
-                    { name: 'Office Keys',           code: 'ASSET-K010' },
-                    { name: 'Other Hardware',        code: '—' },
-                  ].map((a, idx) => (
-                    <label key={idx} className="ep-check-row">
-                      <input
-                        type="checkbox"
-                        checked={assets[idx].checked}
-                        onChange={() => setAssets(prev => prev.map((c, i) => i === idx ? { ...c, checked: !c.checked, status: !c.checked ? 'Returned' : 'Pending' } : c))}
-                      />
-                      <span className="ep-check-box"><i className="ri-check-line" /></span>
-                      <span className="ep-check-label">{a.name} <span className="ep-asset-code">({a.code})</span></span>
-                      <span className={`ep-status-pill ep-status-pill--${assets[idx].status === 'Returned' ? 'done' : 'pending'}`}>{assets[idx].status}</span>
-                    </label>
-                  ))}
-                </div>
+                {(() => {
+                  // Build the actual asset list from the employee row.
+                  // Laptop and Mobile go first if assigned; otherAssets
+                  // follows. Empty state shows a friendly message
+                  // instead of dummy hardware.
+                  const list: { id: number; label: string; code: string }[] = [];
+                  if (employee.laptopAsset) {
+                    const a = employee.laptopAsset;
+                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
+                  }
+                  if (employee.mobileAsset) {
+                    const a = employee.mobileAsset;
+                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
+                  }
+                  for (const a of employee.otherAssets) {
+                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
+                  }
+                  if (list.length === 0) {
+                    return (
+                      <div className="ep-checklist mb-3" style={{ padding: 16, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+                        <i className="ri-inbox-line" style={{ fontSize: 22, marginRight: 6, verticalAlign: 'middle' }} />
+                        No assets are currently assigned to this employee.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="ep-checklist mb-3">
+                      {list.map(a => {
+                        const row = assetReturns[a.id] ?? { checked: false, status: 'Pending' };
+                        return (
+                          <label key={a.id} className="ep-check-row">
+                            <input
+                              type="checkbox"
+                              checked={row.checked}
+                              onChange={() => setAssetReturns(prev => ({
+                                ...prev,
+                                [a.id]: { checked: !row.checked, status: !row.checked ? 'Returned' : 'Pending' },
+                              }))}
+                            />
+                            <span className="ep-check-box"><i className="ri-check-line" /></span>
+                            <span className="ep-check-label">
+                              {a.label} <span className="ep-asset-code">({a.code})</span>
+                            </span>
+                            <span className={`ep-status-pill ep-status-pill--${row.status === 'Returned' ? 'done' : 'pending'}`}>
+                              {row.status}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 <div className="ep-section-label">Access Revocation</div>
                 <div className="ep-checklist mb-3">
@@ -1161,27 +1333,47 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
           </section>
         </div>
 
-        {/* Footer — left: Save Draft / Reject (stage-level actions),
-                     right: Approve / Previous / Next Stage (navigation + sign-off) */}
+        {/* Footer — Save Draft / Previous / Next Stage. Approve and
+            Reject were removed per product call: stage-level sign-off
+            now happens via the inline status pickers inside each form
+            (e.g. Manager Sign-off on Stage 4, HR Final Sign-off on
+            Stage 6) rather than a separate footer action. */}
         <div className="ep-footer">
           <div className="ep-footer-info">
             <i className="ri-information-line" />
             Stage {stage} of {EXIT_STAGES.length} — {current.title}
           </div>
           <div className="d-flex gap-2 align-items-center flex-wrap">
-            <button type="button" className="ep-btn ep-btn--ghost"><i className="ri-save-3-line" />Save Draft</button>
-            <button type="button" className="ep-btn ep-btn--reject" onClick={closeAll}><i className="ri-close-circle-line" />Reject</button>
+            <button
+              type="button"
+              className="ep-btn ep-btn--ghost"
+              disabled={stage === 1 && stage1Saving}
+              onClick={() => { if (stage === 1) saveStage1(); }}
+            >
+              <i className={stage === 1 && stage1Saving ? 'ri-loader-line' : 'ri-save-3-line'} />
+              {stage === 1 && stage1Saving ? 'Saving…' : 'Save Draft'}
+            </button>
             <div className="flex-grow-1" />
-            {!isLastStage && (
-              <button type="button" className="ep-btn ep-btn--approve" onClick={advance}><i className="ri-check-line" />Approve</button>
-            )}
             {stage > 1 && (
               <button type="button" className="ep-btn ep-btn--prev" onClick={goBack}><i className="ri-arrow-left-s-line" />Previous</button>
             )}
             {isLastStage ? (
               <button type="button" className="ep-btn ep-btn--complete" onClick={closeAll}><i className="ri-check-double-line" />Complete Exit</button>
             ) : (
-              <button type="button" className="ep-btn ep-btn--next" onClick={advance}>Next Stage<i className="ri-arrow-right-s-line" /></button>
+              <button
+                type="button"
+                className="ep-btn ep-btn--next"
+                disabled={stage === 1 && stage1Saving}
+                onClick={async () => {
+                  if (stage === 1) {
+                    const ok = await saveStage1();
+                    if (!ok) return;
+                  }
+                  advance();
+                }}
+              >
+                Next Stage<i className="ri-arrow-right-s-line" />
+              </button>
             )}
           </div>
         </div>
@@ -1359,17 +1551,17 @@ function MiniProgressRing({ value }: { value: number }) {
   );
 }
 
-// Compact label for the header stepper pills — keeps each stage chip
-// short so all 7 fit horizontally in the banner.
+// Compact label for the header stepper pills — one chip per stage.
+// Keep these in sync with EXIT_STAGES (Notice removed; Assets moved
+// up to slot 2, Clearance to slot 3).
 function shortStageLabel(num: number): string {
   switch (num) {
     case 1: return 'Initiation';
-    case 2: return 'Notice';
+    case 2: return 'Assets';
     case 3: return 'Clearance';
-    case 4: return 'Assets';
-    case 5: return 'FnF';
-    case 6: return 'Documents';
-    case 7: return 'Closure';
+    case 4: return 'FnF';
+    case 5: return 'Documents';
+    case 6: return 'Closure';
     default: return `Stage ${num}`;
   }
 }
@@ -1665,6 +1857,29 @@ function apiToExitRow(e: any): EmployeeRow {
     managerAccent:   _exitAccent(mgrName || 'manager'),
     exitReadiness,
     status,
+    // The API returns these via eager-loaded relations + accessor on
+    // the Employee model. Project to a small shape so Stage 2 can map
+    // each into a checkbox row without re-fetching.
+    laptopAsset: e.laptop_asset ? {
+      id:           Number(e.laptop_asset.id),
+      asset_name:   e.laptop_asset.asset_name,
+      code:         e.laptop_asset.code ?? null,
+      asset_number: e.laptop_asset.asset_number ?? null,
+    } : null,
+    mobileAsset: e.mobile_asset ? {
+      id:           Number(e.mobile_asset.id),
+      asset_name:   e.mobile_asset.asset_name,
+      code:         e.mobile_asset.code ?? null,
+      asset_number: e.mobile_asset.asset_number ?? null,
+    } : null,
+    otherAssets: Array.isArray(e.other_assets_resolved)
+      ? e.other_assets_resolved.map((a: any) => ({
+          id:           Number(a.id),
+          asset_name:   a.asset_name,
+          code:         a.code ?? null,
+          asset_number: a.asset_number ?? null,
+        }))
+      : [],
   };
 }
 
@@ -1735,6 +1950,9 @@ function buildDummyEmployees(): EmployeeRow[] {
     managerAccent: palette[(idx + 4) % palette.length],
     exitReadiness: s.readiness,
     status: s.status,
+    laptopAsset: null,
+    mobileAsset: null,
+    otherAssets: [],
   }));
 }
 
