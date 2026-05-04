@@ -75,7 +75,7 @@ interface Props {
   onBack: () => void;
 }
 
-type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense';
+type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense' | 'apply_leave';
 type PayrollTab = 'summary' | 'details';
 type VaultTab = 'employee' | 'organizational';
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending';
@@ -411,6 +411,47 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
 
+  // Apply Leave wizard — rendered inline as the "Apply Leave" tab content.
+  // All form state lives here so navigating between tabs preserves a draft.
+  const [leaveStage, setLeaveStage] = useState(1);
+  const [leaveType, setLeaveType] = useState<string>('');
+  const [leaveDayType, setLeaveDayType] = useState<'full' | 'half'>('full');
+  const [leaveFromDate, setLeaveFromDate] = useState<string>('');
+  const [leaveToDate, setLeaveToDate] = useState<string>('');
+  const [leaveReason, setLeaveReason] = useState<string>('');
+  const [leaveDocName, setLeaveDocName] = useState<string>('');
+  const [leaveNotify, setLeaveNotify] = useState<{ manager: boolean; deptHead: boolean; hr: boolean; team: boolean }>({
+    manager: true, deptHead: false, hr: false, team: false,
+  });
+  const [leaveSpecificEmps, setLeaveSpecificEmps] = useState<string>('');
+  const [leaveHandoverReq, setLeaveHandoverReq] = useState<boolean>(true);
+  const [leaveCoverPerson, setLeaveCoverPerson] = useState<string>('');
+  const [leaveHandoverNotes, setLeaveHandoverNotes] = useState<string>('');
+  const [leaveCriticalTasks, setLeaveCriticalTasks] = useState<string>('');
+  const [leaveAvailOnCall, setLeaveAvailOnCall] = useState<boolean>(true);
+  const [leaveEmergencyNumber, setLeaveEmergencyNumber] = useState<string>('');
+  const [leaveAvailNote, setLeaveAvailNote] = useState<string>('');
+
+  // Reset wizard back to stage 1 (used when the user closes via the × button).
+  const resetLeaveWizard = () => {
+    setLeaveStage(1);
+    setLeaveType('');
+    setLeaveDayType('full');
+    setLeaveFromDate('');
+    setLeaveToDate('');
+    setLeaveReason('');
+    setLeaveDocName('');
+    setLeaveNotify({ manager: true, deptHead: false, hr: false, team: false });
+    setLeaveSpecificEmps('');
+    setLeaveHandoverReq(true);
+    setLeaveCoverPerson('');
+    setLeaveHandoverNotes('');
+    setLeaveCriticalTasks('');
+    setLeaveAvailOnCall(true);
+    setLeaveEmergencyNumber('');
+    setLeaveAvailNote('');
+  };
+
   // Attendance regularization modal — opens from the "+ Regularization" button
   // in the Intraday Punch Timeline card. Lets the user submit a request to
   // either adjust time entries or exempt the day from penalization.
@@ -583,6 +624,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     { key: 'vault',      label: 'Evidence Vault',  icon: 'ri-folder-shield-2-line',     color: 'linear-gradient(135deg,#a855f7,#c084fc)' },
     { key: 'payroll',    label: 'Payroll Details', icon: 'ri-money-dollar-circle-line', color: 'linear-gradient(135deg,#f59e0b,#fbbf24)' },
     { key: 'expense',    label: 'Expense Details', icon: 'ri-wallet-3-line',            color: 'linear-gradient(135deg,#f06548,#ff7a5c)' },
+    { key: 'apply_leave',label: 'Apply Leave',     icon: 'ri-calendar-2-line',          color: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' },
   ];
 
   // Onboarding progress as a numeric percent for the hero ring chart.
@@ -3618,6 +3660,32 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         </ComingSoonShell>
       )}
 
+      {/* ── Tab: Apply Leave (inline wizard) ── */}
+      {tab === 'apply_leave' && (
+        <ApplyLeavePanel
+          employee={employee}
+          employeeId={employeeId}
+          stage={leaveStage}
+          setStage={setLeaveStage}
+          leaveType={leaveType} setLeaveType={setLeaveType}
+          dayType={leaveDayType} setDayType={setLeaveDayType}
+          fromDate={leaveFromDate} setFromDate={setLeaveFromDate}
+          toDate={leaveToDate} setToDate={setLeaveToDate}
+          reason={leaveReason} setReason={setLeaveReason}
+          docName={leaveDocName} setDocName={setLeaveDocName}
+          notify={leaveNotify} setNotify={setLeaveNotify}
+          specificEmps={leaveSpecificEmps} setSpecificEmps={setLeaveSpecificEmps}
+          handoverReq={leaveHandoverReq} setHandoverReq={setLeaveHandoverReq}
+          coverPerson={leaveCoverPerson} setCoverPerson={setLeaveCoverPerson}
+          handoverNotes={leaveHandoverNotes} setHandoverNotes={setLeaveHandoverNotes}
+          criticalTasks={leaveCriticalTasks} setCriticalTasks={setLeaveCriticalTasks}
+          availOnCall={leaveAvailOnCall} setAvailOnCall={setLeaveAvailOnCall}
+          emergencyNumber={leaveEmergencyNumber} setEmergencyNumber={setLeaveEmergencyNumber}
+          availNote={leaveAvailNote} setAvailNote={setLeaveAvailNote}
+          onClose={() => { resetLeaveWizard(); setTab('profile'); }}
+        />
+      )}
+
       </div>
     </div>
 
@@ -4827,3 +4895,1127 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     </>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LeaveApplyModal — 7-stage wizard for raising a leave request. Opens from
+// the "Apply Leave" tab on the employee profile. Self-contained so it can be
+// extracted to its own file later when the leave-management feature grows.
+// ─────────────────────────────────────────────────────────────────────────────
+const LEAVE_STAGES: { num: number; title: string; subtitle: string; icon: string; iconBg: string }[] = [
+  { num: 1, title: 'Leave Type',         subtitle: 'Select leave category & check available balance', icon: 'ri-clipboard-line',     iconBg: '#fef3c7' },
+  { num: 2, title: 'Leave Duration',     subtitle: 'Pick from / to dates and the day-fraction',       icon: 'ri-calendar-line',      iconBg: '#dbeafe' },
+  { num: 3, title: 'Reason & Document',  subtitle: 'Provide a reason and any supporting proof',       icon: 'ri-file-text-line',     iconBg: '#ede9fe' },
+  { num: 4, title: 'Notify & Handover',  subtitle: 'Inform your manager and assign work cover',       icon: 'ri-team-line',          iconBg: '#dcfce7' },
+  { num: 5, title: 'Availability',       subtitle: 'Reachability while on leave',                     icon: 'ri-phone-line',         iconBg: '#fee2e2' },
+  { num: 6, title: 'Impact Preview',     subtitle: 'Review balance impact before submission',         icon: 'ri-bar-chart-2-line',   iconBg: '#fde8c4' },
+  { num: 7, title: 'Approval Flow',      subtitle: 'Approver chain that will review this request',    icon: 'ri-user-follow-line',   iconBg: '#d3f0ee' },
+];
+
+// Leave-type catalogue. Balance fields (days / used / total) are intentionally
+// `null` until the backend exposes the per-employee balance API; the UI falls
+// back to em-dashes for unknown values so we don't ship fake numbers.
+const LEAVE_TYPES: {
+  id: string; name: string; desc: string;
+  icon: string; iconBg: string; iconFg: string;
+  days: number | null; used: number | null; total: number | null;
+  daysColor: string; noLimit?: boolean;
+}[] = [
+  { id: 'casual',    name: 'Casual',    desc: 'Max 3 consecutive days. No carry-forward.',          icon: 'ri-focus-3-line',         iconBg: '#fed7aa', iconFg: '#c2410c', days: null, used: null, total: null, daysColor: '#a4661c' },
+  { id: 'sick',      name: 'Sick',      desc: 'Medical certificate required for >2 days.',          icon: 'ri-emotion-sad-line',     iconBg: '#fee2e2', iconFg: '#dc2626', days: null, used: null, total: null, daysColor: '#b91c1c' },
+  { id: 'paid',      name: 'Paid',      desc: 'Carry-forward allowed up to 30 days.',               icon: 'ri-secure-payment-line',  iconBg: '#dcfce7', iconFg: '#15803d', days: null, used: null, total: null, daysColor: '#15803d' },
+  { id: 'unpaid',    name: 'Unpaid',    desc: 'Salary deducted for each unpaid leave day.',         icon: 'ri-file-list-3-line',     iconBg: '#e5e7eb', iconFg: '#6b7280', days: null, used: null, total: null, daysColor: '#6b7280', noLimit: true },
+  { id: 'emergency', name: 'Emergency', desc: 'Requires manager approval within 24 hours.',         icon: 'ri-alarm-warning-line',   iconBg: '#fee2e2', iconFg: '#dc2626', days: null, used: null, total: null, daysColor: '#b91c1c' },
+];
+
+// Notification rows for stage 4 — checklist of who gets pinged on this leave.
+const NOTIFY_ROWS: { key: keyof { manager: boolean; deptHead: boolean; hr: boolean; team: boolean }; title: string; desc: string; required?: boolean }[] = [
+  { key: 'manager',  title: 'Reporting Manager', desc: 'Primary approver — always notified', required: true },
+  { key: 'deptHead', title: 'Department Head',   desc: 'Inform the department lead' },
+  { key: 'hr',       title: 'HR Department',     desc: "HR team will be CC'd on the request" },
+  { key: 'team',     title: 'Team Members',      desc: 'All direct team members will be notified' },
+];
+
+// Days between two ISO dates (inclusive). Returns 0 if either is empty/invalid.
+const diffDaysInclusive = (from: string, to: string): number => {
+  if (!from || !to) return 0;
+  const a = new Date(from); const b = new Date(to);
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return 0;
+  const ms = b.getTime() - a.getTime();
+  if (ms < 0) return 0;
+  return Math.round(ms / (1000 * 60 * 60 * 24)) + 1;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ApplyLeavePanel — inline 7-stage wizard rendered as the "Apply Leave" tab
+// content. Self-contained; all parent state is passed in via props so closing
+// or switching tabs preserves the draft.
+// ─────────────────────────────────────────────────────────────────────────────
+function ApplyLeavePanel(props: {
+  employee?: EmployeeProfileTarget;
+  employeeId: string;
+  stage: number;
+  setStage: (n: number) => void;
+  leaveType: string; setLeaveType: (v: string) => void;
+  dayType: 'full' | 'half'; setDayType: (v: 'full' | 'half') => void;
+  fromDate: string; setFromDate: (v: string) => void;
+  toDate: string;   setToDate: (v: string) => void;
+  reason: string;   setReason: (v: string) => void;
+  docName: string;  setDocName: (v: string) => void;
+  notify: { manager: boolean; deptHead: boolean; hr: boolean; team: boolean };
+  setNotify: (v: { manager: boolean; deptHead: boolean; hr: boolean; team: boolean }) => void;
+  specificEmps: string; setSpecificEmps: (v: string) => void;
+  handoverReq: boolean; setHandoverReq: (v: boolean) => void;
+  coverPerson: string;  setCoverPerson: (v: string) => void;
+  handoverNotes: string; setHandoverNotes: (v: string) => void;
+  criticalTasks: string; setCriticalTasks: (v: string) => void;
+  availOnCall: boolean; setAvailOnCall: (v: boolean) => void;
+  emergencyNumber: string; setEmergencyNumber: (v: string) => void;
+  availNote: string;    setAvailNote: (v: string) => void;
+  onClose: () => void;
+}) {
+  const {
+    employee, employeeId, stage, setStage,
+    leaveType, setLeaveType,
+    dayType, setDayType,
+    fromDate, setFromDate, toDate, setToDate,
+    reason, setReason, docName, setDocName,
+    notify, setNotify, specificEmps, setSpecificEmps,
+    handoverReq, setHandoverReq,
+    coverPerson, setCoverPerson, handoverNotes, setHandoverNotes, criticalTasks, setCriticalTasks,
+    availOnCall, setAvailOnCall, emergencyNumber, setEmergencyNumber, availNote, setAvailNote,
+    onClose,
+  } = props;
+
+  const totalStages = LEAVE_STAGES.length;
+  const currentStage = LEAVE_STAGES[stage - 1];
+
+  // Profile completion ramps up as the user fills in later stages — matches
+  // the 17 / 25 / 33 progression shown in the design mocks.
+  const profilePct = stage <= 5 ? 17 : stage === 6 ? 25 : 33;
+
+  const initials = employee?.initials || 'RM';
+  const accent = employee?.accent || '#7c5cfc';
+  const name = employee?.name || 'Rohan Mehta';
+  const department = employee?.department || 'Engineering';
+  const designation = employee?.designation || 'Software Engineer';
+
+  const selectedLeaveType = LEAVE_TYPES.find(lt => lt.id === leaveType);
+  const totalDays = dayType === 'half' ? (diffDaysInclusive(fromDate, toDate) ? 0.5 : 0) : diffDaysInclusive(fromDate, toDate);
+
+  const fileInputRef = (typeof window !== 'undefined') ? { current: null as HTMLInputElement | null } : { current: null };
+
+  return (
+    <div className="lvm-card-inline">
+      <style>{`
+        /* ── Inline wizard surface — same visual identity as the modal mock,
+              but renders as a regular tab content panel. ── */
+        .lvm-card-inline {
+          background: #fff;
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 4px 20px rgba(15,23,42,0.06);
+          border: 1px solid var(--vz-border-color);
+          display: flex; flex-direction: column;
+        }
+        [data-bs-theme="dark"] .lvm-card-inline { background: #1c2531; }
+
+        /* Header — gradient purple, employee identity + close */
+        .lvm-header {
+          background: linear-gradient(135deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%);
+          color: #fff;
+          padding: 16px 22px;
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 16px; flex-wrap: wrap;
+        }
+        .lvm-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .lvm-avatar {
+          width: 48px; height: 48px; border-radius: 12px;
+          display: inline-flex; align-items: center; justify-content: center;
+          color: #fff; font-weight: 800; font-size: 16px; flex-shrink: 0;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.20);
+        }
+        .lvm-emp-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .lvm-emp-name { font-size: 18px; font-weight: 800; margin: 0; letter-spacing: -0.01em; color: #fff; }
+        .lvm-emp-sub { font-size: 11.5px; color: rgba(255,255,255,0.82); margin-top: 2px; }
+        .lvm-badge {
+          display: inline-flex; align-items: center;
+          padding: 3px 10px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.20);
+          color: #fff;
+          font-size: 10.5px; font-weight: 700;
+          border: 1px solid rgba(255,255,255,0.28);
+        }
+        .lvm-badge-pct { background: rgba(255,255,255,0.28); }
+        .lvm-header-right { display: inline-flex; align-items: center; gap: 12px; }
+        .lvm-flow-label { font-size: 13px; font-weight: 700; color: #fff; }
+        .lvm-close {
+          width: 30px; height: 30px;
+          border-radius: 8px;
+          background: rgba(255,255,255,0.18);
+          border: none; color: #fff;
+          display: inline-flex; align-items: center; justify-content: center;
+          cursor: pointer; transition: background .15s ease;
+        }
+        .lvm-close:hover { background: rgba(255,255,255,0.30); }
+
+        /* Body — sidebar + main. Renders at natural height so the page-level
+           scroll handles overflow (no nested scrollbars). */
+        .lvm-body {
+          display: flex;
+          flex: 1 1 auto;
+          background: #f7f5fc;
+          align-items: stretch;
+        }
+        [data-bs-theme="dark"] .lvm-body { background: #1f2630; }
+
+        /* Sidebar — sticky inside the body so the stage list stays in view
+           while the right panel scrolls past it. */
+        .lvm-side {
+          width: 260px; flex-shrink: 0;
+          padding: 18px 16px 18px 22px;
+          border-right: 1px solid #ece9f6;
+          align-self: flex-start;
+          position: sticky;
+          top: 12px;
+        }
+        [data-bs-theme="dark"] .lvm-side { border-color: var(--vz-border-color); }
+        .lvm-side-title {
+          font-size: 10px; font-weight: 800;
+          letter-spacing: 0.14em; text-transform: uppercase;
+          color: var(--vz-secondary-color);
+          margin: 0 0 12px 0;
+        }
+        .lvm-stage {
+          display: flex; align-items: center; gap: 10px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid transparent;
+          background: transparent;
+          margin-bottom: 6px;
+          cursor: pointer;
+          width: 100%; text-align: left;
+          transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+        }
+        .lvm-stage:hover { background: #fff; border-color: #ece9f6; }
+        .lvm-stage.is-active { background: #ffffff; border-color: #c4b5fd; box-shadow: 0 4px 12px rgba(124,92,252,0.15); }
+        .lvm-stage.is-done { background: #ffffff; }
+        .lvm-stage-num {
+          width: 28px; height: 28px; border-radius: 50%;
+          display: inline-flex; align-items: center; justify-content: center;
+          font-size: 12px; font-weight: 800;
+          background: #ece9f6; color: var(--vz-secondary-color);
+          flex-shrink: 0;
+        }
+        .lvm-stage.is-active .lvm-stage-num { background: linear-gradient(135deg,#7c5cfc,#5a3fd1); color: #fff; }
+        .lvm-stage.is-done .lvm-stage-num { background: linear-gradient(135deg,#0ab39c,#108548); color: #fff; }
+        .lvm-stage.is-done .lvm-stage-num i { font-size: 14px; }
+        .lvm-stage-meta { line-height: 1.3; min-width: 0; }
+        .lvm-stage-name { font-size: 13.5px; font-weight: 700; color: #1f2937; margin: 0; }
+        [data-bs-theme="dark"] .lvm-stage-name { color: var(--vz-heading-color, var(--vz-body-color)); }
+        .lvm-stage-status {
+          display: inline-flex; align-items: center; gap: 4px;
+          font-size: 11.5px; font-weight: 600;
+          color: var(--vz-secondary-color);
+          margin-top: 2px;
+        }
+        .lvm-stage-status .dot { width: 5px; height: 5px; border-radius: 50%; }
+        .lvm-stage.is-active .lvm-stage-status { color: #7c3aed; font-weight: 700; }
+        .lvm-stage.is-active .lvm-stage-status .dot { background: #7c3aed; }
+        .lvm-stage:not(.is-active):not(.is-done) .lvm-stage-status .dot { background: #cbd2dc; }
+        .lvm-stage.is-done .lvm-stage-status { color: #108548; font-weight: 700; }
+
+        /* Main — natural height; the page-level scroll handles overflow. */
+        .lvm-main { flex: 1 1 auto; min-width: 0; padding: 18px 24px 12px; }
+
+        /* Profile completion bar */
+        .lvm-profile-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+        .lvm-profile-label { font-size: 11px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); }
+        .lvm-profile-pct { font-size: 18px; font-weight: 800; color: #f06548; }
+        .lvm-profile-track { height: 6px; background: #e9d5ff; border-radius: 999px; overflow: hidden; margin-bottom: 6px; }
+        .lvm-profile-fill { height: 100%; background: linear-gradient(90deg,#f06548 0%,#f59e0b 50%,#0ab39c 100%); border-radius: 999px; transition: width .25s ease; }
+        .lvm-profile-help { font-size: 11.5px; color: var(--vz-secondary-color); margin-bottom: 14px; }
+
+        /* Stage banner */
+        .lvm-banner {
+          background: #fff;
+          border: 1px solid #ece9f6;
+          border-radius: 12px;
+          padding: 14px 16px;
+          display: flex; align-items: center; gap: 12px;
+          margin-bottom: 14px;
+        }
+        [data-bs-theme="dark"] .lvm-banner { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-banner-icon { width: 42px; height: 42px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .lvm-banner-icon i { font-size: 20px; }
+        .lvm-banner-meta { min-width: 0; flex: 1; }
+        .lvm-banner-title { font-size: 16px; font-weight: 800; color: #1f2937; margin: 0; letter-spacing: -0.01em; }
+        [data-bs-theme="dark"] .lvm-banner-title { color: var(--vz-heading-color, var(--vz-body-color)); }
+        .lvm-banner-sub { font-size: 12px; color: var(--vz-secondary-color); margin-top: 2px; }
+        .lvm-banner-step { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; flex-shrink: 0; }
+
+        /* Section heading */
+        .lvm-section-heading { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 12px 0; }
+
+        /* Leave type cards */
+        .lvm-type-card {
+          display: flex; align-items: center; gap: 14px;
+          background: #fff;
+          border: 1px solid #ece9f6;
+          border-radius: 12px;
+          padding: 14px 16px;
+          margin-bottom: 10px;
+          cursor: pointer;
+          width: 100%; text-align: left;
+          transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+        }
+        [data-bs-theme="dark"] .lvm-type-card { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-type-card:hover { border-color: #c4b5fd; box-shadow: 0 4px 14px rgba(124,92,252,0.12); transform: translateY(-1px); }
+        .lvm-type-card.is-selected { border-color: #7c5cfc; box-shadow: 0 4px 16px rgba(124,92,252,0.20); background: #faf6ff; }
+        [data-bs-theme="dark"] .lvm-type-card.is-selected { background: rgba(124,92,252,0.10); }
+        .lvm-type-icon { width: 44px; height: 44px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .lvm-type-icon i { font-size: 22px; }
+        .lvm-type-meta { flex: 1; min-width: 0; }
+        .lvm-type-name { font-size: 15px; font-weight: 800; color: #1f2937; margin: 0; }
+        [data-bs-theme="dark"] .lvm-type-name { color: var(--vz-heading-color, var(--vz-body-color)); }
+        .lvm-type-desc { font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 2px; }
+        .lvm-type-balance { text-align: right; min-width: 90px; }
+        .lvm-type-days { font-size: 22px; font-weight: 800; line-height: 1; }
+        .lvm-type-days-label { font-size: 12px; font-weight: 700; color: var(--vz-secondary-color); margin-left: 3px; }
+        .lvm-type-used { font-size: 11px; color: var(--vz-secondary-color); margin-top: 4px; font-weight: 600; }
+        .lvm-type-no-limit { font-size: 22px; font-weight: 800; color: #9ca3af; line-height: 1; }
+
+        /* Selected-leave-type info bar (stage 2) */
+        .lvm-info-bar {
+          background: #f3eeff;
+          border: 1px solid #d8c8ff;
+          border-radius: 8px;
+          padding: 10px 14px;
+          font-size: 12.5px;
+          color: var(--vz-body-color);
+          margin-bottom: 14px;
+        }
+        [data-bs-theme="dark"] .lvm-info-bar { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.30); }
+        .lvm-info-bar strong { color: #5a3fd1; font-weight: 700; }
+
+        /* Day-type pill toggle (stage 2) */
+        .lvm-daytype-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+        .lvm-daytype-btn {
+          display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+          padding: 12px 16px;
+          border-radius: 10px;
+          background: #fff;
+          border: 1.5px solid #ece9f6;
+          font-size: 14px; font-weight: 700;
+          color: var(--vz-body-color);
+          cursor: pointer;
+          transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+        }
+        [data-bs-theme="dark"] .lvm-daytype-btn { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-daytype-btn:hover:not(.is-active) { border-color: #c4b5fd; }
+        .lvm-daytype-btn.is-active {
+          background: linear-gradient(135deg,#5a3fd1,#7c5cfc);
+          color: #fff;
+          border-color: transparent;
+          box-shadow: 0 4px 12px rgba(91,63,209,0.30);
+        }
+        .lvm-daytype-btn i { font-size: 18px; }
+
+        /* Form controls (date inputs, textarea, etc.) */
+        .lvm-field-label { font-size: 11px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0 0 6px; display: block; }
+        .lvm-field-label .opt { color: var(--vz-secondary-color); font-weight: 600; letter-spacing: 0.04em; text-transform: none; margin-left: 4px; }
+        .lvm-field-input {
+          width: 100%;
+          padding: 10px 14px;
+          background: #fff;
+          border: 1px solid #ece9f6;
+          border-radius: 10px;
+          font-size: 13px;
+          color: var(--vz-body-color);
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .lvm-field-input::placeholder { color: #9ca3af; }
+        .lvm-field-input:focus { outline: none; border-color: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
+        [data-bs-theme="dark"] .lvm-field-input { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
+        .lvm-field-textarea { min-height: 86px; resize: vertical; }
+
+        .lvm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .lvm-grid-2 > div { min-width: 0; }
+
+        /* Total leave days card (stage 2) */
+        .lvm-total-card {
+          background: #fff;
+          border: 1px solid #ece9f6;
+          border-radius: 10px;
+          padding: 14px 16px;
+          display: flex; align-items: center; justify-content: space-between;
+          margin-top: 14px;
+        }
+        [data-bs-theme="dark"] .lvm-total-card { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-total-meta { line-height: 1.3; }
+        .lvm-total-title { font-size: 13px; font-weight: 700; color: var(--vz-body-color); }
+        .lvm-total-sub { font-size: 11px; color: var(--vz-secondary-color); margin-top: 2px; }
+        .lvm-total-num { font-size: 26px; font-weight: 800; color: #c4b5fd; }
+        .lvm-total-num.has-value { color: #5a3fd1; }
+
+        /* Reason tip + upload zone (stage 3) */
+        .lvm-tip { font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 6px; margin-bottom: 18px; }
+        .lvm-upload {
+          border: 2px dashed #c4b5fd;
+          border-radius: 12px;
+          background: #faf6ff;
+          padding: 30px 20px;
+          text-align: center;
+          cursor: pointer;
+          transition: background .15s ease, border-color .15s ease;
+        }
+        [data-bs-theme="dark"] .lvm-upload { background: rgba(124,92,252,0.08); border-color: rgba(124,92,252,0.40); }
+        .lvm-upload:hover { background: #f3edff; border-color: #7c5cfc; }
+        .lvm-upload-icon { width: 56px; height: 56px; border-radius: 12px; background: #fff; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(124,92,252,0.18); margin-bottom: 10px; }
+        .lvm-upload-icon i { font-size: 26px; color: #7c5cfc; }
+        .lvm-upload-title { font-size: 14px; font-weight: 700; color: #5a3fd1; margin-bottom: 4px; }
+        .lvm-upload-sub { font-size: 11.5px; color: var(--vz-secondary-color); }
+        .lvm-upload-file { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 4px 10px; background: #fff; border: 1px solid #c4b5fd; border-radius: 6px; font-size: 12px; color: #5a3fd1; font-weight: 700; }
+
+        /* Notify checklist (stage 4) — sits inside .lvm-notify-grid for 2x2 */
+        .lvm-notify-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin-bottom: 14px;
+        }
+        @media (max-width: 991px) {
+          .lvm-notify-grid { grid-template-columns: 1fr; }
+        }
+        .lvm-check-row {
+          display: flex; align-items: center; gap: 12px;
+          background: #fff;
+          border: 1.5px solid #ece9f6;
+          border-radius: 10px;
+          padding: 12px 14px;
+          cursor: pointer;
+          transition: border-color .15s ease, background .15s ease;
+        }
+        [data-bs-theme="dark"] .lvm-check-row { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-check-row:hover { border-color: #c4b5fd; }
+        .lvm-check-row.is-checked { background: #f3edff; border-color: #c4b5fd; }
+        [data-bs-theme="dark"] .lvm-check-row.is-checked { background: rgba(124,92,252,0.12); }
+        .lvm-check-row.is-required { background: #f3edff; border-color: #c4b5fd; }
+        .lvm-check-box {
+          width: 22px; height: 22px;
+          border-radius: 6px;
+          border: 1.5px solid #d1d5db;
+          background: #fff;
+          display: inline-flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+        }
+        .lvm-check-row.is-checked .lvm-check-box { background: #5a3fd1; border-color: #5a3fd1; color: #fff; }
+        .lvm-check-row.is-checked .lvm-check-box i { font-size: 14px; }
+        .lvm-check-meta { flex: 1; line-height: 1.3; }
+        .lvm-check-title { font-size: 13.5px; font-weight: 700; color: var(--vz-body-color); }
+        .lvm-check-desc { font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 2px; }
+        .lvm-check-required { font-size: 10.5px; font-weight: 800; color: #5a3fd1; letter-spacing: 0.04em; }
+
+        /* Yes/No segmented toggle */
+        .lvm-yn { display: inline-flex; gap: 4px; padding: 3px; background: #f3eeff; border-radius: 8px; border: 1px solid #d8c8ff; }
+        [data-bs-theme="dark"] .lvm-yn { background: rgba(124,92,252,0.12); border-color: rgba(124,92,252,0.32); }
+        .lvm-yn-btn { padding: 6px 18px; border-radius: 6px; font-size: 12px; font-weight: 700; background: transparent; border: none; color: var(--vz-secondary-color); cursor: pointer; transition: background .15s ease, color .15s ease; }
+        .lvm-yn-btn.is-active { background: #fff; color: #5a3fd1; box-shadow: 0 2px 4px rgba(91,63,209,0.18); }
+        [data-bs-theme="dark"] .lvm-yn-btn.is-active { background: var(--vz-card-bg); color: #c4b5fd; }
+
+        /* Handover sub-card */
+        .lvm-subcard {
+          background: #fff;
+          border: 1px solid #ece9f6;
+          border-radius: 12px;
+          padding: 14px 16px;
+          margin-top: 14px;
+        }
+        [data-bs-theme="dark"] .lvm-subcard { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-subcard-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+        .lvm-subcard-title { font-size: 13.5px; font-weight: 700; color: var(--vz-body-color); margin: 0; }
+        .lvm-subcard-sub { font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 2px; }
+
+        /* Impact summary card (stage 5 footer) */
+        .lvm-impact-card {
+          background: #f3eeff;
+          border: 1px solid #d8c8ff;
+          border-radius: 12px;
+          padding: 14px 16px;
+          margin-top: 18px;
+        }
+        [data-bs-theme="dark"] .lvm-impact-card { background: rgba(124,92,252,0.10); border-color: rgba(124,92,252,0.30); }
+        .lvm-impact-title { font-size: 11px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: #5a3fd1; margin: 0 0 12px; }
+        .lvm-impact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .lvm-impact-cell { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; }
+        [data-bs-theme="dark"] .lvm-impact-cell { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-impact-label { font-size: 10px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vz-secondary-color); }
+        .lvm-impact-value { font-size: 14px; font-weight: 700; color: var(--vz-body-color); margin-top: 4px; }
+        .lvm-impact-value.empty { color: #9ca3af; }
+        .lvm-impact-value.ok { color: #15803d; }
+
+        /* Impact preview (stage 6) — KPI tiles + breakdown table */
+        .lvm-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+        .lvm-kpi {
+          background: #fff;
+          border: 1px solid #ece9f6;
+          border-radius: 10px;
+          padding: 14px 12px;
+          text-align: center;
+        }
+        [data-bs-theme="dark"] .lvm-kpi { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-kpi.tone-blue { background: #f0f5ff; border-color: #c5d8ff; }
+        .lvm-kpi.tone-green { background: #f0faf4; border-color: #c0ebd0; }
+        .lvm-kpi.tone-grey { background: #fafafa; border-color: #e5e7eb; }
+        .lvm-kpi.tone-emerald { background: #ecfdf5; border-color: #a7f3d0; }
+        .lvm-kpi-num { font-size: 20px; font-weight: 800; color: var(--vz-body-color); }
+        .lvm-kpi-num.muted { color: #9ca3af; }
+        .lvm-kpi-num.green { color: #15803d; }
+        .lvm-kpi-label { font-size: 11px; font-weight: 700; color: var(--vz-secondary-color); margin-top: 2px; }
+
+        .lvm-breakdown { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; overflow: hidden; }
+        [data-bs-theme="dark"] .lvm-breakdown { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-breakdown-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #f1f2f4; font-size: 13px; }
+        [data-bs-theme="dark"] .lvm-breakdown-row { border-color: var(--vz-border-color); }
+        .lvm-breakdown-row:last-child { border-bottom: none; }
+        .lvm-breakdown-label { color: var(--vz-secondary-color); font-weight: 600; }
+        .lvm-breakdown-value { color: var(--vz-body-color); font-weight: 700; }
+        .lvm-breakdown-value.green { color: #15803d; }
+        .lvm-breakdown-value.empty { color: #9ca3af; }
+
+        .lvm-note {
+          background: #eff6ff;
+          border: 1px solid #bfdbfe;
+          color: #1e40af;
+          border-radius: 10px;
+          padding: 10px 14px;
+          font-size: 11.5px;
+          margin-top: 12px;
+        }
+
+        /* Approval flow (stage 7) */
+        .lvm-approver {
+          display: flex; align-items: center; gap: 14px;
+          background: #fff;
+          border: 1px solid #ece9f6;
+          border-radius: 12px;
+          padding: 14px 16px;
+          margin-bottom: 8px;
+        }
+        [data-bs-theme="dark"] .lvm-approver { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-approver.is-active { border-color: #5eead4; background: #f0fdfa; }
+        [data-bs-theme="dark"] .lvm-approver.is-active { background: rgba(20,184,166,0.10); border-color: rgba(20,184,166,0.40); }
+        .lvm-approver-num {
+          width: 32px; height: 32px; border-radius: 50%;
+          background: #f3f4f6; color: #9ca3af;
+          display: inline-flex; align-items: center; justify-content: center;
+          flex-shrink: 0;
+          font-size: 13px; font-weight: 800;
+        }
+        .lvm-approver.is-active .lvm-approver-num {
+          background: linear-gradient(135deg,#0ab39c,#108548);
+          color: #fff;
+        }
+        .lvm-approver.is-active .lvm-approver-num i { font-size: 18px; }
+        .lvm-approver-meta { flex: 1; line-height: 1.3; min-width: 0; }
+        .lvm-approver-role { font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vz-secondary-color); }
+        .lvm-approver-name { font-size: 13.5px; font-weight: 700; color: var(--vz-body-color); margin-top: 2px; }
+        [data-bs-theme="dark"] .lvm-approver-name { color: var(--vz-heading-color, var(--vz-body-color)); }
+        .lvm-approver-eta { font-size: 12px; color: var(--vz-secondary-color); font-weight: 600; }
+        .lvm-approver.is-active .lvm-approver-eta { color: #0a716a; font-weight: 700; }
+        .lvm-approver-empty {
+          background: #fff;
+          border: 1px dashed #c4b5fd;
+          border-radius: 12px;
+          padding: 24px 18px;
+          text-align: center;
+          margin-bottom: 8px;
+        }
+        [data-bs-theme="dark"] .lvm-approver-empty { background: var(--vz-card-bg); border-color: rgba(124,92,252,0.40); }
+        .lvm-approver-empty i { font-size: 28px; color: #c4b5fd; display: block; margin-bottom: 8px; }
+        .lvm-approver-empty-title { font-size: 13px; font-weight: 700; color: var(--vz-body-color); margin-bottom: 4px; }
+        .lvm-approver-empty-sub { font-size: 11.5px; color: var(--vz-secondary-color); max-width: 460px; margin: 0 auto; }
+        .lvm-submit-banner {
+          background: #fef9c3;
+          border: 1px solid #fde68a;
+          color: #92400e;
+          border-radius: 10px;
+          padding: 12px 16px;
+          font-size: 12.5px; font-weight: 700;
+          margin-top: 14px;
+        }
+        .lvm-submit-banner strong { color: #78350f; }
+
+        /* Footer */
+        .lvm-footer {
+          background: #fff;
+          border-top: 1px solid #ece9f6;
+          padding: 12px 22px;
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 12px; flex-wrap: wrap;
+        }
+        [data-bs-theme="dark"] .lvm-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+        .lvm-footer-meta { font-size: 12px; color: var(--vz-secondary-color); font-weight: 600; }
+        .lvm-btn-prev, .lvm-btn-draft, .lvm-btn-next {
+          padding: 9px 18px;
+          border-radius: 9px;
+          font-size: 13px; font-weight: 700;
+          cursor: pointer;
+          border: 1px solid transparent;
+          display: inline-flex; align-items: center; gap: 6px;
+          transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+        }
+        .lvm-btn-prev { background: #fff; color: var(--vz-secondary-color); border-color: #e5e7eb; }
+        .lvm-btn-prev:hover:not(:disabled) { background: #f3f4f6; color: var(--vz-body-color); }
+        .lvm-btn-prev:disabled { opacity: 0.5; cursor: not-allowed; }
+        .lvm-btn-draft { background: #fff; color: var(--vz-body-color); border-color: var(--vz-border-color); }
+        .lvm-btn-draft:hover { background: var(--vz-light); }
+        .lvm-btn-next {
+          background: linear-gradient(135deg,#5a3fd1,#7c5cfc);
+          color: #fff; border: none;
+          box-shadow: 0 6px 14px rgba(91,63,209,0.28);
+        }
+        .lvm-btn-next:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(91,63,209,0.36); }
+        [data-bs-theme="dark"] .lvm-btn-prev { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.78); border-color: rgba(255,255,255,0.10); }
+        [data-bs-theme="dark"] .lvm-btn-draft { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
+
+        @media (max-width: 991px) {
+          .lvm-body { flex-direction: column; min-height: 0; }
+          .lvm-side { width: 100%; border-right: 0; border-bottom: 1px solid #ece9f6; }
+          .lvm-grid-2, .lvm-impact-grid { grid-template-columns: 1fr; }
+          .lvm-kpi-grid { grid-template-columns: 1fr 1fr; }
+        }
+      `}</style>
+
+      {/* Header */}
+      <div className="lvm-header">
+        <div className="lvm-header-left">
+          <span className="lvm-avatar" style={{ background: accent }}>{initials}</span>
+          <div className="min-w-0">
+            <div className="lvm-emp-row">
+              <h5 className="lvm-emp-name">{name}</h5>
+              <span className="lvm-badge">Draft</span>
+              <span className="lvm-badge lvm-badge-pct">Profile: {profilePct}% complete</span>
+            </div>
+            <div className="lvm-emp-sub">{employeeId} · {department} · {designation}</div>
+          </div>
+        </div>
+        <div className="lvm-header-right">
+          <span className="lvm-flow-label">Leave Application Flow</span>
+          <button type="button" className="lvm-close" onClick={onClose} aria-label="Close">
+            <i className="ri-close-line" />
+          </button>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="lvm-body">
+
+        {/* Sidebar */}
+        <div className="lvm-side">
+          <p className="lvm-side-title">Leave Stages</p>
+          {LEAVE_STAGES.map(s => {
+            const isActive = s.num === stage;
+            const isDone = s.num < stage;
+            return (
+              <button
+                key={s.num}
+                type="button"
+                onClick={() => setStage(s.num)}
+                className={`lvm-stage${isActive ? ' is-active' : ''}${isDone ? ' is-done' : ''}`}
+              >
+                <span className="lvm-stage-num">{isDone ? <i className="ri-check-line" /> : s.num}</span>
+                <div className="lvm-stage-meta">
+                  <p className="lvm-stage-name">{s.title}</p>
+                  <span className="lvm-stage-status">
+                    <span className="dot" />
+                    {isActive ? 'In Progress' : isDone ? 'Complete' : 'Pending'}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Main */}
+        <div className="lvm-main">
+
+          {/* Profile completion bar */}
+          <div className="lvm-profile-row">
+            <span className="lvm-profile-label">Profile Completion</span>
+            <span className="lvm-profile-pct">{profilePct}%</span>
+          </div>
+          <div className="lvm-profile-track">
+            <div className="lvm-profile-fill" style={{ width: `${profilePct}%` }} />
+          </div>
+          <div className="lvm-profile-help">
+            {profilePct}% complete · Required fields (marked red) must be filled before proceeding
+          </div>
+
+          {/* Stage banner */}
+          <div className="lvm-banner">
+            <span className="lvm-banner-icon" style={{ background: currentStage.iconBg }}>
+              <i className={currentStage.icon} style={{ color: '#a4661c' }} />
+            </span>
+            <div className="lvm-banner-meta">
+              <h6 className="lvm-banner-title">{currentStage.title}</h6>
+              <div className="lvm-banner-sub">{stageSubtitleFor(stage)}</div>
+            </div>
+            <span className="lvm-banner-step">STEP {stage} OF {totalStages}</span>
+          </div>
+
+          {/* ── Stage 1: Leave Type ── */}
+          {stage === 1 && (
+            <>
+              <p className="lvm-section-heading">Select Leave Type</p>
+              {LEAVE_TYPES.map(lt => {
+                const selected = leaveType === lt.id;
+                return (
+                  <button
+                    key={lt.id}
+                    type="button"
+                    onClick={() => setLeaveType(lt.id)}
+                    className={`lvm-type-card${selected ? ' is-selected' : ''}`}
+                  >
+                    <span className="lvm-type-icon" style={{ background: lt.iconBg }}>
+                      <i className={lt.icon} style={{ color: lt.iconFg }} />
+                    </span>
+                    <div className="lvm-type-meta">
+                      <h6 className="lvm-type-name">{lt.name}</h6>
+                      <div className="lvm-type-desc">{lt.desc}</div>
+                    </div>
+                    <div className="lvm-type-balance">
+                      {lt.noLimit ? (
+                        <>
+                          <div className="lvm-type-no-limit">—</div>
+                          <div className="lvm-type-used">No limit</div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <span className="lvm-type-days" style={{ color: lt.days == null ? '#9ca3af' : lt.daysColor }}>
+                              {lt.days ?? '—'}
+                            </span>
+                            <span className="lvm-type-days-label">days</span>
+                          </div>
+                          <div className="lvm-type-used">
+                            {lt.used == null || lt.total == null ? 'Balance unavailable' : `${lt.used} used / ${lt.total} total`}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* ── Stage 2: Leave Duration ── */}
+          {stage === 2 && (
+            <>
+              <div className="lvm-info-bar">
+                Selected leave type: <strong>{selectedLeaveType ? selectedLeaveType.name : '(none selected)'}</strong>
+              </div>
+
+              <label className="lvm-field-label">Day Type</label>
+              <div className="lvm-daytype-row">
+                <button
+                  type="button"
+                  onClick={() => setDayType('full')}
+                  className={`lvm-daytype-btn${dayType === 'full' ? ' is-active' : ''}`}
+                >
+                  <i className="ri-sun-line" /> Full Day
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDayType('half')}
+                  className={`lvm-daytype-btn${dayType === 'half' ? ' is-active' : ''}`}
+                >
+                  <i className="ri-contrast-2-line" /> Half Day
+                </button>
+              </div>
+
+              <div className="lvm-grid-2">
+                <div>
+                  <label className="lvm-field-label">From Date</label>
+                  <input
+                    type="date"
+                    className="lvm-field-input"
+                    value={fromDate}
+                    onChange={e => setFromDate(e.target.value)}
+                    placeholder="mm/dd/yyyy"
+                  />
+                </div>
+                <div>
+                  <label className="lvm-field-label">To Date</label>
+                  <input
+                    type="date"
+                    className="lvm-field-input"
+                    value={toDate}
+                    onChange={e => setToDate(e.target.value)}
+                    placeholder="mm/dd/yyyy"
+                    min={fromDate || undefined}
+                  />
+                </div>
+              </div>
+
+              <div className="lvm-total-card">
+                <div className="lvm-total-meta">
+                  <div className="lvm-total-title">Total Leave Days</div>
+                  <div className="lvm-total-sub">Includes weekends if selected</div>
+                </div>
+                <div className={`lvm-total-num${totalDays > 0 ? ' has-value' : ''}`}>{totalDays || 0}</div>
+              </div>
+            </>
+          )}
+
+          {/* ── Stage 3: Reason & Document — split 2-column so the reason
+                textarea and the upload zone read as a balanced pair. ── */}
+          {stage === 3 && (
+            <div className="lvm-grid-2">
+              <div>
+                <label className="lvm-field-label">Reason for Leave</label>
+                <textarea
+                  className="lvm-field-input lvm-field-textarea"
+                  placeholder="e.g. Family function, medical appointment, vacation…"
+                  value={reason}
+                  onChange={e => setReason(e.target.value)}
+                  style={{ minHeight: 160 }}
+                />
+                <div className="lvm-tip" style={{ marginBottom: 0 }}>Tip: Detailed reasons help managers approve faster.</div>
+              </div>
+              <div>
+                <label className="lvm-field-label">
+                  Supporting Document <span className="opt">(Optional)</span>
+                </label>
+                <label
+                  className="lvm-upload"
+                  style={{ minHeight: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) setDocName(f.name);
+                  }}
+                >
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    style={{ display: 'none' }}
+                    ref={el => { fileInputRef.current = el; }}
+                    onChange={e => {
+                      const f = e.target.files?.[0];
+                      if (f) setDocName(f.name);
+                    }}
+                  />
+                  <div className="lvm-upload-icon"><i className="ri-upload-2-line" /></div>
+                  <div className="lvm-upload-title">Click to upload medical certificate / supporting doc</div>
+                  <div className="lvm-upload-sub">PDF, JPG, PNG · Max 5 MB</div>
+                  {docName && (
+                    <div className="lvm-upload-file">
+                      <i className="ri-file-line" /> {docName}
+                    </div>
+                  )}
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* ── Stage 4: Notify & Handover — notify rows in a 2-column grid
+                so the four options sit as a 2×2 instead of a tall stack. ── */}
+          {stage === 4 && (
+            <>
+              <p className="lvm-section-heading">Who needs to be informed</p>
+              <div className="lvm-notify-grid">
+                {NOTIFY_ROWS.map(row => {
+                  const checked = notify[row.key];
+                  const reqClass = row.required ? ' is-required' : '';
+                  return (
+                    <div
+                      key={row.key}
+                      className={`lvm-check-row${checked ? ' is-checked' : ''}${reqClass}`}
+                      onClick={() => {
+                        if (row.required) return;
+                        setNotify({ ...notify, [row.key]: !checked });
+                      }}
+                    >
+                      <span className="lvm-check-box">
+                        {checked && <i className="ri-check-line" />}
+                      </span>
+                      <div className="lvm-check-meta">
+                        <div className="lvm-check-title">{row.title}</div>
+                        <div className="lvm-check-desc">{row.desc}</div>
+                      </div>
+                      {row.required && <span className="lvm-check-required">Required</span>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ marginTop: 14 }}>
+                <label className="lvm-field-label">Inform Specific Employees</label>
+                <input
+                  type="text"
+                  className="lvm-field-input"
+                  placeholder="Type name & press Enter…"
+                  value={specificEmps}
+                  onChange={e => setSpecificEmps(e.target.value)}
+                />
+                <div className="lvm-tip" style={{ marginBottom: 0 }}>These people will be notified that the employee is on leave</div>
+              </div>
+
+              <div className="lvm-subcard">
+                <div className="lvm-subcard-head">
+                  <div>
+                    <h6 className="lvm-subcard-title">Task Handover Required?</h6>
+                    <div className="lvm-subcard-sub">Is someone covering your work during leave?</div>
+                  </div>
+                  <div className="lvm-yn">
+                    <button type="button" className={`lvm-yn-btn${handoverReq ? ' is-active' : ''}`} onClick={() => setHandoverReq(true)}>Yes</button>
+                    <button type="button" className={`lvm-yn-btn${!handoverReq ? ' is-active' : ''}`} onClick={() => setHandoverReq(false)}>No</button>
+                  </div>
+                </div>
+                {handoverReq && (
+                  <>
+                    <div className="lvm-grid-2">
+                      <div>
+                        <label className="lvm-field-label">Coverage Person</label>
+                        <input
+                          type="text"
+                          className="lvm-field-input"
+                          placeholder="Who will handle your work?"
+                          value={coverPerson}
+                          onChange={e => setCoverPerson(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="lvm-field-label">Handover Notes</label>
+                        <input
+                          type="text"
+                          className="lvm-field-input"
+                          placeholder="Key notes for handover…"
+                          value={handoverNotes}
+                          onChange={e => setHandoverNotes(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 14 }}>
+                      <label className="lvm-field-label">Critical Tasks / Open Items</label>
+                      <textarea
+                        className="lvm-field-input lvm-field-textarea"
+                        placeholder="List any pending critical tasks…"
+                        value={criticalTasks}
+                        onChange={e => setCriticalTasks(e.target.value)}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ── Stage 5: Availability ── */}
+          {stage === 5 && (
+            <>
+              <p className="lvm-section-heading">Contact Availability During Leave</p>
+
+              <div className="lvm-subcard" style={{ marginTop: 0 }}>
+                <div className="lvm-subcard-head" style={{ marginBottom: 0 }}>
+                  <div>
+                    <h6 className="lvm-subcard-title">Available on Call?</h6>
+                    <div className="lvm-subcard-sub">Can you be reached in an emergency?</div>
+                  </div>
+                  <div className="lvm-yn">
+                    <button type="button" className={`lvm-yn-btn${availOnCall ? ' is-active' : ''}`} onClick={() => setAvailOnCall(true)}>Yes</button>
+                    <button type="button" className={`lvm-yn-btn${!availOnCall ? ' is-active' : ''}`} onClick={() => setAvailOnCall(false)}>No</button>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 14 }}>
+                <label className="lvm-field-label">Emergency Contact Number</label>
+                <input
+                  type="tel"
+                  className="lvm-field-input"
+                  placeholder="Mobile number reachable during leave…"
+                  value={emergencyNumber}
+                  onChange={e => setEmergencyNumber(e.target.value)}
+                />
+              </div>
+
+              <div style={{ marginTop: 14 }}>
+                <label className="lvm-field-label">Availability Note</label>
+                <input
+                  type="text"
+                  className="lvm-field-input"
+                  placeholder="e.g. Reachable on WhatsApp after 6PM…"
+                  value={availNote}
+                  onChange={e => setAvailNote(e.target.value)}
+                />
+              </div>
+
+              <div className="lvm-impact-card">
+                <p className="lvm-impact-title">Leave Impact Summary</p>
+                <div className="lvm-impact-grid">
+                  <div className="lvm-impact-cell">
+                    <div className="lvm-impact-label">Requested Days</div>
+                    <div className={`lvm-impact-value${totalDays === 0 ? ' empty' : ''}`}>{totalDays || '—'}</div>
+                  </div>
+                  <div className="lvm-impact-cell">
+                    <div className="lvm-impact-label">Balance Available</div>
+                    <div className={`lvm-impact-value${selectedLeaveType?.days == null ? ' empty' : ''}`}>{selectedLeaveType?.days ?? '—'}</div>
+                  </div>
+                  <div className="lvm-impact-cell">
+                    <div className="lvm-impact-label">Proof Required</div>
+                    <div className="lvm-impact-value empty">—</div>
+                  </div>
+                  <div className="lvm-impact-cell">
+                    <div className="lvm-impact-label">Approval Flow</div>
+                    <div className="lvm-impact-value empty">—</div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── Stage 6: Impact Preview ── */}
+          {stage === 6 && (
+            <>
+              <div className="lvm-kpi-grid">
+                <div className="lvm-kpi tone-blue">
+                  <div className={`lvm-kpi-num${totalDays === 0 ? ' muted' : ''}`}>{totalDays || 0} days</div>
+                  <div className="lvm-kpi-label">Total Days</div>
+                </div>
+                <div className="lvm-kpi tone-green">
+                  <div className={`lvm-kpi-num${totalDays === 0 ? ' muted' : ''}`}>{totalDays || 0} days</div>
+                  <div className="lvm-kpi-label">Paid Leave</div>
+                </div>
+                <div className="lvm-kpi tone-grey">
+                  <div className="lvm-kpi-num muted">0 days</div>
+                  <div className="lvm-kpi-label">Unpaid Leave</div>
+                </div>
+                <div className="lvm-kpi tone-emerald">
+                  <div className="lvm-kpi-num green">Nil</div>
+                  <div className="lvm-kpi-label">Est. Deduction</div>
+                </div>
+              </div>
+
+              <p className="lvm-section-heading">Leave Breakdown</p>
+              <div className="lvm-breakdown">
+                <div className="lvm-breakdown-row">
+                  <span className="lvm-breakdown-label">Leave Type</span>
+                  <span className={`lvm-breakdown-value${!selectedLeaveType ? ' empty' : ''}`}>{selectedLeaveType?.name || '—'}</span>
+                </div>
+                <div className="lvm-breakdown-row">
+                  <span className="lvm-breakdown-label">Duration</span>
+                  <span className={`lvm-breakdown-value${!fromDate || !toDate ? ' empty' : ''}`}>{fromDate && toDate ? `${fromDate} – ${toDate}` : '— – —'}</span>
+                </div>
+                <div className="lvm-breakdown-row">
+                  <span className="lvm-breakdown-label">Working Days</span>
+                  <span className="lvm-breakdown-value">{totalDays || 0} days</span>
+                </div>
+                <div className="lvm-breakdown-row">
+                  <span className="lvm-breakdown-label">Paid Days</span>
+                  <span className="lvm-breakdown-value">{totalDays || 0} days</span>
+                </div>
+                <div className="lvm-breakdown-row">
+                  <span className="lvm-breakdown-label">Unpaid Days</span>
+                  <span className="lvm-breakdown-value">0 days</span>
+                </div>
+                <div className="lvm-breakdown-row">
+                  <span className="lvm-breakdown-label">Salary Deduction</span>
+                  <span className="lvm-breakdown-value green">Nil</span>
+                </div>
+                <div className="lvm-breakdown-row">
+                  <span className="lvm-breakdown-label">Attendance Flag</span>
+                  <span className={`lvm-breakdown-value${!selectedLeaveType ? ' empty' : ''}`}>{selectedLeaveType?.name || '—'}</span>
+                </div>
+                <div className="lvm-breakdown-row">
+                  <span className="lvm-breakdown-label">Payroll Layer</span>
+                  <span className="lvm-breakdown-value green">No impact</span>
+                </div>
+              </div>
+
+              <div className="lvm-note">
+                Attendance will be marked as leave on the From / To range, and any biometric punches inside it will be ignored.
+              </div>
+            </>
+          )}
+
+          {/* ── Stage 7: Approval Flow — approver chain comes from the
+                backend; we only know the maker (current employee) for now. ── */}
+          {stage === 7 && (
+            <>
+              <p className="lvm-section-heading">Approval Chain</p>
+
+              <div className="lvm-approver is-active">
+                <span className="lvm-approver-num"><i className="ri-check-line" /></span>
+                <div className="lvm-approver-meta">
+                  <div className="lvm-approver-role">Maker (You)</div>
+                  <div className="lvm-approver-name">{name}</div>
+                </div>
+                <div className="lvm-approver-eta">Today</div>
+              </div>
+
+              <div className="lvm-approver-empty">
+                <i className="ri-team-line" />
+                <div className="lvm-approver-empty-title">Approval chain not configured yet</div>
+                <div className="lvm-approver-empty-sub">
+                  Approvers (Checker / Approver / HR Notification) will load here once the leave-policy backend is wired up.
+                </div>
+              </div>
+
+              <div className="lvm-submit-banner">
+                <strong>Ready to submit?</strong> Click "Submit Application" below to send for approval.
+              </div>
+            </>
+          )}
+
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="lvm-footer">
+        <span className="lvm-footer-meta">Stage {stage} of {totalStages}</span>
+        <div className="d-flex gap-2 ms-auto">
+          <button
+            type="button"
+            className="lvm-btn-prev"
+            onClick={() => setStage(Math.max(1, stage - 1))}
+            disabled={stage === 1}
+          >
+            <i className="ri-arrow-left-s-line" /> Previous
+          </button>
+          <button type="button" className="lvm-btn-draft">
+            <i className="ri-save-line" /> Save Draft
+          </button>
+          {stage < totalStages ? (
+            <button type="button" className="lvm-btn-next" onClick={() => setStage(stage + 1)}>
+              Next Stage <i className="ri-arrow-right-s-line" />
+            </button>
+          ) : (
+            <button type="button" className="lvm-btn-next" onClick={onClose}>
+              Submit Application <i className="ri-check-line" />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Stage subtitle copy — refined per stage to match the design mock more closely
+// than the original sidebar copy.
+function stageSubtitleFor(stage: number): string {
+  switch (stage) {
+    case 1: return 'Select leave category & check available balance';
+    case 2: return 'Choose start and end dates';
+    case 3: return 'Explain reason; upload supporting docs if needed';
+    case 4: return 'Set handover person & notify stakeholders';
+    case 5: return 'Check team availability for your dates';
+    case 6: return 'Review leave-balance & payroll impact';
+    case 7: return 'Confirm approver chain & submit';
+    default: return '';
+  }
+}
+

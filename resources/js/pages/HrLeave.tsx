@@ -205,9 +205,10 @@ const PAGE_SIZE = 8;
 export default function HrLeave() {
   const [requests] = useState<LeaveRequest[]>(buildRequests);
 
-  const [tab,     setTab]     = useState<'pending' | 'approved'>('pending');
   const [search,  setSearch]  = useState('');
+  const [status,  setStatus]  = useState<string>('All');
   const [type,    setType]    = useState<string>('All');
+  const [stage,   setStage]   = useState<string>('All');
   const [payroll, setPayroll] = useState<string>('All');
   const [page,    setPage]    = useState(1);
 
@@ -225,20 +226,35 @@ export default function HrLeave() {
     };
   }, [requests]);
 
-  // Tab-filtered + search/filter pipeline
+  // Search + filter pipeline. STATUS is the coarse bucket (All / Pending /
+  // Approved / Rejected) while STAGE drills further into the workflow step
+  // (Submitted / Manager Review / HR Review / Approved / Rejected).
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return requests.filter(r => {
-      const inTab =
-        tab === 'pending'   ? r.stage.startsWith('Pending')
-                            : r.stage === 'Approved';
-      if (!inTab) return false;
+      // STATUS filter — coarse: maps the granular `r.stage` onto a bucket
+      if (status === 'Pending'  && !r.stage.startsWith('Pending')) return false;
+      if (status === 'Approved' && r.stage !== 'Approved') return false;
+      if (status === 'Rejected' && r.stage !== 'Rejected') return false;
+
+      // STAGE filter — granular workflow step
+      if (stage !== 'All') {
+        const matchesStage =
+          stage === 'Submitted'      ? false  // dummy data has no submitted-only rows yet
+          : stage === 'Manager Review' ? r.stage === 'Pending (Manager)'
+          : stage === 'HR Review'    ? r.stage === 'Pending (HR)'
+          : stage === 'Approved'     ? r.stage === 'Approved'
+          : stage === 'Rejected'     ? r.stage === 'Rejected'
+          : true;
+        if (!matchesStage) return false;
+      }
+
       if (type    !== 'All' && r.type    !== type)    return false;
       if (payroll !== 'All' && r.payroll !== payroll) return false;
       if (!q) return true;
       return [r.empName, r.empRole, r.id, r.empCode, r.type].some(v => v.toLowerCase().includes(q));
     });
-  }, [requests, tab, search, type, payroll]);
+  }, [requests, search, status, type, stage, payroll]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage  = Math.min(Math.max(1, page), pageCount);
@@ -246,6 +262,20 @@ export default function HrLeave() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + PAGE_SIZE);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
+  const STATUS_OPTIONS = [
+    { value: 'All',      label: 'All Requests' },
+    { value: 'Pending',  label: 'Pending' },
+    { value: 'Approved', label: 'Approved' },
+    { value: 'Rejected', label: 'Rejected' },
+  ];
+  const STAGE_OPTIONS = [
+    { value: 'All',             label: 'All Stages' },
+    { value: 'Submitted',       label: 'Submitted' },
+    { value: 'Manager Review',  label: 'Manager Review' },
+    { value: 'HR Review',       label: 'HR Review' },
+    { value: 'Approved',        label: 'Approved' },
+    { value: 'Rejected',        label: 'Rejected' },
+  ];
   const TYPE_OPTIONS = [
     { value: 'All',       label: 'All' },
     { value: 'Annual',    label: 'Annual' },
@@ -347,18 +377,19 @@ export default function HrLeave() {
         ))}
       </Row>
 
-      {/* ── Tabs (pill-style, free — matches Onboarding screenshot) ── */}
+      {/* ── Tabs (pill-style — quick toggle that drives the Status filter) ── */}
       <div className="d-flex mb-3" style={{ gap: 8, flexWrap: 'wrap' }}>
         {[
-          { key: 'pending'  as const, label: 'Pending Approvals',  count: counts.pending,  icon: 'ri-time-line' },
-          { key: 'approved' as const, label: 'Approved Leaves',    count: counts.approved, icon: 'ri-checkbox-circle-line' },
+          { key: 'All',      label: 'All Leaves',        count: counts.total,    icon: 'ri-stack-line' },
+          { key: 'Pending',  label: 'Pending Leaves',    count: counts.pending,  icon: 'ri-time-line' },
+          { key: 'Approved', label: 'Approved Leaves',   count: counts.approved, icon: 'ri-checkbox-circle-line' },
         ].map(t => {
-          const on = tab === t.key;
+          const on = status === t.key;
           return (
             <button
               key={t.key}
               type="button"
-              onClick={() => { setTab(t.key); setPage(1); }}
+              onClick={() => { setStatus(t.key); setPage(1); }}
               className="btn d-inline-flex align-items-center gap-2 fw-semibold"
               style={{
                 borderRadius: 999,
@@ -391,7 +422,7 @@ export default function HrLeave() {
       <Card>
         <CardBody>
           <Row className="g-2 align-items-center mb-3">
-            <Col md={5} sm={12}>
+            <Col xl={4} md={12} sm={12}>
               <div className="search-box">
                 <Input
                   type="text"
@@ -403,10 +434,21 @@ export default function HrLeave() {
                 <i className="ri-search-line search-icon"></i>
               </div>
             </Col>
-            <Col md={7} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
+            <Col xl={8} md={12} sm={12} className="d-flex justify-content-xl-end gap-3 flex-wrap align-items-center">
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
+                <div style={{ minWidth: 150 }}>
+                  <MasterSelect
+                    value={status}
+                    onChange={v => { setStatus(v); setPage(1); }}
+                    options={STATUS_OPTIONS}
+                    placeholder="All Requests"
+                  />
+                </div>
+              </div>
               <div className="d-flex align-items-center gap-2">
                 <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Type</span>
-                <div style={{ minWidth: 170 }}>
+                <div style={{ minWidth: 140 }}>
                   <MasterSelect
                     value={type}
                     onChange={v => { setType(v); setPage(1); }}
@@ -416,8 +458,19 @@ export default function HrLeave() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2">
+                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Stage</span>
+                <div style={{ minWidth: 160 }}>
+                  <MasterSelect
+                    value={stage}
+                    onChange={v => { setStage(v); setPage(1); }}
+                    options={STAGE_OPTIONS}
+                    placeholder="All Stages"
+                  />
+                </div>
+              </div>
+              <div className="d-flex align-items-center gap-2">
                 <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Payroll</span>
-                <div style={{ minWidth: 170 }}>
+                <div style={{ minWidth: 140 }}>
                   <MasterSelect
                     value={payroll}
                     onChange={v => { setPayroll(v); setPage(1); }}
@@ -438,7 +491,6 @@ export default function HrLeave() {
                 <tr>
                   <th scope="col" className="ps-3" style={{ width: 60 }}>Sr. No.</th>
                   <th scope="col">Employee</th>
-                  <th scope="col">Leave ID</th>
                   <th scope="col">Type</th>
                   <th scope="col">Duration</th>
                   <th scope="col">Date Range</th>
@@ -452,7 +504,7 @@ export default function HrLeave() {
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="text-center py-5 text-muted">
+                    <td colSpan={10} className="text-center py-5 text-muted">
                       <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                       No leave requests match your filters
                     </td>
@@ -480,9 +532,6 @@ export default function HrLeave() {
                             <div className="text-muted" style={{ fontSize: 11.5 }}>{r.empRole}</div>
                           </div>
                         </div>
-                      </td>
-                      <td>
-                        <span className="onb-id-pill">{r.empCode}</span>
                       </td>
                       <td>
                         <span className="lv-type-pill" style={{ background: tType.bg, color: tType.fg }}>
