@@ -1,5 +1,19 @@
 import type { MenuItem, MenuGroup, UserRole } from './types';
 
+/**
+ * Feature flags — flip these on/off without touching menu or route plumbing.
+ * Lifecycle: keep a feature `false` while it's in build/QA, flip to `true`
+ * when ready to expose to users. The flag controls BOTH the sidebar entry
+ * (filtered in HR_GROUPS below) and the React route (in components/App.tsx).
+ *
+ * When a feature is disabled:
+ *   - Menu item is hidden from the sidebar
+ *   - Direct URL navigation falls back to the dashboard
+ */
+export const FEATURE_FLAGS = {
+  hrAttendance: true,    // HR · Time & Pay · Attendance
+};
+
 export const MASTER_GROUPS: MenuGroup[] = [
   {
     id: 'master.identity',
@@ -141,7 +155,9 @@ export const HR_GROUPS: MenuGroup[] = [
     children: [
       { id: 'hr.payroll',            icon: 'IndianRupee',   label: 'Payroll' },
       { id: 'hr.calculation_master', icon: 'Calculator',    label: 'Calculation Master' },
-      { id: 'hr.attendance',         icon: 'CalendarCheck', label: 'Attendance' },
+      ...(FEATURE_FLAGS.hrAttendance
+        ? [{ id: 'hr.attendance', icon: 'CalendarCheck', label: 'Attendance' } as MenuItem]
+        : []),
       { id: 'hr.leave',              icon: 'CalendarOff',   label: 'Leave' },
       { id: 'hr.expense',            icon: 'Receipt',       label: 'Expense Management' },
     ],
