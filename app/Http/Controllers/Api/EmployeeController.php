@@ -639,7 +639,11 @@ class EmployeeController extends Controller
         $ignoreUserId = null;
         $isUpdate = $employeeId !== null;
         if ($isUpdate) {
-            $ignoreUserId = Employee::where('id', $employeeId)->value('user_id');
+            // withTrashed() — the Edit-from-Onboarding flow can target rows
+            // whose linked employee was soft-deleted; without this the lookup
+            // returns null and the unique check below stops ignoring the
+            // existing user, surfacing "email already taken" on every save.
+            $ignoreUserId = Employee::withTrashed()->where('id', $employeeId)->value('user_id');
         }
 
         // Email rules: required + unique on store; nullable + still-unique on
