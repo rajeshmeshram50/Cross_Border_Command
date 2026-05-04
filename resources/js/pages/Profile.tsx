@@ -78,6 +78,7 @@ export default function Profile() {
 
   const isSuperAdmin = user.user_type === 'super_admin';
   const isBranchUser = user.user_type === 'branch_user';
+  const isEmployee   = user.user_type === 'employee';
 
   const validatePassword = (password: string): string[] => {
     const errors: string[] = [];
@@ -754,8 +755,8 @@ export default function Profile() {
         </Row>
       )}
 
-      {/* ── Branding (tenant users only) ── */}
-      {!isSuperAdmin && (
+      {/* ── Branding (tenant users only; employees excluded) ── */}
+      {!isSuperAdmin && !isEmployee && (
         <Row className="mt-3">
           <Col xs={12}>
             <Card className="mb-0" style={cardStyle}>

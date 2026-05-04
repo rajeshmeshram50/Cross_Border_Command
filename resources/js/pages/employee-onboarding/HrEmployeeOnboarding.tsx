@@ -1,8 +1,11 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
-import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
+import Swal from 'sweetalert2';
+import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
+import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
+import ComingSoonShell from '../../components/ComingSoonShell';
 import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
@@ -173,11 +176,12 @@ const _formatDate = (iso: string | null | undefined): string => {
  *   wizard_step = 0                            → Not Started
  */
 const _mapOnboardStatus = (raw: any): OnboardStatus => {
-  const step = Number(raw?.wizard_step_completed ?? 0);
-  const stat = String(raw?.status ?? '').toLowerCase();
-  if (step >= 4 && stat === 'active') return 'Completed';
-  if (step >= 4) return 'Document Pending';
-  if (step > 0) return 'In Progress';
+  const step  = Number(raw?.wizard_step_completed ?? 0);
+  const macro = Number(raw?.onboarding_stage_completed ?? 0);
+  const stat  = String(raw?.status ?? '').toLowerCase();
+  if (macro >= 6 && stat === 'active') return 'Completed';
+  if (macro >= 6) return 'Document Pending';
+  if (macro > 0 || step > 0) return 'In Progress';
   return 'Not Started';
 };
 
@@ -202,9 +206,19 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     managerName: mgrName,
     managerInitials: _initials(mgrName),
     managerAccent: _accent(mgrName || 'manager'),
-    // Profile % matches the HR list: 4 wizard steps capped at 50% (rest
-    // of profile completion lives outside the wizard).
-    profile: Math.min(50, Math.max(0, Number(e.wizard_step_completed ?? 0) * 12.5)),
+    // Profile % spans all six onboarding macro stages. Stage 1 splits
+    // across its 4 internal wizard steps; stages 2-6 each contribute
+    // one sixth on completion. Same formula as HrEmployees so the two
+    // pages stay in sync.
+    profile: ((): number => {
+      const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
+      const macro = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
+      const stage1 = macro >= 1 ? 1 : step / 4;
+      const others = (macro >= 2 ? 1 : 0) + (macro >= 3 ? 1 : 0)
+                   + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
+                   + (macro >= 6 ? 1 : 0);
+      return Math.round(((stage1 + others) / 6) * 100);
+    })(),
     status: _mapOnboardStatus(e),
     wizardStep: Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0))),
     dbId: e.id,
@@ -1253,110 +1267,122 @@ function VaultModal({
           </div>
         </div>
 
-        {/* KPI strip (fixed, non-scrolling) */}
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--vz-border-color)', flexShrink: 0 }}>
-          <Row className="g-3 align-items-stretch">
-            {[
-              { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
-              { key: 'verified', label: 'Verified',      value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-              { key: 'signed',   label: 'Signed',        value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
-              { key: 'pending',  label: 'Pending',       value: counts.pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-              { key: 'notgen',   label: 'Not Generated', value: counts.notGen,   icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
-            ].map(k => (
-              <Col key={k.key} xl md={4} sm={6} xs={12}>
-                <div className="vault-kpi-card">
-                  <div className="vault-kpi-strip" style={{ background: k.gradient }} />
-                  <div className="d-flex align-items-start justify-content-between">
-                    <div className="min-w-0">
-                      <p className="vault-kpi-label">{k.label}</p>
-                      <h3 className="vault-kpi-num">{k.value.toLocaleString()}</h3>
-                    </div>
-                    <div className="vault-kpi-icon" style={{ background: k.gradient }}>
-                      <i className={k.icon} />
-                    </div>
-                  </div>
-                </div>
-              </Col>
-            ))}
-          </Row>
-        </div>
-
-        {/* Tabs (fixed, non-scrolling) */}
-        <div className="d-flex" style={{ padding: '0 24px', borderBottom: '1px solid var(--vz-border-color)', flexShrink: 0 }}>
-          <button
-            type="button"
-            className={`vault-tab-btn${tab === 'employee' ? ' is-active' : ''}`}
-            onClick={() => onTabChange('employee')}
+        {/* Body — wrapped in ComingSoonShell since the document
+            catalogue, signing flow and download links aren't backed
+            by a real backend yet. The header (with the close button
+            + status ring) stays fully interactive so the user can
+            preview the layout and dismiss the modal. */}
+        <div style={{ padding: '16px 24px 22px', flex: '1 1 auto', overflowY: 'auto', minHeight: 0 }}>
+          <ComingSoonShell
+            title="Evidence Vault"
+            subtitle="Document repository, signed agreements, and ID uploads"
           >
-            <i className="ri-user-line" /> Employee Documents
-            <span className="vault-tab-count">{empCount}</span>
-          </button>
-          <button
-            type="button"
-            className={`vault-tab-btn${tab === 'organizational' ? ' is-active' : ''}`}
-            onClick={() => onTabChange('organizational')}
-          >
-            <i className="ri-building-line" /> Organizational Documents
-            <span className="vault-tab-count">{orgCount}</span>
-          </button>
-        </div>
-
-        {/* Section list — only this region scrolls */}
-        <div style={{ padding: '8px 24px 22px', flex: '1 1 auto', overflowY: 'auto', minHeight: 0 }}>
-          {sections.map(section => (
-            <div key={section.title} style={{ paddingTop: 16 }}>
-              <div className="d-flex align-items-center justify-content-between mb-2">
-                <div>
-                  <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                    {section.title}
-                  </div>
-                  <div className="text-muted" style={{ fontSize: 11.5 }}>
-                    {section.docs.length} document{section.docs.length === 1 ? '' : 's'} in this category
-                  </div>
-                </div>
-                <span
-                  className="d-inline-flex align-items-center"
-                  style={{ padding: '4px 12px', borderRadius: 999, background: '#f5f0ff', color: '#5a3fd1', fontSize: 11.5, fontWeight: 600 }}
-                >
-                  {section.docs.length} docs
-                </span>
-              </div>
-              <div>
-                {section.docs.map(doc => {
-                  const dt = VAULT_STATUS_TONE[doc.status];
-                  return (
-                    <div key={doc.id} className="vault-doc-row flex-wrap">
-                      <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
-                        <i className={doc.icon} />
+            {/* KPI strip */}
+            <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--vz-border-color)' }}>
+              <Row className="g-3 align-items-stretch">
+                {[
+                  { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+                  { key: 'verified', label: 'Verified',      value: counts.verified, icon: 'ri-checkbox-circle-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+                  { key: 'signed',   label: 'Signed',        value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
+                  { key: 'pending',  label: 'Pending',       value: counts.pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
+                  { key: 'notgen',   label: 'Not Generated', value: counts.notGen,   icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+                ].map(k => (
+                  <Col key={k.key} xl md={4} sm={6} xs={12}>
+                    <div className="vault-kpi-card">
+                      <div className="vault-kpi-strip" style={{ background: k.gradient }} />
+                      <div className="d-flex align-items-start justify-content-between">
+                        <div className="min-w-0">
+                          <p className="vault-kpi-label">{k.label}</p>
+                          <h3 className="vault-kpi-num">{k.value.toLocaleString()}</h3>
+                        </div>
+                        <div className="vault-kpi-icon" style={{ background: k.gradient }}>
+                          <i className={k.icon} />
+                        </div>
                       </div>
-                      <div className="vault-doc-meta">
-                        <div className="vault-doc-name">{doc.name}</div>
-                        <div className="vault-doc-desc">{doc.desc}</div>
-                      </div>
-                      {doc.category && (
-                        <span
-                          className="d-inline-flex align-items-center"
-                          style={{ padding: '4px 10px', borderRadius: 999, background: '#eef2f6', color: '#475569', fontSize: 11, fontWeight: 600 }}
-                        >
-                          {doc.category}
-                        </span>
-                      )}
-                      <span className="vault-status-pill" style={{ background: dt.bg, color: dt.fg }}>
-                        <span className="vault-status-dot" style={{ background: dt.dot }} />
-                        {doc.status}
-                      </span>
-                      <button type="button" className="vault-action-view">
-                        <i className="ri-eye-line" /> View
-                      </button>
-                      <button type="button" className="vault-action-download">
-                        <i className="ri-download-2-line" /> Download
-                      </button>
                     </div>
-                  );
-                })}
-              </div>
+                  </Col>
+                ))}
+              </Row>
             </div>
-          ))}
+
+            {/* Tabs */}
+            <div className="d-flex" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+              <button
+                type="button"
+                className={`vault-tab-btn${tab === 'employee' ? ' is-active' : ''}`}
+                onClick={() => onTabChange('employee')}
+              >
+                <i className="ri-user-line" /> Employee Documents
+                <span className="vault-tab-count">{empCount}</span>
+              </button>
+              <button
+                type="button"
+                className={`vault-tab-btn${tab === 'organizational' ? ' is-active' : ''}`}
+                onClick={() => onTabChange('organizational')}
+              >
+                <i className="ri-building-line" /> Organizational Documents
+                <span className="vault-tab-count">{orgCount}</span>
+              </button>
+            </div>
+
+            {/* Section list */}
+            <div>
+              {sections.map(section => (
+                <div key={section.title} style={{ paddingTop: 16 }}>
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div>
+                      <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                        {section.title}
+                      </div>
+                      <div className="text-muted" style={{ fontSize: 11.5 }}>
+                        {section.docs.length} document{section.docs.length === 1 ? '' : 's'} in this category
+                      </div>
+                    </div>
+                    <span
+                      className="d-inline-flex align-items-center"
+                      style={{ padding: '4px 12px', borderRadius: 999, background: '#f5f0ff', color: '#5a3fd1', fontSize: 11.5, fontWeight: 600 }}
+                    >
+                      {section.docs.length} docs
+                    </span>
+                  </div>
+                  <div>
+                    {section.docs.map(doc => {
+                      const dt = VAULT_STATUS_TONE[doc.status];
+                      return (
+                        <div key={doc.id} className="vault-doc-row flex-wrap">
+                          <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
+                            <i className={doc.icon} />
+                          </div>
+                          <div className="vault-doc-meta">
+                            <div className="vault-doc-name">{doc.name}</div>
+                            <div className="vault-doc-desc">{doc.desc}</div>
+                          </div>
+                          {doc.category && (
+                            <span
+                              className="d-inline-flex align-items-center"
+                              style={{ padding: '4px 10px', borderRadius: 999, background: '#eef2f6', color: '#475569', fontSize: 11, fontWeight: 600 }}
+                            >
+                              {doc.category}
+                            </span>
+                          )}
+                          <span className="vault-status-pill" style={{ background: dt.bg, color: dt.fg }}>
+                            <span className="vault-status-dot" style={{ background: dt.dot }} />
+                            {doc.status}
+                          </span>
+                          <button type="button" className="vault-action-view">
+                            <i className="ri-eye-line" /> View
+                          </button>
+                          <button type="button" className="vault-action-download">
+                            <i className="ri-download-2-line" /> Download
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ComingSoonShell>
         </div>
       </ModalBody>
     </Modal>
@@ -1661,6 +1687,28 @@ function InitiateOnboardingModal({
   const roleOpts        = mRoles.map(r => ({ value: String(r.id), label: r.name }));
   const legalEntityOpts = mLegalEntities.map(le => ({ value: String(le.id), label: le.entity_name }));
 
+  // ── Asset pickers (Step 3) ─────────────────────────────────────────
+  // Three independent lists — Laptop / Mobile / Other. We fetch the
+  // available pool from the server so devices already booked by other
+  // employees stay out, but the asset currently on THIS employee's
+  // row (exclude_employee_id=...) remains visible so the admin can
+  // keep their selection on edit.
+  type AssetOpt = { value: string; label: string };
+  const [laptopAssets, setLaptopAssets] = useState<AssetOpt[]>([]);
+  const [mobileAssets, setMobileAssets] = useState<AssetOpt[]>([]);
+  const [otherAssets, setOtherAssets]   = useState<AssetOpt[]>([]);
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) return;
+    let cancelled = false;
+    const url = (cat: string) => `/employees/available-assets?category=${cat}&exclude_employee_id=${emp.dbId}`;
+    Promise.allSettled([
+      api.get(url('laptop')).then(r => { if (!cancelled) setLaptopAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
+      api.get(url('mobile')).then(r => { if (!cancelled) setMobileAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
+      api.get(url('other')) .then(r => { if (!cancelled) setOtherAssets ((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
+    ]);
+    return () => { cancelled = true; };
+  }, [isOpen, emp?.dbId]);
+
   // ── Stage 1 form state — every field that maps to a column on
   //    /api/employees lives here. Hydrated from `emp.raw` whenever the
   //    modal opens for a new employee so the inputs always reflect what
@@ -1694,7 +1742,21 @@ function InitiateOnboardingModal({
     leave_plan: '', holiday_list: '', shift: '', weekly_off: '',
     attendance_number: '', time_tracking: '', penalization_policy: '',
     overtime: '', expense_policy: '',
+    // Legacy free-text asset fields kept for backwards-compat hydration
+    // only — UI now drives the FK columns below.
     laptop_assigned: '', laptop_asset_id: '', mobile_device: '', other_assets: '',
+    // Stage 1 Step 3 — asset FK assignments. `laptop_master_asset_id` /
+    // `mobile_master_asset_id` are single ids (string for select binding),
+    // `other_master_asset_ids` is an array of ids. `mobile_assigned`
+    // mirrors `laptop_assigned` so we can show/hide the picker.
+    laptop_master_asset_id: '',
+    mobile_assigned: '',
+    mobile_master_asset_id: '',
+    other_master_asset_ids: [] as string[],
+    // Stage 3 — Physical Setup & Identification.
+    biometric_status:    'Not Registered',
+    desk_workstation_no: '',
+    id_card_status:      'Not Printed',
     attendance_tracking: true,
 
     enable_payroll: true,
@@ -1742,6 +1804,17 @@ function InitiateOnboardingModal({
       laptop_asset_id:     String(x.laptop_asset_id     ?? ''),
       mobile_device:       String(x.mobile_device       ?? ''),
       other_assets:        String(x.other_assets        ?? ''),
+      laptop_master_asset_id: x.laptop_master_asset_id ? String(x.laptop_master_asset_id) : '',
+      // No legacy free-text "Mobile Assigned" column — derive Yes/No
+      // from whether a mobile asset is currently selected.
+      mobile_assigned:     x.mobile_master_asset_id ? 'Yes' : (x.mobile_device ? 'Yes' : ''),
+      mobile_master_asset_id: x.mobile_master_asset_id ? String(x.mobile_master_asset_id) : '',
+      other_master_asset_ids: Array.isArray(x.other_master_asset_ids)
+        ? x.other_master_asset_ids.map((n: any) => String(n))
+        : [],
+      biometric_status:    String(x.biometric_status    ?? 'Not Registered'),
+      desk_workstation_no: String(x.desk_workstation_no ?? ''),
+      id_card_status:      String(x.id_card_status      ?? 'Not Printed'),
       attendance_tracking: x.attendance_tracking !== undefined ? !!x.attendance_tracking : true,
 
       enable_payroll: x.enable_payroll !== undefined ? !!x.enable_payroll : true,
@@ -1796,9 +1869,18 @@ function InitiateOnboardingModal({
       last_name:   s1.last_name.trim()   || null,
       email:       s1.email.trim()       || null,
       mobile:      s1.mobile.trim()      || null,
+      // Asset FK assignments. Skip the laptop / mobile FK when the
+      // Yes/No flag is "No" so an explicit unassign actually clears it.
+      laptop_master_asset_id: s1.laptop_assigned === 'Yes' ? intOrNull(s1.laptop_master_asset_id) : null,
+      mobile_master_asset_id: s1.mobile_assigned === 'Yes' ? intOrNull(s1.mobile_master_asset_id) : null,
+      other_master_asset_ids: s1.other_master_asset_ids
+        .map(v => parseInt(v, 10))
+        .filter(n => Number.isFinite(n)),
     };
     // Strip the composite picker key — backend doesn't know about it.
     delete payload.reporting_manager;
+    // The Mobile Yes/No toggle is a UI helper; backend has no column.
+    delete payload.mobile_assigned;
     if (markComplete) payload.wizard_step_completed = 4;
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
@@ -1809,6 +1891,122 @@ function InitiateOnboardingModal({
     } finally {
       setS1Saving(false);
     }
+  };
+
+  // ── Stage 2 — document state lifted to the modal scope ──────────────
+  // MUST run on every render (not after the `if (!emp) return null` early
+  // exit below). Hooks have to be in the same order across renders or
+  // React fires the "change in the order of Hooks" warning we hit when
+  // emp went from null → populated.
+  const [stage2Docs, setStage2Docs] = useState<{ document_key: string; status: string }[]>([]);
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) return;
+    let cancelled = false;
+    api.get(`/employees/${emp.dbId}/documents`)
+      .then(r => { if (!cancelled) setStage2Docs(Array.isArray(r.data) ? r.data : []); })
+      .catch(() => { if (!cancelled) setStage2Docs([]); });
+    return () => { cancelled = true; };
+  }, [isOpen, emp?.dbId]);
+
+  // ── Stage 4 — Payroll & Finance Setup state (lifted to modal so the
+  //    sidebar progress + footer gating + Save Draft button can read it).
+  const [s4Saving, setS4Saving] = useState(false);
+  const [s4, setS4] = useState({
+    salary_payment_mode: 'bank' as 'bank' | 'cheque' | 'cash',
+    bank_name: '',
+    bank_account_number: '',
+    ifsc_code: '',
+    account_holder_name: '',
+    bank_branch: '',
+    bank_account_type: 'Salary',
+    uan_number: '',
+    pan_number: '',
+    tax_regime: '',
+    pf_deduction: '',
+    esi_applicable: 'No',
+    gratuity_nominee_name: '',
+    agreed_ctc_lpa: '',
+  });
+  // Hydrate s4 whenever a different employee opens. Like s1 we always
+  // re-seed on (isOpen, emp.id) so navigating between employees never
+  // shows stale finance details.
+  useEffect(() => {
+    if (!isOpen || !emp?.raw) return;
+    const x = emp.raw;
+    const mode = String(x.salary_payment_mode ?? 'bank').toLowerCase();
+    setS4({
+      salary_payment_mode: (mode === 'cheque' || mode === 'cash') ? mode as any : 'bank',
+      bank_name:           String(x.bank_name           ?? ''),
+      bank_account_number: String(x.bank_account_number ?? ''),
+      ifsc_code:           String(x.ifsc_code           ?? ''),
+      account_holder_name: String(x.account_holder_name ?? ''),
+      bank_branch:         String(x.bank_branch         ?? ''),
+      bank_account_type:   String(x.bank_account_type   ?? 'Salary'),
+      uan_number:          String(x.uan_number          ?? ''),
+      pan_number:          String(x.pan_number          ?? ''),
+      tax_regime:          String(x.tax_regime          ?? ''),
+      pf_deduction:        String(x.pf_deduction        ?? ''),
+      esi_applicable:      String(x.esi_applicable      ?? 'No'),
+      gratuity_nominee_name: String(x.gratuity_nominee_name ?? ''),
+      agreed_ctc_lpa:      x.agreed_ctc_lpa != null ? String(x.agreed_ctc_lpa) : '',
+    });
+  }, [isOpen, emp?.id, emp?.raw]);
+
+  /** PUT s4 fields back to the employee row. `markComplete` stamps
+   *  `stage4_completed_at` so the sidebar marks Stage 4 done and Next
+   *  Stage gets unblocked. We never clear the timestamp from here — once
+   *  Stage 4 is complete, edits keep the row marked complete (matches
+   *  the wizard_step_completed high-watermark behaviour). */
+  const saveStage4 = async (markComplete: boolean): Promise<boolean> => {
+    if (!emp?.dbId || s4Saving) return false;
+    setS4Saving(true);
+    const trimOrNull = (v: string) => {
+      const t = (v ?? '').trim();
+      return t === '' ? null : t;
+    };
+    const payload: Record<string, any> = {
+      salary_payment_mode: s4.salary_payment_mode,
+      bank_name:           trimOrNull(s4.bank_name),
+      bank_account_number: trimOrNull(s4.bank_account_number),
+      ifsc_code:           s4.ifsc_code.trim() ? s4.ifsc_code.trim().toUpperCase() : null,
+      account_holder_name: trimOrNull(s4.account_holder_name),
+      bank_branch:         trimOrNull(s4.bank_branch),
+      bank_account_type:   trimOrNull(s4.bank_account_type),
+      uan_number:          trimOrNull(s4.uan_number),
+      pan_number:          s4.pan_number.trim() ? s4.pan_number.trim().toUpperCase() : null,
+      tax_regime:          trimOrNull(s4.tax_regime),
+      pf_deduction:        trimOrNull(s4.pf_deduction),
+      esi_applicable:      trimOrNull(s4.esi_applicable),
+      gratuity_nominee_name: trimOrNull(s4.gratuity_nominee_name),
+      agreed_ctc_lpa:      s4.agreed_ctc_lpa === '' ? null : Number(s4.agreed_ctc_lpa),
+    };
+    if (markComplete) {
+      payload.stage4_completed_at = new Date().toISOString();
+      // Bump the macro-stage watermark so profile% reflects Stage 4.
+      payload.onboarding_stage_completed = 4;
+    }
+    try {
+      await api.put(`/employees/${emp.dbId}`, payload);
+      onSaved?.();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setS4Saving(false);
+    }
+  };
+
+  /** Lightweight PUT used when the user clicks Next Stage on a macro
+   *  stage we don't have dedicated form state for yet (Stage 2/3/5/6).
+   *  Bumps the macro watermark so profile% climbs as the user advances. */
+  const bumpMacroStage = async (n: number) => {
+    if (!emp?.dbId) return;
+    const current = Number(emp.raw?.onboarding_stage_completed ?? 0);
+    if (n <= current) return;
+    try {
+      await api.put(`/employees/${emp.dbId}`, { onboarding_stage_completed: n });
+      onSaved?.();
+    } catch { /* keep modal open; user can retry */ }
   };
 
   if (!emp) return null;
@@ -1830,12 +2028,83 @@ function InitiateOnboardingModal({
   const stage1Pct = wizardStep * 25;
   const stage1Done = wizardStep >= 4;
 
+  // Stage 2 progress is anchored to the document upload count. Counts
+  // BOTH catalogue docs (Aadhaar, PAN, …) AND per-company docs (one set
+  // of 4 per persisted previous-employment row). Required-only — Optional
+  // catalogue rows are excluded from `total` so an "Optional" never
+  // permanently caps the percentage below 100%.
+  const stage2RequiredCatalogueKeys = STAGE2_CATEGORIES.flatMap(cat =>
+    cat.docs.filter(d => d.status !== 'Optional').map(d => d.id),
+  );
+  // Per-company doc keys live under prev_<id>_<key>. We pull the unique
+  // company ids straight from the document rows themselves so the modal
+  // doesn't need its own copy of `prevCompanies` here.
+  const stage2PerCompanyIds = Array.from(new Set(
+    stage2Docs
+      .map(d => d.document_key.match(/^prev_(\d+)_/)?.[1])
+      .filter((x): x is string => !!x),
+  ));
+  const stage2RequiredCompanyKeys = stage2PerCompanyIds.flatMap(id =>
+    STAGE2_COMPANY_DOCS
+      .filter(d => d.status !== 'Optional')
+      .map(d => `prev_${id}_${d.id}`),
+  );
+  const stage2AllKeys = [...stage2RequiredCatalogueKeys, ...stage2RequiredCompanyKeys];
+  const stage2Total = stage2AllKeys.length;
+  const stage2Uploaded = stage2AllKeys.filter(k => {
+    const s = stage2Docs.find(d => d.document_key === k)?.status;
+    return s === 'uploaded' || s === 'verified';
+  }).length;
+  const stage2Pct = stage2Total ? Math.round((stage2Uploaded / stage2Total) * 100) : 0;
+  const stage2Done = stage2Total > 0 && stage2Uploaded >= stage2Total;
+
+  // Stage 4 readiness — same shape as the four checks rendered inside
+  // `Stage4Payroll`, derived from the live s4 form state. Bank check
+  // auto-passes for cheque/cash since no account is needed.
+  const PAN_RE  = /^[A-Z]{5}[0-9]{4}[A-Z]$/i;
+  const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/i;
+  const UAN_RE  = /^\d{12}$/;
+  const stage4BankOk =
+    s4.salary_payment_mode !== 'bank' || (
+      !!s4.bank_name.trim() &&
+      !!s4.bank_account_number.trim() &&
+      IFSC_RE.test(s4.ifsc_code.trim()) &&
+      !!s4.account_holder_name.trim() &&
+      !!s4.bank_branch.trim()
+    );
+  const stage4PanOk = PAN_RE.test(s4.pan_number.trim());
+  const stage4UanOk = !s4.uan_number.trim() || UAN_RE.test(s4.uan_number.trim());
+  // Salary structure check passes once Stage 4's Agreed CTC is set. We
+  // don't couple this to Stage 1's annual_salary — admins often record
+  // a negotiated CTC at Stage 4 that's distinct from the wizard's
+  // initial salary input, and gating on both made the pill stay
+  // Pending after a clean fill.
+  const stage4SalaryOk = Number(s4.agreed_ctc_lpa) > 0;
+  const stage4PfOk = !!s4.pf_deduction.trim();
+  const stage4Checks = [stage4BankOk, stage4PanOk, stage4SalaryOk, stage4PfOk];
+  const stage4Pass   = stage4Checks.filter(Boolean).length;
+  const stage4Total4 = stage4Checks.length;
+  // Stage 4 is locked done once the row has been stamped. We *also* allow
+  // an in-session completion when all four checks pass + UAN format is
+  // valid, so the progress meter updates immediately after Save Draft.
+  const stage4Stamped = !!emp?.raw?.stage4_completed_at;
+  const stage4Done    = stage4Stamped || (stage4Pass === stage4Total4 && stage4UanOk);
+  const stage4Pct     = stage4Stamped ? 100 : Math.round((stage4Pass / stage4Total4) * 100);
+
   const stagesView = ONB_STAGES.map(s => {
     let status: StageStatus, progress: number;
     if (s.num === 1) {
       // Anchored to real wizard state — completion can't roll back.
       progress = stage1Pct;
       status   = stage1Done ? 'Completed' : (wizardStep > 0 ? 'In Progress' : 'Pending');
+    } else if (s.num === 2) {
+      // Anchored to real document upload state.
+      progress = stage2Pct;
+      status   = stage2Done ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
+    } else if (s.num === 4) {
+      // Anchored to live Stage 4 readiness checks + persisted stamp.
+      progress = stage4Pct;
+      status   = stage4Done ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
     } else if (s.num < activeStage)      { status = 'Completed';   progress = 100; }
     else if (s.num === activeStage) { status = 'In Progress'; progress = s.progress || 35; }
     else                           { status = 'Pending';     progress = 0;   }
@@ -1977,9 +2246,31 @@ function InitiateOnboardingModal({
               </>
             )}
 
-            {activeStage === 2 && <Stage2Documents />}
-            {activeStage === 3 && <Stage3Provisioning emp={emp} />}
-            {activeStage === 4 && <Stage4Payroll />}
+            {activeStage === 2 && (
+              <Stage2Documents
+                emp={emp}
+                onDocsChanged={(rows) => setStage2Docs(rows)}
+              />
+            )}
+            {activeStage === 3 && (
+              <Stage3Provisioning
+                emp={emp}
+                s1={s1}
+                setS1={setS1}
+                laptopAssets={laptopAssets}
+                mobileAssets={mobileAssets}
+                otherAssets={otherAssets}
+              />
+            )}
+            {activeStage === 4 && (
+              <Stage4Payroll
+                s4={s4}
+                setS4={setS4}
+                checks={{ bank: stage4BankOk, pan: stage4PanOk, salary: stage4SalaryOk, pf: stage4PfOk }}
+                pass={stage4Pass}
+                total={stage4Total4}
+              />
+            )}
             {activeStage === 5 && <Stage5Policies />}
             {activeStage === 6 && <Stage6Verify emp={emp} />}
 
@@ -2119,15 +2410,15 @@ function InitiateOnboardingModal({
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan</label><MasterSelect options={ONB_LEAVE_PLAN} defaultValue="Leave Policy" /></Col>
-                  <Col md={4}><label className="onb-init-label">Holiday List</label><MasterSelect options={ONB_HOLIDAY} defaultValue="Holiday Calendar" /></Col>
-                  <Col md={4}><label className="onb-init-label">Shift</label><MasterSelect options={ONB_SHIFT} defaultValue="General Shift" /></Col>
-                  <Col md={4}><label className="onb-init-label">Weekly Off</label><MasterSelect options={ONB_WEEKLY_OFF} defaultValue="Week Off Policy" /></Col>
-                  <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" /></Col>
-                  <Col md={4}><label className="onb-init-label">Time Tracking Policy</label><MasterSelect options={ONB_TIME_TRACK} defaultValue="Attendance Capture" /></Col>
-                  <Col md={4}><label className="onb-init-label">Penalization Policy</label><MasterSelect options={ONB_PENALIZE} defaultValue="Tracking Policy" /></Col>
-                  <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} defaultValue="Not applicable" /></Col>
-                  <Col md={4}><label className="onb-init-label">Expense Policy</label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan</label><MasterSelect options={ONB_LEAVE_PLAN} value={s1.leave_plan || 'Leave Policy'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Holiday List</label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list || 'Holiday Calendar'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Shift</label><MasterSelect options={ONB_SHIFT} value={s1.shift || 'General Shift'} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Weekly Off</label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off || 'Week Off Policy'} onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Time Tracking Policy</label><MasterSelect options={ONB_TIME_TRACK} value={s1.time_tracking || 'Attendance Capture'} onChange={(v) => setS1(p => ({ ...p, time_tracking: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Penalization Policy</label><MasterSelect options={ONB_PENALIZE} value={s1.penalization_policy || 'Tracking Policy'} onChange={(v) => setS1(p => ({ ...p, penalization_policy: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} value={s1.overtime || 'Not applicable'} onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Expense Policy</label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} onChange={(v) => setS1(p => ({ ...p, expense_policy: v }))} /></Col>
                 </Row>
 
                 <div
@@ -2144,10 +2435,77 @@ function InitiateOnboardingModal({
 
                 <p className="onb-init-subgroup">Assets &amp; Security</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Laptop Assigned</label><MasterSelect options={ONB_YES_NO} defaultValue="No" /></Col>
-                  <Col md={4}><label className="onb-init-label">Laptop Asset ID</label><input className="onb-init-input" placeholder="e.g. LAP-0042" /></Col>
-                  <Col md={4}><label className="onb-init-label">Mobile Device</label><input className="onb-init-input" placeholder="e.g. iPhone 15" /></Col>
-                  <Col md={4}><label className="onb-init-label">Other Assets</label><input className="onb-init-input" placeholder="Monitor, Keyboard..." /></Col>
+                  {/* Laptop — Yes/No flag + (when Yes) device picker.
+                      The picker label shows "Serial Number — Asset Name"
+                      and only lists devices not already issued to another
+                      employee. */}
+                  <Col md={4}>
+                    <label className="onb-init-label">Laptop Assigned</label>
+                    <MasterSelect
+                      options={ONB_YES_NO}
+                      value={s1.laptop_assigned || 'No'}
+                      onChange={(v) => setS1(p => ({
+                        ...p,
+                        laptop_assigned: v,
+                        // Drop the FK when the admin flips back to No.
+                        laptop_master_asset_id: v === 'Yes' ? p.laptop_master_asset_id : '',
+                      }))}
+                    />
+                  </Col>
+                  {s1.laptop_assigned === 'Yes' && (
+                    <Col md={4}>
+                      <label className="onb-init-label">Laptop Device</label>
+                      <MasterSelect
+                        options={laptopAssets}
+                        placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
+                        value={s1.laptop_master_asset_id}
+                        onChange={(v) => setS1(p => ({ ...p, laptop_master_asset_id: v }))}
+                        disabled={laptopAssets.length === 0}
+                      />
+                    </Col>
+                  )}
+
+                  {/* Mobile — same Yes/No + picker pattern. */}
+                  <Col md={4}>
+                    <label className="onb-init-label">Mobile Assigned</label>
+                    <MasterSelect
+                      options={ONB_YES_NO}
+                      value={s1.mobile_assigned || 'No'}
+                      onChange={(v) => setS1(p => ({
+                        ...p,
+                        mobile_assigned: v,
+                        mobile_master_asset_id: v === 'Yes' ? p.mobile_master_asset_id : '',
+                      }))}
+                    />
+                  </Col>
+                  {s1.mobile_assigned === 'Yes' && (
+                    <Col md={4}>
+                      <label className="onb-init-label">Mobile Device</label>
+                      <MasterSelect
+                        options={mobileAssets}
+                        placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
+                        value={s1.mobile_master_asset_id}
+                        onChange={(v) => setS1(p => ({ ...p, mobile_master_asset_id: v }))}
+                        disabled={mobileAssets.length === 0}
+                      />
+                    </Col>
+                  )}
+
+                  {/* Other Assets — multi-select, optional. Lists every
+                      master asset NOT in the Laptop / Mobile system
+                      categories and not already booked by another
+                      employee. */}
+                  <Col md={8}>
+                    <label className="onb-init-label">Other Assets</label>
+                    <MasterMultiSelect
+                      options={otherAssets}
+                      placeholder={otherAssets.length === 0 ? 'No other assets available' : 'Pick one or more (optional)'}
+                      value={s1.other_master_asset_ids}
+                      onChange={(vs) => setS1(p => ({ ...p, other_master_asset_ids: vs }))}
+                      disabled={otherAssets.length === 0}
+                    />
+                  </Col>
+
                   <Col md={4}><label className="onb-init-label">Access Card</label><MasterSelect options={ONB_ACCESS_CARD} defaultValue="Not Issued" /></Col>
                   <Col md={4}><label className="onb-init-label">Desk / Workstation</label><input className="onb-init-input" placeholder="e.g. A-12" /></Col>
                 </Row>
@@ -2179,18 +2537,56 @@ function InitiateOnboardingModal({
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Pay Group</label><MasterSelect options={ONB_PAY_GROUP} defaultValue="Default pay group" /></Col>
-                  <Col md={4}><label className="onb-init-label">Annual Salary <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="Enter amount" /></Col>
-                  <Col md={4}><label className="onb-init-label">Period</label><MasterSelect options={ONB_PERIOD} defaultValue="Per annum" /></Col>
-                  <Col md={4}><label className="onb-init-label">Salary Effective From <span className="req">*</span></label><MasterDatePicker placeholder="Select effective date" /></Col>
-                  <Col md={4}><label className="onb-init-label">Salary Structure Type</label><MasterSelect options={ONB_SAL_STRUCT} defaultValue="Range Based" /></Col>
-                  <Col md={4}><label className="onb-init-label">Tax Regime</label><MasterSelect options={ONB_TAX_REGIME} defaultValue="New Regime (115BAC)" /></Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Pay Group</label>
+                    <MasterSelect options={ONB_PAY_GROUP} value={s1.pay_group || 'Default pay group'} onChange={(v) => setS1(p => ({ ...p, pay_group: v }))} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Annual Salary <span className="req">*</span></label>
+                    <input
+                      className="onb-init-input is-required"
+                      placeholder="Enter amount"
+                      inputMode="decimal"
+                      value={s1.annual_salary}
+                      onChange={e => setS1(p => ({ ...p, annual_salary: e.target.value.replace(/[^0-9.]/g, '') }))}
+                    />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Period</label>
+                    <MasterSelect options={ONB_PERIOD} value={s1.salary_frequency || 'Per annum'} onChange={(v) => setS1(p => ({ ...p, salary_frequency: v }))} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Salary Effective From <span className="req">*</span></label>
+                    <MasterDatePicker placeholder="Select effective date" value={s1.salary_effective_from} onChange={(v) => setS1(p => ({ ...p, salary_effective_from: v }))} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Salary Structure Type</label>
+                    <MasterSelect options={ONB_SAL_STRUCT} value={s1.salary_structure || 'Range Based'} onChange={(v) => setS1(p => ({ ...p, salary_structure: v }))} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Tax Regime</label>
+                    <MasterSelect options={ONB_TAX_REGIME} value={s1.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS1(p => ({ ...p, tax_regime: v }))} />
+                  </Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Bonus, Perks &amp; Statutory</p>
                 <div className="onb-init-check-row">
-                  <label className="onb-init-check"><input type="checkbox" /> Bonus included in annual salary</label>
-                  <label className="onb-init-check"><input type="checkbox" /> Provident Fund (PF) Eligible</label>
+                  <label className="onb-init-check">
+                    <input
+                      type="checkbox"
+                      checked={s1.bonus_in_annual}
+                      onChange={e => setS1(p => ({ ...p, bonus_in_annual: e.target.checked }))}
+                    />
+                    {' '}Bonus included in annual salary
+                  </label>
+                  <label className="onb-init-check">
+                    <input
+                      type="checkbox"
+                      checked={s1.pf_eligible}
+                      onChange={e => setS1(p => ({ ...p, pf_eligible: e.target.checked }))}
+                    />
+                    {' '}Provident Fund (PF) Eligible
+                  </label>
                 </div>
                 <div>
                   <button type="button" className="onb-init-add-btn">+ Add Bonus</button>
@@ -2275,38 +2671,115 @@ function InitiateOnboardingModal({
           <span className="onb-init-footer-meta">
             <i className="ri-information-line" />
             Stage {activeStage} of 6 — {ONB_STAGES[activeStage - 1].stage}
+            {activeStage === 2 && (
+              <span style={{ marginLeft: 10, fontSize: 11.5, color: stage2Done ? '#0a8a78' : '#a4661c' }}>
+                · {stage2Uploaded}/{stage2Total} required documents {stage2Done ? '✓' : ''}
+              </span>
+            )}
+            {activeStage === 4 && (
+              <span style={{ marginLeft: 10, fontSize: 11.5, color: stage4Done ? '#0a8a78' : '#a4661c' }}>
+                · {stage4Pass}/{stage4Total4} readiness checks {stage4Done ? '✓' : ''}
+              </span>
+            )}
           </span>
           <div className="d-flex align-items-center gap-2">
             <button type="button" className="onb-init-btn-ghost" onClick={() => setActiveStage(Math.max(1, activeStage - 1))}>
               <i className="ri-arrow-left-s-line" /> Previous
             </button>
-            {/* Save Draft — only Stage 1 has bound state today, so the
-                button only writes when the user is on that stage. Marks
-                the wizard fully complete (step 4) so the row's profile %
-                + status pill catch up. */}
+            {/* Save Draft — Stage 1 saves the wizard payload + bumps
+                wizard_step_completed to 4. Stage 4 saves the finance
+                payload + stamps stage4_completed_at when all readiness
+                checks pass. Other stages have no bound state yet, so
+                the button is disabled there. */}
             <button
               type="button"
               className="onb-init-btn-outline"
-              disabled={s1Saving || activeStage !== 1}
-              onClick={() => saveStage1(true)}
+              disabled={
+                (activeStage === 1 && s1Saving) ||
+                (activeStage === 3 && s1Saving) ||
+                (activeStage === 4 && s4Saving) ||
+                (activeStage !== 1 && activeStage !== 3 && activeStage !== 4)
+              }
+              onClick={() => {
+                if (activeStage === 1) return saveStage1(true);
+                // Stage 3 saves the asset edits too (no wizard bump).
+                if (activeStage === 3) return saveStage1(false);
+                if (activeStage === 4) return saveStage4(stage4Pass === stage4Total4);
+              }}
             >
-              {s1Saving ? 'Saving…' : 'Save Draft'}
+              {activeStage === 1 ? (s1Saving ? 'Saving…' : 'Save Draft')
+                : activeStage === 3 ? (s1Saving ? 'Saving…' : 'Save Draft')
+                : activeStage === 4 ? (s4Saving ? 'Saving…' : 'Save Draft')
+                : 'Save Draft'}
             </button>
             {activeStage < 6 ? (
               <button
                 type="button"
                 className="onb-init-btn-next"
+                disabled={
+                  (activeStage === 2 && !stage2Done) ||
+                  (activeStage === 4 && !stage4Done) ||
+                  (activeStage === 4 && s4Saving)
+                }
+                title={
+                  activeStage === 2 && !stage2Done
+                    ? `Upload all required documents (${stage2Uploaded}/${stage2Total}) to proceed`
+                    : activeStage === 4 && !stage4Done
+                    ? `Complete all readiness checks (${stage4Pass}/${stage4Total4}) to proceed`
+                    : undefined
+                }
+                style={
+                  ((activeStage === 2 && !stage2Done) || (activeStage === 4 && !stage4Done))
+                    ? { opacity: 0.55, cursor: 'not-allowed' }
+                    : undefined
+                }
                 onClick={async () => {
-                  // On Stage 1, persist edits before advancing so what the
-                  // user sees on Stage 2+ stays in sync with the server.
+                  // Stage 1: persist edits before advancing. saveStage1
+                  // bumps wizard_step_completed=4; the controller then
+                  // auto-bumps the macro stage to ≥1.
                   if (activeStage === 1) await saveStage1(true);
-                  setActiveStage(activeStage + 1);
+                  // Stage 2: gate on required-document completion + bump
+                  // the macro watermark to 2.
+                  if (activeStage === 2) {
+                    if (!stage2Done) return;
+                    await bumpMacroStage(2);
+                  }
+                  // Stage 3: persist any asset-allocation edits (the
+                  // Device & Asset section binds straight to s1) and
+                  // then bump the macro watermark. saveStage1(false)
+                  // skips the wizard_step_completed bump so reopening
+                  // the modal still shows Stage 1 as fully done.
+                  if (activeStage === 3) {
+                    await saveStage1(false);
+                    await bumpMacroStage(3);
+                  }
+                  // Stage 4: gate on readiness checks + persist with the
+                  // completion stamp before advancing. saveStage4 also
+                  // bumps macro stage to 4.
+                  if (activeStage === 4) {
+                    if (!stage4Done) return;
+                    const ok = await saveStage4(true);
+                    if (!ok) return;
+                  }
+                  // Stage 5: provisional macro bump.
+                  if (activeStage === 5) {
+                    await bumpMacroStage(5);
+                  }
+                  setActiveStage((activeStage + 1) as typeof activeStage);
                 }}
               >
                 Next Stage <i className="ri-arrow-right-s-line" />
               </button>
             ) : (
-              <button type="button" className="onb-init-btn-complete" onClick={onClose}>
+              <button
+                type="button"
+                className="onb-init-btn-complete"
+                onClick={async () => {
+                  // Stamp the macro stage at 6 so profile% hits 100%.
+                  await bumpMacroStage(6);
+                  onClose();
+                }}
+              >
                 <i className="ri-checkbox-circle-line" /> Complete Onboarding
               </button>
             )}
@@ -2318,18 +2791,316 @@ function InitiateOnboardingModal({
 }
 
 // ── Stage 2 — Document Management view (used inside InitiateOnboardingModal)
-function Stage2Documents() {
-  const [prevCompanies, setPrevCompanies] = useState<PrevCompany[]>(() => [makePrevCompany()]);
+/** Server-side document row returned by /api/employees/{id}/documents. */
+interface ApiDocument {
+  id: number;
+  document_key: string;
+  status: 'pending' | 'uploaded' | 'verified' | 'rejected';
+  original_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  rejection_reason: string | null;
+  uploaded_at: string | null;
+  verified_at: string | null;
+  uploader: { id: number; name: string } | null;
+  verifier: { id: number; name: string } | null;
+  url: string | null;
+}
 
-  const addCompany = () => setPrevCompanies(prev => [...prev, makePrevCompany()]);
-  const removeCompany = (id: string) =>
-    setPrevCompanies(prev => (prev.length > 1 ? prev.filter(c => c.id !== id) : prev));
-  const updateCompany = (id: string, patch: Partial<PrevCompany>) =>
-    setPrevCompanies(prev => prev.map(c => (c.id === id ? { ...c, ...patch } : c)));
+/** Map server status → existing UI pill tone key (case difference + Optional fallback). */
+const _serverStatusToUi = (s: string): DocStatus => {
+  switch (s) {
+    case 'verified': return 'Verified';
+    case 'uploaded': return 'Uploaded';
+    case 'rejected': return 'Rejected';
+    default:         return 'Pending';
+  }
+};
 
-  const totalDocs = STAGE2_CATEGORIES.reduce((a, c) => a + c.docs.length, 0)
-                  + prevCompanies.length * STAGE2_COMPANY_DOCS.length;
-  const uploadedDocs = 0;
+/** Server caps + accepted MIME list. Mirrors EmployeeDocumentController so
+ *  the user gets a friendly error before the round-trip. Bump together. */
+const DOC_MAX_MB = 8;
+const DOC_ACCEPTED_MIME = new Set([
+  'application/pdf',
+  'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+]);
+
+function Stage2Documents({ emp, onDocsChanged }: {
+  emp: OnboardRow;
+  /** Fires whenever the document list changes (after upload / replace).
+   *  The parent modal uses it to update Stage 2's side-rail progress
+   *  without doing its own duplicate fetch. */
+  onDocsChanged?: (rows: { document_key: string; status: string }[]) => void;
+}) {
+  const toast = useToast();
+
+  // ── Previous Employment Companies — backed by /api/employees/{id}/previous-employments
+  // Each row owns its own server id (or `null` while it's a draft the
+  // user is still typing into; we persist via POST when company_name is
+  // entered, then PATCH on subsequent edits). This keeps the UX feeling
+  // immediate without needing an explicit "Save" button per row.
+  interface PrevCompanyRow {
+    id: number | null;            // null = unsaved draft
+    company_name: string;
+    job_title: string;
+    start_date: string;
+    end_date: string;
+    hr_email_1: string;
+    hr_email_2: string;
+    contact_number: string;
+    _busy?: boolean;              // disable inputs while a save/delete is in flight
+    _localKey: string;            // stable React key independent of server id
+  }
+  const newDraft = (): PrevCompanyRow => ({
+    id: null, company_name: '', job_title: '',
+    start_date: '', end_date: '',
+    hr_email_1: '', hr_email_2: '', contact_number: '',
+    _localKey: `pc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  });
+  const [prevCompanies, setPrevCompanies] = useState<PrevCompanyRow[]>([newDraft()]);
+
+  // Hydrate from server when the modal opens for this employee.
+  useEffect(() => {
+    if (!emp?.dbId) return;
+    let cancelled = false;
+    api.get(`/employees/${emp.dbId}/previous-employments`).then(r => {
+      if (cancelled) return;
+      const list: any[] = Array.isArray(r.data) ? r.data : [];
+      if (list.length === 0) {
+        // Always render at least one empty row so the user has somewhere
+        // to type. The form persists as soon as company_name is filled.
+        setPrevCompanies([newDraft()]);
+        return;
+      }
+      setPrevCompanies(list.map(p => ({
+        id: p.id,
+        company_name:   p.company_name   ?? '',
+        job_title:      p.job_title      ?? '',
+        start_date:     p.start_date     ?? '',
+        end_date:       p.end_date       ?? '',
+        hr_email_1:     p.hr_email_1     ?? '',
+        hr_email_2:     p.hr_email_2     ?? '',
+        contact_number: p.contact_number ?? '',
+        _localKey:      `pc_${p.id}`,
+      })));
+    }).catch(() => { /* keep empty draft on error */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emp?.dbId]);
+
+  const updateCompany = (key: string, patch: Partial<PrevCompanyRow>) =>
+    setPrevCompanies(prev => prev.map(c => (c._localKey === key ? { ...c, ...patch } : c)));
+
+  const addCompany = () => setPrevCompanies(prev => [...prev, newDraft()]);
+
+  /** PATCH/POST a single company row to the server. Called onBlur from
+   *  every input so the user never has to click "Save" — typing alone
+   *  persists once company_name is non-empty. Returns the canonical
+   *  server id, attaches it back to local state. */
+  const persistCompany = async (key: string) => {
+    if (!emp?.dbId) return;
+    const row = prevCompanies.find(c => c._localKey === key);
+    if (!row || row._busy) return;
+    if (!row.company_name.trim()) return; // need a name before we can save
+    // Quick email + date sanity checks before round-tripping.
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (row.hr_email_1 && !emailRe.test(row.hr_email_1)) {
+      toast.error('Invalid HR Email 1', `Please enter a valid email address.`);
+      return;
+    }
+    if (row.hr_email_2 && !emailRe.test(row.hr_email_2)) {
+      toast.error('Invalid HR Email 2', `Please enter a valid email address.`);
+      return;
+    }
+    if (row.start_date && row.end_date && row.end_date < row.start_date) {
+      toast.error('Invalid date range', 'End date cannot be before start date.');
+      return;
+    }
+    const payload = {
+      company_name:   row.company_name.trim(),
+      job_title:      row.job_title.trim() || null,
+      start_date:     row.start_date || null,
+      end_date:       row.end_date   || null,
+      hr_email_1:     row.hr_email_1.trim() || null,
+      hr_email_2:     row.hr_email_2.trim() || null,
+      contact_number: row.contact_number.trim() || null,
+    };
+    updateCompany(key, { _busy: true });
+    try {
+      if (row.id) {
+        await api.patch(`/previous-employments/${row.id}`, payload);
+      } else {
+        const r = await api.post(`/employees/${emp.dbId}/previous-employments`, payload);
+        const newId = r?.data?.previous_employment?.id ?? null;
+        updateCompany(key, { id: newId });
+      }
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors;
+      const firstMsg = apiErrors ? Object.values(apiErrors).flat()[0] : null;
+      toast.error('Could not save company', String(firstMsg || err?.response?.data?.message || err?.message || 'Save failed'));
+    } finally {
+      updateCompany(key, { _busy: false });
+    }
+  };
+
+  const removeCompany = async (key: string) => {
+    const row = prevCompanies.find(c => c._localKey === key);
+    if (!row) return;
+    // Prevent accidental loss of data on rows that look filled.
+    if (row.id || row.company_name.trim()) {
+      const result = await Swal.fire({
+        title: `Remove ${row.company_name || 'this company'}?`,
+        text: 'This will also delete the documents you uploaded against it.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Remove',
+        confirmButtonColor: '#f06548',
+        cancelButtonColor: '#878a99',
+        reverseButtons: true,
+      });
+      if (!result.isConfirmed) return;
+    }
+    if (row.id) {
+      try {
+        await api.delete(`/previous-employments/${row.id}`);
+      } catch (err: any) {
+        toast.error('Could not remove', String(err?.response?.data?.message || err?.message || 'Delete failed'));
+        return;
+      }
+    }
+    setPrevCompanies(prev => {
+      const next = prev.filter(c => c._localKey !== key);
+      return next.length === 0 ? [newDraft()] : next;
+    });
+  };
+
+  // ── Server-backed document state ─────────────────────────────────────
+  // Keyed by document_key so each catalogue card can look itself up in
+  // O(1). Refreshed after every upload/verify/reject so the pill colours
+  // and progress bar stay in sync with the backend.
+  const [docsByKey, setDocsByKey] = useState<Record<string, ApiDocument>>({});
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const reloadDocs = async () => {
+    if (!emp?.dbId) return;
+    try {
+      const r = await api.get(`/employees/${emp.dbId}/documents`);
+      const list: ApiDocument[] = Array.isArray(r.data) ? r.data : [];
+      const map: Record<string, ApiDocument> = {};
+      for (const d of list) map[d.document_key] = d;
+      setDocsByKey(map);
+      // Bubble the list up so the modal's Stage 2 rail progress + count
+      // header refresh together.
+      onDocsChanged?.(list.map(d => ({ document_key: d.document_key, status: d.status })));
+    } catch { /* keep stale on error */ }
+  };
+  useEffect(() => { reloadDocs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [emp?.dbId]);
+
+  /** Open a hidden file picker, validate locally, then POST as multipart.
+   *  Validates BEFORE upload so the user gets immediate feedback on
+   *  oversized/unsupported files instead of a server round-trip. */
+  const triggerUpload = (docKey: string, docName: string, accept: string) => {
+    if (!emp?.dbId) {
+      toast.error('Cannot upload', 'Save the employee first — no record id yet.');
+      return;
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.style.display = 'none';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      try { document.body.removeChild(input); } catch { /* already removed */ }
+      if (!file) return;
+
+      // ── Client-side validation (mirrors backend) ──────────────────
+      const maxBytes = DOC_MAX_MB * 1024 * 1024;
+      if (file.size > maxBytes) {
+        toast.error(
+          `${docName} is too large`,
+          `Max allowed is ${DOC_MAX_MB} MB. Selected file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`,
+        );
+        return;
+      }
+      // The browser-supplied MIME isn't 100% reliable; fall back to
+      // extension when blank.
+      const mime = (file.type || '').toLowerCase();
+      const ext  = (file.name.split('.').pop() || '').toLowerCase();
+      const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+      const mimeOk = mime ? DOC_ACCEPTED_MIME.has(mime) : false;
+      const extOk  = allowedExts.includes(ext);
+      if (!mimeOk && !extOk) {
+        toast.error(
+          `Unsupported file type`,
+          `Only PDF, JPG, PNG and WEBP files are allowed. (got "${mime || ext || 'unknown'}")`,
+        );
+        return;
+      }
+
+      setUploadingKey(docKey);
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('document_key', docKey);
+        await api.post(`/employees/${emp.dbId}/documents`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        await reloadDocs();
+        toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
+      } catch (err: any) {
+        const msg = err?.response?.data?.message
+          || (err?.response?.data?.errors?.file?.[0])
+          || err?.message
+          || 'Upload failed';
+        toast.error(`${docName} upload failed`, String(msg));
+      } finally {
+        setUploadingKey(null);
+      }
+    };
+    document.body.appendChild(input);
+    input.click();
+  };
+
+  /** Remove an uploaded document. Confirms first to prevent rage-clicks. */
+  const triggerDelete = async (docId: number, docName: string) => {
+    const result = await Swal.fire({
+      title: `Remove ${docName}?`,
+      text: 'You can re-upload anytime.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Remove',
+      confirmButtonColor: '#f06548',
+      cancelButtonColor: '#878a99',
+      reverseButtons: true,
+    });
+    if (!result.isConfirmed) return;
+    try {
+      await api.delete(`/documents/${docId}`);
+      await reloadDocs();
+      toast.success(`${docName} removed`, 'You can upload a fresh copy whenever you’re ready.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Delete failed';
+      toast.error(`${docName} could not be removed`, String(msg));
+    }
+  };
+
+  /** All catalogue keys (across categories + prev-company docs) — drives totals. */
+  // ── Total / uploaded counts ────────────────────────────────────────
+  // Catalogue docs (always 10) + per-company docs (4 × companies that
+  // are persisted on the server). Draft companies (no id yet) don't add
+  // to the total because their docs can't be uploaded yet — they'd
+  // permanently bring the % down through no fault of the user.
+  const catalogueKeys: string[] = [
+    ...STAGE2_CATEGORIES.flatMap(cat => cat.docs.map(d => d.id)),
+  ];
+  const savedCompanies = prevCompanies.filter(c => c.id !== null);
+  const perCompanyKeys: string[] = savedCompanies.flatMap(c =>
+    STAGE2_COMPANY_DOCS.map(d => `prev_${c.id}_${d.id}`)
+  );
+  const allKeys = [...catalogueKeys, ...perCompanyKeys];
+  const totalDocs = allKeys.length;
+  const uploadedDocs = allKeys
+    .map(k => docsByKey[k]?.status)
+    .filter(s => s === 'uploaded' || s === 'verified').length;
   const pct = totalDocs ? Math.round((uploadedDocs / totalDocs) * 100) : 0;
 
   return (
@@ -2366,6 +3137,11 @@ function Stage2Documents() {
       {/* Document categories */}
       {STAGE2_CATEGORIES.map(cat => {
         const upTotal = cat.docs.length;
+        const upUploaded = cat.docs.filter(d => {
+          const srv = docsByKey[d.id]?.status;
+          return srv === 'uploaded' || srv === 'verified';
+        }).length;
+        const catPct = upTotal ? Math.round((upUploaded / upTotal) * 100) : 0;
         return (
           <div key={cat.id} className="onb-doc-cat">
             <div className="onb-doc-cat-head">
@@ -2373,11 +3149,20 @@ function Stage2Documents() {
                 <i className={cat.icon} />
               </span>
               <h6 className="onb-doc-cat-title">{cat.title}</h6>
-              <span className="onb-doc-cat-count">0 / {upTotal} uploaded</span>
-              <span className="onb-doc-cat-pct">0%</span>
+              <span className="onb-doc-cat-count">{upUploaded} / {upTotal} uploaded</span>
+              <span className="onb-doc-cat-pct">{catPct}%</span>
             </div>
             {cat.docs.map(d => {
-              const tone = DOC_STATUS_TONE[d.status];
+              // Effective status — server row wins, falls back to the
+              // catalogue's intrinsic state ("Optional" rows stay Optional
+              // until uploaded; everything else defaults to Pending).
+              const srv = docsByKey[d.id];
+              const effective: DocStatus = srv
+                ? _serverStatusToUi(srv.status)
+                : (d.status === 'Optional' ? 'Optional' : 'Pending');
+              const tone = DOC_STATUS_TONE[effective];
+              const accept = /photo|cheque/i.test(d.id) ? 'image/jpeg,image/png,application/pdf' : 'application/pdf,image/*';
+              const isBusy = uploadingKey === d.id;
               return (
                 <div key={d.id} className="onb-doc-row">
                   <span className="onb-doc-row-icon"><i className="ri-file-text-line" /></span>
@@ -2386,15 +3171,48 @@ function Stage2Documents() {
                       {d.name}
                       {d.status === 'Optional' && <span className="onb-doc-tag">Optional</span>}
                     </h6>
-                    <p className="onb-doc-row-sub">{d.sub}</p>
+                    <p className="onb-doc-row-sub">
+                      {d.sub}
+                      {srv?.original_name && <> · <strong>{srv.original_name}</strong></>}
+                      {srv?.rejection_reason && <> · <span style={{ color: '#b1401d' }}>Reason: {srv.rejection_reason}</span></>}
+                    </p>
                   </div>
                   <span className="onb-doc-status-pill" style={{ background: tone.bg, color: tone.fg }}>
                     <span className="dot" style={{ background: tone.dot }} />
-                    {d.status}
+                    {effective}
                   </span>
-                  <button type="button" className="onb-doc-upload-btn">
-                    <i className="ri-upload-cloud-2-line" /> Upload
+                  {srv?.url && (
+                    <a
+                      href={srv.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="onb-doc-upload-btn"
+                      style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
+                    >
+                      <i className="ri-eye-line" /> View
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className="onb-doc-upload-btn"
+                    onClick={() => triggerUpload(d.id, d.name, accept)}
+                    disabled={isBusy}
+                    style={isBusy ? { opacity: 0.6, cursor: 'progress' } : undefined}
+                  >
+                    <i className={isBusy ? 'ri-loader-4-line' : 'ri-upload-cloud-2-line'} />
+                    {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                   </button>
+                  {srv && (
+                    <button
+                      type="button"
+                      className="onb-doc-upload-btn"
+                      onClick={() => triggerDelete(srv.id, d.name)}
+                      title="Remove this document"
+                      style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
+                    >
+                      <i className="ri-delete-bin-line" />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -2408,23 +3226,34 @@ function Stage2Documents() {
           <span className="onb-doc-prev-icon"><i className="ri-briefcase-line" style={{ fontSize: 14 }} /></span>
           <div className="min-w-0 flex-grow-1">
             <h6 className="onb-doc-prev-title">Previous Employment Documents</h6>
-            <div className="onb-doc-prev-sub">7 Years Experience · Required for each previous company</div>
           </div>
           <span className="onb-doc-prev-pill">{prevCompanies.length} {prevCompanies.length === 1 ? 'Company' : 'Companies'}</span>
         </div>
 
-        {prevCompanies.map((c, idx) => (
-          <div key={c.id} className="onb-doc-comp">
+        {prevCompanies.map((c, idx) => {
+          // Per-company doc upload key — namespaced so each row has its
+          // own slots in the employee_documents table without colliding
+          // with the catalogue keys.
+          const docKeyFor = (k: string) => c.id ? `prev_${c.id}_${k}` : '';
+          const compDocsTotal = STAGE2_COMPANY_DOCS.length;
+          const compDocsUploaded = c.id
+            ? STAGE2_COMPANY_DOCS.filter(d => {
+                const srv = docsByKey[docKeyFor(d.id)]?.status;
+                return srv === 'uploaded' || srv === 'verified';
+              }).length
+            : 0;
+          return (
+          <div key={c._localKey} className="onb-doc-comp">
             <div className="onb-doc-comp-head">
               <span className="onb-doc-comp-num">{idx + 1}</span>
-              <h6 className="onb-doc-comp-name">{c.name || `Previous Company ${idx + 1}`}</h6>
-              <span className="onb-doc-comp-count">0/4 Docs</span>
+              <h6 className="onb-doc-comp-name">{c.company_name || `Previous Company ${idx + 1}`}</h6>
+              <span className="onb-doc-comp-count">{compDocsUploaded}/{compDocsTotal} Docs</span>
               {prevCompanies.length > 1 && (
                 <button
                   type="button"
                   className="onb-doc-comp-close"
                   aria-label="Remove company"
-                  onClick={() => removeCompany(c.id)}
+                  onClick={() => removeCompany(c._localKey)}
                 >
                   <i className="ri-close-line" style={{ fontSize: 12 }} />
                 </button>
@@ -2438,46 +3267,99 @@ function Stage2Documents() {
                   <input
                     className="onb-init-input"
                     placeholder="e.g. Wipro Digital (2020-2023)"
-                    value={c.name}
-                    onChange={e => updateCompany(c.id, { name: e.target.value })}
+                    value={c.company_name}
+                    onChange={e => updateCompany(c._localKey, { company_name: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
                 <Col md={6}>
-                  <label className="onb-init-label">Job Title / Designation <span className="req">*</span></label>
+                  <label className="onb-init-label">Job Title / Designation</label>
                   <input
                     className="onb-init-input"
                     placeholder="e.g. Software Engineer"
-                    value={c.jobTitle}
-                    onChange={e => updateCompany(c.id, { jobTitle: e.target.value })}
+                    value={c.job_title}
+                    onChange={e => updateCompany(c._localKey, { job_title: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
                 <Col md={6}>
-                  <label className="onb-init-label">Employment Start Date <span className="req">*</span></label>
-                  <MasterDatePicker placeholder="Select start date" />
+                  <label className="onb-init-label">Employment Start Date</label>
+                  <MasterDatePicker
+                    placeholder="Select start date"
+                    value={c.start_date}
+                    onChange={(v) => { updateCompany(c._localKey, { start_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
+                  />
                 </Col>
                 <Col md={6}>
-                  <label className="onb-init-label">Employment End Date <span className="req">*</span></label>
-                  <MasterDatePicker placeholder="Select end date" />
+                  <label className="onb-init-label">Employment End Date</label>
+                  <MasterDatePicker
+                    placeholder="Select end date"
+                    value={c.end_date}
+                    onChange={(v) => { updateCompany(c._localKey, { end_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
+                  />
                 </Col>
               </Row>
 
               <p className="onb-doc-comp-section" style={{ marginTop: 14 }}><i className="ri-file-list-line" /> Document Upload</p>
+              {!c.id && (
+                <div style={{ fontSize: 11.5, color: '#a4661c', background: '#fde8c4', padding: '6px 10px', borderRadius: 8, marginBottom: 6 }}>
+                  Save the company name first to enable document uploads.
+                </div>
+              )}
               {STAGE2_COMPANY_DOCS.map(d => {
-                const tone = DOC_STATUS_TONE[d.status];
+                const fullKey = docKeyFor(d.id);
+                const srv = fullKey ? docsByKey[fullKey] : undefined;
+                const effective: DocStatus = srv
+                  ? _serverStatusToUi(srv.status)
+                  : (d.status === 'Optional' ? 'Optional' : 'Pending');
+                const tone = DOC_STATUS_TONE[effective];
+                const isBusy = uploadingKey === fullKey;
                 return (
                   <div key={d.id} className="onb-doc-comp-doc">
                     <span className="onb-doc-comp-doc-icon"><i className="ri-file-text-line" /></span>
                     <h6 className="onb-doc-comp-doc-name">
                       {d.name}
                       {d.status === 'Optional' && <span className="onb-doc-tag">Optional</span>}
+                      {srv?.original_name && <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>· {srv.original_name}</span>}
                     </h6>
                     <span className="onb-doc-status-pill" style={{ background: tone.bg, color: tone.fg }}>
                       <span className="dot" style={{ background: tone.dot }} />
-                      {d.status}
+                      {effective}
                     </span>
-                    <button type="button" className="onb-doc-upload-btn">
-                      <i className="ri-upload-cloud-2-line" /> Upload
+                    {srv?.url && (
+                      <a
+                        href={srv.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="onb-doc-upload-btn"
+                        style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
+                      >
+                        <i className="ri-eye-line" /> View
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      className="onb-doc-upload-btn"
+                      disabled={!c.id || isBusy}
+                      onClick={() => triggerUpload(fullKey, d.name, 'application/pdf,image/*')}
+                      style={(!c.id || isBusy) ? { opacity: 0.6, cursor: c.id ? 'progress' : 'not-allowed' } : undefined}
+                    >
+                      <i className={isBusy ? 'ri-loader-4-line' : 'ri-upload-cloud-2-line'} />
+                      {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                     </button>
+                    {srv && (
+                      <button
+                        type="button"
+                        className="onb-doc-upload-btn"
+                        onClick={() => triggerDelete(srv.id, d.name)}
+                        title="Remove this document"
+                        style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
+                      >
+                        <i className="ri-delete-bin-line" />
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -2489,36 +3371,42 @@ function Stage2Documents() {
               </div>
               <Row className="g-3">
                 <Col md={4}>
-                  <label className="onb-init-label">HR Email ID 1 <span className="req">*</span></label>
+                  <label className="onb-init-label">HR Email ID 1</label>
                   <input
-                    className="onb-init-input is-required"
+                    className="onb-init-input"
                     placeholder="hr@company.com"
-                    value={c.hrEmail1}
-                    onChange={e => updateCompany(c.id, { hrEmail1: e.target.value })}
+                    value={c.hr_email_1}
+                    onChange={e => updateCompany(c._localKey, { hr_email_1: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
                 <Col md={4}>
-                  <label className="onb-init-label">HR Email ID 2 <span className="req">*</span></label>
+                  <label className="onb-init-label">HR Email ID 2</label>
                   <input
-                    className="onb-init-input is-required"
+                    className="onb-init-input"
                     placeholder="hr2@company.com"
-                    value={c.hrEmail2}
-                    onChange={e => updateCompany(c.id, { hrEmail2: e.target.value })}
+                    value={c.hr_email_2}
+                    onChange={e => updateCompany(c._localKey, { hr_email_2: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
                 <Col md={4}>
-                  <label className="onb-init-label">Company Contact Number <span className="req">*</span></label>
+                  <label className="onb-init-label">Company Contact Number</label>
                   <input
-                    className="onb-init-input is-required"
+                    className="onb-init-input"
                     placeholder="+91 XXXXX XXXXX"
-                    value={c.contactNumber}
-                    onChange={e => updateCompany(c.id, { contactNumber: e.target.value })}
+                    value={c.contact_number}
+                    onChange={e => updateCompany(c._localKey, { contact_number: e.target.value })}
+                    onBlur={() => persistCompany(c._localKey)}
+                    disabled={c._busy}
                   />
                 </Col>
               </Row>
             </div>
           </div>
-        ))}
+        );})}
 
         <button type="button" className="onb-doc-add-comp" onClick={addCompany}>
           <i className="ri-add-line" /> Add Previous Company
@@ -2529,13 +3417,39 @@ function Stage2Documents() {
 }
 
 // ── Stage 3 — Provisioning & Asset Setup ────────────────────────────────────
-function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
+/** Stage 3 — Provisioning. Reads/writes the SAME `s1` state as the
+ *  Stage 1 wizard so the asset selections stay in lock-step (the row's
+ *  `laptop_master_asset_id` / `mobile_master_asset_id` / `other_master_asset_ids`
+ *  are the only persisted FK columns). Saving Stage 3 reuses
+ *  `saveStage1(false)` from the modal scope. */
+function Stage3Provisioning({
+  emp, s1, setS1, laptopAssets, mobileAssets, otherAssets,
+}: {
+  emp: OnboardRow;
+  s1: any;
+  setS1: React.Dispatch<React.SetStateAction<any>>;
+  laptopAssets: { value: string; label: string }[];
+  mobileAssets: { value: string; label: string }[];
+  otherAssets:  { value: string; label: string }[];
+}) {
+  // Cosmetic progress meter — counts each provisioning area that has
+  // at least one filled value. Keeps the banner moving as the admin
+  // works through the section.
   const tasksTotal = 4;
-  const tasksDone  = 0;
+  const tasksDone  =
+    (s1.laptop_assigned === 'Yes' && s1.laptop_master_asset_id ? 1 : 0)
+    + (s1.mobile_assigned === 'Yes' && s1.mobile_master_asset_id ? 1 : 0)
+    + ((s1.other_master_asset_ids?.length ?? 0) > 0 ? 1 : 0)
+    + (
+      (s1.biometric_status && s1.biometric_status !== 'Not Registered') ||
+      !!s1.desk_workstation_no?.trim() ||
+      (s1.id_card_status && s1.id_card_status !== 'Not Printed')
+        ? 1 : 0
+    );
   const pct = Math.round((tasksDone / tasksTotal) * 100);
 
   const autoLabel = (
-    <span className="auto" style={{ background: '#d6f4e3', color: '#108548' }}>AUTO-FETCHED</span>
+    <span className="auto" style={{ background: '#d6f4e3', color: '#108548' }}>EDITABLE</span>
   );
 
   return (
@@ -2576,7 +3490,11 @@ function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
         </div>
       </div>
 
-      {/* Device & Asset Allocation */}
+      {/* Device & Asset Allocation — fully editable. Bound to the same
+          `s1` state used by the Stage 1 wizard, so changes here ride
+          along on the next Save Draft / Next Stage. The pickers come
+          from /employees/available-assets (booked devices on other
+          employees are filtered out by the backend). */}
       <div className="onb-prov-section">
         <div className="onb-prov-section-head">
           <span className="onb-prov-section-icon device"><i className="ri-computer-line" /></span>
@@ -2587,37 +3505,71 @@ function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
           <Row className="g-3">
             <Col md={4}>
               <label className="onb-init-label">Laptop Assigned {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span>No</span>
-              </div>
+              <MasterSelect
+                options={ONB_YES_NO}
+                value={s1.laptop_assigned || 'No'}
+                onChange={(v) => setS1((p: any) => ({
+                  ...p,
+                  laptop_assigned: v,
+                  laptop_master_asset_id: v === 'Yes' ? p.laptop_master_asset_id : '',
+                }))}
+              />
             </Col>
+            {s1.laptop_assigned === 'Yes' && (
+              <Col md={4}>
+                <label className="onb-init-label">Laptop Device {autoLabel}</label>
+                <MasterSelect
+                  options={laptopAssets}
+                  placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
+                  value={s1.laptop_master_asset_id}
+                  onChange={(v) => setS1((p: any) => ({ ...p, laptop_master_asset_id: v }))}
+                  disabled={laptopAssets.length === 0}
+                />
+              </Col>
+            )}
             <Col md={4}>
-              <label className="onb-init-label">Laptop Asset ID {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>
-              </div>
+              <label className="onb-init-label">Mobile Assigned {autoLabel}</label>
+              <MasterSelect
+                options={ONB_YES_NO}
+                value={s1.mobile_assigned || 'No'}
+                onChange={(v) => setS1((p: any) => ({
+                  ...p,
+                  mobile_assigned: v,
+                  mobile_master_asset_id: v === 'Yes' ? p.mobile_master_asset_id : '',
+                }))}
+              />
             </Col>
-            <Col md={4}>
-              <label className="onb-init-label">Mobile Device {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>
-              </div>
-            </Col>
+            {s1.mobile_assigned === 'Yes' && (
+              <Col md={4}>
+                <label className="onb-init-label">Mobile Device {autoLabel}</label>
+                <MasterSelect
+                  options={mobileAssets}
+                  placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
+                  value={s1.mobile_master_asset_id}
+                  onChange={(v) => setS1((p: any) => ({ ...p, mobile_master_asset_id: v }))}
+                  disabled={mobileAssets.length === 0}
+                />
+              </Col>
+            )}
             <Col md={12}>
-              <label className="onb-init-label">Other Assets {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>
-              </div>
+              <label className="onb-init-label">
+                Other Assets {autoLabel}
+                <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span>
+              </label>
+              <MasterMultiSelect
+                options={otherAssets}
+                placeholder={otherAssets.length === 0 ? 'No other assets available' : 'Pick one or more'}
+                value={s1.other_master_asset_ids}
+                onChange={(vs) => setS1((p: any) => ({ ...p, other_master_asset_ids: vs }))}
+                disabled={otherAssets.length === 0}
+              />
             </Col>
           </Row>
         </div>
       </div>
 
-      {/* Physical Setup & Identification */}
+      {/* Physical Setup & Identification — bound to s1 so saves ride
+          along with the rest of the wizard / Stage 3 PUT. */}
       <div className="onb-prov-section">
         <div className="onb-prov-section-head">
           <span className="onb-prov-section-icon physical"><i className="ri-shield-check-line" /></span>
@@ -2627,24 +3579,39 @@ function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
           <Row className="g-3">
             <Col md={4}>
               <label className="onb-init-label">Biometric Status {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span>Not Registered</span>
-              </div>
+              <MasterSelect
+                options={[
+                  { value: 'Not Registered', label: 'Not Registered' },
+                  { value: 'Pending',        label: 'Pending' },
+                  { value: 'Registered',     label: 'Registered' },
+                  { value: 'Failed',         label: 'Failed' },
+                ]}
+                value={s1.biometric_status || 'Not Registered'}
+                onChange={(v) => setS1((p: any) => ({ ...p, biometric_status: v }))}
+              />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Desk / Workstation No {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>
-              </div>
+              <input
+                className="onb-init-input"
+                placeholder="e.g. WS-204, Floor 3 / Bay B"
+                value={s1.desk_workstation_no}
+                onChange={e => setS1((p: any) => ({ ...p, desk_workstation_no: e.target.value }))}
+              />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">ID Card Status {autoLabel}</label>
-              <div className="onb-prov-input is-autofetched">
-                <i className="ri-checkbox-circle-line" />
-                <span>Not Printed</span>
-              </div>
+              <MasterSelect
+                options={[
+                  { value: 'Not Printed', label: 'Not Printed' },
+                  { value: 'Printed',     label: 'Printed' },
+                  { value: 'Issued',      label: 'Issued' },
+                  { value: 'Lost',        label: 'Lost' },
+                  { value: 'Reissued',    label: 'Reissued' },
+                ]}
+                value={s1.id_card_status || 'Not Printed'}
+                onChange={(v) => setS1((p: any) => ({ ...p, id_card_status: v }))}
+              />
             </Col>
           </Row>
         </div>
@@ -2654,27 +3621,59 @@ function Stage3Provisioning({ emp }: { emp: OnboardRow }) {
 }
 
 // ── Stage 4 — Payroll & Finance Setup ──────────────────────────────────────
-function Stage4Payroll() {
-  const [mode, setMode] = useState<'bank' | 'cheque' | 'cash'>('bank');
-  const checks: { id: string; name: string }[] = [
-    { id: 'bank', name: 'Bank details complete' },
-    { id: 'pan',  name: 'PAN verified' },
-    { id: 'sal',  name: 'Salary structure confirmed' },
-    { id: 'pf',   name: 'PF / ESIC setup complete' },
+/** Bound to the modal-level `s4` state so all Stage 4 progress, check-pills,
+ *  Save Draft button, and Next-Stage gating share one source of truth. */
+type S4State = {
+  salary_payment_mode: 'bank' | 'cheque' | 'cash';
+  bank_name: string;
+  bank_account_number: string;
+  ifsc_code: string;
+  account_holder_name: string;
+  bank_branch: string;
+  bank_account_type: string;
+  uan_number: string;
+  pan_number: string;
+  tax_regime: string;
+  pf_deduction: string;
+  esi_applicable: string;
+  gratuity_nominee_name: string;
+  agreed_ctc_lpa: string;
+};
+
+function Stage4Payroll({
+  s4, setS4, checks, pass, total,
+}: {
+  s4: S4State;
+  setS4: React.Dispatch<React.SetStateAction<S4State>>;
+  checks: { bank: boolean; pan: boolean; salary: boolean; pf: boolean };
+  pass: number;
+  total: number;
+}) {
+  const checkRows: { id: keyof typeof checks; name: string }[] = [
+    { id: 'bank',   name: 'Bank details complete' },
+    { id: 'pan',    name: 'PAN verified' },
+    { id: 'salary', name: 'Salary structure confirmed' },
+    { id: 'pf',     name: 'PF / ESIC setup complete' },
   ];
+  const pct = total ? Math.round((pass / total) * 100) : 0;
+  const allDone = pass === total;
 
   return (
     <>
-      {/* Progress banner (amber) */}
-      <div className="onb-pay-progress">
-        <span className="onb-pay-progress-icon"><i className="ri-money-dollar-circle-line" style={{ fontSize: 16 }} /></span>
+      {/* Progress banner — flips green once every readiness check passes. */}
+      <div className="onb-pay-progress" style={allDone ? { background: '#e6f7f1', borderColor: '#c4eedc' } : undefined}>
+        <span className="onb-pay-progress-icon" style={allDone ? { background: '#10b981' } : undefined}><i className="ri-money-dollar-circle-line" style={{ fontSize: 16 }} /></span>
         <div className="flex-grow-1 min-w-0">
           <div className="onb-pay-progress-row">
             <h6 className="onb-pay-progress-title">Payroll &amp; Finance Setup</h6>
-            <span className="onb-pay-progress-count">0 / 4 Checks</span>
+            <span className="onb-pay-progress-count">{pass} / {total} Checks</span>
           </div>
-          <div className="onb-pay-progress-bar"><div className="onb-pay-progress-fill" style={{ width: '0%' }} /></div>
-          <p className="onb-pay-progress-help">Fill all required fields and complete readiness checks before proceeding to Stage 5.</p>
+          <div className="onb-pay-progress-bar"><div className="onb-pay-progress-fill" style={{ width: `${pct}%`, background: allDone ? '#10b981' : undefined }} /></div>
+          <p className="onb-pay-progress-help">
+            {allDone
+              ? 'All readiness checks passed. Click Save Draft to lock Stage 4 and continue to Stage 5.'
+              : 'Fill all required fields and complete readiness checks before proceeding to Stage 5.'}
+          </p>
         </div>
       </div>
 
@@ -2693,8 +3692,8 @@ function Stage4Payroll() {
           ] as const).map(opt => (
             <div
               key={opt.id}
-              className={`onb-pay-radio ${mode === opt.id ? 'is-selected' : ''}`}
-              onClick={() => setMode(opt.id)}
+              className={`onb-pay-radio ${s4.salary_payment_mode === opt.id ? 'is-selected' : ''}`}
+              onClick={() => setS4(p => ({ ...p, salary_payment_mode: opt.id }))}
             >
               <span className="onb-pay-radio-circle" />
               <div className="min-w-0">
@@ -2706,7 +3705,9 @@ function Stage4Payroll() {
         </div>
       </div>
 
-      {/* Bank Details */}
+      {/* Bank Details — only collected for `bank` mode. Cheque/cash skip
+          straight to Tax & Statutory since no account is needed. */}
+      {s4.salary_payment_mode === 'bank' && (
       <div className="onb-pay-section">
         <div className="onb-pay-section-head">
           <span className="onb-pay-section-icon bank"><i className="ri-money-dollar-circle-line" /></span>
@@ -2714,16 +3715,56 @@ function Stage4Payroll() {
         </div>
         <div className="onb-pay-section-body">
           <Row className="g-3">
-            <Col md={4}><label className="onb-init-label">Bank Name <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. HDFC Bank" /></Col>
-            <Col md={4}><label className="onb-init-label">Account Number <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="16-digit account number" /></Col>
-            <Col md={4}><label className="onb-init-label">IFSC Code <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. HDFC0001234" /></Col>
-            <Col md={4}><label className="onb-init-label">Name on the Account <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="Full legal name as per bank" /></Col>
-            <Col md={4}><label className="onb-init-label">Branch <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. Baner, Pune" /></Col>
-            <Col md={4}><label className="onb-init-label">Account Type</label><MasterSelect options={ONB_ACCOUNT_TYPE} defaultValue="Salary" /></Col>
-            <Col md={4}><label className="onb-init-label">UAN Number (PF)</label><input className="onb-init-input" placeholder="12-digit UAN" /></Col>
+            <Col md={4}>
+              <label className="onb-init-label">Bank Name <span className="req">*</span></label>
+              <input className="onb-init-input is-required" placeholder="e.g. HDFC Bank" value={s4.bank_name} onChange={e => setS4(p => ({ ...p, bank_name: e.target.value }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Account Number <span className="req">*</span></label>
+              <input className="onb-init-input is-required" placeholder="Account number" value={s4.bank_account_number} onChange={e => setS4(p => ({ ...p, bank_account_number: e.target.value.replace(/\s+/g, '') }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">IFSC Code <span className="req">*</span></label>
+              <input
+                className="onb-init-input is-required"
+                placeholder="e.g. HDFC0001234"
+                maxLength={11}
+                value={s4.ifsc_code}
+                onChange={e => setS4(p => ({ ...p, ifsc_code: e.target.value.toUpperCase() }))}
+              />
+              {s4.ifsc_code && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(s4.ifsc_code) && (
+                <small style={{ color: '#dc2626', fontSize: 11.5 }}>11 chars: 4 letters + 0 + 6 alphanum</small>
+              )}
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Name on the Account <span className="req">*</span></label>
+              <input className="onb-init-input is-required" placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Branch <span className="req">*</span></label>
+              <input className="onb-init-input is-required" placeholder="e.g. Baner, Pune" value={s4.bank_branch} onChange={e => setS4(p => ({ ...p, bank_branch: e.target.value }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Account Type</label>
+              <MasterSelect options={ONB_ACCOUNT_TYPE} value={s4.bank_account_type} onChange={(v) => setS4(p => ({ ...p, bank_account_type: v }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">UAN Number (PF)</label>
+              <input
+                className="onb-init-input"
+                placeholder="12-digit UAN"
+                maxLength={12}
+                value={s4.uan_number}
+                onChange={e => setS4(p => ({ ...p, uan_number: e.target.value.replace(/\D/g, '') }))}
+              />
+              {s4.uan_number && s4.uan_number.length !== 12 && (
+                <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN must be exactly 12 digits</small>
+              )}
+            </Col>
           </Row>
         </div>
       </div>
+      )}
 
       {/* Tax & Statutory Details */}
       <div className="onb-pay-section">
@@ -2733,12 +3774,45 @@ function Stage4Payroll() {
         </div>
         <div className="onb-pay-section-body">
           <Row className="g-3">
-            <Col md={4}><label className="onb-init-label">PAN Number <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="AAAZZ9999A" /></Col>
-            <Col md={4}><label className="onb-init-label">Tax Regime</label><MasterSelect options={ONB_TAX_REGIME} defaultValue="New Regime (115BAC)" /></Col>
-            <Col md={4}><label className="onb-init-label">PF Deduction</label><MasterSelect options={ONB_PF_DEDUCT} defaultValue="Employee + Employer" /></Col>
-            <Col md={4}><label className="onb-init-label">ESI Applicable</label><MasterSelect options={ONB_YES_NO} defaultValue="No" /></Col>
-            <Col md={4}><label className="onb-init-label">Gratuity Nominee Name</label><input className="onb-init-input" placeholder="Full legal name" /></Col>
-            <Col md={4}><label className="onb-init-label">Agreed CTC (LPA) <span className="req">*</span></label><input className="onb-init-input is-required" placeholder="e.g. 12" /></Col>
+            <Col md={4}>
+              <label className="onb-init-label">PAN Number <span className="req">*</span></label>
+              <input
+                className="onb-init-input is-required"
+                placeholder="AAAZZ9999A"
+                maxLength={10}
+                value={s4.pan_number}
+                onChange={e => setS4(p => ({ ...p, pan_number: e.target.value.toUpperCase() }))}
+              />
+              {s4.pan_number && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(s4.pan_number) && (
+                <small style={{ color: '#dc2626', fontSize: 11.5 }}>PAN format: 5 letters + 4 digits + 1 letter</small>
+              )}
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Tax Regime</label>
+              <MasterSelect options={ONB_TAX_REGIME} value={s4.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS4(p => ({ ...p, tax_regime: v }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">PF Deduction <span className="req">*</span></label>
+              <MasterSelect options={ONB_PF_DEDUCT} value={s4.pf_deduction} onChange={(v) => setS4(p => ({ ...p, pf_deduction: v }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">ESI Applicable</label>
+              <MasterSelect options={ONB_YES_NO} value={s4.esi_applicable || 'No'} onChange={(v) => setS4(p => ({ ...p, esi_applicable: v }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Gratuity Nominee Name</label>
+              <input className="onb-init-input" placeholder="Full legal name" value={s4.gratuity_nominee_name} onChange={e => setS4(p => ({ ...p, gratuity_nominee_name: e.target.value }))} />
+            </Col>
+            <Col md={4}>
+              <label className="onb-init-label">Agreed CTC (LPA) <span className="req">*</span></label>
+              <input
+                className="onb-init-input is-required"
+                placeholder="e.g. 12"
+                inputMode="decimal"
+                value={s4.agreed_ctc_lpa}
+                onChange={e => setS4(p => ({ ...p, agreed_ctc_lpa: e.target.value.replace(/[^0-9.]/g, '') }))}
+              />
+            </Col>
           </Row>
         </div>
       </div>
@@ -2750,16 +3824,26 @@ function Stage4Payroll() {
           <h6 className="onb-pay-section-title">Payroll Readiness Check</h6>
         </div>
         <div className="onb-pay-section-body">
-          {checks.map(c => (
-            <div key={c.id} className="onb-pay-check">
-              <span className="onb-pay-check-icon"><i className="ri-loader-line" /></span>
-              <h6 className="onb-pay-check-name">{c.name}</h6>
-              <span className="onb-doc-status-pill" style={{ background: '#fde8c4', color: '#a4661c' }}>
-                <span className="dot" style={{ background: '#f59e0b' }} />
-                Pending
-              </span>
-            </div>
-          ))}
+          {checkRows.map(c => {
+            const ok = checks[c.id];
+            return (
+              <div key={c.id} className="onb-pay-check">
+                <span className="onb-pay-check-icon" style={ok ? { background: '#10b981', color: '#fff' } : undefined}>
+                  <i className={ok ? 'ri-check-line' : 'ri-loader-line'} />
+                </span>
+                <h6 className="onb-pay-check-name">{c.name}</h6>
+                <span
+                  className="onb-doc-status-pill"
+                  style={ok
+                    ? { background: '#d1fae5', color: '#065f46' }
+                    : { background: '#fde8c4', color: '#a4661c' }}
+                >
+                  <span className="dot" style={{ background: ok ? '#10b981' : '#f59e0b' }} />
+                  {ok ? 'Verified' : 'Pending'}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </>
@@ -2779,7 +3863,15 @@ function Stage5Policies() {
   ];
 
   return (
-    <>
+    // Stage 5 backend (digital signing, doc generation, audit trail)
+    // isn't wired yet, so the whole pane is wrapped in ComingSoonShell.
+    // The Next Stage button in the modal footer stays clickable —
+    // ComingSoonShell only blocks pointer events INSIDE the shell, so
+    // the user can preview the layout and skip ahead.
+    <ComingSoonShell
+      title="Policies & Agreements"
+      subtitle="Digital signing, doc generation, and audit trail"
+    >
       {/* Signing progress */}
       <div className="onb-pol-progress">
         <span className="onb-pol-progress-icon"><i className="ri-shield-check-line" style={{ fontSize: 16 }} /></span>
@@ -2835,7 +3927,7 @@ function Stage5Policies() {
           </div>
         ))}
       </div>
-    </>
+    </ComingSoonShell>
   );
 }
 

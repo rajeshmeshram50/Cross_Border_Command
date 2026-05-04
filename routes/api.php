@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\CandidateController;
@@ -7,6 +8,9 @@ use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\EmployeeController;
+use App\Http\Controllers\Api\EmployeeDocumentController;
+use App\Http\Controllers\Api\ExitController;
+use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OnboardingController;
@@ -70,9 +74,35 @@ Route::middleware('auth:sanctum')->group(function () {
     // resolve cleanly.
     Route::get   ('/employees/next-code',         [EmployeeController::class, 'nextCode']);
     Route::get   ('/employees/managers',          [EmployeeController::class, 'managers']);
+    Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
     // Admin issues a self-service onboarding invite + emails the link.
     Route::post  ('/employees/onboarding-invite', [OnboardingController::class, 'createInvite']);
+    // Re-enable a soft-deleted employee (inverse of DELETE /employees/{id}).
+    Route::patch ('/employees/{id}/restore',      [EmployeeController::class, 'restore']);
     Route::apiResource('employees', EmployeeController::class);
+
+    // Stage 2 — Document Management. List + upload are nested under the
+    // employee; verify/reject/delete address documents directly by id.
+    Route::get  ('/employees/{employee}/documents', [EmployeeDocumentController::class, 'index']);
+    Route::post ('/employees/{employee}/documents', [EmployeeDocumentController::class, 'store']);
+    Route::patch('/documents/{document}/verify',    [EmployeeDocumentController::class, 'verify']);
+    Route::patch('/documents/{document}/reject',    [EmployeeDocumentController::class, 'reject']);
+    Route::delete('/documents/{document}',          [EmployeeDocumentController::class, 'destroy']);
+
+    // Exit Process — Stage 1 currently. One row per employee; the
+    // controller upserts on PUT so the SPA can save partial drafts as
+    // the admin works through the wizard.
+    Route::get('/employees/{employee}/exit', [ExitController::class, 'show']);
+    Route::put('/employees/{employee}/exit', [ExitController::class, 'upsert']);
+
+    // Previous Employment Companies — one row per company the candidate
+    // worked at before. Per-company doc uploads use the
+    // `prev_<id>_<docKey>` namespace via the existing employee_documents
+    // endpoints.
+    Route::get   ('/employees/{employee}/previous-employments', [PreviousEmploymentController::class, 'index']);
+    Route::post  ('/employees/{employee}/previous-employments', [PreviousEmploymentController::class, 'store']);
+    Route::patch ('/previous-employments/{prev}',               [PreviousEmploymentController::class, 'update']);
+    Route::delete('/previous-employments/{prev}',               [PreviousEmploymentController::class, 'destroy']);
 
     // Recruitments — full CRUD + auto-numbered REC-### scoped per tenant.
     // Declared BEFORE the generic /master/{slug} routes so apiResource params
@@ -90,7 +120,20 @@ Route::middleware('auth:sanctum')->group(function () {
     // uploads go via multipart/form-data on store/update.
     Route::get  ('/recruitments/{recruitment}/candidates/summary', [CandidateController::class, 'recruitmentSummary']);
     Route::patch('/candidates/{candidate}/status',                 [CandidateController::class, 'updateStatus']);
+    // Bulk operations + stats — declared BEFORE apiResource so the literal
+    // paths /sample, /import, /export, /stats aren't captured as `{candidate}` ids.
+    Route::get ('/candidates/stats',  [CandidateController::class, 'stats']);
+    Route::get ('/candidates/sample', [CandidateController::class, 'sample']);
+    Route::post('/candidates/import', [CandidateController::class, 'import']);
+    Route::get ('/candidates/export', [CandidateController::class, 'export']);
     Route::apiResource('candidates', CandidateController::class);
+
+    // Broadcast Centre announcements — company-wide announcements with
+    // audience targeting, scheduling and acknowledgement tracking. Stats /
+    // next-code declared BEFORE apiResource so they aren't captured as ids.
+    Route::get('/announcements/stats',     [AnnouncementController::class, 'stats']);
+    Route::get('/announcements/next-code', [AnnouncementController::class, 'nextCode']);
+    Route::apiResource('announcements', AnnouncementController::class);
 
     Route::get   ('/master/{slug}',           [MasterController::class, 'list']);
     Route::post  ('/master/{slug}',           [MasterController::class, 'store']);
@@ -123,5 +166,11 @@ Route::middleware('auth:sanctum')->group(function () {
 // Invoice routes (auth via query token, outside sanctum middleware)
 Route::get('/payments/{payment}/invoice/download', [PaymentController::class, 'downloadInvoice']);
 Route::get('/payments/{payment}/invoice/view', [PaymentController::class, 'viewInvoice']);
+
+// Candidate CV download — query-token auth so plain <a download> works
+// regardless of whether Apache's DocumentRoot is public/ (the storage
+// symlink isn't reliable in XAMPP setups).
+Route::get('/candidates/{candidate}/cv', [CandidateController::class, 'downloadCv'])
+    ->name('candidates.cv');
 
 Route::apiResource('dummy-items', DummyItemController::class);
