@@ -412,9 +412,11 @@ export default function HrEmployees() {
     }
   }, []);
 
-  useEffect(() => {
-    reloadEmployees();
-    // Fire master fetches in parallel — they're independent of each other.
+  // Re-fetchable so we can refresh the source lists when a dropdown opens
+  // (covers the case where a new master row is added in another modal/tab
+  // during this session). Fire-and-forget; failures fall back to whatever
+  // is already in state.
+  const reloadMasters = useCallback(() => {
     Promise.allSettled([
       api.get('/master/departments').then(r => setMDepts(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/designations').then(r => setMDesignations(Array.isArray(r.data) ? r.data : [])),
@@ -423,7 +425,11 @@ export default function HrEmployees() {
       api.get('/master/countries').then(r => setMCountries(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/states').then(r => setMStates(Array.isArray(r.data) ? r.data : [])),
     ]);
-  }, [reloadEmployees]);
+  }, []);
+  useEffect(() => {
+    reloadEmployees();
+    reloadMasters();
+  }, [reloadEmployees, reloadMasters]);
 
   // UI-shaped rows derived from `apiEmployees`. Carries `_dbId` + `_raw` so
   // edit/delete handlers can act on the server row without re-fetching.
@@ -482,9 +488,9 @@ export default function HrEmployees() {
       toast.error('Please fix the highlighted fields', `${Object.keys(errs).length} field${Object.keys(errs).length === 1 ? '' : 's'} need${Object.keys(errs).length === 1 ? 's' : ''} attention.`);
       return;
     }
-    // Map the dropdown's department label back to its master id (the
-    // backend expects the FK, not the label).
-    const deptId = mDepts.find(d => d.name === onbDept)?.id;
+    // The dropdown now binds directly to the master id (was previously the
+    // department name). Coerce to int so the FK survives null vs ''.
+    const deptId = onbDept ? Number(onbDept) : null;
     setGeneratingInvite(true);
     try {
       const r = await api.post('/employees/onboarding-invite', {
@@ -569,7 +575,10 @@ export default function HrEmployees() {
   const openOnboardingForEmployee = (row: EmployeeRow) => {
     setOnbName(row.name);
     setOnbEmail(row.email);
-    setOnbDept(row.department);
+    // Map the row's department label back to its master id since the
+    // dropdown now binds to id, not name.
+    const matchedDeptId = mDepts.find(d => d.name === row.department)?.id;
+    setOnbDept(matchedDeptId ? String(matchedDeptId) : '');
     setOnbDate('');
     setOnbExpiry(15);
     setOnboardOpen(true);
@@ -2334,9 +2343,13 @@ export default function HrEmployees() {
                       value={onbDept}
                       onChange={(v) => { setOnbDept(v); clearOnbError('dept'); }}
                       placeholder="Select department"
-                      options={departments
-                        .filter(d => d !== 'All Depts')
-                        .map(d => ({ value: d, label: d }))}
+                      // Pull straight from the Departments master so newly
+                      // created departments (with no employees yet) show up.
+                      // The previous implementation derived options from
+                      // existing employees' departments, which excluded any
+                      // unused master row.
+                      options={departmentOptions}
+                      onOpen={() => reloadMasters()}
                       invalid={!!onbErrors.dept}
                     />
                     {onbErrors.dept && (
