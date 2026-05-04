@@ -1,42 +1,59 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
-import { Card, CardBody, Col, Row, Input, Button } from 'reactstrap';
+import { useEffect, useMemo, useState } from 'react';
+import { Card, CardBody, Col, Row, Input, Modal, ModalBody } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from './master/masterFormKit';
+import '../../css/recruitment.css';
+// Reuses the purple hero-card & hero-pill that HrEmployeeOnboarding ships
+// (.onb-hero-card / .onb-hero-pill) so the page header reads the same as the
+// Onboarding Hub.
 import './employee-onboarding/HrEmployeeOnboarding.css';
 
+// Renders dates as "05-Apr-2026" (DD-MMM-YYYY) — same project-standard format
+// used by HrRecruitment so every HR module reads dates the same way.
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function formatDate(raw: any): string {
+  if (raw == null || raw === '') return '—';
+  const d = new Date(String(raw));
+  if (isNaN(d.getTime())) return String(raw);
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
+}
+// Date range formatter — collapses to a single date when from/to are equal.
+function formatRange(from: string, to: string): string {
+  if (!from) return '—';
+  if (!to || to === from) return formatDate(from);
+  return `${formatDate(from)} – ${formatDate(to)}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Types — mirrors the project's existing Attendance-Regularization workflow:
-// Employee → Reporting Manager → HR. Manager is the primary approver; HR is
-// only involved when (a) manager rejected (HR override), (b) request aged out
-// (>7d auto-escalation), (c) HR raised the request on the employee's behalf.
+// Types — wire to GET /api/leaves when the backend is available.
 //
-// All field names track the same shape used by `ApprovalRequest` in
-// HrAttendance.tsx and by the polymorphic `approval_queue` table on the
-// backend, so wiring up `GET /api/leaves` later is a 1-to-1 mapping.
+// Workflow mirrors the project's existing Attendance Regularization pattern
+// (Employee → Reporting Manager → HR). Manager is the primary approver; HR
+// only steps in when (a) manager rejected (override), (b) request aged out
+// past 7 days (auto-escalation), or (c) HR raised the request on the
+// employee's behalf (manager step skipped).
 // ─────────────────────────────────────────────────────────────────────────────
 type LeaveType = 'Annual' | 'Sick' | 'Casual' | 'Earned' | 'Maternity' | 'Comp Off' | 'LOP';
 type LeaveStage =
   | 'Approved'           // final state — manager approved (or HR overrode)
   | 'Pending (Manager)'  // sitting with the reporting manager
-  | 'Pending (HR)'       // escalated to HR (auto-escalation, override, or HR-raised)
-  | 'Rejected'           // final state — both levels rejected (or manager rejected and HR concurred)
+  | 'Pending (HR)'       // escalated to HR (override / age-out / HR-raised)
+  | 'Rejected'           // both levels rejected (or final no)
   | 'Cancelled';         // employee withdrew before action
 type ApprovalState = 'Pending' | 'Approved' | 'Rejected' | 'NA';
 type PayrollMode = 'Paid Leave' | 'Unpaid' | 'Half-Pay';
 type ProofState = 'Uploaded' | 'Missing' | 'N/A';
 type EscalationReason = 'manager_rejected' | 'aged_out' | 'manager_unavailable' | 'hr_raised' | 'none';
 
-// Lightweight reference to a person in the org chart. Only the fields needed
-// for rendering are kept here; the live backend will hydrate from `employees`.
 interface PersonRef {
   initials: string;
   name: string;
-  designation: string;   // "Reporting Manager" / "Project Manager" / "Team Lead"
+  designation: string;
 }
 
 interface LeaveRequest {
-  id: string;                          // LV-1042 (matches approval_queue.id pattern)
-  empCode: string;                     // LV-001 (employee.emp_code)
+  id: string;                          // LV-1042 (matches approval_queue.id)
+  empCode: string;                     // employee.emp_code
   empInitials: string;
   empName: string;
   empRole: string;                     // designation + department
@@ -44,39 +61,52 @@ interface LeaveRequest {
   type: LeaveType;
   durationDays: number;
   durationLabel: string;
-  rangeLabel: string;
+  // ISO dates (YYYY-MM-DD). Display strings are computed via formatDate /
+  // formatRange so the format stays consistent with HrRecruitment.
+  fromDate: string;
+  toDate: string;
   appliedOn: string;
-  raisedBy: 'employee' | 'hr';         // hr = on-behalf submission, skips manager step
+  raisedBy: 'employee' | 'hr';
 
-  // Reporting hierarchy from the employee record. The leave request gets
-  // routed to `reportingManager` first; HR steps in only on escalation.
   reportingManager: PersonRef;
-  hrApprover?: PersonRef;              // populated once an HR user picks up the request
+  hrApprover?: PersonRef;
 
-  // Two-stage workflow — same shape as Attendance Regularization
   managerStatus: ApprovalState;
-  managerActionAt?: string;
+  managerActionAt?: string;            // ISO
   managerComment?: string;
 
-  hrStatus: ApprovalState;             // 'NA' until escalated
-  hrActionAt?: string;
+  hrStatus: ApprovalState;
+  hrActionAt?: string;                 // ISO
   hrComment?: string;
 
-  escalatedToHr: boolean;              // true once HR can act on this request
-  escalationReason: EscalationReason;  // why HR was pulled in (drives the badge)
+  escalatedToHr: boolean;
+  escalationReason: EscalationReason;
 
-  // Cached final state — derived from manager/hr status above
   stage: LeaveStage;
-  stageNote?: string;                  // "Approved: Apr 13" / "3d pending"
+  // Short SLA / state hint shown next to the status pill ("3d pending",
+  // "auto-escalated", "HR override"). Date-bearing notes (like
+  // "Approved: 13-Apr-2026") are derived at render time, not stored here.
+  stageNote?: string;
 
   payroll: PayrollMode;
   proof: ProofState;
   proofVia?: string;
-  reason: string;                      // "Family function", etc.
+  // Supporting-document metadata. Backend will expose these when the
+  // /api/leaves endpoint lands; for now they're dummy strings so HR can
+  // see realistic file chips in the table.
+  proofType?: string;        // human-friendly category, e.g. "Medical Certificate"
+  proofFileName?: string;    // actual file name, e.g. "medical-certificate.pdf"
+  proofUrl?: string;         // download/preview URL — left blank in dummy data
+  proofUploadedAt?: string;  // ISO timestamp of upload
+  proofMimeType?: string;    // "application/pdf", "image/jpeg", …
+  proofSizeKb?: number;
+  reason: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Palette helpers
+// Tone palettes — bg/fg pairs consumed by `.rec-pill` (which only carries the
+// shape; colour comes through inline style — same convention HrRecruitment
+// uses for priority / employment-type pills).
 // ─────────────────────────────────────────────────────────────────────────────
 const STAGE_TONE: Record<LeaveStage, { fg: string; bg: string; dot: string }> = {
   'Approved':          { fg: '#0a716a', bg: '#d3f0ee', dot: '#0ab39c' },
@@ -96,48 +126,54 @@ const TYPE_TONE: Record<LeaveType, { fg: string; bg: string }> = {
   'LOP':       { fg: '#374151', bg: '#eef2f6' },
 };
 
+const PAYROLL_TONE: Record<PayrollMode, { fg: string; bg: string }> = {
+  'Paid Leave': { fg: '#5a3fd1', bg: '#ece6ff' },
+  'Unpaid':     { fg: '#374151', bg: '#eef2f6' },
+  'Half-Pay':   { fg: '#a4661c', bg: '#fde8c4' },
+};
+
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dummy data — replace with `GET /api/leaves?fy=2025-26` when wired.
-// Designed to exercise every branch of the approval workflow:
-//   • LV-1042 — Manager approved (final)
-//   • LV-1043 — Manager approved (final)
-//   • LV-1044 — Pending with manager (3d in queue)
-//   • LV-1045 — Manager approved (final)
-//   • LV-1046 — HR-raised on behalf (skips manager step, HR-only review)
-//   • LV-1047 — Manager rejected → HR override approved
-//   • LV-1048 — Manager rejected → HR concurred (final reject)
-//   • LV-1049 — Aged out >7d → auto-escalated to HR
+// Each row exercises a distinct branch of the approval workflow.
 // ─────────────────────────────────────────────────────────────────────────────
 const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1042', empCode: 'LV-001',
     empInitials: 'GJ', empName: 'Gaurav Jagtap', empRole: 'Software Development', accent: accent(0),
-    type: 'Annual', durationDays: 3, durationLabel: '3 days', rangeLabel: 'Apr 14 – Apr 16', appliedOn: 'Apr 12, 2026',
+    type: 'Annual', durationDays: 3, durationLabel: '3 days',
+    fromDate: '2026-04-14', toDate: '2026-04-16', appliedOn: '2026-04-12',
     raisedBy: 'employee',
     reportingManager: { initials: 'PL', name: 'Pranav Lokhande', designation: 'Project Manager' },
-    managerStatus: 'Approved', managerActionAt: 'Apr 13, 2026', managerComment: 'Approved — please share handover notes before EOD.',
+    managerStatus: 'Approved', managerActionAt: '2026-04-13', managerComment: 'Approved — please share handover notes before EOD.',
     hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Approved', stageNote: 'Approved: Apr 13',
-    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Parth', reason: 'Family function',
+    stage: 'Approved',
+    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Parth',
+    proofType: 'Function Card', proofFileName: 'wedding-card.pdf', proofMimeType: 'application/pdf',
+    proofSizeKb: 412, proofUploadedAt: '2026-04-12',
+    reason: 'Family function',
   },
   {
     id: 'LV-1043', empCode: 'LV-002',
     empInitials: 'RC', empName: 'Ritika Chauhan', empRole: 'UI/UX Designing', accent: accent(1),
-    type: 'Sick', durationDays: 2, durationLabel: '2 days', rangeLabel: 'Apr 09 – Apr 10', appliedOn: 'Apr 07, 2026',
+    type: 'Sick', durationDays: 2, durationLabel: '2 days',
+    fromDate: '2026-04-09', toDate: '2026-04-10', appliedOn: '2026-04-07',
     raisedBy: 'employee',
     reportingManager: { initials: 'PL', name: 'Pranav Lokhande', designation: 'Team Lead — Design' },
-    managerStatus: 'Approved', managerActionAt: 'Apr 08, 2026', managerComment: 'Get well soon.',
+    managerStatus: 'Approved', managerActionAt: '2026-04-08', managerComment: 'Get well soon.',
     hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Approved', stageNote: 'Approved: Apr 08',
-    payroll: 'Paid Leave', proof: 'Missing', proofVia: 'Parth', reason: 'Fever — medical leave',
+    stage: 'Approved',
+    payroll: 'Paid Leave', proof: 'Missing', proofVia: 'Parth',
+    proofType: 'Medical Certificate',
+    reason: 'Fever — medical leave',
   },
   {
     id: 'LV-1044', empCode: 'LV-003',
     empInitials: 'HT', empName: 'Harsh Thakur', empRole: 'Business Analyst', accent: accent(2),
-    type: 'Casual', durationDays: 1, durationLabel: '1 day', rangeLabel: 'Apr 11', appliedOn: 'Apr 08, 2026',
+    type: 'Casual', durationDays: 1, durationLabel: '1 day',
+    fromDate: '2026-04-11', toDate: '2026-04-11', appliedOn: '2026-04-08',
     raisedBy: 'employee',
     reportingManager: { initials: 'AG', name: 'Arun Gupta', designation: 'Reporting Manager' },
     managerStatus: 'Pending',
@@ -148,18 +184,22 @@ const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1045', empCode: 'LV-004',
     empInitials: 'SJ', empName: 'Swati Joshi', empRole: 'Software Testing', accent: accent(3),
-    type: 'Sick', durationDays: 1, durationLabel: '1 day', rangeLabel: 'Apr 08', appliedOn: 'Apr 06, 2026',
+    type: 'Sick', durationDays: 1, durationLabel: '1 day',
+    fromDate: '2026-04-08', toDate: '2026-04-08', appliedOn: '2026-04-06',
     raisedBy: 'employee',
     reportingManager: { initials: 'AP', name: 'Atharv Patil', designation: 'QA Lead' },
-    managerStatus: 'Approved', managerActionAt: 'Apr 07, 2026',
+    managerStatus: 'Approved', managerActionAt: '2026-04-07',
     hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Approved', stageNote: 'Approved: Apr 07',
-    payroll: 'Paid Leave', proof: 'Missing', proofVia: 'Atharv', reason: 'Medical appointment',
+    stage: 'Approved',
+    payroll: 'Paid Leave', proof: 'Missing', proofVia: 'Atharv',
+    proofType: 'Medical Prescription',
+    reason: 'Medical appointment',
   },
   {
     id: 'LV-1046', empCode: 'LV-005',
     empInitials: 'NK', empName: 'Neha Kulkarni', empRole: 'Product Design', accent: accent(4),
-    type: 'Earned', durationDays: 5, durationLabel: '5 days', rangeLabel: 'Apr 21 – Apr 25', appliedOn: 'Apr 14, 2026',
+    type: 'Earned', durationDays: 5, durationLabel: '5 days',
+    fromDate: '2026-04-21', toDate: '2026-04-25', appliedOn: '2026-04-14',
     raisedBy: 'hr',
     reportingManager: { initials: 'VR', name: 'Vishal Rao', designation: 'Design Head' },
     hrApprover: { initials: 'RV', name: 'Rajesh Verma', designation: 'HR Manager' },
@@ -167,38 +207,44 @@ const buildRequests = (): LeaveRequest[] => [
     hrStatus: 'Pending',
     escalatedToHr: true, escalationReason: 'hr_raised',
     stage: 'Pending (HR)', stageNote: '1d pending · HR-raised',
-    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Vishal', reason: 'Carry-forward leave — vacation',
+    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Vishal',
+    proofType: 'Travel Itinerary', proofFileName: 'goa-itinerary.pdf', proofMimeType: 'application/pdf',
+    proofSizeKb: 287, proofUploadedAt: '2026-04-14',
+    reason: 'Carry-forward leave — vacation',
   },
   {
     id: 'LV-1047', empCode: 'LV-006',
     empInitials: 'RG', empName: 'Rahul Gupta', empRole: 'Account Executive', accent: accent(5),
-    type: 'LOP', durationDays: 2, durationLabel: '2 days', rangeLabel: 'Apr 02 – Apr 03', appliedOn: 'Apr 01, 2026',
+    type: 'LOP', durationDays: 2, durationLabel: '2 days',
+    fromDate: '2026-04-02', toDate: '2026-04-03', appliedOn: '2026-04-01',
     raisedBy: 'employee',
     reportingManager: { initials: 'PI', name: 'Priya Iyer', designation: 'Sales Lead' },
     hrApprover: { initials: 'RV', name: 'Rajesh Verma', designation: 'HR Manager' },
-    managerStatus: 'Rejected', managerActionAt: 'Apr 02, 2026', managerComment: 'Quarter close week — cannot release.',
-    hrStatus: 'Approved', hrActionAt: 'Apr 02, 2026', hrComment: 'Approved as exception — verified personal emergency.',
+    managerStatus: 'Rejected', managerActionAt: '2026-04-02', managerComment: 'Quarter close week — cannot release.',
+    hrStatus: 'Approved', hrActionAt: '2026-04-02', hrComment: 'Approved as exception — verified personal emergency.',
     escalatedToHr: true, escalationReason: 'manager_rejected',
-    stage: 'Approved', stageNote: 'HR override · Apr 02',
+    stage: 'Approved', stageNote: 'HR override',
     payroll: 'Unpaid', proof: 'N/A', reason: 'Personal emergency',
   },
   {
     id: 'LV-1048', empCode: 'LV-007',
     empInitials: 'KS', empName: 'Karan Singh', empRole: 'Software Engineer', accent: accent(6),
-    type: 'Casual', durationDays: 4, durationLabel: '4 days', rangeLabel: 'Apr 17 – Apr 20', appliedOn: 'Apr 12, 2026',
+    type: 'Casual', durationDays: 4, durationLabel: '4 days',
+    fromDate: '2026-04-17', toDate: '2026-04-20', appliedOn: '2026-04-12',
     raisedBy: 'employee',
     reportingManager: { initials: 'AG', name: 'Arun Gupta', designation: 'Engineering Manager' },
     hrApprover: { initials: 'RV', name: 'Rajesh Verma', designation: 'HR Manager' },
-    managerStatus: 'Rejected', managerActionAt: 'Apr 13, 2026', managerComment: 'Sprint close conflicts with these dates.',
-    hrStatus: 'Rejected', hrActionAt: 'Apr 14, 2026', hrComment: 'Concur with manager — re-apply for next sprint.',
+    managerStatus: 'Rejected', managerActionAt: '2026-04-13', managerComment: 'Sprint close conflicts with these dates.',
+    hrStatus: 'Rejected', hrActionAt: '2026-04-14', hrComment: 'Concur with manager — re-apply for next sprint.',
     escalatedToHr: true, escalationReason: 'manager_rejected',
-    stage: 'Rejected', stageNote: 'Rejected: Apr 14',
+    stage: 'Rejected',
     payroll: 'Paid Leave', proof: 'N/A', reason: 'Wedding in family',
   },
   {
     id: 'LV-1049', empCode: 'LV-008',
     empInitials: 'DN', empName: 'Deepa Nair', empRole: 'Finance Analyst', accent: accent(7),
-    type: 'Earned', durationDays: 3, durationLabel: '3 days', rangeLabel: 'Apr 28 – Apr 30', appliedOn: 'Apr 04, 2026',
+    type: 'Earned', durationDays: 3, durationLabel: '3 days',
+    fromDate: '2026-04-28', toDate: '2026-04-30', appliedOn: '2026-04-04',
     raisedBy: 'employee',
     reportingManager: { initials: 'NM', name: 'Nikhil Mehra', designation: 'Finance Lead' },
     hrApprover: { initials: 'RV', name: 'Rajesh Verma', designation: 'HR Manager' },
@@ -206,22 +252,40 @@ const buildRequests = (): LeaveRequest[] => [
     hrStatus: 'Pending',
     escalatedToHr: true, escalationReason: 'aged_out',
     stage: 'Pending (HR)', stageNote: '8d pending · auto-escalated',
-    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Self', reason: 'Annual vacation — pre-booked tickets',
+    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Self',
+    proofType: 'Booking Confirmation', proofFileName: 'flight-tickets.pdf', proofMimeType: 'application/pdf',
+    proofSizeKb: 198, proofUploadedAt: '2026-04-04',
+    reason: 'Annual vacation — pre-booked tickets',
   },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AnimatedNumber — same simple count-up the Onboarding KPIs use
+// AnimatedNumber — same count-up the recruitment KPIs use.
 // ─────────────────────────────────────────────────────────────────────────────
 function AnimatedNumber({ value }: { value: number }) {
-  return <>{value.toLocaleString()}</>;
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    const end = value;
+    if (!end) { setDisplay(0); return; }
+    const dur = 600;
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setDisplay(Math.round(end * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{display.toLocaleString()}</>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Render-friendly approval-chain projection. The backend stores the workflow
-// as discrete fields (managerStatus / hrStatus / escalatedToHr); the table
-// and timeline both want a flat 3-node list so they can paint avatars in a
-// row or vertical timeline. `deriveChain` does the projection.
+// Approval-chain projection. The backend stores the workflow as discrete
+// fields (managerStatus / hrStatus / escalatedToHr); the table and timeline
+// both consume a flat 3-node list, so this projection happens at render-time.
 // ─────────────────────────────────────────────────────────────────────────────
 interface ApprovalNode {
   initials: string;
@@ -234,7 +298,6 @@ interface ApprovalNode {
 }
 
 const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
-  // Maker — always the employee, always considered "submitted"
   const self: ApprovalNode = {
     initials: r.empInitials,
     name: r.empName,
@@ -244,7 +307,6 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     actionAt: r.appliedOn,
   };
 
-  // Manager — primary approver. Skipped entirely when HR raises on behalf.
   const managerSkipped = r.raisedBy === 'hr';
   const managerDecision: ApprovalNode['decision'] =
     managerSkipped ? 'skipped'
@@ -268,7 +330,6 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     comment: r.managerComment,
   };
 
-  // HR — only "active" when escalated. Otherwise sits idle as a notification step.
   const hrDecision: ApprovalNode['decision'] =
     !r.escalatedToHr ? 'idle'
     : r.hrStatus === 'Approved' ? 'approved'
@@ -299,71 +360,45 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tiny atoms for the approval chain
+// HrLeave — page component. Layout, classes and table mirror HrRecruitment.
 // ─────────────────────────────────────────────────────────────────────────────
-const ChainAvatar = ({ node }: { node: ApprovalNode }) => {
-  const isPending  = node.decision === 'pending';
-  const isApproved = node.decision === 'approved';
-  const isRejected = node.decision === 'rejected';
-  const isSkipped  = node.decision === 'skipped';
-  const isIdle     = node.decision === 'idle';
-
-  const bg =
-    isApproved ? 'linear-gradient(135deg,#0ab39c,#108548)'
-    : isRejected ? 'linear-gradient(135deg,#f06548,#dc2626)'
-    : isPending ? 'linear-gradient(135deg,#f7b84b,#f59e0b)'
-    : isSkipped ? '#f3f4f6'
-    : '#e5e7eb';
-  const fg = isIdle || isSkipped ? '#9ca3af' : '#ffffff';
-  const ring =
-    isApproved ? '0 0 0 3px rgba(10,179,156,0.18)'
-    : isRejected ? '0 0 0 3px rgba(220,38,38,0.18)'
-    : isPending ? '0 0 0 3px rgba(245,158,11,0.18)'
-    : 'none';
-
-  return (
-    <span
-      className="lv-chain-avatar"
-      title={`${node.role}: ${node.name}${node.detail ? ' — ' + node.detail : ''}`}
-      style={{ background: bg, color: fg, boxShadow: ring, opacity: isSkipped ? 0.5 : 1 }}
-    >
-      {isSkipped ? <i className="ri-subtract-line" /> :
-       isApproved && !node.initials ? <i className="ri-check-line" /> :
-       isRejected && !node.initials ? <i className="ri-close-line" /> :
-       (node.initials || <i className="ri-time-line" />)}
-    </span>
-  );
-};
-
-const ApprovalChain = ({ chain }: { chain: ApprovalNode[] }) => (
-  <div className="lv-chain">
-    {chain.map((n, i) => (
-      <span key={i} className="lv-chain-item">
-        <ChainAvatar node={n} />
-        {i < chain.length - 1 && <i className="ri-arrow-right-line lv-chain-arrow" />}
-      </span>
-    ))}
-  </div>
-);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HrLeave — page component (Onboarding-Hub style)
-// ─────────────────────────────────────────────────────────────────────────────
-const PAGE_SIZE = 8;
+const KPI_CARDS = [
+  { key: 'total',        label: 'Total Requests',  icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#0c63b0,#0ea5e9)' },
+  { key: 'pending',      label: 'Pending Approval',icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
+  { key: 'approved',     label: 'Approved (Month)',icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)' },
+  { key: 'rejected',     label: 'Rejected',        icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548,#fda192)' },
+  { key: 'onLeaveToday', label: 'On Leave Today',  icon: 'ri-user-3-line',          gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+] as const;
 
 export default function HrLeave() {
   const [requests] = useState<LeaveRequest[]>(buildRequests);
 
+  // Filter state — Status / Type / Stage / Payroll. Tabs drive the Status
+  // filter so the segmented control and dropdown stay in sync.
   const [search,  setSearch]  = useState('');
   const [status,  setStatus]  = useState<string>('All');
   const [type,    setType]    = useState<string>('All');
   const [stage,   setStage]   = useState<string>('All');
   const [payroll, setPayroll] = useState<string>('All');
   const [page,    setPage]    = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  // Detail drawer — opens when HR clicks "View Details" on any leave row.
-  // Holds the row whose details are being inspected; null when closed.
+  // Drawer state — opens the read-only details modal for a single row.
   const [detail, setDetail] = useState<LeaveRequest | null>(null);
+
+  // Bulk-selection state — only Pending rows are selectable since terminal
+  // states can't be re-actioned. The header checkbox cycles select-all /
+  // deselect-all over the *currently visible* pending rows.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const isPendingRow = (r: LeaveRequest) => r.stage.startsWith('Pending');
+  const toggleRow = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
 
   const counts = useMemo(() => {
     const approved = requests.filter(r => r.stage === 'Approved');
@@ -376,24 +411,25 @@ export default function HrLeave() {
       approvedDays: approved.reduce((s, r) => s + r.durationDays, 0),
       rejected:     rejected.length,
       onLeaveToday: 1,
+      tabs: {
+        All:      requests.length,
+        Pending:  pending.length,
+        Approved: approved.length,
+        Rejected: rejected.length,
+      },
     };
   }, [requests]);
 
-  // Search + filter pipeline. STATUS is the coarse bucket (All / Pending /
-  // Approved / Rejected) while STAGE drills further into the workflow step
-  // (Submitted / Manager Review / HR Review / Approved / Rejected).
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return requests.filter(r => {
-      // STATUS filter — coarse: maps the granular `r.stage` onto a bucket
       if (status === 'Pending'  && !r.stage.startsWith('Pending')) return false;
-      if (status === 'Approved' && r.stage !== 'Approved') return false;
-      if (status === 'Rejected' && r.stage !== 'Rejected') return false;
+      if (status === 'Approved' && r.stage !== 'Approved')          return false;
+      if (status === 'Rejected' && r.stage !== 'Rejected')          return false;
 
-      // STAGE filter — granular workflow step
       if (stage !== 'All') {
         const matchesStage =
-          stage === 'Submitted'      ? false  // dummy data has no submitted-only rows yet
+          stage === 'Submitted'      ? false
           : stage === 'Manager Review' ? r.stage === 'Pending (Manager)'
           : stage === 'HR Review'    ? r.stage === 'Pending (HR)'
           : stage === 'Approved'     ? r.stage === 'Approved'
@@ -409,10 +445,10 @@ export default function HrLeave() {
     });
   }, [requests, search, status, type, stage, payroll]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(Math.max(1, page), pageCount);
-  const sliceFrom = (safePage - 1) * PAGE_SIZE;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + PAGE_SIZE);
+  const sliceFrom = (safePage - 1) * pageSize;
+  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
   const STATUS_OPTIONS = [
@@ -446,1335 +482,906 @@ export default function HrLeave() {
     { value: 'Half-Pay',   label: 'Half-Pay' },
   ];
 
-  // KPI cards definition — mirrors Onboarding Hub (strip + tinted icon)
-  const KPI_CARDS = [
-    { key: 'pending',      label: 'Pending Approval',   icon: 'ri-time-line',           strip: 'linear-gradient(90deg,#7c5cfc,#a78bfa)', tint: '#ece6ff', fg: '#5a3fd1' },
-    { key: 'approved',     label: 'Approved (Month)',   icon: 'ri-checkbox-circle-line',strip: 'linear-gradient(90deg,#0ab39c,#34d399)', tint: '#d3f0ee', fg: '#0a716a' },
-    { key: 'onLeaveToday', label: 'On Leave Today',     icon: 'ri-user-3-line',         strip: 'linear-gradient(90deg,#3b82f6,#60a5fa)', tint: '#dceefe', fg: '#0c63b0' },
-    { key: 'rejected',     label: 'Rejected',           icon: 'ri-close-circle-line',   strip: 'linear-gradient(90deg,#f06548,#fda192)', tint: '#fde2dc', fg: '#b91c1c' },
-    { key: 'total',        label: 'Total Requests',     icon: 'ri-stack-line',          strip: 'linear-gradient(90deg,#f59e0b,#fbcc77)', tint: '#fde8c4', fg: '#a4661c' },
-  ];
-
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
       <MasterFormStyles />
-      <LeaveStyles />
 
-      {/* ── Hero card (purple-tinted, separate container — matches Onboarding Hub) ── */}
-      <div className="onb-hero-card mb-3">
-        <div className="d-flex align-items-center gap-3 min-w-0">
-          <span
-            className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-            style={{
-              width: 46, height: 46,
-              background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
-              boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
-            }}
-          >
-            <i className="ri-calendar-2-line" style={{ color: '#fff', fontSize: 21 }} />
-          </span>
-          <div className="min-w-0">
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Leave Management</h5>
-              <span className="onb-hero-pill"><span className="dot" />FY 2025–26</span>
-            </div>
-            <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
-              Leave requests, balances, and approval pipeline across all employees
-            </div>
-          </div>
-        </div>
-        <div className="d-flex align-items-center gap-2 flex-wrap">
-          <Button className="lv-secondary-btn rounded-pill">
-            <i className="ri-calendar-event-line me-2" style={{ fontSize: 15 }} />Holidays
-          </Button>
-          <Button className="onb-checklist-cta rounded-pill">
-            <i className="ri-check-double-line me-2" style={{ fontSize: 16 }} />
-            Approve All
-          </Button>
-        </div>
-      </div>
-
-      {/* ── KPI cards row ── */}
-      <Row className="g-3 mb-3 align-items-stretch">
-        {KPI_CARDS.map(k => (
-          <Col key={k.key} xl={true} md={4} sm={6} xs={12}>
-            <div
-              className="onb-surface onb-kpi-card"
-              style={{
-                borderRadius: 14,
-                border: '1px solid var(--vz-border-color)',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                padding: '16px 18px',
-                position: 'relative',
-                overflow: 'hidden',
-                height: '100%',
-              }}
-            >
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.strip }} />
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
+      <Row>
+        <Col xs={12}>
+          <div className="rec-page">
+            {/* ── Hero card — purple-tinted banner, mirrors Onboarding Hub.
+                  Uses the existing .onb-hero-card / .onb-hero-pill classes
+                  shipped by HrEmployeeOnboarding. ── */}
+            <div className="onb-hero-card mb-3">
+              <div className="d-flex align-items-center gap-3 min-w-0">
+                <span
+                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                  style={{
+                    width: 48, height: 48,
+                    background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
+                    boxShadow: '0 8px 18px rgba(124,92,252,0.32)',
+                  }}
+                >
+                  <i className="ri-calendar-2-line" style={{ color: '#fff', fontSize: 22 }} />
+                </span>
                 <div className="min-w-0">
-                  <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                    {k.label}
-                  </p>
-                  <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                    <AnimatedNumber value={(counts as any)[k.key] ?? 0} />
-                  </h3>
-                </div>
-                <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <i className={k.icon} style={{ fontSize: 20, color: k.fg }} />
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <h5 className="fw-bold mb-0">Leave Management</h5>
+                    <span className="onb-hero-pill">
+                      <span className="dot" />
+                      FY 2025–26
+                    </span>
+                  </div>
+                  <div className="text-muted mt-1 fs-13">
+                    Leave requests, balances, and approval pipeline across all employees
+                  </div>
                 </div>
               </div>
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" className="rec-btn-ghost">
+                  <i className="ri-calendar-event-line" />Holidays
+                </button>
+              </div>
             </div>
-          </Col>
-        ))}
+
+            {/* ── KPI cards (5 tiles) ── */}
+            <Row className="g-3 mb-2 align-items-stretch rec-page-kpis">
+              {KPI_CARDS.map(k => (
+                <Col key={k.key} xl md={4} sm={6} xs={12}>
+                  <div className="rec-kpi-card h-100">
+                    <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+                    <div className="rec-kpi-text">
+                      <span className="rec-kpi-label">{k.label}</span>
+                      <span className="rec-kpi-num">
+                        <AnimatedNumber value={(counts as any)[k.key]} />
+                      </span>
+                    </div>
+                    <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                      <i className={k.icon} />
+                    </span>
+                  </div>
+                </Col>
+              ))}
+            </Row>
+
+            {/* ── Tabs (All / Pending / Approved / Rejected) — segmented control,
+                  drives the Status filter so the dropdown stays in sync. ── */}
+            <div className="rec-tab-track mb-2">
+              {([
+                { key: 'All',      label: 'All Leaves',      count: counts.tabs.All,      icon: 'ri-stack-line',          variant: 'in-progress' },
+                { key: 'Pending',  label: 'Pending',         count: counts.tabs.Pending,  icon: 'ri-time-line',           variant: 'in-progress' },
+                { key: 'Approved', label: 'Approved',        count: counts.tabs.Approved, icon: 'ri-checkbox-circle-line',variant: 'completed'   },
+                { key: 'Rejected', label: 'Rejected',        count: counts.tabs.Rejected, icon: 'ri-close-circle-line',   variant: 'cancelled'   },
+              ] as const).map(t => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => { setStatus(t.key); setPage(1); }}
+                  className={`rec-tab ${status === t.key ? `is-active ${t.variant}` : ''}`}
+                >
+                  <i className={t.icon} />
+                  {t.label}
+                  <span className="badge">{t.count}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* ── Bulk-action bar — only renders when at least one row is
+                  selected. Composed from existing recruitment classes
+                  (rec-header-count, rec-act-icon, rec-btn-primary,
+                  rec-btn-ghost) + Bootstrap utilities. */}
+            {selectedIds.size > 0 && (
+              <div className="d-flex align-items-center gap-2 flex-wrap p-2 rounded-3 border mb-2 bg-light">
+                <span className="rec-header-count">
+                  <span className="dot" />
+                  {selectedIds.size} selected
+                </span>
+                <button type="button" className="rec-btn-primary">
+                  <i className="ri-check-double-line" />Approve Selected
+                </button>
+                <button type="button" className="rec-btn-soft">
+                  <i className="ri-close-line" />Reject Selected
+                </button>
+                <button type="button" className="rec-btn-ghost ms-auto" onClick={clearSelection}>
+                  <i className="ri-close-circle-line" />Clear
+                </button>
+              </div>
+            )}
+
+            {/* ── Search + Filters + Table — single rec-list-frame ── */}
+            <Card className="border-0 shadow-none mb-0 bg-transparent">
+              <CardBody className="p-0">
+                <div className="rec-list-frame">
+                  <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
+                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
+                      <Input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search name, ID, type…"
+                        value={search}
+                        onChange={e => { setSearch(e.target.value); setPage(1); }}
+                      />
+                      <i className="ri-search-line search-icon" />
+                    </div>
+                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Status</span>
+                    <div style={{ minWidth: 150 }}>
+                      <MasterSelect value={status} onChange={v => { setStatus(v); setPage(1); }} options={STATUS_OPTIONS} placeholder="All Requests" />
+                    </div>
+                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Type</span>
+                    <div style={{ minWidth: 140 }}>
+                      <MasterSelect value={type} onChange={v => { setType(v); setPage(1); }} options={TYPE_OPTIONS} placeholder="All" />
+                    </div>
+                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Stage</span>
+                    <div style={{ minWidth: 160 }}>
+                      <MasterSelect value={stage} onChange={v => { setStage(v); setPage(1); }} options={STAGE_OPTIONS} placeholder="All Stages" />
+                    </div>
+                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Payroll</span>
+                    <div style={{ minWidth: 140 }}>
+                      <MasterSelect value={payroll} onChange={v => { setPayroll(v); setPage(1); }} options={PAYROLL_OPTIONS} placeholder="All" />
+                    </div>
+                    <span className="cand-result-chip ms-auto">
+                      <i className="ri-filter-3-line" />
+                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+
+                  <div className="rec-list-scroll">
+                    {(() => {
+                      // Header checkbox toggles all *visible pending* rows on
+                      // the current page. Tri-state: indeterminate when only
+                      // some are selected, checked when all are.
+                      const visiblePending = visible.filter(isPendingRow);
+                      const visiblePendingIds = visiblePending.map(r => r.id);
+                      const selectedVisible = visiblePendingIds.filter(id => selectedIds.has(id)).length;
+                      const allVisibleChecked = visiblePending.length > 0 && selectedVisible === visiblePending.length;
+                      const someVisibleChecked = selectedVisible > 0 && selectedVisible < visiblePending.length;
+                      const togglePageSelection = () => {
+                        setSelectedIds(prev => {
+                          const next = new Set(prev);
+                          if (allVisibleChecked) {
+                            visiblePendingIds.forEach(id => next.delete(id));
+                          } else {
+                            visiblePendingIds.forEach(id => next.add(id));
+                          }
+                          return next;
+                        });
+                      };
+                      return (
+                    <table className="rec-list-table align-middle table-nowrap mb-0">
+                      <thead>
+                        <tr>
+                          <th scope="col" className="ps-3 text-center" style={{ width: 38 }}>
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={allVisibleChecked}
+                              ref={el => { if (el) el.indeterminate = someVisibleChecked; }}
+                              disabled={visiblePending.length === 0}
+                              onChange={togglePageSelection}
+                              aria-label="Select all pending requests on this page"
+                            />
+                          </th>
+                          <th scope="col" className="text-center" style={{ width: 50 }}>SR.</th>
+                          <th scope="col" style={{ width: 240 }}>Employee</th>
+                          <th scope="col" style={{ width: 100 }}>Type</th>
+                          <th scope="col" style={{ width: 80 }}>Duration</th>
+                          <th scope="col" style={{ width: 220 }}>Date Range</th>
+                          <th scope="col" style={{ width: 200 }}>Approval Chain</th>
+                          <th scope="col" style={{ width: 120 }}>Payroll</th>
+                          <th scope="col" style={{ width: 110 }}>Proof</th>
+                          <th scope="col" style={{ width: 180 }}>Status</th>
+                          <th scope="col" className="text-center pe-3" style={{ width: 130 }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visible.length === 0 ? (
+                          <tr>
+                            <td colSpan={11} className="text-center py-5 text-muted">
+                              <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                              No leave requests match your filters
+                            </td>
+                          </tr>
+                        ) : visible.map((r, idx) => {
+                          const tone = STAGE_TONE[r.stage];
+                          const tType = TYPE_TONE[r.type];
+                          const tPay = PAYROLL_TONE[r.payroll];
+                          const isPending = r.stage.startsWith('Pending');
+                          const isSelected = selectedIds.has(r.id);
+                          return (
+                            <tr key={r.id} className={isSelected ? 'table-active' : undefined}>
+                              <td className="ps-3 text-center">
+                                <input
+                                  type="checkbox"
+                                  className="form-check-input"
+                                  checked={isSelected}
+                                  disabled={!isPending}
+                                  onChange={() => toggleRow(r.id)}
+                                  aria-label={`Select request ${r.id}`}
+                                  title={isPending ? 'Select for bulk action' : 'Only pending requests can be bulk-actioned'}
+                                />
+                              </td>
+                              <td className="text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
+                              <td>
+                                <div className="d-flex align-items-center gap-2">
+                                  <div
+                                    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                                    style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)` }}
+                                  >
+                                    {r.empInitials}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="fw-semibold fs-13">{r.empName}</div>
+                                    <div className="text-muted" style={{ fontSize: 11.5 }}>{r.empCode} · {r.empRole}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td>
+                                <span className="rec-pill" style={{ background: tType.bg, color: tType.fg }}>
+                                  {r.type}
+                                </span>
+                              </td>
+                              <td className="fs-13">{r.durationLabel}</td>
+                              <td>
+                                <div className="fs-13 fw-semibold"><span className="rec-date">{formatRange(r.fromDate, r.toDate)}</span></div>
+                                <div className="text-muted" style={{ fontSize: 11 }}>Applied: {formatDate(r.appliedOn)}</div>
+                              </td>
+                              <td>
+                                <ChainDots row={r} />
+                              </td>
+                              <td>
+                                <span className="rec-pill" style={{ background: tPay.bg, color: tPay.fg }}>
+                                  {r.payroll}
+                                </span>
+                              </td>
+                              <td>
+                                {r.proof === 'Uploaded' ? (
+                                  <>
+                                    <span className="rec-pill" style={{ background: '#d3f0ee', color: '#0a716a' }}>
+                                      <i className="ri-check-line me-1" />Uploaded
+                                    </span>
+                                    {r.proofVia && <div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>via {r.proofVia}</div>}
+                                  </>
+                                ) : r.proof === 'Missing' ? (
+                                  <>
+                                    <span className="rec-pill" style={{ background: '#fde2dc', color: '#b91c1c' }}>
+                                      <i className="ri-close-line me-1" />Missing
+                                    </span>
+                                    {r.proofVia && <div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>via {r.proofVia}</div>}
+                                  </>
+                                ) : (
+                                  <span className="text-muted fs-13">N/A</span>
+                                )}
+                              </td>
+                              <td>
+                                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: tone.bg, color: tone.fg }}>
+                                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
+                                  {r.stage}
+                                </span>
+                                {isPending && r.stageNote && (
+                                  <div className="text-muted" style={{ fontSize: 11, marginTop: 3 }}>{r.stageNote}</div>
+                                )}
+                              </td>
+                              <td className="pe-3">
+                                <div className="d-flex gap-1 justify-content-center align-items-center">
+                                  <ActionBtn
+                                    title="View details"
+                                    icon="ri-eye-line"
+                                    tone="info"
+                                    onClick={() => setDetail(r)}
+                                  />
+                                  <ActionBtn
+                                    title={
+                                      r.stage === 'Approved'  ? 'Already approved'
+                                      : r.stage === 'Cancelled' ? 'Request cancelled'
+                                      : 'Approve'
+                                    }
+                                    icon="ri-check-line"
+                                    tone="success"
+                                    disabled={r.stage === 'Approved' || r.stage === 'Cancelled'}
+                                  />
+                                  <ActionBtn
+                                    title={
+                                      r.stage === 'Rejected'  ? 'Already rejected'
+                                      : r.stage === 'Cancelled' ? 'Request cancelled'
+                                      : 'Reject'
+                                    }
+                                    icon="ri-close-line"
+                                    tone="danger"
+                                    disabled={r.stage === 'Rejected' || r.stage === 'Cancelled'}
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Pagination footer — same shape as recruitment */}
+                  <div className="rec-list-footer">
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="text-muted" style={{ fontSize: 12 }}>Rows per page:</span>
+                      <div style={{ width: 80 }}>
+                        <MasterSelect
+                          value={String(pageSize)}
+                          onChange={(v) => { setPageSize(Number(v) || 10); setPage(1); }}
+                          options={['10', '25', '50'].map(v => ({ value: v, label: v }))}
+                          placeholder="10"
+                        />
+                      </div>
+                      <span className="text-muted" style={{ fontSize: 12, marginLeft: 16 }}>
+                        Showing {filtered.length === 0 ? 0 : (sliceFrom + 1)}–{Math.min(sliceFrom + pageSize, filtered.length)} of {filtered.length}
+                      </span>
+                    </div>
+                    <div className="d-flex align-items-center gap-1">
+                      <button className="rec-pagebtn" onClick={() => goto(safePage - 1)} disabled={safePage <= 1}>‹ Prev</button>
+                      {Array.from({ length: pageCount }).map((_, i) => (
+                        <button
+                          key={i}
+                          className={`rec-pagebtn${safePage === i + 1 ? ' is-active' : ''}`}
+                          onClick={() => goto(i + 1)}
+                        >
+                          {i + 1}
+                        </button>
+                      ))}
+                      <button className="rec-pagebtn" onClick={() => goto(safePage + 1)} disabled={safePage >= pageCount}>Next ›</button>
+                    </div>
+                  </div>
+                </div>
+              </CardBody>
+            </Card>
+          </div>
+        </Col>
       </Row>
 
-      {/* ── Tabs (pill-style — quick toggle that drives the Status filter) ── */}
-      <div className="d-flex mb-3" style={{ gap: 8, flexWrap: 'wrap' }}>
-        {[
-          { key: 'All',      label: 'All Leaves',        count: counts.total,    icon: 'ri-stack-line' },
-          { key: 'Pending',  label: 'Pending Leaves',    count: counts.pending,  icon: 'ri-time-line' },
-          { key: 'Approved', label: 'Approved Leaves',   count: counts.approved, icon: 'ri-checkbox-circle-line' },
-        ].map(t => {
-          const on = status === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => { setStatus(t.key); setPage(1); }}
-              className="btn d-inline-flex align-items-center gap-2 fw-semibold"
-              style={{
-                borderRadius: 999,
-                padding: '8px 16px',
-                fontSize: 13,
-                background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'var(--vz-card-bg)',
-                color: on ? '#fff' : 'var(--vz-secondary-color)',
-                border: on ? 'none' : '1px solid var(--vz-border-color)',
-                boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-              }}
-            >
-              <i className={t.icon} style={{ fontSize: 14 }} />
-              {t.label}
-              <span
-                className="badge rounded-pill"
-                style={{
-                  fontSize: 11,
-                  background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                  color: on ? '#fff' : 'var(--vz-secondary-color)',
-                }}
-              >
-                {t.count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── Filters + Table — own card, like Employee Onboarding list ── */}
-      <Card>
-        <CardBody>
-          <Row className="g-2 align-items-center mb-3">
-            <Col xl={4} md={12} sm={12}>
-              <div className="search-box">
-                <Input
-                  type="text"
-                  className="form-control"
-                  placeholder="Search name, ID, type…"
-                  value={search}
-                  onChange={e => { setSearch(e.target.value); setPage(1); }}
-                />
-                <i className="ri-search-line search-icon"></i>
-              </div>
-            </Col>
-            <Col xl={8} md={12} sm={12} className="d-flex justify-content-xl-end gap-3 flex-wrap align-items-center">
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
-                <div style={{ minWidth: 150 }}>
-                  <MasterSelect
-                    value={status}
-                    onChange={v => { setStatus(v); setPage(1); }}
-                    options={STATUS_OPTIONS}
-                    placeholder="All Requests"
-                  />
-                </div>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Type</span>
-                <div style={{ minWidth: 140 }}>
-                  <MasterSelect
-                    value={type}
-                    onChange={v => { setType(v); setPage(1); }}
-                    options={TYPE_OPTIONS}
-                    placeholder="All"
-                  />
-                </div>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Stage</span>
-                <div style={{ minWidth: 160 }}>
-                  <MasterSelect
-                    value={stage}
-                    onChange={v => { setStage(v); setPage(1); }}
-                    options={STAGE_OPTIONS}
-                    placeholder="All Stages"
-                  />
-                </div>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Payroll</span>
-                <div style={{ minWidth: 140 }}>
-                  <MasterSelect
-                    value={payroll}
-                    onChange={v => { setPayroll(v); setPage(1); }}
-                    options={PAYROLL_OPTIONS}
-                    placeholder="All"
-                  />
-                </div>
-              </div>
-              <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                {filtered.length} results
-              </div>
-            </Col>
-          </Row>
-
-          <div className="table-responsive table-card rounded p-2">
-            <table className="table align-middle table-nowrap mb-0">
-              <thead className="table-light">
-                <tr>
-                  <th scope="col" className="ps-3" style={{ width: 60 }}>Sr. No.</th>
-                  <th scope="col">Employee</th>
-                  <th scope="col">Type</th>
-                  <th scope="col">Duration</th>
-                  <th scope="col">Date Range</th>
-                  <th scope="col">Approval Chain</th>
-                  <th scope="col">Payroll</th>
-                  <th scope="col">Proof</th>
-                  <th scope="col">Status</th>
-                  <th scope="col" className="pe-3">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="text-center py-5 text-muted">
-                      <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                      No leave requests match your filters
-                    </td>
-                  </tr>
-                ) : visible.map((r, idx) => {
-                  const tone = STAGE_TONE[r.stage];
-                  const tType = TYPE_TONE[r.type];
-                  return (
-                    <tr key={r.id}>
-                      <td className="ps-3 fs-13 text-muted">{sliceFrom + idx + 1}</td>
-                      <td>
-                        <div className="d-flex align-items-center gap-2">
-                          <div
-                            className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                            style={{
-                              width: 34, height: 34, fontSize: 12,
-                              background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
-                              boxShadow: `0 2px 6px ${r.accent}40`,
-                            }}
-                          >
-                            {r.empInitials}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="fw-semibold fs-13">{r.empName}</div>
-                            <div className="text-muted" style={{ fontSize: 11.5 }}>{r.empRole}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="lv-type-pill" style={{ background: tType.bg, color: tType.fg }}>
-                          {r.type}
-                        </span>
-                      </td>
-                      <td className="fs-13">{r.durationLabel}</td>
-                      <td>
-                        <div className="lv-range-cell">
-                          <div className="lv-range-text">{r.rangeLabel}</div>
-                          <div className="lv-range-applied">Applied: {r.appliedOn}</div>
-                        </div>
-                      </td>
-                      <td>
-                        <ApprovalChain chain={deriveChain(r)} />
-                      </td>
-                      <td>
-                        <span className="onb-role-pill">{r.payroll}</span>
-                      </td>
-                      <td>
-                        {r.proof === 'Uploaded' ? (
-                          <div className="lv-proof-cell">
-                            <span className="lv-proof-ok">
-                              <i className="ri-check-line" />Uploaded
-                            </span>
-                            {r.proofVia && <div className="lv-proof-via">via {r.proofVia}</div>}
-                          </div>
-                        ) : r.proof === 'Missing' ? (
-                          <div className="lv-proof-cell">
-                            <span className="lv-proof-bad">
-                              <i className="ri-close-line" />Missing
-                            </span>
-                            {r.proofVia && <div className="lv-proof-via">via {r.proofVia}</div>}
-                          </div>
-                        ) : (
-                          <span className="fs-13 text-muted">N/A</span>
-                        )}
-                      </td>
-                      <td>
-                        <span className="onb-pill" style={{ background: tone.bg, color: tone.fg }}>
-                          <span className="d" style={{ background: tone.dot }} />
-                          {r.stage}
-                        </span>
-                        {r.stage.startsWith('Pending') && r.stageNote && (
-                          <div className="lv-sla-chip" title="SLA">{r.stageNote}</div>
-                        )}
-                      </td>
-                      <td className="pe-3">
-                        <div className="lv-actions">
-                          <button
-                            type="button"
-                            className="lv-icon-btn lv-icon-btn--view"
-                            title="View details"
-                            aria-label="View details"
-                            onClick={() => setDetail(r)}
-                          >
-                            <i className="ri-eye-line" />
-                          </button>
-                          {r.stage.startsWith('Pending') && (
-                            <>
-                              <button
-                                type="button"
-                                className="lv-icon-btn lv-icon-btn--approve"
-                                title="Approve"
-                                aria-label="Approve"
-                              >
-                                <i className="ri-check-line" />
-                              </button>
-                              <button
-                                type="button"
-                                className="lv-icon-btn lv-icon-btn--reject"
-                                title="Reject"
-                                aria-label="Reject"
-                              >
-                                <i className="ri-close-line" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination — same layout as master TableContainer / onboarding */}
-          <Row className="align-items-center mt-2 g-3 text-center text-sm-start">
-            <div className="col-sm">
-              <div className="text-muted">
-                Showing
-                <span className="fw-semibold ms-1">{visible.length}</span>
-                {' '}of <span className="fw-semibold">{filtered.length}</span> Results
-              </div>
-            </div>
-            <div className="col-sm-auto">
-              <ul className="pagination pagination-separated pagination-md justify-content-center justify-content-sm-start mb-0">
-                <li className={safePage <= 1 ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage - 1); }}>Previous</a>
-                </li>
-                {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                  <li key={p} className={p === safePage ? 'page-item active' : 'page-item'}>
-                    <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(p); }}>{p}</a>
-                  </li>
-                ))}
-                <li className={safePage >= pageCount ? 'page-item disabled' : 'page-item'}>
-                  <a href="#" className="page-link" onClick={(e) => { e.preventDefault(); goto(safePage + 1); }}>Next</a>
-                </li>
-              </ul>
-            </div>
-          </Row>
-        </CardBody>
-      </Card>
-
-      {/* ── Leave Details drawer — opens from the row's "View Details" button.
-            Read-only summary of the leave + approval timeline + balance impact
-            + audit trail. Wire to GET /api/leaves/:id when backend lands. */}
-      <LeaveDetailsDrawer row={detail} onClose={() => setDetail(null)} />
+      {/* ── Read-only details modal — mirrors HrRecruitment's view modal. ── */}
+      <LeaveDetailsModal row={detail} onClose={() => setDetail(null)} />
     </>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LeaveStyles — page-scoped CSS for the few `lv-*` extras we add on top of
-// the Onboarding-Hub classes (chain avatars, type pill, proof cell, SLA chip).
+// LeaveDetailsModal — read-only Reactstrap Modal using the rec-form-modal
+// shell (same chrome HrRecruitment uses for its View modal). All copy lives
+// in tagged sub-components so the body reads top-to-bottom.
 // ─────────────────────────────────────────────────────────────────────────────
-function LeaveStyles(): ReactNode {
-  return (
-    <style>{`
-      .lv-secondary-btn {
-        background: rgba(255,255,255,0.85) !important;
-        color: #5a3fd1 !important;
-        border: 1px solid rgba(124,92,252,0.30) !important;
-        font-size: 13px;
-        font-weight: 700;
-        padding: 9px 16px;
-        display: inline-flex;
-        align-items: center;
-        transition: background .15s ease, transform .15s ease, box-shadow .15s ease;
-      }
-      .lv-secondary-btn:hover {
-        background: #ffffff !important;
-        transform: translateY(-1px);
-        box-shadow: 0 6px 14px rgba(124,92,252,0.18);
-      }
-      [data-bs-theme="dark"] .lv-secondary-btn {
-        background: rgba(255,255,255,0.06) !important;
-        color: #c4b5fd !important;
-        border-color: rgba(124,92,252,0.40) !important;
-      }
-
-      /* Type pill — solid-coloured chip in the table (matches Employee
-         table role-pill weight: 600 / semibold). */
-      .lv-type-pill {
-        display: inline-flex; align-items: center;
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 11px; font-weight: 600;
-        letter-spacing: 0.01em;
-      }
-
-      /* Date range cell — primary line + applied-on subtitle.
-         Weight matches the Employee-table convention: semibold on the
-         emphasized value, muted text-secondary on the helper line. */
-      .lv-range-cell { line-height: 1.3; }
-      .lv-range-text { font-size: 13px; font-weight: 600; color: var(--vz-body-color); }
-      .lv-range-applied { font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 2px; }
-
-      /* SLA chip under the status pill */
-      .lv-sla-chip {
-        display: inline-flex; align-items: center;
-        margin-top: 4px;
-        padding: 2px 8px;
-        border-radius: 6px;
-        background: #fef3c7;
-        color: #92400e;
-        border: 1px solid #fde68a;
-        font-size: 10px; font-weight: 600;
-      }
-      [data-bs-theme="dark"] .lv-sla-chip {
-        background: rgba(245,158,11,0.16);
-        color: #fbbf24;
-        border-color: rgba(245,158,11,0.40);
-      }
-
-      /* Approval chain — small avatars connected with arrows */
-      .lv-chain { display: inline-flex; align-items: center; gap: 3px; }
-      .lv-chain-item { display: inline-flex; align-items: center; gap: 3px; }
-      .lv-chain-arrow { color: #cbd5e1; font-size: 13px; }
-      .lv-chain-avatar {
-        display: inline-flex; align-items: center; justify-content: center;
-        width: 26px; height: 26px; border-radius: 50%;
-        font-size: 10px; font-weight: 800;
-        flex-shrink: 0;
-        transition: transform .15s ease;
-      }
-      .lv-chain-avatar:hover { transform: scale(1.10); }
-      .lv-chain-avatar i { font-size: 12px; }
-
-      /* Proof cell */
-      .lv-proof-cell { line-height: 1.3; }
-      .lv-proof-ok {
-        display: inline-flex; align-items: center; gap: 4px;
-        padding: 3px 10px;
-        border-radius: 999px;
-        background: #d3f0ee; color: #0a716a;
-        font-size: 11px; font-weight: 600;
-        border: 1px solid #b6e4dd;
-      }
-      .lv-proof-bad {
-        display: inline-flex; align-items: center; gap: 4px;
-        padding: 3px 10px;
-        border-radius: 999px;
-        background: #fde2dc; color: #b91c1c;
-        font-size: 11px; font-weight: 600;
-        border: 1px solid #fecaca;
-      }
-      .lv-proof-via {
-        font-size: 11.5px;
-        color: var(--vz-secondary-color);
-        margin-top: 3px;
-      }
-
-      /* ── Row action buttons ────────────────────────────────────────────
-           Compact icon-only buttons. Same 32px square footprint regardless
-           of whether the row needs 1 button (View only) or 3 (View / Approve
-           / Reject) — keeps the Action column tight and visually consistent.
-           Tooltips surface what each icon does on hover. */
-      .lv-actions {
-        display: inline-flex; align-items: center;
-        gap: 6px; flex-wrap: nowrap;
-      }
-      .lv-icon-btn {
-        position: relative;
-        width: 32px; height: 32px;
-        border-radius: 8px;
-        display: inline-flex; align-items: center; justify-content: center;
-        background: #ffffff;
-        border: 1px solid var(--vz-border-color);
-        color: var(--vz-secondary-color);
-        cursor: pointer;
-        padding: 0;
-        transition: transform .15s ease, box-shadow .15s ease, background .15s ease, border-color .15s ease, color .15s ease;
-      }
-      .lv-icon-btn i { font-size: 15px; line-height: 1; }
-      .lv-icon-btn:hover { transform: translateY(-1px); }
-      .lv-icon-btn:active { transform: translateY(0); }
-      .lv-icon-btn:focus-visible {
-        outline: 2px solid #c4b5fd;
-        outline-offset: 2px;
-      }
-      [data-bs-theme="dark"] .lv-icon-btn {
-        background: rgba(255,255,255,0.04);
-        color: rgba(255,255,255,0.78);
-      }
-
-      /* View — neutral default; on hover gains the project's purple accent. */
-      .lv-icon-btn--view:hover {
-        background: #f5f3ff;
-        color: #5a3fd1;
-        border-color: #c4b5fd;
-        box-shadow: 0 4px 10px rgba(124,92,252,0.18);
-      }
-      [data-bs-theme="dark"] .lv-icon-btn--view:hover {
-        background: rgba(124,92,252,0.16);
-        color: #c4b5fd;
-        border-color: rgba(124,92,252,0.40);
-      }
-
-      /* Approve — soft tinted green by default, deepens on hover. The slight
-         green tint on idle state makes the action immediately readable. */
-      .lv-icon-btn--approve {
-        background: #ecfdf5;
-        color: #059669;
-        border-color: #a7f3d0;
-      }
-      .lv-icon-btn--approve:hover {
-        background: linear-gradient(135deg,#10b981 0%,#059669 100%);
-        color: #ffffff;
-        border-color: transparent;
-        box-shadow: 0 4px 12px rgba(16,185,129,0.36);
-      }
-      [data-bs-theme="dark"] .lv-icon-btn--approve {
-        background: rgba(16,185,129,0.14);
-        color: #6ee7b7;
-        border-color: rgba(16,185,129,0.40);
-      }
-
-      /* Reject — soft tinted red by default, fills on hover. */
-      .lv-icon-btn--reject {
-        background: #fef2f2;
-        color: #dc2626;
-        border-color: #fecaca;
-      }
-      .lv-icon-btn--reject:hover {
-        background: linear-gradient(135deg,#ef4444 0%,#b91c1c 100%);
-        color: #ffffff;
-        border-color: transparent;
-        box-shadow: 0 4px 12px rgba(220,38,38,0.32);
-      }
-      [data-bs-theme="dark"] .lv-icon-btn--reject {
-        background: rgba(220,38,38,0.14);
-        color: #fca5a5;
-        border-color: rgba(220,38,38,0.40);
-      }
-    `}</style>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LeaveDetailsDrawer — modal dialog opened from a row's "View Details" button.
-// Renders directly to document.body via createPortal so it always escapes the
-// table's stacking context. Read-only for now; the Cancel Leave button is a
-// stub until the backend exposes a cancellation endpoint.
-// ─────────────────────────────────────────────────────────────────────────────
-function LeaveDetailsDrawer({ row, onClose }: { row: LeaveRequest | null; onClose: () => void }) {
+function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose: () => void }) {
   if (!row) return null;
 
   const tType = TYPE_TONE[row.type];
-
-  // Approval-chain projection (Self → Manager → HR) computed once for the
-  // drawer; consumed by the timeline and the audit-trail derivation below.
+  const tPay = PAYROLL_TONE[row.payroll];
+  const tStage = STAGE_TONE[row.stage];
   const chain = deriveChain(row);
-  const managerName = row.reportingManager.name;
 
-  // Audit trail rows derived from the approval chain — replace when the
-  // backend exposes a real audit log.
-  const auditRows = chain
-    .filter(n => n.decision === 'approved' || n.decision === 'rejected')
-    .map(n => {
-      const verb =
-        n.role === 'Self'      ? `submitted ${row.type} request (${row.id})`
-        : n.decision === 'approved' && n.role === 'HR' && row.escalationReason === 'manager_rejected' ? 'override-approved (manager had rejected)'
-        : n.decision === 'approved' ? 'approved'
-        : 'rejected';
-      const date = n.actionAt || (n.role === 'Self' ? row.appliedOn : '—');
-      return { date, name: n.name, action: verb };
-    });
+  const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="rec-view-field">
+      <div className="rec-view-label">{label}</div>
+      <div className="rec-view-value">{value || <span className="text-muted">—</span>}</div>
+    </div>
+  );
 
-  // Balance impact rows — kept hardcoded as visual placeholders. Replace with
-  // GET /api/employees/:id/leave-balances once the backend lands.
-  const balanceRows = [
-    { label: 'Annual',   used: 14, total: 18, color: '#7c5cfc', icon: 'ri-flight-takeoff-line' },
-    { label: 'Sick',     used: 6,  total: 12, color: '#dc2626', icon: 'ri-emotion-sad-line' },
-    { label: 'Casual',   used: 5,  total: 8,  color: '#c2410c', icon: 'ri-focus-3-line' },
-    { label: 'WFH',      used: 16, total: 24, color: '#0ea5e9', icon: 'ri-home-office-line' },
-    { label: 'Comp-off', used: 5,  total: 5,  color: '#10b981', icon: 'ri-time-line' },
-  ];
-  const totalUsed = balanceRows.reduce((s, b) => s + b.used, 0);
-  const totalQuota = balanceRows.reduce((s, b) => s + b.total, 0);
-  const overallPct = totalQuota === 0 ? 0 : Math.round((totalUsed / totalQuota) * 100);
-
-  return createPortal(
-    <div
-      className="lvd-overlay"
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 5000,
-        background: 'rgba(15,23,42,0.55)',
-        backdropFilter: 'blur(2px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16, overflowY: 'auto',
-      }}
+  return (
+    <Modal
+      isOpen={!!row}
+      toggle={onClose}
+      centered
+      size="lg"
+      backdrop="static"
+      contentClassName="rec-view-content border-0"
     >
-      <style>{`
-        .lvd-card {
-          background: #fff;
-          width: 100%;
-          max-width: 820px;
-          max-height: calc(100vh - 32px);
-          border-radius: 14px;
-          overflow: hidden;
-          box-shadow: 0 24px 60px rgba(15,23,42,0.30);
-          display: flex; flex-direction: column;
-        }
-        [data-bs-theme="dark"] .lvd-card { background: #1c2531; }
-
-        /* Header — purple-tinted identity bar */
-        .lvd-header {
-          background: linear-gradient(135deg, #f3edff 0%, #ede4ff 100%);
-          border-bottom: 1px solid #e3d6ff;
-          padding: 8px 14px;
-          display: flex; align-items: center; gap: 10px;
-        }
-        [data-bs-theme="dark"] .lvd-header {
-          background: linear-gradient(135deg, rgba(124,92,252,0.18) 0%, rgba(167,139,250,0.10) 100%);
-          border-color: rgba(124,92,252,0.32);
-        }
-        .lvd-avatar {
-          width: 34px; height: 34px; border-radius: 50%;
-          color: #fff; font-size: 11.5px; font-weight: 800;
-          display: inline-flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.14);
-        }
-        .lvd-head-meta { flex: 1; min-width: 0; }
-        .lvd-head-name { font-size: 14px; font-weight: 800; color: var(--vz-body-color); margin: 0; line-height: 1.2; }
-        [data-bs-theme="dark"] .lvd-head-name { color: #fff; }
-        .lvd-head-sub { font-size: 11px; color: #5a3fd1; font-weight: 600; margin-top: 1px; }
-        [data-bs-theme="dark"] .lvd-head-sub { color: #c4b5fd; }
-        .lvd-head-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-        .lvd-head-x {
-          width: 26px; height: 26px;
-          border-radius: 7px;
-          background: #fff;
-          border: 1px solid var(--vz-border-color);
-          display: inline-flex; align-items: center; justify-content: center;
-          color: var(--vz-secondary-color);
-          cursor: pointer; flex-shrink: 0;
-          transition: background .15s ease, color .15s ease;
-        }
-        .lvd-head-x:hover { background: var(--vz-light); color: var(--vz-body-color); }
-        [data-bs-theme="dark"] .lvd-head-x { background: rgba(255,255,255,0.06); }
-
-        /* Body — scrollable */
-        .lvd-body {
-          flex: 1 1 auto;
-          overflow-y: auto;
-          padding: 8px 12px 2px;
-        }
-        .lvd-section-title {
-          font-size: 9.5px; font-weight: 800;
-          letter-spacing: 0.12em; text-transform: uppercase;
-          color: var(--vz-secondary-color);
-          margin: 8px 0 4px;
-        }
-        .lvd-section-title:first-child { margin-top: 0; }
-
-        /* Details card — 3-column grid keeps the section ~half its old height */
-        .lvd-details-card {
-          background: #fff;
-          border: 1px solid var(--vz-border-color);
-          border-radius: 8px;
-          padding: 8px 10px;
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 6px 10px;
-        }
-        [data-bs-theme="dark"] .lvd-details-card { background: var(--vz-card-bg); }
-        .lvd-field-label { font-size: 9px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); margin-bottom: 1px; }
-        .lvd-field-value { font-size: 12px; font-weight: 500; color: var(--vz-body-color); line-height: 1.25; }
-        [data-bs-theme="dark"] .lvd-field-value { color: #fff; }
-
-        /* Approval timeline — horizontal stepper.
-             Each step is a centered column: dot on top, role + name below.
-             The connector to the next step is painted as a ::after pseudo
-             on the step itself, sitting at the dot's vertical center, which
-             keeps the dot horizontally aligned with its label underneath. */
-        .lvd-stepper {
-          display: flex; align-items: flex-start;
-          padding: 6px 0 2px;
-        }
-        .lvd-step {
-          flex: 1; min-width: 0;
-          display: flex; flex-direction: column; align-items: center;
-          gap: 6px;
-          position: relative;
-        }
-        .lvd-step-dot {
-          width: 32px; height: 32px;
-          border-radius: 50%;
-          display: inline-flex; align-items: center; justify-content: center;
-          background: #f3f4f6;
-          color: #9ca3af;
-          font-size: 14px;
-          flex-shrink: 0;
-          border: 2px solid #fff;
-          box-shadow: 0 0 0 1.5px #e5e7eb;
-          transition: background .25s ease, color .25s ease, box-shadow .25s ease;
-          position: relative;
-          z-index: 1;
-        }
-        /* Connector to NEXT step. Anchored at the dot's vertical centre
-           (top: 16px = half the 32-px dot) and extends right across the
-           gap until the next dot's centre. */
-        .lvd-step:not(:last-child)::after {
-          content: '';
-          position: absolute;
-          top: 21px; /* 6px stepper top padding + 16px (dot half) - 1px (line half) */
-          left: calc(50% + 18px);
-          right: calc(-50% + 18px);
-          height: 2px;
-          background: #e5e7eb;
-          border-radius: 999px;
-          z-index: 0;
-        }
-        .lvd-step.has-connector-filled:not(:last-child)::after {
-          background: linear-gradient(90deg,#7c5cfc,#5a3fd1);
-        }
-        .lvd-step-meta {
-          text-align: center;
-          line-height: 1.2;
-          width: 100%;
-          padding: 0 4px;
-        }
-        .lvd-step-role {
-          font-size: 10.5px; font-weight: 800;
-          letter-spacing: 0.04em; text-transform: uppercase;
-          color: var(--vz-secondary-color);
-        }
-        .lvd-step-name {
-          font-size: 11.5px; font-weight: 600;
-          color: var(--vz-body-color);
-          margin-top: 1px;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        [data-bs-theme="dark"] .lvd-step-name { color: #fff; }
-
-        /* Step states */
-        .lvd-step.is-done .lvd-step-dot {
-          background: linear-gradient(135deg,#7c5cfc,#5a3fd1);
-          color: #fff;
-          box-shadow: 0 0 0 1.5px rgba(124,92,252,0.30);
-        }
-        .lvd-step.is-done .lvd-step-role { color: #5a3fd1; }
-        [data-bs-theme="dark"] .lvd-step.is-done .lvd-step-role { color: #c4b5fd; }
-        .lvd-step.is-active .lvd-step-dot {
-          background: linear-gradient(135deg,#f59e0b,#d97706);
-          color: #fff;
-          box-shadow: 0 0 0 1.5px rgba(245,158,11,0.30), 0 0 0 6px rgba(245,158,11,0.12);
-        }
-        .lvd-step.is-active .lvd-step-role { color: #b45309; }
-        .lvd-step.is-rejected .lvd-step-dot {
-          background: linear-gradient(135deg,#f06548,#dc2626);
-          color: #fff;
-          box-shadow: 0 0 0 1.5px rgba(220,38,38,0.30);
-        }
-        .lvd-step.is-rejected .lvd-step-role { color: #b91c1c; }
-        .lvd-step.is-skipped .lvd-step-dot {
-          background: #f3f4f6; color: #9ca3af;
-          box-shadow: 0 0 0 1.5px #e5e7eb;
-        }
-        .lvd-step.is-skipped { opacity: 0.55; }
-
-        /* Active-step detail panel below the stepper */
-        .lvd-step-detail {
-          margin-top: 6px;
-          background: #f3eeff;
-          border: 1px solid #d8c8ff;
-          border-radius: 6px;
-          padding: 6px 10px;
-        }
-        [data-bs-theme="dark"] .lvd-step-detail { background: rgba(124,92,252,0.10); border-color: rgba(124,92,252,0.30); }
-        .lvd-step-detail-head {
-          display: flex; align-items: center; justify-content: space-between;
-          gap: 8px;
-          font-size: 9.5px; font-weight: 800;
-          letter-spacing: 0.08em; text-transform: uppercase;
-          color: var(--vz-secondary-color);
-        }
-        .lvd-step-detail-when { font-weight: 700; }
-        .lvd-step-detail-body {
-          display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
-          margin-top: 2px;
-        }
-        .lvd-step-detail-body strong {
-          font-size: 12.5px; font-weight: 700; color: var(--vz-body-color);
-        }
-        [data-bs-theme="dark"] .lvd-step-detail-body strong { color: #fff; }
-        .lvd-step-detail-action { font-size: 11px; color: var(--vz-secondary-color); }
-        .lvd-step-detail-comment {
-          margin-top: 4px;
-          padding: 4px 8px;
-          background: rgba(255,255,255,0.70);
-          border-left: 2px solid #c4b5fd;
-          border-radius: 4px;
-          font-size: 10.5px;
-          color: var(--vz-body-color);
-          font-style: italic;
-        }
-        [data-bs-theme="dark"] .lvd-step-detail-comment { background: rgba(0,0,0,0.20); color: rgba(255,255,255,0.86); }
-
-        /* Footer — clock icon + ETA + audit-trail pill */
-        .lvd-step-foot {
-          display: flex; align-items: center; gap: 6px;
-          margin-top: 4px;
-          font-size: 10.5px;
-          color: var(--vz-secondary-color);
-        }
-        .lvd-step-foot-eta { display: inline-flex; align-items: center; gap: 4px; }
-        .lvd-step-foot-eta i { font-size: 13px; }
-        .lvd-step-foot-sep { font-weight: 800; opacity: 0.5; }
-        .lvd-step-foot-pill {
-          display: inline-flex; align-items: center;
-          padding: 2px 8px;
-          border-radius: 999px;
-          background: #ede9fe;
-          color: #5a3fd1;
-          font-size: 9.5px; font-weight: 800;
-          letter-spacing: 0.06em;
-        }
-        [data-bs-theme="dark"] .lvd-step-foot-pill { background: rgba(124,92,252,0.20); color: #c4b5fd; }
-
-        /* Escalation banner — only rendered when a request has been pulled
-           into HR's queue. Reason colour-codes the strip. */
-        .lvd-escalation {
-          margin-top: 6px;
-          padding: 6px 10px;
-          border-radius: 6px;
-          display: flex; align-items: flex-start; gap: 8px;
-          font-size: 10.5px; line-height: 1.3;
-        }
-        .lvd-escalation i { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
-        .lvd-escalation strong { font-weight: 800; font-size: 11px; display: block; }
-        .lvd-escalation-sub { font-size: 10px; opacity: 0.85; margin-top: 1px; }
-        .lvd-escalation--manager_rejected {
-          background: #fee2e2; border: 1px solid #fecaca; color: #991b1b;
-        }
-        .lvd-escalation--manager_rejected i { color: #b91c1c; }
-        .lvd-escalation--aged_out {
-          background: #fef3c7; border: 1px solid #fde68a; color: #78350f;
-        }
-        .lvd-escalation--aged_out i { color: #b45309; }
-        .lvd-escalation--hr_raised {
-          background: #ede9fe; border: 1px solid #d8c8ff; color: #4c1d95;
-        }
-        .lvd-escalation--hr_raised i { color: #5a3fd1; }
-        .lvd-escalation--manager_unavailable {
-          background: #dbeafe; border: 1px solid #bfdbfe; color: #1e40af;
-        }
-        .lvd-escalation--manager_unavailable i { color: #1d4ed8; }
-        .lvd-escalation--none { display: none; }
-
-        /* Policy flags */
-        .lvd-empty {
-          font-size: 12px;
-          color: var(--vz-secondary-color);
-          font-style: italic;
-        }
-
-        /* Balance impact — analytics format */
-        .lvd-bal-summary {
-          position: relative;
-          background: linear-gradient(135deg,#f3eeff 0%,#ede4ff 100%);
-          border: 1px solid #d8c8ff;
-          border-radius: 8px;
-          padding: 6px 12px 8px;
-          display: grid;
-          grid-template-columns: 1fr auto;
-          align-items: center;
-          gap: 4px 10px;
-          margin-bottom: 6px;
-          overflow: hidden;
-        }
-        [data-bs-theme="dark"] .lvd-bal-summary {
-          background: linear-gradient(135deg, rgba(124,92,252,0.16) 0%, rgba(124,92,252,0.08) 100%);
-          border-color: rgba(124,92,252,0.32);
-        }
-        .lvd-bal-summary-meta { min-width: 0; }
-        .lvd-bal-summary-label {
-          font-size: 9px; font-weight: 800;
-          letter-spacing: 0.10em; text-transform: uppercase;
-          color: #5a3fd1;
-        }
-        [data-bs-theme="dark"] .lvd-bal-summary-label { color: #c4b5fd; }
-        .lvd-bal-summary-num { display: flex; align-items: baseline; gap: 5px; margin-top: 2px; }
-        .lvd-bal-summary-used { font-size: 17px; font-weight: 800; color: #1f2937; line-height: 1; letter-spacing: -0.01em; }
-        [data-bs-theme="dark"] .lvd-bal-summary-used { color: #fff; }
-        .lvd-bal-summary-total { font-size: 11px; font-weight: 600; color: var(--vz-secondary-color); }
-        .lvd-bal-summary-right { text-align: right; }
-        .lvd-bal-summary-pct { font-size: 17px; font-weight: 800; color: #5a3fd1; line-height: 1; letter-spacing: -0.01em; }
-        [data-bs-theme="dark"] .lvd-bal-summary-pct { color: #c4b5fd; }
-        .lvd-bal-summary-pct-label { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vz-secondary-color); margin-top: 1px; }
-        .lvd-bal-summary-track {
-          grid-column: 1 / -1;
-          height: 4px;
-          background: rgba(124,92,252,0.18);
-          border-radius: 999px;
-          overflow: hidden;
-        }
-        .lvd-bal-summary-fill {
-          height: 100%;
-          background: linear-gradient(90deg,#5a3fd1,#7c5cfc,#a78bfa);
-          border-radius: 999px;
-          transition: width .35s ease;
-          box-shadow: 0 0 10px rgba(124,92,252,0.40);
-        }
-
-        .lvd-bal-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 6px;
-        }
-        @media (max-width: 600px) {
-          .lvd-bal-grid { grid-template-columns: 1fr 1fr; }
-        }
-        .lvd-bal-card {
-          border: 1px solid var(--vz-border-color);
-          border-radius: 8px;
-          padding: 6px 9px 7px;
-          transition: transform .18s ease, box-shadow .18s ease;
-        }
-        .lvd-bal-card:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(15,23,42,0.06); }
-        .lvd-bal-head {
-          display: flex; align-items: center; gap: 6px;
-          margin-bottom: 4px;
-        }
-        .lvd-bal-icon {
-          width: 22px; height: 22px;
-          border-radius: 6px;
-          display: inline-flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-        }
-        .lvd-bal-icon i { font-size: 12px; }
-        .lvd-bal-label {
-          flex: 1; min-width: 0;
-          font-size: 10px; font-weight: 800;
-          letter-spacing: 0.04em; text-transform: uppercase;
-          color: var(--vz-body-color);
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        [data-bs-theme="dark"] .lvd-bal-label { color: #fff; }
-        .lvd-bal-pct-chip {
-          display: inline-flex; align-items: center;
-          padding: 1px 6px;
-          border-radius: 999px;
-          font-size: 9px; font-weight: 800;
-          flex-shrink: 0;
-        }
-        .lvd-bal-stat {
-          display: flex; align-items: baseline; gap: 4px;
-          margin-bottom: 3px;
-        }
-        .lvd-bal-num { font-size: 17px; font-weight: 800; line-height: 1; letter-spacing: -0.01em; }
-        .lvd-bal-num-sub { font-size: 9.5px; font-weight: 600; color: var(--vz-secondary-color); text-transform: lowercase; letter-spacing: 0.02em; }
-        .lvd-bal-track {
-          height: 3px;
-          background: rgba(0,0,0,0.05);
-          border-radius: 999px;
-          overflow: hidden;
-          margin-bottom: 4px;
-        }
-        [data-bs-theme="dark"] .lvd-bal-track { background: rgba(255,255,255,0.10); }
-        .lvd-bal-fill { height: 100%; border-radius: 999px; transition: width .25s ease; }
-        .lvd-bal-foot {
-          display: flex; align-items: center; justify-content: space-between;
-          font-size: 9px; font-weight: 700;
-          color: var(--vz-secondary-color);
-          letter-spacing: 0.02em;
-        }
-        .lvd-bal-impact-row {
-          margin-top: 6px;
-          padding: 5px 10px;
-          background: #faf6ff;
-          border: 1px dashed #c4b5fd;
-          border-radius: 6px;
-          display: flex; align-items: center; justify-content: space-between;
-          gap: 8px; flex-wrap: wrap;
-        }
-        [data-bs-theme="dark"] .lvd-bal-impact-row {
-          background: rgba(124,92,252,0.08);
-          border-color: rgba(124,92,252,0.40);
-        }
-        .lvd-bal-impact-label {
-          font-size: 10px; font-weight: 700;
-          color: var(--vz-secondary-color);
-          letter-spacing: 0.04em; text-transform: uppercase;
-        }
-
-        /* Team availability warning */
-        .lvd-warn {
-          display: flex; align-items: flex-start; gap: 8px;
-          background: #fef9c3;
-          border: 1px solid #fde68a;
-          color: #78350f;
-          border-radius: 6px;
-          padding: 6px 10px;
-          font-size: 10.5px; line-height: 1.35;
-        }
-        .lvd-warn i { font-size: 14px; color: #b45309; flex-shrink: 0; }
-        .lvd-warn strong { color: #78350f; font-weight: 700; }
-
-        /* Audit trail */
-        .lvd-audit {
-          background: #fff;
-          border: 1px solid var(--vz-border-color);
-          border-radius: 6px;
-          padding: 6px 10px;
-        }
-        [data-bs-theme="dark"] .lvd-audit { background: var(--vz-card-bg); }
-        .lvd-audit-row { font-size: 10.5px; color: var(--vz-secondary-color); padding: 0; line-height: 1.5; }
-        .lvd-audit-row strong { color: var(--vz-body-color); font-weight: 700; }
-        [data-bs-theme="dark"] .lvd-audit-row strong { color: #fff; }
-
-        /* Footer */
-        .lvd-footer {
-          padding: 6px 14px;
-          border-top: 1px solid var(--vz-border-color);
-          background: #fff;
-        }
-        [data-bs-theme="dark"] .lvd-footer { background: var(--vz-card-bg); }
-        .lvd-cancel-btn {
-          width: 100%;
-          padding: 6px 12px;
-          background: #f3f4f6;
-          border: 1px solid #e5e7eb;
-          border-radius: 6px;
-          font-size: 11.5px; font-weight: 700;
-          color: var(--vz-secondary-color);
-          display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-          cursor: pointer;
-          transition: background .15s ease, color .15s ease, border-color .15s ease;
-        }
-        .lvd-cancel-btn:hover {
-          background: #fee2e2;
-          border-color: #fecaca;
-          color: #b91c1c;
-        }
-      `}</style>
-
-      <div className="lvd-card" onClick={e => e.stopPropagation()}>
-
-        {/* Header — identity only. Stage / Payroll / Proof live further down
-            in their proper sections so the header stays clean. */}
-        <div className="lvd-header">
-          <span className="lvd-avatar" style={{ background: row.accent }}>{row.empInitials}</span>
-          <div className="lvd-head-meta">
-            <h5 className="lvd-head-name">{row.empName}</h5>
-            <div className="lvd-head-sub">{row.empRole} · {row.id}</div>
+      <ModalBody className="p-0">
+        {/* Header */}
+        <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-3 min-w-0">
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                style={{
+                  width: 38, height: 38,
+                  background: `linear-gradient(135deg, ${row.accent}, ${row.accent}cc)`,
+                  color: '#fff', fontWeight: 700, fontSize: 13,
+                }}
+              >
+                {row.empInitials}
+              </span>
+              <div className="min-w-0">
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                  {row.empName} <span style={{ opacity: 0.8 }}>· {row.id}</span>
+                </h5>
+                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                  {row.empRole} · Reporting to {row.reportingManager.name}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rec-close-btn d-inline-flex align-items-center justify-content-center"
+            >
+              <i className="ri-close-line" style={{ fontSize: 17 }} />
+            </button>
           </div>
-          <button type="button" className="lvd-head-x" onClick={onClose} aria-label="Close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
-        <div className="lvd-body">
+        <div className="rec-view-body" style={{ padding: '14px 18px', maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
 
-          {/* Leave Details */}
-          <p className="lvd-section-title">Leave Details</p>
-          <div className="lvd-details-card">
-            <div>
-              <div className="lvd-field-label">Leave Type</div>
-              <div><span className="lv-type-pill" style={{ background: tType.bg, color: tType.fg }}>{row.type}</span></div>
-            </div>
-            <div>
-              <div className="lvd-field-label">Duration</div>
-              <div className="lvd-field-value">{row.durationLabel}</div>
-            </div>
-            <div>
-              <div className="lvd-field-label">Dates</div>
-              <div className="lvd-field-value">{row.rangeLabel}</div>
-            </div>
-            <div>
-              <div className="lvd-field-label">Manager</div>
-              <div className="lvd-field-value">{managerName}</div>
-            </div>
-            <div>
-              <div className="lvd-field-label">Reason</div>
-              <div className="lvd-field-value">{row.reason || '—'}</div>
-            </div>
-            <div>
-              <div className="lvd-field-label">Submitted</div>
-              <div className="lvd-field-value">{row.appliedOn}</div>
+          {/* Leave Details — 3-column grid so values like the manager
+              "Name · Designation" line don't wrap awkwardly. */}
+          <div className="rec-view-card">
+            <div className="rec-view-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
+              <Field label="Leave Type" value={
+                <span className="rec-pill" style={{ background: tType.bg, color: tType.fg }}>{row.type}</span>
+              } />
+              <Field label="Duration" value={row.durationLabel} />
+              <Field label="Dates" value={formatRange(row.fromDate, row.toDate)} />
+              <Field label="Reporting Manager" value={
+                <span>
+                  {row.reportingManager.name}
+                  <span className="text-muted d-block" style={{ fontSize: 11 }}>{row.reportingManager.designation}</span>
+                </span>
+              } />
+              <Field label="Submitted" value={formatDate(row.appliedOn)} />
+              <Field label="Payroll" value={
+                <span className="rec-pill" style={{ background: tPay.bg, color: tPay.fg }}>{row.payroll}</span>
+              } />
+              <Field label="Status" value={
+                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: tStage.bg, color: tStage.fg }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: tStage.dot }} />
+                  {row.stage}
+                </span>
+              } />
+              <Field label="Reason" value={row.reason} />
             </div>
           </div>
 
-          {/* Approval Timeline — horizontal stepper. Each dot represents one
-              actor in the chain (You → Manager → HR). Filled connectors show
-              progress; the active step's name + comment renders below. */}
-          <p className="lvd-section-title">Approval Timeline</p>
-          <div className="lvd-stepper">
-            {chain.map((n, i) => {
-              const isActive   = n.decision === 'pending';
-              const isApproved = n.decision === 'approved';
-              const isRejected = n.decision === 'rejected';
-              const isSkipped  = n.decision === 'skipped';
-
-              const stepClass =
-                isApproved ? 'is-done'
-                : isActive ? 'is-active'
-                : isRejected ? 'is-rejected'
-                : isSkipped ? 'is-skipped'
-                : 'is-idle';
-
-              // Connector to NEXT step is "filled" only when THIS step is past.
-              // We attach it as a modifier on this step so the ::after pseudo
-              // can pick the right colour without needing to inspect siblings.
-              const stepConnectorClass = isApproved ? ' has-connector-filled' : '';
-
-              const baseIcon =
-                n.role === 'Self'    ? 'ri-user-3-line'
-                : n.role === 'Manager' ? 'ri-user-star-line'
-                : 'ri-shield-user-line';
-              const overlayIcon =
-                isApproved ? 'ri-check-line'
-                : isRejected ? 'ri-close-line'
-                : isSkipped  ? 'ri-subtract-line'
-                : null;
-
-              const role = n.role === 'Self' ? 'You' : n.role === 'Manager' ? 'Manager' : 'HR';
-              return (
-                <div
-                  key={i}
-                  className={`lvd-step ${stepClass}${stepConnectorClass}`}
-                  title={`${role}: ${n.name} — ${n.detail || ''}`}
-                >
-                  <span className="lvd-step-dot">
-                    <i className={overlayIcon || baseIcon} />
+          {/* Approval Timeline — clean vertical list. Each step is a row:
+              colored dot + role/name/action/date + comment block beneath. */}
+          <div className="rec-view-card mt-3">
+            <div className="rec-view-label mb-2">Approval Timeline</div>
+            <ApprovalTimelineList chain={chain} reportingManager={row.reportingManager} appliedOn={row.appliedOn} />
+            {row.escalatedToHr && (
+              <div className="mt-2 d-flex align-items-start gap-2 p-2 rounded" style={{ background: '#fef3c7', border: '1px solid #fde68a', color: '#78350f' }}>
+                <i className="ri-information-line" style={{ fontSize: 16, marginTop: 1 }} />
+                <div style={{ fontSize: 11.5, lineHeight: 1.4 }}>
+                  <strong style={{ display: 'block' }}>
+                    {row.escalationReason === 'manager_rejected' && 'Manager rejected — escalated to HR'}
+                    {row.escalationReason === 'aged_out'         && 'Auto-escalated to HR (>7 days)'}
+                    {row.escalationReason === 'hr_raised'        && 'HR raised on behalf of employee'}
+                    {row.escalationReason === 'manager_unavailable' && 'Manager unavailable — escalated to HR'}
+                  </strong>
+                  <span>
+                    {row.escalationReason === 'manager_rejected' && 'HR can override the manager\'s decision after reviewing context.'}
+                    {row.escalationReason === 'aged_out'         && 'Request sat with the manager for over 7 days; HR has been pulled in.'}
+                    {row.escalationReason === 'hr_raised'        && 'Manager step is skipped — HR is the sole approver.'}
+                    {row.escalationReason === 'manager_unavailable' && 'Reporting manager is on leave — HR is acting in their place.'}
                   </span>
-                  <div className="lvd-step-meta">
-                    <div className="lvd-step-role">{role}</div>
-                    <div className="lvd-step-name">{n.name}</div>
-                  </div>
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
 
-          {/* Active-step detail panel — surfaces the most relevant actor's
-              name, action time, and comment without bloating the stepper. */}
+          {/* Policy Flags — auto-derived from the request shape (short
+              notice, long duration, manager rejection, etc). HR uses these
+              to spot-check requests that need a closer look. */}
           {(() => {
-            const pending = chain.find(n => n.decision === 'pending');
-            const lastActed = [...chain].reverse().find(n => n.decision === 'approved' || n.decision === 'rejected');
-            const focal = pending || lastActed;
-            if (!focal) return null;
-            const roleLabel =
-              focal.role === 'Self' ? 'Maker'
-              : focal.role === 'Manager'
-                ? `Reporting Manager${row.reportingManager.designation ? ' · ' + row.reportingManager.designation : ''}`
-                : 'HR';
+            const flags: { label: string; tone: { bg: string; fg: string } }[] = [];
+
+            // "Short Notice" — applied less than 2 days before the leave starts.
+            const applied = new Date(row.appliedOn);
+            const startsAt = new Date(row.fromDate);
+            const noticeDays = Math.round((startsAt.getTime() - applied.getTime()) / (1000 * 60 * 60 * 24));
+            if (!isNaN(noticeDays) && noticeDays < 2 && row.type !== 'Sick' && row.type !== 'Maternity') {
+              flags.push({ label: 'Short Notice', tone: { bg: '#fde2dc', fg: '#b91c1c' } });
+            }
+
+            // "Long Duration" — more than 5 working days.
+            if (row.durationDays > 5) {
+              flags.push({ label: 'Long Duration', tone: { bg: '#fde8c4', fg: '#a4661c' } });
+            }
+
+            // "Manager Override" — HR overrode a manager rejection.
+            if (row.escalationReason === 'manager_rejected' && row.hrStatus === 'Approved') {
+              flags.push({ label: 'HR Override', tone: { bg: '#ede9fe', fg: '#5a3fd1' } });
+            }
+
+            // "SLA Breached" — pending more than 7 days (auto-escalation cutoff).
+            if (row.escalationReason === 'aged_out') {
+              flags.push({ label: 'SLA Breached', tone: { bg: '#fef3c7', fg: '#92400e' } });
+            }
+
+            // "Missing Proof" — required document hasn't been uploaded yet.
+            if (row.proof === 'Missing') {
+              flags.push({ label: 'Missing Proof', tone: { bg: '#fde2dc', fg: '#b91c1c' } });
+            }
+
             return (
-              <div className="lvd-step-detail">
-                <div className="lvd-step-detail-head">
-                  <span className="lvd-step-detail-role">{roleLabel}</span>
-                  <span className="lvd-step-detail-when">
-                    {focal.actionAt || (focal.role === 'Self' ? row.appliedOn : 'Awaiting action')}
-                  </span>
-                </div>
-                <div className="lvd-step-detail-body">
-                  <strong>{focal.name}</strong>
-                  <span className="lvd-step-detail-action">{focal.detail || '—'}</span>
-                </div>
-                {focal.comment && (
-                  <div className="lvd-step-detail-comment">"{focal.comment}"</div>
+              <div className="rec-view-card mt-3">
+                <div className="rec-view-label mb-2">Policy Flags</div>
+                {flags.length === 0 ? (
+                  <span className="text-muted fst-italic" style={{ fontSize: 12 }}>No policy flags</span>
+                ) : (
+                  <div className="d-flex flex-wrap gap-2">
+                    {flags.map((f, i) => (
+                      <span
+                        key={i}
+                        className="rec-pill"
+                        style={{ background: f.tone.bg, color: f.tone.fg }}
+                      >
+                        <i className="ri-flag-2-line me-1" />{f.label}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             );
           })()}
 
-          {/* Footer — ETA + audit-trail pill, modeled on the reference image. */}
-          <div className="lvd-step-foot">
-            <span className="lvd-step-foot-eta">
-              <i className="ri-time-line" />
-              {row.stage === 'Approved' || row.stage === 'Rejected' || row.stage === 'Cancelled'
-                ? 'Resolved'
-                : 'Typically resolved in 24–48 hrs'}
-            </span>
-            <span className="lvd-step-foot-sep">·</span>
-            <span className="lvd-step-foot-pill">AUDIT TRAIL GENERATED</span>
-          </div>
-
-          {/* Escalation banner — explains why HR is reviewing this request.
-              Only shown when escalation actually happened. */}
-          {row.escalatedToHr && (
-            <div className={`lvd-escalation lvd-escalation--${row.escalationReason}`}>
-              <i className={
-                row.escalationReason === 'manager_rejected' ? 'ri-shield-cross-line'
-                : row.escalationReason === 'aged_out' ? 'ri-timer-flash-line'
-                : row.escalationReason === 'hr_raised' ? 'ri-user-star-line'
-                : 'ri-information-line'
-              } />
-              <div>
-                <strong>
-                  {row.escalationReason === 'manager_rejected' && 'Manager rejected — escalated to HR'}
-                  {row.escalationReason === 'aged_out'         && 'Auto-escalated to HR (>7 days)'}
-                  {row.escalationReason === 'hr_raised'        && 'HR raised on behalf of employee'}
-                  {row.escalationReason === 'manager_unavailable' && 'Manager unavailable — escalated to HR'}
-                </strong>
-                <div className="lvd-escalation-sub">
-                  {row.escalationReason === 'manager_rejected' && 'HR can override the manager\'s decision after reviewing context.'}
-                  {row.escalationReason === 'aged_out'         && 'Request sat with the manager for over 7 days; HR has been pulled in.'}
-                  {row.escalationReason === 'hr_raised'        && 'Manager step is skipped — HR is the sole approver.'}
-                  {row.escalationReason === 'manager_unavailable' && 'Reporting manager is on leave — HR is acting in their place.'}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Payroll & Balance Impact — analytics-style summary header + grid
-              of per-leave-type cards with consumption % and remaining days. */}
-          <p className="lvd-section-title">Payroll &amp; Balance Impact</p>
-
-          <div className="lvd-bal-summary">
-            <div className="lvd-bal-summary-meta">
-              <div className="lvd-bal-summary-label">Year-to-Date Consumption</div>
-              <div className="lvd-bal-summary-num">
-                <span className="lvd-bal-summary-used">{totalUsed}</span>
-                <span className="lvd-bal-summary-total">/ {totalQuota} days</span>
-              </div>
-            </div>
-            <div className="lvd-bal-summary-right">
-              <div className="lvd-bal-summary-pct">{overallPct}%</div>
-              <div className="lvd-bal-summary-pct-label">consumed</div>
-            </div>
-            <div className="lvd-bal-summary-track">
-              <div className="lvd-bal-summary-fill" style={{ width: `${overallPct}%` }} />
-            </div>
-          </div>
-
-          <div className="lvd-bal-grid">
-            {balanceRows.map(b => {
-              const pct = b.total === 0 ? 0 : Math.round((b.used / b.total) * 100);
-              const remaining = Math.max(0, b.total - b.used);
-              const exhausted = remaining === 0;
+          {/* Payroll & Balance Impact — per-leave-type usage bars + the
+              payroll mode this request will be charged against. Numbers are
+              dummy until the backend exposes /api/employees/:id/leave-balances. */}
+          <div className="rec-view-card mt-3">
+            <div className="rec-view-label mb-2">Payroll &amp; Balance Impact</div>
+            {[
+              { label: 'Annual Leave', used: 14, total: 18, color: '#7c5cfc' },
+              { label: 'Sick Leave',   used: 6,  total: 12, color: '#dc2626' },
+              { label: 'Casual Leave', used: 5,  total: 8,  color: '#c2410c' },
+              { label: 'WFH Days',     used: 16, total: 24, color: '#0ea5e9' },
+              { label: 'Comp-off',     used: 5,  total: 5,  color: '#9ca3af' },
+            ].map(b => {
+              const pct = b.total === 0 ? 0 : Math.min(100, (b.used / b.total) * 100);
               return (
-                <div
-                  key={b.label}
-                  className="lvd-bal-card"
-                  style={{
-                    background: `linear-gradient(135deg, ${b.color}10 0%, ${b.color}03 100%)`,
-                    borderColor: `${b.color}26`,
-                  }}
-                >
-                  <div className="lvd-bal-head">
-                    <span className="lvd-bal-icon" style={{ background: `${b.color}1f`, color: b.color }}>
-                      <i className={b.icon} />
-                    </span>
-                    <span className="lvd-bal-label">{b.label}</span>
+                <div key={b.label} className="d-flex align-items-center gap-3 py-1">
+                  <span className="fs-13" style={{ width: 110, flexShrink: 0 }}>{b.label}</span>
+                  <span
+                    className="flex-grow-1 rounded-pill"
+                    style={{ height: 6, background: '#f3f4f6', overflow: 'hidden', minWidth: 0 }}
+                  >
                     <span
-                      className="lvd-bal-pct-chip"
-                      style={{
-                        background: exhausted ? '#fee2e2' : `${b.color}1a`,
-                        color: exhausted ? '#b91c1c' : b.color,
-                      }}
-                    >
-                      {pct}%
-                    </span>
-                  </div>
-                  <div className="lvd-bal-stat">
-                    <span className="lvd-bal-num" style={{ color: exhausted ? '#b91c1c' : b.color }}>
-                      {remaining}
-                    </span>
-                    <span className="lvd-bal-num-sub">{exhausted ? 'exhausted' : 'days left'}</span>
-                  </div>
-                  <div className="lvd-bal-track">
-                    <div
-                      className="lvd-bal-fill"
-                      style={{
-                        width: `${pct}%`,
-                        background: `linear-gradient(90deg, ${b.color}, ${b.color}cc)`,
-                      }}
+                      className="d-block rounded-pill"
+                      style={{ height: '100%', width: `${pct}%`, background: b.color }}
                     />
-                  </div>
-                  <div className="lvd-bal-foot">
-                    <span>Used {b.used}</span>
-                    <span>Quota {b.total}</span>
-                  </div>
+                  </span>
+                  <span className="fw-semibold fs-13 text-muted" style={{ width: 50, textAlign: 'right', flexShrink: 0 }}>
+                    {b.used}/{b.total}
+                  </span>
                 </div>
               );
             })}
+            <div className="d-flex align-items-center gap-2 mt-2 pt-2 border-top">
+              <span className="text-muted" style={{ fontSize: 12 }}>Impact:</span>
+              <span className="rec-pill" style={{ background: tPay.bg, color: tPay.fg }}>{row.payroll}</span>
+            </div>
           </div>
 
-          <div className="lvd-bal-impact-row">
-            <span className="lvd-bal-impact-label">This request impacts</span>
-            <span className="onb-role-pill" style={{ background: '#ddd6fe', color: '#5a3fd1', padding: '5px 14px' }}>
-              <i className="ri-arrow-right-line me-1" />{row.payroll}
-            </span>
+          {/* Audit trail */}
+          <div className="rec-view-card mt-3">
+            <div className="rec-view-label mb-2">Audit Trail</div>
+            <ul className="list-unstyled mb-0">
+              {chain
+                .filter(n => n.decision === 'approved' || n.decision === 'rejected')
+                .map((n, i) => {
+                  const verb =
+                    n.role === 'Self' ? `submitted ${row.type} request (${row.id})`
+                    : n.decision === 'approved' && n.role === 'HR' && row.escalationReason === 'manager_rejected' ? 'override-approved (manager had rejected)'
+                    : n.decision === 'approved' ? 'approved'
+                    : 'rejected';
+                  const date = formatDate(n.actionAt || (n.role === 'Self' ? row.appliedOn : ''));
+                  return (
+                    <li key={i} className="text-muted" style={{ fontSize: 11.5, lineHeight: 1.6 }}>
+                      {date} — <strong className="text-body">{n.name}</strong> {verb}
+                    </li>
+                  );
+                })}
+            </ul>
           </div>
-
-          {/* Team Availability */}
-          <p className="lvd-section-title">Team Availability</p>
-          <div className="lvd-warn">
-            <i className="ri-alert-line" />
-            <div>2 colleagues in <strong>{row.empRole}</strong> also on approved leave this month. Verify team availability.</div>
-          </div>
-
-          {/* Audit Trail */}
-          <p className="lvd-section-title">Audit Trail</p>
-          <div className="lvd-audit">
-            {auditRows.length === 0 ? (
-              <div className="lvd-empty">No audit entries yet.</div>
-            ) : auditRows.map((a, i) => (
-              <div key={i} className="lvd-audit-row">
-                {a.date} — <strong>{a.name}</strong> {a.action}
-              </div>
-            ))}
-          </div>
-
         </div>
 
         {/* Footer */}
-        <div className="lvd-footer">
-          <button type="button" className="lvd-cancel-btn">
-            <i className="ri-close-line" /> Cancel Leave
+        <div className="rec-form-footer">
+          <span className="hint">Read-only view · Use the row actions to approve / reject</span>
+          <button type="button" className="rec-btn-ghost" onClick={onClose}>
+            <i className="ri-close-line" />Close
           </button>
         </div>
+      </ModalBody>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ApprovalTimelineList — horizontal stepper for the details modal.
+//   [Dot] —— [Dot] —— [Dot]
+//    You    Manager   HR
+//   Name    Name      Name
+//   Date    Date      Date
+// Uses a CSS grid (3 step columns × auto-sized connector tracks) so the dots
+// always sit at fixed positions; connectors take only the leftover space
+// between them — no more stretched-out lines or off-centre dots.
+// Comments render as a single quote block underneath the row, attributed to
+// whichever actor left them, so a long comment doesn't break the alignment.
+// ─────────────────────────────────────────────────────────────────────────────
+function ApprovalTimelineList({
+  chain, reportingManager, appliedOn,
+}: {
+  chain: ApprovalNode[];
+  reportingManager: PersonRef;
+  appliedOn: string;
+}) {
+  // Comments live below the row — one entry per actor that left a note.
+  const comments = chain
+    .filter(n => !!n.comment)
+    .map(n => ({
+      role: n.role === 'Self' ? 'Maker' : n.role === 'Manager' ? 'Reporting Manager' : 'HR',
+      name: n.name,
+      comment: n.comment!,
+    }));
+
+  return (
+    <div>
+      {/* Step row — 3 columns of equal width with dots centred. The
+          connector line is painted as a flat ::before pseudo via inline
+          style on the rail. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, minmax(0,1fr))',
+          alignItems: 'flex-start',
+          gap: 0,
+        }}
+      >
+        {chain.map((n, i) => {
+          const isApproved = n.decision === 'approved';
+          const isPending  = n.decision === 'pending';
+          const isRejected = n.decision === 'rejected';
+          const isSkipped  = n.decision === 'skipped';
+          const isLast = i === chain.length - 1;
+
+          const dotBg =
+            isApproved ? 'linear-gradient(135deg,#0ab39c,#108548)'
+            : isRejected ? 'linear-gradient(135deg,#f06548,#dc2626)'
+            : isPending  ? 'linear-gradient(135deg,#f59e0b,#d97706)'
+            : isSkipped  ? '#f3f4f6'
+            : '#fff';
+          const dotColor = isApproved || isRejected || isPending ? '#fff' : '#9ca3af';
+          const dotBorder = isSkipped ? '1.5px dashed #d1d5db' : !isApproved && !isRejected && !isPending ? '1.5px solid #e5e7eb' : 'none';
+          const dotIcon =
+            isApproved ? 'ri-check-line'
+            : isRejected ? 'ri-close-line'
+            : isSkipped  ? 'ri-subtract-line'
+            : isPending  ? 'ri-time-line'
+            : n.role === 'Self' ? 'ri-user-3-line'
+            : n.role === 'Manager' ? 'ri-user-star-line'
+            : 'ri-shield-user-line';
+
+          const role = n.role === 'Self' ? 'You' : n.role === 'Manager' ? 'Manager' : 'HR';
+          const dateLabel = formatDate(n.actionAt || (n.role === 'Self' ? appliedOn : ''));
+
+          // Connector colour reflects state of the *current* step.
+          const connectorColor =
+            isApproved ? '#10b981' : isRejected ? '#dc2626' : '#e5e7eb';
+
+          return (
+            <div key={i} className="text-center position-relative" style={{ minWidth: 0, opacity: isSkipped ? 0.6 : 1 }}>
+              {/* Connector — sits at dot's vertical centre, painted from the
+                  middle of this step's column to the start of the next. The
+                  fixed offsets keep it from clipping into the dots. */}
+              {!isLast && (
+                <span
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    top: 14,            // half the dot height
+                    left: 'calc(50% + 16px)',
+                    right: 'calc(-50% + 16px)',
+                    height: 2,
+                    background: connectorColor,
+                    zIndex: 0,
+                  }}
+                />
+              )}
+
+              {/* Dot */}
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-circle position-relative"
+                style={{
+                  width: 28, height: 28,
+                  background: dotBg, color: dotColor, fontSize: 13,
+                  border: dotBorder,
+                  zIndex: 1,
+                }}
+              >
+                <i className={dotIcon} />
+              </span>
+
+              {/* Labels */}
+              <div className="text-uppercase fw-bold mt-2" style={{ fontSize: 10, letterSpacing: '0.08em', color: 'var(--vz-secondary-color)' }}>
+                {role}
+              </div>
+              {n.role === 'Manager' && reportingManager.designation && (
+                <div className="text-muted" style={{ fontSize: 10, marginTop: 1 }}>
+                  {reportingManager.designation}
+                </div>
+              )}
+              <div className="fw-semibold fs-13 mt-1 px-1" style={{ lineHeight: 1.2 }}>{n.name}</div>
+              {n.detail && (
+                <div className="text-muted px-1" style={{ fontSize: 11, marginTop: 2 }}>{n.detail}</div>
+              )}
+              {(n.actionAt || n.role === 'Self') && (
+                <div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>{dateLabel}</div>
+              )}
+            </div>
+          );
+        })}
       </div>
-    </div>,
-    document.body,
+
+      {/* Comment block — one collapsed area below the row. Attributes each
+          comment to the actor who left it so HR can read them in context. */}
+      {comments.length > 0 && (
+        <div className="mt-3 px-3 py-2 rounded" style={{ background: '#f3eeff', border: '1px solid #d8c8ff' }}>
+          {comments.map((c, i) => (
+            <div key={i} className="text-body" style={{ fontSize: 11.5, marginTop: i > 0 ? 6 : 0 }}>
+              <span className="fw-bold" style={{ color: '#5a3fd1' }}>{c.role}</span>
+              <span className="text-muted"> · {c.name}: </span>
+              <span className="fst-italic">"{c.comment}"</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ActionBtn — row-level icon button. Mirrors the helper in HrRecruitment.tsx
+// so the leave row-actions share the exact same chrome (rec-act-icon +
+// rec-act-tone-*) and disabled handling already defined in recruitment.css.
+// ─────────────────────────────────────────────────────────────────────────────
+function ActionBtn({
+  title, icon, tone, onClick, disabled,
+}: {
+  title: string;
+  icon: string;
+  tone: 'info' | 'success' | 'danger' | 'neutral';
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  const toneClass =
+    tone === 'info'    ? 'rec-act-tone-info'
+    : tone === 'success' ? 'rec-act-tone-success'
+    : tone === 'danger'  ? 'rec-act-tone-danger'
+    : 'rec-act-tone-neutral';
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={`rec-act-icon ${toneClass}`}
+    >
+      <i className={icon} />
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ChainDots — compact in-row approval-chain renderer.
+//   Self → Manager → HR rendered as 3 small connected avatars with a single
+//   caption underneath surfacing the latest decision / SLA hint.
+//
+// Visual states (mirrors the Onboarding-Hub stepper convention):
+//   approved  → solid green dot, white check icon, soft green ring
+//   rejected  → solid red dot, white close icon, soft red ring
+//   pending   → solid amber dot, white initials of the actor on duty
+//   skipped   → soft grey dot with dash icon, dimmed (HR-raised case)
+//   idle      → outlined grey dot with the ROLE abbreviation in muted text
+//               ("HR" when HR isn't yet involved)
+// ─────────────────────────────────────────────────────────────────────────────
+function ChainDots({ row }: { row: LeaveRequest }) {
+  const chain = deriveChain(row);
+
+  // Caption — always reflects the *most recent* signal on the row:
+  //   resolved approved → "Approved: <last action date>"
+  //   resolved rejected → "Rejected: <last action date>"
+  //   pending           → SLA hint stored on the row (e.g., "3d pending")
+  const lastAction = row.hrActionAt || row.managerActionAt;
+  const caption =
+    row.stage === 'Approved' && lastAction ? { text: `Approved: ${formatDate(lastAction)}`, tone: 'text-success' }
+    : row.stage === 'Rejected' && lastAction ? { text: `Rejected: ${formatDate(lastAction)}`, tone: 'text-danger' }
+    : row.stage === 'Cancelled' ? { text: 'Cancelled', tone: 'text-muted' }
+    : row.stageNote ? { text: row.stageNote, tone: 'text-warning' }
+    : null;
+
+  return (
+    <div>
+      <div className="d-inline-flex align-items-center">
+        {chain.map((n, i) => {
+          const isApproved = n.decision === 'approved';
+          const isRejected = n.decision === 'rejected';
+          const isPending  = n.decision === 'pending';
+          const isSkipped  = n.decision === 'skipped';
+          const isLast     = i === chain.length - 1;
+
+          // Resolve the dot's visual treatment as a single object so the JSX
+          // stays readable. Order of branches matters — most-decisive first.
+          const state =
+            isApproved ? {
+              bg: '#16a34a', fg: '#fff',
+              border: 'none',
+              shadow: '0 0 0 2px rgba(22,163,74,0.16), 0 1px 2px rgba(22,163,74,0.20)',
+              content: <i className="ri-check-line" />,
+            }
+            : isRejected ? {
+              bg: '#dc2626', fg: '#fff',
+              border: 'none',
+              shadow: '0 0 0 2px rgba(220,38,38,0.16), 0 1px 2px rgba(220,38,38,0.20)',
+              content: <i className="ri-close-line" />,
+            }
+            : isPending ? {
+              bg: '#f59e0b', fg: '#fff',
+              border: 'none',
+              shadow: '0 0 0 2px rgba(245,158,11,0.18), 0 1px 2px rgba(245,158,11,0.22)',
+              content: <span style={{ fontWeight: 800 }}>{n.initials || '·'}</span>,
+            }
+            : isSkipped ? {
+              bg: '#f3f4f6', fg: '#9ca3af',
+              border: '1.5px dashed #d1d5db',
+              shadow: 'none',
+              content: <i className="ri-subtract-line" />,
+            }
+            : /* idle */ {
+              bg: '#fff', fg: '#9ca3af',
+              border: '1.5px solid #e5e7eb',
+              shadow: 'none',
+              content: (
+                <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.04em' }}>
+                  {n.role === 'Self' ? 'You' : n.role === 'Manager' ? 'MGR' : 'HR'}
+                </span>
+              ),
+            };
+
+          // Connector colour reflects whether the *current* step is past:
+          // green when this step is approved, red when rejected, otherwise grey.
+          const connectorColor =
+            isApproved ? '#16a34a' : isRejected ? '#dc2626' : '#cbd5e1';
+
+          return (
+            <span key={i} className="d-inline-flex align-items-center">
+              <span
+                className="rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                title={`${n.role === 'Self' ? 'Maker' : n.role === 'Manager' ? 'Reporting Manager' : 'HR'}: ${n.name}${n.detail ? ' — ' + n.detail : ''}`}
+                style={{
+                  width: 26, height: 26,
+                  fontSize: 11,
+                  background: state.bg,
+                  color: state.fg,
+                  border: state.border,
+                  boxShadow: state.shadow,
+                  opacity: isSkipped ? 0.7 : 1,
+                }}
+              >
+                {state.content}
+              </span>
+              {!isLast && (
+                <i
+                  className="ri-arrow-right-s-line"
+                  style={{ fontSize: 14, color: connectorColor, margin: '0 2px' }}
+                />
+              )}
+            </span>
+          );
+        })}
+      </div>
+      {caption && (
+        <div className={`${caption.tone} mt-1`} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.01em' }}>
+          {caption.text}
+        </div>
+      )}
+    </div>
   );
 }
