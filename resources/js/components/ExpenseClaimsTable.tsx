@@ -94,6 +94,18 @@ function initialsFromName(name: string | null | undefined, fallback?: string): s
   return name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('') || (fallback || 'EM');
 }
 
+/** Append the sanctum bearer to a download URL so plain anchor clicks work
+ *  without sending an Authorization header (Laravel resolves the user via
+ *  ?token=… on the expense-claims/{id}/attachments/{idx} route). */
+function withAuthToken(url: string): string {
+  if (!url) return url;
+  let token = '';
+  try { token = localStorage.getItem('cbc_token') || ''; } catch {}
+  if (!token) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}token=${encodeURIComponent(token)}`;
+}
+
 export default function ExpenseClaimsTable({
   rows, loading,
   fallbackName, fallbackInitials, accent = '#7c5cfc',
@@ -240,7 +252,7 @@ function ExpenseClaimRowView({
       <td>
         {proof?.url ? (
           <a
-            href={proof.url}
+            href={withAuthToken(proof.url)}
             target="_blank"
             rel="noreferrer"
             className="d-inline-flex align-items-center gap-1 text-decoration-none"

@@ -141,6 +141,9 @@ class ExpenseClaimController extends Controller
         // File attachments — accepted as multipart `files[]`. Each file is
         // stored on the public disk; the saved row carries an array of
         // {name, size, path, url} entries so the frontend can list them.
+        // Files are stored with name/size/path only — the public URL is
+        // built per-request at serialize() time so it always points at the
+        // Laravel route (which streams the file with query-token auth).
         $attachments = [];
         if ($request->hasFile('files')) {
             $files = $request->file('files');
@@ -154,7 +157,6 @@ class ExpenseClaimController extends Controller
                     'name' => $name,
                     'size' => $size,
                     'path' => $path,
-                    'url'  => Storage::disk('public')->url($path),
                 ];
             }
         }
@@ -203,6 +205,54 @@ class ExpenseClaimController extends Controller
             ->findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         return response()->json($this->serialize($row));
+    }
+
+    /**
+     * Stream one attachment for the given claim by its index in the
+     * attachments array. Auth via query token (?token=<sanctum>) so plain
+     * <a target="_blank"> clicks work — same pattern as CandidateController::downloadCv,
+     * which sidesteps the storage symlink + Apache DocumentRoot mismatch
+     * that causes /storage/... to 404 in some local setups.
+     */
+    public function downloadAttachment(Request $request, $id, $index)
+    {
+        $this->authenticateFromQueryToken($request);
+
+        $row = ExpenseClaim::findOrFail($id);
+        $this->ensureTenantAccess($row, $request->user());
+
+        $idx = (int) $index;
+        $atts = $row->attachments ?? [];
+        if (!isset($atts[$idx]) || empty($atts[$idx]['path'])) {
+            abort(404, 'Attachment not found.');
+        }
+        $path = $atts[$idx]['path'];
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($path)) {
+            abort(404, 'Attachment file is missing on the server.');
+        }
+        $filename = $atts[$idx]['name'] ?? basename($path);
+        return $disk->response($path, $filename);
+    }
+
+    /**
+     * Resolve the request user from `?token=<sanctum>` so direct browser
+     * link-clicks work without sending an Authorization header. Mirrors
+     * CandidateController::authenticateFromQueryToken.
+     */
+    private function authenticateFromQueryToken(Request $request): void
+    {
+        if (!$request->user() && $request->query('token')) {
+            $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->query('token'));
+            if ($token) {
+                $request->setUserResolver(fn () => $token->tokenable);
+            } else {
+                abort(401, 'Invalid token');
+            }
+        }
+        if (!$request->user()) {
+            abort(401, 'Unauthorized');
+        }
     }
 
     /* ============================================================ */
@@ -508,7 +558,17 @@ class ExpenseClaimController extends Controller
             'expense_date'    => optional($row->expense_date)->format('Y-m-d'),
             'vendor'          => $row->vendor,
             'purpose'         => $row->purpose,
-            'attachments'     => $row->attachments ?? [],
+            'attachments'     => collect($row->attachments ?? [])->values()->map(function ($a, $i) use ($row) {
+                // The download URL points at the Laravel route which streams
+                // the file via query-token auth. The browser-side anchor
+                // appends `?token=<sanctum>` before opening, identical to
+                // the candidate CV pattern.
+                return [
+                    'name' => $a['name'] ?? null,
+                    'size' => $a['size'] ?? null,
+                    'url'  => url("/api/expense-claims/{$row->id}/attachments/{$i}"),
+                ];
+            })->all(),
             'status'          => $row->status,
             'manager_status'  => $row->manager_status,
             'manager_acted_at'=> optional($row->manager_acted_at)->toIso8601String(),
