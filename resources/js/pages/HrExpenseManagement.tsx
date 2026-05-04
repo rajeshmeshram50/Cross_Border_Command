@@ -4,7 +4,7 @@ import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import ExpenseClaimsTable, { type ExpenseClaimRow } from '../components/ExpenseClaimsTable';
-import { MasterSelect } from './master/masterFormKit';
+import { MasterSelect, MasterFormStyles } from './master/masterFormKit';
 
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -412,6 +412,10 @@ export default function HrExpenseManagement() {
 
   return (
     <>
+      {/* Inject the master-form CSS so MasterSelect dropdowns on this page
+          render with the proper border/background/chevron styling instead
+          of browser defaults — without this they look like raw text. */}
+      <MasterFormStyles />
       <style>{`
         .hrexp-surface { background: #ffffff; }
         [data-bs-theme="dark"] .hrexp-surface { background: #1c2531; }
@@ -482,61 +486,52 @@ export default function HrExpenseManagement() {
         }
       `}</style>
 
-        {/* ── Page header ── */}
-        <Row className="mb-3">
-          <Col xs={12}>
-            <div className="d-flex align-items-center justify-content-between flex-wrap gap-3" style={{ padding: '4px 0 4px' }}>
-              <div className="d-flex align-items-center gap-3">
-                <span
-                  className="d-inline-flex align-items-center justify-content-center"
-                  style={{
-                    width: 38, height: 38, borderRadius: 10,
-                    background: 'rgba(249,115,22,0.12)', color: '#f97316', fontSize: 18,
-                  }}
-                >
-                  <i className="ri-bank-card-2-line" />
-                </span>
-                <div>
-                  <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>
-                    Expense Management
-                  </h4>
-                  <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
-                    Employee expense claims, approvals, and reimbursements
-                  </p>
-                </div>
-              </div>
+        {/* ── Hero header — purple-tinted card mirroring the Employee
+             Onboarding Hub. Violet icon tile on the left, title + small
+             "Live" pill + subtitle, and the All Dates filter + violet
+             gradient Export CTA on the right. */}
+        <div className="hrexp-hero-card mb-3">
+          <div className="d-flex align-items-center gap-3 min-w-0">
+            <span
+              className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+              style={{
+                width: 46, height: 46,
+                background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
+                boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
+              }}
+            >
+              <i className="ri-bank-card-2-line" style={{ color: '#fff', fontSize: 21 }} />
+            </span>
+            <div className="min-w-0">
               <div className="d-flex align-items-center gap-2 flex-wrap">
-                <div style={{ minWidth: 160 }}>
-                  <MasterSelect
-                    value={dateFilter}
-                    onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
-                    options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({
-                      value: k,
-                      label: DATE_FILTER_LABELS[k],
-                    }))}
-                    placeholder="All Dates"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={exportCsv}
-                  className="d-inline-flex align-items-center gap-2 fw-semibold"
-                  style={{
-                    background: 'var(--vz-card-bg, #fff)',
-                    color: 'var(--vz-body-color, #1f2937)',
-                    border: '1px solid var(--vz-border-color, #e5e7eb)',
-                    borderRadius: 10,
-                    padding: '7px 14px',
-                    fontSize: 13,
-                  }}
-                >
-                  <i className="ri-download-2-line" style={{ color: '#6b7280' }} />
-                  Export
-                </button>
+                <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Expense Management</h5>
+                <span className="hrexp-hero-pill">
+                  <span className="dot" />Live
+                </span>
+              </div>
+              <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+                Employee expense claims, approvals, and reimbursements
               </div>
             </div>
-          </Col>
-        </Row>
+          </div>
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <div style={{ minWidth: 160 }}>
+              <MasterSelect
+                value={dateFilter}
+                onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
+                options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({
+                  value: k,
+                  label: DATE_FILTER_LABELS[k],
+                }))}
+                placeholder="All Dates"
+              />
+            </div>
+            <button type="button" onClick={exportCsv} className="hrexp-cta rounded-pill">
+              <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
+              Export
+            </button>
+          </div>
+        </div>
 
         {/* ── KPI tiles — five cards mirroring the onboarding list view ── */}
         <Row className="g-3 mb-3 align-items-stretch">
