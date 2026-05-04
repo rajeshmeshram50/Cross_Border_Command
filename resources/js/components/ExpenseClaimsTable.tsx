@@ -1,5 +1,10 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { Modal, ModalBody } from 'reactstrap';
+// Reuses the polished confirmation-modal CSS classes already shipping with
+// the recruitment / candidate flows (cand-confirm-modal, cand-confirm-head,
+// cand-confirm-body, cand-confirm-footer, etc.).
+import '../../css/recruitment.css';
 
 /**
  * Expense Claims table — single source of truth for the row layout used by
@@ -184,7 +189,11 @@ function ExpenseClaimRowView({
   const proof = c.attachments?.[0];
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showRejectBox, setShowRejectBox] = useState<null | 'manager' | 'hr'>(null);
+  // Confirmation modal for both approve & reject. The action shape carries
+  // both the verdict and the stage so we can render a contextual title +
+  // submit colour, and so the same dispatcher hits the right backend route.
+  type Confirm = { stage: 'manager' | 'hr'; verdict: 'approve' | 'reject' };
+  const [confirmAction, setConfirmAction] = useState<Confirm | null>(null);
   const [comment, setComment] = useState('');
 
   const canManagerAct =
@@ -289,7 +298,7 @@ function ExpenseClaimRowView({
               <button
                 type="button"
                 title="Approve"
-                onClick={() => onAct && onAct(c.id, 'manager-approve')}
+                onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'approve' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                 style={{
                   width: 28, height: 28, padding: 0,
@@ -302,7 +311,7 @@ function ExpenseClaimRowView({
               <button
                 type="button"
                 title="Reject"
-                onClick={() => { setShowRejectBox('manager'); setComment(''); }}
+                onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'reject' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                 style={{
                   width: 28, height: 28, padding: 0,
@@ -319,7 +328,7 @@ function ExpenseClaimRowView({
               <button
                 type="button"
                 title="Approve"
-                onClick={() => onAct && onAct(c.id, 'hr-approve')}
+                onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'approve' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                 style={{
                   width: 28, height: 28, padding: 0,
@@ -332,7 +341,7 @@ function ExpenseClaimRowView({
               <button
                 type="button"
                 title="Reject"
-                onClick={() => { setShowRejectBox('hr'); setComment(''); }}
+                onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'reject' }); setComment(''); }}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                 style={{
                   width: 28, height: 28, padding: 0,
@@ -351,58 +360,22 @@ function ExpenseClaimRowView({
           />
         </div>
 
-        {showRejectBox && onAct && (
-          <div
-            className="position-fixed"
-            style={{
-              top: 0, left: 0, right: 0, bottom: 0,
-              background: 'rgba(15,23,42,0.55)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              zIndex: 6000,
-            }}
-            onClick={() => setShowRejectBox(null)}
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                background: 'var(--vz-card-bg, #ffffff)', borderRadius: 12,
-                width: '100%', maxWidth: 420, padding: 20,
-                boxShadow: '0 24px 60px rgba(0,0,0,0.3)',
-              }}
-            >
-              <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>
-                {showRejectBox === 'manager' ? 'Reject claim (Manager)' : 'Reject claim (HR / Finance)'}
-              </h6>
-              <p className="text-muted mb-2" style={{ fontSize: 12 }}>
-                Optional comment — shown to the employee in their audit log.
-              </p>
-              <textarea
-                className="form-control"
-                rows={3}
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Reason for rejection (optional)…"
-                style={{ fontSize: 13 }}
-              />
-              <div className="d-flex justify-content-end gap-2 mt-3">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-light"
-                  onClick={() => setShowRejectBox(null)}
-                >Cancel</button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-danger"
-                  onClick={async () => {
-                    const action: ActionKind = showRejectBox === 'manager' ? 'manager-reject' : 'hr-reject';
-                    await onAct(c.id, action, comment.trim() || undefined);
-                    setShowRejectBox(null);
-                  }}
-                >Reject</button>
-              </div>
-            </div>
-          </div>
-        )}
+        <ExpenseConfirmModal
+          target={confirmAction && onAct ? { claim: c, action: confirmAction } : null}
+          comment={comment}
+          setComment={setComment}
+          onClose={() => setConfirmAction(null)}
+          onConfirm={async () => {
+            if (!confirmAction || !onAct) return;
+            const isApprove = confirmAction.verdict === 'approve';
+            const action: ActionKind =
+                confirmAction.stage === 'manager'
+                  ? (isApprove ? 'manager-approve' : 'manager-reject')
+                  : (isApprove ? 'hr-approve'      : 'hr-reject');
+            await onAct(c.id, action, comment.trim() || undefined);
+            setConfirmAction(null);
+          }}
+        />
       </td>
     </tr>
   );
@@ -634,5 +607,120 @@ function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
         })}
       </div>
     </div>
+  );
+}
+
+/**
+ * Approve / Reject confirmation dialog. Mirrors the look of
+ * `CandidateConfirmModal` (Reactstrap Modal + cand-confirm-* class set so
+ * we get the polished header tile, summary card, and footer styling for
+ * free), but specialised for the expense-claim verdict pair.
+ */
+function ExpenseConfirmModal({
+  target, comment, setComment, onClose, onConfirm,
+}: {
+  target: { claim: ExpenseClaimRow; action: { stage: 'manager' | 'hr'; verdict: 'approve' | 'reject' } } | null;
+  comment: string;
+  setComment: (v: string) => void;
+  onClose: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  if (!target) return null;
+  const { claim, action } = target;
+  const isApprove = action.verdict === 'approve';
+  const stageLabel = action.stage === 'manager' ? 'Manager' : 'HR / Finance';
+  const tone = STATUS_TONE[claim.status];
+
+  return (
+    <Modal
+      isOpen={!!target}
+      toggle={onClose}
+      centered
+      size="md"
+      backdrop="static"
+      contentClassName={`border-0 cand-confirm-modal cand-confirm-modal--${isApprove ? 'select' : 'reject'}`}
+    >
+      <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
+        {/* Header */}
+        <div className="cand-confirm-head">
+          <span className="cand-confirm-head-icon">
+            <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
+          </span>
+          <div className="cand-confirm-head-text">
+            <h5 className="mb-0">
+              {isApprove ? `Approve Claim — ${stageLabel}` : `Reject Claim — ${stageLabel}`}
+            </h5>
+            <div className="cand-confirm-head-sub">
+              {isApprove
+                ? (action.stage === 'manager'
+                    ? 'Forwards to HR / Finance for final approval'
+                    : 'Final approval — claim will be marked Approved')
+                : 'Closes the claim — employee will see the rejection in their audit log'}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="cand-confirm-close">
+            <i className="ri-close-line" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="cand-confirm-body">
+          {/* Claim summary card */}
+          <div className="cand-confirm-summary">
+            <div
+              className="cand-confirm-avatar"
+              style={{ background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' }}
+            >
+              <i className="ri-file-text-line" style={{ fontSize: 18 }} />
+            </div>
+            <div className="cand-confirm-summary-text">
+              <div className="cand-confirm-name">
+                {claim.title || claim.claim_no || `Claim #${claim.id}`}
+              </div>
+              <div className="cand-confirm-meta">
+                <span className="rec-id-pill">{claim.claim_no || `#${claim.id}`}</span>
+                <span className="dot">·</span>
+                <span>{claim.employee_name || `Employee #${claim.employee_id}`}</span>
+                <span className="dot">·</span>
+                <span className="fw-semibold" style={{ color: '#1f2937' }}>
+                  ₹{Number(claim.amount || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+            <div className="cand-confirm-stage">
+              <div className="cand-confirm-stage-label">Status</div>
+              <span className="rec-pill" style={{ background: tone.bg, color: tone.fg }}>
+                {tone.label}
+              </span>
+            </div>
+          </div>
+
+          <div className="cand-confirm-field">
+            <label className="cand-confirm-label">
+              {isApprove ? 'Approval Note' : 'Reason for Rejection'} <span className="opt">(OPTIONAL)</span>
+            </label>
+            <textarea
+              className="cand-confirm-textarea"
+              rows={3}
+              placeholder={isApprove
+                ? 'Add context for the audit trail (e.g. "Approved within policy limit")'
+                : 'Explain why this claim is being rejected'}
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              autoFocus
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="cand-confirm-footer">
+          <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="cand-confirm-submit" onClick={onConfirm}>
+            <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
+            {isApprove ? 'Confirm Approval' : 'Confirm Rejection'}
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
   );
 }
