@@ -4,6 +4,7 @@ import { Button, Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMen
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import ComingSoonShell from '../components/ComingSoonShell';
+import api from '../api';
 
 // Custom portal-based modal — renders directly to document.body so it always
 // escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
@@ -581,27 +582,181 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Request (purple/indigo).
   const [claimOpen, setClaimOpen] = useState(false);
   const [claimMode, setClaimMode] = useState<'expense' | 'advance'>('expense');
-  const [claimEmployee, setClaimEmployee] = useState('');
-  const [claimCategory, setClaimCategory] = useState('');
-  const [claimCurrency, setClaimCurrency] = useState('INR');
-  const [claimProject, setClaimProject] = useState('');
-  const [claimPayment, setClaimPayment] = useState('Corporate Card');
-  const [claimTitle, setClaimTitle] = useState('');
-  const [claimAmount, setClaimAmount] = useState('');
-  const [claimDate, setClaimDate] = useState(new Date().toISOString().slice(0, 10));
-  const [claimVendor, setClaimVendor] = useState('');
-  const [claimPurpose, setClaimPurpose] = useState('');
+
+  // Categories pulled from the expense_category master so the dropdown stays
+  // in sync with what admins configure (and so we save the master id, not a
+  // free-text label).
+  const [claimCategories, setClaimCategories] = useState<{ id: number; name: string }[]>([]);
+  useEffect(() => {
+    if (!claimOpen) return;
+    api.get('/master/expense_category')
+      .then((res: any) => {
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        setClaimCategories(
+          rows
+            .filter((r: any) => (r.status ?? 'Active') === 'Active')
+            .map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') })),
+        );
+      })
+      .catch(() => setClaimCategories([]));
+  }, [claimOpen]);
+  const categoryLabelById = (id: string | number | undefined): string => {
+    if (id === undefined || id === '' || id === null) return '';
+    const num = Number(id);
+    const hit = claimCategories.find(c => c.id === num);
+    return hit ? hit.name : String(id);
+  };
+
+  // Multi-draft tab support — every form-render reads/writes the active draft
+  // in `claimDrafts`. "Save & Add Another" appends a fresh draft and switches
+  // to it; clicking a tab swaps drafts in/out. This lets users line up several
+  // claims in one sitting without losing in-progress work.
+  type ClaimDraft = {
+    employee: string;
+    category: string;     // expense_category id (stringified)
+    currency: string;
+    project: string;
+    payment: string;
+    title: string;
+    amount: string;
+    date: string;
+    vendor: string;
+    purpose: string;
+    saved: boolean;       // marked true once "Save & Add Another" / "Submit" runs on this draft
+  };
+  const blankDraft = (): ClaimDraft => ({
+    employee: employeeId,
+    category: '',
+    currency: 'INR',
+    project: '',
+    payment: 'UPI',
+    title: '',
+    amount: '',
+    date: new Date().toISOString().slice(0, 10),
+    vendor: '',
+    purpose: '',
+    saved: false,
+  });
+  const [claimDrafts, setClaimDrafts] = useState<ClaimDraft[]>([blankDraft()]);
+  const [activeClaimIdx, setActiveClaimIdx] = useState(0);
+  // Each time the modal re-opens, start with one fresh draft.
+  useEffect(() => {
+    if (claimOpen) {
+      setClaimDrafts([blankDraft()]);
+      setActiveClaimIdx(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claimOpen]);
+  const draft = claimDrafts[activeClaimIdx] ?? blankDraft();
+  const updateDraft = (patch: Partial<ClaimDraft>) =>
+    setClaimDrafts(d => d.map((x, i) => (i === activeClaimIdx ? { ...x, ...patch } : x)));
+  const saveAndAddAnother = () => {
+    setClaimDrafts(d => {
+      const next = d.map((x, i) => (i === activeClaimIdx ? { ...x, saved: true } : x));
+      next.push(blankDraft());
+      return next;
+    });
+    setActiveClaimIdx(i => i + 1);
+  };
+
+  // Aliases so the existing JSX bindings (claimEmployee, setClaimEmployee, …)
+  // keep working without touching every value/onChange site below.
+  const claimEmployee = draft.employee;
+  const setClaimEmployee = (v: string) => updateDraft({ employee: v });
+  const claimCategory = draft.category;
+  const setClaimCategory = (v: string) => updateDraft({ category: v });
+  const claimCurrency = draft.currency;
+  const setClaimCurrency = (v: string) => updateDraft({ currency: v });
+  const claimProject = draft.project;
+  const setClaimProject = (v: string) => updateDraft({ project: v });
+  const claimPayment = draft.payment;
+  const setClaimPayment = (v: string) => updateDraft({ payment: v });
+  const claimTitle = draft.title;
+  const setClaimTitle = (v: string) => updateDraft({ title: v });
+  const claimAmount = draft.amount;
+  const setClaimAmount = (v: string) => updateDraft({ amount: v });
+  const claimDate = draft.date;
+  const setClaimDate = (v: string) => updateDraft({ date: v });
+  const claimVendor = draft.vendor;
+  const setClaimVendor = (v: string) => updateDraft({ vendor: v });
+  const claimPurpose = draft.purpose;
+  const setClaimPurpose = (v: string) => updateDraft({ purpose: v });
   // Advance request fields
   const [advType, setAdvType] = useState('');
+  const [advTypeOther, setAdvTypeOther] = useState(''); // shown only when advType === 'Other'
   const [advAmount, setAdvAmount] = useState('');
   const [advRequestedDate, setAdvRequestedDate] = useState(new Date().toISOString().slice(0, 10));
   const [advRecoveryStart, setAdvRecoveryStart] = useState('');
   const [advRecoveryMode, setAdvRecoveryMode] = useState('');
   const [advMonths, setAdvMonths] = useState('');
   const [advReason, setAdvReason] = useState('');
-  const advMonthlyEmi = Number(advAmount) > 0 && Number(advMonths) > 0
-    ? Math.round(Number(advAmount) / Number(advMonths))
-    : 0;
+  // Editable EMI — auto-derived from amount/months unless the user has typed
+  // a value into the field. `advEmiTouched` flips on any keystroke and stops
+  // the auto-fill from overwriting their manual override.
+  const [advMonthlyEmi, setAdvMonthlyEmi] = useState('');
+  const [advEmiTouched, setAdvEmiTouched] = useState(false);
+  useEffect(() => {
+    if (advEmiTouched) return;
+    const a = Number(String(advAmount).replace(/[^\d.]/g, ''));
+    const m = Number(advMonths);
+    if (a > 0 && m > 0) {
+      setAdvMonthlyEmi(String(Math.round(a / m)));
+    } else {
+      setAdvMonthlyEmi('');
+    }
+  }, [advAmount, advMonths, advEmiTouched]);
+  // Reset the manual-override flag every time the modal re-opens so the
+  // auto-fill kicks back in for a fresh request.
+  useEffect(() => {
+    if (claimOpen) setAdvEmiTouched(false);
+  }, [claimOpen]);
+  // Multi-file attachments — separate buckets for expense receipts vs advance
+  // supporting docs so the two flows don't bleed into each other.
+  const [claimFiles, setClaimFiles] = useState<File[]>([]);
+  const [advFiles, setAdvFiles] = useState<File[]>([]);
+  // Reset attachments + custom advance-type field every time the modal opens.
+  useEffect(() => {
+    if (claimOpen) {
+      setClaimFiles([]);
+      setAdvFiles([]);
+      setAdvTypeOther('');
+    }
+  }, [claimOpen]);
+
+  // Locally-submitted expense claims — appended to the top of the table when
+  // the user clicks "Submit Claim" (or commits drafts via "Save & Add Another"
+  // followed by Submit). Lives in component state since there's no claims API
+  // wired yet; categories are resolved to their human-readable label here so
+  // the table render path doesn't need to know about master ids.
+  type SubmittedClaim = {
+    id: string;
+    category: string;
+    description: string;
+    date: string;
+    amount: number;
+    receipt: string;
+    status: 'Pending' | 'Approved' | 'Rejected';
+  };
+  const [submittedClaims, setSubmittedClaims] = useState<SubmittedClaim[]>([]);
+  const submitAllDrafts = () => {
+    const ts = Date.now();
+    const valid = claimDrafts.filter(d => d.title.trim() && d.amount.trim());
+    if (valid.length === 0) {
+      setClaimOpen(false);
+      return;
+    }
+    const newClaims: SubmittedClaim[] = valid.map((d, i) => ({
+      id: `EXP-${String(ts).slice(-4)}${String(i + 1).padStart(2, '0')}`,
+      category: categoryLabelById(d.category) || '—',
+      description: d.title.trim(),
+      date: d.date,
+      amount: Number(String(d.amount).replace(/[^\d.]/g, '')) || 0,
+      receipt: `Receipt_${d.title.trim().slice(0, 12) || 'pending'}`,
+      status: 'Pending',
+    }));
+    setSubmittedClaims(prev => [...newClaims, ...prev]);
+    setClaimOpen(false);
+  };
 
   // Live counts for the Evidence Vault hero KPIs.
   const allVaultDocs = [
@@ -635,17 +790,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     :                                          83;
 
   // Pre-compute counts and the filtered list once per render so the filter
-  // tabs stay in sync with the table.
+  // tabs stay in sync with the table. Locally-submitted claims (from the
+  // Raise New Claim modal) are merged on top of the static mock dataset so
+  // newly created entries appear immediately without a backend round-trip.
+  const allExpenseClaims = [...submittedClaims, ...EXPENSE_CLAIMS];
   const expenseCounts = {
-    all:      EXPENSE_CLAIMS.length,
-    approved: EXPENSE_CLAIMS.filter(c => c.status === 'Approved').length,
-    rejected: EXPENSE_CLAIMS.filter(c => c.status === 'Rejected').length,
-    pending:  EXPENSE_CLAIMS.filter(c => c.status === 'Pending').length,
+    all:      allExpenseClaims.length,
+    approved: allExpenseClaims.filter(c => c.status === 'Approved').length,
+    rejected: allExpenseClaims.filter(c => c.status === 'Rejected').length,
+    pending:  allExpenseClaims.filter(c => c.status === 'Pending').length,
   };
-  const totalClaimed = EXPENSE_CLAIMS.reduce((sum, c) => sum + c.amount, 0);
+  const totalClaimed = allExpenseClaims.reduce((sum, c) => sum + c.amount, 0);
   const filteredExpenses = expenseFilter === 'all'
-    ? EXPENSE_CLAIMS
-    : EXPENSE_CLAIMS.filter(c => c.status.toLowerCase() === expenseFilter);
+    ? allExpenseClaims
+    : allExpenseClaims.filter(c => c.status.toLowerCase() === expenseFilter);
 
   return (
     <>
@@ -971,6 +1129,109 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         }
         .ep-claim-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
         .ep-claim-dot.is-faded { opacity: 0.4; }
+
+        /* ── Draft tabs strip — sits above section A so users can hop between
+           the multiple in-progress claims spawned by "Save & Add Another". */
+        .ep-claim-tabs-strip {
+          display: flex; flex-wrap: wrap; gap: 6px;
+          padding: 6px 0 10px; margin-bottom: 8px;
+          border-bottom: 1px dashed var(--vz-border-color);
+        }
+        .ep-claim-draft-tab {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 5px 10px 5px 12px; border-radius: 999px;
+          background: var(--vz-secondary-bg);
+          border: 1px solid var(--vz-border-color);
+          color: var(--vz-secondary-color);
+          font-size: 11px; font-weight: 600;
+          cursor: pointer; transition: all .15s ease;
+        }
+        .ep-claim-draft-tab:hover {
+          background: var(--accent-soft); color: var(--accent);
+          border-color: var(--accent-border);
+        }
+        .ep-claim-draft-tab.is-active {
+          background: var(--accent); color: #fff; border-color: var(--accent);
+          box-shadow: 0 2px 6px var(--accent-soft);
+        }
+        .ep-claim-draft-tab.is-saved:not(.is-active) {
+          background: rgba(16,133,72,0.10);
+          color: #108548; border-color: rgba(16,133,72,0.25);
+        }
+        .ep-claim-draft-tab-x {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 14px; height: 14px; border-radius: 50%;
+          background: rgba(0,0,0,0.10); color: inherit;
+          font-size: 10px; line-height: 1;
+        }
+        .ep-claim-draft-tab.is-active .ep-claim-draft-tab-x {
+          background: rgba(255,255,255,0.25);
+        }
+        .ep-claim-draft-tab-x:hover { background: rgba(0,0,0,0.20); }
+
+        /* ── File-list rows — rendered below an upload area when one or more
+           files have been picked. Same look in both the expense (orange) and
+           advance (indigo) modes; tone is inherited from --accent. */
+        .ep-claim-file-list {
+          display: flex; flex-direction: column; gap: 6px;
+        }
+        .ep-claim-file-row {
+          display: flex; align-items: center; gap: 10px;
+          padding: 6px 10px; border-radius: 8px;
+          background: var(--accent-soft);
+          border: 1px solid var(--accent-border);
+        }
+        .ep-claim-file-icon {
+          color: var(--accent); font-size: 14px; flex-shrink: 0;
+        }
+        .ep-claim-file-meta { flex-grow: 1; min-width: 0; }
+        .ep-claim-file-name {
+          font-size: 11.5px; font-weight: 600;
+          color: var(--vz-heading-color, var(--vz-body-color));
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .ep-claim-file-size {
+          font-size: 10px; color: var(--vz-secondary-color); margin-top: 1px;
+        }
+        .ep-claim-file-x {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 20px; height: 20px; border-radius: 50%;
+          background: rgba(0,0,0,0.06); color: var(--vz-secondary-color);
+          border: none; font-size: 12px; cursor: pointer; flex-shrink: 0;
+          transition: background .15s ease, color .15s ease;
+        }
+        .ep-claim-file-x:hover { background: #ef4444; color: #fff; }
+
+        /* ── Approval Flow card — replaces the old "System Intelligence"
+           placeholder. Renders the You → Reporting Manager → HR/Finance chain. */
+        .ep-claim-flow {
+          display: flex; align-items: center; gap: 8px;
+          padding: 12px; border-radius: 10px;
+          background: var(--accent-soft);
+          border: 1px solid var(--accent-border);
+          flex-wrap: wrap;
+        }
+        .ep-claim-flow-step {
+          display: flex; align-items: center; gap: 8px;
+          flex: 1 1 auto; min-width: 0;
+        }
+        .ep-claim-flow-icon {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 32px; height: 32px; border-radius: 9px;
+          color: #fff; font-size: 14px; flex-shrink: 0;
+        }
+        .ep-claim-flow-title {
+          font-size: 11.5px; font-weight: 700;
+          color: var(--vz-heading-color, var(--vz-body-color));
+          line-height: 1.2;
+        }
+        .ep-claim-flow-sub {
+          font-size: 10px; color: var(--vz-secondary-color);
+          line-height: 1.2; margin-top: 2px;
+        }
+        .ep-claim-flow-arrow {
+          color: var(--accent); font-size: 16px; flex-shrink: 0;
+        }
         .ep-claim-label {
           font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
           text-transform: uppercase; color: var(--vz-secondary-color);
@@ -3347,7 +3608,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
       {/* ── Tab: Expense Details ── */}
       {tab === 'expense' && (
-        <ComingSoonShell title="Expense Reports" subtitle="Reimbursement requests, approvals, audit trail">
+        <>
           {/* Expense Overview hero — same shape as Evidence Vault / Payroll Summary. */}
           <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
             <div
@@ -3527,7 +3788,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         </td>
                       </tr>
                     ) : filteredExpenses.map(c => {
-                      const cat = EXPENSE_CATEGORY_TONE[c.category];
+                      // Fall back to a neutral tone for categories that aren't
+                      // in the hard-coded EXPENSE_CATEGORY_TONE palette (e.g.
+                      // categories created via the expense_category master).
+                      const cat = EXPENSE_CATEGORY_TONE[c.category] ?? {
+                        bg: '#eef2f6', fg: '#5b6478', icon: 'ri-price-tag-3-line',
+                      };
                       const st = EXPENSE_STATUS_TONE[c.status];
                       return (
                         <tr key={c.id}>
@@ -3657,7 +3923,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </div>
           </div>
-        </ComingSoonShell>
+        </>
       )}
 
       {/* ── Tab: Apply Leave (inline wizard) ── */}
@@ -4607,7 +4873,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   {claimMode === 'expense' ? 'Submit New Expense Claim' : 'Advance Request — Recoverable Payout'}
                 </h5>
                 <small style={{ color: 'rgba(255,255,255,0.78)', fontSize: 10.5 }}>
-                  All required fields must be completed · Receipt required above ₹500 · Changes take effect after MCA approval
+                  All required fields must be completed · Receipt required above ₹500 · Changes take effect after approval flow completes
                 </small>
               </div>
             </div>
@@ -4653,14 +4919,57 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <Row className="g-2">
               {/* Left column */}
               <Col lg={6}>
+                {/* Draft tabs — one per "Save & Add Another" click. Sits above
+                    section A so users can hop between in-progress claims. */}
+                <div className="ep-claim-tabs-strip">
+                  {claimDrafts.map((d, i) => {
+                    const isActive = i === activeClaimIdx;
+                    const label = d.title?.trim()
+                      ? d.title.trim().slice(0, 22)
+                      : `Claim ${i + 1}`;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        className={`ep-claim-draft-tab${isActive ? ' is-active' : ''}${d.saved ? ' is-saved' : ''}`}
+                        onClick={() => setActiveClaimIdx(i)}
+                        title={d.saved ? 'Saved draft — click to view' : 'Click to switch to this draft'}
+                      >
+                        {d.saved && <i className="ri-check-line me-1" />}
+                        {label}
+                        {claimDrafts.length > 1 && (
+                          <span
+                            className="ep-claim-draft-tab-x"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const next = claimDrafts.filter((_, j) => j !== i);
+                              setClaimDrafts(next.length ? next : [blankDraft()]);
+                              setActiveClaimIdx(prev => {
+                                if (next.length === 0) return 0;
+                                if (i < prev) return prev - 1;
+                                if (i === prev) return Math.max(0, prev - 1);
+                                return prev;
+                              });
+                            }}
+                            title="Close draft"
+                          >
+                            <i className="ri-close-line" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="ep-claim-section-head">
                   <span className="ep-claim-dot" /> A — Claim Context
                 </div>
                 <div className="mb-3">
                   <div className="ep-claim-label">Employee <span className="ep-claim-req">*</span></div>
                   <MasterSelect
-                    value={claimEmployee}
+                    value={claimEmployee || employeeId}
                     placeholder="Select employee"
+                    disabled
                     options={[{ value: employeeId, label: `${employee?.name || 'Aarav Patel'} (${employeeId})` }]}
                     onChange={setClaimEmployee}
                   />
@@ -4670,8 +4979,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div className="ep-claim-label">Category <span className="ep-claim-req">*</span></div>
                     <MasterSelect
                       value={claimCategory}
-                      placeholder="Select category"
-                      options={['Travel','Meals','Internet','Office Supplies','Training'].map(o => ({ value: o, label: o }))}
+                      placeholder={claimCategories.length ? 'Select category' : 'Loading…'}
+                      options={claimCategories.map(c => ({ value: String(c.id), label: c.name }))}
                       onChange={setClaimCategory}
                     />
                   </Col>
@@ -4690,7 +4999,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <MasterSelect
                       value={claimProject}
                       placeholder="Not assigned"
-                      options={['Project Alpha','Project Beta'].map(o => ({ value: o, label: o }))}
+                      options={['HR','Sales','Operations','IT'].map(o => ({ value: o, label: o }))}
                       onChange={setClaimProject}
                     />
                   </Col>
@@ -4698,7 +5007,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div className="ep-claim-label">Payment Method</div>
                     <MasterSelect
                       value={claimPayment}
-                      options={['Corporate Card','Personal Card','Cash','UPI'].map(o => ({ value: o, label: o }))}
+                      options={['UPI','PhonePe','Cash','Cheque','Bank Transfer'].map(o => ({ value: o, label: o }))}
                       onChange={setClaimPayment}
                     />
                   </Col>
@@ -4739,22 +5048,81 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div className="ep-claim-section-head">
                   <span className="ep-claim-dot is-faded" /> C — Proof &amp; Receipt
                 </div>
-                <div className="ep-claim-upload mb-4">
+                <label className="ep-claim-upload mb-2 d-block" style={{ cursor: 'pointer' }}>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const picked = Array.from(e.target.files || []);
+                      if (picked.length) setClaimFiles(prev => [...prev, ...picked]);
+                      e.target.value = '';
+                    }}
+                  />
                   <span className="ep-claim-upload-icon">
                     <i className="ri-upload-2-line" />
                   </span>
                   <div className="fw-semibold" style={{ fontSize: 13 }}>Click to upload or drag &amp; drop</div>
-                  <small className="text-muted" style={{ fontSize: 11.5 }}>PDF, JPG, PNG · Max 5 MB</small>
-                </div>
+                  <small className="text-muted" style={{ fontSize: 11.5 }}>PDF, JPG, PNG · Multiple files allowed · Max 5 MB each</small>
+                </label>
+                {claimFiles.length > 0 && (
+                  <div className="ep-claim-file-list mb-4">
+                    {claimFiles.map((f, i) => (
+                      <div key={i} className="ep-claim-file-row">
+                        <i className="ri-attachment-2 ep-claim-file-icon" />
+                        <div className="ep-claim-file-meta">
+                          <div className="ep-claim-file-name">{f.name}</div>
+                          <div className="ep-claim-file-size">{(f.size / 1024).toFixed(1)} KB</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="ep-claim-file-x"
+                          onClick={() => setClaimFiles(prev => prev.filter((_, j) => j !== i))}
+                          title="Remove"
+                        >
+                          <i className="ri-close-line" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {claimFiles.length === 0 && <div className="mb-4" />}
 
                 <div className="ep-claim-section-head">
-                  <span className="ep-claim-dot is-faded" /> D — System Intelligence
+                  <span className="ep-claim-dot is-faded" /> D — Approval Flow
                 </div>
-                <div className="ep-claim-intel mb-4">
-                  <small className="text-muted">Fill in expense details to see live policy checks</small>
+                <div className="ep-claim-flow mb-4">
+                  <div className="ep-claim-flow-step">
+                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                      <i className="ri-user-line" />
+                    </span>
+                    <div>
+                      <div className="ep-claim-flow-title">You</div>
+                      <div className="ep-claim-flow-sub">{employee?.name || employeeId}</div>
+                    </div>
+                  </div>
+                  <i className="ri-arrow-right-line ep-claim-flow-arrow" />
+                  <div className="ep-claim-flow-step">
+                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#30d5b5)' }}>
+                      <i className="ri-user-star-line" />
+                    </span>
+                    <div>
+                      <div className="ep-claim-flow-title">Reporting Manager</div>
+                      <div className="ep-claim-flow-sub">First-level review</div>
+                    </div>
+                  </div>
+                  <i className="ri-arrow-right-line ep-claim-flow-arrow" />
+                  <div className="ep-claim-flow-step">
+                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#f59e0b,#fbbf24)' }}>
+                      <i className="ri-shield-check-line" />
+                    </span>
+                    <div>
+                      <div className="ep-claim-flow-title">HR / Finance Manager</div>
+                      <div className="ep-claim-flow-sub">Final approval</div>
+                    </div>
+                  </div>
                 </div>
-
-                
               </Col>
             </Row>
           ) : (
@@ -4767,16 +5135,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </span>
                   <div className="flex-grow-1">
                     <h6 className="mb-1 fw-bold" style={{ color: '#4338ca', fontSize: 14 }}>Advance Request — Recoverable Payout</h6>
-                    <small style={{ color: '#6366f1', fontSize: 11.5 }}>Amount will be recovered through payroll deduction · MCA approval required</small>
+                    <small style={{ color: '#6366f1', fontSize: 11.5 }}>Amount will be recovered through payroll deduction · Approval flow required</small>
                   </div>
-                  <span className="ep-claim-flow-pill">MCA FLOW</span>
+                  <span className="ep-claim-flow-pill">APPROVAL FLOW</span>
                 </div>
 
                 <div className="mb-3">
                   <div className="ep-claim-label">Employee <span className="ep-claim-req">*</span></div>
                   <MasterSelect
-                    value={claimEmployee}
+                    value={claimEmployee || employeeId}
                     placeholder="Select employee"
+                    disabled
                     options={[{ value: employeeId, label: `${employee?.name || 'Aarav Patel'} (${employeeId})` }]}
                     onChange={setClaimEmployee}
                   />
@@ -4799,6 +5168,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </div>
                   </Col>
                 </Row>
+                {/* "Other" advance type — free-text input appears only when the
+                    user picks Other so the dropdown stays uncluttered for the
+                    common cases. */}
+                {advType === 'Other' && (
+                  <div className="mb-3">
+                    <div className="ep-claim-label">Specify Advance Type <span className="ep-claim-req">*</span></div>
+                    <input
+                      className="ep-claim-input"
+                      placeholder="e.g. Conference Registration, Education Loan…"
+                      value={advTypeOther}
+                      onChange={e => setAdvTypeOther(e.target.value)}
+                    />
+                  </div>
+                )}
                 <Row className="g-3 mb-3">
                   <Col md={6}>
                     <div className="ep-claim-label">Requested Date <span className="ep-claim-req">*</span></div>
@@ -4815,56 +5198,129 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     value={advRecoveryMode}
                     placeholder="Select mode..."
                     options={[
-                      { value: 'emi', label: 'Equal monthly installments' },
-                      { value: 'lumpsum', label: 'Lumpsum' },
+                      { value: 'emi', label: 'EMI' },
+                      { value: 'lumpsum', label: 'Single Lump Sum' },
+                      { value: 'bimonthly', label: 'Bi-Monthly' },
                     ]}
                     onChange={setAdvRecoveryMode}
                   />
                 </div>
-                <Row className="g-3 mb-3">
-                  <Col md={6}>
-                    <div className="ep-claim-label">No. of Months</div>
-                    <input className="ep-claim-input" placeholder="e.g. 6" value={advMonths} onChange={e => setAdvMonths(e.target.value)} />
-                  </Col>
-                  <Col md={6}>
-                    <div className="ep-claim-label">Monthly EMI</div>
-                    <input className="ep-claim-input" readOnly value={advMonthlyEmi > 0 ? `₹${advMonthlyEmi.toLocaleString('en-IN')}` : '—'} style={{ background: 'var(--vz-secondary-bg)' }} />
-                  </Col>
-                </Row>
-                <div className="mb-3">
+                {/* Months + computed EMI only make sense for EMI mode — hide
+                    them for lump sum / bi-monthly so the form stays tight. */}
+                {advRecoveryMode === 'emi' && (
+                  <Row className="g-3 mb-3">
+                    <Col md={6}>
+                      <div className="ep-claim-label">No. of Months</div>
+                      <input className="ep-claim-input" placeholder="e.g. 6" value={advMonths} onChange={e => setAdvMonths(e.target.value)} />
+                    </Col>
+                    <Col md={6}>
+                      <div className="ep-claim-label">Monthly EMI</div>
+                      <div className="position-relative">
+                        <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
+                        <input
+                          className="ep-claim-input"
+                          style={{ paddingLeft: 28 }}
+                          placeholder="Auto from amount ÷ months"
+                          value={advMonthlyEmi}
+                          onChange={(e) => {
+                            setAdvMonthlyEmi(e.target.value.replace(/[^\d.]/g, ''));
+                            setAdvEmiTouched(true);
+                          }}
+                        />
+                      </div>
+                    </Col>
+                  </Row>
+                )}
+                <div className="mb-0">
                   <div className="ep-claim-label">Reason / Purpose <span className="ep-claim-req">*</span></div>
                   <textarea className="ep-claim-input" rows={3} placeholder="Describe why this advance is needed..." value={advReason} onChange={e => setAdvReason(e.target.value)} />
                 </div>
-                <div className="mb-0">
-                  <div className="ep-claim-label">Supporting Document</div>
-                  <div className="ep-claim-upload" style={{ background: 'rgba(99,102,241,0.04)', borderColor: 'rgba(99,102,241,0.25)' }}>
-                    <span className="ep-claim-upload-icon" style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>
-                      <i className="ri-attachment-line" />
-                    </span>
-                    <div className="fw-semibold" style={{ fontSize: 13, color: '#4338ca' }}>Attach document (bank letter, itinerary…)</div>
-                    <small className="text-muted" style={{ fontSize: 11.5 }}>PDF, JPG, PNG · Max 5 MB</small>
-                  </div>
-                </div>
               </Col>
 
+              {/* Right column — Supporting Documents (multi-file) + Approval Flow.
+                  Replaces the old Payroll Recovery Preview / Advance Intelligence
+                  placeholders, which weren't wired to anything actionable. */}
               <Col lg={6}>
-                <div className="ep-claim-label" style={{ marginBottom: 6 }}>Payroll Recovery Preview</div>
-                <div className="ep-claim-intel mb-4">
-                  <small className="text-muted">
-                    {advMonthlyEmi > 0
-                      ? <>Monthly deduction <strong>₹{advMonthlyEmi.toLocaleString('en-IN')}</strong> for <strong>{advMonths}</strong> months starting <strong>{advRecoveryStart || '—'}</strong></>
-                      : 'Enter amount and recovery mode to preview'}
-                  </small>
+                <div className="ep-claim-section-head">
+                  <span className="ep-claim-dot is-faded" /> Supporting Documents
+                </div>
+                <label className="ep-claim-upload mb-2 d-block" style={{ background: 'rgba(99,102,241,0.04)', borderColor: 'rgba(99,102,241,0.25)', cursor: 'pointer' }}>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const picked = Array.from(e.target.files || []);
+                      if (picked.length) setAdvFiles(prev => [...prev, ...picked]);
+                      e.target.value = '';
+                    }}
+                  />
+                  <span className="ep-claim-upload-icon" style={{ background: 'rgba(99,102,241,0.10)', color: '#6366f1' }}>
+                    <i className="ri-attachment-line" />
+                  </span>
+                  <div className="fw-semibold" style={{ fontSize: 13, color: '#4338ca' }}>Attach documents (bank letter, itinerary…)</div>
+                  <small className="text-muted" style={{ fontSize: 11.5 }}>PDF, JPG, PNG · Multiple files allowed · Max 5 MB each</small>
+                </label>
+                {advFiles.length > 0 && (
+                  <div className="ep-claim-file-list mb-4">
+                    {advFiles.map((f, i) => (
+                      <div key={i} className="ep-claim-file-row">
+                        <i className="ri-attachment-2 ep-claim-file-icon" />
+                        <div className="ep-claim-file-meta">
+                          <div className="ep-claim-file-name">{f.name}</div>
+                          <div className="ep-claim-file-size">{(f.size / 1024).toFixed(1)} KB</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="ep-claim-file-x"
+                          onClick={() => setAdvFiles(prev => prev.filter((_, j) => j !== i))}
+                          title="Remove"
+                        >
+                          <i className="ri-close-line" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {advFiles.length === 0 && <div className="mb-4" />}
+
+                <div className="ep-claim-section-head">
+                  <span className="ep-claim-dot is-faded" /> Approval Flow
+                </div>
+                <div className="ep-claim-flow mb-3">
+                  <div className="ep-claim-flow-step">
+                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>
+                      <i className="ri-user-line" />
+                    </span>
+                    <div>
+                      <div className="ep-claim-flow-title">You</div>
+                      <div className="ep-claim-flow-sub">{employee?.name || employeeId}</div>
+                    </div>
+                  </div>
+                  <i className="ri-arrow-right-line ep-claim-flow-arrow" />
+                  <div className="ep-claim-flow-step">
+                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#0ab39c,#30d5b5)' }}>
+                      <i className="ri-user-star-line" />
+                    </span>
+                    <div>
+                      <div className="ep-claim-flow-title">Reporting Manager</div>
+                      <div className="ep-claim-flow-sub">First-level review</div>
+                    </div>
+                  </div>
+                  <i className="ri-arrow-right-line ep-claim-flow-arrow" />
+                  <div className="ep-claim-flow-step">
+                    <span className="ep-claim-flow-icon" style={{ background: 'linear-gradient(135deg,#f59e0b,#fbbf24)' }}>
+                      <i className="ri-shield-check-line" />
+                    </span>
+                    <div>
+                      <div className="ep-claim-flow-title">HR / Finance Manager</div>
+                      <div className="ep-claim-flow-sub">Final approval</div>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="ep-claim-label" style={{ marginBottom: 6 }}>Advance Intelligence</div>
-                <div className="ep-claim-intel mb-4">
-                  <small className="text-muted">Policy checks will appear here</small>
-                </div>
-
-               
-
-                <div className="ep-claim-warn mt-3">
+                <div className="ep-claim-warn">
                   <i className="ri-error-warning-line" />
                   <div>
                     This creates a recoverable liability entry. The advance will be deducted from your salary per the selected schedule. Original record is immutable after approval.
@@ -4882,12 +5338,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <button type="button" className="ep-claim-secondary">
               <i className="ri-save-line me-1" /> Save Draft
             </button>
-            <button type="button" className="ep-claim-secondary">
-              <i className="ri-add-line me-1" /> Save &amp; Add Another
-            </button>
-            <button type="button" className="ep-claim-submit" onClick={() => setClaimOpen(false)}>
+            {claimMode === 'expense' && (
+              <button type="button" className="ep-claim-secondary" onClick={saveAndAddAnother}>
+                <i className="ri-add-line me-1" /> Save &amp; Add Another
+              </button>
+            )}
+            <button
+              type="button"
+              className="ep-claim-submit"
+              onClick={claimMode === 'expense' ? submitAllDrafts : () => setClaimOpen(false)}
+            >
               <i className={claimMode === 'expense' ? 'ri-send-plane-line me-1' : 'ri-send-plane-fill me-1'} />
-              {claimMode === 'expense' ? 'Submit Claim' : 'Submit Advance Request'}
+              {claimMode === 'expense'
+                ? (claimDrafts.length > 1 ? `Submit ${claimDrafts.length} Claims` : 'Submit Claim')
+                : 'Submit Advance Request'}
             </button>
           </div>
         </div>
