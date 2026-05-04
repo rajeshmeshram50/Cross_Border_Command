@@ -58,7 +58,8 @@ class ExpenseClaimController extends Controller
 
         $q = ExpenseClaim::query()
             ->with([
-                'employee:id,first_name,middle_name,last_name,display_name,emp_code,reporting_manager_id',
+                'employee:id,first_name,middle_name,last_name,display_name,emp_code,reporting_manager_id,department_id',
+                'employee.department:id,name',
                 'manager:id,first_name,middle_name,last_name,display_name,emp_code',
                 'category:id,name,code',
                 'creator:id,name,user_type',
@@ -190,7 +191,7 @@ class ExpenseClaimController extends Controller
             'created_by'     => $user->id,
         ]);
 
-        $row->load(['employee', 'manager', 'category', 'creator', 'hrUser']);
+        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
         return response()->json($this->serialize($row), 201);
     }
 
@@ -297,7 +298,7 @@ class ExpenseClaimController extends Controller
         }
         $row->save();
 
-        $row->load(['employee', 'manager', 'category', 'creator', 'hrUser']);
+        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
         return response()->json($this->serialize($row));
     }
 
@@ -340,7 +341,7 @@ class ExpenseClaimController extends Controller
         $row->status      = $verdict; // hr stage is the final word
         $row->save();
 
-        $row->load(['employee', 'manager', 'category', 'creator', 'hrUser']);
+        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
         return response()->json($this->serialize($row));
     }
 
@@ -546,6 +547,8 @@ class ExpenseClaimController extends Controller
             'employee_id'     => $row->employee_id,
             'employee_name'   => $employeeName,
             'employee_code'   => $employee?->emp_code,
+            'department_id'   => $employee?->department_id,
+            'department_name' => $employee?->department?->name,
             'manager_id'      => $row->manager_id,
             'manager_name'    => $managerName,
             'category_id'     => $row->category_id,

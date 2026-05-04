@@ -30,6 +30,8 @@ export type ExpenseClaimRow = {
   employee_id: number;
   employee_name: string | null;
   employee_code: string | null;
+  department_id?: number | null;
+  department_name?: string | null;
   manager_id: number | null;
   manager_name: string | null;
   category_id: number | null;

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardBody, Col, Dropdown, DropdownToggle, DropdownMenu, DropdownItem, Row } from 'reactstrap';
+import { Card, CardBody, Col, Row } from 'reactstrap';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import ExpenseClaimsTable, { type ExpenseClaimRow } from '../components/ExpenseClaimsTable';
+import { MasterSelect } from './master/masterFormKit';
 
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -119,8 +120,12 @@ export default function HrExpenseManagement() {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
+  // Category + department dropdowns sit inside the filter strip below the
+  // status tabs. 'all' = no narrowing. Both reset whenever the user flips
+  // the date dropdown so they don't end up filtering against an empty set.
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
-  const [dateMenuOpen, setDateMenuOpen] = useState(false);
   // Expense categories master — needed for the policy-limit panel below.
   // Each row carries `monthly_limit` and `yearly_limit` from the master.
   const [categories, setCategories] = useState<{ id: number; name: string; monthly_limit: number | null; yearly_limit: number | null }[]>([]);
@@ -315,14 +320,40 @@ export default function HrExpenseManagement() {
     return 'All time';
   }, [dateFilter]);
 
-  // Apply status filter + free-text search ON TOP of the date window.
+  // Distinct option lists for the Category + Department dropdowns. Built
+  // off the date-windowed rows so the dropdowns shrink/grow with the date
+  // filter (e.g. "Today" hides categories nobody filed today).
+  const categoryOptions = useMemo(() => {
+    const set = new Map<string, string>();
+    for (const r of dateFilteredRows) {
+      const name = r.category_name?.trim();
+      if (name) set.set(name.toLowerCase(), name);
+    }
+    return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
+  }, [dateFilteredRows]);
+  const departmentOptions = useMemo(() => {
+    const set = new Map<string, string>();
+    for (const r of dateFilteredRows) {
+      const name = r.department_name?.trim();
+      if (name) set.set(name.toLowerCase(), name);
+    }
+    return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
+  }, [dateFilteredRows]);
+
+  // Apply status tab + category + department + free-text search on top of
+  // the date window. Each filter is independent — clearing any one back to
+  // 'all' / '' restores those rows.
   const filtered = dateFilteredRows.filter(r => {
     if (filter !== 'all' && r.status !== filter) return false;
+    if (categoryFilter !== 'all'
+        && (r.category_name || '').toLowerCase() !== categoryFilter.toLowerCase()) return false;
+    if (departmentFilter !== 'all'
+        && (r.department_name || '').toLowerCase() !== departmentFilter.toLowerCase()) return false;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       return [
         r.claim_no, r.employee_name, r.employee_code,
-        r.category_name, r.title, r.vendor, r.purpose,
+        r.category_name, r.department_name, r.title, r.vendor, r.purpose,
       ].some(v => (v || '').toString().toLowerCase().includes(q));
     }
     return true;
@@ -384,6 +415,71 @@ export default function HrExpenseManagement() {
       <style>{`
         .hrexp-surface { background: #ffffff; }
         [data-bs-theme="dark"] .hrexp-surface { background: #1c2531; }
+
+        /* Hero card — purple-tinted, mirrors .onb-hero-card from the
+           Employee Onboarding Hub so the two HR landings feel like
+           siblings. */
+        .hrexp-hero-card {
+          display: flex; align-items: center; justify-content: space-between;
+          gap: 16px; flex-wrap: wrap;
+          padding: 18px 22px;
+          border-radius: 16px;
+          background: linear-gradient(135deg, #f3edff 0%, #ede4ff 100%);
+          border: 1px solid #e3d6ff;
+          box-shadow: 0 2px 12px rgba(124,92,252,0.06);
+        }
+        [data-bs-theme="dark"] .hrexp-hero-card {
+          background: linear-gradient(135deg, rgba(124,92,252,0.18) 0%, rgba(167,139,250,0.10) 100%);
+          border-color: rgba(124,92,252,0.32);
+        }
+        .hrexp-hero-pill {
+          display: inline-flex; align-items: center; gap: 6px;
+          padding: 5px 10px; border-radius: 999px;
+          font-size: 11px; font-weight: 700;
+          background: rgba(124,92,252,0.18); color: #5a3fd1;
+        }
+        .hrexp-hero-pill .dot {
+          width: 6px; height: 6px; border-radius: 50%;
+          background: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.20);
+        }
+        /* Solid violet primary button — Export. Same as .onb-checklist-cta. */
+        .hrexp-cta {
+          padding: 10px 18px;
+          font-size: 13px; font-weight: 700;
+          color: #fff !important;
+          background: linear-gradient(135deg,#7c5cfc 0%,#5a3fd1 100%) !important;
+          border: none !important;
+          border-radius: 999px;
+          box-shadow: 0 8px 18px rgba(91,63,209,0.30) !important;
+          display: inline-flex; align-items: center;
+          cursor: pointer;
+          transition: transform .15s ease, box-shadow .15s ease;
+        }
+        .hrexp-cta:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 22px rgba(91,63,209,0.38) !important;
+        }
+        /* Ghost button — All Dates. White surface with violet border on hover. */
+        .hrexp-ghost-btn {
+          display: inline-flex; align-items: center; gap: 8px;
+          padding: 9px 16px;
+          font-size: 13px; font-weight: 600;
+          background: #ffffff;
+          color: #5a3fd1;
+          border: 1px solid rgba(124,92,252,0.30);
+          border-radius: 999px;
+          cursor: pointer;
+          transition: all .15s ease;
+        }
+        .hrexp-ghost-btn:hover {
+          background: #faf6ff;
+          border-color: #a78bfa;
+          color: #5a3fd1;
+        }
+        [data-bs-theme="dark"] .hrexp-ghost-btn {
+          background: rgba(124,92,252,0.10);
+          color: #c4b5fd;
+        }
       `}</style>
 
         {/* ── Page header ── */}
@@ -410,38 +506,17 @@ export default function HrExpenseManagement() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
-                <Dropdown isOpen={dateMenuOpen} toggle={() => setDateMenuOpen(o => !o)}>
-                  <DropdownToggle
-                    tag="button"
-                    type="button"
-                    caret={false}
-                    className="d-inline-flex align-items-center gap-2 fw-semibold"
-                    style={{
-                      background: 'var(--vz-card-bg, #fff)',
-                      color: 'var(--vz-body-color, #1f2937)',
-                      border: '1px solid var(--vz-border-color, #e5e7eb)',
-                      borderRadius: 10,
-                      padding: '7px 14px',
-                      fontSize: 13,
-                    }}
-                  >
-                    <i className="ri-calendar-line" style={{ color: '#6b7280' }} />
-                    {DATE_FILTER_LABELS[dateFilter]}
-                    <i className="ri-arrow-down-s-line" style={{ color: '#6b7280' }} />
-                  </DropdownToggle>
-                  <DropdownMenu end style={{ minWidth: 160, padding: 4 }}>
-                    {(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => (
-                      <DropdownItem
-                        key={k}
-                        active={dateFilter === k}
-                        onClick={() => setDateFilter(k)}
-                        style={{ borderRadius: 6, padding: '6px 10px', fontSize: 13 }}
-                      >
-                        {DATE_FILTER_LABELS[k]}
-                      </DropdownItem>
-                    ))}
-                  </DropdownMenu>
-                </Dropdown>
+                <div style={{ minWidth: 160 }}>
+                  <MasterSelect
+                    value={dateFilter}
+                    onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
+                    options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({
+                      value: k,
+                      label: DATE_FILTER_LABELS[k],
+                    }))}
+                    placeholder="All Dates"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={exportCsv}
@@ -668,62 +743,116 @@ export default function HrExpenseManagement() {
           </Col>
         </Row>
 
-        {/* ── Main card with status filter pills + table ── */}
+        {/* ── Main card with status tabs + filter row + table ── */}
         <Card className="border-0" style={{ borderRadius: 14 }}>
           <CardBody>
-            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-              <div className="d-flex gap-2 flex-wrap">
-                {[
-                  { key: 'all'      as StatusFilter, label: 'All',      count: counts.all,      active: '#6366f1', shadow: 'rgba(99,102,241,0.32)' },
-                  { key: 'pending'  as StatusFilter, label: 'Pending',  count: counts.pending,  active: '#f59e0b', shadow: 'rgba(245,158,11,0.32)' },
-                  { key: 'approved' as StatusFilter, label: 'Approved', count: counts.approved, active: '#10b981', shadow: 'rgba(16,185,129,0.32)' },
-                  { key: 'rejected' as StatusFilter, label: 'Rejected', count: counts.rejected, active: '#ef4444', shadow: 'rgba(239,68,68,0.32)'  },
-                ].map(f => {
-                  const on = filter === f.key;
-                  return (
-                    <button
-                      key={f.key}
-                      type="button"
-                      onClick={() => setFilter(f.key)}
-                      className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold"
-                      style={{
-                        fontSize: 11.5,
-                        padding: '4px 12px',
-                        background: on ? f.active : 'var(--vz-card-bg)',
-                        color: on ? '#fff' : 'var(--vz-secondary-color)',
-                        border: `1px solid ${on ? f.active : 'var(--vz-border-color)'}`,
-                        boxShadow: on ? `0 4px 10px ${f.shadow}` : 'none',
-                      }}
-                    >
-                      {f.label}
-                      <span
-                        className="d-inline-flex align-items-center justify-content-center rounded-pill"
+            {/* Status tabs — pill-style, mirrors the Active/Disabled tabs on
+                the HrEmployees page. Active tab gets the violet gradient with
+                white text + count chip; inactive tabs sit transparent with
+                muted text inside the same rounded gray bar. */}
+            <Row className="g-2 align-items-center mb-3">
+              <Col xs={12}>
+                <div
+                  className="d-flex flex-wrap"
+                  style={{
+                    background: 'var(--vz-secondary-bg)',
+                    border: '1px solid var(--vz-border-color)',
+                    borderRadius: 10,
+                    padding: 4,
+                    gap: 4,
+                  }}
+                >
+                  {[
+                    { key: 'all'      as StatusFilter, label: 'All Claims',     count: counts.all,      icon: 'ri-stack-line'             },
+                    { key: 'pending'  as StatusFilter, label: 'Pending Review', count: counts.pending,  icon: 'ri-time-line'              },
+                    { key: 'approved' as StatusFilter, label: 'Approved',       count: counts.approved, icon: 'ri-checkbox-circle-line'   },
+                    { key: 'rejected' as StatusFilter, label: 'Rejected',       count: counts.rejected, icon: 'ri-close-circle-line'      },
+                  ].map(t => {
+                    const on = filter === t.key;
+                    return (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => setFilter(t.key)}
+                        className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
                         style={{
-                          minWidth: 20, height: 16, padding: '0 6px',
-                          background: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
+                          borderRadius: 8,
+                          padding: '8px 14px',
+                          fontSize: 13,
+                          background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
                           color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          fontSize: 10, fontWeight: 700,
+                          border: 'none',
+                          boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
                         }}
                       >
-                        {f.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="search-box" style={{ minWidth: 240 }}>
-                <input
-                  type="text"
-                  className="form-control form-control-sm"
-                  placeholder="Search by claim no, employee, category…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  style={{ fontSize: 12, height: 32 }}
-                />
-                <i className="ri-search-line search-icon" style={{ fontSize: 12 }} />
-              </div>
-            </div>
+                        <i className={t.icon} style={{ fontSize: 14 }} />
+                        {t.label}
+                        <span
+                          className="badge rounded-pill"
+                          style={{
+                            fontSize: 11,
+                            background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
+                            color: on ? '#fff' : 'var(--vz-secondary-color)',
+                          }}
+                        >
+                          {t.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Col>
+            </Row>
 
+            {/* Filter row — search on the left, Category + Department
+                dropdowns on the right. Mirrors the HrEmployees Status /
+                Department row exactly so both pages read as siblings. */}
+            <Row className="g-2 align-items-center mb-3">
+              <Col md={6} sm={12}>
+                <div className="search-box">
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Search employee, claim no, category, vendor…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                  <i className="ri-search-line search-icon" />
+                </div>
+              </Col>
+              <Col md={6} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Category</span>
+                  <div style={{ minWidth: 170 }}>
+                    <MasterSelect
+                      value={categoryFilter}
+                      onChange={(v) => setCategoryFilter(v || 'all')}
+                      options={[
+                        { value: 'all', label: 'All Categories' },
+                        ...categoryOptions.map(c => ({ value: c, label: c })),
+                      ]}
+                      placeholder="All Categories"
+                    />
+                  </div>
+                </div>
+                <div className="d-flex align-items-center gap-2">
+                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
+                  <div style={{ minWidth: 170 }}>
+                    <MasterSelect
+                      value={departmentFilter}
+                      onChange={(v) => setDepartmentFilter(v || 'all')}
+                      options={[
+                        { value: 'all', label: 'All Depts' },
+                        ...departmentOptions.map(d => ({ value: d, label: d })),
+                      ]}
+                      placeholder="All Depts"
+                    />
+                  </div>
+                </div>
+              </Col>
+            </Row>
+
+            <div>
             <ExpenseClaimsTable
               rows={filtered}
               loading={loading}
@@ -742,6 +871,7 @@ export default function HrExpenseManagement() {
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
                 Live data
               </small>
+            </div>
             </div>
           </CardBody>
         </Card>
