@@ -63,6 +63,7 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.onboarding":  return "/hr/employee-onboarding";
     case "hr.attendance":  return "/hr/attendance";
     case "hr.broadcast":   return "/hr/broadcast";
+    case "hr.leave":       return "/hr/leave";
     default:               return "/hr";
   }
 };

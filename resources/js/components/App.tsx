@@ -44,6 +44,7 @@ import HrRecruitment from '../pages/HrRecruitment';
 import HrCandidates from '../pages/HrCandidates';
 import HrExitManagement from '../pages/HrExitManagement';
 import HrAttendance from '../pages/HrAttendance';
+import HrLeave from '../pages/HrLeave';
 import HrBroadcastCentre from '../pages/HrBroadcastCentre';
 import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
 import EmployeePermissions from '../pages/EmployeePermissions';
@@ -80,6 +81,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'hr-employees': return '/hr/employees';
     case 'hr-recruitment': return '/hr/recruitment';
     case 'hr-attendance': return '/hr/attendance';
+    case 'hr-leave': return '/hr/leave';
     case 'hr-broadcast': return '/hr/broadcast';
     case 'hr-employee-onboarding': return '/hr/employee-onboarding';
     case 'employee-permissions': return `/hr/employees/${data?.employeeId}/permissions`;
@@ -316,6 +318,7 @@ function DashboardRoutes({ user }: { user: any }) {
               {FEATURE_FLAGS.hrAttendance && (
                 <Route path="/hr/attendance" element={<HrAttendance />} />
               )}
+              <Route path="/hr/leave" element={<HrLeave />} />
               <Route path="/hr/broadcast" element={<HrBroadcastCentre />} />
               <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
