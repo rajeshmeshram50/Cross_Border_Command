@@ -1175,6 +1175,41 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
+  expense_category: {
+    key: 'expense_category', slug: 'expense_category', title: 'Expense Categories', titleSingular: 'Expense Category',
+    icon: 'ri-money-rupee-circle-line', iconColor: 'success', iconBg: 'success',
+    desc: 'Classify expenses with monthly & yearly policy limits for claim controls',
+    cat: 'Operations & Support',
+    fields: [
+      { n: 'code', l: 'Category Code', t: 'text', r: true, p: 'e.g. EXC-01',
+        autogenApi: true,
+        autogen: (records: any[]) => {
+          const max = records.reduce((m: number, r: any) => {
+            const match = /^EXC-(\d+)$/i.exec(String(r.code || '').trim());
+            const n = match ? parseInt(match[1], 10) : 0;
+            return n > m ? n : m;
+          }, 0);
+          return `EXC-${String(max + 1).padStart(2, '0')}`;
+        } },
+      { n: 'name', l: 'Expense Name', t: 'text', r: true, p: 'e.g. Travel, Meals, Internet' },
+      { n: 'monthly_limit', l: 'Monthly Limit (₹)', t: 'number', p: 'e.g. 10000' },
+      { n: 'yearly_limit', l: 'Yearly Limit (₹)', t: 'number', p: 'e.g. 100000' },
+      { n: 'description', l: 'Description', t: 'textarea', p: 'Policy notes — what is reimbursable, exclusions, etc.', full: true },
+      { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
+    ],
+    cols: ['code', 'name', 'monthly_limit', 'yearly_limit', 'status'],
+    colL: ['Code', 'Expense Name', 'Monthly Limit (₹)', 'Yearly Limit (₹)', 'Status'],
+    uFields: ['code'],
+    data: [],
+    wtd: [
+      { icon: 'ri-hashtag', title: 'Auto-Generate Code', desc: 'EXC-01, EXC-02 — sequenced per tenant' },
+      { icon: 'ri-money-rupee-circle-line', title: 'Name the Category', desc: 'e.g. Travel, Meals, Internet' },
+      { icon: 'ri-calendar-line', title: 'Set Monthly Limit', desc: 'Cap per month an employee can claim' },
+      { icon: 'ri-calendar-2-line', title: 'Set Yearly Limit', desc: 'Annual ceiling across all claims' },
+      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for expense claims' },
+    ],
+  },
+
   // ---------- P2P MASTERS ----------
   payment_terms: {
     key: 'payment_terms', slug: 'payment_terms', title: 'Payment Terms', titleSingular: 'Payment Term',

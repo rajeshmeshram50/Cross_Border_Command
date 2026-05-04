@@ -87,8 +87,9 @@ export const MASTER_GROUPS: MenuGroup[] = [
     label: 'Operations & Support',
     icon: 'Wrench',
     children: [
-      { id: 'master.assets',           icon: 'Briefcase', label: 'Assets' },
-      { id: 'master.asset_categories', icon: 'Tags',      label: 'Asset Categories' },
+      { id: 'master.assets',           icon: 'Briefcase',     label: 'Assets' },
+      { id: 'master.asset_categories', icon: 'Tags',          label: 'Asset Categories' },
+      { id: 'master.expense_category', icon: 'IndianRupee',   label: 'Expense Categories' },
     ],
   },
   {
