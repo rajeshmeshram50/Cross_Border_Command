@@ -46,6 +46,7 @@ import HrCandidates from '../pages/HrCandidates';
 import HrExitManagement from '../pages/HrExitManagement';
 import HrAttendance from '../pages/HrAttendance';
 import HrLeave from '../pages/HrLeave';
+import HrLeavePlans from '../pages/HrLeavePlans';
 import HrExpenseManagement from '../pages/HrExpenseManagement';
 import HrBroadcastCentre from '../pages/HrBroadcastCentre';
 import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
@@ -383,6 +384,7 @@ function DashboardRoutes({ user }: { user: any }) {
                 <Route path="/hr/attendance" element={<HrAttendance />} />
               )}
               <Route path="/hr/leave" element={<HrLeave />} />
+              <Route path="/hr/leave-plans" element={<HrLeavePlans />} />
               <Route path="/hr/expense" element={<HrExpenseManagement />} />
               <Route path="/hr/broadcast" element={<HrBroadcastCentre />} />
               <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />

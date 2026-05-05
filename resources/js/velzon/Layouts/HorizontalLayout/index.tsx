@@ -31,18 +31,28 @@ const HorizontalLayout = (props : any) => {
     const [, setTick] = useState(0);
     useEffect(() => subscribeMenu(() => setTick((t) => t + 1)), []);
 
+    // Single helper: collapse every open menu surface (sidebar dropdown set
+    // + the local horizontal-layout state). Used by the outside-click
+    // handler, the path-change effect, AND the leaf-click handler so the
+    // mega-menu always closes when navigation happens.
+    const collapseAllNavMenus = React.useCallback(() => {
+        closeAllMenus();
+        setOpenHrCat(null);
+        setIsMoreMenu(false);
+    }, []);
+
     // Close any open dropdown when the user clicks anywhere outside the
     // navbar. mousedown (rather than click) so we react before the focus/blur
-    // shuffle, and `composedPath`/`closest` so a click on a child element
-    // inside the navbar still counts as "inside".
+    // shuffle, and `closest` so a click on a child element inside the navbar
+    // still counts as "inside".
     useEffect(() => {
         const handleOutside = (e: MouseEvent) => {
             const target = e.target as HTMLElement | null;
-            if (target && !target.closest("#navbar-nav")) closeAllMenus();
+            if (target && !target.closest("#navbar-nav")) collapseAllNavMenus();
         };
         document.addEventListener("mousedown", handleOutside);
         return () => document.removeEventListener("mousedown", handleOutside);
-    }, []);
+    }, [collapseAllNavMenus]);
 
     const navData = navdata().props.children;
     let menuItems = [];
@@ -68,6 +78,11 @@ const HorizontalLayout = (props : any) => {
 
     useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Path changed — collapse every open menu surface so the navbar
+        // resets to its default closed state on each navigation. Without
+        // this, clicking HR Core → Employee leaves the HR mega-menu and the
+        // active category strip both expanded over the new page.
+        collapseAllNavMenus();
         const initMenu = () => {
             const pathName = process.env.PUBLIC_URL + path;
             const ul = document.getElementById("navbar-nav") as HTMLElement;
@@ -188,6 +203,7 @@ const HorizontalLayout = (props : any) => {
                                                                         key={ei}
                                                                         to={entry.link ? entry.link : "/#"}
                                                                         className="hr-mega-cat-btn is-link"
+                                                                        onClick={collapseAllNavMenus}
                                                                     >
                                                                         {props.t(entry.label)}
                                                                     </Link>
@@ -201,6 +217,7 @@ const HorizontalLayout = (props : any) => {
                                                                         key={li}
                                                                         to={leaf.link ? leaf.link : "/#"}
                                                                         className="hr-mega-leaf-link"
+                                                                        onClick={collapseAllNavMenus}
                                                                     >
                                                                         {props.t(leaf.label)}
                                                                     </Link>

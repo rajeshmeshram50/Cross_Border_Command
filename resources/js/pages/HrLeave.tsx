@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from './master/masterFormKit';
 import '../../css/recruitment.css';
+import '../../css/leave.css';
 // Reuses the purple hero-card & hero-pill that HrEmployeeOnboarding ships
 // (.onb-hero-card / .onb-hero-pill) so the page header reads the same as the
 // Onboarding Hub.
@@ -57,6 +59,13 @@ interface LeaveRequest {
   empInitials: string;
   empName: string;
   empRole: string;                     // designation + department
+  // New facets used by the Figma filter chips (Department / Location /
+  // Legal Entity). Backend will eventually expose these as employee-level
+  // attributes; for the dummy rows below they're seeded so each row exercises
+  // the filter logic.
+  department: string;
+  location: string;
+  legalEntity: string;
   accent: string;
   type: LeaveType;
   durationDays: number;
@@ -132,6 +141,21 @@ const PAYROLL_TONE: Record<PayrollMode, { fg: string; bg: string }> = {
   'Half-Pay':   { fg: '#a4661c', bg: '#fde8c4' },
 };
 
+// SLA traffic-light: green (fresh) → red (aging) → solid amber (breached).
+// Anchored against `appliedOn`; the 7-day cutoff matches deriveChain()'s
+// `aged_out` rule so the pill flips to OVERDUE the same moment HR auto-
+// escalation kicks in.
+type SlaTone = { label: string; bg: string; fg: string; solid?: boolean };
+function computeSla(r: LeaveRequest, today = new Date()): SlaTone | null {
+  if (!r.stage.startsWith('Pending')) return null;
+  const applied = new Date(r.appliedOn);
+  if (isNaN(applied.getTime())) return null;
+  const days = Math.max(0, Math.round((today.getTime() - applied.getTime()) / (1000 * 60 * 60 * 24)));
+  if (days >= 7) return { label: 'OVERDUE',           bg: '#fde68a', fg: '#92400e', solid: true };
+  if (days >= 3) return { label: `${days}d pending`,  bg: '#fee2e2', fg: '#b91c1c' };
+  return            { label: `${days || 1}d pending`, bg: '#d1fae5', fg: '#065f46' };
+}
+
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
 
@@ -143,6 +167,7 @@ const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1042', empCode: 'LV-001',
     empInitials: 'GJ', empName: 'Gaurav Jagtap', empRole: 'Software Development', accent: accent(0),
+    department: 'Engineering', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
     type: 'Annual', durationDays: 3, durationLabel: '3 days',
     fromDate: '2026-04-14', toDate: '2026-04-16', appliedOn: '2026-04-12',
     raisedBy: 'employee',
@@ -158,6 +183,7 @@ const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1043', empCode: 'LV-002',
     empInitials: 'RC', empName: 'Ritika Chauhan', empRole: 'UI/UX Designing', accent: accent(1),
+    department: 'Design', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
     type: 'Sick', durationDays: 2, durationLabel: '2 days',
     fromDate: '2026-04-09', toDate: '2026-04-10', appliedOn: '2026-04-07',
     raisedBy: 'employee',
@@ -172,6 +198,7 @@ const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1044', empCode: 'LV-003',
     empInitials: 'HT', empName: 'Harsh Thakur', empRole: 'Business Analyst', accent: accent(2),
+    department: 'Operations', location: 'Pune', legalEntity: 'IGC India Pvt Ltd',
     type: 'Casual', durationDays: 1, durationLabel: '1 day',
     fromDate: '2026-04-11', toDate: '2026-04-11', appliedOn: '2026-04-08',
     raisedBy: 'employee',
@@ -184,6 +211,7 @@ const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1045', empCode: 'LV-004',
     empInitials: 'SJ', empName: 'Swati Joshi', empRole: 'Software Testing', accent: accent(3),
+    department: 'Engineering', location: 'Bengaluru', legalEntity: 'IGC India Pvt Ltd',
     type: 'Sick', durationDays: 1, durationLabel: '1 day',
     fromDate: '2026-04-08', toDate: '2026-04-08', appliedOn: '2026-04-06',
     raisedBy: 'employee',
@@ -198,6 +226,7 @@ const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1046', empCode: 'LV-005',
     empInitials: 'NK', empName: 'Neha Kulkarni', empRole: 'Product Design', accent: accent(4),
+    department: 'Design', location: 'Bengaluru', legalEntity: 'IGC India Pvt Ltd',
     type: 'Earned', durationDays: 5, durationLabel: '5 days',
     fromDate: '2026-04-21', toDate: '2026-04-25', appliedOn: '2026-04-14',
     raisedBy: 'hr',
@@ -215,6 +244,7 @@ const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1047', empCode: 'LV-006',
     empInitials: 'RG', empName: 'Rahul Gupta', empRole: 'Account Executive', accent: accent(5),
+    department: 'Sales', location: 'Delhi', legalEntity: 'IGC India Pvt Ltd',
     type: 'LOP', durationDays: 2, durationLabel: '2 days',
     fromDate: '2026-04-02', toDate: '2026-04-03', appliedOn: '2026-04-01',
     raisedBy: 'employee',
@@ -229,6 +259,7 @@ const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1048', empCode: 'LV-007',
     empInitials: 'KS', empName: 'Karan Singh', empRole: 'Software Engineer', accent: accent(6),
+    department: 'Engineering', location: 'Pune', legalEntity: 'IGC India Pvt Ltd',
     type: 'Casual', durationDays: 4, durationLabel: '4 days',
     fromDate: '2026-04-17', toDate: '2026-04-20', appliedOn: '2026-04-12',
     raisedBy: 'employee',
@@ -243,6 +274,7 @@ const buildRequests = (): LeaveRequest[] => [
   {
     id: 'LV-1049', empCode: 'LV-008',
     empInitials: 'DN', empName: 'Deepa Nair', empRole: 'Finance Analyst', accent: accent(7),
+    department: 'Finance', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
     type: 'Earned', durationDays: 3, durationLabel: '3 days',
     fromDate: '2026-04-28', toDate: '2026-04-30', appliedOn: '2026-04-04',
     raisedBy: 'employee',
@@ -256,6 +288,54 @@ const buildRequests = (): LeaveRequest[] => [
     proofType: 'Booking Confirmation', proofFileName: 'flight-tickets.pdf', proofMimeType: 'application/pdf',
     proofSizeKb: 198, proofUploadedAt: '2026-04-04',
     reason: 'Annual vacation — pre-booked tickets',
+  },
+  // ── Approved leaves spanning today (TODAY_DEMO = 2026-04-22) so the
+  //    "On Leave Today" panel always has someone to surface in the demo. ──
+  {
+    id: 'LV-1050', empCode: 'LV-009',
+    empInitials: 'AM', empName: 'Aarav Mehta', empRole: 'Software Development', accent: accent(0),
+    department: 'Engineering', location: 'Bengaluru', legalEntity: 'IGC India Pvt Ltd',
+    type: 'Annual', durationDays: 6, durationLabel: '6 days',
+    fromDate: '2026-04-20', toDate: '2026-04-25', appliedOn: '2026-04-08',
+    raisedBy: 'employee',
+    reportingManager: { initials: 'GJ', name: 'Gaurav Jagtap', designation: 'Engineering Manager' },
+    managerStatus: 'Approved', managerActionAt: '2026-04-09', managerComment: 'Enjoy your break.',
+    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
+    stage: 'Approved',
+    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Self',
+    proofType: 'Travel Itinerary', proofFileName: 'goa-trip.pdf', proofMimeType: 'application/pdf',
+    proofSizeKb: 234, proofUploadedAt: '2026-04-08',
+    reason: 'Pre-planned vacation',
+  },
+  {
+    id: 'LV-1051', empCode: 'LV-010',
+    empInitials: 'PS', empName: 'Priya Sharma', empRole: 'Human Resources', accent: accent(2),
+    department: 'HR', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
+    type: 'Casual', durationDays: 1, durationLabel: '1 day',
+    fromDate: '2026-04-22', toDate: '2026-04-22', appliedOn: '2026-04-19',
+    raisedBy: 'employee',
+    reportingManager: { initials: 'SG', name: 'Sunita Ghosh', designation: 'HR Head' },
+    managerStatus: 'Approved', managerActionAt: '2026-04-20',
+    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
+    stage: 'Approved',
+    payroll: 'Paid Leave', proof: 'N/A',
+    reason: 'Personal work',
+  },
+  {
+    id: 'LV-1052', empCode: 'LV-011',
+    empInitials: 'VN', empName: 'Vikram Nair', empRole: 'Product Management', accent: accent(4),
+    department: 'Product', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
+    type: 'Sick', durationDays: 3, durationLabel: '3 days',
+    fromDate: '2026-04-21', toDate: '2026-04-23', appliedOn: '2026-04-21',
+    raisedBy: 'employee',
+    reportingManager: { initials: 'AG', name: 'Arun Gupta', designation: 'CTO' },
+    managerStatus: 'Approved', managerActionAt: '2026-04-21', managerComment: 'Get well soon.',
+    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
+    stage: 'Approved',
+    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Self',
+    proofType: 'Medical Certificate', proofFileName: 'med-cert.pdf', proofMimeType: 'application/pdf',
+    proofSizeKb: 158, proofUploadedAt: '2026-04-21',
+    reason: 'Viral fever',
   },
 ];
 
@@ -362,21 +442,64 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
 // ─────────────────────────────────────────────────────────────────────────────
 // HrLeave — page component. Layout, classes and table mirror HrRecruitment.
 // ─────────────────────────────────────────────────────────────────────────────
+// The page now surfaces "On Leave Today" as its own employee panel below
+// the KPI strip (avatar chips, not a count tile), so the KPI row drops to
+// four cards. Anchoring against a fixed demo date so the panel is always
+// populated until the backend feeds real `LEAVE_REQUESTS.startDate <= today
+// <= endDate` data.
+const TODAY_DEMO = '2026-04-22';
 const KPI_CARDS = [
-  { key: 'total',        label: 'Total Requests',  icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#0c63b0,#0ea5e9)' },
-  { key: 'pending',      label: 'Pending Approval',icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-  { key: 'approved',     label: 'Approved (Month)',icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)' },
-  { key: 'rejected',     label: 'Rejected',        icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548,#fda192)' },
-  { key: 'onLeaveToday', label: 'On Leave Today',  icon: 'ri-user-3-line',          gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+  { key: 'total',    label: 'Total Requests',   icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#0c63b0,#0ea5e9)' },
+  { key: 'pending',  label: 'Pending Approval', icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
+  { key: 'approved', label: 'Approved (Month)', icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)' },
+  { key: 'rejected', label: 'Rejected',         icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548,#fda192)' },
 ] as const;
 
 export default function HrLeave() {
-  const [requests] = useState<LeaveRequest[]>(buildRequests);
+  const navigate = useNavigate();
+  const [requests, setRequests] = useState<LeaveRequest[]>(buildRequests);
 
-  // Filter state — Status / Type / Stage / Payroll. Tabs drive the Status
-  // filter so the segmented control and dropdown stay in sync.
+  // Confirmation popup for the Approve / Reject row actions. Open state
+  // carries which row is being actioned and the intent so the modal copy +
+  // accent colour can react accordingly.
+  const [confirmAction, setConfirmAction] = useState<
+    { row: LeaveRequest; action: 'approve' | 'reject' } | null
+  >(null);
+
+  const applyAction = (comment: string) => {
+    if (!confirmAction) return;
+    const { row, action } = confirmAction;
+    const today = new Date().toISOString().slice(0, 10);
+    setRequests(prev => prev.map(r => {
+      if (r.id !== row.id) return r;
+      if (action === 'approve') {
+        return {
+          ...r,
+          managerStatus: 'Approved',
+          managerActionAt: today,
+          managerComment: comment.trim() || r.managerComment,
+          stage: 'Approved',
+          stageNote: undefined,
+        };
+      }
+      return {
+        ...r,
+        managerStatus: 'Rejected',
+        managerActionAt: today,
+        managerComment: comment.trim() || r.managerComment,
+        stage: 'Rejected',
+        stageNote: undefined,
+      };
+    }));
+    setConfirmAction(null);
+  };
+
+  // Filter state. Tabs drive the Status filter (no separate dropdown for it
+  // since the segmented control owns that pivot). Dropdowns cover the
+  // remaining facets — Department / Type / Stage / Payroll.
   const [search,  setSearch]  = useState('');
   const [status,  setStatus]  = useState<string>('All');
+  const [department, setDepartment] = useState<string>('All');
   const [type,    setType]    = useState<string>('All');
   const [stage,   setStage]   = useState<string>('All');
   const [payroll, setPayroll] = useState<string>('All');
@@ -385,6 +508,8 @@ export default function HrLeave() {
 
   // Drawer state — opens the read-only details modal for a single row.
   const [detail, setDetail] = useState<LeaveRequest | null>(null);
+  // Collapsible state for the "On Leave Today" panel.
+  const [todayOpen, setTodayOpen] = useState(true);
 
   // Bulk-selection state — only Pending rows are selectable since terminal
   // states can't be re-actioned. The header checkbox cycles select-all /
@@ -410,7 +535,6 @@ export default function HrLeave() {
       approved:     approved.length,
       approvedDays: approved.reduce((s, r) => s + r.durationDays, 0),
       rejected:     rejected.length,
-      onLeaveToday: 1,
       tabs: {
         All:      requests.length,
         Pending:  pending.length,
@@ -418,6 +542,16 @@ export default function HrLeave() {
         Rejected: rejected.length,
       },
     };
+  }, [requests]);
+
+  // Employees whose approved leave overlaps "today". Used by the avatar
+  // panel right under the KPI strip. Backend will replace TODAY_DEMO with
+  // the server-side current date once /api/leaves is wired.
+  const onLeaveToday = useMemo(() => {
+    const today = TODAY_DEMO;
+    return requests.filter(r =>
+      r.stage === 'Approved' && r.fromDate <= today && r.toDate >= today
+    );
   }, [requests]);
 
   const filtered = useMemo(() => {
@@ -438,12 +572,14 @@ export default function HrLeave() {
         if (!matchesStage) return false;
       }
 
-      if (type    !== 'All' && r.type    !== type)    return false;
-      if (payroll !== 'All' && r.payroll !== payroll) return false;
+      if (type       !== 'All' && r.type       !== type)       return false;
+      if (payroll    !== 'All' && r.payroll    !== payroll)    return false;
+      if (department !== 'All' && r.department !== department) return false;
+
       if (!q) return true;
       return [r.empName, r.empRole, r.id, r.empCode, r.type].some(v => v.toLowerCase().includes(q));
     });
-  }, [requests, search, status, type, stage, payroll]);
+  }, [requests, search, status, type, stage, payroll, department]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(Math.max(1, page), pageCount);
@@ -451,11 +587,12 @@ export default function HrLeave() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
-  const STATUS_OPTIONS = [
-    { value: 'All',      label: 'All Requests' },
-    { value: 'Pending',  label: 'Pending' },
-    { value: 'Approved', label: 'Approved' },
-    { value: 'Rejected', label: 'Rejected' },
+  // Department options derived from the rows themselves so the dropdown
+  // never offers a value with zero matches.
+  const DEPT_OPTIONS = [
+    { value: 'All', label: 'All Departments' },
+    ...Array.from(new Set(requests.map(r => r.department))).filter(Boolean).sort()
+      .map(v => ({ value: v, label: v })),
   ];
   const STAGE_OPTIONS = [
     { value: 'All',             label: 'All Stages' },
@@ -521,13 +658,20 @@ export default function HrLeave() {
                 <button type="button" className="rec-btn-ghost">
                   <i className="ri-calendar-event-line" />Holidays
                 </button>
+                <button
+                  type="button"
+                  className="rec-btn-primary"
+                  onClick={() => navigate('/hr/leave-plans')}
+                >
+                  <i className="ri-settings-3-line" />Leave Plans
+                </button>
               </div>
             </div>
 
-            {/* ── KPI cards (5 tiles) ── */}
-            <Row className="g-3 mb-2 align-items-stretch rec-page-kpis">
+            {/* ── KPI cards (4 tiles) ── */}
+            <Row className="g-3 mb-3 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
-                <Col key={k.key} xl md={4} sm={6} xs={12}>
+                <Col key={k.key} xl={3} md={6} sm={6} xs={12}>
                   <div className="rec-kpi-card h-100">
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
@@ -543,6 +687,98 @@ export default function HrLeave() {
                 </Col>
               ))}
             </Row>
+
+            {/* ── On Leave Today — collapsible avatar strip. Header doubles
+                  as a toggle so the panel can fold away when HR wants more
+                  vertical space. Decorative gradient banner + by-leave-type
+                  mini-summary ("3 Sick · 2 Annual") makes the strip readable
+                  at a glance even before the chips render. */}
+            <div className={`lv-today-card mb-3 ${todayOpen ? 'is-open' : 'is-closed'}`}>
+              <button
+                type="button"
+                className="lv-today-head lv-today-head-btn"
+                onClick={() => setTodayOpen(o => !o)}
+                aria-expanded={todayOpen}
+              >
+                <span className="lv-today-banner">
+                  <span className="lv-today-banner-icon">
+                    <i className="ri-user-follow-line" />
+                  </span>
+                  <span className="lv-today-banner-text">
+                    <span className="lv-today-banner-title">On Leave Today</span>
+                    <span className="lv-today-banner-sub">
+                      <i className="ri-calendar-event-line" />
+                      {formatDate(TODAY_DEMO)}
+                      {onLeaveToday.length > 0 && (
+                        <>
+                          <span className="lv-today-banner-dot" />
+                          {Array.from(new Set(onLeaveToday.map(r => r.type)))
+                            .map(t => `${onLeaveToday.filter(r => r.type === t).length} ${t}`)
+                            .join(' · ')}
+                        </>
+                      )}
+                    </span>
+                  </span>
+                </span>
+                <span className="lv-today-banner-end">
+                  <span className={`lv-today-count ${onLeaveToday.length === 0 ? 'is-empty' : ''}`}>
+                    <i className={onLeaveToday.length === 0 ? 'ri-emotion-happy-line' : 'ri-team-line'} />
+                    {onLeaveToday.length} {onLeaveToday.length === 1 ? 'person' : 'people'}
+                  </span>
+                  <i className={`lv-today-caret ri-arrow-${todayOpen ? 'up' : 'down'}-s-line`} />
+                </span>
+              </button>
+
+              {todayOpen && (
+                onLeaveToday.length === 0 ? (
+                  <div className="lv-today-empty">
+                    <span className="lv-today-empty-icon">
+                      <i className="ri-emotion-happy-line" />
+                    </span>
+                    <div className="fw-bold mt-2" style={{ fontSize: 13 }}>Everyone is in today</div>
+                    <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+                      No approved leaves overlap {formatDate(TODAY_DEMO)}.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="lv-today-strip">
+                    {onLeaveToday.map(r => {
+                      const tType = TYPE_TONE[r.type];
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          className="lv-today-chip"
+                          onClick={() => setDetail(r)}
+                          title={`${r.empName} · ${r.type} · until ${formatDate(r.toDate)}`}
+                        >
+                          <span
+                            className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                            style={{
+                              width: 36, height: 36, fontSize: 12,
+                              background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
+                            }}
+                          >
+                            {r.empInitials}
+                          </span>
+                          <span className="lv-today-chip-body">
+                            <span className="lv-today-chip-name">{r.empName}</span>
+                            <span className="lv-today-chip-meta">
+                              <span className="rec-pill" style={{ background: tType.bg, color: tType.fg, padding: '1px 7px', fontSize: 10 }}>
+                                {r.type}
+                              </span>
+                              <span className="text-muted" style={{ fontSize: 10.5 }}>
+                                <i className="ri-arrow-right-line me-1" />till {formatDate(r.toDate)}
+                              </span>
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+            </div>
 
             {/* ── Tabs (All / Pending / Approved / Rejected) — segmented control,
                   drives the Status filter so the dropdown stays in sync. ── */}
@@ -603,9 +839,9 @@ export default function HrLeave() {
                       />
                       <i className="ri-search-line search-icon" />
                     </div>
-                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Status</span>
-                    <div style={{ minWidth: 150 }}>
-                      <MasterSelect value={status} onChange={v => { setStatus(v); setPage(1); }} options={STATUS_OPTIONS} placeholder="All Requests" />
+                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Department</span>
+                    <div style={{ minWidth: 160 }}>
+                      <MasterSelect value={department} onChange={v => { setDepartment(v); setPage(1); }} options={DEPT_OPTIONS} placeholder="All Departments" />
                     </div>
                     <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Type</span>
                     <div style={{ minWidth: 140 }}>
@@ -619,11 +855,8 @@ export default function HrLeave() {
                     <div style={{ minWidth: 140 }}>
                       <MasterSelect value={payroll} onChange={v => { setPayroll(v); setPage(1); }} options={PAYROLL_OPTIONS} placeholder="All" />
                     </div>
-                    <span className="cand-result-chip ms-auto">
-                      <i className="ri-filter-3-line" />
-                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
-                    </span>
                   </div>
+
 
                   <div className="rec-list-scroll">
                     {(() => {
@@ -670,13 +903,14 @@ export default function HrLeave() {
                           <th scope="col" style={{ width: 120 }}>Payroll</th>
                           <th scope="col" style={{ width: 110 }}>Proof</th>
                           <th scope="col" style={{ width: 180 }}>Status</th>
+                          <th scope="col" style={{ width: 120 }}>SLA</th>
                           <th scope="col" className="text-center pe-3" style={{ width: 130 }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {visible.length === 0 ? (
                           <tr>
-                            <td colSpan={11} className="text-center py-5 text-muted">
+                            <td colSpan={12} className="text-center py-5 text-muted">
                               <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                               No leave requests match your filters
                             </td>
@@ -735,31 +969,52 @@ export default function HrLeave() {
                               </td>
                               <td>
                                 {r.proof === 'Uploaded' ? (
-                                  <>
-                                    <span className="rec-pill" style={{ background: '#d3f0ee', color: '#0a716a' }}>
-                                      <i className="ri-check-line me-1" />Uploaded
-                                    </span>
-                                    {r.proofVia && <div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>via {r.proofVia}</div>}
-                                  </>
-                                ) : r.proof === 'Missing' ? (
-                                  <>
-                                    <span className="rec-pill" style={{ background: '#fde2dc', color: '#b91c1c' }}>
-                                      <i className="ri-close-line me-1" />Missing
-                                    </span>
-                                    {r.proofVia && <div className="text-muted" style={{ fontSize: 11, marginTop: 2 }}>via {r.proofVia}</div>}
-                                  </>
+                                  // Uploaded → pill-button with eye icon. The
+                                  // proof is a file (image / PDF / etc.) so
+                                  // the click opens the proofUrl directly
+                                  // when one is present; the form-popup is
+                                  // *not* used because that's for request
+                                  // metadata, not files. Backend will fill
+                                  // proofUrl from the storage layer.
+                                  <button
+                                    type="button"
+                                    className="lv-proof-btn lv-proof-uploaded"
+                                    onClick={() => {
+                                      if (r.proofUrl) window.open(r.proofUrl, '_blank', 'noopener');
+                                    }}
+                                    title={r.proofFileName ? `Preview ${r.proofFileName}` : 'Preview proof'}
+                                  >
+                                    <i className="ri-check-line" />
+                                    <span>Uploaded</span>
+                                    <i className="ri-eye-line lv-proof-view" />
+                                  </button>
                                 ) : (
-                                  <span className="text-muted fs-13">N/A</span>
+                                  // Missing and N/A both render as a quiet
+                                  // dash — keeps the column scannable for
+                                  // rows where proof isn't actionable.
+                                  <span className="text-muted fs-13">—</span>
                                 )}
                               </td>
                               <td>
-                                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: tone.bg, color: tone.fg }}>
-                                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
+                                <span className="rec-pill" style={{ background: tone.bg, color: tone.fg }}>
                                   {r.stage}
                                 </span>
                                 {isPending && r.stageNote && (
                                   <div className="text-muted" style={{ fontSize: 11, marginTop: 3 }}>{r.stageNote}</div>
                                 )}
+                              </td>
+                              <td>
+                                {(() => {
+                                  const sla = computeSla(r);
+                                  return sla ? (
+                                    <span
+                                      className="rec-pill"
+                                      style={{ background: sla.bg, color: sla.fg, fontWeight: sla.solid ? 800 : 700 }}
+                                    >
+                                      {sla.label}
+                                    </span>
+                                  ) : <span className="text-muted fs-13">—</span>;
+                                })()}
                               </td>
                               <td className="pe-3">
                                 <div className="d-flex gap-1 justify-content-center align-items-center">
@@ -778,6 +1033,7 @@ export default function HrLeave() {
                                     icon="ri-check-line"
                                     tone="success"
                                     disabled={r.stage === 'Approved' || r.stage === 'Cancelled'}
+                                    onClick={() => setConfirmAction({ row: r, action: 'approve' })}
                                   />
                                   <ActionBtn
                                     title={
@@ -788,6 +1044,7 @@ export default function HrLeave() {
                                     icon="ri-close-line"
                                     tone="danger"
                                     disabled={r.stage === 'Rejected' || r.stage === 'Cancelled'}
+                                    onClick={() => setConfirmAction({ row: r, action: 'reject' })}
                                   />
                                 </div>
                               </td>
@@ -839,10 +1096,14 @@ export default function HrLeave() {
 
       {/* ── Read-only details modal — mirrors HrRecruitment's view modal. ── */}
       <LeaveDetailsModal row={detail} onClose={() => setDetail(null)} />
+      <ConfirmActionModal
+        state={confirmAction}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={applyAction}
+      />
     </>
   );
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // LeaveDetailsModal — read-only Reactstrap Modal using the rec-form-modal
 // shell (same chrome HrRecruitment uses for its View modal). All copy lives
@@ -1099,7 +1360,7 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
 //    You    Manager   HR
 //   Name    Name      Name
 //   Date    Date      Date
-// Uses a CSS grid (3 step columns × auto-sized connector tracks) so the dots
+// Uses a CSS grid (3 step columns Ã— auto-sized connector tracks) so the dots
 // always sit at fixed positions; connectors take only the leftover space
 // between them — no more stretched-out lines or off-centre dots.
 // Comments render as a single quote block underneath the row, attributed to
@@ -1237,6 +1498,125 @@ function ApprovalTimelineList({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ConfirmActionModal — guard-rail popup for Approve / Reject row actions.
+// HR sees the request summary, can leave a comment (mandatory for Reject so
+// the audit trail captures *why*), and confirms before the row mutates.
+// ─────────────────────────────────────────────────────────────────────────────
+function ConfirmActionModal({
+  state, onClose, onConfirm,
+}: {
+  state: { row: LeaveRequest; action: 'approve' | 'reject' } | null;
+  onClose: () => void;
+  onConfirm: (comment: string) => void;
+}) {
+  const [comment, setComment] = useState('');
+  // Reset the comment whenever the popup opens so a previous draft doesn't
+  // leak between rows.
+  useEffect(() => { if (state) setComment(''); }, [state?.row.id, state?.action]);
+
+  if (!state) return null;
+  const { row, action } = state;
+  const isApprove = action === 'approve';
+  const tType = TYPE_TONE[row.type];
+  // Reject without a reason is bad for the audit trail; require a comment
+  // to flip the confirm button on.
+  const canConfirm = isApprove || comment.trim().length > 0;
+
+  return (
+    <Modal
+      isOpen={!!state}
+      toggle={onClose}
+      centered
+      size="md"
+      backdrop="static"
+      contentClassName="lv-confirm-content"
+    >
+      <ModalBody className="p-0">
+        <div className={`lv-confirm-header ${isApprove ? 'is-approve' : 'is-reject'}`}>
+          <span className="lv-confirm-icon">
+            <i className={isApprove ? 'ri-check-double-line' : 'ri-close-circle-line'} />
+          </span>
+          <div className="min-w-0">
+            <h6 className="fw-bold mb-0" style={{ fontSize: 14 }}>
+              {isApprove ? 'Approve leave request' : 'Reject leave request'}
+            </h6>
+            <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+              {isApprove
+                ? 'The employee will be notified once approved.'
+                : 'The employee will be notified with your reason.'}
+            </div>
+          </div>
+          <button type="button" className="lv-confirm-close" onClick={onClose} aria-label="Close">
+            <i className="ri-close-line" />
+          </button>
+        </div>
+
+        <div className="lv-confirm-body">
+          <div className="lv-confirm-summary">
+            <span
+              className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 36, height: 36, fontSize: 12, background: `linear-gradient(135deg, ${row.accent}, ${row.accent}cc)` }}
+            >
+              {row.empInitials}
+            </span>
+            <div className="min-w-0 flex-grow-1">
+              <div className="fw-semibold" style={{ fontSize: 13 }}>{row.empName}</div>
+              <div className="text-muted" style={{ fontSize: 11.5 }}>
+                {row.id} · {row.empCode} · {row.empRole}
+              </div>
+            </div>
+          </div>
+
+          <div className="lv-confirm-meta">
+            <div>
+              <div className="lv-confirm-label">Type</div>
+              <span className="rec-pill" style={{ background: tType.bg, color: tType.fg }}>{row.type}</span>
+            </div>
+            <div>
+              <div className="lv-confirm-label">Duration</div>
+              <div className="fw-semibold fs-13">{row.durationLabel}</div>
+            </div>
+            <div>
+              <div className="lv-confirm-label">Dates</div>
+              <div className="fw-semibold fs-13">{formatRange(row.fromDate, row.toDate)}</div>
+            </div>
+          </div>
+
+          <label className="lv-confirm-label mt-3 d-block">
+            Comment {isApprove ? <span className="text-muted">(optional)</span> : <span className="text-danger">*</span>}
+          </label>
+          <textarea
+            className="form-control"
+            rows={3}
+            placeholder={
+              isApprove
+                ? 'Optional note (visible to the employee)…'
+                : 'Reason for rejection — visible to the employee'
+            }
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+            style={{ resize: 'vertical' }}
+          />
+        </div>
+
+        <div className="lv-confirm-footer">
+          <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className={isApprove ? 'lv-btn-success' : 'lv-btn-danger'}
+            onClick={() => onConfirm(comment)}
+            disabled={!canConfirm}
+          >
+            <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
+            {isApprove ? 'Confirm Approve' : 'Confirm Reject'}
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ActionBtn — row-level icon button. Mirrors the helper in HrRecruitment.tsx
 // so the leave row-actions share the exact same chrome (rec-act-icon +
 // rec-act-tone-*) and disabled handling already defined in recruitment.css.
@@ -1308,25 +1688,33 @@ function ChainDots({ row }: { row: LeaveRequest }) {
           const isLast     = i === chain.length - 1;
 
           // Resolve the dot's visual treatment as a single object so the JSX
-          // stays readable. Order of branches matters — most-decisive first.
+          // stays readable. Approved / Rejected / Pending circles all carry
+          // the actor's initials so HR sees *who* acted at each step;
+          // colour alone conveys the decision. Idle / Skipped fall back to
+          // a role abbreviation since there's no actor history yet.
+          const initialsContent = (
+            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '0.02em' }}>
+              {n.initials || (n.role === 'Self' ? 'YOU' : n.role === 'Manager' ? 'MGR' : 'HR')}
+            </span>
+          );
           const state =
             isApproved ? {
-              bg: '#16a34a', fg: '#fff',
+              bg: 'linear-gradient(135deg,#16a34a,#108548)', fg: '#fff',
               border: 'none',
-              shadow: '0 0 0 2px rgba(22,163,74,0.16), 0 1px 2px rgba(22,163,74,0.20)',
-              content: <i className="ri-check-line" />,
+              shadow: '0 0 0 3px rgba(22,163,74,0.14), 0 2px 4px rgba(22,163,74,0.22)',
+              content: initialsContent,
             }
             : isRejected ? {
-              bg: '#dc2626', fg: '#fff',
+              bg: 'linear-gradient(135deg,#dc2626,#b91c1c)', fg: '#fff',
               border: 'none',
-              shadow: '0 0 0 2px rgba(220,38,38,0.16), 0 1px 2px rgba(220,38,38,0.20)',
-              content: <i className="ri-close-line" />,
+              shadow: '0 0 0 3px rgba(220,38,38,0.14), 0 2px 4px rgba(220,38,38,0.22)',
+              content: initialsContent,
             }
             : isPending ? {
-              bg: '#f59e0b', fg: '#fff',
+              bg: 'linear-gradient(135deg,#f59e0b,#d97706)', fg: '#fff',
               border: 'none',
-              shadow: '0 0 0 2px rgba(245,158,11,0.18), 0 1px 2px rgba(245,158,11,0.22)',
-              content: <span style={{ fontWeight: 800 }}>{n.initials || '·'}</span>,
+              shadow: '0 0 0 3px rgba(245,158,11,0.16), 0 2px 4px rgba(245,158,11,0.24)',
+              content: initialsContent,
             }
             : isSkipped ? {
               bg: '#f3f4f6', fg: '#9ca3af',
@@ -1340,7 +1728,7 @@ function ChainDots({ row }: { row: LeaveRequest }) {
               shadow: 'none',
               content: (
                 <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.04em' }}>
-                  {n.role === 'Self' ? 'You' : n.role === 'Manager' ? 'MGR' : 'HR'}
+                  {n.role === 'Self' ? 'YOU' : n.role === 'Manager' ? 'MGR' : 'HR'}
                 </span>
               ),
             };
@@ -1356,7 +1744,7 @@ function ChainDots({ row }: { row: LeaveRequest }) {
                 className="rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0"
                 title={`${n.role === 'Self' ? 'Maker' : n.role === 'Manager' ? 'Reporting Manager' : 'HR'}: ${n.name}${n.detail ? ' — ' + n.detail : ''}`}
                 style={{
-                  width: 26, height: 26,
+                  width: 30, height: 30,
                   fontSize: 11,
                   background: state.bg,
                   color: state.fg,
@@ -1368,10 +1756,29 @@ function ChainDots({ row }: { row: LeaveRequest }) {
                 {state.content}
               </span>
               {!isLast && (
-                <i
-                  className="ri-arrow-right-s-line"
-                  style={{ fontSize: 14, color: connectorColor, margin: '0 2px' }}
-                />
+                <span
+                  aria-hidden
+                  style={{
+                    display: 'inline-block',
+                    width: 22, height: 2,
+                    margin: '0 4px',
+                    background: connectorColor,
+                    borderRadius: 2,
+                    position: 'relative',
+                  }}
+                >
+                  <i
+                    className="ri-arrow-right-s-line"
+                    style={{
+                      position: 'absolute',
+                      right: -7, top: '50%',
+                      transform: 'translateY(-50%)',
+                      fontSize: 14,
+                      color: connectorColor,
+                      lineHeight: 1,
+                    }}
+                  />
+                </span>
               )}
             </span>
           );
@@ -1385,3 +1792,4 @@ function ChainDots({ row }: { row: LeaveRequest }) {
     </div>
   );
 }
+
