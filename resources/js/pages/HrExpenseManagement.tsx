@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -129,6 +130,10 @@ export default function HrExpenseManagement() {
   // Expense categories master — needed for the policy-limit panel below.
   // Each row carries `monthly_limit` and `yearly_limit` from the master.
   const [categories, setCategories] = useState<{ id: number; name: string; monthly_limit: number | null; yearly_limit: number | null }[]>([]);
+  // Departments master — fed into the Department dropdown so the user sees
+  // every department even when no one in that department has filed a claim
+  // yet (or under the current date window).
+  const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {
     api.get('/master/expense_category').then((res: any) => {
       const arr = Array.isArray(res?.data) ? res.data : [];
@@ -139,6 +144,12 @@ export default function HrExpenseManagement() {
         yearly_limit:  c.yearly_limit  != null ? Number(c.yearly_limit)  : null,
       })));
     }).catch(() => setCategories([]));
+    api.get('/master/departments').then((res: any) => {
+      const arr = Array.isArray(res?.data) ? res.data : [];
+      setDepartments(arr
+        .filter((d: any) => (d.status ?? 'Active') === 'Active')
+        .map((d: any) => ({ id: Number(d.id), name: String(d.name ?? '') })));
+    }).catch(() => setDepartments([]));
   }, []);
 
   // HR users can approve when their permission row on the `hr.expense`
@@ -288,14 +299,18 @@ export default function HrExpenseManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFilteredRows, categories, dateFilter]);
 
-  /** Sorted views for the two panels — Spend by Category is desc-by-spent
-   *  AND drops zero-spent rows; Policy Limits keeps everyone with a limit
-   *  set (or any spend) so the section doesn't go empty when no one has
-   *  filed yet. */
+  /** Sorted views for the two panels.
+   *  Spend by Category surfaces EVERY category from the master so HR can
+   *  see which categories are unused at a glance — sort by spent desc with
+   *  zero rows pushed to the end (alphabetical inside the zero bucket).
+   *  Policy Limits keeps everyone with a limit set OR any spend so the
+   *  section doesn't go empty when no one has filed yet. */
   const spendByCategory = useMemo(
-    () => categoryRollup
-      .filter(c => c.spent > 0)
-      .sort((a, b) => b.spent - a.spent),
+    () => [...categoryRollup].sort((a, b) => {
+      if ((b.spent > 0) !== (a.spent > 0)) return b.spent > 0 ? 1 : -1;
+      if (b.spent !== a.spent) return b.spent - a.spent;
+      return a.name.localeCompare(b.name);
+    }),
     [categoryRollup],
   );
   const policyLimitRows = useMemo(
@@ -308,8 +323,6 @@ export default function HrExpenseManagement() {
       }),
     [categoryRollup],
   );
-  const maxCatSpend = spendByCategory.reduce((m, c) => Math.max(m, c.spent), 0);
-
   const dateSubLabel = useMemo(() => {
     const d = new Date();
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -320,25 +333,36 @@ export default function HrExpenseManagement() {
     return 'All time';
   }, [dateFilter]);
 
-  // Distinct option lists for the Category + Department dropdowns. Built
-  // off the date-windowed rows so the dropdowns shrink/grow with the date
-  // filter (e.g. "Today" hides categories nobody filed today).
+  // Option lists for the Category + Department dropdowns. Both pull from
+  // the masters so HR sees every value regardless of the date window — the
+  // dropdown stays stable and the user can pick a category/department that
+  // doesn't yet have any claims in the selected period (which legitimately
+  // returns an empty table). Names from claim rows that aren't in the
+  // master (legacy data) are merged in as a safety net.
   const categoryOptions = useMemo(() => {
     const set = new Map<string, string>();
+    for (const c of categories) {
+      const name = c.name?.trim();
+      if (name) set.set(name.toLowerCase(), name);
+    }
     for (const r of dateFilteredRows) {
       const name = r.category_name?.trim();
       if (name) set.set(name.toLowerCase(), name);
     }
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
-  }, [dateFilteredRows]);
+  }, [categories, dateFilteredRows]);
   const departmentOptions = useMemo(() => {
     const set = new Map<string, string>();
+    for (const d of departments) {
+      const name = d.name?.trim();
+      if (name) set.set(name.toLowerCase(), name);
+    }
     for (const r of dateFilteredRows) {
       const name = r.department_name?.trim();
       if (name) set.set(name.toLowerCase(), name);
     }
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
-  }, [dateFilteredRows]);
+  }, [departments, dateFilteredRows]);
 
   // Apply status tab + category + department + free-text search on top of
   // the date window. Each filter is independent — clearing any one back to
@@ -637,38 +661,82 @@ export default function HrExpenseManagement() {
               {spendByCategory.length === 0 ? (
                 <div className="text-center text-muted py-4" style={{ fontSize: 12 }}>
                   <i className="ri-bar-chart-line d-block mb-2" style={{ fontSize: 24, opacity: 0.45 }} />
-                  No spend recorded for {DATE_FILTER_LABELS[dateFilter].toLowerCase()}.
+                  No expense categories configured yet.
                 </div>
               ) : (
-                <div className="d-flex flex-column" style={{ gap: 10 }}>
-                  {spendByCategory.map(c => {
-                    const pct = maxCatSpend > 0 ? (c.spent / maxCatSpend) * 100 : 0;
-                    return (
-                      <div key={`${c.id}:${c.name}`} className="d-flex flex-column" style={{ gap: 4 }}>
-                        <div className="d-flex align-items-center justify-content-between" style={{ fontSize: 12 }}>
-                          <div className="d-flex align-items-center gap-2 fw-semibold" style={{ color: 'var(--vz-body-color, #1f2937)' }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
-                            {c.name}
-                          </div>
-                          <span className="fw-bold" style={{ color: c.color, fontVariantNumeric: 'tabular-nums' }}>
-                            ₹{Number(c.spent).toLocaleString('en-IN')}
-                          </span>
-                        </div>
-                        <div style={{ height: 6, borderRadius: 999, background: 'var(--vz-secondary-bg, #f3f4f6)', overflow: 'hidden' }}>
-                          <div
-                            style={{
-                              width: `${pct}%`,
-                              height: '100%',
-                              background: c.color,
-                              borderRadius: 999,
-                              transition: 'width .3s ease',
-                            }}
+                <>
+                  {/* Recharts vertical bar chart — every category from the
+                      master is plotted, even ones with zero spend, so HR can
+                      see unused buckets at a glance. Bar colour matches the
+                      category's stable palette colour from `colorForCat`. */}
+                  <div style={{ width: '100%', height: 280 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={spendByCategory.map(c => ({
+                          name:  c.name,
+                          spent: Math.round(c.spent),
+                          color: c.color,
+                        }))}
+                        margin={{ top: 24, right: 12, left: 0, bottom: 8 }}
+                        barCategoryGap="22%"
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#eef2f6" vertical={false} />
+                        <XAxis
+                          dataKey="name"
+                          tick={{ fontSize: 11, fill: '#6b7280', fontWeight: 600 }}
+                          interval={0}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: '#a0aec0' }}
+                          axisLine={false}
+                          tickLine={false}
+                          width={55}
+                          tickFormatter={(v: number) =>
+                            v >= 1_00_000 ? `₹${(v / 1_00_000).toFixed(1)}L`
+                            : v >= 1_000   ? `₹${(v / 1_000).toFixed(0)}K`
+                            : `₹${v}`
+                          }
+                        />
+                        <Tooltip
+                          cursor={{ fill: 'rgba(124,92,252,0.06)' }}
+                          contentStyle={{
+                            background: '#ffffff', border: '1px solid #e5e7eb',
+                            borderRadius: 8, fontSize: 12, padding: '6px 10px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                          }}
+                          formatter={(value: any) => [`₹${Number(value).toLocaleString('en-IN')}`, 'Spent']}
+                        />
+                        <Bar dataKey="spent" radius={[6, 6, 0, 0]}>
+                          {spendByCategory.map((c, i) => (
+                            <Cell key={`cell-${i}`} fill={c.color} />
+                          ))}
+                          <LabelList
+                            dataKey="spent"
+                            position="top"
+                            formatter={(v: any) => Number(v) > 0 ? `₹${Number(v).toLocaleString('en-IN')}` : ''}
+                            style={{ fontSize: 10.5, fontWeight: 700, fill: '#1f2937' }}
                           />
-                        </div>
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {/* Legend strip — colored dot + name + amount; surfaces
+                      zero-spend categories as "—" so they remain visible
+                      without a bar in the chart above. */}
+                  <div className="d-flex flex-wrap" style={{ gap: '6px 16px', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--vz-border-color)' }}>
+                    {spendByCategory.map(c => (
+                      <div key={`leg:${c.id}:${c.name}`} className="d-inline-flex align-items-center gap-2" style={{ fontSize: 11 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
+                        <span className="fw-semibold" style={{ color: 'var(--vz-body-color, #1f2937)' }}>{c.name}</span>
+                        <span className="text-muted" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {c.spent > 0 ? `₹${Number(c.spent).toLocaleString('en-IN')}` : '—'}
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </Col>

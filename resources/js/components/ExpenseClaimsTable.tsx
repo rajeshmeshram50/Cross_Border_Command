@@ -1,6 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Modal, ModalBody } from 'reactstrap';
 // Reuses the polished confirmation-modal CSS classes already shipping with
 // the recruitment / candidate flows (cand-confirm-modal, cand-confirm-head,
 // cand-confirm-body, cand-confirm-footer, etc.).
@@ -518,10 +517,15 @@ function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
       // Show the assigned reporting manager's name regardless of state — when
       // pending it tells the employee who they're waiting on; when actioned
       // it's the same person (manager_name = the manager who approved).
+      // When the employee has no reporting manager, the backend auto-clears
+      // this stage at create time and routes the claim straight to HR — the
+      // sub-line uses the controller's "Auto-approved · …" comment which
+      // makes the bypass explicit in the audit trail.
       label: 'Reporting Manager',
       icon: 'ri-user-star-line',
       state: c.manager_status,
-      actor: c.manager_name || (c.manager_id ? `Manager #${c.manager_id}` : 'No manager assigned'),
+      actor: c.manager_name
+        || (c.manager_id ? `Manager #${c.manager_id}` : (c.manager_comment || 'No manager assigned · skipped')),
       pendingHint: c.manager_name ? `Awaiting ${c.manager_name}` : 'Awaiting manager review',
       at: c.manager_acted_at,
       comment: c.manager_comment,
@@ -633,16 +637,33 @@ function ExpenseConfirmModal({
   const stageLabel = action.stage === 'manager' ? 'Manager' : 'HR / Finance';
   const tone = STATUS_TONE[claim.status];
 
-  return (
-    <Modal
-      isOpen={!!target}
-      toggle={onClose}
-      centered
-      size="md"
-      backdrop="static"
-      contentClassName={`border-0 cand-confirm-modal cand-confirm-modal--${isApprove ? 'select' : 'reject'}`}
+  /* Bypass Reactstrap and render the dialog through a manual portal.
+     Reactstrap's Modal applies its z-index after mount which fights with
+     EmployeeProfile's fullscreen overlay (z-index 1080) and the page's
+     other modal classes (2100/5000). A direct portal at z-index 6500
+     guarantees the dialog floats above every page chrome layer. */
+  return createPortal(
+    <div
+      className={`expense-confirm-overlay cand-confirm-modal cand-confirm-modal--${isApprove ? 'select' : 'reject'}`}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 6500,
+        background: 'rgba(15,23,42,0.55)',
+        backdropFilter: 'blur(2px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+      }}
+      onClick={onClose}
     >
-      <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
+      <div
+        onClick={e => e.stopPropagation()}
+        className="border-0"
+        style={{
+          background: '#ffffff', color: '#1f2937',
+          borderRadius: 16, overflow: 'hidden',
+          width: '100%', maxWidth: 560,
+          boxShadow: '0 24px 60px rgba(15,23,42,0.30)',
+        }}
+      >
         {/* Header */}
         <div className="cand-confirm-head">
           <span className="cand-confirm-head-icon">
@@ -722,7 +743,8 @@ function ExpenseConfirmModal({
             {isApprove ? 'Confirm Approval' : 'Confirm Rejection'}
           </button>
         </div>
-      </ModalBody>
-    </Modal>
+      </div>
+    </div>,
+    document.body,
   );
 }
