@@ -158,11 +158,11 @@ class BranchController extends Controller
                 'created_by' => $user->id,
             ]);
 
-            // Save uploaded branch logo (if any) under storage/app/public/branch-logos.
-            // Stored value is the public URL (/storage/...) for direct SPA use.
+            // Store relative path so it resolves correctly across local and
+            // Azure disks. URL is generated at read time via file_url().
             if ($request->hasFile('logo')) {
                 $branch->update([
-                    'logo' => '/storage/' . $request->file('logo')->store('branches/logos', 'public'),
+                    'logo' => $request->file('logo')->store('branches/logos', 'public'),
                 ]);
             }
 
@@ -312,10 +312,10 @@ class BranchController extends Controller
             ]));
 
             if ($request->hasFile('logo')) {
-                if ($branch->logo && str_starts_with($branch->logo, '/storage/')) {
-                    Storage::disk('public')->delete(substr($branch->logo, strlen('/storage/')));
+                if ($branch->logo) {
+                    Storage::disk('public')->delete($this->relativePath($branch->logo));
                 }
-                $branch->update(['logo' => '/storage/' . $request->file('logo')->store('branches/logos', 'public')]);
+                $branch->update(['logo' => $request->file('logo')->store('branches/logos', 'public')]);
             }
 
             if ($statusBecomingInactive) {
@@ -398,5 +398,22 @@ class BranchController extends Controller
             ->where('tokenable_type', User::class)
             ->whereIn('tokenable_id', $userIds)
             ->delete();
+    }
+
+    /**
+     * Normalize a stored value (legacy "/storage/..." URL or already-relative
+     * path) to a disk-relative path suitable for Storage::delete().
+     */
+    private function relativePath(string $stored): string
+    {
+        if (preg_match('#^https?://#i', $stored)) {
+            $path = parse_url($stored, PHP_URL_PATH) ?: '';
+            $stored = ltrim($path, '/');
+        }
+        $stored = ltrim(str_replace('\\', '/', $stored), '/');
+        if (str_starts_with($stored, 'storage/')) {
+            $stored = substr($stored, strlen('storage/'));
+        }
+        return $stored;
     }
 }

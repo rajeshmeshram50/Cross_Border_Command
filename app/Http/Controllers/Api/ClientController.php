@@ -151,15 +151,14 @@ class ClientController extends Controller
                 'created_by' => $request->user()->id,
             ]);
 
-            // Save uploaded branding files (logo / favicon) under
-            // storage/app/public/client-logos. The stored value is the public
-            // URL (/storage/...) so the SPA can use it directly.
+            // Store relative paths so they resolve correctly across local and
+            // Azure disks. URL is generated at read time via file_url().
             $brandingUpdates = [];
             if ($request->hasFile('logo')) {
-                $brandingUpdates['logo'] = '/storage/' . $request->file('logo')->store('clients/logos', 'public');
+                $brandingUpdates['logo'] = $request->file('logo')->store('clients/logos', 'public');
             }
             if ($request->hasFile('favicon')) {
-                $brandingUpdates['favicon'] = '/storage/' . $request->file('favicon')->store('clients/favicons', 'public');
+                $brandingUpdates['favicon'] = $request->file('favicon')->store('clients/favicons', 'public');
             }
             if ($brandingUpdates) {
                 $client->update($brandingUpdates);
@@ -298,18 +297,19 @@ class ClientController extends Controller
             $client->update($payload);
 
             // Replace branding files if new uploads came in. Old files are deleted
-            // so we don't accumulate orphans on the public disk.
+            // so we don't accumulate orphans. Old rows may store a legacy
+            // "/storage/..." URL — strip the prefix before deleting.
             if ($request->hasFile('logo')) {
-                if ($client->logo && str_starts_with($client->logo, '/storage/')) {
-                    Storage::disk('public')->delete(substr($client->logo, strlen('/storage/')));
+                if ($client->logo) {
+                    Storage::disk('public')->delete($this->relativePath($client->logo));
                 }
-                $client->update(['logo' => '/storage/' . $request->file('logo')->store('clients/logos', 'public')]);
+                $client->update(['logo' => $request->file('logo')->store('clients/logos', 'public')]);
             }
             if ($request->hasFile('favicon')) {
-                if ($client->favicon && str_starts_with($client->favicon, '/storage/')) {
-                    Storage::disk('public')->delete(substr($client->favicon, strlen('/storage/')));
+                if ($client->favicon) {
+                    Storage::disk('public')->delete($this->relativePath($client->favicon));
                 }
-                $client->update(['favicon' => '/storage/' . $request->file('favicon')->store('clients/favicons', 'public')]);
+                $client->update(['favicon' => $request->file('favicon')->store('clients/favicons', 'public')]);
             }
 
             if ($statusBecomingInactive) {
@@ -378,5 +378,23 @@ class ClientController extends Controller
             ->where('tokenable_type', User::class)
             ->whereIn('tokenable_id', $userIds)
             ->delete();
+    }
+
+    /**
+     * Normalize a stored value (legacy "/storage/..." URL or already-relative
+     * path) to a disk-relative path suitable for Storage::delete().
+     */
+    private function relativePath(string $stored): string
+    {
+        if (preg_match('#^https?://#i', $stored)) {
+            // Full URL stored (e.g. Azure CDN) — extract path after the host
+            $path = parse_url($stored, PHP_URL_PATH) ?: '';
+            $stored = ltrim($path, '/');
+        }
+        $stored = ltrim(str_replace('\\', '/', $stored), '/');
+        if (str_starts_with($stored, 'storage/')) {
+            $stored = substr($stored, strlen('storage/'));
+        }
+        return $stored;
     }
 }

@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Facades\Storage;
 
 class Announcement extends Model
 {
@@ -77,7 +76,6 @@ class Announcement extends Model
      */
     public function getAttachmentUrlAttribute(): ?string
     {
-        if (empty($this->attachment_path)) return null;
-        return Storage::disk('public')->url($this->attachment_path);
+        return file_url($this->attachment_path);
     }
 }

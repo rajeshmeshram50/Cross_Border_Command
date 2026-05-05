@@ -41,11 +41,23 @@ class Client extends Model
         'created_by',
     ];
 
+    protected $appends = ['logo_url', 'favicon_url'];
+
     protected function casts(): array
     {
         return [
             'plan_expires_at' => 'date',
         ];
+    }
+
+    public function getLogoUrlAttribute(): ?string
+    {
+        return file_url($this->logo);
+    }
+
+    public function getFaviconUrlAttribute(): ?string
+    {
+        return file_url($this->favicon);
     }
 
     // ── Relationships ──
