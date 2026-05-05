@@ -335,14 +335,18 @@ const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { bg: string; fg: stri
 
 // Reuse the Clients KPI card recipe — gradient strip on top + 44×44 icon box,
 // 11px uppercase label, 26px value. Keep gradients distinct per status so the
-// 6 tiles read at a glance.
+// 10 tiles read at a glance.
 const KPI_CARDS = [
-  { key: 'total',          label: 'Total Employees', icon: 'ri-team-line',           gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
-  { key: 'active',         label: 'Active',          icon: 'ri-checkbox-circle-fill',gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-  { key: 'on_leave',       label: 'On Leave',        icon: 'ri-time-line',           gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-  { key: 'high_attention', label: 'High Attention',  icon: 'ri-error-warning-fill',  gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
-  { key: 'probation',      label: 'Probation',       icon: 'ri-shield-check-fill',   gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)' },
-  { key: 'inactive',       label: 'Inactive',        icon: 'ri-close-circle-fill',   gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+  { key: 'total',                 label: 'Total Employees',          icon: 'ri-team-line',            gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
+  { key: 'active',                label: 'Active Employees',         icon: 'ri-user-follow-fill',     gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+  { key: 'disabled',              label: 'Disabled Employees',       icon: 'ri-user-unfollow-fill',   gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+  { key: 'on_leave',              label: 'On Leave Employees',       icon: 'ri-calendar-event-line',  gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
+  { key: 'onboarding_completed',  label: 'Onboarding Completed',     icon: 'ri-medal-fill',           gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)' },
+  { key: 'new_joiners',           label: 'New Joiners',              icon: 'ri-user-add-fill',        gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+  { key: 'probation_in_progress', label: 'Probation In Progress',    icon: 'ri-shield-flash-line',    gradient: 'linear-gradient(135deg,#0ea5e9,#38bdf8)' },
+  { key: 'probation_completed',   label: 'Probation Completed',      icon: 'ri-shield-check-fill',    gradient: 'linear-gradient(135deg,#10b981,#34d399)' },
+  { key: 'exit_in_progress',      label: 'Exit In Progress',         icon: 'ri-logout-box-r-line',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
+  { key: 'total_exited',          label: 'Total Exited Employees',   icon: 'ri-logout-circle-line',   gradient: 'linear-gradient(135deg,#dc3545,#f06548)' },
 ] as const;
 
 type ExpiryDays = 3 | 7 | 15;
@@ -1636,24 +1640,54 @@ export default function HrEmployees() {
     [apiRows]
   );
 
-  // KPI counts derived from real data. Tiles for metrics that aren't yet
-  // sourced from a real subsystem (high_attention / probation / on_leave)
-  // stay in the strip but render 0 — they'll switch on once those modules
-  // (Leave, Probation) start writing rows that can be queried.
+  // KPI counts derived from real data. Probation buckets are computed
+  // from `date_of_joining + probation_months` since the schema has no
+  // explicit "probation completed" flag — anyone whose probation window
+  // has elapsed counts as Completed, anyone still inside it as In Progress.
+  // On-Leave today is currently sourced from the `status` enum; once the
+  // Leave module starts writing daily attendance rows the comment beside
+  // the card ("Daily basis count will change") becomes a query against
+  // that table instead.
   const counts = useMemo(() => {
+    const todayMs = Date.now();
+    const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
+
+    const probationWindow = (e: any): 'in' | 'done' | null => {
+      if (!e.enabled) return null;
+      const dojRaw = e._raw?.date_of_joining;
+      const months = Number(e._raw?.probation_months || 0);
+      if (!dojRaw || months <= 0) return null;
+      const doj = new Date(dojRaw).getTime();
+      if (Number.isNaN(doj)) return null;
+      return (todayMs - doj) < months * MONTH_MS ? 'in' : 'done';
+    };
+    const rawStatus = (e: any) => String(e._raw?.status || '');
+
     const total = apiRows.length;
-    const active = apiRows.filter(e => e.enabled && e.status === 'active').length;
-    const inactive = apiRows.filter(e => !e.enabled).length;
-    const probation = apiRows.filter(e => e.status === 'probation').length;
-    const onLeave = apiRows.filter(e => e.status === 'on_leave').length;
-    const highAttention = apiRows.filter(e => e.status === 'high_attention').length;
+    const active = apiRows.filter(e => e.enabled).length;
+    const disabled = apiRows.filter(e => !e.enabled).length;
+    const on_leave = apiRows.filter(e => rawStatus(e) === 'On Leave').length;
+    const onboarding_completed = apiRows.filter(e => e.onboarding === 'Completed').length;
+    const new_joiners = apiRows.filter(e => e.onboarding === 'In Progress').length;
+    const probation_in_progress = apiRows.filter(e => probationWindow(e) === 'in').length;
+    const probation_completed = apiRows.filter(e => probationWindow(e) === 'done').length;
+    const exit_in_progress = apiRows.filter(e => rawStatus(e) === 'Notice Period').length;
+    const total_exited = apiRows.filter(e => {
+      const s = rawStatus(e);
+      return s === 'Resigned' || s === 'Terminated';
+    }).length;
+
     return {
       total,
       active,
-      on_leave: onLeave,
-      high_attention: highAttention,
-      probation,
-      inactive,
+      disabled,
+      on_leave,
+      onboarding_completed,
+      new_joiners,
+      probation_in_progress,
+      probation_completed,
+      exit_in_progress,
+      total_exited,
       activeTab: apiRows.filter(e => e.enabled).length,
       disabledTab: apiRows.filter(e => !e.enabled).length,
     };
@@ -1705,6 +1739,11 @@ export default function HrEmployees() {
       <style>{`
         .hr-employees-surface { background: #ffffff; }
         [data-bs-theme="dark"] .hr-employees-surface { background: #1c2531; }
+        .hr-emp-kpi-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+        @media (min-width: 576px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (min-width: 768px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(3, 1fr); } }
+        @media (min-width: 992px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(4, 1fr); } }
+        @media (min-width: 1200px) { .hr-emp-kpi-grid { grid-template-columns: repeat(5, 1fr); } }
       `}</style>
       <MasterFormStyles />
 
@@ -1772,39 +1811,38 @@ export default function HrEmployees() {
             </div>
 
             {/* ── KPI cards (Clients-style: gradient strip + icon box) ── */}
-            <Row className="g-3 mb-3 align-items-stretch">
+            <div className="hr-emp-kpi-grid mb-3">
               {KPI_CARDS.map(k => (
-                <Col key={k.key} xl={2} md={4} sm={6} xs={12}>
-                  <div
-                    className="hr-employees-surface"
-                    style={{
-                      borderRadius: 14,
-                      border: '1px solid var(--vz-border-color)',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                      padding: '16px 18px',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      height: '100%',
-                    }}
-                  >
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                      <div className="min-w-0">
-                        <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                          {k.label}
-                        </p>
-                        <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                          <AnimatedNumber value={(counts as any)[k.key]} />
-                        </h3>
-                      </div>
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
-                      </div>
+                <div
+                  key={k.key}
+                  className="hr-employees-surface"
+                  style={{
+                    borderRadius: 14,
+                    border: '1px solid var(--vz-border-color)',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                    padding: '16px 18px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    height: '100%',
+                  }}
+                >
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
+                    <div className="min-w-0">
+                      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                        {k.label}
+                      </p>
+                      <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                        <AnimatedNumber value={(counts as any)[k.key]} />
+                      </h3>
+                    </div>
+                    <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                      <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
                     </div>
                   </div>
-                </Col>
+                </div>
               ))}
-            </Row>
+            </div>
 
             {/* ── Tabs (Active / Disabled) ── */}
             <Row className="g-2 mb-3">
