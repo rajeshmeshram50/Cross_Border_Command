@@ -233,8 +233,8 @@ class AuthController extends Controller
             'employee_code' => $linkedEmployeeCode,
             'client_name' => $user->client?->org_name,
             'branch_name' => $user->branch?->name,
-            'client_logo' => $user->client?->logo,
-            'branch_logo' => $user->branch?->logo,
+            'client_logo' => file_url($user->client?->logo),
+            'branch_logo' => file_url($user->branch?->logo),
             // Effective tenant theme colors — branch values win over client values,
             // null when neither is set so the frontend falls back to app defaults.
             // Only valid 7-char hex strings (#RRGGBB) are surfaced; anything else
@@ -299,12 +299,12 @@ class AuthController extends Controller
             if ($payload) $client->update($payload);
 
             if ($request->hasFile('logo')) {
-                if ($client->logo && str_starts_with($client->logo, '/storage/')) {
+                if ($client->logo) {
                     \Illuminate\Support\Facades\Storage::disk('public')
-                        ->delete(substr($client->logo, strlen('/storage/')));
+                        ->delete($this->relativeFilePath($client->logo));
                 }
                 $client->update([
-                    'logo' => '/storage/' . $request->file('logo')->store('clients/logos', 'public'),
+                    'logo' => $request->file('logo')->store('clients/logos', 'public'),
                 ]);
             }
         }
@@ -319,12 +319,12 @@ class AuthController extends Controller
             if ($payload) $branch->update($payload);
 
             if ($request->hasFile('logo')) {
-                if ($branch->logo && str_starts_with($branch->logo, '/storage/')) {
+                if ($branch->logo) {
                     \Illuminate\Support\Facades\Storage::disk('public')
-                        ->delete(substr($branch->logo, strlen('/storage/')));
+                        ->delete($this->relativeFilePath($branch->logo));
                 }
                 $branch->update([
-                    'logo' => '/storage/' . $request->file('logo')->store('branches/logos', 'public'),
+                    'logo' => $request->file('logo')->store('branches/logos', 'public'),
                 ]);
             }
         }
@@ -336,5 +336,22 @@ class AuthController extends Controller
             'message' => 'Branding updated',
             'user' => $this->formatUser($user->fresh(['client', 'branch'])),
         ]);
+    }
+
+    /**
+     * Normalize a stored value (legacy "/storage/..." URL or already-relative
+     * path) to a disk-relative path suitable for Storage::delete().
+     */
+    private function relativeFilePath(string $stored): string
+    {
+        if (preg_match('#^https?://#i', $stored)) {
+            $path = parse_url($stored, PHP_URL_PATH) ?: '';
+            $stored = ltrim($path, '/');
+        }
+        $stored = ltrim(str_replace('\\', '/', $stored), '/');
+        if (str_starts_with($stored, 'storage/')) {
+            $stored = substr($stored, strlen('storage/'));
+        }
+        return $stored;
     }
 }

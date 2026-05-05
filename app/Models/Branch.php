@@ -43,6 +43,8 @@ class Branch extends Model
         'created_by',
     ];
 
+    protected $appends = ['logo_url'];
+
     protected function casts(): array
     {
         return [
@@ -50,6 +52,11 @@ class Branch extends Model
             'max_users' => 'integer',
             'established_at' => 'date',
         ];
+    }
+
+    public function getLogoUrlAttribute(): ?string
+    {
+        return file_url($this->logo);
     }
 
     // ── Relationships ──

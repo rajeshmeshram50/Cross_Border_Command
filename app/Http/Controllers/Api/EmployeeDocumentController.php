@@ -187,7 +187,7 @@ class EmployeeDocumentController extends Controller
             'verified_at'     => $d->verified_at?->toIso8601String(),
             'uploader'        => $d->uploader ? ['id' => $d->uploader->id, 'name' => $d->uploader->name] : null,
             'verifier'        => $d->verifier ? ['id' => $d->verifier->id, 'name' => $d->verifier->name] : null,
-            'url'             => $d->file_path ? Storage::disk('public')->url($d->file_path) : null,
+            'url'             => file_url($d->file_path),
         ];
     }
 }

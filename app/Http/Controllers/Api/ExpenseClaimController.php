@@ -168,27 +168,39 @@ class ExpenseClaimController extends Controller
             $categoryName = $cat?->name;
         }
 
+        // When the employee has no reporting manager assigned, auto-clear
+        // the manager-approval stage at create time so the claim flows
+        // straight to whoever holds HR / Finance approval rights. The
+        // audit log surfaces this with an explicit "no manager" note so
+        // it doesn't look like a phantom approval.
+        $hasManager      = !empty($employee->reporting_manager_id);
+        $managerStatus   = $hasManager ? 'pending'  : 'approved';
+        $managerActedAt  = $hasManager ? null       : now();
+        $managerComment  = $hasManager ? null       : 'Auto-approved · no reporting manager assigned';
+
         $row = ExpenseClaim::create([
-            'client_id'      => $employee->client_id,
-            'branch_id'      => $employee->branch_id,
-            'claim_no'       => $this->nextClaimNo($employee->client_id, $employee->branch_id),
-            'employee_id'    => $employee->id,
-            'manager_id'     => $employee->reporting_manager_id,
-            'category_id'    => $data['category_id'] ?? null,
-            'category_name'  => $categoryName,
-            'currency'       => $data['currency'] ?? 'INR',
-            'project'        => $data['project'] ?? null,
-            'payment_method' => $data['payment_method'] ?? null,
-            'title'          => $data['title'],
-            'amount'         => $data['amount'],
-            'expense_date'   => $data['expense_date'],
-            'vendor'         => $data['vendor'] ?? null,
-            'purpose'        => $data['purpose'] ?? null,
-            'attachments'    => $attachments ?: null,
-            'status'         => 'pending',
-            'manager_status' => 'pending',
-            'hr_status'      => 'pending',
-            'created_by'     => $user->id,
+            'client_id'        => $employee->client_id,
+            'branch_id'        => $employee->branch_id,
+            'claim_no'         => $this->nextClaimNo($employee->client_id, $employee->branch_id),
+            'employee_id'      => $employee->id,
+            'manager_id'       => $employee->reporting_manager_id,
+            'category_id'      => $data['category_id'] ?? null,
+            'category_name'    => $categoryName,
+            'currency'         => $data['currency'] ?? 'INR',
+            'project'          => $data['project'] ?? null,
+            'payment_method'   => $data['payment_method'] ?? null,
+            'title'            => $data['title'],
+            'amount'           => $data['amount'],
+            'expense_date'     => $data['expense_date'],
+            'vendor'           => $data['vendor'] ?? null,
+            'purpose'          => $data['purpose'] ?? null,
+            'attachments'      => $attachments ?: null,
+            'status'           => 'pending',
+            'manager_status'   => $managerStatus,
+            'manager_acted_at' => $managerActedAt,
+            'manager_comment'  => $managerComment,
+            'hr_status'        => 'pending',
+            'created_by'       => $user->id,
         ]);
 
         $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
