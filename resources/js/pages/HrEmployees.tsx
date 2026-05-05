@@ -1744,6 +1744,19 @@ export default function HrEmployees() {
         @media (min-width: 768px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (min-width: 992px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(4, 1fr); } }
         @media (min-width: 1200px) { .hr-emp-kpi-grid { grid-template-columns: repeat(5, 1fr); } }
+        .hr-emp-kpi-card {
+          transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+        .hr-emp-kpi-card:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
+          border-color: rgba(124, 92, 252, 0.35);
+        }
+        .hr-emp-kpi-card:hover .hr-emp-kpi-icon {
+          transform: scale(1.06);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+        }
+        .hr-emp-kpi-icon { transition: transform .18s ease, box-shadow .18s ease; }
       `}</style>
       <MasterFormStyles />
 
@@ -1815,7 +1828,7 @@ export default function HrEmployees() {
               {KPI_CARDS.map(k => (
                 <div
                   key={k.key}
-                  className="hr-employees-surface"
+                  className="hr-employees-surface hr-emp-kpi-card"
                   style={{
                     borderRadius: 14,
                     border: '1px solid var(--vz-border-color)',
@@ -1836,7 +1849,7 @@ export default function HrEmployees() {
                         <AnimatedNumber value={(counts as any)[k.key]} />
                       </h3>
                     </div>
-                    <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                    <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
                       <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
                     </div>
                   </div>
