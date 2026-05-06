@@ -800,7 +800,7 @@ const C: Record<string, MasterConfig> = {
 
   incoterms: {
     key: 'incoterms', slug: 'incoterms', title: 'Incoterms', titleSingular: 'Incoterm',
-    icon: 'ri-handshake-line', iconColor: 'primary', iconBg: 'primary',
+    icon: 'ri-shake-hands-line', iconColor: 'primary', iconBg: 'primary',
     desc: 'Trade terms (FOB, CIF) defining delivery & risk',
     cat: 'Trade & Commercial',
     fields: [
@@ -819,7 +819,7 @@ const C: Record<string, MasterConfig> = {
       { id: 4, code: 'DDP', full_name: 'Delivered Duty Paid', transport_mode: 'Any Mode', status: 'Active' },
     ],
     wtd: [
-      { icon: 'ri-handshake-line', title: 'Add Incoterm Code', desc: 'e.g. FOB, CIF, EXW, DDP' },
+      { icon: 'ri-shake-hands-line', title: 'Add Incoterm Code', desc: 'e.g. FOB, CIF, EXW, DDP' },
       { icon: 'ri-ship-line', title: 'Define Transport Mode', desc: 'Sea / Air / Road / Any Mode' },
       { icon: 'ri-file-list-3-line', title: 'Printed On Invoices', desc: 'Defines delivery & risk transfer' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Available for invoice creation' },

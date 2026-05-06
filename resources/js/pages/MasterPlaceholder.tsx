@@ -11,7 +11,7 @@ const ICONS: Record<string, string> = {
   Home: 'ri-home-line', Anchor: 'ri-anchor-line', Ship: 'ri-ship-line',
   Target: 'ri-focus-3-line', Binary: 'ri-file-code-line', Percent: 'ri-percent-line',
   DollarSign: 'ri-money-dollar-circle-line', Ruler: 'ri-ruler-line', Package: 'ri-box-3-line',
-  Leaf: 'ri-leaf-line', Handshake: 'ri-handshake-line',
+  Leaf: 'ri-leaf-line', Handshake: 'ri-shake-hands-line',
   UserSquare: 'ri-user-3-line', Award: 'ri-award-line', Store: 'ri-store-2-line',
   Activity: 'ri-pulse-line', Users2: 'ri-team-fill',
   FileBadge: 'ri-file-shield-2-line', Zap: 'ri-flashlight-line',

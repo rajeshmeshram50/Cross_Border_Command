@@ -80,6 +80,10 @@ class BranchController extends Controller
             }
         }
 
+        // Normalize GST/PAN to uppercase before validation so the unique
+        // check is case-canonical (Indian GSTIN/PAN are uppercase).
+        $this->normalizeGstPanInput($request);
+
         $request->validate([
             'name' => [
                 'required', 'string', 'max:255',
@@ -95,8 +99,20 @@ class BranchController extends Controller
             'branch_type' => 'nullable|string|max:50',
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
-            'gst_number' => 'nullable|string|max:20',
-            'pan_number' => 'nullable|string|max:20',
+            'gst_number' => [
+                'nullable', 'string', 'max:20',
+                'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
+                Rule::unique('branches', 'gst_number')
+                    ->where(fn ($q) => $q->where('client_id', $clientId))
+                    ->whereNull('deleted_at'),
+            ],
+            'pan_number' => [
+                'nullable', 'string', 'max:20',
+                'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
+                Rule::unique('branches', 'pan_number')
+                    ->where(fn ($q) => $q->where('client_id', $clientId))
+                    ->whereNull('deleted_at'),
+            ],
             'registration_number' => 'nullable|string|max:50',
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
@@ -121,6 +137,11 @@ class BranchController extends Controller
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'required|string|min:6',
             'user_status' => 'nullable|in:active,inactive,pending',
+        ], [
+            'gst_number.unique' => 'This GSTIN is already registered to another branch.',
+            'gst_number.regex'  => 'Invalid GSTIN format. Example: 27AADCI6120M1ZH',
+            'pan_number.unique' => 'This PAN is already registered to another branch.',
+            'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
         ]);
 
         try {
@@ -253,6 +274,10 @@ class BranchController extends Controller
             ->where('user_type', 'branch_user')
             ->first();
 
+        // Normalize GST/PAN to uppercase before validation so the unique
+        // check matches case-insensitively (Indian GSTIN/PAN are uppercase).
+        $this->normalizeGstPanInput($request);
+
         // Only enforce per-client name uniqueness when the user is actually
         // RENAMING the branch. If the name is unchanged we skip the check —
         // otherwise legacy duplicates (created before the rule existed) trap
@@ -275,8 +300,22 @@ class BranchController extends Controller
             'branch_type' => 'nullable|string|max:50',
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
-            'gst_number' => 'nullable|string|max:20',
-            'pan_number' => 'nullable|string|max:20',
+            'gst_number' => [
+                'nullable', 'string', 'max:20',
+                'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
+                Rule::unique('branches', 'gst_number')
+                    ->ignore($branch->id)
+                    ->where(fn ($q) => $q->where('client_id', $branch->client_id))
+                    ->whereNull('deleted_at'),
+            ],
+            'pan_number' => [
+                'nullable', 'string', 'max:20',
+                'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
+                Rule::unique('branches', 'pan_number')
+                    ->ignore($branch->id)
+                    ->where(fn ($q) => $q->where('client_id', $branch->client_id))
+                    ->whereNull('deleted_at'),
+            ],
             'registration_number' => 'nullable|string|max:50',
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
@@ -299,6 +338,11 @@ class BranchController extends Controller
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'nullable|string|min:6',
             'user_status' => 'nullable|in:active,inactive,pending',
+        ], [
+            'gst_number.unique' => 'This GSTIN is already registered to another branch.',
+            'gst_number.regex'  => 'Invalid GSTIN format. Example: 27AADCI6120M1ZH',
+            'pan_number.unique' => 'This PAN is already registered to another branch.',
+            'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
         ]);
 
         try {
@@ -377,6 +421,23 @@ class BranchController extends Controller
     {
         return $e->getCode() === '23505'
             && str_contains($e->getMessage(), 'users_email_unique');
+    }
+
+    /**
+     * Indian GSTIN and PAN are uppercase by spec. Canonicalize them on the
+     * way in so the unique check, the regex format check, and the stored
+     * value all see the same string regardless of how the user typed it.
+     */
+    private function normalizeGstPanInput(Request $request): void
+    {
+        $patch = [];
+        foreach (['gst_number', 'pan_number'] as $field) {
+            $val = $request->input($field);
+            if (is_string($val) && $val !== '') {
+                $patch[$field] = strtoupper(trim($val));
+            }
+        }
+        if ($patch) $request->merge($patch);
     }
 
     public function destroy(Branch $branch, Request $request)

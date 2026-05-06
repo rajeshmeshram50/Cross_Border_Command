@@ -511,6 +511,10 @@ function MasterPageInner({
         errs[f.n] = 'Must be a valid number';
       } else if (f.n === 'gstin' && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(raw.toUpperCase())) {
         errs[f.n] = 'Invalid GSTIN — must be 15 characters (e.g. 27AADCI6120M1ZH)';
+      } else if (f.n === 'pan' && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(raw.toUpperCase())) {
+        errs[f.n] = 'Invalid PAN — must be 10 characters (e.g. AADCI6120M)';
+      } else if (f.n === 'cin' && raw.length !== 21) {
+        errs[f.n] = 'Invalid CIN — must be 21 characters';
       } else if (f.n === 'ifsc_code' && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(raw.toUpperCase())) {
         errs[f.n] = 'Invalid IFSC — must be 11 characters (e.g. HDFC0000350)';
       }

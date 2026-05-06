@@ -66,6 +66,11 @@ class ClientController extends Controller
 
     public function store(Request $request)
     {
+        // Indian GSTIN / PAN are uppercase by spec — canonicalize before
+        // validation so the regex + unique check + stored value all see
+        // the same string.
+        $this->normalizeGstPanInput($request);
+
         $request->validate([
             // Organization
             'org_name' => 'required|string|max:255',
@@ -86,9 +91,17 @@ class ClientController extends Controller
             'state' => 'nullable|string|max:100',
             'country' => 'nullable|string|max:100',
 
-            // Legal
-            'gst_number' => 'nullable|string|max:20',
-            'pan_number' => 'nullable|string|max:20',
+            // Legal — GSTIN and PAN are globally unique business IDs.
+            'gst_number' => [
+                'nullable', 'string', 'max:20',
+                'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
+                Rule::unique('clients', 'gst_number')->whereNull('deleted_at'),
+            ],
+            'pan_number' => [
+                'nullable', 'string', 'max:20',
+                'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
+                Rule::unique('clients', 'pan_number')->whereNull('deleted_at'),
+            ],
 
             // Plan
             'plan_id' => 'nullable|exists:plans,id',
@@ -111,6 +124,11 @@ class ClientController extends Controller
             'admin_designation' => 'nullable|string|max:100',
             'admin_password' => 'required|string|min:6',
             'admin_status' => 'nullable|in:active,inactive,pending',
+        ], [
+            'gst_number.unique' => 'This GSTIN is already registered with another client.',
+            'gst_number.regex'  => 'Invalid GSTIN format. Example: 27AADCI6120M1ZH',
+            'pan_number.unique' => 'This PAN is already registered with another client.',
+            'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
         ]);
 
         return DB::transaction(function () use ($request) {
@@ -235,6 +253,9 @@ class ClientController extends Controller
             ->where('user_type', 'client_admin')
             ->first();
 
+        // Canonicalize GSTIN / PAN to uppercase before validation.
+        $this->normalizeGstPanInput($request);
+
         $request->validate([
             'org_name' => 'required|string|max:255',
             'org_type' => 'required|string|max:50|exists:organization_types,name',
@@ -251,8 +272,16 @@ class ClientController extends Controller
             'pincode' => 'nullable|string|max:10',
             'state' => 'nullable|string|max:100',
             'country' => 'nullable|string|max:100',
-            'gst_number' => 'nullable|string|max:20',
-            'pan_number' => 'nullable|string|max:20',
+            'gst_number' => [
+                'nullable', 'string', 'max:20',
+                'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
+                Rule::unique('clients', 'gst_number')->ignore($client->id)->whereNull('deleted_at'),
+            ],
+            'pan_number' => [
+                'nullable', 'string', 'max:20',
+                'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
+                Rule::unique('clients', 'pan_number')->ignore($client->id)->whereNull('deleted_at'),
+            ],
             'plan_id' => 'nullable|exists:plans,id',
             'plan_type' => 'nullable|in:free,paid',
             'plan_expires_at' => 'nullable|date',
@@ -267,6 +296,11 @@ class ClientController extends Controller
             'admin_designation' => 'nullable|string|max:100',
             'admin_password' => 'nullable|string|min:6',
             'admin_status' => 'nullable|in:active,inactive,pending',
+        ], [
+            'gst_number.unique' => 'This GSTIN is already registered with another client.',
+            'gst_number.regex'  => 'Invalid GSTIN format. Example: 27AADCI6120M1ZH',
+            'pan_number.unique' => 'This PAN is already registered with another client.',
+            'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
         ]);
 
         return DB::transaction(function () use ($request, $client, $adminUser) {
@@ -369,6 +403,23 @@ class ClientController extends Controller
      * so existing sessions are killed alongside the new-login guard. Returns
      * the count of revoked tokens (informational only).
      */
+    /**
+     * Indian GSTIN and PAN are uppercase by spec. Canonicalize them so the
+     * regex format check, the unique check, and the stored value all see
+     * the same string regardless of how the user typed it.
+     */
+    private function normalizeGstPanInput(Request $request): void
+    {
+        $patch = [];
+        foreach (['gst_number', 'pan_number'] as $field) {
+            $val = $request->input($field);
+            if (is_string($val) && $val !== '') {
+                $patch[$field] = strtoupper(trim($val));
+            }
+        }
+        if ($patch) $request->merge($patch);
+    }
+
     private function revokeAllUserTokensForClient(int $clientId): int
     {
         $userIds = User::where('client_id', $clientId)->pluck('id');
