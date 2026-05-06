@@ -253,14 +253,20 @@ class BranchController extends Controller
             ->where('user_type', 'branch_user')
             ->first();
 
+        // Only enforce per-client name uniqueness when the user is actually
+        // RENAMING the branch. If the name is unchanged we skip the check —
+        // otherwise legacy duplicates (created before the rule existed) trap
+        // users editing unrelated fields like country/state.
+        $nameRules = ['required', 'string', 'max:255'];
+        if ($request->input('name') !== $branch->name) {
+            $nameRules[] = Rule::unique('branches', 'name')
+                ->ignore($branch->id)
+                ->where(fn ($q) => $q->where('client_id', $branch->client_id))
+                ->whereNull('deleted_at');
+        }
+
         $request->validate([
-            'name' => [
-                'required', 'string', 'max:255',
-                Rule::unique('branches', 'name')
-                    ->ignore($branch->id)
-                    ->where(fn ($q) => $q->where('client_id', $branch->client_id))
-                    ->whereNull('deleted_at'),
-            ],
+            'name' => $nameRules,
             'code' => 'nullable|string|max:50',
             'email' => 'nullable|email|max:255',
             'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],

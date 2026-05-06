@@ -164,6 +164,7 @@ class DashboardController extends Controller
         // Sub-branch users (non-main) are always server-locked to their own branch.
         // If their branch_id is missing or invalid (data integrity issue), force a
         // sentinel value so no rows match — never silently widen the scope.
+        $userBranch = null;
         if ($user->user_type === 'branch_user') {
             $userBranch = $user->branch_id
                 ? Branch::where('client_id', $clientId)->find($user->branch_id)
@@ -175,6 +176,12 @@ class DashboardController extends Controller
             }
             // Main branch user: $branchId stays as caller-supplied (already validated above)
         }
+
+        // Payment data is billing-level info — only the client admin and the
+        // main branch (head office) should see actual amounts and history.
+        // Non-main branch users get zeros / empty so the dashboard doesn't
+        // leak revenue / invoice numbers across the org.
+        $canViewPayments = $user->user_type !== 'branch_user' || (bool) $userBranch?->is_main;
 
         $client = Client::with('plan')->find($clientId);
 
@@ -191,11 +198,19 @@ class DashboardController extends Controller
         $activeUsers = $usersBase()->where('status', 'active')->count();
 
         // Payments are subscription-level (per client, not per branch). Show client-level
-        // counts even when filtering, so a branch user still sees plan/payment status.
-        $totalPayments = Payment::where('client_id', $clientId)->count();
-        $successPayments = Payment::where('client_id', $clientId)->where('status', 'success')->count();
-        $pendingPayments = Payment::where('client_id', $clientId)->where('status', 'pending')->count();
-        $totalPaid = (float) Payment::where('client_id', $clientId)->where('status', 'success')->sum('total');
+        // counts to client admins and main-branch users only — sub-branch users get
+        // zeros so we don't leak finance data through the dashboard.
+        if ($canViewPayments) {
+            $totalPayments = Payment::where('client_id', $clientId)->count();
+            $successPayments = Payment::where('client_id', $clientId)->where('status', 'success')->count();
+            $pendingPayments = Payment::where('client_id', $clientId)->where('status', 'pending')->count();
+            $totalPaid = (float) Payment::where('client_id', $clientId)->where('status', 'success')->sum('total');
+        } else {
+            $totalPayments = 0;
+            $successPayments = 0;
+            $pendingPayments = 0;
+            $totalPaid = 0.0;
+        }
 
         // Plan info
         $planName = $client?->plan?->name ?? 'Free';
@@ -203,12 +218,14 @@ class DashboardController extends Controller
         $daysRemaining = $planExpiry ? max(0, (int) now()->diffInDays($planExpiry, false)) : null;
         $planStatus = $planExpiry ? ($planExpiry->isPast() ? 'expired' : 'active') : 'no_plan';
 
-        // Recent payments
-        $recentPayments = Payment::with('plan:id,name')
-            ->where('client_id', $clientId)
-            ->orderByDesc('created_at')
-            ->limit(5)
-            ->get(['id', 'plan_id', 'total', 'status', 'method', 'invoice_number', 'valid_from', 'valid_until', 'created_at']);
+        // Recent payments — restricted to roles allowed to see billing
+        $recentPayments = $canViewPayments
+            ? Payment::with('plan:id,name')
+                ->where('client_id', $clientId)
+                ->orderByDesc('created_at')
+                ->limit(5)
+                ->get(['id', 'plan_id', 'total', 'status', 'method', 'invoice_number', 'valid_from', 'valid_until', 'created_at'])
+            : collect();
 
         // Branches list — full list when no filter, single-branch when filtered
         $branches = Branch::where('client_id', $clientId)
@@ -218,15 +235,19 @@ class DashboardController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'code', 'status', 'is_main', 'city', 'state', 'email', 'phone']);
 
-        // Payment trend (last 6 months)
+        // Payment trend (last 6 months) — same gating as recent payments.
+        // For restricted users we still emit month buckets with 0 amounts so
+        // the chart axes render, but no revenue numbers leak through.
         $paymentTrend = [];
         for ($i = 5; $i >= 0; $i--) {
             $month = now()->subMonths($i);
-            $amount = (float) Payment::where('client_id', $clientId)
-                ->where('status', 'success')
-                ->whereYear('created_at', $month->year)
-                ->whereMonth('created_at', $month->month)
-                ->sum('total');
+            $amount = $canViewPayments
+                ? (float) Payment::where('client_id', $clientId)
+                    ->where('status', 'success')
+                    ->whereYear('created_at', $month->year)
+                    ->whereMonth('created_at', $month->month)
+                    ->sum('total')
+                : 0.0;
             $paymentTrend[] = [
                 'month' => $month->format('M'),
                 'amount' => $amount,
@@ -270,6 +291,7 @@ class DashboardController extends Controller
             'recent_payments' => $recentPayments,
             'payment_trend' => $paymentTrend,
             'user_roles' => $userRoles,
+            'can_view_payments' => $canViewPayments,
             'filter' => [
                 'branch_id' => $branchId,
             ],

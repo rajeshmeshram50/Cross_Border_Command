@@ -8,6 +8,7 @@ use App\Models\Permission;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class MasterController extends Controller
 {
@@ -80,7 +81,7 @@ class MasterController extends Controller
         'designations' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'level', 't' => 'select', 'r' => true, 'opts' => ['Director / CEO', 'Head of Department (HOD)', 'Team Leader', 'Executive', 'Employee', 'Intern / Trainee']], ['n' => 'reports_to_id', 't' => 'select', 'ref' => 'designations'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'kpis' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'role_id', 't' => 'select', 'r' => true, 'ref' => 'roles'], ['n' => 'target_type', 't' => 'select', 'r' => true, 'opts' => ['Numeric', 'Percentage', 'Currency', 'Boolean', 'Date-based', 'Rating']], ['n' => 'priority', 't' => 'select', 'r' => true, 'opts' => ['Critical', 'High', 'Medium', 'Low']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'legal_entities' => ['fields' => [['n' => 'entity_name', 't' => 'text', 'r' => true], ['n' => 'legal_name', 't' => 'text', 'r' => true], ['n' => 'cin', 't' => 'text', 'r' => true], ['n' => 'date_of_incorporation', 't' => 'date', 'r' => true], ['n' => 'type_of_business', 't' => 'select', 'r' => true, 'opts' => ['Manufacturing', 'Trading', 'Services', 'IT / ITeS', 'Healthcare', 'Construction', 'Logistics', 'Retail', 'Education', 'Hospitality', 'Agriculture', 'Other']], ['n' => 'sector', 't' => 'select', 'r' => true, 'opts' => ['Healthcare', 'IT', 'Finance', 'Manufacturing', 'Retail', 'Education', 'Real Estate', 'Logistics', 'Agriculture', 'Energy', 'Telecom', 'Hospitality', 'Other']], ['n' => 'nature_of_business', 't' => 'select', 'opts' => ['Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Proprietorship', 'OPC (One Person Company)', 'Section 8 Company', 'Trust', 'Society', 'Other']], ['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'address_line1', 't' => 'text', 'r' => true], ['n' => 'address_line2', 't' => 'text'], ['n' => 'city', 't' => 'text', 'r' => true], ['n' => 'state_id', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'zip_code', 't' => 'text', 'r' => true], ['n' => 'currency_id', 't' => 'select', 'ref' => 'currencies'], ['n' => 'financial_year', 't' => 'select', 'opts' => ['April - March', 'January - December', 'July - June']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['entity_name', 'cin']],
-        'countries' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'iso_code', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
+        'countries' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'iso_code', 't' => 'text', 'normalize' => 'upper'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'iso_code']],
         'states' => ['fields' => [['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name', 'country_id']],
         'state_codes' => ['fields' => [['n' => 'state_id', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'state_code', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['state_id', 'state_code']],
         'address_types' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
@@ -605,6 +606,11 @@ class MasterController extends Controller
         $schema = self::SCHEMAS[$slug] ?? ['fields' => [], 'uFields' => []];
         $fields = $schema['fields'] ?? [];
         $uFields = $schema['uFields'] ?? [];
+        // `uEach` lists fields that must EACH be independently unique
+        // (in addition to / separate from the composite `uFields` check).
+        // Nullable fields with an empty value skip the unique check via
+        // Laravel's `nullable` rule.
+        $uEach = $schema['uEach'] ?? [];
         $tenantScoped = !empty($schema['tenantScoped']);
         $modelClass = $this->resolveModel($slug);
         $table = (new $modelClass)->getTable();
@@ -639,6 +645,22 @@ class MasterController extends Controller
                     : $q->where('branch_id', $tenantBranchId);
             });
         };
+
+        // Pre-validation normalization (e.g. uppercase ISO codes) so the
+        // uniqueness check and the stored value are case-canonical. Without
+        // this, "us" and "US" would bypass each other.
+        $normalizers = [];
+        foreach ($fields as $f) {
+            $norm = $f['normalize'] ?? null;
+            if (!$norm) continue;
+            $val = $request->input($f['n']);
+            if (is_string($val) && $val !== '') {
+                $normalized = $norm === 'upper' ? strtoupper($val)
+                    : ($norm === 'lower' ? strtolower($val) : $val);
+                $normalizers[$f['n']] = $normalized;
+            }
+        }
+        if ($normalizers) $request->merge($normalizers);
 
         $rules = [];
         foreach ($fields as $f) {
@@ -677,10 +699,45 @@ class MasterController extends Controller
                 if ($id) $rule = $rule->ignore($id);
                 $r[] = $rule;
             }
+            // `uEach` (independent per-field uniqueness) is checked AFTER
+            // this loop using a case-INSENSITIVE comparison, so "india" and
+            // "India" are treated as the same value. Skip the standard
+            // case-sensitive Rule::unique here for those fields — it would
+            // miss case-mismatched duplicates and just adds a redundant
+            // query when both pass.
             $rules[$f['n']] = $r;
         }
 
         $validated = $request->validate($rules);
+
+        // Case-insensitive uniqueness check for `uEach` fields. Done
+        // manually with whereRaw + LOWER() because Laravel's Rule::unique
+        // builds a case-sensitive `column = ?` clause we can't easily
+        // override. Postgres-default collation is case-sensitive too.
+        foreach ($uEach as $colName) {
+            $value = $validated[$colName] ?? null;
+            if ($value === null || $value === '') continue; // nullable → skip
+
+            $query = $modelClass::query()
+                ->whereRaw('LOWER(' . $colName . ') = LOWER(?)', [(string) $value]);
+
+            if ($id) $query->where('id', '!=', $id);
+
+            if ($tenantScoped) {
+                $tenantClientId === null
+                    ? $query->whereNull('client_id')
+                    : $query->where('client_id', $tenantClientId);
+                $tenantBranchId === null
+                    ? $query->whereNull('branch_id')
+                    : $query->where('branch_id', $tenantBranchId);
+            }
+
+            if ($query->exists()) {
+                throw ValidationException::withMessages([
+                    $colName => "This {$colName} already exists (case-insensitive match).",
+                ]);
+            }
+        }
 
         // Composite uniqueness — match the COMBINATION of all uFields
         if ($isComposite) {
