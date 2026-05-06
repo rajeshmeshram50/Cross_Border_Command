@@ -444,7 +444,10 @@ export default function BranchForm({ onBack, editId }: Props) {
       const payload: Record<string, any> = { ...form };
       delete payload.user_password_confirmation;
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
-      payload.is_main = form.is_main === 'true';
+      // Serialize as '1'/'0' so the value survives multipart/form-data
+      // (which only carries strings) — Laravel's `boolean` rule accepts
+      // '1'/'0' but rejects 'true'/'false' string forms.
+      payload.is_main = form.is_main === 'true' ? '1' : '0';
       payload.max_users = parseInt(form.max_users) || 0;
 
       if (isEdit) {
