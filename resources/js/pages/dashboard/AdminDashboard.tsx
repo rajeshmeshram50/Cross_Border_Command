@@ -215,7 +215,7 @@ export default function AdminDashboard() {
         </Col>
         <Col xl={2} md={4} xs={6}>
           <KpiCard label="Revenue" value={<>₹<AnimatedNumber value={Math.round(revenue.total / 1000)} suffix="K" /></>}
-            iconClass="ri-money-rupee-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0ab39c,#405189)"
+            iconClass="ri-money-dollar-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0ab39c,#405189)"
             trend="up" change="+24%" changeText="vs last period" />
         </Col>
         <Col xl={2} md={4} xs={6}>

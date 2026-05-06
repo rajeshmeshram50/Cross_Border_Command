@@ -1739,11 +1739,17 @@ export default function HrEmployees() {
       <style>{`
         .hr-employees-surface { background: #ffffff; }
         [data-bs-theme="dark"] .hr-employees-surface { background: #1c2531; }
-        .hr-emp-kpi-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+        .hr-emp-kpi-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
         @media (min-width: 576px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (min-width: 768px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(3, 1fr); } }
-        @media (min-width: 992px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(4, 1fr); } }
-        @media (min-width: 1200px) { .hr-emp-kpi-grid { grid-template-columns: repeat(5, 1fr); } }
+        @media (min-width: 768px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(5, 1fr); } }
+        @media (min-width: 1200px) {
+          .hr-emp-kpi-grid { grid-template-columns: repeat(10, 1fr); gap: 8px; }
+          .hr-emp-kpi-card { padding: 12px 10px !important; }
+          .hr-emp-kpi-icon { width: 34px !important; height: 34px !important; }
+          .hr-emp-kpi-icon i { font-size: 17px !important; }
+          .hr-emp-kpi-label { font-size: 9.5px !important; letter-spacing: 0.04em !important; margin-bottom: 6px !important; }
+          .hr-emp-kpi-value { font-size: 20px !important; }
+        }
         .hr-emp-kpi-card {
           transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
         }
@@ -1842,10 +1848,10 @@ export default function HrEmployees() {
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
                     <div className="min-w-0">
-                      <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                      <p className="hr-emp-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
                         {k.label}
                       </p>
-                      <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                      <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
                         <AnimatedNumber value={(counts as any)[k.key]} />
                       </h3>
                     </div>
