@@ -74,7 +74,7 @@ class MasterController extends Controller
      * slug -> ['fields' => [{n,t,r,ref?}, ...], 'uFields' => [...]]
      */
     private const SCHEMAS = [
-        'company' => ['fields' => [['n' => 'company_name', 't' => 'text', 'r' => true], ['n' => 'short_code', 't' => 'text', 'r' => true], ['n' => 'gstin', 't' => 'text', 'r' => true], ['n' => 'pan', 't' => 'text', 'r' => true], ['n' => 'cin', 't' => 'text'], ['n' => 'iec', 't' => 'text'], ['n' => 'email', 't' => 'email'], ['n' => 'mobile', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'state', 't' => 'text'], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['company_name', 'gstin', 'pan']],
+        'company' => ['fields' => [['n' => 'company_name', 't' => 'text', 'r' => true], ['n' => 'short_code', 't' => 'text', 'r' => true], ['n' => 'gstin', 't' => 'text', 'r' => true, 'normalize' => 'upper'], ['n' => 'pan', 't' => 'text', 'r' => true, 'normalize' => 'upper'], ['n' => 'cin', 't' => 'text', 'normalize' => 'upper'], ['n' => 'iec', 't' => 'text'], ['n' => 'email', 't' => 'email'], ['n' => 'mobile', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'state', 't' => 'text'], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['company_name', 'gstin', 'pan']],
         'bank_accounts' => ['fields' => [['n' => 'bank_name', 't' => 'text', 'r' => true], ['n' => 'account_holder', 't' => 'text', 'r' => true], ['n' => 'account_number', 't' => 'text', 'r' => true], ['n' => 'ifsc_code', 't' => 'text', 'r' => true], ['n' => 'branch_name', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'swift_code', 't' => 'text', 'r' => true], ['n' => 'ad_code', 't' => 'text', 'r' => true], ['n' => 'is_primary', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['account_number', 'ifsc_code']],
         'departments' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'parent_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'head', 't' => 'select'], ['n' => 'email', 't' => 'email'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code'], 'tenantScoped' => true],
         'roles' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'role_type', 't' => 'select', 'r' => true, 'opts' => ['Primary', 'Ancillary']], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'role_category', 't' => 'select', 'opts' => ['Technical', 'Management', 'Operational', 'Support', 'Sales', 'Compliance', 'Finance', 'HR']], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
@@ -733,8 +733,23 @@ class MasterController extends Controller
             }
 
             if ($query->exists()) {
+                // Pretty per-field labels for the duplicate message — falls
+                // back to a humanized version of the column name.
+                $labels = [
+                    'gstin' => 'GSTIN',
+                    'pan' => 'PAN',
+                    'cin' => 'CIN',
+                    'iso_code' => 'ISO code',
+                    'short_code' => 'Short code',
+                    'company_name' => 'Company name',
+                    'name' => 'Name',
+                    'code' => 'Code',
+                    'account_number' => 'Account number',
+                    'ifsc_code' => 'IFSC code',
+                ];
+                $label = $labels[$colName] ?? ucfirst(str_replace('_', ' ', $colName));
                 throw ValidationException::withMessages([
-                    $colName => "This {$colName} already exists (case-insensitive match).",
+                    $colName => "This {$label} is already registered. Please use a different value.",
                 ]);
             }
         }

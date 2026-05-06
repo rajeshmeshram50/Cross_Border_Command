@@ -80,12 +80,21 @@ function KpiCard({ label, value, iconClass, gradient, changeText, trend = 'neutr
         position: 'absolute', top: 0, left: 0, right: 0, height: 3,
         background: gradient,
       }} />
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <div style={{ flex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
-          <h3 style={{ fontSize: 28, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>{value}</h3>
+          <h3 style={{
+            fontSize: 'clamp(20px, 1.8vw, 28px)',
+            fontWeight: 800,
+            color: 'var(--vz-heading-color, var(--vz-body-color))',
+            margin: 0,
+            lineHeight: 1.05,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>{value}</h3>
           {(change || changeText) && (
-            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
               {change && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: trendColor + '18', color: trendColor, borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
                   <i className={arrow} style={{ fontSize: 11 }}></i> {change}
@@ -96,10 +105,10 @@ function KpiCard({ label, value, iconClass, gradient, changeText, trend = 'neutr
           )}
         </div>
         <div style={{
-          width: 46, height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: gradient, flexShrink: 0,
         }}>
-          <i className={iconClass} style={{ fontSize: 20, color: '#fff' }}></i>
+          <i className={iconClass} style={{ fontSize: 19, color: '#fff' }}></i>
         </div>
       </div>
     </div>
@@ -390,7 +399,7 @@ export default function BranchDashboard() {
                 <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Monthly cash flow</p>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }}>₹{counts.total_paid.toLocaleString()}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }} title={`₹${counts.total_paid.toLocaleString('en-IN')}`}>₹{formatINRCompact(counts.total_paid)}</div>
                 <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>TOTAL PAID</div>
               </div>
             </div>

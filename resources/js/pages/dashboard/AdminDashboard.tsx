@@ -31,6 +31,16 @@ const methodLabels: Record<string, string> = {
   net_banking: 'Net Banking', wallet: 'Wallet', cash: 'Cash', card: 'Card',
 };
 
+// Compact INR formatter — keeps the KPI value short enough to share its row
+// with the icon without wrapping. <1L stays grouped (e.g. "98,500"), 1L–99L
+// becomes "1.52L", crores become "1.50Cr".
+function formatINRCompact(n: number): string {
+  const v = Math.max(0, Number(n) || 0);
+  if (v < 100000) return v.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  if (v < 10000000) return (v / 100000).toFixed(2) + 'L';
+  return (v / 10000000).toFixed(2) + 'Cr';
+}
+
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
@@ -91,12 +101,21 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
         position: 'absolute', top: 0, left: 0, right: 0, height: 3,
         background: gradient,
       }} />
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <div style={{ flex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 /* allow flex item to shrink so long values truncate instead of pushing the icon out */ }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
-          <h3 style={{ fontSize: 28, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>{value}</h3>
+          <h3 style={{
+            fontSize: 'clamp(20px, 1.8vw, 28px)',
+            fontWeight: 800,
+            color: 'var(--vz-heading-color, var(--vz-body-color))',
+            margin: 0,
+            lineHeight: 1.05,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }} title={typeof value === 'string' || typeof value === 'number' ? String(value) : undefined}>{value}</h3>
           {(change || changeText) && (
-            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: trendColor + '18', color: trendColor, borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
                 <i className={arrow} style={{ fontSize: 11 }}></i> {change}
               </span>
@@ -105,10 +124,10 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
           )}
         </div>
         <div style={{
-          width: 46, height: 46, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: gradient, flexShrink: 0,
         }}>
-          <i className={iconClass} style={{ fontSize: 20, color: '#fff' }}></i>
+          <i className={iconClass} style={{ fontSize: 19, color: '#fff' }}></i>
         </div>
       </div>
     </div>
@@ -214,7 +233,7 @@ export default function AdminDashboard() {
             trend="up" change="+5%" changeText="vs last month" />
         </Col>
         <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Revenue" value={<>₹<AnimatedNumber value={Math.round(revenue.total / 1000)} suffix="K" /></>}
+          <KpiCard label="Revenue" value={<>₹{formatINRCompact(revenue.total)}</>}
             iconClass="ri-money-dollar-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0ab39c,#405189)"
             trend="up" change="+24%" changeText="vs last period" />
         </Col>
@@ -236,7 +255,7 @@ export default function AdminDashboard() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }}>₹{revenue.total.toLocaleString()}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }} title={`₹${revenue.total.toLocaleString('en-IN')}`}>₹{formatINRCompact(revenue.total)}</div>
                   <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>TOTAL REVENUE</div>
                 </div>
                 <button type="button" style={{

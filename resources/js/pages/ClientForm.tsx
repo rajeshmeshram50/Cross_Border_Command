@@ -66,8 +66,20 @@ function validateClientForm(form: FormState, isEdit: boolean): Record<string, st
   if (!form.country?.trim()) e.country = 'Country is required';
   if (form.pincode && !/^\d{6}$/.test(form.pincode)) e.pincode = 'Must be 6 digits';
   if (form.country === 'India') {
-    if (form.gst_number && !/^[0-9A-Z]{15}$/.test(form.gst_number)) e.gst_number = '15 alphanumeric characters';
-    if (form.pan_number && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan_number)) e.pan_number = 'Invalid PAN format';
+    if (form.gst_number) {
+      if (form.gst_number.length !== 15) {
+        e.gst_number = `GSTIN must be exactly 15 characters (you entered ${form.gst_number.length})`;
+      } else if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(form.gst_number)) {
+        e.gst_number = 'Invalid GSTIN format. Example: 27AADCI6120M1ZH';
+      }
+    }
+    if (form.pan_number) {
+      if (form.pan_number.length !== 10) {
+        e.pan_number = `PAN must be exactly 10 characters (you entered ${form.pan_number.length})`;
+      } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan_number)) {
+        e.pan_number = 'Invalid PAN format. Example: AADCI6120M (5 letters + 4 digits + 1 letter)';
+      }
+    }
   }
   if (!form.plan_id) e.plan_id = 'Plan is required';
   if (!form.plan_type) e.plan_type = 'Plan type is required';
