@@ -5,11 +5,23 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Plan;
 use App\Models\PlanModule;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class PlanController extends Controller
 {
+    /**
+     * Convert a plan name into the URL-safe slug we store on the row.
+     * "TEST", "test", "Test  Plan!" all collapse to the same value, which
+     * is why we need a uniqueness check on top of the unique DB index.
+     */
+    private function makeSlug(string $name): string
+    {
+        return trim(strtolower(preg_replace('/[^a-z0-9]+/i', '-', $name)), '-');
+    }
+
     public function index(Request $request)
     {
         $query = Plan::withCount('clients')
@@ -47,44 +59,62 @@ class PlanController extends Controller
             'modules.*.access_level' => 'required|in:full,limited,addon,not_included',
         ]);
 
-        $slug = strtolower(preg_replace('/[^a-z0-9]+/i', '-', $request->name));
-
-        $plan = DB::transaction(function () use ($request, $slug) {
-            $plan = Plan::create([
-                'name' => $request->name,
-                'slug' => $slug,
-                'price' => $request->price,
-                'period' => $request->period,
-                'max_branches' => $request->max_branches,
-                'max_users' => $request->max_users,
-                'storage_limit' => $request->storage_limit,
-                'support_level' => $request->support_level,
-                'is_featured' => $request->boolean('is_featured'),
-                'badge' => $request->badge,
-                'color' => $request->color,
-                'description' => $request->description,
-                'best_for' => $request->best_for,
-                'status' => $request->status,
-                'sort_order' => Plan::max('sort_order') + 1,
-                'trial_days' => $request->trial_days,
-                'yearly_discount' => $request->yearly_discount,
-                'is_custom' => $request->boolean('is_custom'),
+        $slug = $this->makeSlug($request->name);
+        if ($slug === '') {
+            throw ValidationException::withMessages([
+                'name' => 'Plan name must contain at least one letter or number.',
             ]);
+        }
+        if (Plan::where('slug', $slug)->exists()) {
+            throw ValidationException::withMessages([
+                'name' => 'A plan with this name already exists. Please choose a different name.',
+            ]);
+        }
 
-            // Save modules
-            if ($request->modules) {
-                foreach ($request->modules as $mod) {
-                    if ($mod['access_level'] === 'not_included') continue;
-                    PlanModule::create([
-                        'plan_id' => $plan->id,
-                        'module_id' => $mod['module_id'],
-                        'access_level' => $mod['access_level'],
-                    ]);
+        try {
+            $plan = DB::transaction(function () use ($request, $slug) {
+                $plan = Plan::create([
+                    'name' => $request->name,
+                    'slug' => $slug,
+                    'price' => $request->price,
+                    'period' => $request->period,
+                    'max_branches' => $request->max_branches,
+                    'max_users' => $request->max_users,
+                    'storage_limit' => $request->storage_limit,
+                    'support_level' => $request->support_level,
+                    'is_featured' => $request->boolean('is_featured'),
+                    'badge' => $request->badge,
+                    'color' => $request->color,
+                    'description' => $request->description,
+                    'best_for' => $request->best_for,
+                    'status' => $request->status,
+                    'sort_order' => Plan::max('sort_order') + 1,
+                    'trial_days' => $request->trial_days,
+                    'yearly_discount' => $request->yearly_discount,
+                    'is_custom' => $request->boolean('is_custom'),
+                ]);
+
+                // Save modules
+                if ($request->modules) {
+                    foreach ($request->modules as $mod) {
+                        if ($mod['access_level'] === 'not_included') continue;
+                        PlanModule::create([
+                            'plan_id' => $plan->id,
+                            'module_id' => $mod['module_id'],
+                            'access_level' => $mod['access_level'],
+                        ]);
+                    }
                 }
-            }
 
-            return $plan;
-        });
+                return $plan;
+            });
+        } catch (UniqueConstraintViolationException $e) {
+            // Belt and suspenders: covers the race where two requests pass the
+            // pre-check above and only one wins the DB insert.
+            throw ValidationException::withMessages([
+                'name' => 'A plan with this name already exists. Please choose a different name.',
+            ]);
+        }
 
         $plan->load('modules:id,name,slug,icon');
 
@@ -122,6 +152,18 @@ class PlanController extends Controller
             'modules.*.module_id' => 'required|exists:modules,id',
             'modules.*.access_level' => 'required|in:full,limited,addon,not_included',
         ]);
+
+        $newSlug = $this->makeSlug($request->name);
+        if ($newSlug === '') {
+            throw ValidationException::withMessages([
+                'name' => 'Plan name must contain at least one letter or number.',
+            ]);
+        }
+        if ($newSlug !== $plan->slug && Plan::where('slug', $newSlug)->where('id', '!=', $plan->id)->exists()) {
+            throw ValidationException::withMessages([
+                'name' => 'A plan with this name already exists. Please choose a different name.',
+            ]);
+        }
 
         DB::transaction(function () use ($request, $plan) {
             $plan->update([

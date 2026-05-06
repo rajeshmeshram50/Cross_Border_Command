@@ -16,6 +16,82 @@ const empty = {
   trial_days: '', yearly_discount: '', is_custom: false,
 };
 
+type FormState = typeof empty;
+
+// Validate the plan form. Returns { field: ['message'] } so it merges
+// directly into the existing `errors` state shape from the API.
+function validatePlanForm(f: FormState): Record<string, string[]> {
+  const e: Record<string, string[]> = {};
+
+  // Name
+  const name = f.name.trim();
+  if (!name) e.name = ['Plan name is required'];
+  else if (name.length < 2) e.name = ['Plan name must be at least 2 characters'];
+  else if (name.length > 100) e.name = ['Plan name cannot exceed 100 characters'];
+
+  // Price (required, number, >= 0)
+  if (f.price === '' || f.price === null) {
+    e.price = ['Price is required'];
+  } else {
+    const p = Number(f.price);
+    if (isNaN(p)) e.price = ['Price must be a valid number'];
+    else if (p < 0) e.price = ['Price cannot be negative — enter 0 for a free plan'];
+    else if (p > 99999999) e.price = ['Price seems too high (max 99,999,999)'];
+  }
+
+  // Billing period (must match backend enum)
+  if (!['month', 'quarter', 'year'].includes(f.period)) {
+    e.period = ['Choose a valid billing period'];
+  }
+
+  // Max branches / users — optional but must be non-negative integers
+  if (f.max_branches !== '') {
+    const n = Number(f.max_branches);
+    if (!Number.isInteger(n) || n < 0) e.max_branches = ['Max branches must be 0 or a positive whole number (blank = unlimited)'];
+    else if (n > 100000) e.max_branches = ['Max branches seems too high (limit 100,000)'];
+  }
+  if (f.max_users !== '') {
+    const n = Number(f.max_users);
+    if (!Number.isInteger(n) || n < 0) e.max_users = ['Max users must be 0 or a positive whole number (blank = unlimited)'];
+    else if (n > 1000000) e.max_users = ['Max users seems too high (limit 1,000,000)'];
+  }
+
+  // Storage limit — free text but should look like "25GB", "500MB", "1TB"
+  if (f.storage_limit) {
+    if (f.storage_limit.length > 20) e.storage_limit = ['Storage limit cannot exceed 20 characters'];
+    else if (!/^\d+(\.\d+)?\s?(KB|MB|GB|TB)$/i.test(f.storage_limit.trim())) {
+      e.storage_limit = ['Use a format like 25GB, 500MB, or 1TB'];
+    }
+  }
+
+  // Trial days
+  if (f.trial_days !== '') {
+    const n = Number(f.trial_days);
+    if (!Number.isInteger(n) || n < 0) e.trial_days = ['Trial days must be 0 or a positive whole number'];
+    else if (n > 365) e.trial_days = ['Trial cannot exceed 365 days'];
+  }
+
+  // Yearly discount: 0 – 100 percent
+  if (f.yearly_discount !== '') {
+    const n = Number(f.yearly_discount);
+    if (isNaN(n)) e.yearly_discount = ['Yearly discount must be a number'];
+    else if (n < 0 || n > 100) e.yearly_discount = ['Yearly discount must be between 0 and 100'];
+  }
+
+  // Accent color — must be a 7-char hex like #RRGGBB
+  if (f.color && !/^#[0-9A-Fa-f]{6}$/.test(f.color)) {
+    e.color = ['Color must be a 7-character hex code like #5A51E8'];
+  }
+
+  // Badge length cap
+  if (f.badge && f.badge.length > 50) e.badge = ['Badge label cannot exceed 50 characters'];
+
+  // Best for length cap
+  if (f.best_for && f.best_for.length > 255) e.best_for = ['"Best for" cannot exceed 255 characters'];
+
+  return e;
+}
+
 export default function AddPlan({ onBack, editId }: Props) {
   const isEdit = !!editId;
   const toast = useToast();
@@ -27,7 +103,16 @@ export default function AddPlan({ onBack, editId }: Props) {
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [modSearch, setModSearch] = useState('');
 
-  const set = (key: string, val: any) => setForm(f => ({ ...f, [key]: val }));
+  const set = (key: string, val: any) => {
+    setForm(f => ({ ...f, [key]: val }));
+    // Clear the error for this field as the user fixes it
+    setErrors(prev => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
   const CYCLE_ORDER: AccessLevel[] = ['not_included', 'full', 'limited', 'addon'];
   const cycleAccess = (id: number) =>
@@ -75,6 +160,16 @@ export default function AddPlan({ onBack, editId }: Props) {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
+
+    // Client-side validation first — bail before hitting the server
+    const clientErrors = validatePlanForm(form);
+    if (Object.keys(clientErrors).length > 0) {
+      setErrors(clientErrors);
+      const firstError = Object.values(clientErrors)[0]?.[0] || 'Please fix the highlighted fields';
+      toast.error('Validation Error', firstError);
+      return;
+    }
+
     setErrors({});
     setSaving(true);
     try {
@@ -283,8 +378,9 @@ export default function AddPlan({ onBack, editId }: Props) {
                       </label>
                       <InputGroup size="sm">
                         <InputGroupText style={{ background: 'rgba(16,185,129,0.10)', border: '1px solid var(--vz-border-color)', color: '#10b981', fontWeight: 700 }}>₹</InputGroupText>
-                        <Input type="number" className="stylish-input" value={form.price} onChange={e => set('price', e.target.value)} invalid={!!fieldError('price')} placeholder="0" />
+                        <Input type="number" min={0} step="0.01" className="stylish-input" value={form.price} onChange={e => set('price', e.target.value)} invalid={!!fieldError('price')} placeholder="0" />
                       </InputGroup>
+                      {fieldError('price') && <div className="invalid-feedback d-block">{fieldError('price')}</div>}
                     </Col>
                     <Col md={4}>
                       <label className="stylish-label">
@@ -307,7 +403,8 @@ export default function AddPlan({ onBack, editId }: Props) {
                         <i className="ri-team-line" style={{ color: '#f59e0b' }} />
                         Best For
                       </label>
-                      <Input bsSize="sm" className="stylish-input" value={form.best_for} onChange={e => set('best_for', e.target.value)} placeholder="e.g. Small teams" />
+                      <Input bsSize="sm" className="stylish-input" value={form.best_for} onChange={e => set('best_for', e.target.value)} invalid={!!fieldError('best_for')} placeholder="e.g. Small teams" />
+                      {fieldError('best_for') && <div className="invalid-feedback d-block">{fieldError('best_for')}</div>}
                     </Col>
                     <Col md={4}>
                       <label className="stylish-label">
@@ -329,7 +426,8 @@ export default function AddPlan({ onBack, editId }: Props) {
                         <i className="ri-vip-crown-line" style={{ color: '#f59e0b' }} />
                         Badge Label
                       </label>
-                      <Input bsSize="sm" className="stylish-input" value={form.badge} onChange={e => set('badge', e.target.value)} placeholder="e.g. Most Popular" />
+                      <Input bsSize="sm" className="stylish-input" value={form.badge} onChange={e => set('badge', e.target.value)} invalid={!!fieldError('badge')} placeholder="e.g. Most Popular" />
+                      {fieldError('badge') && <div className="invalid-feedback d-block">{fieldError('badge')}</div>}
                     </Col>
                     <Col xs={12}>
                       <label className="stylish-label">
@@ -439,21 +537,24 @@ export default function AddPlan({ onBack, editId }: Props) {
                         <i className="ri-git-branch-line" style={{ color: '#6366f1' }} />
                         Max Branches
                       </label>
-                      <Input bsSize="sm" className="stylish-input" type="number" value={form.max_branches} onChange={e => set('max_branches', e.target.value)} placeholder="∞ unlimited" />
+                      <Input bsSize="sm" className="stylish-input" type="number" min={0} step={1} value={form.max_branches} onChange={e => set('max_branches', e.target.value)} invalid={!!fieldError('max_branches')} placeholder="∞ unlimited" />
+                      {fieldError('max_branches') && <div className="invalid-feedback d-block">{fieldError('max_branches')}</div>}
                     </Col>
                     <Col md={3}>
                       <label className="stylish-label">
                         <i className="ri-user-3-line" style={{ color: '#0ea5e9' }} />
                         Max Users
                       </label>
-                      <Input bsSize="sm" className="stylish-input" type="number" value={form.max_users} onChange={e => set('max_users', e.target.value)} placeholder="∞ unlimited" />
+                      <Input bsSize="sm" className="stylish-input" type="number" min={0} step={1} value={form.max_users} onChange={e => set('max_users', e.target.value)} invalid={!!fieldError('max_users')} placeholder="∞ unlimited" />
+                      {fieldError('max_users') && <div className="invalid-feedback d-block">{fieldError('max_users')}</div>}
                     </Col>
                     <Col md={3}>
                       <label className="stylish-label">
                         <i className="ri-hard-drive-2-line" style={{ color: '#10b981' }} />
                         Storage Limit
                       </label>
-                      <Input bsSize="sm" className="stylish-input" value={form.storage_limit} onChange={e => set('storage_limit', e.target.value)} placeholder="e.g. 25GB" />
+                      <Input bsSize="sm" className="stylish-input" value={form.storage_limit} onChange={e => set('storage_limit', e.target.value)} invalid={!!fieldError('storage_limit')} placeholder="e.g. 25GB" />
+                      {fieldError('storage_limit') && <div className="invalid-feedback d-block">{fieldError('storage_limit')}</div>}
                     </Col>
                     <Col md={3}>
                       <label className="stylish-label">
@@ -478,14 +579,16 @@ export default function AddPlan({ onBack, editId }: Props) {
                         <i className="ri-time-line" style={{ color: '#10b981' }} />
                         Trial Days
                       </label>
-                      <Input bsSize="sm" className="stylish-input" type="number" value={form.trial_days} onChange={e => set('trial_days', e.target.value)} placeholder="e.g. 14" />
+                      <Input bsSize="sm" className="stylish-input" type="number" min={0} step={1} value={form.trial_days} onChange={e => set('trial_days', e.target.value)} invalid={!!fieldError('trial_days')} placeholder="e.g. 14" />
+                      {fieldError('trial_days') && <div className="invalid-feedback d-block">{fieldError('trial_days')}</div>}
                     </Col>
                     <Col md={4}>
                       <label className="stylish-label">
                         <i className="ri-price-tag-3-line" style={{ color: '#ef4444' }} />
                         Yearly Discount (%)
                       </label>
-                      <Input bsSize="sm" className="stylish-input" type="number" value={form.yearly_discount} onChange={e => set('yearly_discount', e.target.value)} placeholder="e.g. 20" />
+                      <Input bsSize="sm" className="stylish-input" type="number" min={0} max={100} step="0.01" value={form.yearly_discount} onChange={e => set('yearly_discount', e.target.value)} invalid={!!fieldError('yearly_discount')} placeholder="e.g. 20" />
+                      {fieldError('yearly_discount') && <div className="invalid-feedback d-block">{fieldError('yearly_discount')}</div>}
                     </Col>
                     <Col md={4}>
                       <label className="stylish-label">
@@ -517,8 +620,9 @@ export default function AddPlan({ onBack, editId }: Props) {
                             }}
                           />
                         </div>
-                        <Input bsSize="sm" className="stylish-input font-monospace" value={form.color} onChange={e => set('color', e.target.value)} />
+                        <Input bsSize="sm" className="stylish-input font-monospace" value={form.color} onChange={e => set('color', e.target.value)} invalid={!!fieldError('color')} />
                       </div>
+                      {fieldError('color') && <div className="invalid-feedback d-block">{fieldError('color')}</div>}
                     </Col>
                   </Row>
                 </div>

@@ -150,7 +150,7 @@ export default function BranchDashboard() {
   if (loading) return <ShimmerDashboard />;
   if (!data) return null;
 
-  const { counts, plan, branches: allBranches, recent_payments, payment_trend } = data;
+  const { counts, plan, branches: allBranches, recent_payments, payment_trend, can_view_payments } = data;
   const branches = isMainBranchUser && !selectedBranchId
     ? allBranches
     : allBranches.filter((b: any) => b.id === (selectedBranchId || user?.branch_id));
@@ -350,31 +350,37 @@ export default function BranchDashboard() {
         );
       })()}
 
-      {/* KPI Cards */}
+      {/* KPI Cards — billing tiles (Total Paid / Payments) are hidden for
+          users without payment access; remaining tiles widen to fill. */}
       <Row className="g-3 mb-3">
-        <Col md={3} xs={6}>
+        <Col md={can_view_payments ? 3 : 6} xs={6}>
           <KpiCard label="Branches" value={<AnimatedNumber value={branches.length} />}
             iconClass="ri-git-branch-line" gradient="linear-gradient(135deg,#299cdb,#50c3e6)"
             changeText="visible" />
         </Col>
-        <Col md={3} xs={6}>
+        <Col md={can_view_payments ? 3 : 6} xs={6}>
           <KpiCard label="Users" value={<AnimatedNumber value={branchUsers} />}
             iconClass="ri-user-3-line" gradient="linear-gradient(135deg,#9b72cf,#865ce2)"
             changeText="branch staff" />
         </Col>
-        <Col md={3} xs={6}>
-          <KpiCard label="Total Paid" value={<>₹{formatINRCompact(counts.total_paid)}</>}
-            iconClass="ri-money-rupee-circle-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
-            trend="up" change={`${counts.success_payments}`} changeText="payments" />
-        </Col>
-        <Col md={3} xs={6}>
-          <KpiCard label="Payments" value={<AnimatedNumber value={counts.total_payments} />}
-            iconClass="ri-bank-card-line" gradient="linear-gradient(135deg,#405189,#6691e7)"
-            trend={successRate > 80 ? 'up' : 'down'} change={`${successRate}%`} changeText="success rate" />
-        </Col>
+        {can_view_payments && (
+          <Col md={3} xs={6}>
+            <KpiCard label="Total Paid" value={<>₹{formatINRCompact(counts.total_paid)}</>}
+              iconClass="ri-money-rupee-circle-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
+              trend="up" change={`${counts.success_payments}`} changeText="payments" />
+          </Col>
+        )}
+        {can_view_payments && (
+          <Col md={3} xs={6}>
+            <KpiCard label="Payments" value={<AnimatedNumber value={counts.total_payments} />}
+              iconClass="ri-bank-card-line" gradient="linear-gradient(135deg,#405189,#6691e7)"
+              trend={successRate > 80 ? 'up' : 'down'} change={`${successRate}%`} changeText="success rate" />
+          </Col>
+        )}
       </Row>
 
-      {/* Payment Trend */}
+      {/* Payment Trend — billing data, gated like Recent Payments */}
+      {can_view_payments && (
       <Row className="g-3 mb-3">
         <Col xs={12}>
           <Card style={cardStyle}>
@@ -408,10 +414,12 @@ export default function BranchDashboard() {
           </Card>
         </Col>
       </Row>
+      )}
 
-      {/* Branches + Recent Payments */}
+      {/* Branches + Recent Payments — payments are hidden for non-main
+          branch users (server also strips them, so the data is gone). */}
       <Row className="g-3">
-        <Col xl={6}>
+        <Col xl={can_view_payments ? 6 : 12}>
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
@@ -457,6 +465,7 @@ export default function BranchDashboard() {
           </Card>
         </Col>
 
+        {can_view_payments && (
         <Col xl={6}>
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
@@ -504,6 +513,7 @@ export default function BranchDashboard() {
             </CardBody>
           </Card>
         </Col>
+        )}
       </Row>
     </>
   );
