@@ -428,7 +428,9 @@ class EmployeeController extends Controller
             $newMacro = max($newMacro, 1);
         }
 
-        DB::transaction(function () use ($row, $data, $newStep, $newMacro) {
+        $oldStatus = (string) $row->getOriginal('status');
+
+        DB::transaction(function () use ($row, $data, $newStep, $newMacro, $oldStatus) {
             // first_name might not be in $data on a partial step-3/step-4
             // PATCH (the frontend only sends the fields for the step it
             // just saved). Fall back to the existing row value so
@@ -452,6 +454,24 @@ class EmployeeController extends Controller
                     'phone'       => $data['mobile'] ?? $row->user->phone,
                     'designation' => $data['designation_name'] ?? $row->user->designation,
                 ]);
+
+                // Cascade employee.status → users.status when it actually
+                // changes. Inactive/Resigned/Terminated must block login;
+                // anything else (Active/Probation/On Leave/Notice Period)
+                // keeps the login open. Tokens are revoked on the
+                // transition-to-disabled so any stale Sanctum session is
+                // killed immediately. Without this guard, admins flipping
+                // status via the edit form leave the user able to sign in.
+                $newStatus = array_key_exists('status', $data)
+                    ? (string) $data['status']
+                    : $oldStatus;
+                if (strcasecmp($oldStatus, $newStatus) !== 0) {
+                    $disabled = in_array(strtolower($newStatus), ['inactive', 'resigned', 'terminated'], true);
+                    $row->user->update(['status' => $disabled ? 'inactive' : 'active']);
+                    if ($disabled) {
+                        $row->user->tokens()->delete();
+                    }
+                }
             }
         });
 
@@ -468,7 +488,11 @@ class EmployeeController extends Controller
         DB::transaction(function () use ($row) {
             // Soft-delete the employee record and disable the login account.
             // Hard-deleting the user would orphan permissions/activity logs.
+            // Existing Sanctum tokens are revoked too — without that, any
+            // already-issued token keeps authenticating because no middleware
+            // re-checks user.status on subsequent requests.
             $row->user?->update(['status' => 'inactive']);
+            $row->user?->tokens()->delete();
             $row->delete();
         });
 
