@@ -125,7 +125,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
               </Col>
               <Col className="text-end">
                 <Button
-                  color="success"
+                  color="primary"
                   className="btn-label waves-effect waves-light rounded-pill"
                   onClick={handleSave}
                   disabled={saving}
@@ -152,7 +152,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
               Editing: <strong className="text-dark">{adminUser.name}</strong>
             </span>
             <Button
-              color="success"
+              color="primary"
               className="btn-label waves-effect waves-light rounded-pill"
               onClick={handleSave}
               disabled={saving}

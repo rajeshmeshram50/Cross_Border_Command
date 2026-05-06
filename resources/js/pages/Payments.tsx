@@ -6,6 +6,7 @@ import {
 } from 'reactstrap';
 import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
+import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -705,6 +706,8 @@ export default function Payments() {
         className="cbc-payment-modal"
         contentClassName="border-0 shadow-lg"
       >
+        {/* Loads styles for MasterSelect / MasterDatePicker (master-field, master-select-*, master-datepicker-*) */}
+        <MasterFormStyles />
         {/* ── Hero header — icon chip + title + subtitle + "New Payment" pill + close X ── */}
         <div className="pmt-reg-hero">
           <span className="pmt-reg-hero-icon"><i className="ri-secure-payment-line" /></span>
@@ -737,22 +740,24 @@ export default function Payments() {
             <Row className="g-3 mb-3">
               <Col md={6}>
                 <Label>Client <span className="text-danger">*</span></Label>
-                <div className="pmt-reg-field">
-                  <i className="ri-building-line pmt-reg-field-icon" />
-                  <Input type="select" name="client_id" required>
-                    <option value="">— Select client —</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.org_name}</option>)}
-                  </Input>
+                <div className="master-field">
+                  <i className="ri-building-line master-field-icon" />
+                  <MasterSelect
+                    name="client_id"
+                    placeholder="— Select client —"
+                    options={clients.map(c => ({ value: String(c.id), label: c.org_name }))}
+                  />
                 </div>
               </Col>
               <Col md={6}>
                 <Label>Plan</Label>
-                <div className="pmt-reg-field">
-                  <i className="ri-vip-crown-line pmt-reg-field-icon" />
-                  <Input type="select" name="plan_id">
-                    <option value="">— Select plan —</option>
-                    {plans.map(p => <option key={p.id} value={p.id}>{p.name} — ₹{p.price}</option>)}
-                  </Input>
+                <div className="master-field">
+                  <i className="ri-vip-crown-line master-field-icon" />
+                  <MasterSelect
+                    name="plan_id"
+                    placeholder="— Select plan —"
+                    options={plans.map(p => ({ value: String(p.id), label: `${p.name} — ₹${p.price}` }))}
+                  />
                 </div>
               </Col>
             </Row>
@@ -835,25 +840,29 @@ export default function Payments() {
             <Row className="g-3 mb-3">
               <Col md={4}>
                 <Label>Method <span className="text-danger">*</span></Label>
-                <div className="pmt-reg-field">
-                  <i className="ri-wallet-3-line pmt-reg-field-icon" />
-                  <Input type="select" name="method" required>
-                    <option value="">— Select method —</option>
-                    {Object.entries(methodLabels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                  </Input>
+                <div className="master-field">
+                  <i className="ri-wallet-3-line master-field-icon" />
+                  <MasterSelect
+                    name="method"
+                    placeholder="— Select method —"
+                    options={Object.entries(methodLabels).map(([k, v]) => ({ value: k, label: v }))}
+                  />
                 </div>
               </Col>
               <Col md={4}>
                 <Label>Gateway</Label>
-                <div className="pmt-reg-field">
-                  <i className="ri-global-line pmt-reg-field-icon" />
-                  <Input type="select" name="gateway">
-                    <option value="">— Select gateway —</option>
-                    <option value="razorpay">Razorpay</option>
-                    <option value="stripe">Stripe</option>
-                    <option value="paytm">Paytm</option>
-                    <option value="manual">Manual</option>
-                  </Input>
+                <div className="master-field">
+                  <i className="ri-global-line master-field-icon" />
+                  <MasterSelect
+                    name="gateway"
+                    placeholder="— Select gateway —"
+                    options={[
+                      { value: 'razorpay', label: 'Razorpay' },
+                      { value: 'stripe', label: 'Stripe' },
+                      { value: 'paytm', label: 'Paytm' },
+                      { value: 'manual', label: 'Manual' },
+                    ]}
+                  />
                 </div>
               </Col>
               <Col md={4}>
@@ -864,16 +873,17 @@ export default function Payments() {
                     title="If Success is selected, an invoice PDF is auto-generated and emailed to the client."
                   />
                 </Label>
-                <div className="pmt-reg-field">
-                  <i className="ri-checkbox-circle-line pmt-reg-field-icon" />
-                  <Input
-                    type="select" name="status" required defaultValue="success"
-                    title="If Success is selected, an invoice PDF is auto-generated and emailed to the client."
-                  >
-                    <option value="success">Success</option>
-                    <option value="pending">Pending</option>
-                    <option value="failed">Failed</option>
-                  </Input>
+                <div className="master-field">
+                  <i className="ri-checkbox-circle-line master-field-icon" />
+                  <MasterSelect
+                    name="status"
+                    defaultValue="success"
+                    options={[
+                      { value: 'success', label: 'Success' },
+                      { value: 'pending', label: 'Pending' },
+                      { value: 'failed', label: 'Failed' },
+                    ]}
+                  />
                 </div>
               </Col>
             </Row>
@@ -886,21 +896,24 @@ export default function Payments() {
             <Row className="g-3 mb-3">
               <Col md={4}>
                 <Label>Billing Cycle</Label>
-                <div className="pmt-reg-field">
-                  <i className="ri-refresh-line pmt-reg-field-icon" />
-                  <Input type="select" name="billing_cycle">
-                    <option value="">—</option>
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="yearly">Yearly</option>
-                  </Input>
+                <div className="master-field">
+                  <i className="ri-refresh-line master-field-icon" />
+                  <MasterSelect
+                    name="billing_cycle"
+                    placeholder="—"
+                    options={[
+                      { value: 'monthly', label: 'Monthly' },
+                      { value: 'quarterly', label: 'Quarterly' },
+                      { value: 'yearly', label: 'Yearly' },
+                    ]}
+                  />
                 </div>
               </Col>
               <Col md={4}>
                 <Label>Valid From</Label>
-                <div className="pmt-reg-field">
-                  <i className="ri-calendar-check-line pmt-reg-field-icon" />
-                  <Input type="date" name="valid_from" />
+                <div className="master-field">
+                  <i className="ri-calendar-check-line master-field-icon" />
+                  <MasterDatePicker name="valid_from" placeholder="dd-mm-yyyy" />
                 </div>
               </Col>
               <Col md={4}>
@@ -911,12 +924,9 @@ export default function Payments() {
                     title="Subscription active window. Leave blank for one-time payments."
                   />
                 </Label>
-                <div className="pmt-reg-field">
-                  <i className="ri-calendar-event-line pmt-reg-field-icon" />
-                  <Input
-                    type="date" name="valid_until"
-                    title="Subscription active window. Leave blank for one-time payments."
-                  />
+                <div className="master-field">
+                  <i className="ri-calendar-event-line master-field-icon" />
+                  <MasterDatePicker name="valid_until" placeholder="dd-mm-yyyy" />
                 </div>
               </Col>
             </Row>
