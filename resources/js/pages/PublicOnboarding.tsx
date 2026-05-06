@@ -4,23 +4,6 @@ import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 
-/**
- * PublicOnboarding — the page candidates land on when they click the link
- * from the invite email. Three-step wizard:
- *
- *   Step 1: Personal
- *   Step 2: Address (current + permanent)
- *   Step 3: Job Details + Submit
- *
- * Draft persistence keyed by token: if the candidate fills step 1 and
- * closes the tab, reopening the link resumes them at the step they left
- * (state is restored, step pointer too). On successful submit the draft is
- * wiped so a refresh on the success card doesn't restore stale state.
- *
- * Rendered OUTSIDE the auth wrapper — no logged-in user; the URL token is
- * the only credential.
- */
-
 interface InvitePreview {
   invitee_name: string;
   invitee_email: string;

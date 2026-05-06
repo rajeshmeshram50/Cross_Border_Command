@@ -11,9 +11,7 @@ interface TabDef {
   color: string;
 }
 
-// Premium, cohesive palette — inspired by Linear, Stripe, Vercel, Notion.
-// Uses a single refined violet as the signature + muted semantic colors
-// for meaning (red=security, emerald=privacy, amber=help, etc.)
+
 const TABS: TabDef[] = [
   { id: 'general',       icon: 'ri-settings-3-line',     label: 'General',       desc: 'Platform configuration',  color: '#6366f1' }, // indigo
   { id: 'security',      icon: 'ri-shield-keyhole-line', label: 'Security',      desc: 'Auth & access control',   color: '#ef4444' }, // red
