@@ -141,18 +141,14 @@ class ModuleSeeder extends Seeder
             }
         }
 
-        // ── HR module tree ────────────────────────────────────────────────
-        // Mirrors the IDIMS HR menu: 1 root → 6 category groups → 24 leaves.
-        // Slugs use `hr.` prefix so they don't collide with anything else.
+        
         $hr = Module::where('slug', 'hr')->first();
 
         $hrCategories = [
-            ['name' => 'HRMS Command',     'slug' => 'hr.command',    'icon' => 'LayoutDashboard', 'description' => 'HRMS overview & performance improvement plans'],
-            ['name' => 'HR Core',          'slug' => 'hr.core',       'icon' => 'Users',           'description' => 'Employees, departments, designations, roles & KPIs'],
-            ['name' => 'HR Operations',    'slug' => 'hr.operations', 'icon' => 'Workflow',        'description' => 'Recruitment, onboarding & exit'],
-            ['name' => 'Time & Pay Inputs','slug' => 'hr.time_pay',   'icon' => 'IndianRupee',     'description' => 'Payroll, attendance, leave & expenses'],
-            ['name' => 'Document & Evidence','slug' => 'hr.documents','icon' => 'FileText',        'description' => 'Policies, templates, document masters'],
-            ['name' => 'AI Intelligence',  'slug' => 'hr.ai',         'icon' => 'Brain',           'description' => 'HR reports & AI-driven master data'],
+            ['name' => 'HRMS Command Center', 'slug' => 'hr.command',    'icon' => 'LayoutDashboard', 'description' => 'HRMS overview, PIP, reports & AI configuration'],
+            ['name' => 'HR Core',             'slug' => 'hr.core',       'icon' => 'Users',           'description' => 'Recruitment, employees, onboarding & exit'],
+            ['name' => 'Time & Pay Inputs',   'slug' => 'hr.time_pay',   'icon' => 'IndianRupee',     'description' => 'Payroll, attendance, leave & expenses'],
+            ['name' => 'Document & Evidence', 'slug' => 'hr.documents',  'icon' => 'FileText',        'description' => 'Policies, templates, document masters'],
         ];
 
         $hrCatIds = [];
@@ -166,18 +162,14 @@ class ModuleSeeder extends Seeder
 
         $hrLeaves = [
             'hr.command' => [
-                ['name' => 'HRMS Overview', 'slug' => 'hr.overview', 'icon' => 'LayoutGrid',     'description' => 'Headcount, joinings, exits & headline KPIs'],
-                ['name' => 'PIP',           'slug' => 'hr.pip',      'icon' => 'ClipboardCheck', 'description' => 'Performance improvement plans'],
+                ['name' => 'HRMS Overview', 'slug' => 'hr.overview',  'icon' => 'LayoutGrid',     'description' => 'Headcount, joinings, exits & headline KPIs'],
+                ['name' => 'PIP',           'slug' => 'hr.pip',       'icon' => 'ClipboardCheck', 'description' => 'Performance improvement plans'],
+                ['name' => 'HR Reports',    'slug' => 'hr.reports',   'icon' => 'BarChart3',      'description' => 'Standard & custom HR analytics reports'],
+                ['name' => 'AI Master',     'slug' => 'hr.ai_master', 'icon' => 'Sparkles',       'description' => 'AI configuration & training data'],
             ],
             'hr.core' => [
-                ['name' => 'Employee',    'slug' => 'hr.employee',    'icon' => 'User',         'description' => 'Employee master with personal & job data'],
-                ['name' => 'Department',  'slug' => 'hr.department',  'icon' => 'Building2',    'description' => 'Department setup for employee assignment'],
-                ['name' => 'Designation', 'slug' => 'hr.designation', 'icon' => 'BadgeCheck',   'description' => 'Job titles used in offer letters & HR docs'],
-                ['name' => 'Role',        'slug' => 'hr.role',        'icon' => 'UserCog',      'description' => 'Functional roles for module-level access'],
-                ['name' => "KPI's",       'slug' => 'hr.kpis',        'icon' => 'TrendingUp',   'description' => 'Goal-setting & performance metrics'],
-            ],
-            'hr.operations' => [
                 ['name' => 'Recruitment',         'slug' => 'hr.recruitment', 'icon' => 'UserPlus',  'description' => 'Job posts, candidates & interviews'],
+                ['name' => 'Employee',            'slug' => 'hr.employee',    'icon' => 'User',      'description' => 'Employee master with personal & job data'],
                 ['name' => 'Employee Onboarding', 'slug' => 'hr.onboarding',  'icon' => 'UserCheck', 'description' => 'New-hire workflow & documentation'],
                 ['name' => 'Exit Management',     'slug' => 'hr.exit',        'icon' => 'LogOut',    'description' => 'Resignations, F&F, exit checklist'],
             ],
@@ -195,15 +187,11 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Broadcast Centre',    'slug' => 'hr.broadcast',      'icon' => 'Megaphone',      'description' => 'Push policies/notices to employees'],
                 // The "MASTERS" sub-section in the HR Document column — flattened
                 // here as direct leaves under hr.documents because the modules
-                // table is 3-level deep. Slugs include `master` for clarity.
+                // table is 3-level deep. Slugs include `doc_` for clarity.
                 ['name' => 'Document Category',       'slug' => 'hr.doc_category',  'icon' => 'FolderOpen',  'description' => 'Document category master'],
                 ['name' => 'Document Types',          'slug' => 'hr.doc_types',     'icon' => 'FileBadge',   'description' => 'Document type definitions'],
                 ['name' => 'Doc Generation Rules',    'slug' => 'hr.doc_gen_rules', 'icon' => 'Settings2',   'description' => 'Auto-generation rule sets'],
                 ['name' => 'Custom Fields',           'slug' => 'hr.custom_fields', 'icon' => 'PlusSquare',  'description' => 'Custom data fields for HR documents'],
-            ],
-            'hr.ai' => [
-                ['name' => 'HR Reports', 'slug' => 'hr.reports',   'icon' => 'BarChart3',    'description' => 'Standard & custom HR analytics reports'],
-                ['name' => 'AI Master',  'slug' => 'hr.ai_master', 'icon' => 'Sparkles',     'description' => 'AI configuration & training data'],
             ],
         ];
 
