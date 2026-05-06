@@ -40,7 +40,7 @@ Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPa
 Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
 
 // Protected
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);

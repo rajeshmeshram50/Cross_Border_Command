@@ -46,9 +46,14 @@ return [
 
             'root' => storage_path('app/public'),
 
+            // Local mode returns a relative URL ("/storage/...") so the browser
+            // resolves it against whatever origin is currently serving the SPA
+            // (works on any dev port, prod domain, or proxy without depending
+            // on APP_URL being set correctly). Azure mode uses the absolute
+            // container URL since the blob lives off-domain.
             'url' => env('FILESYSTEM_DISK') === 'azure'
                 ? env('AZURE_STORAGE_URL')
-                : rtrim(env('APP_URL', 'http://localhost'), '/') . '/storage',
+                : '/storage',
 
             'visibility' => 'public',
             'throw' => false,

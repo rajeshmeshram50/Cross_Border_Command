@@ -12,7 +12,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Re-validate user/tenant status after Sanctum auth on every request,
+        // so disabled employees / inactive tenants can't keep using a token
+        // that was issued before they were deactivated.
+        $middleware->alias([
+            'user.active' => \App\Http\Middleware\EnsureUserActive::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

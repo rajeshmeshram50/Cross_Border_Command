@@ -45,11 +45,16 @@ if (!function_exists('file_url')) {
         // response shape stays intact and the issue is visible at the
         // image instead of breaking the whole request.
         try {
-            return Storage::disk('public')->url($normalized);
+            $url = Storage::disk('public')->url($normalized);
         } catch (\Throwable $e) {
             $base = config('filesystems.disks.public.url')
                 ?: rtrim((string) config('app.url', 'http://localhost'), '/') . '/storage';
-            return rtrim((string) $base, '/') . '/' . $normalized;
+            $url = rtrim((string) $base, '/') . '/' . $normalized;
         }
+
+        // Collapse accidental double slashes ("http://host//storage//path")
+        // that creep in when env values or path joins disagree on trailing
+        // slashes. Preserve the protocol "://".
+        return preg_replace('#(?<!:)//+#', '/', $url);
     }
 }
