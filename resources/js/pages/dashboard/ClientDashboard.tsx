@@ -375,7 +375,7 @@ export default function ClientDashboard() {
           <KpiCard
             label="Total Paid"
             value={<>₹{formatINRCompact(counts.total_paid)}</>}
-            iconClass="ri-money-rupee-circle-line"
+            iconClass="ri-coins-line"
             gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
             trend="up"
             change={`${counts.success_payments}`}
