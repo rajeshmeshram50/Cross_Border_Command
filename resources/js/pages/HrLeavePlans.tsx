@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem, Progress } from 'reactstrap';
 import { MasterFormStyles } from './master/masterFormKit';
 import '../../css/recruitment.css';
 import '../../css/leave.css';
@@ -803,47 +803,89 @@ function EmployeesTab({
               <th>JOB TITLE</th>
               <th>REPORTING TO</th>
               <th>LOCATION</th>
+              <th style={{ minWidth: 200 }}>LEAVE UTILIZATION</th>
+              <th style={{ textAlign: 'right' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {employees.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-5 text-muted">
+                <td colSpan={8} className="text-center py-5 text-muted">
                   <i className="ri-team-line d-block mb-2" style={{ fontSize: 32, opacity: 0.35 }} />
                   No employees match your search
                 </td>
               </tr>
-            ) : employees.map(e => (
-              <tr key={e.id}>
-                <td>
-                  <a href="#" className="lp-emp-name">{e.name}</a>
-                </td>
-                <td>
-                  <a href="#" className="lp-emp-link">{e.empNo}</a>
-                </td>
-                <td className="fs-13">{e.department}</td>
-                <td>
-                  <span className="rec-pill" style={{ background: e.jobTitleTone.bg, color: e.jobTitleTone.fg }}>
-                    {e.jobTitle}
-                  </span>
-                </td>
-                <td>
-                  <div className="d-flex align-items-center gap-2">
-                    <span
-                      className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold"
-                      style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${e.reportingTo.accent}, ${e.reportingTo.accent}cc)` }}
-                    >
-                      {e.reportingTo.initials}
+            ) : employees.map(e => {
+              // Deterministic per-employee utilization so bars don't reshuffle
+              // on every render. Backend will replace with real consumption.
+              let h = 0;
+              for (let i = 0; i < e.id.length; i++) h = (h * 31 + e.id.charCodeAt(i)) >>> 0;
+              const utilization = 25 + (h % 60);
+              const color = utilization >= 85 ? 'danger'
+                : utilization >= 65 ? 'warning'
+                : 'success';
+              return (
+                <tr key={e.id}>
+                  <td>
+                    <div className="d-flex align-items-center gap-2">
+                      <span
+                        className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                        style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}
+                      >
+                        {e.initials}
+                      </span>
+                      <a href="#" className="lp-emp-name">{e.name}</a>
+                    </div>
+                  </td>
+                  <td>
+                    <a href="#" className="lp-emp-link">{e.empNo}</a>
+                  </td>
+                  <td className="fs-13">{e.department}</td>
+                  <td>
+                    <span className="rec-pill" style={{ background: e.jobTitleTone.bg, color: e.jobTitleTone.fg }}>
+                      {e.jobTitle}
                     </span>
-                    <span className="fs-13">{e.reportingTo.name}</span>
-                  </div>
-                </td>
-                <td className="fs-13 text-muted">
-                  <i className="ri-map-pin-line me-1" />
-                  {e.location}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td>
+                    <div className="d-flex align-items-center gap-2">
+                      <span
+                        className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold"
+                        style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${e.reportingTo.accent}, ${e.reportingTo.accent}cc)` }}
+                      >
+                        {e.reportingTo.initials}
+                      </span>
+                      <span className="fs-13">{e.reportingTo.name}</span>
+                    </div>
+                  </td>
+                  <td className="fs-13 text-muted">
+                    <i className="ri-map-pin-line me-1" />
+                    {e.location}
+                  </td>
+                  <td>
+                    {/* Velzon's animated-progress + custom-progress + progress-label
+                        combo: thicker pill bar with the % label sitting above the
+                        fill via the embedded .label child. */}
+                    <Progress
+                      value={utilization}
+                      color={color}
+                      className="animated-progress custom-progress progress-label lp-util-bar"
+                    >
+                      <div className="label">{utilization}%</div>
+                    </Progress>
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <div className="d-flex justify-content-end gap-1">
+                      <button type="button" className="lp-row-action" aria-label="Edit assignment" title="Edit assignment">
+                        <i className="ri-pencil-line" />
+                      </button>
+                      <button type="button" className="lp-row-action lp-row-action-danger" aria-label="Remove from plan" title="Remove from plan">
+                        <i className="ri-user-unfollow-line" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -156,11 +156,42 @@ class AuthController extends Controller
             return response()->json(['message' => 'Current password is incorrect'], 422);
         }
 
+        // Prevent reusing the current password
+        if (Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'message' => 'New password cannot be the same as your current password.',
+            ], 422);
+        }
+
         $user->update([
             'password' => Hash::make($request->password),
         ]);
 
         return response()->json(['message' => 'Password changed successfully']);
+    }
+
+    /**
+     * Update the signed-in user's own profile (name, phone, designation).
+     * Email is intentionally NOT editable here — it's the login identifier
+     * and changing it requires re-verification, which we don't support yet.
+     */
+    public function updateProfile(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|min:2|max:255',
+            'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
+            'designation' => 'nullable|string|max:100',
+        ], [
+            'phone.regex' => 'Phone may only contain digits, spaces, +, -, ( and ) and must be 7–20 characters.',
+        ]);
+
+        $user = $request->user();
+        $user->update($request->only(['name', 'phone', 'designation']));
+
+        return response()->json([
+            'message' => 'Profile updated successfully',
+            'user' => $this->formatUser($user->fresh()->load(['client', 'branch'])),
+        ]);
     }
 
     public function logout(Request $request)

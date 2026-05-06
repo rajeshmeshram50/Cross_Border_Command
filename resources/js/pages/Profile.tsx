@@ -13,6 +13,12 @@ export default function Profile() {
   const [confirmPw, setConfirmPw] = useState('');
   const [showAllPerms, setShowAllPerms] = useState(false);
 
+  // ── Personal Information (editable) ──
+  const [profileName,        setProfileName]        = useState('');
+  const [profilePhone,       setProfilePhone]       = useState('');
+  const [profileDesignation, setProfileDesignation] = useState('');
+  const [savingProfile,      setSavingProfile]      = useState(false);
+
   // ── Branding section (logo + colors) — tenant users only ──
   const [brandPrimary,   setBrandPrimary]   = useState<string>('#4F46E5');
   const [brandSecondary, setBrandSecondary] = useState<string>('#10B981');
@@ -31,6 +37,14 @@ export default function Profile() {
     if (logo) setBrandLogoPreview(logo);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.primary_color, user?.secondary_color, user?.branch_logo, user?.client_logo]);
+
+  // Sync the personal-info form whenever /me reloads.
+  useEffect(() => {
+    if (!user) return;
+    setProfileName(user.name || '');
+    setProfilePhone(user.phone || '');
+    setProfileDesignation(user.designation || '');
+  }, [user?.name, user?.phone, user?.designation]);
 
   if (!user) return null;
 
@@ -99,6 +113,32 @@ export default function Profile() {
     return { level, text: levels[level], color: textColors[level], barColor: barColors[level] };
   };
   const strength = passwordStrength();
+
+  const handleSaveProfile = async () => {
+    const name = profileName.trim();
+    if (!name) { toast.warning('Required', 'Full name cannot be empty'); return; }
+    if (name.length < 2) { toast.warning('Too short', 'Full name must be at least 2 characters'); return; }
+    if (profilePhone && !/^[+\d\s\-()]{7,20}$/.test(profilePhone)) {
+      toast.warning('Invalid phone', 'Phone may only contain digits, spaces, +, -, ( and ) and must be 7–20 characters');
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      await api.post('/me/profile', {
+        name,
+        phone: profilePhone || null,
+        designation: profileDesignation || null,
+      });
+      await refresh();
+      toast.success('Updated', 'Your profile has been saved');
+    } catch (err: any) {
+      const data = err.response?.data;
+      const fieldErrs = data?.errors ? Object.values(data.errors).flat().join(' ') : '';
+      toast.error('Failed', fieldErrs || data?.message || 'Could not save profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
 
   const handleChangePassword = async () => {
     if (!currentPw) { toast.warning('Required', 'Enter your current password'); return; }
@@ -350,11 +390,11 @@ export default function Profile() {
     <Card className="pf-wrap h-100 mb-0" style={cardStyle}>
       <CardBody className="d-flex flex-column">
         <SectionHeader title="Personal Information" gradient={GRAD_PRIMARY} icon="ri-user-settings-line" />
-        <Form onSubmit={(e) => e.preventDefault()} className="d-flex flex-column flex-grow-1">
+        <Form onSubmit={(e) => { e.preventDefault(); handleSaveProfile(); }} className="d-flex flex-column flex-grow-1">
           <Row className="g-2">
             <Col md={6}>
               <Label className="pf-label">Full Name <span className="text-danger">*</span></Label>
-              <Input defaultValue={user.name} placeholder="Your full name" />
+              <Input value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Your full name" />
             </Col>
             <Col md={6}>
               <Label className="pf-label">
@@ -365,16 +405,17 @@ export default function Profile() {
             </Col>
             <Col md={6}>
               <Label className="pf-label">Phone</Label>
-              <Input defaultValue={user.phone || ''} placeholder="+91 98765 43210" />
+              <Input value={profilePhone} onChange={e => setProfilePhone(e.target.value)} placeholder="+91 98765 43210" />
             </Col>
             <Col md={6}>
               <Label className="pf-label">Designation</Label>
-              <Input defaultValue={user.designation || ''} placeholder="e.g., Manager" />
+              <Input value={profileDesignation} onChange={e => setProfileDesignation(e.target.value)} placeholder="e.g., Manager" />
             </Col>
           </Row>
           <div className="d-flex justify-content-end align-items-center mt-auto pt-3 flex-wrap gap-2">
             <button
-              type="button"
+              type="submit"
+              disabled={savingProfile}
               className="btn d-inline-flex align-items-center gap-1 rounded-pill fw-semibold"
               style={{
                 padding: '7px 20px',
@@ -384,9 +425,11 @@ export default function Profile() {
                 border: 'none',
                 boxShadow: '0 6px 18px rgba(64,81,137,0.45), inset 0 1px 0 rgba(255,255,255,0.22)',
                 transition: 'all .18s ease',
+                opacity: savingProfile ? 0.7 : 1,
                 minWidth: 150,
               }}
               onMouseEnter={e => {
+                if (savingProfile) return;
                 const el = e.currentTarget as HTMLButtonElement;
                 el.style.boxShadow = '0 10px 26px rgba(64,81,137,0.60), inset 0 1px 0 rgba(255,255,255,0.30)';
                 el.style.transform = 'translateY(-1px)';
@@ -397,8 +440,8 @@ export default function Profile() {
                 el.style.transform = 'translateY(0)';
               }}
             >
-              <i className="ri-save-line" />
-              Save Changes
+              {savingProfile ? <Spinner size="sm" /> : <i className="ri-save-line" />}
+              {savingProfile ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </Form>

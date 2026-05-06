@@ -81,11 +81,16 @@ class BranchController extends Controller
         }
 
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required', 'string', 'max:255',
+                Rule::unique('branches', 'name')
+                    ->where(fn ($q) => $q->where('client_id', $clientId))
+                    ->whereNull('deleted_at'),
+            ],
             'code' => 'nullable|string|max:50',
             'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'website' => 'nullable|string|max:500',
+            'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
+            'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
             'contact_person' => 'nullable|string|max:255',
             'branch_type' => 'nullable|string|max:50',
             'industry' => 'nullable|string|max:100',
@@ -112,7 +117,7 @@ class BranchController extends Controller
             // Branch user login credentials
             'user_name' => 'required|string|max:255',
             'user_email' => ['required', 'email', Rule::unique('users', 'email')->whereNull('deleted_at')],
-            'user_phone' => 'nullable|string|max:20',
+            'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'required|string|min:6',
             'user_status' => 'nullable|in:active,inactive,pending',
@@ -249,11 +254,17 @@ class BranchController extends Controller
             ->first();
 
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required', 'string', 'max:255',
+                Rule::unique('branches', 'name')
+                    ->ignore($branch->id)
+                    ->where(fn ($q) => $q->where('client_id', $branch->client_id))
+                    ->whereNull('deleted_at'),
+            ],
             'code' => 'nullable|string|max:50',
             'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'website' => 'nullable|string|max:500',
+            'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
+            'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
             'contact_person' => 'nullable|string|max:255',
             'branch_type' => 'nullable|string|max:50',
             'industry' => 'nullable|string|max:100',
@@ -278,7 +289,7 @@ class BranchController extends Controller
             'secondary_color' => 'nullable|string|max:7',
             'user_name' => 'nullable|string|max:255',
             'user_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($branchUser?->id)->whereNull('deleted_at')],
-            'user_phone' => 'nullable|string|max:20',
+            'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'nullable|string|min:6',
             'user_status' => 'nullable|in:active,inactive,pending',

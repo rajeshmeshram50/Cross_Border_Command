@@ -199,6 +199,13 @@ class ForgotPasswordController extends Controller
             return response()->json(['message' => 'User not found.'], 404);
         }
 
+        // Prevent reusing the current password
+        if (Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'message' => 'New password cannot be the same as your current password. Please choose a different password.',
+            ], 422);
+        }
+
         $user->update([
             'password' => Hash::make($request->password),
         ]);

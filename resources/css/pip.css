@@ -1,0 +1,1567 @@
+/* ================================================================== */
+/*  HR · Performance Improvement Plan (PIP)                              */
+/*  Scoped styles for HrPIP.tsx. All classes prefixed with .pip-*.        */
+/* ================================================================== */
+
+
+/* ── Hero header ─────────────────────────────────────────────────── */
+.pip-hero {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(245, 158, 11, 0.10) 0%, transparent 40%),
+    radial-gradient(circle at 100% 100%, rgba(124, 92, 252, 0.10) 0%, transparent 40%),
+    linear-gradient(180deg, #ffffff 0%, #faf8ff 100%);
+  border: 1px solid rgba(124, 92, 252, 0.15);
+}
+[data-bs-theme="dark"] .pip-hero {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+}
+.pip-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+}
+.pip-pill .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+  animation: pip-pulse 2s ease-in-out infinite;
+}
+.pip-pill-live { background: #d1fae5; color: #047857; }
+.pip-pill-warn { background: #fde8c4; color: #a4661c; }
+@keyframes pip-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18); }
+  50%      { box-shadow: 0 0 0 5px rgba(22, 163, 74, 0.05); }
+}
+
+/* "Initiate PIP" — orange CTA distinct from purple primary */
+.pip-btn-initiate {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 18px; border-radius: 10px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #fff; border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    0 6px 16px rgba(245, 158, 11, 0.35);
+  cursor: pointer; transition: all .18s ease;
+}
+.pip-btn-initiate:hover {
+  filter: brightness(1.05); transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    0 10px 22px rgba(245, 158, 11, 0.45);
+}
+.pip-btn-initiate:active { transform: translateY(0); }
+.pip-btn-initiate i { font-size: 16px; }
+
+.pip-count-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; margin-left: 4px;
+  border-radius: 999px;
+  background: #f3eeff; color: #5a3fd1;
+  font-size: 10.5px; font-weight: 800;
+}
+
+
+/* ── "NEW" pill on tabs ──────────────────────────────────────────── */
+.pip-tab-new {
+  display: inline-flex; align-items: center;
+  margin-left: 4px; padding: 1px 6px;
+  border-radius: 999px;
+  background: #ffe4e6; color: #be123c;
+  font-size: 9px; font-weight: 800; letter-spacing: 0.06em;
+}
+
+
+/* ── Segmented controls (Performance Intelligence / PIP Actions) ─── */
+.pip-segment, .pip-pivot {
+  display: inline-flex; gap: 4px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 12px;
+}
+[data-bs-theme="dark"] .pip-segment, [data-bs-theme="dark"] .pip-pivot {
+  background: var(--vz-card-bg); border-color: var(--vz-border-color);
+}
+.pip-segment-btn, .pip-pivot-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  background: transparent; border: none; border-radius: 8px;
+  color: var(--vz-secondary-color, #6b7280);
+  font-size: 12.5px; font-weight: 600;
+  cursor: pointer; transition: all .15s ease;
+}
+.pip-segment-btn:hover, .pip-pivot-btn:hover { color: #7c5cfc; }
+.pip-segment-btn.is-active, .pip-pivot-btn.is-active {
+  background: linear-gradient(135deg, #ece6ff, #ddd0ff);
+  color: #5a3fd1;
+  box-shadow: inset 0 0 0 1px rgba(124, 92, 252, 0.20);
+}
+[data-bs-theme="dark"] .pip-segment-btn.is-active,
+[data-bs-theme="dark"] .pip-pivot-btn.is-active {
+  background: rgba(124, 92, 252, 0.18); color: #c4b5fd;
+}
+.pip-live-dot {
+  display: inline-flex; align-items: center;
+  margin-left: 4px; padding: 1px 6px;
+  border-radius: 999px;
+  background: #16a34a; color: #fff;
+  font-size: 9px; font-weight: 800; letter-spacing: 0.06em;
+}
+
+
+/* ── Context pill (right side of toggles) ────────────────────────── */
+.pip-context-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 999px;
+  background: #ece6ff; color: #5a3fd1;
+  font-size: 11.5px; font-weight: 600;
+  border: 1px solid rgba(124, 92, 252, 0.20);
+}
+.pip-context-pill .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.20);
+}
+.pip-context-pill-soft {
+  background: #f3eeff; color: #5a3fd1;
+  border-color: transparent;
+}
+
+
+/* ── Generic card ────────────────────────────────────────────────── */
+.pip-card {
+  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  transition: box-shadow .18s ease, border-color .18s ease;
+}
+.pip-card:hover {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  border-color: rgba(124, 92, 252, 0.20);
+}
+[data-bs-theme="dark"] .pip-card {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .pip-card:hover { box-shadow: none; }
+.pip-card-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.pip-card-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 14px; font-weight: 700;
+  color: var(--vz-body-color, #111827);
+}
+.pip-card-title i { color: #7c5cfc; font-size: 16px; }
+.pip-card-sub {
+  font-size: 11.5px;
+  color: var(--vz-secondary-color, #6b7280);
+  margin-top: 2px;
+}
+
+
+/* ── KPI cards (PIP variants) ────────────────────────────────────
+   Builds on the shared .rec-kpi-card. Adds a soft inner glow that
+   matches the top accent strip, a refined icon block (tint background
+   + brand-colour glyph), and a smoother hover lift. */
+.pip-kpis .pip-kpi-card {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fff 0%, #fafbff 100%);
+  border-radius: 14px;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.pip-kpis .pip-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  border-color: rgba(124, 92, 252, 0.20);
+}
+[data-bs-theme="dark"] .pip-kpis .pip-kpi-card {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+  box-shadow: none;
+}
+
+/* Soft icon tile — gradient fill + brand-colour glyph, with an inner
+   highlight so it reads as a frosted plate rather than a flat block. */
+.pip-kpi-icon {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 4px 10px rgba(15, 23, 42, 0.05);
+}
+.pip-kpi-icon i { font-size: 18px; }
+
+/* Delta chip — sits below the number, never floats over the icon. */
+.pip-kpi-delta {
+  display: inline-flex; align-items: center; gap: 2px;
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+.pip-kpi-delta i { font-size: 13px; }
+
+
+/* ── Stat tiles (Productivity & Output) ──────────────────────────── */
+.pip-stat-tile {
+  padding: 14px 14px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.50),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: transform .18s ease;
+}
+.pip-stat-tile:hover { transform: translateY(-1px); }
+.pip-stat-num { font-size: 24px; font-weight: 800; line-height: 1; letter-spacing: -0.01em; }
+.pip-stat-label { font-size: 11px; font-weight: 700; margin-top: 6px; letter-spacing: 0.02em; }
+.pip-stat-sub { font-size: 10.5px; opacity: 0.75; margin-top: 2px; }
+
+
+/* ── Meter (TAT / Manager perf) ──────────────────────────────────── */
+/* Bars themselves use Bootstrap/Velzon's .progress + .animated-progress
+   + .custom-progress classes — only the surrounding card chrome lives
+   here so the meter stands out from the rest of the card body. */
+.pip-meter {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+}
+[data-bs-theme="dark"] .pip-meter {
+  background: rgba(245, 158, 11, 0.10);
+  border-color: rgba(245, 158, 11, 0.20);
+}
+
+
+/* ── Generic vertical list / row ────────────────────────────────── */
+.pip-list { display: flex; flex-direction: column; gap: 8px; }
+.pip-list-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--vz-border-color, #f1f5f9);
+  border-radius: 10px;
+  background: #fff;
+  transition: all .15s ease;
+}
+.pip-list-row:hover {
+  background: rgba(124, 92, 252, 0.03);
+  border-color: rgba(124, 92, 252, 0.20);
+}
+[data-bs-theme="dark"] .pip-list-row {
+  background: var(--vz-secondary-bg);
+  border-color: var(--vz-border-color);
+}
+
+
+/* ── Top Performer medals ────────────────────────────────────────── */
+.pip-medal {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%;
+  font-size: 11px; font-weight: 800;
+  flex-shrink: 0;
+}
+.pip-medal-1 { background: #fef3c7; color: #a4661c; }
+.pip-medal-2 { background: #e5e7eb; color: #6b7280; }
+.pip-medal-3 { background: #fde8c4; color: #a4661c; }
+.pip-medal-na { background: #f3f4f6; color: #6b7280; }
+
+
+/* ── Band pill (Top / At Risk / Healthy / status badges) ─────────── */
+.pip-band-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em;
+}
+.pip-band-top { background: #fef3c7; color: #a4661c; }
+
+
+/* ── Workload buckets ────────────────────────────────────────────── */
+.pip-bucket {
+  padding: 14px;
+  border-radius: 12px;
+  text-align: center;
+}
+.pip-bucket-num { font-size: 22px; font-weight: 800; line-height: 1; }
+.pip-bucket-label { font-size: 11px; font-weight: 700; margin-top: 4px; }
+.pip-bucket-over     { background: #fee2e2; color: #b91c1c; }
+.pip-bucket-balanced { background: #d1fae5; color: #047857; }
+.pip-bucket-under    { background: #dbeafe; color: #1e40af; }
+
+.pip-workload-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+}
+.pip-workload-meta { width: 160px; flex-shrink: 0; }
+
+
+/* ── Manager card ───────────────────────────────────────────────── */
+.pip-manager-card {
+  padding: 12px 14px;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 12px;
+  background: #fff;
+}
+[data-bs-theme="dark"] .pip-manager-card {
+  background: var(--vz-secondary-bg);
+  border-color: var(--vz-border-color);
+}
+
+
+/* ── Diagnosis card ─────────────────────────────────────────────── */
+.pip-info-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ede9fe; color: #5a3fd1;
+  border: 1px solid rgba(124, 92, 252, 0.18);
+  font-size: 12px; margin-bottom: 12px;
+}
+.pip-info-bar i { font-size: 16px; flex-shrink: 0; }
+
+.pip-diag-card {
+  padding: 12px 14px;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 12px;
+  background: #fff;
+}
+[data-bs-theme="dark"] .pip-diag-card {
+  background: var(--vz-secondary-bg);
+  border-color: var(--vz-border-color);
+}
+.pip-icon-btn {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: #f3f4f6; border: none;
+  color: var(--vz-secondary-color, #6b7280);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .15s ease;
+}
+.pip-icon-btn:hover { background: #e5e7eb; color: #7c5cfc; }
+.pip-icon-btn i { font-size: 14px; }
+
+.pip-signal-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; border-radius: 999px;
+  background: #fde8c4; color: #a4661c;
+  font-size: 10.5px; font-weight: 600;
+}
+
+
+/* ── Department cards ───────────────────────────────────────────── */
+.pip-dept-card {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 14px;
+  padding: 14px 16px 12px;
+  overflow: hidden;
+}
+[data-bs-theme="dark"] .pip-dept-card {
+  background: var(--vz-card-bg); border-color: var(--vz-border-color);
+}
+.pip-dept-strip {
+  position: absolute; left: 0; right: 0; top: 0;
+  height: 3px;
+}
+.pip-dept-score {
+  font-size: 32px; font-weight: 800; line-height: 1;
+}
+.pip-spark {
+  display: flex; align-items: flex-end; gap: 3px;
+  height: 28px;
+}
+.pip-spark-bar {
+  flex: 1;
+  border-radius: 2px;
+  min-height: 4px;
+}
+
+
+/* ── Department ranking ──────────────────────────────────────────── */
+/* Progress bar chrome comes from Velzon's .animated-progress +
+   .custom-progress; only the row layout, name column, value pill, and
+   the absolute "org benchmark" line live here. */
+.pip-rank-list { display: flex; flex-direction: column; gap: 8px; }
+.pip-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pip-rank-row .progress {
+  flex: 1;
+  min-width: 0;
+}
+.pip-rank-name {
+  width: 120px;
+  flex-shrink: 0;
+  font-size: 12.5px; font-weight: 600;
+  color: var(--vz-body-color, #111827);
+}
+.pip-rank-track-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.pip-rank-track-wrap .progress {
+  margin: 0;
+}
+.pip-rank-benchmark {
+  position: absolute; top: -2px; bottom: -2px;
+  width: 2px;
+  background: #9ca3af;
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 1;
+}
+.pip-rank-value {
+  font-size: 14px; font-weight: 800;
+  min-width: 32px; text-align: right;
+  flex-shrink: 0;
+}
+
+
+/* ── Risk matrix row ────────────────────────────────────────────── */
+.pip-risk-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--vz-border-color, #f1f5f9);
+}
+.pip-risk-row:last-child { border-bottom: none; }
+
+
+/* ── 6-month trend bars (Performance Trend Comparison) ──────────── */
+.pip-trend-list { display: flex; flex-direction: column; gap: 6px; }
+.pip-trend-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.pip-trend-name { font-size: 12.5px; font-weight: 500; }
+.pip-trend-bars {
+  display: flex; align-items: flex-end; gap: 3px;
+  height: 32px;
+}
+.pip-trend-bar {
+  flex: 1;
+  border-radius: 2px;
+  min-height: 4px;
+}
+.pip-trend-delta {
+  font-size: 12px; font-weight: 800;
+  min-width: 60px;
+  text-align: right;
+}
+
+
+/* ── PIP Actions: bar chart for PIP Trend ───────────────────────── */
+.pip-bar-chart {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 12px; height: 200px; padding: 10px 4px 0;
+}
+.pip-bar-col {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; height: 100%;
+}
+.pip-bar-stack {
+  width: 100%; max-width: 64px;
+  display: flex; flex-direction: column-reverse; gap: 2px;
+  flex-grow: 1; justify-content: flex-end;
+}
+.pip-bar-piece {
+  border-radius: 4px;
+  position: relative;
+  min-height: 8px;
+  transition: filter .15s ease;
+}
+.pip-bar-piece:hover { filter: brightness(1.1); }
+.pip-bar-cap {
+  position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; font-weight: 800;
+  color: #5a3fd1;
+}
+.pip-bar-month {
+  font-size: 11px; font-weight: 600;
+  color: var(--vz-secondary-color, #6b7280);
+}
+
+
+/* ── Risk distribution tiles + stack ─────────────────────────────── */
+.pip-risk-tile {
+  padding: 12px 14px;
+  border-radius: 10px;
+}
+.pip-risk-stack {
+  display: flex; height: 8px; border-radius: 999px;
+  overflow: hidden; margin-top: 4px;
+}
+.pip-risk-stack > span {
+  display: block; height: 100%;
+}
+
+
+/* ── Activity feed ──────────────────────────────────────────────── */
+.pip-activity { display: flex; flex-direction: column; gap: 8px; }
+.pip-activity-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f9fafb;
+  transition: background .15s ease;
+}
+.pip-activity-row:hover { background: #f3eeff; }
+[data-bs-theme="dark"] .pip-activity-row {
+  background: rgba(255, 255, 255, 0.03);
+}
+[data-bs-theme="dark"] .pip-activity-row:hover {
+  background: rgba(124, 92, 252, 0.12);
+}
+.pip-activity-icon {
+  width: 32px; height: 32px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.pip-activity-icon i { font-size: 15px; }
+
+
+/* ── Legend chips ───────────────────────────────────────────────── */
+.pip-legend {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--vz-secondary-color, #6b7280);
+}
+.pip-legend-dot {
+  display: inline-block; width: 9px; height: 9px;
+  border-radius: 50%;
+}
+
+
+/* ── Trend chart container ──────────────────────────────────────── */
+.pip-trend-chart {
+  width: 100%;
+  position: relative;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────
+   Initiate-PIP Wizard — 6-step modal
+   Indigo gradient header (premium / authoritative feel) with a
+   left-side stepper. Replaces the cream/orange mock with a proper
+   gradient + structured colour system.
+   ────────────────────────────────────────────────────────────────── */
+.pip-wiz-modal .modal-dialog {
+  max-width: min(1180px, 96vw);
+  margin: 1.2rem auto;
+}
+.pip-wiz-content {
+  border-radius: 18px !important;
+  overflow: hidden;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.22);
+}
+/* Fixed height so the modal stays the same size regardless of which step
+   is active — short steps no longer collapse the dialog. The main pane
+   has its own overflow-y so longer steps scroll inside. */
+.pip-wiz-shell {
+  display: flex; flex-direction: column;
+  height: min(700px, 88vh);
+  background: #fff;
+}
+[data-bs-theme="dark"] .pip-wiz-shell { background: var(--vz-card-bg); }
+
+/* Header — indigo gradient with glossy overlay (matches rec-form-modal-navy
+   aesthetic). Replaces the orange/cream mock. */
+.pip-wiz-header {
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+  color: #fff;
+}
+.pip-wiz-header::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(circle at 95% 10%, rgba(255,255,255,0.18), transparent 45%);
+  pointer-events: none;
+}
+.pip-wiz-header > * { position: relative; z-index: 1; }
+.pip-wiz-header-icon {
+  width: 42px; height: 42px; border-radius: 12px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    0 6px 14px rgba(245, 158, 11, 0.40);
+}
+.pip-wiz-header-icon i { font-size: 20px; color: #fff; }
+.pip-wiz-close {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.15); border: none; color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background .15s ease;
+}
+.pip-wiz-close:hover { background: rgba(255, 255, 255, 0.28); }
+.pip-wiz-close i { font-size: 17px; }
+
+/* Body — sidebar + main scrollable pane */
+.pip-wiz-body {
+  display: grid; grid-template-columns: 240px 1fr;
+  flex: 1; min-height: 0;
+  background: #f7f8fb;
+}
+[data-bs-theme="dark"] .pip-wiz-body { background: rgba(0,0,0,0.10); }
+@media (max-width: 900px) {
+  .pip-wiz-body { grid-template-columns: 1fr; }
+}
+
+/* Sidebar — vertical stepper */
+.pip-wiz-sidebar {
+  padding: 18px 12px;
+  background: #fff;
+  border-right: 1px solid var(--vz-border-color, #e5e7eb);
+  overflow-y: auto;
+}
+[data-bs-theme="dark"] .pip-wiz-sidebar {
+  background: var(--vz-card-bg); border-color: var(--vz-border-color);
+}
+
+.pip-wiz-step {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 12px;
+  width: 100%; padding: 10px 12px;
+  background: transparent; border: none; border-radius: 10px;
+  text-align: left;
+  cursor: pointer; transition: background .15s ease;
+  margin-bottom: 4px;
+}
+.pip-wiz-step:hover { background: rgba(124, 92, 252, 0.04); }
+.pip-wiz-step.is-active { background: rgba(124, 92, 252, 0.08); }
+[data-bs-theme="dark"] .pip-wiz-step.is-active { background: rgba(124, 92, 252, 0.18); }
+
+/* Step number badge */
+.pip-wiz-step-num {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800;
+  background: #f3f4f6; color: #9ca3af;
+  flex-shrink: 0;
+  z-index: 1; position: relative;
+  border: 2px solid #fff;
+  transition: all .2s ease;
+}
+.pip-wiz-step.is-active .pip-wiz-step-num {
+  background: linear-gradient(135deg, #7c5cfc, #5a3fd1);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.18), 0 4px 8px rgba(124, 92, 252, 0.30);
+}
+.pip-wiz-step.is-done .pip-wiz-step-num {
+  background: linear-gradient(135deg, #16a34a, #047857);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.16);
+}
+.pip-wiz-step.is-done .pip-wiz-step-num i { font-size: 13px; }
+
+/* Connecting dotted line */
+.pip-wiz-step-line {
+  position: absolute;
+  left: 25px; top: 38px; bottom: -4px;
+  width: 2px;
+  background: repeating-linear-gradient(to bottom, #d1d5db 0 4px, transparent 4px 8px);
+}
+.pip-wiz-step.is-done .pip-wiz-step-line {
+  background: linear-gradient(to bottom, #16a34a, #16a34a);
+}
+
+.pip-wiz-step-body {
+  display: flex; flex-direction: column;
+  min-width: 0;
+  padding-top: 2px;
+}
+.pip-wiz-step-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600;
+  color: var(--vz-body-color, #111827);
+}
+.pip-wiz-step.is-active .pip-wiz-step-label,
+.pip-wiz-step.is-done   .pip-wiz-step-label { color: #5a3fd1; }
+.pip-wiz-step.is-done   .pip-wiz-step-label { color: #047857; }
+.pip-wiz-step-label i { font-size: 14px; }
+.pip-wiz-step-status {
+  font-size: 11px;
+  color: var(--vz-secondary-color, #6b7280);
+  margin-top: 2px;
+}
+.pip-wiz-step.is-active .pip-wiz-step-status { color: #7c5cfc; font-weight: 700; }
+.pip-wiz-step.is-done   .pip-wiz-step-status { color: #047857; font-weight: 700; }
+
+/* Main pane */
+.pip-wiz-main {
+  padding: 22px 26px;
+  overflow-y: auto;
+}
+.pip-wiz-step-pane > * { margin-bottom: 0; }
+.pip-wiz-step-title {
+  font-size: 11px; font-weight: 800;
+  color: var(--vz-secondary-color, #6b7280);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+.pip-wiz-help-label {
+  font-size: 10.5px; font-weight: 700;
+  color: var(--vz-secondary-color, #6b7280);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.pip-wiz-tip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #ede9fe; color: #5a3fd1;
+  border: 1px solid rgba(124, 92, 252, 0.20);
+  border-left: 4px solid #7c5cfc;
+  font-size: 12.5px;
+  margin-bottom: 14px;
+}
+.pip-wiz-tip i { font-size: 16px; flex-shrink: 0; }
+
+/* Footer */
+.pip-wiz-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 12px 22px;
+  background: linear-gradient(180deg, #fbfaff 0%, #ffffff 100%);
+  border-top: 1px solid var(--vz-border-color, #e5e7eb);
+}
+[data-bs-theme="dark"] .pip-wiz-footer {
+  background: var(--vz-card-bg); border-color: var(--vz-border-color);
+}
+
+.pip-wiz-next {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 9px 18px; border-radius: 10px;
+  background: linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%);
+  color: #fff; border: none;
+  font-size: 13px; font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 6px 14px rgba(124, 92, 252, 0.30);
+  cursor: pointer; transition: all .18s ease;
+}
+.pip-wiz-next:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.pip-wiz-submit {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 9px 22px; border-radius: 10px;
+  background: linear-gradient(135deg, #16a34a 0%, #047857 100%);
+  color: #fff; border: none;
+  font-size: 13px; font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 6px 16px rgba(22, 163, 74, 0.35);
+  cursor: pointer; transition: all .18s ease;
+}
+.pip-wiz-submit:hover { transform: translateY(-1px); filter: brightness(1.05); }
+
+/* Quick template chips (Step 1) — kept compact so they read as a row of
+   small auto-fill suggestions, not full-size buttons. */
+.pip-tpl-chip {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  border: 1.5px solid transparent;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.01em;
+  cursor: pointer; transition: all .15s ease;
+}
+.pip-tpl-chip:hover { transform: translateY(-1px); }
+
+/* Detected-issue chips (Step 2) */
+.pip-issue-chip {
+  display: inline-flex; align-items: center;
+  padding: 6px 12px; border-radius: 999px;
+  background: #f3f4f6; color: var(--vz-body-color, #374151);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all .15s ease;
+}
+.pip-issue-chip:hover { border-color: #a78bfa; }
+.pip-issue-chip.is-active {
+  background: #1e1b4b; color: #fff;
+  border-color: #1e1b4b;
+}
+[data-bs-theme="dark"] .pip-issue-chip {
+  background: var(--vz-secondary-bg); border-color: var(--vz-border-color);
+}
+
+/* Evidence cards (Step 2) */
+.pip-evidence-stack { display: flex; flex-direction: column; gap: 8px; }
+.pip-evidence-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid;
+  border-left-width: 4px;
+}
+.pip-evidence-card i { font-size: 18px; flex-shrink: 0; }
+.pip-evidence-card-blue  { background: #dbeafe; border-color: #bfdbfe; border-left-color: #1e40af; color: #1e40af; }
+.pip-evidence-card-red   { background: #fee2e2; border-color: #fecaca; border-left-color: #b91c1c; color: #b91c1c; }
+.pip-evidence-card-amber { background: #fef3c7; border-color: #fde68a; border-left-color: #92400e; color: #92400e; }
+
+/* Attach evidence drop zone */
+.pip-attach-zone {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 16px;
+  border: 1.5px dashed var(--vz-border-color, #d1d5db);
+  border-radius: 10px;
+  background: #f9fafb;
+  color: var(--vz-secondary-color, #6b7280);
+  font-size: 12.5px;
+  cursor: pointer; transition: all .15s ease;
+}
+.pip-attach-zone:hover { border-color: #a78bfa; background: rgba(124, 92, 252, 0.04); color: #5a3fd1; }
+.pip-attach-zone i { font-size: 16px; }
+
+/* Goals (Step 3) */
+.pip-goals { display: flex; flex-direction: column; gap: 8px; }
+.pip-goal-row {
+  display: flex; align-items: center; gap: 10px;
+}
+.pip-goal-num {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #ede9fe; color: #5a3fd1;
+  font-size: 12px; font-weight: 800;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(124, 92, 252, 0.30);
+}
+
+/* Milestones (Step 4) */
+.pip-milestones { display: flex; flex-direction: column; gap: 8px; }
+.pip-milestone-row {
+  display: flex; align-items: center; gap: 10px;
+}
+.pip-milestone-week {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff;
+  font-size: 11px; font-weight: 800;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.4), 0 2px 6px rgba(15, 23, 42, 0.10);
+}
+
+/* Action plan cards (Step 4) */
+.pip-action-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer; transition: all .15s ease;
+  margin-bottom: 0;
+}
+.pip-action-card:hover { border-color: #a78bfa; }
+.pip-action-card.is-active {
+  border-color: #7c5cfc;
+  background: rgba(124, 92, 252, 0.05);
+}
+.pip-action-card input[type="checkbox"] { margin-top: 2px; accent-color: #7c5cfc; }
+[data-bs-theme="dark"] .pip-action-card {
+  background: var(--vz-secondary-bg); border-color: var(--vz-border-color);
+}
+
+/* Step 5 history tiles + week cards now reuse the shared
+   .pip-summary-card pattern (KPI-card recipe) so the wizard reads
+   consistently with the rest of the dashboard. */
+
+.pip-success-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #d1fae5; color: #047857;
+  border: 1px solid #a7f3d0;
+  border-left: 4px solid #16a34a;
+  font-size: 12.5px;
+}
+.pip-success-banner i { font-size: 16px; flex-shrink: 0; }
+
+/* Step 6 — Approval summary cards.
+   Same shape as the page-level KPI tiles: top accent strip, label /
+   value text on the left, gradient icon block on the right, soft hover
+   lift. Keeps the wizard visually consistent with the rest of the PIP
+   dashboard. */
+.pip-summary-card {
+  position: relative;
+  display: flex; align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #fff 0%, #fafbff 100%);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  min-height: 84px;
+}
+.pip-summary-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  border-color: rgba(124, 92, 252, 0.20);
+}
+[data-bs-theme="dark"] .pip-summary-card {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+  box-shadow: none;
+}
+/* Default — strip across the TOP edge (history tiles, Step 6 summary
+   cards). The .pip-summary-card--side modifier flips the strip to a
+   vertical spine on the LEFT so a second row of cards reads as visually
+   distinct from the first (used by the Week 1-4 cards). */
+.pip-summary-strip {
+  position: absolute; left: 0; right: 0; top: 0;
+  height: 3px;
+}
+/* --side flips the strip from top to a left vertical spine.
+   --compact shrinks padding + type for secondary timeline tiles.
+   The two are independent so the Week cards stack both, while Step 6
+   summary cards use only --side and keep their KPI-card heft. */
+.pip-summary-card--side {
+  padding-left: 20px;
+}
+.pip-summary-card--side .pip-summary-strip {
+  left: 0; top: 0; bottom: 0; right: auto;
+  width: 4px;
+  height: auto;
+}
+.pip-summary-card--compact {
+  padding: 10px 12px 10px 16px;
+  min-height: 64px;
+  gap: 8px;
+}
+.pip-summary-card--compact .pip-summary-label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+.pip-summary-card--compact .pip-summary-value {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 2px;
+  letter-spacing: 0;
+}
+.pip-summary-card--compact .pip-summary-icon {
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  font-size: 11px;
+}
+.pip-summary-card--compact .pip-summary-icon i { font-size: 14px; }
+.pip-summary-text {
+  display: flex; flex-direction: column;
+  flex: 1; min-width: 0;
+  margin-top: 2px;
+}
+.pip-summary-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vz-secondary-color, #6b7280);
+}
+.pip-summary-value {
+  font-size: 16px; font-weight: 800;
+  margin-top: 4px;
+  letter-spacing: -0.01em;
+}
+.pip-summary-icon {
+  width: 38px; height: 38px; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 4px 10px rgba(15, 23, 42, 0.05);
+}
+.pip-summary-icon i { font-size: 18px; }
+
+.pip-risk-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; margin-bottom: 12px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-left: 4px solid #f59e0b;
+  border-radius: 10px;
+  color: #92400e;
+}
+.pip-risk-banner .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.20);
+  flex-shrink: 0;
+}
+
+.pip-mca-card {
+  padding: 16px;
+  background: #f5f3ff;
+  border: 1px solid rgba(124, 92, 252, 0.20);
+  border-left: 4px solid #7c5cfc;
+  border-radius: 12px;
+}
+[data-bs-theme="dark"] .pip-mca-card {
+  background: rgba(124, 92, 252, 0.10); border-color: rgba(124, 92, 252, 0.30);
+}
+.pip-mca-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 700;
+  color: #5a3fd1;
+  margin-bottom: 12px;
+}
+/* MCA chain now uses Bootstrap "Progress with Steps" — thin .progress
+   line with 3 round step buttons stacked on top via position:absolute.
+   The legacy chain/avatar/arrow rules were dropped; only this small
+   wrapper remains so the icon glyphs sit centered inside the buttons. */
+.pip-mca-progress .btn i { font-size: 14px; line-height: 1; }
+.pip-mca-progress .btn.btn-light { color: #6b7280; }
+
+
+/* ── Active PIPs table (PIP Actions tab) ─────────────────────────── */
+.pip-active-table-wrap { overflow-x: auto; }
+.pip-active-table {
+  width: 100%; min-width: 1000px;
+  border-collapse: separate; border-spacing: 0;
+  font-size: 13px;
+}
+.pip-active-table thead th {
+  padding: 10px 14px; text-align: left;
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #5a3fd1;
+  background: #f3eeff;
+  border-top: 1px solid rgba(124, 92, 252, 0.15);
+  border-bottom: 1px solid rgba(124, 92, 252, 0.15);
+  white-space: nowrap;
+}
+.pip-active-table thead th:first-child { border-radius: 8px 0 0 0; }
+.pip-active-table thead th:last-child  { border-radius: 0 8px 0 0; }
+[data-bs-theme="dark"] .pip-active-table thead th {
+  background: rgba(124, 92, 252, 0.10);
+}
+.pip-active-table tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--vz-border-color, #f1f5f9);
+  vertical-align: middle;
+}
+.pip-active-table tbody tr:hover { background: rgba(124, 92, 252, 0.03); }
+
+.pip-id-pill {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  background: #ece6ff; color: #5a3fd1;
+  font-size: 11.5px; font-weight: 800; letter-spacing: 0.02em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────
+   Score Engine view — mostly reuses .pip-card / .pip-summary-card /
+   <Progress> classes. Only the navy formula hero, the score circle,
+   the tiny per-row trend bars and the new "headed card" pattern need
+   their own styles.
+   ────────────────────────────────────────────────────────────────── */
+
+/* "Headed" card — soft gradient header band + thin top strip + rounded
+   icon tile + white body. Mirrors the IGC profile-page reference (each
+   section of an employee profile carries its own colour). The white
+   body separates from the gradient head with a 1px divider. */
+.pip-headed-card {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+  transition: box-shadow .18s ease, border-color .18s ease;
+}
+.pip-headed-card:hover {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  border-color: rgba(124, 92, 252, 0.18);
+}
+[data-bs-theme="dark"] .pip-headed-card {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+  box-shadow: none;
+}
+.pip-headed-card-strip {
+  position: absolute; left: 0; right: 0; top: 0;
+  height: 3px;
+  z-index: 1;
+}
+.pip-headed-card-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--vz-border-color, #e5e7eb);
+}
+[data-bs-theme="dark"] .pip-headed-card-head {
+  border-bottom-color: var(--vz-border-color);
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+.pip-headed-card-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 2px 4px rgba(15, 23, 42, 0.05);
+}
+.pip-headed-card-icon i { font-size: 17px; }
+.pip-headed-card-title {
+  font-size: 14px; font-weight: 700;
+  color: var(--vz-body-color, #111827);
+  line-height: 1.2;
+}
+.pip-headed-card-sub {
+  font-size: 11.5px;
+  color: var(--vz-secondary-color, #6b7280);
+  margin-top: 2px;
+}
+.pip-headed-card-body {
+  padding: 16px 18px;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────
+   Watchlist view
+   Reuses .pip-card / Progress for most chrome — only the zone KPI
+   tiles, employee score box, perf-target bar, mini distribution bars
+   and the signal-log rows need new styles.
+   ────────────────────────────────────────────────────────────────── */
+
+/* Zone KPI tiles — compact KPI counters. Smaller numbers/labels than the
+   first pass so the row reads as a quick partition of the org, not as
+   primary hero content. */
+.pip-watch-zone-card {
+  position: relative;
+  background: linear-gradient(180deg, #fff 0%, #fafbff 100%);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 12px;
+  padding: 12px 14px 12px 14px;
+  overflow: hidden;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+.pip-watch-zone-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.06);
+}
+[data-bs-theme="dark"] .pip-watch-zone-card {
+  background: var(--vz-card-bg); border-color: var(--vz-border-color);
+}
+.pip-watch-zone-strip {
+  position: absolute; left: 0; right: 0; top: 0;
+  height: 3px;
+}
+.pip-watch-zone-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+}
+.pip-watch-zone-range {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pip-watch-zone-num {
+  font-size: 22px; font-weight: 700; line-height: 1.1;
+  letter-spacing: -0.01em;
+  margin-top: 4px;
+}
+.pip-watch-zone-label {
+  font-size: 11.5px; font-weight: 600;
+  color: var(--vz-secondary-color, #6b7280);
+  letter-spacing: 0.01em;
+}
+
+/* Org snapshot + employee cards both reuse the .pip-headed-card chrome
+   from the Score Engine. Only the per-row label/strong layout for the
+   org snapshot stays here. */
+.pip-watch-org-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12.5px;
+  padding: 3px 0;
+}
+
+/* Score box on the right of each emp card */
+.pip-watch-score-box {
+  text-align: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.pip-watch-score-num {
+  font-size: 22px; font-weight: 800; line-height: 1;
+}
+.pip-watch-score-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  opacity: 0.85; margin-top: 2px;
+}
+.pip-watch-score-delta {
+  font-size: 11px; font-weight: 700; margin-top: 2px;
+}
+
+/* Performance Score bar with absolute "Target 85" tick */
+.pip-watch-perf-bar-wrap {
+  position: relative;
+}
+.pip-watch-perf-target {
+  position: absolute; top: -2px; bottom: -2px;
+  width: 2px;
+  background: #6b7280;
+  border-radius: 1px;
+  pointer-events: none;
+}
+
+/* Mini distribution bars beneath the perf bar */
+.pip-watch-dist {
+  display: flex; align-items: flex-end; gap: 4px;
+  height: 28px;
+}
+.pip-watch-dist-bar {
+  flex: 1;
+  border-radius: 3px;
+  min-height: 6px;
+  opacity: 0.55;
+}
+.pip-watch-dist-bar:last-child { opacity: 1; }
+
+/* Role KPI rows */
+.pip-watch-kpi-row { padding: 2px 0; }
+
+/* Signal log rows */
+.pip-watch-signals { display: flex; flex-direction: column; gap: 4px; }
+.pip-watch-signal-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 0;
+}
+.pip-watch-signal-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Footer action row */
+.pip-watch-foot {
+  display: flex; align-items: center; gap: 6px;
+  padding-top: 10px; flex-wrap: wrap;
+  border-top: 1px solid var(--vz-border-color, #f1f5f9);
+}
+
+
+/* ──────────────────────────────────────────────────────────────────
+   PIP's Status view — Active/Completed tabs + status table
+   Reuses .pip-watch-zone-card for the 5 KPIs and .pip-active-table
+   for the table chrome. Only the Active/Completed tab pills, status
+   trigger tags, MCA 3-dot indicator, and the per-row left strip need
+   new styles.
+   ────────────────────────────────────────────────────────────────── */
+
+/* Active / Completed tab pills */
+.pip-status-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  color: var(--vz-secondary-color, #6b7280);
+  font-size: 12.5px; font-weight: 600;
+  cursor: pointer; transition: all .15s ease;
+}
+.pip-status-tab:hover { border-color: #a78bfa; color: #7c5cfc; }
+.pip-status-tab.is-active {
+  background: #1e1b4b; color: #fff; border-color: #1e1b4b;
+  box-shadow: 0 4px 10px rgba(30, 27, 75, 0.20);
+}
+.pip-status-tab i { font-size: 14px; }
+.pip-status-tab-count {
+  display: inline-flex; align-items: center;
+  min-width: 22px; height: 20px; padding: 0 6px;
+  border-radius: 999px;
+  background: #ece6ff; color: #5a3fd1;
+  font-size: 10.5px; font-weight: 800;
+}
+.pip-status-tab.is-active .pip-status-tab-count {
+  background: rgba(255, 255, 255, 0.18); color: #fff;
+}
+
+/* Trigger sub-tags inside the table TRIGGER cell */
+.pip-status-tag {
+  display: inline-flex; align-items: center;
+  padding: 1px 8px; border-radius: 999px;
+  background: #f3f4f6; color: var(--vz-secondary-color, #6b7280);
+  font-size: 10.5px; font-weight: 600;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+}
+[data-bs-theme="dark"] .pip-status-tag {
+  background: var(--vz-secondary-bg); border-color: var(--vz-border-color);
+}
+
+/* MCA 3-dot indicator (Maker → Checker → Approver) */
+.pip-mca-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #e5e7eb;
+  position: relative;
+}
+.pip-mca-dot + .pip-mca-dot::before {
+  content: '';
+  position: absolute;
+  left: -10px; top: 50%; transform: translateY(-50%);
+  width: 10px; height: 1px;
+  background: #e5e7eb;
+}
+.pip-mca-dot.is-on + .pip-mca-dot.is-on::before {
+  background: #7c5cfc;
+}
+.pip-mca-dot.is-on {
+  box-shadow: 0 0 0 2px rgba(124, 92, 252, 0.18);
+}
+
+/* Status table — rows get a left-edge brand-colored strip via the
+   --row-tone CSS variable so the page reads like the Watchlist cards.
+   The strip is painted with a left border so it doesn't disturb the
+   table's column rhythm. */
+.pip-status-table tbody tr.pip-status-row td:first-child {
+  position: relative;
+}
+.pip-status-table tbody tr.pip-status-row td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--row-tone, #7c5cfc);
+}
+.pip-formula-hero {
+  position: relative;
+  display: grid; grid-template-columns: 1fr 360px;
+  gap: 24px;
+  padding: 22px 26px;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 10% 20%, rgba(124, 92, 252, 0.30), transparent 50%),
+    radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.20), transparent 55%),
+    linear-gradient(92deg, #010103 0%, #292679 50%, #2920a1 100%);
+  color: #fff;
+  overflow: hidden;
+}
+/* Decorative bubble blobs floating on the navy strip — pure CSS, no
+   markup. The two layers drift slightly via a slow loop animation so
+   the hero feels alive without distracting from the formula. */
+.pip-formula-hero::before,
+.pip-formula-hero::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(0.5px);
+  z-index: 0;
+}
+.pip-formula-hero::before {
+  width: 220px; height: 220px;
+  left: -40px; top: 60%;
+  background: radial-gradient(circle at 30% 30%, rgba(167, 139, 250, 0.35), rgba(124, 92, 252, 0.10) 60%, transparent 75%);
+  animation: pip-bubble-a 12s ease-in-out infinite alternate;
+}
+.pip-formula-hero::after {
+  width: 140px; height: 140px;
+  left: 38%; top: -40px;
+  background: radial-gradient(circle at 40% 40%, rgba(196, 181, 253, 0.28), rgba(124, 92, 252, 0.08) 65%, transparent 80%);
+  animation: pip-bubble-b 14s ease-in-out infinite alternate;
+}
+.pip-formula-hero > * { position: relative; z-index: 1; }
+
+@keyframes pip-bubble-a {
+  0%   { transform: translate(0, 0)      scale(1); }
+  100% { transform: translate(30px, -20px) scale(1.08); }
+}
+@keyframes pip-bubble-b {
+  0%   { transform: translate(0, 0)      scale(1); }
+  100% { transform: translate(-25px, 28px) scale(1.12); }
+}
+@media (max-width: 900px) {
+  .pip-formula-hero { grid-template-columns: 1fr; }
+}
+.pip-formula-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.10em;
+  color: rgba(255, 255, 255, 0.65);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+.pip-formula-row {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 8px;
+  font-weight: 800;
+}
+.pip-formula-final {
+  font-size: 28px;
+  background: linear-gradient(90deg, #c4b5fd, #ffffff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.pip-formula-pill {
+  font-size: 22px; font-weight: 800;
+  padding: 4px 14px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.pip-formula-pill-solid {
+  color: #fff;
+  border: none;
+  font-size: 18px;
+}
+.pip-formula-x, .pip-formula-plus {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 22px; font-weight: 700;
+}
+.pip-formula-sub {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+  margin-top: 12px;
+}
+
+.pip-formula-example {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 12px;
+  padding: 14px 16px;
+  align-self: center;
+}
+.pip-formula-example-label {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.10em;
+  color: rgba(255, 255, 255, 0.60);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.pip-formula-example-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 5px 0;
+}
+.pip-formula-example-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+  margin: 6px 0;
+}
+
+/* Common Score / Calculation Steps row helpers */
+.pip-score-part {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background .15s ease;
+}
+.pip-score-part:hover { background: rgba(124, 92, 252, 0.04); }
+.pip-score-weight {
+  width: 38px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 8px;
+  font-size: 11px; font-weight: 800;
+  flex-shrink: 0;
+}
+
+.pip-role-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px;
+}
+.pip-role-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pip-calc-step {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: background .15s ease;
+}
+.pip-calc-step:hover { background: rgba(245, 158, 11, 0.04); }
+.pip-calc-num {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800;
+  flex-shrink: 0;
+}
+.pip-calc-badge {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.02em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  flex-shrink: 0;
+}
+
+/* Score Zone Model spectrum bar */
+.pip-zone-spectrum {
+  height: 6px; border-radius: 999px;
+  background: linear-gradient(90deg, #dc2626 0%, #f97316 25%, #f59e0b 60%, #16a34a 100%);
+}
+.pip-zone-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px 0;
+}
+.pip-zone-tile {
+  min-width: 90px;
+  padding: 8px 12px; border-radius: 8px;
+  text-align: left;
+  flex-shrink: 0;
+}
+
+/* Deduction row — Progress bar handles the actual bar; we just stack
+   the label/value above it. */
+.pip-deduction-row {
+  padding: 4px 0;
+}
+
+/* Score-engine filter chips above the All Employee Scores table */
+.pip-score-filter {
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  color: var(--vz-secondary-color, #6b7280);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all .15s ease;
+}
+.pip-score-filter:hover { border-color: #a78bfa; color: #7c5cfc; }
+.pip-score-filter.is-active {
+  background: #1e1b4b; color: #fff; border-color: #1e1b4b;
+}
+
+/* Score circle for the per-employee row */
+.pip-score-circle {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 2px solid;
+  font-size: 14px; font-weight: 800;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* Tiny inline trend bars */
+.pip-mini-trend {
+  display: inline-flex; align-items: flex-end; gap: 2px;
+  height: 24px;
+}
+.pip-mini-trend-bar {
+  width: 4px;
+  border-radius: 2px;
+  min-height: 3px;
+}

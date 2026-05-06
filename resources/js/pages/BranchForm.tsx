@@ -33,6 +33,7 @@ const FIELD_LABELS: Record<string, string> = {
   name: 'Branch Name',
   email: 'Branch Email',
   phone: 'Branch Phone',
+  website: 'Website',
   pincode: 'Pincode',
   gst_number: 'GST Number',
   pan_number: 'PAN Number',
@@ -43,6 +44,80 @@ const FIELD_LABELS: Record<string, string> = {
   user_password: 'Password',
   user_password_confirmation: 'Confirm Password',
 };
+
+// Country-specific phone rules. `digits` = required count of NATIONAL digits
+// (excludes country code). `cc` = country code (digits, no +). `mobilePrefix`
+// is a regex matched against the first national digit(s) to catch obviously
+// wrong numbers (e.g. India mobiles must start with 6-9).
+type PhoneRule = { country: string; cc: string; digits: number | [number, number]; mobilePrefix?: RegExp; example: string };
+const PHONE_RULES: PhoneRule[] = [
+  { country: 'India',          cc: '91',  digits: 10,        mobilePrefix: /^[6-9]/, example: '+91 9876543210' },
+  { country: 'United States',  cc: '1',   digits: 10,        mobilePrefix: /^[2-9]/, example: '+1 2125551234' },
+  { country: 'Canada',         cc: '1',   digits: 10,        mobilePrefix: /^[2-9]/, example: '+1 4165551234' },
+  { country: 'United Kingdom', cc: '44',  digits: 10,                                example: '+44 7911123456' },
+  { country: 'UAE',            cc: '971', digits: 9,                                 example: '+971 501234567' },
+  { country: 'Singapore',      cc: '65',  digits: 8,                                 example: '+65 81234567' },
+  { country: 'Australia',      cc: '61',  digits: 9,                                 example: '+61 412345678' },
+  { country: 'Germany',        cc: '49',  digits: [10, 11],                          example: '+49 15123456789' },
+  { country: 'France',         cc: '33',  digits: 9,                                 example: '+33 612345678' },
+  { country: 'China',          cc: '86',  digits: 11,                                example: '+86 13812345678' },
+  { country: 'Japan',          cc: '81',  digits: 10,                                example: '+81 9012345678' },
+];
+
+// Validate a phone number against either a known country's rule or a generic
+// E.164 fallback (7–15 digits). Returns an error string, or '' if valid.
+function validatePhone(raw: string, country: string, label: string): string {
+  if (!/^[+\d\s\-()]+$/.test(raw)) {
+    return `${label} may only contain digits, spaces, +, -, ( and )`;
+  }
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) {
+    return `${label} must be 7–15 digits (international E.164 standard)`;
+  }
+  const rule = PHONE_RULES.find(r => r.country === country);
+  if (!rule) return ''; // unknown country → generic check is enough
+
+  // Strip the country code if present (handles +91…, 91…, or bare national)
+  let national = digits;
+  if (national.startsWith(rule.cc) && national.length > (Array.isArray(rule.digits) ? rule.digits[0] : rule.digits)) {
+    national = national.slice(rule.cc.length);
+  }
+
+  const [min, max] = Array.isArray(rule.digits) ? rule.digits : [rule.digits, rule.digits];
+  if (national.length < min || national.length > max) {
+    const want = min === max ? `${min}` : `${min}–${max}`;
+    return `${rule.country} ${label.toLowerCase()} must be ${want} digits. Example: ${rule.example}`;
+  }
+  if (rule.mobilePrefix && !rule.mobilePrefix.test(national)) {
+    return `Invalid ${rule.country} number. Example: ${rule.example}`;
+  }
+  return '';
+}
+
+// Website / URL validator. Accepts:
+//   www.example.com         → ok
+//   example.com             → ok
+//   https://www.example.com → ok
+//   http://sub.example.co.in/path?x=1 → ok
+// Rejects bare words, missing TLD, spaces, or unsupported schemes.
+function validateWebsite(raw: string): string {
+  const v = raw.trim();
+  if (/\s/.test(v)) return 'Website cannot contain spaces';
+  if (v.length > 500) return 'Website is too long (max 500 characters)';
+
+  // Strip optional scheme for the domain check
+  const stripped = v.replace(/^https?:\/\//i, '');
+  if (/^(ftp|file|javascript|mailto):/i.test(v)) {
+    return 'Website must start with http:// or https://';
+  }
+
+  // domain.tld with optional subdomain, optional path/query/hash. TLD ≥ 2 chars.
+  const re = /^(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i;
+  if (!re.test(stripped)) {
+    return 'Enter a valid website like www.example.com or https://example.com';
+  }
+  return '';
+}
 
 function validateBranchForm(form: FormState, isEdit: boolean): Record<string, string> {
   const e: Record<string, string> = {};
@@ -65,16 +140,16 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
     }
   }
 
-  // ── Branch phone ── (10 digits, with optional +91)
+  // ── Branch phone ── (country-aware)
   if (form.phone) {
-    const digits = form.phone.replace(/\D/g, '');
-    if (digits.length < 10) {
-      e.phone = 'Phone must contain at least 10 digits';
-    } else if (digits.length > 13) {
-      e.phone = `Phone has ${digits.length} digits — max 13 (with country code)`;
-    } else if (!/^[+\d\s\-()]+$/.test(form.phone)) {
-      e.phone = 'Phone may only contain digits, spaces, +, -, ( and )';
-    }
+    const err = validatePhone(form.phone, form.country, 'Phone');
+    if (err) e.phone = err;
+  }
+
+  // ── Website ──
+  if (form.website) {
+    const err = validateWebsite(form.website);
+    if (err) e.website = err;
   }
 
   // ── Pincode ── (Indian PIN = 6 digits)
@@ -143,10 +218,8 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
     }
 
     if (form.user_phone) {
-      const ud = form.user_phone.replace(/\D/g, '');
-      if (ud.length < 10 || ud.length > 13) {
-        e.user_phone = 'Admin phone must be 10–13 digits';
-      }
+      const err = validatePhone(form.user_phone, form.country, 'Admin phone');
+      if (err) e.user_phone = err;
     }
   } else if (form.user_password && form.user_password.length < 6) {
     e.user_password = 'New password must be at least 6 characters';
@@ -1039,8 +1112,11 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Website</Lbl>
-                <Input style={css.input} type="url" value={form.website} onChange={e => set('website', e.target.value)}
-                  placeholder="www.branch.com" />
+                <Input name="website" style={css.input} type="url" value={form.website}
+                  invalid={fieldInvalid('website')}
+                  onChange={e => set('website', e.target.value)} onBlur={() => touch('website')}
+                  placeholder="www.branch.com or https://branch.com" />
+                <FormFeedback style={css.formFeedback}>{fieldError('website')}</FormFeedback>
               </Col>
               <Col md={8}>
                 <Lbl>Description</Lbl>
@@ -1225,9 +1301,11 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Phone</Lbl>
-                <Input style={css.input} type="tel" value={form.user_phone}
-                  onChange={e => set('user_phone', e.target.value)}
+                <Input name="user_phone" style={css.input} type="tel" value={form.user_phone}
+                  invalid={fieldInvalid('user_phone')}
+                  onChange={e => set('user_phone', e.target.value)} onBlur={() => touch('user_phone')}
                   placeholder="+91 9876543210" />
+                <FormFeedback style={css.formFeedback}>{fieldError('user_phone')}</FormFeedback>
               </Col>
               <Col md={4}>
                 <Lbl>Designation</Lbl>

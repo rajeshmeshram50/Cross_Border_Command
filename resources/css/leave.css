@@ -989,6 +989,26 @@
 .lp-row-action i { font-size: 14px; }
 [data-bs-theme="dark"] .lp-row-action { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); }
 
+/* Destructive variant — used to remove an employee from a plan. Hovers
+   into red instead of purple so the click target reads as different
+   from the regular edit / view actions. */
+.lp-row-action-danger:hover {
+  border-color: #f87171; color: #b91c1c; background: rgba(220, 38, 38, 0.05);
+}
+
+/* Utilization bar in the Employee tab. The .progress-label child needs
+   ~16px of breathing room above so the floating label-bubble doesn't
+   clash with the row above. The min-width keeps the bar legible even
+   when the column gets narrow on smaller viewports. */
+.lp-util-bar {
+  margin-top: 16px;
+  min-width: 140px;
+}
+.lp-util-bar .label {
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .lp-group-row td {
   background: #f3eeff !important;
   font-size: 10.5px !important;
