@@ -16,6 +16,9 @@ const HR_LEAF_ROUTES: Record<string, string> = {
   'hr.onboarding':  '/hr/employee-onboarding',
   'hr.broadcast':   '/hr/broadcast',
   'hr.leave':       '/hr/leave',
+  'hr.attendance':  '/hr/attendance',
+  'hr.expense':     '/hr/expense',
+  'hr.pip':         '/hr/pip',
 };
 
 interface CategoryStyle { color: string; icon: string; gradient: string; }
@@ -35,8 +38,8 @@ const LEAF_ICONS: Record<string, string> = {
   BadgeCheck: 'ri-verified-badge-line', UserCog: 'ri-user-settings-line',
   TrendingUp: 'ri-line-chart-line',
   UserPlus: 'ri-user-add-line', UserCheck: 'ri-user-follow-line', LogOut: 'ri-logout-box-line',
-  IndianRupee: 'ri-money-rupee-circle-line', Calculator: 'ri-calculator-line',
-  CalendarCheck: 'ri-calendar-check-line', CalendarOff: 'ri-calendar-close-line', Receipt: 'ri-receipt-line',
+  IndianRupee: 'ri-coins-line', Calculator: 'ri-calculator-line',
+  CalendarCheck: 'ri-calendar-check-line', CalendarOff: 'ri-calendar-close-line', Receipt: 'ri-bill-line',
   FileText: 'ri-file-text-line', BookOpen: 'ri-book-open-line',
   Megaphone: 'ri-megaphone-line', FolderOpen: 'ri-folder-open-line',
   FileBadge: 'ri-file-shield-2-line', Settings2: 'ri-settings-3-line', PlusSquare: 'ri-add-box-line',
@@ -79,7 +82,7 @@ const STAT_CARDS = [
   { label: 'Categories',     icon: 'ri-folder-line',          gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
   { label: 'Active Records', icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#10b981,#34d399)' },
   { label: 'Coming Soon',    icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#f1963b)' },
-  { label: 'Time & Pay',     icon: 'ri-money-rupee-circle-line', gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
+  { label: 'Time & Pay',     icon: 'ri-coins-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
   { label: 'Documents',      icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg,#e83e8c,#ef79b0)' },
 ];
 

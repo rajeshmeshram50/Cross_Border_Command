@@ -616,33 +616,33 @@ class MasterController extends Controller
         $table = (new $modelClass)->getTable();
         $isComposite = count($uFields) > 1;
 
-        // For tenant-scoped masters, uniqueness is checked WITHIN the
-        // (client_id, branch_id) tuple the row will live under so different
-        // tenants can independently use the same value (e.g. each client
-        // starts numbering at DEPT-001). Determine that tuple now: on update
-        // we keep the existing row's tuple, on create we use the same logic
-        // as resolveOwnership() so the unique check matches what will be
-        // stamped during store().
+        // Uniqueness is ALWAYS scoped by client_id so two different clients
+        // can independently maintain the same value (e.g. both can have a
+        // country named "India"). Masters that also need per-branch
+        // isolation (e.g. departments' DEPT-### numbering restarts per
+        // branch) opt in via 'tenantScoped' => true and additionally scope
+        // by branch_id. Determine the tuple now: on update we keep the
+        // existing row's owner, on create we use resolveOwnership() so the
+        // unique check matches what will be stamped during store().
         $tenantClientId = null;
         $tenantBranchId = null;
-        if ($tenantScoped) {
-            if ($id !== null) {
-                $existing = $modelClass::find($id);
-                $tenantClientId = $existing?->client_id;
-                $tenantBranchId = $existing?->branch_id;
-            } else {
-                [$tenantClientId, $tenantBranchId] = $this->resolveOwnership($request, $request->user());
-            }
+        if ($id !== null) {
+            $existing = $modelClass::find($id);
+            $tenantClientId = $existing?->client_id;
+            $tenantBranchId = $existing?->branch_id;
+        } else {
+            [$tenantClientId, $tenantBranchId] = $this->resolveOwnership($request, $request->user());
         }
         $applyTenantScope = function ($rule) use ($tenantScoped, $tenantClientId, $tenantBranchId) {
-            if (!$tenantScoped) return $rule;
-            return $rule->where(function ($q) use ($tenantClientId, $tenantBranchId) {
+            return $rule->where(function ($q) use ($tenantScoped, $tenantClientId, $tenantBranchId) {
                 $tenantClientId === null
                     ? $q->whereNull('client_id')
                     : $q->where('client_id', $tenantClientId);
-                $tenantBranchId === null
-                    ? $q->whereNull('branch_id')
-                    : $q->where('branch_id', $tenantBranchId);
+                if ($tenantScoped) {
+                    $tenantBranchId === null
+                        ? $q->whereNull('branch_id')
+                        : $q->where('branch_id', $tenantBranchId);
+                }
             });
         };
 
