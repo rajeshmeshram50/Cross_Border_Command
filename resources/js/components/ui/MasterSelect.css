@@ -1,0 +1,173 @@
+
+
+  /* Custom MasterSelect — replaces native <select> dropdowns */
+  .master-select-wrap { width: 100%; }
+  .master-select-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    height: 38px;
+    padding: 7px 12px;
+    border: 1px solid var(--vz-border-color);
+    border-radius: 10px;
+    background: var(--vz-card-bg);
+    color: var(--vz-heading-color, var(--vz-body-color));
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+    transition: border-color .18s ease, box-shadow .18s ease;
+  }
+  /* Extra left padding only when sitting inside a master-field wrapper
+     (accommodates the prefix icon used in master-modal forms) */
+  .master-field .master-select-toggle { padding-left: 36px; }
+  .master-select-toggle:hover:not(:disabled) {
+    border-color: rgba(99,102,241,0.55);
+    box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+  }
+  .master-select-wrap.show .master-select-toggle {
+    border-color: #6366f1 !important;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12) !important;
+  }
+  .master-select-wrap.invalid .master-select-toggle {
+    border-color: #f06548 !important;
+    box-shadow: 0 0 0 3px rgba(240,101,72,0.15) !important;
+  }
+  .master-select-toggle:disabled {
+    background: var(--vz-secondary-bg);
+    color: var(--vz-secondary-color);
+    cursor: not-allowed;
+    opacity: 0.85;
+    box-shadow: none;
+  }
+  .master-select-placeholder {
+    color: var(--vz-secondary-color);
+    opacity: 0.65;
+    font-weight: 400;
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .master-select-value {
+    color: var(--vz-heading-color, var(--vz-body-color));
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .master-select-chev {
+    font-size: 18px;
+    color: var(--vz-secondary-color);
+    margin-left: 8px;
+    flex-shrink: 0;
+    transition: transform .2s ease, color .18s ease;
+  }
+  .master-select-wrap.show .master-select-chev {
+    color: #6366f1;
+    transform: rotate(180deg);
+  }
+  .master-modal .master-select-menu.dropdown-menu,
+  div.master-select-menu.dropdown-menu {
+    width: 100%;
+    min-width: 100% !important;
+    border-radius: 10px !important;
+    padding: 6px !important;
+    box-shadow: 0 14px 30px rgba(18,38,63,0.14), 0 2px 8px rgba(18,38,63,0.06) !important;
+    border: 1px solid var(--vz-border-color) !important;
+    margin-top: 6px !important;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    opacity: 1 !important;
+    filter: none !important;
+    /* Sits above EpModal overlays (z-index 5000) used in EmployeeProfile so
+       the dropdown menu isn't trapped behind the modal backdrop. */
+    z-index: 6000 !important;
+  }
+  /* Search row at the top of the menu (sticks — not part of scroll area) */
+  .master-select-search {
+    position: relative;
+    padding: 2px 2px 6px 2px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--vz-border-color);
+  }
+  .master-select-search-icon {
+    position: absolute;
+    left: 11px;
+    top: calc(50% - 3px);
+    transform: translateY(-50%);
+    font-size: 14px;
+    color: var(--vz-secondary-color);
+    pointer-events: none;
+  }
+  .master-select-search-input {
+    width: 100%;
+    height: 34px;
+    padding: 6px 10px 6px 34px;
+    border: 1px solid var(--vz-border-color);
+    border-radius: 8px;
+    font-size: 12.5px;
+    color: var(--vz-body-color);
+    background: var(--vz-secondary-bg);
+    outline: none;
+    transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+  }
+  .master-select-search-input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99,102,241,0.15);
+    background: var(--vz-card-bg);
+  }
+  .master-select-search-input::placeholder {
+    color: var(--vz-secondary-color);
+    opacity: 0.65;
+  }
+  /* Scroll area — caps to ~4 items, rest scrolls */
+  .master-select-list {
+    max-height: 152px;
+    overflow-y: auto;
+  }
+  .master-select-list::-webkit-scrollbar { width: 6px; }
+  .master-select-list::-webkit-scrollbar-track { background: transparent; }
+  .master-select-list::-webkit-scrollbar-thumb {
+    background: var(--vz-border-color);
+    border-radius: 6px;
+  }
+  .master-select-list::-webkit-scrollbar-thumb:hover {
+    background: var(--vz-secondary-color);
+  }
+  html[data-bs-theme="dark"] .master-modal .master-select-menu.dropdown-menu,
+  html[data-layout-mode="dark"] .master-modal .master-select-menu.dropdown-menu,
+  [data-bs-theme="dark"] div.master-select-menu.dropdown-menu,
+  [data-layout-mode="dark"] div.master-select-menu.dropdown-menu {
+    background-color: #2a2f34 !important;
+    border-color: rgba(255,255,255,0.08) !important;
+  }
+  .master-select-item {
+    background-color: transparent !important;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    color: var(--vz-body-color) !important;
+    transition: background .15s ease, color .15s ease;
+    margin-bottom: 1px;
+  }
+  .master-select-item:hover,
+  .master-select-item:focus {
+    background: var(--vz-secondary-bg) !important;
+    color: var(--vz-heading-color, var(--vz-body-color)) !important;
+  }
+  .master-select-item.active {
+    background: rgba(99,102,241,0.10) !important;
+    color: #6366f1 !important;
+    font-weight: 600;
+  }
+  .master-select-empty {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--vz-secondary-color);
+    text-align: center;
+  }

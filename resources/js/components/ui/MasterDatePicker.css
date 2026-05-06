@@ -1,0 +1,276 @@
+/* ============================================================
+   MasterDatePicker — themed compact calendar styles.
+   Originally lived in masterFormKit.tsx's MASTER_MODAL_CSS;
+   moved here so the component is self-contained.
+   ============================================================ */
+
+  /* ── MasterDatePicker ─────────────────────────────────────────── */
+  .master-datepicker-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 38px;
+    padding: 7px 12px;
+    border: 1px solid var(--vz-border-color);
+    border-radius: 10px;
+    background: var(--vz-card-bg);
+    color: var(--vz-heading-color, var(--vz-body-color));
+    font-size: 13px;
+    cursor: pointer;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+    transition: border-color .18s ease, box-shadow .18s ease;
+  }
+  .master-datepicker-toggle:hover:not([aria-disabled="true"]) {
+    border-color: rgba(99,102,241,0.55);
+    box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+  }
+  .master-datepicker-toggle.open {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+  }
+  .master-datepicker-wrap.invalid .master-datepicker-toggle {
+    border-color: #f06548;
+    box-shadow: 0 0 0 3px rgba(240,101,72,0.15);
+  }
+  .master-datepicker-toggle[aria-disabled="true"],
+  .master-datepicker-wrap.disabled .master-datepicker-toggle {
+    background: var(--vz-secondary-bg);
+    color: var(--vz-secondary-color);
+    cursor: not-allowed;
+    opacity: 0.85;
+    box-shadow: none;
+  }
+  /* Extra left padding when inside a master-field wrapper with a prefix icon */
+  .master-field .master-datepicker-toggle { padding-left: 36px; }
+  /* Hide the internal right-side calendar icon when already shown as prefix */
+  .master-field .master-datepicker-icon { display: none; }
+  /* Tint the master-field prefix icon indigo while the picker is open */
+  .master-field:has(.master-datepicker-toggle.open) .master-field-icon {
+    color: #6366f1;
+  }
+
+  .master-datepicker-placeholder {
+    flex: 1;
+    color: var(--vz-secondary-color);
+    opacity: 0.65;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .master-datepicker-value {
+    flex: 1;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .master-datepicker-icon {
+    color: #6366f1;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .master-datepicker-clear {
+    border: none;
+    background: transparent;
+    color: var(--vz-secondary-color);
+    font-size: 14px;
+    padding: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: color .15s ease;
+  }
+  .master-datepicker-clear:hover { color: #f06548; }
+
+  /* Popup — compact 240px. Extra selectors + resets to beat anything that
+     tries to leak through (transparent CSS vars, opacity inheritance, etc.) */
+  .master-datepicker-popup,
+  div.master-datepicker-popup,
+  .master-modal .master-datepicker-popup,
+  .master-field .master-datepicker-popup {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 0;
+    min-width: 240px;
+    max-width: 240px;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    opacity: 1 !important;
+    filter: none !important;
+    border: 1px solid var(--vz-border-color);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.16);
+    padding: 10px;
+    /* Sits above EpModal overlays (z-index 5000) used in EmployeeProfile —
+       Revise Salary, Raise Claim, Payslip viewer, Salary Breakdown — so the
+       portalled date picker isn't trapped behind the modal backdrop. */
+    z-index: 6000 !important;
+  }
+  html[data-bs-theme="dark"] .master-datepicker-popup,
+  html[data-layout-mode="dark"] .master-datepicker-popup,
+  [data-bs-theme="dark"] .master-datepicker-popup,
+  [data-layout-mode="dark"] .master-datepicker-popup,
+  [data-bs-theme="dark"] div.master-datepicker-popup,
+  [data-layout-mode="dark"] div.master-datepicker-popup {
+    background-color: #2a2f34 !important;
+    border-color: rgba(255,255,255,0.08);
+  }
+  .master-datepicker-nav {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: var(--vz-secondary-bg);
+    border: 1px solid var(--vz-border-color);
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .master-datepicker-nav:hover {
+    background: rgba(99,102,241,0.10);
+    color: #6366f1;
+    border-color: rgba(99,102,241,0.3);
+  }
+  .master-datepicker-title {
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--vz-heading-color, var(--vz-body-color));
+  }
+  /* Title button — clickable when drilling up (days → months → years). */
+  .master-datepicker-title-btn {
+    background: transparent;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    display: inline-flex;
+    align-items: center;
+    cursor: default;
+    transition: background .15s ease, color .15s ease;
+  }
+  .master-datepicker-title-btn.is-clickable {
+    cursor: pointer;
+  }
+  .master-datepicker-title-btn.is-clickable:hover {
+    background: rgba(99,102,241,0.10);
+    color: #6366f1;
+  }
+  .master-datepicker-title-btn:disabled {
+    cursor: default;
+  }
+  /* Month / year cells — same visual language as the day cells but a touch
+     larger (4-col grid instead of 7-col), so labels like "January" or 4-digit
+     years fit comfortably. */
+  .master-datepicker-cell {
+    height: 34px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background .15s ease, color .15s ease;
+  }
+  .master-datepicker-cell:hover:not(.is-selected) {
+    background: rgba(99,102,241,0.10);
+    color: #6366f1;
+  }
+  .master-datepicker-cell.is-today {
+    background: rgba(99,102,241,0.12);
+    color: #6366f1;
+    font-weight: 700;
+  }
+  .master-datepicker-cell.is-selected {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 3px 8px rgba(99,102,241,0.30);
+  }
+  .master-datepicker-dow {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: var(--vz-secondary-color);
+    padding: 2px 0;
+    text-align: center;
+    letter-spacing: 0.03em;
+  }
+  .master-datepicker-day {
+    height: 26px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 400;
+    background: transparent;
+    color: var(--vz-heading-color, var(--vz-body-color));
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background .15s ease, color .15s ease;
+  }
+  .master-datepicker-day:hover:not(:disabled):not(.is-selected) {
+    background: rgba(99,102,241,0.10);
+    color: #6366f1;
+  }
+  .master-datepicker-day.is-today {
+    background: rgba(99,102,241,0.12);
+    color: #6366f1;
+    font-weight: 600;
+  }
+  .master-datepicker-day.is-selected {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 3px 8px rgba(99,102,241,0.30);
+  }
+  .master-datepicker-day:disabled {
+    color: var(--vz-secondary-color);
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .master-datepicker-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 4px;
+    margin-top: 4px;
+    border-top: 1px solid var(--vz-border-color);
+  }
+  .master-datepicker-footer .clear-btn,
+  .master-datepicker-footer .today-btn {
+    border: none;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    font-size: 10.5px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .master-datepicker-footer .clear-btn {
+    color: var(--vz-secondary-color);
+    font-weight: 600;
+  }
+  .master-datepicker-footer .today-btn {
+    color: #6366f1;
+    font-weight: 700;
+  }
