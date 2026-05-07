@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import PayslipViewerModal, { type PayslipLine } from '../../components/PayslipViewerModal';
+import PayrollRunModal, { type PayrollRunIssue } from '../../components/PayrollRunModal';
 import { useToast } from '../../contexts/ToastContext';
 // Reuses the purple hero-card, hero-pill, KPI surface and table styles that
 // HrEmployeeOnboarding ships (.onb-hero-card / .onb-hero-pill / .onb-surface
@@ -192,6 +193,75 @@ export default function HrPayroll() {
   const [paySlipRow, setPaySlipRow] = useState<PayrollRow | null>(null);
   const openPayslip  = (row: PayrollRow) => setPaySlipRow(row);
   const closePayslip = () => setPaySlipRow(null);
+
+  // Payroll run pre-flight modal — opened from the Run Payroll button in the
+  // hero. Bridges the click into the two-phase blocking-issues / success
+  // flow defined in PayrollRunModal.
+  const [runOpen, setRunOpen] = useState(false);
+
+  // Issues are derived from the rows already in `PAYROLL_ROWS`:
+  //   - status 'On Hold'        → blocking
+  //   - attMismatch || mismatch → warning
+  // This keeps the modal's data in sync with the table without a separate
+  // hardcoded list. Real implementation would come from /api/payroll/preflight.
+  const runIssues = useMemo<PayrollRunIssue[]>(() => {
+    const list: PayrollRunIssue[] = [];
+    for (const r of PAYROLL_ROWS) {
+      if (r.status === 'On Hold') {
+        const reasons: string[] = [];
+        if (r.missingPunch > 0) reasons.push(`${r.missingPunch} missing biometric punch${r.missingPunch === 1 ? '' : 'es'}`);
+        if (r.unpaidLeave > 0)  reasons.push(`Unpaid leave on ${r.unpaidLeave} day${r.unpaidLeave === 1 ? '' : 's'}`);
+        if (r.absent > 0)       reasons.push(`Absent on ${r.absent} day${r.absent === 1 ? '' : 's'} without leave`);
+        reasons.push('Bank details not verified');
+        list.push({
+          id: r.id,
+          type: 'blocking',
+          empCode: r.empId,
+          empName: r.name,
+          empInitials: r.initials,
+          empAccent: r.accent,
+          department: r.department,
+          reasons,
+          actions: [
+            { label: 'Go to Attendance', tone: 'blue' },
+            { label: 'Open Employee',    tone: 'purple' },
+          ],
+        });
+      } else if (r.attMismatch || r.mismatch) {
+        const reasons: string[] = [];
+        if (r.mismatch)        reasons.push(r.mismatch);
+        if (r.unpaidLeave > 0) reasons.push('Leave proof pending (Sick, Casual)');
+        if (r.lateMarks > 0)   reasons.push(`${r.lateMarks} late mark${r.lateMarks === 1 ? '' : 's'} flagged`);
+        if (reasons.length === 0) reasons.push('Attendance review pending');
+        list.push({
+          id: r.id,
+          type: 'warning',
+          empCode: r.empId,
+          empName: r.name,
+          empInitials: r.initials,
+          empAccent: r.accent,
+          department: r.department,
+          reasons,
+          actions: [
+            { label: 'Upload Proof',  tone: 'green' },
+            { label: 'Open Employee', tone: 'purple' },
+          ],
+        });
+      }
+    }
+    return list;
+  }, []);
+
+  // Sum of net pay for the blocking & at-risk buckets — drives the 3 KPI
+  // tiles at the top of the pre-flight modal.
+  const blockedAmount = useMemo(
+    () => PAYROLL_ROWS.filter(r => r.status === 'On Hold').reduce((s, r) => s + r.netPay, 0),
+    [],
+  );
+  const atRiskAmount  = useMemo(
+    () => PAYROLL_ROWS.filter(r => (r.attMismatch || r.mismatch) && r.status !== 'On Hold').reduce((s, r) => s + r.netPay, 0),
+    [],
+  );
 
   // Pagination — match the master tables (7 per page).
   const [page, setPage] = useState(1);
@@ -418,10 +488,7 @@ export default function HrPayroll() {
           </div>
           <Button
             className="rounded-pill fw-bold d-inline-flex align-items-center pay-hero-run"
-            onClick={() => toast.success(
-              'Payroll cycle started',
-              `${cycle.label} — processing for ${counts.totalEmployees} employees.`,
-            )}
+            onClick={() => setRunOpen(true)}
             style={{
               padding: '10px 18px',
               fontSize: 13,
@@ -1122,6 +1189,25 @@ export default function HrPayroll() {
           </Row>
         </CardBody>
       </Card>
+
+      {/* ── Payroll Run Modal — pre-flight checks → success → proceed-to-pay ── */}
+      <PayrollRunModal
+        open={runOpen}
+        onClose={() => setRunOpen(false)}
+        onProceedToPay={() => {
+          setRunOpen(false);
+          toast.success(
+            'Payment initiated',
+            `${counts.totalEmployees} employees · ${fmtINRShort(counts.totalPayroll)} disbursed for ${cycle.label}.`,
+          );
+        }}
+        cycleLabel={cycle.label}
+        totalEmployees={counts.totalEmployees}
+        totalPayrollLabel={fmtINRShort(counts.totalPayroll)}
+        blockedAmountLabel={fmtINRShort(blockedAmount)}
+        atRiskAmountLabel={fmtINRShort(atRiskAmount)}
+        issues={runIssues}
+      />
 
       {/* ── Payslip Viewer Modal ──
           Earnings split is synthesized 50/25/25 (Basic / HRA / Special) since

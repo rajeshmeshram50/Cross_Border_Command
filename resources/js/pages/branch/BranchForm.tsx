@@ -6,6 +6,7 @@ import {
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import { validatePhone } from '../../utils/validatePhone';
 
 interface Props {
   onBack: () => void;
@@ -17,7 +18,7 @@ const empty = {
   contact_person: '', branch_type: '', industry: '', description: '',
   gst_number: '', pan_number: '', registration_number: '',
   address: '', city: '', district: '', taluka: '', pincode: '',
-  state: '', country: 'India',
+  state: '', country: '',
   is_main: 'false', max_users: '0',
   established_at: '', status: 'active', notes: '',
   primary_color: '#4F46E5', secondary_color: '#10B981',
@@ -45,55 +46,6 @@ const FIELD_LABELS: Record<string, string> = {
   user_password_confirmation: 'Confirm Password',
 };
 
-// Country-specific phone rules. `digits` = required count of NATIONAL digits
-// (excludes country code). `cc` = country code (digits, no +). `mobilePrefix`
-// is a regex matched against the first national digit(s) to catch obviously
-// wrong numbers (e.g. India mobiles must start with 6-9).
-type PhoneRule = { country: string; cc: string; digits: number | [number, number]; mobilePrefix?: RegExp; example: string };
-const PHONE_RULES: PhoneRule[] = [
-  { country: 'India',          cc: '91',  digits: 10,        mobilePrefix: /^[6-9]/, example: '+91 9876543210' },
-  { country: 'United States',  cc: '1',   digits: 10,        mobilePrefix: /^[2-9]/, example: '+1 2125551234' },
-  { country: 'Canada',         cc: '1',   digits: 10,        mobilePrefix: /^[2-9]/, example: '+1 4165551234' },
-  { country: 'United Kingdom', cc: '44',  digits: 10,                                example: '+44 7911123456' },
-  { country: 'UAE',            cc: '971', digits: 9,                                 example: '+971 501234567' },
-  { country: 'Singapore',      cc: '65',  digits: 8,                                 example: '+65 81234567' },
-  { country: 'Australia',      cc: '61',  digits: 9,                                 example: '+61 412345678' },
-  { country: 'Germany',        cc: '49',  digits: [10, 11],                          example: '+49 15123456789' },
-  { country: 'France',         cc: '33',  digits: 9,                                 example: '+33 612345678' },
-  { country: 'China',          cc: '86',  digits: 11,                                example: '+86 13812345678' },
-  { country: 'Japan',          cc: '81',  digits: 10,                                example: '+81 9012345678' },
-];
-
-// Validate a phone number against either a known country's rule or a generic
-// E.164 fallback (7–15 digits). Returns an error string, or '' if valid.
-function validatePhone(raw: string, country: string, label: string): string {
-  if (!/^[+\d\s\-()]+$/.test(raw)) {
-    return `${label} may only contain digits, spaces, +, -, ( and )`;
-  }
-  const digits = raw.replace(/\D/g, '');
-  if (digits.length < 7 || digits.length > 15) {
-    return `${label} must be 7–15 digits (international E.164 standard)`;
-  }
-  const rule = PHONE_RULES.find(r => r.country === country);
-  if (!rule) return ''; // unknown country → generic check is enough
-
-  // Strip the country code if present (handles +91…, 91…, or bare national)
-  let national = digits;
-  if (national.startsWith(rule.cc) && national.length > (Array.isArray(rule.digits) ? rule.digits[0] : rule.digits)) {
-    national = national.slice(rule.cc.length);
-  }
-
-  const [min, max] = Array.isArray(rule.digits) ? rule.digits : [rule.digits, rule.digits];
-  if (national.length < min || national.length > max) {
-    const want = min === max ? `${min}` : `${min}–${max}`;
-    return `${rule.country} ${label.toLowerCase()} must be ${want} digits. Example: ${rule.example}`;
-  }
-  if (rule.mobilePrefix && !rule.mobilePrefix.test(national)) {
-    return `Invalid ${rule.country} number. Example: ${rule.example}`;
-  }
-  return '';
-}
-
 // Website / URL validator. Accepts:
 //   www.example.com         → ok
 //   example.com             → ok
@@ -117,6 +69,33 @@ function validateWebsite(raw: string): string {
     return 'Enter a valid website like www.example.com or https://example.com';
   }
   return '';
+}
+
+// ── Password strength rules (mirrors ClientForm + Profile) ──
+const PW_RULES = [
+  'At least 8 characters',
+  'One uppercase letter',
+  'One lowercase letter',
+  'One number',
+] as const;
+
+function validatePasswordRules(password: string): string[] {
+  const errors: string[] = [];
+  if (password.length < 8) errors.push('At least 8 characters');
+  if (!/[A-Z]/.test(password)) errors.push('One uppercase letter');
+  if (!/[a-z]/.test(password)) errors.push('One lowercase letter');
+  if (!/[0-9]/.test(password)) errors.push('One number');
+  return errors;
+}
+
+function computePasswordStrength(pw: string) {
+  if (!pw) return { level: 0, text: '', color: '', barColor: '' };
+  const errors = validatePasswordRules(pw);
+  const level = 4 - errors.length;
+  const levels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+  const barColors = ['', '#ef4444', '#f97316', '#eab308', '#10b981'];
+  const textColors = ['', 'text-danger', 'text-warning', 'text-warning', 'text-success'];
+  return { level, text: levels[level], color: textColors[level], barColor: barColors[level] };
 }
 
 function validateBranchForm(form: FormState, isEdit: boolean): Record<string, string> {
@@ -209,20 +188,20 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
 
     if (!form.user_password) {
       e.user_password = 'Password is required';
-    } else if (form.user_password.length < 6) {
-      e.user_password = `Password must be at least 6 characters (you entered ${form.user_password.length})`;
     } else if (form.user_password.length > 64) {
       e.user_password = 'Password cannot exceed 64 characters';
-    } else if (!/[A-Za-z]/.test(form.user_password) || !/\d/.test(form.user_password)) {
-      e.user_password = 'Password must contain at least one letter and one digit';
+    } else {
+      const errs = validatePasswordRules(form.user_password);
+      if (errs.length) e.user_password = errs.join(', ');
     }
 
     if (form.user_phone) {
       const err = validatePhone(form.user_phone, form.country, 'Admin phone');
       if (err) e.user_phone = err;
     }
-  } else if (form.user_password && form.user_password.length < 6) {
-    e.user_password = 'New password must be at least 6 characters';
+  } else if (form.user_password) {
+    const errs = validatePasswordRules(form.user_password);
+    if (errs.length) e.user_password = errs.join(', ');
   }
 
   // ── Password confirmation ──
@@ -355,6 +334,9 @@ export default function BranchForm({ onBack, editId }: Props) {
       .map(s => ({ label: s.name, value: s.name }));
   }, [form.country, countries, statesAll]);
 
+  // Password strength meter for the branch admin password (mirrors ClientForm).
+  const pwStrength = useMemo(() => computePasswordStrength(form.user_password || ''), [form.user_password]);
+
   // When the country changes, drop a previously-picked state that doesn't
   // belong to the new country.
   useEffect(() => {
@@ -396,7 +378,7 @@ export default function BranchForm({ onBack, editId }: Props) {
         registration_number: b.registration_number || '',
         address: b.address || '', city: b.city || '',
         district: b.district || '', taluka: b.taluka || '',
-        pincode: b.pincode || '', state: b.state || '', country: b.country || 'India',
+        pincode: b.pincode || '', state: b.state || '', country: b.country || '',
         is_main: b.is_main ? 'true' : 'false',
         max_users: String(b.max_users ?? 0),
         established_at: b.established_at || '', status: b.status || 'active',
@@ -1320,19 +1302,63 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Lbl>{isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Lbl>
                 <Input name="user_password" style={css.input} type="password" value={form.user_password}
                   invalid={fieldInvalid('user_password')}
+                  autoComplete="new-password"
                   onChange={e => set('user_password', e.target.value)} onBlur={() => touch('user_password')}
-                  placeholder={isEdit ? 'Leave blank to keep' : 'Min. 6 characters'} />
+                  placeholder={isEdit ? 'Leave blank to keep' : 'Minimum 8 characters'} />
                 <FormFeedback style={css.formFeedback}>{fieldError('user_password')}</FormFeedback>
+                {form.user_password && (
+                  <div className="mt-2">
+                    <div className="d-flex align-items-center gap-2 mb-1">
+                      <div style={{ flex: 1, height: 6, background: 'var(--vz-secondary-bg)', borderRadius: 999, overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${(pwStrength.level / 4) * 100}%`,
+                          height: '100%',
+                          background: pwStrength.barColor,
+                          transition: 'width .25s ease, background .25s ease',
+                        }} />
+                      </div>
+                      <span className={`fs-11 fw-bold ${pwStrength.color}`} style={{ minWidth: 44, textAlign: 'right' }}>
+                        {pwStrength.text}
+                      </span>
+                    </div>
+                    <ul className="list-unstyled mb-0 mt-2" style={{ fontSize: 11 }}>
+                      {PW_RULES.map(rule => {
+                        const passed = !validatePasswordRules(form.user_password).includes(rule);
+                        return (
+                          <li key={rule} className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}>
+                            <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
+                            {rule}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
               </Col>
               <Col md={4}>
                 <Lbl>Confirm Password {!isEdit && <span className="text-danger">*</span>}</Lbl>
                 <Input name="user_password_confirmation" style={css.input} type="password"
                   value={form.user_password_confirmation}
                   invalid={fieldInvalid('user_password_confirmation')}
+                  autoComplete="new-password"
                   onChange={e => set('user_password_confirmation', e.target.value)}
                   onBlur={() => touch('user_password_confirmation')}
                   placeholder="Re-enter password" />
-                <FormFeedback style={css.formFeedback}>{fieldError('user_password_confirmation')}</FormFeedback>
+                {form.user_password_confirmation && (
+                  <div className="mt-2 d-inline-flex align-items-center gap-1 fs-11 fw-semibold">
+                    {form.user_password === form.user_password_confirmation ? (
+                      <span className="text-success d-inline-flex align-items-center gap-1">
+                        <i className="ri-checkbox-circle-fill" style={{ fontSize: 12 }}></i>
+                        Passwords match
+                      </span>
+                    ) : (
+                      <span className="text-danger d-inline-flex align-items-center gap-1">
+                        <i className="ri-close-circle-fill" style={{ fontSize: 12 }}></i>
+                        Passwords do not match
+                      </span>
+                    )}
+                  </div>
+                )}
               </Col>
               <Col md={4}>
                 <Lbl>User Status</Lbl>

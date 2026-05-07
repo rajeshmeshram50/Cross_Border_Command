@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row, Input, Label, Spinner, Form } from 'reactstra
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
+import { validatePhone } from '../utils/validatePhone';
 
 export default function Profile() {
   const { user, logout, refresh } = useAuth();
@@ -118,9 +119,16 @@ export default function Profile() {
     const name = profileName.trim();
     if (!name) { toast.warning('Required', 'Full name cannot be empty'); return; }
     if (name.length < 2) { toast.warning('Too short', 'Full name must be at least 2 characters'); return; }
-    if (profilePhone && !/^[+\d\s\-()]{7,20}$/.test(profilePhone)) {
-      toast.warning('Invalid phone', 'Phone may only contain digits, spaces, +, -, ( and ) and must be 7–20 characters');
-      return;
+    if (profilePhone) {
+      // Same country-aware validation used by BranchForm — falls back to the
+      // generic E.164 check (7–15 digits) when the user has no country on
+      // their /me record.
+      const userCountry = (user as any).country || '';
+      const phoneErr = validatePhone(profilePhone, userCountry, 'Phone');
+      if (phoneErr) {
+        toast.warning('Invalid phone', phoneErr);
+        return;
+      }
     }
     setSavingProfile(true);
     try {

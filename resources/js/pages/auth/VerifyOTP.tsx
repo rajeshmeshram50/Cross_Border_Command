@@ -22,6 +22,10 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(DEFAULT_RESEND_COOLDOWN);
+  // Guards against rapid double-clicks on Resend — without this, every click
+  // races the server's 120s cooldown and stacks one "Please wait Xs" toast per
+  // click. While `resending` is true the button is disabled and shows a spinner.
+  const [resending, setResending] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -107,6 +111,8 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
   };
 
   const handleResend = async () => {
+    if (resending || resendTimer > 0) return;
+    setResending(true);
     try {
       // Server is the source of truth for the cooldown — pull the value it
       // returns and use it for the next countdown so the UI never gets out
@@ -123,6 +129,8 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
       if (retryAfter > 0) setResendTimer(retryAfter);
       const msg = err.response?.data?.message || 'Failed to resend code';
       toast.error('Error', msg);
+    } finally {
+      setResending(false);
     }
   };
 
@@ -164,13 +172,19 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
           <div className="text-center text-[13px] font-medium text-[#5e6b85] pt-2">
             {resendTimer > 0 ? (
               <p>Resend code in <span className="font-bold text-primary">{resendTimer}s</span></p>
+            ) : resending ? (
+              <p className="inline-flex items-center justify-center gap-2 font-semibold text-primary">
+                <Loader2 size={14} className="animate-spin" />
+                Sending new code…
+              </p>
             ) : (
               <p>
                 Didn't receive code?{' '}
                 <button
                   type="button"
                   onClick={handleResend}
-                  className="font-bold text-primary hover:underline transition-all duration-200"
+                  disabled={resending}
+                  className="font-bold text-primary hover:underline transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed disabled:no-underline"
                 >
                   Resend
                 </button>

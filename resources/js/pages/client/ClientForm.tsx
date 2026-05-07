@@ -40,7 +40,7 @@ const formatPlanLabel = (p: PlanOption): string => {
 const empty = {
   org_name: '', org_type: '', email: '', phone: '', website: '',
   status: 'inactive', sports: '', industry: '', address: '', city: '',
-  district: '', taluka: '', pincode: '', state: '', country: 'India',
+  district: '', taluka: '', pincode: '', state: '', country: '',
   gst_number: '', pan_number: '', plan_id: '', plan_type: 'free',
   plan_expires_at: '', primary_color: '#4F46E5', secondary_color: '#10B981',
   notes: '', admin_name: '', admin_email: '', admin_phone: '',
@@ -49,6 +49,32 @@ const empty = {
 };
 
 type FormState = typeof empty;
+
+const PW_RULES = [
+  'At least 8 characters',
+  'One uppercase letter',
+  'One lowercase letter',
+  'One number',
+] as const;
+
+function validatePasswordRules(password: string): string[] {
+  const errors: string[] = [];
+  if (password.length < 8) errors.push('At least 8 characters');
+  if (!/[A-Z]/.test(password)) errors.push('One uppercase letter');
+  if (!/[a-z]/.test(password)) errors.push('One lowercase letter');
+  if (!/[0-9]/.test(password)) errors.push('One number');
+  return errors;
+}
+
+function computePasswordStrength(pw: string) {
+  if (!pw) return { level: 0, text: '', color: '', barColor: '' };
+  const errors = validatePasswordRules(pw);
+  const level = 4 - errors.length;
+  const levels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+  const barColors = ['', '#ef4444', '#f97316', '#eab308', '#10b981'];
+  const textColors = ['', 'text-danger', 'text-warning', 'text-warning', 'text-success'];
+  return { level, text: levels[level], color: textColors[level], barColor: barColors[level] };
+}
 
 function validateClientForm(form: FormState, isEdit: boolean): Record<string, string> {
   const e: Record<string, string> = {};
@@ -89,9 +115,15 @@ function validateClientForm(form: FormState, isEdit: boolean): Record<string, st
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.admin_email)) e.admin_email = 'Invalid email format';
     if (!form.admin_phone?.trim()) e.admin_phone = 'Phone is required';
     if (!form.admin_password) e.admin_password = 'Password is required';
-    else if (form.admin_password.length < 6) e.admin_password = 'Minimum 6 characters';
+    else {
+      const errs = validatePasswordRules(form.admin_password);
+      if (errs.length) e.admin_password = errs.join(', ');
+    }
   } else {
-    if (form.admin_password && form.admin_password.length < 6) e.admin_password = 'Minimum 6 characters';
+    if (form.admin_password) {
+      const errs = validatePasswordRules(form.admin_password);
+      if (errs.length) e.admin_password = errs.join(', ');
+    }
   }
   if (!form.admin_status) e.admin_status = 'Status is required';
   if (form.admin_password && form.admin_password !== form.admin_password_confirmation)
@@ -234,6 +266,10 @@ export default function ClientForm({ onBack, editId }: Props) {
       .map(s => ({ label: s.name, value: s.name }));
   }, [form.country, countries, statesAll]);
 
+  // Password strength meter (mirrors Profile.tsx). Drives the colored bar,
+  // label (Weak/Fair/Good/Strong) and the rule checklist under the field.
+  const pwStrength = useMemo(() => computePasswordStrength(form.admin_password || ''), [form.admin_password]);
+
   // When the country changes, drop a previously-picked state that doesn't
   // belong to the new country. Avoids the "Maharashtra, USA" inconsistency.
   useEffect(() => {
@@ -283,7 +319,7 @@ export default function ClientForm({ onBack, editId }: Props) {
         phone: c.phone||'', website: c.website||'', status: c.status||'inactive',
         sports: c.sports||'', industry: c.industry||'', address: c.address||'',
         city: c.city||'', district: c.district||'', taluka: c.taluka||'',
-        pincode: c.pincode||'', state: c.state||'', country: c.country||'India',
+        pincode: c.pincode||'', state: c.state||'', country: c.country||'',
         gst_number: c.gst_number||'', pan_number: c.pan_number||'',
         plan_id: c.plan_id?.toString()||'', plan_type: c.plan_type||'free',
         plan_expires_at: c.plan_expires_at||'', primary_color: c.primary_color||'#4F46E5',
@@ -823,7 +859,7 @@ export default function ClientForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Website</Lbl>
-                <Input style={css.input} type="url" value={form.website} onChange={e => set('website', e.target.value)} placeholder="www.company.com" />
+                <Input style={css.input} type="text" value={form.website} onChange={e => set('website', e.target.value)} placeholder="www.company.com or https://company.com" />
               </Col>
             </Row>
 
@@ -997,17 +1033,61 @@ export default function ClientForm({ onBack, editId }: Props) {
               <Col md={4}>
                 <Lbl>{isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Lbl>
                 <Input style={css.input} type="password" value={form.admin_password} invalid={fieldInvalid('admin_password')}
+                  autoComplete="new-password"
                   onChange={e => set('admin_password', e.target.value)} onBlur={() => touch('admin_password')}
-                  placeholder={isEdit ? 'Leave blank to keep' : 'Min. 6 characters'} />
+                  placeholder={isEdit ? 'Leave blank to keep' : 'Minimum 8 characters'} />
                 <FormFeedback style={css.formFeedback}>{fieldError('admin_password')}</FormFeedback>
+                {form.admin_password && (
+                  <div className="mt-2">
+                    <div className="d-flex align-items-center gap-2 mb-1">
+                      <div style={{ flex: 1, height: 6, background: 'var(--vz-secondary-bg)', borderRadius: 999, overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${(pwStrength.level / 4) * 100}%`,
+                          height: '100%',
+                          background: pwStrength.barColor,
+                          transition: 'width .25s ease, background .25s ease',
+                        }} />
+                      </div>
+                      <span className={`fs-11 fw-bold ${pwStrength.color}`} style={{ minWidth: 44, textAlign: 'right' }}>
+                        {pwStrength.text}
+                      </span>
+                    </div>
+                    <ul className="list-unstyled mb-0 mt-2" style={{ fontSize: 11 }}>
+                      {PW_RULES.map(rule => {
+                        const passed = !validatePasswordRules(form.admin_password).includes(rule);
+                        return (
+                          <li key={rule} className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}>
+                            <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
+                            {rule}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
               </Col>
               <Col md={4}>
                 <Lbl>Confirm Password {!isEdit && <span className="text-danger">*</span>}</Lbl>
                 <Input style={css.input} type="password" value={form.admin_password_confirmation}
                   invalid={fieldInvalid('admin_password_confirmation')}
+                  autoComplete="new-password"
                   onChange={e => set('admin_password_confirmation', e.target.value)}
                   onBlur={() => touch('admin_password_confirmation')} placeholder="Re-enter password" />
-                <FormFeedback style={css.formFeedback}>{fieldError('admin_password_confirmation')}</FormFeedback>
+                {form.admin_password_confirmation && (
+                  <div className="mt-2 d-inline-flex align-items-center gap-1 fs-11 fw-semibold">
+                    {form.admin_password === form.admin_password_confirmation ? (
+                      <span className="text-success d-inline-flex align-items-center gap-1">
+                        <i className="ri-checkbox-circle-fill" style={{ fontSize: 12 }}></i>
+                        Passwords match
+                      </span>
+                    ) : (
+                      <span className="text-danger d-inline-flex align-items-center gap-1">
+                        <i className="ri-close-circle-fill" style={{ fontSize: 12 }}></i>
+                        Passwords do not match
+                      </span>
+                    )}
+                  </div>
+                )}
               </Col>
               <Col md={4}>
                 <Lbl>Admin Status <span className="text-danger">*</span></Lbl>

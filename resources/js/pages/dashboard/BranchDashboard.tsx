@@ -375,7 +375,7 @@ export default function BranchDashboard() {
         {can_view_payments && (
           <Col md={3} xs={6}>
             <KpiCard label="Total Paid" value={<>₹{formatINRCompact(counts.total_paid)}</>}
-              iconClass="ri-money-rupee-circle-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
+              iconClass="ri-money-dollar-circle-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
               trend="up" change={`${counts.success_payments}`} changeText="payments" />
           </Col>
         )}
