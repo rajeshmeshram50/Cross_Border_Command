@@ -71,6 +71,33 @@ function validateWebsite(raw: string): string {
   return '';
 }
 
+// ── Password strength rules (mirrors ClientForm + Profile) ──
+const PW_RULES = [
+  'At least 8 characters',
+  'One uppercase letter',
+  'One lowercase letter',
+  'One number',
+] as const;
+
+function validatePasswordRules(password: string): string[] {
+  const errors: string[] = [];
+  if (password.length < 8) errors.push('At least 8 characters');
+  if (!/[A-Z]/.test(password)) errors.push('One uppercase letter');
+  if (!/[a-z]/.test(password)) errors.push('One lowercase letter');
+  if (!/[0-9]/.test(password)) errors.push('One number');
+  return errors;
+}
+
+function computePasswordStrength(pw: string) {
+  if (!pw) return { level: 0, text: '', color: '', barColor: '' };
+  const errors = validatePasswordRules(pw);
+  const level = 4 - errors.length;
+  const levels = ['', 'Weak', 'Fair', 'Good', 'Strong'];
+  const barColors = ['', '#ef4444', '#f97316', '#eab308', '#10b981'];
+  const textColors = ['', 'text-danger', 'text-warning', 'text-warning', 'text-success'];
+  return { level, text: levels[level], color: textColors[level], barColor: barColors[level] };
+}
+
 function validateBranchForm(form: FormState, isEdit: boolean): Record<string, string> {
   const e: Record<string, string> = {};
 
@@ -161,20 +188,20 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
 
     if (!form.user_password) {
       e.user_password = 'Password is required';
-    } else if (form.user_password.length < 6) {
-      e.user_password = `Password must be at least 6 characters (you entered ${form.user_password.length})`;
     } else if (form.user_password.length > 64) {
       e.user_password = 'Password cannot exceed 64 characters';
-    } else if (!/[A-Za-z]/.test(form.user_password) || !/\d/.test(form.user_password)) {
-      e.user_password = 'Password must contain at least one letter and one digit';
+    } else {
+      const errs = validatePasswordRules(form.user_password);
+      if (errs.length) e.user_password = errs.join(', ');
     }
 
     if (form.user_phone) {
       const err = validatePhone(form.user_phone, form.country, 'Admin phone');
       if (err) e.user_phone = err;
     }
-  } else if (form.user_password && form.user_password.length < 6) {
-    e.user_password = 'New password must be at least 6 characters';
+  } else if (form.user_password) {
+    const errs = validatePasswordRules(form.user_password);
+    if (errs.length) e.user_password = errs.join(', ');
   }
 
   // ── Password confirmation ──
@@ -306,6 +333,9 @@ export default function BranchForm({ onBack, editId }: Props) {
       .filter(s => Number(s.country_id) === selected.id)
       .map(s => ({ label: s.name, value: s.name }));
   }, [form.country, countries, statesAll]);
+
+  // Password strength meter for the branch admin password (mirrors ClientForm).
+  const pwStrength = useMemo(() => computePasswordStrength(form.user_password || ''), [form.user_password]);
 
   // When the country changes, drop a previously-picked state that doesn't
   // belong to the new country.
@@ -1272,19 +1302,63 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Lbl>{isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Lbl>
                 <Input name="user_password" style={css.input} type="password" value={form.user_password}
                   invalid={fieldInvalid('user_password')}
+                  autoComplete="new-password"
                   onChange={e => set('user_password', e.target.value)} onBlur={() => touch('user_password')}
-                  placeholder={isEdit ? 'Leave blank to keep' : 'Min. 6 characters'} />
+                  placeholder={isEdit ? 'Leave blank to keep' : 'Minimum 8 characters'} />
                 <FormFeedback style={css.formFeedback}>{fieldError('user_password')}</FormFeedback>
+                {form.user_password && (
+                  <div className="mt-2">
+                    <div className="d-flex align-items-center gap-2 mb-1">
+                      <div style={{ flex: 1, height: 6, background: 'var(--vz-secondary-bg)', borderRadius: 999, overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${(pwStrength.level / 4) * 100}%`,
+                          height: '100%',
+                          background: pwStrength.barColor,
+                          transition: 'width .25s ease, background .25s ease',
+                        }} />
+                      </div>
+                      <span className={`fs-11 fw-bold ${pwStrength.color}`} style={{ minWidth: 44, textAlign: 'right' }}>
+                        {pwStrength.text}
+                      </span>
+                    </div>
+                    <ul className="list-unstyled mb-0 mt-2" style={{ fontSize: 11 }}>
+                      {PW_RULES.map(rule => {
+                        const passed = !validatePasswordRules(form.user_password).includes(rule);
+                        return (
+                          <li key={rule} className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}>
+                            <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
+                            {rule}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
               </Col>
               <Col md={4}>
                 <Lbl>Confirm Password {!isEdit && <span className="text-danger">*</span>}</Lbl>
                 <Input name="user_password_confirmation" style={css.input} type="password"
                   value={form.user_password_confirmation}
                   invalid={fieldInvalid('user_password_confirmation')}
+                  autoComplete="new-password"
                   onChange={e => set('user_password_confirmation', e.target.value)}
                   onBlur={() => touch('user_password_confirmation')}
                   placeholder="Re-enter password" />
-                <FormFeedback style={css.formFeedback}>{fieldError('user_password_confirmation')}</FormFeedback>
+                {form.user_password_confirmation && (
+                  <div className="mt-2 d-inline-flex align-items-center gap-1 fs-11 fw-semibold">
+                    {form.user_password === form.user_password_confirmation ? (
+                      <span className="text-success d-inline-flex align-items-center gap-1">
+                        <i className="ri-checkbox-circle-fill" style={{ fontSize: 12 }}></i>
+                        Passwords match
+                      </span>
+                    ) : (
+                      <span className="text-danger d-inline-flex align-items-center gap-1">
+                        <i className="ri-close-circle-fill" style={{ fontSize: 12 }}></i>
+                        Passwords do not match
+                      </span>
+                    )}
+                  </div>
+                )}
               </Col>
               <Col md={4}>
                 <Lbl>User Status</Lbl>
