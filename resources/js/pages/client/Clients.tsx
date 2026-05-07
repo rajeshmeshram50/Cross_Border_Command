@@ -43,8 +43,12 @@ export default function Clients({ onNavigate }: Props) {
   const fetchClients = useCallback(async () => {
     setLoading(true);
     try {
+      // Pull all clients in one request and let TableContainer (react-table)
+      // paginate on the client. Avoids the double-pagination conflict where
+      // server pagination capped the dataset at 10 rows and react-table then
+      // disabled its own next/prev because it only saw one page.
       const res = await api.get<PaginatedResponse<Client>>('/clients', {
-        params: { search: search || undefined, page, per_page: 10 },
+        params: { search: search || undefined, per_page: 9999 },
       });
       setClients(res.data.data);
       setTotalPages(res.data.last_page);
