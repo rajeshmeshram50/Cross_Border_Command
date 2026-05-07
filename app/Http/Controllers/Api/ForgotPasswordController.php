@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Mail\PasswordResetOtpMail;
 use App\Models\User;
+use App\Traits\PasswordHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -12,6 +13,8 @@ use Illuminate\Support\Facades\Mail;
 
 class ForgotPasswordController extends Controller
 {
+    use PasswordHistory;
+
     private const OTP_EXPIRY_MINUTES = 10;
     private const MAX_OTP_ATTEMPTS = 5;
     private const RESEND_COOLDOWN_SECONDS = 120;
@@ -91,6 +94,10 @@ class ForgotPasswordController extends Controller
         return response()->json([
             'message' => 'Verification code sent to your email.',
             'expires_in' => self::OTP_EXPIRY_MINUTES * 60,
+            // Backend is the source of truth for the resend cooldown so the
+            // VerifyOTP screen can't show "Resend in 0s" while the API is
+            // still throttling — fixes the timer-mismatch bug.
+            'resend_after' => self::RESEND_COOLDOWN_SECONDS,
         ]);
     }
 
@@ -199,12 +206,16 @@ class ForgotPasswordController extends Controller
             return response()->json(['message' => 'User not found.'], 404);
         }
 
-        // Prevent reusing the current password
-        if (Hash::check($request->password, $user->password)) {
+        // Block re-use of the last 3 passwords (current + 2 historical).
+        // See App\Traits\PasswordHistory for the full policy.
+        if ($this->isPasswordReused($user, $request->password)) {
             return response()->json([
-                'message' => 'New password cannot be the same as your current password. Please choose a different password.',
+                'message' => $this->passwordReuseMessage(),
             ], 422);
         }
+
+        // Save the OLD hash to history BEFORE we overwrite it on the user.
+        $this->recordPasswordHistory($user);
 
         $user->update([
             'password' => Hash::make($request->password),

@@ -48,9 +48,12 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
 
     setLoading(true);
     try {
-      await api.post('/forgot-password/send-otp', { email });
+      // Use the backend-supplied resend_after when present so a future
+      // change to RESEND_COOLDOWN_SECONDS in the controller propagates
+      // here without needing a frontend edit.
+      const { data } = await api.post('/forgot-password/send-otp', { email });
       toast.success('Code sent', 'Verification code sent to your email');
-      startCooldown(COOLDOWN);
+      startCooldown(Number(data?.resend_after) || COOLDOWN);
       onEmailSubmitted?.(email);
     } catch (err: any) {
       const msg = err.response?.data?.message || 'An error occurred. Please try again.';

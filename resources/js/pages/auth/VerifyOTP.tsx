@@ -13,10 +13,15 @@ interface VerifyOTPProps {
 
 export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified }: VerifyOTPProps) {
   const toast = useToast();
+  // Default cooldown matches backend RESEND_COOLDOWN_SECONDS (120). Both
+  // the initial mount AND the resend handler use the value the API returns
+  // (`resend_after`) so the timer never drifts from what the server is
+  // actually enforcing.
+  const DEFAULT_RESEND_COOLDOWN = 120;
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [resendTimer, setResendTimer] = useState(60);
+  const [resendTimer, setResendTimer] = useState(DEFAULT_RESEND_COOLDOWN);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -103,13 +108,19 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
 
   const handleResend = async () => {
     try {
-      await api.post('/forgot-password/send-otp', { email });
-      setResendTimer(60);
+      // Server is the source of truth for the cooldown — pull the value it
+      // returns and use it for the next countdown so the UI never gets out
+      // of sync with what the API will actually accept.
+      const { data } = await api.post('/forgot-password/send-otp', { email });
+      setResendTimer(Number(data?.resend_after) || DEFAULT_RESEND_COOLDOWN);
       setOtp(['', '', '', '', '', '']);
       setError('');
       inputRefs.current[0]?.focus();
       toast.success('Code sent', 'New verification code sent to your email');
     } catch (err: any) {
+      // 429 throttle — server tells us the exact remaining seconds.
+      const retryAfter = Number(err.response?.data?.retry_after);
+      if (retryAfter > 0) setResendTimer(retryAfter);
       const msg = err.response?.data?.message || 'Failed to resend code';
       toast.error('Error', msg);
     }

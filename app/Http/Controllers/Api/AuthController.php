@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Permission;
 use App\Models\User;
+use App\Traits\PasswordHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    use PasswordHistory;
+
     public function login(Request $request)
     {
         $request->validate([
@@ -156,12 +159,16 @@ class AuthController extends Controller
             return response()->json(['message' => 'Current password is incorrect'], 422);
         }
 
-        // Prevent reusing the current password
-        if (Hash::check($request->password, $user->password)) {
+        // Block re-use of the last 3 passwords (current + 2 historical).
+        // See App\Traits\PasswordHistory for the full policy.
+        if ($this->isPasswordReused($user, $request->password)) {
             return response()->json([
-                'message' => 'New password cannot be the same as your current password.',
+                'message' => $this->passwordReuseMessage(),
             ], 422);
         }
+
+        // Save the OLD hash to history BEFORE we overwrite it on the user.
+        $this->recordPasswordHistory($user);
 
         $user->update([
             'password' => Hash::make($request->password),

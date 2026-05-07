@@ -67,6 +67,7 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.expense":     return "/hr/expense";
     case "hr.payroll":     return "/hr/payroll";
     case "hr.pip":         return "/hr/pip";
+    case "hr.calculation_master": return "/hr/calculation-master";
     default:               return "/hr";
   }
 };

@@ -20,6 +20,7 @@ const HR_LEAF_ROUTES: Record<string, string> = {
   'hr.expense':     '/hr/expense',
   'hr.payroll':     '/hr/payroll',
   'hr.pip':         '/hr/pip',
+  'hr.calculation_master': '/hr/calculation-master',
 };
 
 interface CategoryStyle { color: string; icon: string; gradient: string; }

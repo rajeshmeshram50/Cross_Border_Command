@@ -1565,3 +1565,441 @@
   border-radius: 2px;
   min-height: 3px;
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Calculation Master (HrCalculationMaster.tsx)
+ * Reuses .pip-card / .pip-active-table / .rec-pill / .pip-btn-initiate from
+ * above. Only the bits unique to this page get cm-* classes.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Hero header reuses .onb-hero-card / .pip-pill — no calc-master-specific
+   header classes needed. See the page top of HrCalculationMaster.tsx. */
+
+/* ── Section label (uppercase divider above each card group) ─────────── */
+.cm-section-label {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.10em;
+  color: var(--vz-secondary-color, #6b7280);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* ── Sidebar (rule categories) ───────────────────────────────────────── */
+.cm-sidebar {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.cm-side-group-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.10em;
+  color: var(--vz-secondary-color, #6b7280);
+  text-transform: uppercase;
+  padding: 6px 8px 4px;
+}
+.cm-side-group-label-spaced { margin-top: 14px; }
+.cm-side-item {
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  padding: 10px 10px 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+  --cm-accent: #7c5cfc; /* fallback when no accent provided */
+}
+.cm-side-item:hover {
+  border-color: var(--cm-accent);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--cm-accent) 18%, transparent);
+}
+.cm-side-item.is-active {
+  background: var(--vz-card-bg, #fff);
+  border-color: var(--cm-accent);
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--cm-accent) 20%, transparent);
+}
+
+/* Coloured left strip — short on inactive, full-height + bolder when active.
+   Matches the Master page rule-card pattern. */
+.cm-side-strip {
+  position: absolute;
+  left: 0; top: 22%; bottom: 22%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--cm-accent);
+  opacity: 0.55;
+  transition: top .15s ease, bottom .15s ease, width .15s ease, opacity .15s ease;
+}
+.cm-side-item:hover .cm-side-strip { opacity: 0.85; }
+.cm-side-item.is-active .cm-side-strip {
+  top: 0; bottom: 0;
+  width: 4px;
+  opacity: 1;
+}
+.cm-side-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 9px;
+  background: color-mix(in srgb, var(--cm-accent) 12%, transparent);
+  color: var(--cm-accent);
+  font-size: 17px; flex-shrink: 0;
+}
+.cm-side-icon i { line-height: 1; }
+.cm-side-item.is-active .cm-side-icon {
+  background: var(--cm-accent);
+  color: #fff;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--cm-accent) 40%, transparent);
+}
+.cm-side-text {
+  display: flex; flex-direction: column; min-width: 0;
+}
+.cm-side-title {
+  font-size: 13px; font-weight: 700;
+  color: var(--vz-heading-color, #111827);
+  line-height: 1.2;
+}
+.cm-side-sub {
+  font-size: 11px; color: var(--vz-secondary-color, #6b7280);
+  margin-top: 2px;
+}
+
+/* ── Right preview panel ─────────────────────────────────────────────── */
+.cm-preview {
+  position: sticky; top: 80px;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.cm-preview-head { margin-bottom: 12px; }
+.cm-preview-title {
+  font-weight: 800; font-size: 14px;
+  color: var(--vz-heading-color, #111827);
+  margin: 0;
+}
+.cm-preview-sub {
+  font-size: 11.5px; color: var(--vz-secondary-color, #6b7280);
+  margin: 2px 0 0;
+}
+.cm-form {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.cm-field { display: flex; flex-direction: column; gap: 4px; }
+.cm-label {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em;
+  color: var(--vz-secondary-color, #6b7280);
+  text-transform: uppercase;
+}
+.cm-label-block { display: block; margin-bottom: 4px; }
+.cm-input {
+  border-radius: 8px;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+}
+.cm-input-narrow { max-width: 80px; }
+
+/* ── Salary flow visualisation ───────────────────────────────────────── */
+.cm-flow {
+  margin-top: 14px;
+  padding: 14px;
+  background: linear-gradient(180deg, #eef2ff, #f5f3ff);
+  border: 1px solid #c7d2fe;
+  border-radius: 12px;
+  display: flex; flex-direction: column; align-items: stretch;
+}
+.cm-flow-title {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.10em;
+  color: #5a3fd1;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.cm-flow-step {
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
+}
+.cm-flow-step-gross   { background: var(--vz-card-bg, #fff); }
+.cm-flow-step-deduct  { background: linear-gradient(135deg, #fee2e2, #fef2f2); border-color: #fecaca; text-align: left; }
+.cm-flow-step-add     { background: linear-gradient(135deg, #d1fae5, #ecfdf5); border-color: #a7f3d0; text-align: left; }
+.cm-flow-step-net     { background: linear-gradient(135deg, #dbeafe, #eff6ff); border-color: #93c5fd; }
+.cm-flow-label {
+  font-size: 11px; font-weight: 700;
+  color: var(--vz-secondary-color, #6b7280);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.cm-flow-value {
+  font-size: 22px; font-weight: 800;
+  color: var(--vz-heading-color, #111827);
+  margin-top: 2px;
+  line-height: 1.1;
+}
+.cm-flow-value-net { color: #1e40af; font-size: 26px; }
+.cm-flow-line {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; padding: 2px 0;
+  color: #7f1d1d;
+  font-weight: 600;
+}
+.cm-flow-step-deduct .cm-flow-label { color: #b91c1c; margin-bottom: 4px; }
+.cm-flow-step-add .cm-flow-line { color: #065f46; }
+.cm-flow-amt { font-weight: 800; }
+.cm-flow-amt-neg { color: #b91c1c; }
+.cm-flow-amt-pos { color: #16a34a; }
+.cm-flow-connector {
+  width: 2px; height: 14px;
+  background: #c4b5fd;
+  margin: 0 auto;
+  border-radius: 2px;
+}
+
+/* ── Pills used inside cards (status / role / severity) ──────────────── */
+.cm-pill {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.cm-pill-red    { background: #fee2e2; color: #b91c1c; }
+.cm-pill-amber  { background: #fde8c4; color: #a4661c; }
+.cm-pill-green  { background: #d1fae5; color: #065f46; }
+.cm-pill-blue   { background: #dbeafe; color: #1e40af; }
+
+/* ── Mono-spaced cells (numbers, formulas in tables) ─────────────────── */
+.cm-cell-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  color: var(--vz-body-color);
+}
+
+/* ── Formula box (cream/yellow background, mono font) ────────────────── */
+.cm-formula {
+  margin-top: 10px;
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #78350f;
+  line-height: 1.6;
+}
+.cm-formula-key { color: #b45309; font-weight: 800; }
+
+/* ── PT applicability matrix tiles ───────────────────────────────────── */
+.cm-matrix {
+  border: 2px solid;
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+}
+.cm-matrix-female { background: #ecfdf5; border-color: #a7f3d0; }
+.cm-matrix-male   { background: #fff7ed; border-color: #fed7aa; }
+.cm-matrix-exempt { background: var(--vz-secondary-bg, #f9fafb); border-color: var(--vz-border-color, #e5e7eb); }
+.cm-matrix-head {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.05em;
+  color: var(--vz-secondary-color, #6b7280);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.cm-matrix-amount {
+  font-size: 24px; font-weight: 800;
+  color: var(--vz-heading-color, #111827);
+  line-height: 1;
+}
+.cm-matrix-foot {
+  font-size: 11px; color: var(--vz-secondary-color, #6b7280);
+  margin-top: 4px;
+}
+
+/* ── F&F deduction / addition cards ──────────────────────────────────── */
+.cm-fnf {
+  border-radius: 10px;
+  padding: 14px;
+  border: 1px solid;
+}
+.cm-fnf-deduct { background: linear-gradient(135deg, #fef2f2, #fff5f5); border-color: #fecaca; }
+.cm-fnf-add    { background: linear-gradient(135deg, #ecfdf5, #f0fdf4); border-color: #a7f3d0; }
+.cm-fnf-title {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.cm-fnf-deduct .cm-fnf-title { color: #b91c1c; }
+.cm-fnf-add .cm-fnf-title    { color: #065f46; }
+.cm-fnf-list {
+  margin: 0; padding-left: 0;
+  list-style: none;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.cm-fnf-list li {
+  font-size: 13px;
+  color: var(--vz-body-color);
+  padding-left: 16px;
+  position: relative;
+}
+.cm-fnf-list li::before {
+  content: '•';
+  position: absolute; left: 4px; top: 0;
+  font-weight: 800;
+}
+.cm-fnf-deduct .cm-fnf-list li::before { color: #dc2626; }
+.cm-fnf-add .cm-fnf-list li::before    { color: #16a34a; }
+
+/* ── Maker-Checker-Approver flow visualisation ───────────────────────── */
+.cm-mca {
+  display: flex; align-items: flex-start; justify-content: space-around;
+  gap: 12px;
+  padding: 18px 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.cm-mca-stage {
+  flex: 1; min-width: 180px;
+  text-align: center;
+  padding: 0 8px;
+}
+.cm-mca-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 56px; height: 56px; border-radius: 50%;
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+.cm-mca-icon-0 { background: #dbeafe; color: #1e40af; }
+.cm-mca-icon-1 { background: #fef3c7; color: #92400e; }
+.cm-mca-icon-2 { background: #d1fae5; color: #065f46; }
+.cm-mca-title {
+  font-weight: 800; font-size: 14px;
+  color: var(--vz-heading-color, #111827);
+  margin-bottom: 4px;
+}
+.cm-mca-desc {
+  font-size: 12px;
+  color: var(--vz-secondary-color, #6b7280);
+  line-height: 1.4;
+}
+
+/* ── Override request flag tiles ─────────────────────────────────────── */
+.cm-flag {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid;
+  border-radius: 10px;
+}
+.cm-flag-amber  { background: #fef3c7; border-color: #fde68a; }
+.cm-flag-orange { background: #ffedd5; border-color: #fed7aa; }
+.cm-flag-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 8px;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+.cm-flag-amber .cm-flag-icon  { background: #fde68a; color: #92400e; }
+.cm-flag-orange .cm-flag-icon { background: #fed7aa; color: #c2410c; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Calculation Master — DARK MODE overrides
+ * Every pastel-coloured background gets a darker, lower-saturation variant
+ * so the page doesn't blast white cards on a dark theme.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Hero card (in case .onb-hero-card's dark variant isn't loaded by another CSS file) */
+[data-bs-theme="dark"] .onb-hero-card {
+  background: linear-gradient(135deg, rgba(124,92,252,0.18) 0%, rgba(167,139,250,0.10) 100%);
+  border-color: rgba(124,92,252,0.32);
+}
+
+/* Sidebar tabs */
+[data-bs-theme="dark"] .cm-side-item {
+  background: var(--vz-secondary-bg);
+  border-color: var(--vz-border-color);
+}
+
+/* Right preview panel */
+[data-bs-theme="dark"] .cm-preview {
+  background: var(--vz-secondary-bg);
+  border-color: var(--vz-border-color);
+}
+
+/* Formula box */
+[data-bs-theme="dark"] .cm-formula {
+  background: rgba(245,158,11,0.10);
+  border-color: rgba(245,158,11,0.30);
+  color: #fde68a;
+}
+[data-bs-theme="dark"] .cm-formula-key { color: #fbbf24; }
+
+/* Salary flow visualisation */
+[data-bs-theme="dark"] .cm-flow {
+  background: linear-gradient(180deg, rgba(124,92,252,0.10), rgba(167,139,250,0.05));
+  border-color: rgba(124,92,252,0.30);
+}
+[data-bs-theme="dark"] .cm-flow-step              { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+[data-bs-theme="dark"] .cm-flow-step-deduct       {
+  background: linear-gradient(135deg, rgba(220,38,38,0.15), rgba(254,202,202,0.04));
+  border-color: rgba(220,38,38,0.32);
+}
+[data-bs-theme="dark"] .cm-flow-step-add          {
+  background: linear-gradient(135deg, rgba(22,163,74,0.15), rgba(167,243,208,0.04));
+  border-color: rgba(22,163,74,0.32);
+}
+[data-bs-theme="dark"] .cm-flow-step-net          {
+  background: linear-gradient(135deg, rgba(30,64,175,0.18), rgba(147,197,253,0.04));
+  border-color: rgba(30,64,175,0.40);
+}
+[data-bs-theme="dark"] .cm-flow-value             { color: var(--vz-heading-color); }
+[data-bs-theme="dark"] .cm-flow-value-net         { color: #93c5fd; }
+[data-bs-theme="dark"] .cm-flow-step-deduct .cm-flow-label { color: #fca5a5; }
+[data-bs-theme="dark"] .cm-flow-step-deduct .cm-flow-line  { color: #fca5a5; }
+[data-bs-theme="dark"] .cm-flow-step-add .cm-flow-line     { color: #6ee7b7; }
+[data-bs-theme="dark"] .cm-flow-amt-neg           { color: #fca5a5; }
+[data-bs-theme="dark"] .cm-flow-amt-pos           { color: #6ee7b7; }
+[data-bs-theme="dark"] .cm-flow-connector         { background: rgba(124,92,252,0.45); }
+
+/* Pills inside tables — keep readable on dark */
+[data-bs-theme="dark"] .cm-pill-red    { background: rgba(220,38,38,0.20);  color: #fca5a5; }
+[data-bs-theme="dark"] .cm-pill-amber  { background: rgba(245,158,11,0.18); color: #fcd34d; }
+[data-bs-theme="dark"] .cm-pill-green  { background: rgba(22,163,74,0.18);  color: #6ee7b7; }
+[data-bs-theme="dark"] .cm-pill-blue   { background: rgba(30,64,175,0.20);  color: #93c5fd; }
+
+/* PT Applicability matrix tiles */
+[data-bs-theme="dark"] .cm-matrix-female {
+  background: rgba(22,163,74,0.10);  border-color: rgba(22,163,74,0.40);
+}
+[data-bs-theme="dark"] .cm-matrix-male {
+  background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.40);
+}
+[data-bs-theme="dark"] .cm-matrix-exempt {
+  background: var(--vz-secondary-bg); border-color: var(--vz-border-color);
+}
+[data-bs-theme="dark"] .cm-matrix-amount { color: var(--vz-heading-color); }
+
+/* F&F deduction / addition cards */
+[data-bs-theme="dark"] .cm-fnf-deduct {
+  background: rgba(220,38,38,0.10); border-color: rgba(220,38,38,0.30);
+}
+[data-bs-theme="dark"] .cm-fnf-add {
+  background: rgba(22,163,74,0.10); border-color: rgba(22,163,74,0.30);
+}
+[data-bs-theme="dark"] .cm-fnf-list li { color: var(--vz-body-color); }
+
+/* MCA stage icons */
+[data-bs-theme="dark"] .cm-mca-icon-0 { background: rgba(30,64,175,0.20); color: #93c5fd; }
+[data-bs-theme="dark"] .cm-mca-icon-1 { background: rgba(245,158,11,0.20); color: #fcd34d; }
+[data-bs-theme="dark"] .cm-mca-icon-2 { background: rgba(22,163,74,0.20); color: #6ee7b7; }
+
+/* Override request flags */
+[data-bs-theme="dark"] .cm-flag-amber {
+  background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.30);
+}
+[data-bs-theme="dark"] .cm-flag-orange {
+  background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.30);
+}
+[data-bs-theme="dark"] .cm-flag-amber .cm-flag-icon  { background: rgba(245,158,11,0.25); color: #fcd34d; }
+[data-bs-theme="dark"] .cm-flag-orange .cm-flag-icon { background: rgba(245,158,11,0.25); color: #fdba74; }
+
+/* Form inputs in the right preview panel */
+[data-bs-theme="dark"] .cm-input {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+  color: var(--vz-body-color);
+}
