@@ -823,7 +823,7 @@ export default function ClientForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Website</Lbl>
-                <Input style={css.input} type="url" value={form.website} onChange={e => set('website', e.target.value)} placeholder="www.company.com" />
+                <Input style={css.input} type="text" value={form.website} onChange={e => set('website', e.target.value)} placeholder="www.company.com or https://company.com" />
               </Col>
             </Row>
 
