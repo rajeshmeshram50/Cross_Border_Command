@@ -1577,87 +1577,13 @@
 
 /* ── Section label (uppercase divider above each card group) ─────────── */
 .cm-section-label {
-  font-size: 11px; font-weight: 800; letter-spacing: 0.10em;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
   color: var(--vz-secondary-color, #6b7280);
   text-transform: uppercase;
   margin-bottom: 10px;
 }
 
-/* ── Sidebar (rule categories) ───────────────────────────────────────── */
-.cm-sidebar {
-  display: flex; flex-direction: column; gap: 4px;
-}
-.cm-side-group-label {
-  font-size: 10.5px; font-weight: 800; letter-spacing: 0.10em;
-  color: var(--vz-secondary-color, #6b7280);
-  text-transform: uppercase;
-  padding: 6px 8px 4px;
-}
-.cm-side-group-label-spaced { margin-top: 14px; }
-.cm-side-item {
-  position: relative;
-  display: flex; align-items: center; gap: 10px;
-  width: 100%; text-align: left;
-  background: var(--vz-card-bg, #fff);
-  border: 1px solid var(--vz-border-color, #e5e7eb);
-  padding: 10px 10px 10px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
-  --cm-accent: #7c5cfc; /* fallback when no accent provided */
-}
-.cm-side-item:hover {
-  border-color: var(--cm-accent);
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--cm-accent) 18%, transparent);
-}
-.cm-side-item.is-active {
-  background: var(--vz-card-bg, #fff);
-  border-color: var(--cm-accent);
-  box-shadow: 0 4px 10px color-mix(in srgb, var(--cm-accent) 20%, transparent);
-}
-
-/* Coloured left strip — short on inactive, full-height + bolder when active.
-   Matches the Master page rule-card pattern. */
-.cm-side-strip {
-  position: absolute;
-  left: 0; top: 22%; bottom: 22%;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--cm-accent);
-  opacity: 0.55;
-  transition: top .15s ease, bottom .15s ease, width .15s ease, opacity .15s ease;
-}
-.cm-side-item:hover .cm-side-strip { opacity: 0.85; }
-.cm-side-item.is-active .cm-side-strip {
-  top: 0; bottom: 0;
-  width: 4px;
-  opacity: 1;
-}
-.cm-side-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; border-radius: 9px;
-  background: color-mix(in srgb, var(--cm-accent) 12%, transparent);
-  color: var(--cm-accent);
-  font-size: 17px; flex-shrink: 0;
-}
-.cm-side-icon i { line-height: 1; }
-.cm-side-item.is-active .cm-side-icon {
-  background: var(--cm-accent);
-  color: #fff;
-  box-shadow: 0 3px 8px color-mix(in srgb, var(--cm-accent) 40%, transparent);
-}
-.cm-side-text {
-  display: flex; flex-direction: column; min-width: 0;
-}
-.cm-side-title {
-  font-size: 13px; font-weight: 700;
-  color: var(--vz-heading-color, #111827);
-  line-height: 1.2;
-}
-.cm-side-sub {
-  font-size: 11px; color: var(--vz-secondary-color, #6b7280);
-  margin-top: 2px;
-}
+/* (Sidebar styles removed — page now uses .rec-tab-track top tabs.) */
 
 /* ── Right preview panel ─────────────────────────────────────────────── */
 .cm-preview {
@@ -1670,20 +1596,22 @@
 }
 .cm-preview-head { margin-bottom: 12px; }
 .cm-preview-title {
-  font-weight: 800; font-size: 14px;
+  font-weight: 700; font-size: 14px; letter-spacing: -0.01em;
   color: var(--vz-heading-color, #111827);
   margin: 0;
 }
 .cm-preview-sub {
-  font-size: 11.5px; color: var(--vz-secondary-color, #6b7280);
+  font-size: 12.5px; color: var(--vz-secondary-color, #6b7280);
   margin: 2px 0 0;
 }
 .cm-form {
-  display: flex; flex-direction: column; gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
 }
-.cm-field { display: flex; flex-direction: column; gap: 4px; }
+.cm-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .cm-label {
-  font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
   color: var(--vz-secondary-color, #6b7280);
   text-transform: uppercase;
 }
@@ -1771,45 +1699,23 @@
   color: var(--vz-body-color);
 }
 
-/* ── Formula box (cream/yellow background, mono font) ────────────────── */
+/* ── Formula box — neutral slate code-block style (no more yellow) ───── */
 .cm-formula {
   margin-top: 10px;
-  background: linear-gradient(135deg, #fffbeb, #fef3c7);
-  border: 1px solid #fde68a;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #6366f1;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 10px 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #78350f;
+  color: #334155;
   line-height: 1.6;
 }
-.cm-formula-key { color: #b45309; font-weight: 800; }
+.cm-formula-key { color: #4338ca; font-weight: 800; }
 
-/* ── PT applicability matrix tiles ───────────────────────────────────── */
-.cm-matrix {
-  border: 2px solid;
-  border-radius: 10px;
-  padding: 14px;
-  text-align: center;
-}
-.cm-matrix-female { background: #ecfdf5; border-color: #a7f3d0; }
-.cm-matrix-male   { background: #fff7ed; border-color: #fed7aa; }
-.cm-matrix-exempt { background: var(--vz-secondary-bg, #f9fafb); border-color: var(--vz-border-color, #e5e7eb); }
-.cm-matrix-head {
-  font-size: 11px; font-weight: 800; letter-spacing: 0.05em;
-  color: var(--vz-secondary-color, #6b7280);
-  text-transform: uppercase;
-  margin-bottom: 6px;
-}
-.cm-matrix-amount {
-  font-size: 24px; font-weight: 800;
-  color: var(--vz-heading-color, #111827);
-  line-height: 1;
-}
-.cm-matrix-foot {
-  font-size: 11px; color: var(--vz-secondary-color, #6b7280);
-  margin-top: 4px;
-}
+/* (PT applicability tiles now use .rec-kpi-card from recruitment.css —
+   .cm-matrix-* removed since the existing KPI pattern covers it.) */
 
 /* ── F&F deduction / addition cards ──────────────────────────────────── */
 .cm-fnf {
@@ -1845,38 +1751,8 @@
 .cm-fnf-deduct .cm-fnf-list li::before { color: #dc2626; }
 .cm-fnf-add .cm-fnf-list li::before    { color: #16a34a; }
 
-/* ── Maker-Checker-Approver flow visualisation ───────────────────────── */
-.cm-mca {
-  display: flex; align-items: flex-start; justify-content: space-around;
-  gap: 12px;
-  padding: 18px 12px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-.cm-mca-stage {
-  flex: 1; min-width: 180px;
-  text-align: center;
-  padding: 0 8px;
-}
-.cm-mca-icon {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 56px; height: 56px; border-radius: 50%;
-  font-size: 24px;
-  margin-bottom: 8px;
-}
-.cm-mca-icon-0 { background: #dbeafe; color: #1e40af; }
-.cm-mca-icon-1 { background: #fef3c7; color: #92400e; }
-.cm-mca-icon-2 { background: #d1fae5; color: #065f46; }
-.cm-mca-title {
-  font-weight: 800; font-size: 14px;
-  color: var(--vz-heading-color, #111827);
-  margin-bottom: 4px;
-}
-.cm-mca-desc {
-  font-size: 12px;
-  color: var(--vz-secondary-color, #6b7280);
-  line-height: 1.4;
-}
+/* (MCA flow now uses .rec-kpi-card from recruitment.css —
+   .cm-mca-* removed since the existing KPI pattern covers it.) */
 
 /* ── Override request flag tiles ─────────────────────────────────────── */
 .cm-flag {
@@ -1908,11 +1784,8 @@
   border-color: rgba(124,92,252,0.32);
 }
 
-/* Sidebar tabs */
-[data-bs-theme="dark"] .cm-side-item {
-  background: var(--vz-secondary-bg);
-  border-color: var(--vz-border-color);
-}
+/* (Sidebar dark-mode override removed — top tabs use .rec-tab which
+   already ships with its own dark variant in recruitment.css.) */
 
 /* Right preview panel */
 [data-bs-theme="dark"] .cm-preview {
@@ -1920,13 +1793,14 @@
   border-color: var(--vz-border-color);
 }
 
-/* Formula box */
+/* Formula box — slate code-block in dark mode too */
 [data-bs-theme="dark"] .cm-formula {
-  background: rgba(245,158,11,0.10);
-  border-color: rgba(245,158,11,0.30);
-  color: #fde68a;
+  background: rgba(99,102,241,0.08);
+  border-color: rgba(99,102,241,0.20);
+  border-left-color: #818cf8;
+  color: #cbd5e1;
 }
-[data-bs-theme="dark"] .cm-formula-key { color: #fbbf24; }
+[data-bs-theme="dark"] .cm-formula-key { color: #a5b4fc; }
 
 /* Salary flow visualisation */
 [data-bs-theme="dark"] .cm-flow {
@@ -1961,17 +1835,8 @@
 [data-bs-theme="dark"] .cm-pill-green  { background: rgba(22,163,74,0.18);  color: #6ee7b7; }
 [data-bs-theme="dark"] .cm-pill-blue   { background: rgba(30,64,175,0.20);  color: #93c5fd; }
 
-/* PT Applicability matrix tiles */
-[data-bs-theme="dark"] .cm-matrix-female {
-  background: rgba(22,163,74,0.10);  border-color: rgba(22,163,74,0.40);
-}
-[data-bs-theme="dark"] .cm-matrix-male {
-  background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.40);
-}
-[data-bs-theme="dark"] .cm-matrix-exempt {
-  background: var(--vz-secondary-bg); border-color: var(--vz-border-color);
-}
-[data-bs-theme="dark"] .cm-matrix-amount { color: var(--vz-heading-color); }
+/* (PT matrix dark-mode overrides removed — using .rec-kpi-card which
+   already ships its own dark variant in recruitment.css.) */
 
 /* F&F deduction / addition cards */
 [data-bs-theme="dark"] .cm-fnf-deduct {
@@ -1982,10 +1847,8 @@
 }
 [data-bs-theme="dark"] .cm-fnf-list li { color: var(--vz-body-color); }
 
-/* MCA stage icons */
-[data-bs-theme="dark"] .cm-mca-icon-0 { background: rgba(30,64,175,0.20); color: #93c5fd; }
-[data-bs-theme="dark"] .cm-mca-icon-1 { background: rgba(245,158,11,0.20); color: #fcd34d; }
-[data-bs-theme="dark"] .cm-mca-icon-2 { background: rgba(22,163,74,0.20); color: #6ee7b7; }
+/* (MCA stage icons dark-mode removed — using .rec-kpi-card which already
+   ships its own dark variant in recruitment.css.) */
 
 /* Override request flags */
 [data-bs-theme="dark"] .cm-flag-amber {
@@ -2002,4 +1865,146 @@
   background: var(--vz-card-bg);
   border-color: var(--vz-border-color);
   color: var(--vz-body-color);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * Calculation Master — premium glassmorphism layer
+ * Scoped under .cm-page so no other page is affected. Provides the iOS /
+ * Big Sur "frosted glass" look — translucent cards, inset highlights,
+ * soft multi-layer shadows, gloss overlays on primary buttons.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Page-level soft tinted backdrop — a barely-visible diagonal wash that
+   gives the cards "something to be glassy against" instead of flat grey. */
+.cm-page {
+  background:
+    radial-gradient(1200px 600px at 5% -10%, rgba(217,154,241,0.18), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(31,73,167,0.10), transparent 60%);
+  padding-top: 4px;
+}
+[data-bs-theme="dark"] .cm-page {
+  background:
+    radial-gradient(1200px 600px at 5% -10%, rgba(168,85,247,0.16), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(56,189,248,0.10), transparent 60%);
+}
+
+/* Glassy cards — translucent fill + backdrop blur + inset top highlight. */
+.cm-page .pip-card,
+.cm-page .cm-preview {
+  background: linear-gradient(155deg, rgba(255,255,255,0.78), rgba(255,255,255,0.62));
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  border: 1px solid rgba(255,255,255,0.55);
+  border-radius: 18px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.85) inset,
+    0 -1px 0 rgba(31,73,167,0.05) inset,
+    0 14px 40px -12px rgba(31,73,167,0.18),
+    0 4px 12px rgba(31,73,167,0.06);
+}
+[data-bs-theme="dark"] .cm-page .pip-card,
+[data-bs-theme="dark"] .cm-page .cm-preview {
+  background: linear-gradient(155deg, rgba(40,48,72,0.72), rgba(28,34,54,0.58));
+  border: 1px solid rgba(167,139,250,0.18);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.06) inset,
+    0 -1px 0 rgba(0,0,0,0.20) inset,
+    0 14px 40px -12px rgba(0,0,0,0.45),
+    0 4px 12px rgba(0,0,0,0.25);
+}
+
+/* Hero card already gets its own gradient — add the same inset highlight +
+   shadow stack so it matches the glass family. */
+.cm-page .onb-hero-card {
+  border-radius: 18px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.85) inset,
+    0 14px 40px -12px rgba(120,40,180,0.22),
+    0 4px 12px rgba(120,40,180,0.08);
+}
+[data-bs-theme="dark"] .cm-page .onb-hero-card {
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.06) inset,
+    0 14px 40px -12px rgba(0,0,0,0.55),
+    0 4px 12px rgba(0,0,0,0.30);
+}
+
+/* Glossy buttons — top half gets a subtle white sheen overlay so primary
+   actions feel pressable & premium (matches iOS button styling). */
+.cm-page .pip-btn-initiate,
+.cm-page .rec-btn-ghost {
+  position: relative;
+  overflow: hidden;
+  border-radius: 11px;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.cm-page .pip-btn-initiate::before,
+.cm-page .rec-btn-ghost::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.30), rgba(255,255,255,0));
+  border-radius: 11px 11px 0 0;
+  pointer-events: none;
+}
+.cm-page .pip-btn-initiate:hover,
+.cm-page .rec-btn-ghost:hover {
+  transform: translateY(-1px);
+}
+.cm-page .pip-btn-initiate:active,
+.cm-page .rec-btn-ghost:active {
+  transform: translateY(0);
+}
+
+/* Top tabs — give the active one a subtle gloss + lift to match the
+   premium feel of the cards. */
+.cm-page .rec-tab.is-active {
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.30) inset,
+    0 6px 18px -6px rgba(31,73,167,0.40);
+}
+
+/* Tables inside glassy cards — the white-filled tbody clashed with the
+   translucent card background. Make rows transparent so the glass shows. */
+.cm-page .pip-active-table tbody td,
+.cm-page .pip-active-table thead th {
+  background: transparent;
+}
+.cm-page .pip-active-table tbody tr:hover {
+  background: rgba(124,92,252,0.05);
+}
+[data-bs-theme="dark"] .cm-page .pip-active-table tbody tr:hover {
+  background: rgba(167,139,250,0.08);
+}
+
+/* Form inputs inside glass cards — match the translucency so they don't
+   look like opaque rectangles cut into the glass. */
+.cm-page .form-control,
+.cm-page .form-select,
+.cm-page .cm-input {
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(255,255,255,0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.cm-page .form-control:focus,
+.cm-page .form-select:focus,
+.cm-page .cm-input:focus {
+  background: rgba(255,255,255,0.95);
+  border-color: rgba(124,92,252,0.45);
+  box-shadow: 0 0 0 4px rgba(124,92,252,0.10);
+}
+[data-bs-theme="dark"] .cm-page .form-control,
+[data-bs-theme="dark"] .cm-page .form-select,
+[data-bs-theme="dark"] .cm-page .cm-input {
+  background: rgba(15,23,42,0.5);
+  border-color: rgba(167,139,250,0.20);
+  color: var(--vz-body-color);
+}
+[data-bs-theme="dark"] .cm-page .form-control:focus,
+[data-bs-theme="dark"] .cm-page .form-select:focus,
+[data-bs-theme="dark"] .cm-page .cm-input:focus {
+  background: rgba(15,23,42,0.85);
+  border-color: rgba(167,139,250,0.50);
+  box-shadow: 0 0 0 4px rgba(167,139,250,0.12);
 }
