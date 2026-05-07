@@ -232,25 +232,26 @@ export default function HrCalculationMaster() {
     <Row>
       <Col xs={12}>
         <div className="rec-page cm-page">
-          {/* ── Hero header — same .onb-hero-card structure used by HrPIP /
-              HrLeave / HrExpenseManagement, but with this page's blue→magenta
-              accent gradient (also reused on the icon and Run Preview button
-              so the three elements feel like one design system). */}
-          <div
-            className="onb-hero-card mb-3"
-            style={{ background: 'linear-gradient(177deg, #d99af1 0%, #ede4ff 100%)', borderColor: '#e3d6ff' }}
-          >
+          {/* ── Hero header — matches the Employee Onboarding Hub treatment
+              (soft purple wash from .onb-hero-card defaults + solid purple
+              icon box + .onb-hero-pill + .onb-checklist-cta primary action).
+              Keeps the page visually consistent with the rest of HR. */}
+          <div className="onb-hero-card mb-3">
             <div className="d-flex align-items-center gap-3 min-w-0">
               <span
                 className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                style={{ width: 48, height: 48, background: 'linear-gradient(149deg, rgb(31,73,167) 0%, rgb(210,4,206) 100%)', boxShadow: '0 8px 18px rgba(120,40,180,0.32)' }}
+                style={{
+                  width: 46, height: 46,
+                  background: 'linear-gradient(135deg, #7c5cfc 0%, #5a3fd1 100%)',
+                  boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
+                }}
               >
-                <i className="ri-stack-line" style={{ color: '#fff', fontSize: 22 }} />
+                <i className="ri-stack-line" style={{ color: '#fff', fontSize: 21 }} />
               </span>
               <div className="min-w-0">
                 <div className="d-flex align-items-center gap-2 flex-wrap">
                   <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Calculation Master</h5>
-                  <span className="pip-pill pip-pill-warn"><span className="dot" />Rule Engine</span>
+                  <span className="onb-hero-pill"><span className="dot" />Rule Engine</span>
                 </div>
                 <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
                   Time &amp; Pay Inputs · Payroll Rule Engine · Live preview engine
@@ -261,12 +262,9 @@ export default function HrCalculationMaster() {
               <button type="button" className="rec-btn-ghost" onClick={handleSaveRules}>
                 <i className="ri-save-line" />Save Rules
               </button>
-              <button
-                type="button"
-                className="pip-btn-initiate"
-                style={{ background: 'linear-gradient(149deg, rgb(31,73,167) 0%, rgb(210,4,206) 100%)', boxShadow: '0 6px 14px rgba(120,40,180,0.32)' }}
-              >
-                <i className="ri-play-circle-line" />Run Preview
+              <button type="button" className="onb-checklist-cta rounded-pill">
+                <i className="ri-play-circle-line me-2" style={{ fontSize: 16 }} />
+                Run Preview
               </button>
             </div>
           </div>
