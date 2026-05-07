@@ -427,7 +427,6 @@ export default function HrPayroll() {
               fontSize: 13,
               color: '#fff',
               background: 'linear-gradient(135deg,#0ab39c 0%,#078b78 100%)',
-              border: '2px solid #5a3fd1',
               boxShadow: '0 8px 18px rgba(90,63,209,0.32)',
             }}
           >
@@ -442,14 +441,14 @@ export default function HrPayroll() {
               `${cycle.label} payroll will download shortly as CSV.`,
             )}
             style={{
-              padding: '10px 18px',
-              fontSize: 13,
-              border: '2px solid #5a3fd1',
+              padding: '10px 15px',
+              fontSize: 12,
+              border: '1px solid #705ad0',
               background: 'var(--vz-card-bg)',
               color: '#5a3fd1',
             }}
           >
-            <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
+            <i className="ri-download-2-line me-2" style={{ fontSize: 14 }} />
             Export
           </Button>
         </div>
