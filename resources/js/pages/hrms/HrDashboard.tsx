@@ -18,6 +18,7 @@ const HR_LEAF_ROUTES: Record<string, string> = {
   'hr.leave':       '/hr/leave',
   'hr.attendance':  '/hr/attendance',
   'hr.expense':     '/hr/expense',
+  'hr.payroll':     '/hr/payroll',
   'hr.pip':         '/hr/pip',
 };
 
