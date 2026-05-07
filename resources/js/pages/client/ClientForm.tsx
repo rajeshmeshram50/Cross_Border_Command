@@ -40,7 +40,7 @@ const formatPlanLabel = (p: PlanOption): string => {
 const empty = {
   org_name: '', org_type: '', email: '', phone: '', website: '',
   status: 'inactive', sports: '', industry: '', address: '', city: '',
-  district: '', taluka: '', pincode: '', state: '', country: 'India',
+  district: '', taluka: '', pincode: '', state: '', country: '',
   gst_number: '', pan_number: '', plan_id: '', plan_type: 'free',
   plan_expires_at: '', primary_color: '#4F46E5', secondary_color: '#10B981',
   notes: '', admin_name: '', admin_email: '', admin_phone: '',
@@ -283,7 +283,7 @@ export default function ClientForm({ onBack, editId }: Props) {
         phone: c.phone||'', website: c.website||'', status: c.status||'inactive',
         sports: c.sports||'', industry: c.industry||'', address: c.address||'',
         city: c.city||'', district: c.district||'', taluka: c.taluka||'',
-        pincode: c.pincode||'', state: c.state||'', country: c.country||'India',
+        pincode: c.pincode||'', state: c.state||'', country: c.country||'',
         gst_number: c.gst_number||'', pan_number: c.pan_number||'',
         plan_id: c.plan_id?.toString()||'', plan_type: c.plan_type||'free',
         plan_expires_at: c.plan_expires_at||'', primary_color: c.primary_color||'#4F46E5',
