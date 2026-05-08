@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Card, CardBody, Col, Row, Badge } from 'reactstrap';
+import { Card, CardBody, Col, Row, Badge, Modal, ModalBody } from 'reactstrap';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import api from '../../api';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
+// Reuse the recruitment module's modal styling so the dashboard popups
+// match the Hiring Requests modal exactly (rec-req-* classes).
+import '../../../css/recruitment.css';
 
 interface DashboardData {
   counts: {
@@ -152,9 +155,12 @@ const cardHeaderStyle: React.CSSProperties = {
   justifyContent: 'space-between',
 };
 
+type DetailModal = 'clients' | 'payments' | 'revenue' | null;
+
 export default function AdminDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [openModal, setOpenModal] = useState<DetailModal>(null);
 
   useEffect(() => {
     api.get('/dashboard/admin-stats').then(res => setData(res.data))
@@ -258,7 +264,7 @@ export default function AdminDashboard() {
                   <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }} title={`₹${revenue.total.toLocaleString('en-IN')}`}>₹{formatINRCompact(revenue.total)}</div>
                   <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>TOTAL REVENUE</div>
                 </div>
-                <button type="button" style={{
+                <button type="button" onClick={() => setOpenModal('revenue')} style={{
                   background: 'linear-gradient(135deg,#405189,#6691e7)', color: '#fff', border: 'none',
                   borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                 }}>
@@ -445,13 +451,13 @@ export default function AdminDashboard() {
                 <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Recent Clients</h5>
                 <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Latest registered clients</p>
               </div>
-              <button style={{
+              <button onClick={() => setOpenModal('clients')} style={{
                 background: 'transparent', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 14px',
                 fontSize: 12, fontWeight: 600, color: '#405189', cursor: 'pointer',
               }}>View All</button>
             </div>
             <CardBody style={{ padding: 0 }}>
-              {data.recent_clients.map((c: any, i: number) => (
+              {data.recent_clients.slice(0, 5).map((c: any, i: number) => (
                 <div key={c.id} className="ad-list-row" style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '12px 20px',
@@ -493,13 +499,13 @@ export default function AdminDashboard() {
                 <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Recent Payments</h5>
                 <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Latest transactions</p>
               </div>
-              <button style={{
+              <button onClick={() => setOpenModal('payments')} style={{
                 background: 'transparent', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '5px 14px',
                 fontSize: 12, fontWeight: 600, color: '#405189', cursor: 'pointer',
               }}>View All</button>
             </div>
             <CardBody style={{ padding: 0 }}>
-              {data.recent_payments.map((p: any) => {
+              {data.recent_payments.slice(0, 5).map((p: any) => {
                 const cfg = p.status === 'success'
                   ? { color: '#0ab39c', icon: 'ri-checkbox-circle-fill', bg: '#0ab39c18' }
                   : p.status === 'failed'
@@ -537,7 +543,203 @@ export default function AdminDashboard() {
           </Card>
         </Col>
       </Row>
+
+      {/* ── Detail popups — read-only previews of recent_clients,
+          recent_payments, and the revenue trend. Same gradient-header
+          pattern the master / asset modals use, so the dashboard popups
+          feel native to the rest of the app. Bodies scroll when content
+          overflows; data already lives in `data` so no refetch fires. */}
+      {/* Fixed medium height (540px) so all 3 popups feel the same size
+          regardless of row count. The header pins; only the body scrolls. */}
+      {/* Recent Clients — narrower (lg/800px). Doesn't need the wide
+          rec-req-modal width since there are only 4 columns. */}
+      <Modal isOpen={openModal === 'clients'} toggle={() => setOpenModal(null)} centered backdrop="static"
+        size="lg" contentClassName="rec-req-content border-0">
+        <ModalBody className="p-0 d-flex flex-column" style={{ height: 540 }}>
+          <DashboardModalHeader
+            icon="ri-team-line"
+            title="Recent Clients"
+            subtitle="Latest registered clients"
+            onClose={() => setOpenModal(null)}
+          />
+          <div className="rec-req-table-wrap" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+            <table className="rec-req-table table align-middle table-nowrap mb-0">
+              <thead className="table-light" style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                <tr>
+                  <th className="ps-4">ORGANIZATION</th>
+                  <th>EMAIL</th>
+                  <th>PLAN</th>
+                  <th className="pe-4">STATUS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.recent_clients.map((c: any) => (
+                  <tr key={c.id}>
+                    <td className="ps-4 fw-semibold">{c.org_name}</td>
+                    <td className="text-muted">{c.email}</td>
+                    <td>{c.plan?.name || 'Free'}</td>
+                    <td className="pe-4">
+                      <span className="rec-pill fw-bold" style={{
+                        background: c.status === 'active' ? '#0ab39c22' : '#f0654822',
+                        color: c.status === 'active' ? '#067d6e' : '#c2410c',
+                      }}>{c.status}</span>
+                    </td>
+                  </tr>
+                ))}
+                {data.recent_clients.length === 0 && (
+                  <tr><td colSpan={4} className="text-center text-muted py-4">No recent clients</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      <Modal isOpen={openModal === 'payments'} toggle={() => setOpenModal(null)} centered backdrop="static"
+        modalClassName="rec-req-modal" contentClassName="rec-req-content border-0">
+        <ModalBody className="p-0 d-flex flex-column" style={{ height: 540 }}>
+          <DashboardModalHeader
+            icon="ri-bank-card-line"
+            title="Recent Payments"
+            subtitle="Latest transactions"
+            onClose={() => setOpenModal(null)}
+          />
+          <div className="rec-req-table-wrap" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+            <table className="rec-req-table table align-middle table-nowrap mb-0">
+              <thead className="table-light" style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                <tr>
+                  <th className="ps-4">CLIENT</th>
+                  <th>INVOICE</th>
+                  <th>METHOD</th>
+                  <th className="text-end">AMOUNT</th>
+                  <th>STATUS</th>
+                  <th className="pe-4">DATE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.recent_payments.map((p: any) => {
+                  const tone = p.status === 'success' ? { bg: '#0ab39c22', text: '#067d6e' }
+                    : p.status === 'failed' ? { bg: '#f0654822', text: '#c2410c' }
+                    : { bg: '#f7b84b22', text: '#a16207' };
+                  const amtTone = p.status === 'success' ? '#0ab39c' : p.status === 'failed' ? '#f06548' : '#f7b84b';
+                  return (
+                    <tr key={p.id}>
+                      <td className="ps-4 fw-semibold">{p.client?.org_name || 'Unknown'}</td>
+                      <td className="text-muted">{p.invoice_number}</td>
+                      <td>{methodLabels[p.method] || p.method}</td>
+                      <td className="text-end fw-bold" style={{ color: amtTone }}>₹{parseFloat(p.total).toLocaleString('en-IN')}</td>
+                      <td>
+                        <span className="rec-pill fw-bold" style={{ background: tone.bg, color: tone.text }}>{p.status}</span>
+                      </td>
+                      <td className="pe-4 text-muted">{new Date(p.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                    </tr>
+                  );
+                })}
+                {data.recent_payments.length === 0 && (
+                  <tr><td colSpan={6} className="text-center text-muted py-4">No recent payments</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* Revenue Report — narrower (lg/800px). Three KPI tiles + a 3-col
+          monthly table fit comfortably without the wide rec-req-modal. */}
+      <Modal isOpen={openModal === 'revenue'} toggle={() => setOpenModal(null)} centered backdrop="static"
+        size="lg" contentClassName="rec-req-content border-0">
+        <ModalBody className="p-0 d-flex flex-column" style={{ height: 540 }}>
+          <DashboardModalHeader
+            icon="ri-line-chart-line"
+            title="Revenue Report"
+            subtitle="Monthly revenue breakdown"
+            onClose={() => setOpenModal(null)}
+          />
+          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+            <div className="px-3 pt-3">
+              <Row className="g-3 mb-3">
+                <Col md={4}>
+                  <div className="rec-kpi-card h-100">
+                    <span className="rec-kpi-strip" style={{ background: 'linear-gradient(90deg,#0ab39c,#22c8a9)' }} />
+                    <div className="rec-kpi-text">
+                      <span className="rec-kpi-label">Total Revenue</span>
+                      <span className="rec-kpi-num" style={{ color: '#0ab39c' }}>₹{revenue.total.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                </Col>
+                <Col md={4}>
+                  <div className="rec-kpi-card h-100">
+                    <span className="rec-kpi-strip" style={{ background: 'linear-gradient(90deg,#405189,#6691e7)' }} />
+                    <div className="rec-kpi-text">
+                      <span className="rec-kpi-label">This Month</span>
+                      <span className="rec-kpi-num" style={{ color: '#405189' }}>₹{revenue.monthly.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                </Col>
+                <Col md={4}>
+                  <div className="rec-kpi-card h-100">
+                    <span className="rec-kpi-strip" style={{ background: 'linear-gradient(90deg,#f7b84b,#f6c85a)' }} />
+                    <div className="rec-kpi-text">
+                      <span className="rec-kpi-label">Transactions</span>
+                      <span className="rec-kpi-num" style={{ color: '#f7b84b' }}>{counts.total_payments}</span>
+                    </div>
+                  </div>
+                </Col>
+              </Row>
+            </div>
+            <table className="rec-req-table table align-middle table-nowrap mb-0">
+              <thead className="table-light" style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                <tr>
+                  <th className="ps-4">MONTH</th>
+                  <th className="text-end">TRANSACTIONS</th>
+                  <th className="text-end pe-4">REVENUE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.revenue_trend.map((r: any) => (
+                  <tr key={r.month}>
+                    <td className="ps-4 fw-semibold">{r.month}</td>
+                    <td className="text-end">{r.count}</td>
+                    <td className="text-end fw-bold pe-4" style={{ color: '#0ab39c' }}>₹{Number(r.revenue).toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ModalBody>
+      </Modal>
     </>
+  );
+}
+
+/**
+ * Branded gradient header for the dashboard's read-only popups.
+ * Reuses the .rec-req-header / .rec-close-btn classes from
+ * recruitment.css so dashboard popups match the Hiring Requests modal
+ * pixel-for-pixel. No bespoke CSS lives in this file.
+ */
+function DashboardModalHeader({ icon, title, subtitle, onClose }: {
+  icon: string; title: string; subtitle: string; onClose: () => void;
+}) {
+  return (
+    <div className="rec-req-header">
+      <div className="d-flex align-items-center gap-3 min-w-0">
+        <span style={{
+          width: 44, height: 44, borderRadius: 12,
+          background: 'rgba(255,255,255,0.18)',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        }}>
+          <i className={icon} style={{ fontSize: 22 }} />
+        </span>
+        <div className="min-w-0">
+          <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 18 }}>{title}</h5>
+          <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>{subtitle}</div>
+        </div>
+      </div>
+      <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn">
+        <i className="ri-close-line" />
+      </button>
+    </div>
   );
 }
 
