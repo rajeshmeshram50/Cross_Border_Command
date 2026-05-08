@@ -36,6 +36,19 @@ class BranchController extends Controller
             $query->where('client_id', $request->query('client_id'));
         }
 
+        // Hide the auto-created "Head Office" placeholder branch that
+        // ClientController stamps on signup so the client_admin user has a
+        // branch_id FK target. It's an internal record, not a real branch the
+        // user manages — so it should not appear in the branches list.
+        // Match BOTH the auto code ('HO') and the auto name pattern so a
+        // legitimate user-created branch with code 'HO' isn't filtered.
+        if (!$request->boolean('include_head_office')) {
+            $query->where(function ($q) {
+                $q->where('code', '!=', 'HO')
+                  ->orWhere('name', 'not ilike', '% — Head Office');
+            });
+        }
+
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'ilike', "%{$search}%")
