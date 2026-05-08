@@ -303,6 +303,11 @@ export default function Permissions() {
                     className="btn-label waves-effect waves-light rounded-pill"
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
+                    style={{
+                      background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                      border: 'none',
+                      boxShadow: '0 4px 12px rgba(30,64,175,0.30)',
+                    }}
                   >
                     {saving
                       ? <Spinner size="sm" className="label-icon align-middle me-2" />
@@ -454,6 +459,11 @@ export default function Permissions() {
                     className="btn-label waves-effect waves-light rounded-pill"
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
+                    style={{
+                      background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                      border: 'none',
+                      boxShadow: '0 4px 12px rgba(30,64,175,0.30)',
+                    }}
                   >
                     {saving
                       ? <Spinner size="sm" className="label-icon align-middle me-2" />
