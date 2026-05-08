@@ -40,6 +40,10 @@ export default function TopNav({ current, onNavigate }: Props) {
     if (!id) return false;
     if (isSuperAdmin) return true;
     if (defaultSlugs.includes(id)) return true;
+    // Permissions module isn't a plan-permission row — its visibility is purely
+    // role-based. MENU_ITEMS already restricts it to client_admin + branch_user;
+    // here we just bypass the perms check so branch users actually see it.
+    if (id === 'permissions' && user?.user_type === 'branch_user') return true;
     if (planExpiredOrMissing) return false;
     return !!perms[id]?.can_view;
   };
