@@ -357,6 +357,39 @@ export default function HrEmployees() {
   const [statusFilter, setStatusFilter] = useState<'Active' | 'All'>('Active');
   const [deptFilter, setDeptFilter] = useState<string>('All Depts');
 
+  // KPI marquee strip — wheel-to-horizontal scroll. While the user is
+  // hovering, the auto-scroll animation pauses (CSS) and the strip switches
+  // to overflow-x: auto; this listener converts a vertical mouse-wheel
+  // delta into a horizontal scroll on the strip so the user doesn't have
+  // to hold Shift or grab a scrollbar.
+  //
+  // On mouseleave we snap scrollLeft back to 0. Why: the strip's auto-scroll
+  // is a CSS translateX animation on the inner .hr-emp-kpi-track, while
+  // user scroll changes the OUTER container's scrollLeft. They're additive
+  // — if the user scrolled to scrollLeft=3000 and then leaves, the resumed
+  // animation pushes the track past its end and the user sees a blank gap.
+  // Resetting scrollLeft on leave keeps the animation in a valid range.
+  const kpiStripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = kpiStripRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return;
+      if (el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+    const onLeave = () => {
+      el.scrollTo({ left: 0, behavior: 'smooth' });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('mouseleave', onLeave);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('mouseleave', onLeave);
+    };
+  }, []);
+
   // ── Server-backed state ─────────────────────────────────────────────
   // employees:  raw API rows + a UI-shaped projection. We keep the raw
   //             rows around so handlers can read foreign-key ids without
@@ -1739,24 +1772,103 @@ export default function HrEmployees() {
       <style>{`
         .hr-employees-surface { background: #ffffff; }
         [data-bs-theme="dark"] .hr-employees-surface { background: #1c2531; }
-        .hr-emp-kpi-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
-        @media (min-width: 576px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-        @media (min-width: 768px)  { .hr-emp-kpi-grid { grid-template-columns: repeat(5, 1fr); } }
-        @media (min-width: 1200px) {
-          .hr-emp-kpi-grid { grid-template-columns: repeat(10, 1fr); gap: 8px; }
-          .hr-emp-kpi-card { padding: 12px 10px !important; }
-          .hr-emp-kpi-icon { width: 34px !important; height: 34px !important; }
-          .hr-emp-kpi-icon i { font-size: 17px !important; }
-          .hr-emp-kpi-label { font-size: 9.5px !important; letter-spacing: 0.04em !important; margin-bottom: 6px !important; }
-          .hr-emp-kpi-value { font-size: 20px !important; }
+        /* KPI strip — auto-scrolling marquee. The viewport is .hr-emp-kpi-grid
+           (overflow hidden, no scrollbar). The .hr-emp-kpi-track inside it
+           contains the cards rendered TWICE and animates from 0 → -50%
+           over 40s, so the loop reads as continuous and seamless. Hovering
+           anywhere on the strip pauses the animation so the user can
+           actually read a card. Soft fade-out masks at the left/right
+           edges hide the seam where the duplicate set joins. */
+        /* Marquee viewport — overflow hidden by default so cards march
+           past via the CSS animation. On hover the animation pauses AND
+           overflow-x switches to auto so the user can scroll-wheel
+           through the cards manually (the wheel listener in the
+           component converts vertical wheel into horizontal scroll). */
+        .hr-emp-kpi-grid {
+          position: relative;
+          overflow-x: hidden;
+          padding: 8px 0 14px;
+          mask-image: linear-gradient(90deg, transparent 0%, #000 1.5%, #000 98.5%, transparent 100%);
+          -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 1.5%, #000 98.5%, transparent 100%);
+          scrollbar-width: none;
+        }
+        .hr-emp-kpi-grid::-webkit-scrollbar { display: none; }
+        .hr-emp-kpi-grid:hover { overflow-x: auto; cursor: grab; }
+        .hr-emp-kpi-grid:active { cursor: grabbing; }
+        .hr-emp-kpi-grid::after {
+          content: '';
+          position: absolute; inset: 0;
+          pointer-events: none;
+          background: linear-gradient(90deg,
+            rgba(255,255,255,0.55) 0%,
+            rgba(255,255,255,0) 30%,
+            rgba(255,255,255,0) 70%,
+            rgba(255,255,255,0.55) 100%);
+        }
+        [data-bs-theme="dark"] .hr-emp-kpi-grid::after {
+          background: linear-gradient(90deg,
+            rgba(28,37,49,0.65) 0%,
+            rgba(28,37,49,0) 30%,
+            rgba(28,37,49,0) 70%,
+            rgba(28,37,49,0.65) 100%);
+        }
+        /* Steps timing — the strip "ticks" one card at a time and holds it
+           at the centre briefly before sliding to the next. 20 steps =
+           10 cards × 2 (duplicate set), ~1.8s pause per card. */
+        .hr-emp-kpi-track {
+          display: flex;
+          gap: 14px;
+          width: max-content;
+          animation: hr-emp-kpi-marquee 36s steps(20, end) infinite;
+        }
+        .hr-emp-kpi-grid:hover .hr-emp-kpi-track {
+          animation-play-state: paused;
+        }
+        @keyframes hr-emp-kpi-marquee {
+          from { transform: translateX(0); }
+          to   { transform: translateX(calc(-50% - 7px)); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .hr-emp-kpi-track { animation: none; }
         }
         .hr-emp-kpi-card {
+          flex: 0 0 250px;
+          /* Fixed height keeps every card the same — labels that wrap to
+             2 lines no longer make their card taller than its neighbours. */
+          height: 104px;
           transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+          /* Richer base shadow — replaces the original 0 2px 10px rgba(0,0,0,0.04) */
+          box-shadow:
+            0 6px 16px -4px rgba(15, 23, 42, 0.10),
+            0 2px 4px rgba(15, 23, 42, 0.06) !important;
+        }
+        /* Reserve space for 2 lines on every label so the value sits at
+           the same vertical position whether the label is one line
+           ("NEW JOINERS") or two ("ONBOARDING COMPLETED"). */
+        .hr-emp-kpi-label {
+          min-height: 28px;
+          line-height: 1.25;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+        [data-bs-theme="dark"] .hr-emp-kpi-card {
+          box-shadow:
+            0 8px 20px -4px rgba(0, 0, 0, 0.55),
+            0 2px 6px rgba(0, 0, 0, 0.35) !important;
         }
         .hr-emp-kpi-card:hover {
-          transform: translateY(-3px);
-          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
-          border-color: rgba(124, 92, 252, 0.35);
+          transform: translateY(-4px);
+          box-shadow:
+            0 16px 32px -8px rgba(15, 23, 42, 0.18),
+            0 4px 10px rgba(124, 92, 252, 0.10) !important;
+          border-color: rgba(124, 92, 252, 0.45);
+        }
+        [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
+          box-shadow:
+            0 18px 36px -8px rgba(0, 0, 0, 0.65),
+            0 4px 12px rgba(124, 92, 252, 0.25) !important;
         }
         .hr-emp-kpi-card:hover .hr-emp-kpi-icon {
           transform: scale(1.06);
@@ -1829,38 +1941,47 @@ export default function HrEmployees() {
               </div>
             </div>
 
-            {/* ── KPI cards (Clients-style: gradient strip + icon box) ── */}
-            <div className="hr-emp-kpi-grid mb-3">
-              {KPI_CARDS.map(k => (
-                <div
-                  key={k.key}
-                  className="hr-employees-surface hr-emp-kpi-card"
-                  style={{
-                    borderRadius: 14,
-                    border: '1px solid var(--vz-border-color)',
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                    padding: '16px 18px',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    height: '100%',
-                  }}
-                >
-                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                    <div className="min-w-0">
-                      <p className="hr-emp-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                        {k.label}
-                      </p>
-                      <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                        <AnimatedNumber value={(counts as any)[k.key]} />
-                      </h3>
-                    </div>
-                    <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                      <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+            {/* ── KPI cards — auto-scrolling marquee.
+                Cards are rendered TWICE (with aria-hidden on the second
+                copy so screen readers don't double-read them) so the
+                CSS animation can wrap from translateX(0) → -50% and
+                read as a single, infinite, seamless scroll. The strip
+                ref + wheel handler below let the user scroll the strip
+                horizontally with a vertical mouse wheel while the
+                animation is paused on hover. */}
+            <div ref={kpiStripRef} className="hr-emp-kpi-grid mb-3">
+              <div className="hr-emp-kpi-track">
+                {[...KPI_CARDS, ...KPI_CARDS].map((k, idx) => (
+                  <div
+                    key={`${k.key}-${idx}`}
+                    aria-hidden={idx >= KPI_CARDS.length}
+                    className="hr-employees-surface hr-emp-kpi-card"
+                    style={{
+                      borderRadius: 14,
+                      border: '1px solid var(--vz-border-color)',
+                      padding: '16px 18px',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      height: '100%',
+                    }}
+                  >
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
+                      <div className="min-w-0">
+                        <p className="hr-emp-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                          {k.label}
+                        </p>
+                        <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                          <AnimatedNumber value={(counts as any)[k.key]} />
+                        </h3>
+                      </div>
+                      <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
             {/* ── Tabs (Active / Disabled) ── */}
