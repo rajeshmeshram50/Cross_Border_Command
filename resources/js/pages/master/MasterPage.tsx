@@ -1604,7 +1604,7 @@ function MasterPageInner({
             </button>
           </div>
         </div>
-        <Form onSubmit={handleSave}>
+        <Form onSubmit={handleSave} noValidate>
           <ModalBody className="px-4 py-3">
             {sectionedFields.map((group, gIdx) => {
               const p = SECTION_PALETTES[gIdx % SECTION_PALETTES.length];
