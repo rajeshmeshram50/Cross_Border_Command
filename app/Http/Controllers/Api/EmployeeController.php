@@ -301,6 +301,7 @@ class EmployeeController extends Controller
     {
         $this->authorize($request, 'can_add');
         $data = $this->validatePayload($request);
+        $data = $this->mirrorAncillaryRoles($data);
         $this->assertAssetsNotDoubleBooked($data, null);
 
         try {
@@ -411,6 +412,7 @@ class EmployeeController extends Controller
         // it's destructive.
 
         $data = $this->validatePayload($request, $row->id);
+        $data = $this->mirrorAncillaryRoles($data);
         $this->assertAssetsNotDoubleBooked($data, $row->id);
 
         // Track wizard progress as a high-watermark — never decrease it.
@@ -724,7 +726,9 @@ class EmployeeController extends Controller
             'department_id'   => 'nullable|integer',
             'designation_id'  => 'nullable|integer',
             'primary_role_id' => 'nullable|integer',
-            'ancillary_role_id' => 'nullable|integer',
+            'ancillary_role_id'    => 'nullable|integer',
+            'ancillary_role_ids'   => 'nullable|array',
+            'ancillary_role_ids.*' => 'integer',
             'reporting_manager_id' => 'nullable|integer',
             'date_of_joining' => 'nullable|date',
 
@@ -851,6 +855,28 @@ class EmployeeController extends Controller
 
     /**
      * Reject the save if any of the chosen assets is already booked by
+     * Bridge multi-role array → legacy single-int column.
+     *
+     * If `ancillary_role_ids` is sent, normalise it to clean ints and
+     * mirror its first element into the legacy `ancillary_role_id` column
+     * so SQL/reports still referencing the old column keep working.
+     * If only the legacy single id arrives (older client), expand it
+     * into a one-item array so the new code path stays the source of truth.
+     */
+    private function mirrorAncillaryRoles(array $data): array
+    {
+        if (array_key_exists('ancillary_role_ids', $data)) {
+            $ids = array_values(array_filter((array) $data['ancillary_role_ids'], fn ($v) => $v !== null && $v !== ''));
+            $ids = array_map('intval', $ids);
+            $data['ancillary_role_ids'] = $ids;
+            $data['ancillary_role_id']  = $ids[0] ?? null;
+        } elseif (array_key_exists('ancillary_role_id', $data) && $data['ancillary_role_id']) {
+            $data['ancillary_role_ids'] = [(int) $data['ancillary_role_id']];
+        }
+        return $data;
+    }
+
+    /**
      * a different employee. Throws a ValidationException with the
      * conflicting field names so the SPA can highlight them.
      */

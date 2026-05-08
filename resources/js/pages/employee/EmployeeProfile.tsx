@@ -66,6 +66,10 @@ export interface EmployeeProfileTarget {
   designation?: string;
   primaryRole?: string;
   ancillaryRole?: string | string[] | null;
+  /** Multi-role array — populated by HrEmployees' apiToUiRow from the
+   *  server-side `ancillary_roles_resolved` accessor. Preferred over the
+   *  legacy single `ancillaryRole`. */
+  ancillaryRoles?: string[];
   manager?: string;
   profile?: number;
   onboarding?: 'Completed' | 'In Progress' | 'Pending';
@@ -392,15 +396,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     || (employee?.name ? employee.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase() : 'EM');
   const accent = employee?.accent || '#7c5cfc';
   const profilePct = typeof employee?.profile === 'number' ? employee.profile : 83;
-  // Ancillary roles support multiple values per employee — accept either an
-  // array or a single string from `employee.ancillaryRole`. Falls back to a
-  // mock multi-role list so the directory→profile flow still showcases the
-  // multi-pill scenario when no employee state is passed.
-  const ancillaryList = Array.isArray(employee?.ancillaryRole)
-    ? (employee?.ancillaryRole as string[]).filter(Boolean)
-    : (employee?.ancillaryRole
-        ? [employee.ancillaryRole as string]
-        : ['Training Coordinator', 'Onboarding Buddy', 'Interviewer']);
+  // Ancillary roles support multiple values per employee. Prefer the
+  // explicit `ancillaryRoles` array (server-resolved from
+  // `ancillary_roles_resolved`); fall back to the legacy single
+  // `ancillaryRole` for older row shapes. No hardcoded demo data —
+  // empty saved data renders as an empty list, not fake names.
+  const ancillaryList: string[] = Array.isArray(employee?.ancillaryRoles) && employee.ancillaryRoles.length > 0
+    ? employee.ancillaryRoles.filter(Boolean)
+    : Array.isArray(employee?.ancillaryRole)
+      ? (employee?.ancillaryRole as string[]).filter(Boolean)
+      : (employee?.ancillaryRole ? [employee.ancillaryRole as string] : []);
 
   const statusTone =
       employee?.status === 'active'         ? { bg: 'rgba(255,255,255,0.18)', dot: '#22c55e', label: 'Active' }

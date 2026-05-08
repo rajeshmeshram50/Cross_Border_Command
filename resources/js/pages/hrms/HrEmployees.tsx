@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -137,6 +138,7 @@ interface EmployeeRow {
   designation: string;
   primaryRole: string;
   ancillaryRole: string | null;
+  ancillaryRoles: string[];
   manager: string;
   profile: number;
   onboarding: 'Completed' | 'In Progress' | 'Pending';
@@ -177,6 +179,8 @@ interface ApiEmployee {
   designation_id: number | null;
   primary_role_id: number | null;
   ancillary_role_id: number | null;
+  ancillary_role_ids?: number[] | null;
+  ancillary_roles_resolved?: { id: number; name: string }[];
   reporting_manager_id: number | null;
   legal_entity_id: number | null;
   location: string | null;
@@ -247,6 +251,12 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
     designation: e.designation?.name || '—',
     primaryRole: e.primary_role?.name || '—',
     ancillaryRole: e.ancillary_role?.name || null,
+    // Prefer the server-resolved array of roles so the table can render the
+    // chip + "+N" pattern. Falls back to the legacy single role for rows
+    // saved before the multi-role migration.
+    ancillaryRoles: (e.ancillary_roles_resolved && e.ancillary_roles_resolved.length > 0)
+      ? e.ancillary_roles_resolved.map(r => r.name)
+      : (e.ancillary_role?.name ? [e.ancillary_role.name] : []),
     manager: e.reporting_manager?.display_name
       || (e.reporting_manager
           ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
@@ -1253,7 +1263,11 @@ export default function HrEmployees() {
       setEDept(raw.department_id ? String(raw.department_id) : '');
       setEDesignation(raw.designation_id ? String(raw.designation_id) : '');
       setEPrimaryRole(raw.primary_role_id ? String(raw.primary_role_id) : '');
-      setEAncillaryRole(raw.ancillary_role_id ? [String(raw.ancillary_role_id)] : []);
+      setEAncillaryRole(
+        Array.isArray(raw.ancillary_role_ids) && raw.ancillary_role_ids.length > 0
+          ? raw.ancillary_role_ids.map(String)
+          : (raw.ancillary_role_id ? [String(raw.ancillary_role_id)] : [])
+      );
       setELegalEntity(raw.legal_entity_id ? String(raw.legal_entity_id) : '');
       setELocation(raw.location || '');
       setEReportingMgr(raw.reporting_manager_id ? `employee:${raw.reporting_manager_id}` : '');
@@ -1450,7 +1464,9 @@ export default function HrEmployees() {
       department_id:   intOrNull(eDept),
       designation_id:  intOrNull(eDesignation),
       primary_role_id: intOrNull(ePrimaryRole),
-      ancillary_role_id: intOrNull(eAncillaryRole[0]),
+      // Send the full multi-select array. Backend mirrors the first item
+      // into the legacy ancillary_role_id column for SQL/report compat.
+      ancillary_role_ids: eAncillaryRole.map(v => Number(v)).filter(n => Number.isFinite(n)),
       legal_entity_id: intOrNull(eLegalEntity),
       location:        eLocation || null,
       reporting_manager_id: (() => {
@@ -2110,7 +2126,6 @@ export default function HrEmployees() {
                         </tr>
                       ) : filtered.map((e, idx) => {
                         const primary = tone(e.primaryRole);
-                        const ancillary = e.ancillaryRole ? tone(e.ancillaryRole) : null;
                         return (
                           <tr
                             key={e.id}
@@ -2175,22 +2190,7 @@ export default function HrEmployees() {
                               </span>
                             </td>
                             <td>
-                              {ancillary ? (
-                                <span
-                                  className="d-inline-flex align-items-center fw-semibold"
-                                  style={{
-                                    fontSize: 11,
-                                    padding: '4px 10px',
-                                    borderRadius: 999,
-                                    background: ancillary.bg,
-                                    color: ancillary.fg,
-                                  }}
-                                >
-                                  {e.ancillaryRole}
-                                </span>
-                              ) : (
-                                <span className="text-muted">—</span>
-                              )}
+                              <AncillaryRolesChip names={e.ancillaryRoles} />
                             </td>
                             <td className="fs-13">{e.manager}</td>
                             <td>
@@ -4591,6 +4591,160 @@ export default function HrEmployees() {
           </Modal>
         );
       })()}
+    </>
+  );
+}
+
+/**
+ * Multi-role chip for the Ancillary Role column.
+ *
+ * Shows the FIRST role as a coloured pill, plus a "+N" badge if the
+ * employee has more. Click the +N → floating popover lists every
+ * remaining role. The popover uses `position: fixed` + a Portal so it
+ * escapes the table cell's overflow clipping and z-index stacking,
+ * and aligns itself to the button via getBoundingClientRect(). Closes
+ * on outside-click, Esc, scroll, or window resize. Empty list = "—".
+ */
+function AncillaryRolesChip({ names }: { names: string[] }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  // Recompute the popover anchor whenever it opens. Clamp to the viewport
+  // so it never falls off the edge on the right.
+  const place = () => {
+    const b = btnRef.current?.getBoundingClientRect();
+    if (!b) return;
+    const POP_W = 200;
+    const margin = 8;
+    let left = b.left;
+    if (left + POP_W + margin > window.innerWidth) {
+      left = Math.max(margin, window.innerWidth - POP_W - margin);
+    }
+    setPos({ top: b.bottom + 6, left });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const onScrollOrResize = () => setOpen(false);
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onEsc);
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onEsc);
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [open]);
+
+  if (!names || names.length === 0) {
+    return <span className="text-muted">—</span>;
+  }
+
+  const first = names[0];
+  const rest = names.slice(1);
+  const firstTone = tone(first);
+
+  return (
+    <>
+      <span className="d-inline-flex align-items-center gap-1">
+        <span
+          className="d-inline-flex align-items-center fw-semibold"
+          style={{
+            fontSize: 11,
+            padding: '4px 10px',
+            borderRadius: 999,
+            background: firstTone.bg,
+            color: firstTone.fg,
+          }}
+        >
+          {first}
+        </span>
+        {rest.length > 0 && (
+          <button
+            ref={btnRef}
+            type="button"
+            onClick={(ev) => { ev.stopPropagation(); setOpen(o => !o); }}
+            className="d-inline-flex align-items-center fw-bold"
+            aria-label={`Show ${rest.length} more ancillary role${rest.length > 1 ? 's' : ''}`}
+            style={{
+              fontSize: 10.5,
+              padding: '4px 8px',
+              borderRadius: 999,
+              background: open ? '#7c5cfc' : 'rgba(124,92,252,0.12)',
+              color: open ? '#fff' : '#5a3fd1',
+              border: '1px solid rgba(124,92,252,0.25)',
+              cursor: 'pointer',
+              transition: 'background .15s ease, color .15s ease',
+              lineHeight: 1.1,
+            }}
+          >
+            +{rest.length}
+          </button>
+        )}
+      </span>
+      {open && rest.length > 0 && pos && createPortal(
+        <div
+          ref={popRef}
+          onClick={(ev) => ev.stopPropagation()}
+          className="d-flex flex-column gap-1"
+          style={{
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left,
+            zIndex: 1080,
+            width: 200,
+            padding: 10,
+            borderRadius: 12,
+            background: 'var(--vz-card-bg, #fff)',
+            border: '1px solid var(--vz-border-color)',
+            boxShadow: '0 18px 38px -8px rgba(15,23,42,0.22), 0 6px 14px rgba(15,23,42,0.08)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.06em',
+              color: 'var(--vz-secondary-color)',
+              textTransform: 'uppercase',
+              marginBottom: 4,
+            }}
+          >
+            All Ancillary Roles
+          </div>
+          {names.map(n => {
+            const t = tone(n);
+            return (
+              <span
+                key={n}
+                className="fw-semibold"
+                style={{
+                  fontSize: 11,
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  background: t.bg,
+                  color: t.fg,
+                  alignSelf: 'flex-start',
+                }}
+              >
+                {n}
+              </span>
+            );
+          })}
+        </div>,
+        document.body,
+      )}
     </>
   );
 }

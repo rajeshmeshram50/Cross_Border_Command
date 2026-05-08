@@ -35,7 +35,7 @@ class Employee extends Model
 
         'legal_entity_id', 'location',
         'department_id', 'designation_id',
-        'primary_role_id', 'ancillary_role_id',
+        'primary_role_id', 'ancillary_role_id', 'ancillary_role_ids',
         'reporting_manager_id', 'date_of_joining',
 
         'probation_policy', 'probation_months',
@@ -76,7 +76,7 @@ class Employee extends Model
     /** Accessors auto-included on every JSON serialization. The
      *  `other_assets_resolved` accessor short-circuits when the array
      *  is empty, so rows without assets pay no DB cost. */
-    protected $appends = ['other_assets_resolved'];
+    protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved'];
 
     protected $casts = [
         'date_of_birth'  => 'date',
@@ -84,6 +84,7 @@ class Employee extends Model
         'salary_effective_from' => 'date',
         'assets' => 'array',
         'other_master_asset_ids' => 'array',
+        'ancillary_role_ids' => 'array',
         'probation_months' => 'integer',
         'notice_period_days' => 'integer',
         'attendance_tracking' => 'boolean',
@@ -153,6 +154,27 @@ class Employee extends Model
         return \App\Models\Masters\Assets::query()
             ->whereIn('id', $ids)
             ->get(['id', 'asset_name', 'code', 'asset_number']);
+    }
+
+    /**
+     * Resolve the JSON-array of ancillary role ids into role rows so the
+     * SPA can render the chip + "+N" badge directly. Falls back to the
+     * legacy `ancillary_role_id` for rows that haven't been re-saved
+     * since the multi-role migration.
+     */
+    public function getAncillaryRolesResolvedAttribute(): \Illuminate\Support\Collection
+    {
+        $ids = (array) ($this->ancillary_role_ids ?? []);
+        if (empty($ids) && $this->ancillary_role_id) {
+            $ids = [$this->ancillary_role_id];
+        }
+        if (empty($ids)) return collect();
+        return \App\Models\Masters\Roles::query()
+            ->whereIn('id', $ids)
+            ->get(['id', 'name'])
+            // Preserve the user's pick order, not the DB's natural order.
+            ->sortBy(fn ($r) => array_search($r->id, $ids))
+            ->values();
     }
 
     // ── Master refs ─────────────────────────────────────────────────────
