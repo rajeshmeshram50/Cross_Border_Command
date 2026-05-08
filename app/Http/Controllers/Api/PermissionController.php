@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Employee;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
@@ -26,14 +27,22 @@ class PermissionController extends Controller
         $authUser = $request->user();
         $targetUser = User::findOrFail($userId);
 
-        // Allow self-read; super admin reads anyone; client admin reads anyone in
-        // their client; main branch user reads anyone in their own branch.
+        // Allow self-read; super admin reads anyone; client admin and main
+        // branch user both read anyone in their client. Main branch sees
+        // sibling sub-branches per the tenant model, and the HR Employees
+        // page surfaces those employees — gating perm-read by branch_id
+        // would 403 every sibling-branch employee a main branch user opens.
+        //
+        // Orphan target (NULL client_id, e.g. an employee super_admin created
+        // without a tenant) is also allowed for client_admin / main_branch
+        // user — the HR Employees scope shows orphans to them, so the perms
+        // page must load too. The save path then adopts the orphan into the
+        // granter's tenant.
+        $isPrivilegedGranter = $authUser->isClientAdmin() || $authUser->isMainBranchUser();
         $allowed = $authUser->id === $targetUser->id
             || $authUser->isSuperAdmin()
-            || ($authUser->isClientAdmin() && $authUser->client_id === $targetUser->client_id)
-            || ($authUser->isMainBranchUser()
-                && $authUser->client_id === $targetUser->client_id
-                && $authUser->branch_id === $targetUser->branch_id);
+            || ($isPrivilegedGranter && $authUser->client_id === $targetUser->client_id)
+            || ($isPrivilegedGranter && $targetUser->client_id === null);
 
         if (!$allowed) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -61,11 +70,14 @@ class PermissionController extends Controller
                 ->whereHas('client', fn($q) => $q->where('status', 'active'))
                 ->with(['client:id,org_name,status'])
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
-        } elseif ($authUser->isClientAdmin()) {
-            // Client admin can manage both branch_users (whose branch is active)
-            // AND employees under their client. Employees don't always carry a
-            // branch_id, so we don't gate them on branch.status.
+        } elseif ($authUser->isClientAdmin() || $authUser->isMainBranchUser()) {
+            // Client admin AND main branch user both manage every active
+            // branch_user/employee in the client (excluding self). Main
+            // branch sees sibling sub-branches per the tenant model, so its
+            // picker mirrors the client admin scope rather than its own
+            // branch alone.
             $users = User::where('client_id', $authUser->client_id)
+                ->where('id', '!=', $authUser->id)
                 ->whereIn('user_type', ['branch_user', 'employee'])
                 ->where('status', 'active')
                 ->where(function ($q) {
@@ -76,17 +88,6 @@ class PermissionController extends Controller
                              ->whereHas('branch', fn($qb) => $qb->where('status', 'active'));
                       });
                 })
-                ->with('branch:id,name,status')
-                ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
-        } elseif ($authUser->isMainBranchUser()) {
-            // Main-branch user can manage permissions for OTHER active users in
-            // their own branch (excluding themselves) — branch_users and any
-            // employees stamped with the same branch.
-            $users = User::where('client_id', $authUser->client_id)
-                ->where('branch_id', $authUser->branch_id)
-                ->where('id', '!=', $authUser->id)
-                ->whereIn('user_type', ['branch_user', 'employee'])
-                ->where('status', 'active')
                 ->with('branch:id,name,status')
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } else {
@@ -125,17 +126,40 @@ class PermissionController extends Controller
                 return response()->json(['message' => 'Cannot assign permissions to super admin'], 403);
             }
         } elseif ($authUser->isClientAdmin() || $authUser->isMainBranchUser()) {
-            // Client admin grants to any branch_user OR employee under their
-            // client. Main branch user grants to branch_users / employees in
-            // their own branch (not themselves).
+            // Client admin AND main branch user both grant to any
+            // branch_user/employee under their client (excluding self). Main
+            // branch sees sibling sub-branches per the tenant model, so it
+            // also grants across them — matching what HR Employees surfaces.
             $manageableTypes = ['branch_user', 'employee'];
-            $allowed = $authUser->isClientAdmin()
-                ? ($targetUser->client_id === $authUser->client_id
-                    && in_array($targetUser->user_type, $manageableTypes, true))
-                : ($targetUser->client_id === $authUser->client_id
-                    && $targetUser->branch_id === $authUser->branch_id
-                    && in_array($targetUser->user_type, $manageableTypes, true)
-                    && $targetUser->id !== $authUser->id);
+
+            // Adopt orphan targets (NULL client_id — typically employees that
+            // super_admin created without tenant attribution) into the
+            // granter's tenant. The HR Employees scope already exposes these
+            // orphans to branch users, so we mirror the implicit ownership
+            // and clean up the data on first interaction. Without this the
+            // ===-comparison below 403's every orphan grant.
+            if ($targetUser->client_id === null
+                && in_array($targetUser->user_type, $manageableTypes, true)) {
+                $targetUser->update([
+                    'client_id' => $authUser->client_id,
+                    'branch_id' => $authUser->branch_id,
+                ]);
+                if ($targetUser->user_type === 'employee') {
+                    Employee::where('user_id', $targetUser->id)
+                        ->whereNull('client_id')
+                        ->update([
+                            'client_id' => $authUser->client_id,
+                            'branch_id' => $authUser->branch_id,
+                        ]);
+                }
+                $targetUser->refresh();
+                $targetClientId = $targetUser->client_id;
+                $targetBranchId = $targetUser->branch_id;
+            }
+
+            $allowed = $targetUser->client_id === $authUser->client_id
+                && in_array($targetUser->user_type, $manageableTypes, true)
+                && $targetUser->id !== $authUser->id;
 
             if (!$allowed) {
                 return response()->json(['message' => 'You can only assign permissions to users you manage'], 403);
