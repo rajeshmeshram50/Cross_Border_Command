@@ -627,6 +627,15 @@ function MasterPageInner({
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     const label = deleteLabel(deleteTarget);
+    // Defensive: an upstream API that returns a wrapped payload (e.g. legacy
+    // `{ message, record }`) can leave a row in state without an `id`. Catch
+    // it here so we never send `/endpoint/undefined` to the backend.
+    if (deleteTarget.id == null) {
+      toast.error('Cannot delete', 'This record is missing an identifier. Refresh the page and try again.');
+      setDeleteOpen(false);
+      setDeleteTarget(null);
+      return;
+    }
     setDeleting(true);
     try {
       await api.delete(`${masterEndpoint(cfg)}/${deleteTarget.id}`);

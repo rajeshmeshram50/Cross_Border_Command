@@ -1,6 +1,6 @@
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { MENU_ITEMS } from '../constants';
+import { MENU_ITEMS, SUPER_ADMIN_MASTERS } from '../constants';
 import type { MenuGroup, MenuItem } from '../types';
 import Avatar from '../components/ui/Avatar';
 import Logo from '../components/Logo';
@@ -50,7 +50,10 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
 
   const canView = (id: string) => {
     if (!id) return false;
-    if (isSuperAdmin) return true;
+    if (isSuperAdmin) {
+      if (id.startsWith('master.')) return SUPER_ADMIN_MASTERS.has(id);
+      return true;
+    }
     if (defaultSlugs.includes(id)) return true;
     if (planExpiredOrMissing) return false;
     return !!perms[id]?.can_view;

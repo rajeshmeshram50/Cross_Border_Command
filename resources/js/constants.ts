@@ -14,6 +14,17 @@ export const FEATURE_FLAGS = {
   hrAttendance: true,    // HR · Time & Pay · Attendance
 };
 
+// Masters the super admin actually uses. Tenant-scoped masters (everything
+// else) stay available to client/branch users via the standard per-module
+// permission flags in `perms[id].can_view`.
+export const SUPER_ADMIN_MASTERS: ReadonlySet<string> = new Set([
+  'master.organization_types',
+  'master.countries',
+  'master.states',
+  'master.state_codes',
+  'master.address_types',
+]);
+
 export const MASTER_GROUPS: MenuGroup[] = [
   {
     id: 'master.identity',
@@ -217,7 +228,8 @@ export const MENU_ITEMS: MenuItem[] = [
     id: 'hr',
     icon: 'Users',
     label: 'HR',
-    roles: ALL_TENANT_ROLES,
+    // HR is tenant-only — super admin doesn't manage employees, leave, payroll, etc.
+    roles: ['client_admin', 'client_user', 'branch_user', 'employee'],
     groups: HR_GROUPS,
   },
 

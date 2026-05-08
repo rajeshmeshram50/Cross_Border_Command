@@ -41,7 +41,7 @@ class OrganizationTypeController extends Controller
 
         $type = OrganizationType::create($data);
 
-        return response()->json(['message' => 'Organization type created', 'organization_type' => $type], 201);
+        return response()->json($type, 201);
     }
 
     public function show(OrganizationType $organizationType)
@@ -67,7 +67,7 @@ class OrganizationTypeController extends Controller
 
         $organizationType->update($data);
 
-        return response()->json(['message' => 'Organization type updated', 'organization_type' => $organizationType]);
+        return response()->json($organizationType);
     }
 
     public function destroy(Request $request, OrganizationType $organizationType)

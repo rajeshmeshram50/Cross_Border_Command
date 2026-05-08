@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Row, Col } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { MASTER_GROUPS } from '../constants';
+import { MASTER_GROUPS, SUPER_ADMIN_MASTERS } from '../constants';
 import type { MenuChild, MenuGroup } from '../types';
 import api from '../api';
 import { getMasterConfig, masterEndpoint } from './master/masterConfigs';
@@ -118,7 +118,11 @@ export default function MasterDashboard() {
   const [search, setSearch] = useState('');
 
   const groups = useMemo<MenuGroup[]>(() => {
-    if (isSuperAdmin) return MASTER_GROUPS;
+    if (isSuperAdmin) {
+      return MASTER_GROUPS
+        .map(g => ({ ...g, children: g.children.filter(c => SUPER_ADMIN_MASTERS.has(c.id)) }))
+        .filter(g => g.children.length > 0);
+    }
     return MASTER_GROUPS
       .map(g => ({ ...g, children: g.children.filter(c => !SUPER_ADMIN_ONLY_MASTERS.has(c.id) && !!perms[c.id]?.can_view) }))
       .filter(g => g.children.length > 0);
