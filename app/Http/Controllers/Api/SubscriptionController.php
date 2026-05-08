@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\Client;
 use App\Models\Payment;
 use App\Models\Permission;
 use App\Models\Plan;
 use App\Models\PlanModule;
 use App\Models\Module;
+use App\Models\User;
 use App\Services\RazorpayService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -57,6 +59,8 @@ class SubscriptionController extends Controller
             'plan_id' => 'required|exists:plans,id',
             'payment_method' => 'required|in:upi,card,net_banking',
             'billing_cycle' => 'required|in:month,quarter,year',
+            'kept_branch_ids' => 'nullable|array',
+            'kept_branch_ids.*' => 'integer|exists:branches,id',
         ]);
 
         $user = $request->user();
@@ -67,6 +71,15 @@ class SubscriptionController extends Controller
         $plan = Plan::with('modules')->findOrFail($request->plan_id);
         $client = Client::findOrFail($user->client_id);
 
+        // Branch-shrink guard: if the new plan caps branches below the current
+        // active count, the client MUST send `kept_branch_ids` so we know which
+        // ones survive. We validate scope (own client, must include main, not
+        // exceeding cap) here before any payment is created.
+        $keptBranchIds = $this->resolveKeptBranchIds($request, $client, $plan);
+        if ($keptBranchIds instanceof \Illuminate\Http\JsonResponse) {
+            return $keptBranchIds;
+        }
+
         [$amount, $gst, $total, $validFrom, $validUntil] = $this->computePricing($plan, $request->billing_cycle);
 
         // Free plan — activate immediately, no Razorpay
@@ -76,6 +89,7 @@ class SubscriptionController extends Controller
                 $request->billing_cycle, $request->payment_method,
                 $validFrom, $validUntil,
                 razorpayOrderId: null,
+                keptBranchIds: $keptBranchIds,
             );
 
             $this->activatePlan($payment, $plan, $client, $user);
@@ -108,6 +122,7 @@ class SubscriptionController extends Controller
             $request->billing_cycle, $request->payment_method,
             $validFrom, $validUntil,
             razorpayOrderId: $order['id'],
+            keptBranchIds: $keptBranchIds,
         );
 
         return response()->json([
@@ -274,7 +289,13 @@ class SubscriptionController extends Controller
         string $billingCycle, string $paymentMethod,
         $validFrom, $validUntil,
         ?string $razorpayOrderId,
+        ?array $keptBranchIds = null,
     ): Payment {
+        $gatewayResponse = $razorpayOrderId ? ['razorpay_order_id' => $razorpayOrderId] : [];
+        if (!empty($keptBranchIds)) {
+            $gatewayResponse['kept_branch_ids'] = array_values($keptBranchIds);
+        }
+
         return Payment::create([
             'client_id' => $client->id,
             'plan_id' => $plan->id,
@@ -294,7 +315,7 @@ class SubscriptionController extends Controller
             'status' => $total <= 0 ? 'success' : 'pending',
             'invoice_number' => 'INV-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4)),
             'processed_by' => $user->id,
-            'gateway_response' => $razorpayOrderId ? ['razorpay_order_id' => $razorpayOrderId] : [],
+            'gateway_response' => $gatewayResponse,
         ]);
     }
 
@@ -341,6 +362,210 @@ class SubscriptionController extends Controller
                     ]);
                 }
             }
+
+            // Downgrade hygiene — without these two steps, a client who shrinks
+            // their plan keeps every old branch active and every old branch-user
+            // permission. Both must be reconciled to the new plan's footprint.
+            $this->cascadePruneDownstreamPermissions($user->id, $client->id);
+            $this->enforceBranchLimit($client, $plan, $payment);
         });
+    }
+
+    /**
+     * Drop any flag a branch_user / employee still holds that the freshly-reset
+     * client admin no longer has post-downgrade. Mirrors PermissionController's
+     * cascade — duplicated here because the trigger (plan change) is different
+     * from the manual super-admin save path. Returns rows touched.
+     */
+    private function cascadePruneDownstreamPermissions(int $adminUserId, int $clientId): int
+    {
+        $fields = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
+
+        $adminPerms = DB::table('permissions')
+            ->where('user_id', $adminUserId)
+            ->get(['module_id', ...$fields])
+            ->keyBy('module_id');
+
+        $downstreamUserIds = User::where('client_id', $clientId)
+            ->whereIn('user_type', ['branch_user', 'employee'])
+            ->pluck('id');
+
+        $affected = 0;
+        foreach ($downstreamUserIds as $duid) {
+            $rows = DB::table('permissions')->where('user_id', $duid)->get();
+            foreach ($rows as $row) {
+                $admin = $adminPerms->get($row->module_id);
+
+                // Whole module not in admin's perms anymore → wipe row entirely
+                if (!$admin) {
+                    DB::table('permissions')->where('id', $row->id)->delete();
+                    $affected++;
+                    continue;
+                }
+
+                $updates = [];
+                foreach ($fields as $f) {
+                    if ($row->$f && !$admin->$f) {
+                        $updates[$f] = false;
+                    }
+                }
+                if (!empty($updates)) {
+                    $updates['updated_at'] = now();
+                    DB::table('permissions')->where('id', $row->id)->update($updates);
+                    $affected++;
+                }
+
+                $stillHasAny = collect($fields)
+                    ->some(fn($f) => array_key_exists($f, $updates) ? $updates[$f] : $row->$f);
+                if (!$stillHasAny) {
+                    DB::table('permissions')->where('id', $row->id)->delete();
+                }
+            }
+        }
+        return $affected;
+    }
+
+    /**
+     * Enforce plan.max_branches by deactivating any branch the client did NOT
+     * include in `kept_branch_ids` on the order. Branches are NOT soft-deleted
+     * — they go status='inactive' so re-upgrading restores them. Sanctum tokens
+     * for users in deactivated branches are revoked so live sessions die.
+     *
+     * Fallback (no kept_branch_ids on the payment): keep main + oldest N-1 by
+     * created_at. This handles renewals/upgrades where no shrink is needed.
+     */
+    private function enforceBranchLimit(Client $client, Plan $plan, Payment $payment): int
+    {
+        $maxBranches = (int) ($plan->max_branches ?? 0);
+        if ($maxBranches <= 0) {
+            return 0;
+        }
+
+        $keptIds = collect($payment->gateway_response['kept_branch_ids'] ?? [])
+            ->map(fn($id) => (int) $id)
+            ->filter()
+            ->values()
+            ->all();
+
+        $activeBranches = Branch::where('client_id', $client->id)
+            ->where('status', 'active')
+            ->orderByDesc('is_main')
+            ->orderBy('created_at')
+            ->get(['id', 'is_main', 'status', 'created_at']);
+
+        if ($activeBranches->count() <= $maxBranches) {
+            return 0;
+        }
+
+        if (!empty($keptIds)) {
+            // Validate: client-scoped kept set, capped to max_branches
+            $validKeptIds = $activeBranches->pluck('id')
+                ->intersect($keptIds)
+                ->take($maxBranches)
+                ->values()
+                ->all();
+
+            // Always keep the main branch — even if the client forgot to tick it
+            $mainId = $activeBranches->firstWhere('is_main', true)?->id;
+            if ($mainId && !in_array($mainId, $validKeptIds, true)) {
+                array_unshift($validKeptIds, $mainId);
+                $validKeptIds = array_slice($validKeptIds, 0, $maxBranches);
+            }
+
+            $excess = $activeBranches->whereNotIn('id', $validKeptIds);
+        } else {
+            // No selection submitted — pick main + oldest sub-branches
+            $excess = $activeBranches->slice($maxBranches);
+        }
+
+        if ($excess->isEmpty()) {
+            return 0;
+        }
+
+        $excessIds = $excess->pluck('id')->all();
+
+        Branch::whereIn('id', $excessIds)->update(['status' => 'inactive']);
+
+        $userIds = User::whereIn('branch_id', $excessIds)->pluck('id');
+        if ($userIds->isNotEmpty()) {
+            DB::table('personal_access_tokens')
+                ->where('tokenable_type', User::class)
+                ->whereIn('tokenable_id', $userIds)
+                ->delete();
+        }
+
+        return count($excessIds);
+    }
+
+    /**
+     * Validate the `kept_branch_ids` payload against the new plan and the
+     * caller's own client. Returns the cleaned id list, or a JsonResponse
+     * the controller can return as-is on validation failure.
+     *
+     * Required only when current active branch count > new plan's max_branches.
+     * If not required, an empty array is returned — `enforceBranchLimit` will
+     * fall through to the no-op path.
+     */
+    private function resolveKeptBranchIds(Request $request, Client $client, Plan $plan)
+    {
+        $maxBranches = (int) ($plan->max_branches ?? 0);
+        if ($maxBranches <= 0) {
+            return []; // unlimited plan — selection is meaningless
+        }
+
+        $clientBranches = Branch::where('client_id', $client->id)
+            ->where('status', 'active')
+            ->get(['id', 'is_main']);
+
+        $currentCount = $clientBranches->count();
+        $shrinkRequired = $currentCount > $maxBranches;
+
+        $submitted = collect($request->input('kept_branch_ids', []))
+            ->map(fn($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if (!$shrinkRequired) {
+            // Selection allowed but ignored — frontend may still submit it.
+            // Filter to the client's own branches just to be safe.
+            return $clientBranches->pluck('id')->intersect($submitted)->values()->all();
+        }
+
+        if ($submitted->isEmpty()) {
+            return response()->json([
+                'message' => "This plan allows up to {$maxBranches} branches but you currently have {$currentCount}. Select which branches to keep before downgrading.",
+                'requires_branch_selection' => true,
+                'max_branches' => $maxBranches,
+                'current_branch_count' => $currentCount,
+            ], 422);
+        }
+
+        $clientBranchIds = $clientBranches->pluck('id')->all();
+        $foreign = $submitted->reject(fn($id) => in_array($id, $clientBranchIds, true));
+        if ($foreign->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Selected branches must belong to your organization.',
+            ], 422);
+        }
+
+        if ($submitted->count() > $maxBranches) {
+            return response()->json([
+                'message' => "You can keep at most {$maxBranches} branches on this plan.",
+                'max_branches' => $maxBranches,
+            ], 422);
+        }
+
+        // Main branch must survive — auto-include if the client forgot to tick it
+        $mainId = $clientBranches->firstWhere('is_main', true)?->id;
+        $kept = $submitted->all();
+        if ($mainId && !in_array($mainId, $kept, true)) {
+            if (count($kept) >= $maxBranches) {
+                array_pop($kept);
+            }
+            array_unshift($kept, $mainId);
+        }
+
+        return array_values(array_unique(array_map('intval', $kept)));
     }
 }

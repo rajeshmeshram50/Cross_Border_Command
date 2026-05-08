@@ -7,6 +7,7 @@ import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination, Autoplay } from 'swiper/modules';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { useToast } from '../../contexts/ToastContext';
 // @ts-ignore
 import 'swiper/css';
@@ -28,6 +29,7 @@ interface Plan {
 export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) {
   const { user } = useAuth();
   const toast = useToast();
+  const { branches } = useBranchSwitcher();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
@@ -37,8 +39,18 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   const [processing, setProcessing] = useState(false);
   const [paymentStep, setPaymentStep] = useState<'select' | 'processing' | 'success'>('select');
   const [txnResult, setTxnResult] = useState<any>(null);
+
+  // Branch-shrink flow — when the chosen plan caps branches below the active
+  // count, the client must pick which to keep before payment. The main branch
+  // is always kept (locked in the UI) so the tenant model stays intact.
+  const [branchKeepModal, setBranchKeepModal] = useState(false);
+  const [keptBranchIds, setKeptBranchIds] = useState<number[]>([]);
+
   const prevRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
+
+  const activeBranches = branches.filter(b => b.status === 'active');
+  const mainBranchId = activeBranches.find(b => b.is_main)?.id ?? null;
 
   useEffect(() => {
     api.get('/subscription/plans').then(res => setPlans(res.data || []))
@@ -53,9 +65,68 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
     return amount;
   };
 
+  // Whether the chosen plan's max_branches forces the client to drop branches.
+  // null/0 = unlimited, no shrink. Returns the cap when shrink is required.
+  const requiredShrinkCap = (plan: Plan): number | null => {
+    const cap = plan.max_branches ?? 0;
+    if (cap <= 0) return null;
+    return activeBranches.length > cap ? cap : null;
+  };
+
   const openPayment = (plan: Plan) => {
     setSelectedPlan(plan);
     setPaymentStep('select');
+
+    if (requiredShrinkCap(plan) !== null) {
+      // Pre-select main branch + (cap - 1) most-recently-used / oldest branches
+      // so the user has a sensible starting state. They can adjust freely.
+      const cap = plan.max_branches ?? 0;
+      const initial = mainBranchId ? [mainBranchId] : [];
+      for (const b of activeBranches) {
+        if (initial.length >= cap) break;
+        if (!initial.includes(b.id)) initial.push(b.id);
+      }
+      setKeptBranchIds(initial);
+      setBranchKeepModal(true);
+      return;
+    }
+
+    setKeptBranchIds([]);
+    setPaymentModal(true);
+  };
+
+  const toggleKeptBranch = (branchId: number) => {
+    if (!selectedPlan) return;
+    if (branchId === mainBranchId) return; // main is locked — always kept
+    const cap = selectedPlan.max_branches ?? 0;
+    setKeptBranchIds(prev => {
+      if (prev.includes(branchId)) {
+        return prev.filter(id => id !== branchId);
+      }
+      if (cap > 0 && prev.length >= cap) {
+        toast.error('Limit reached', `You can keep at most ${cap} branches on this plan.`);
+        return prev;
+      }
+      return [...prev, branchId];
+    });
+  };
+
+  const confirmBranchSelection = () => {
+    if (!selectedPlan) return;
+    const cap = selectedPlan.max_branches ?? 0;
+    if (cap > 0 && keptBranchIds.length === 0) {
+      toast.error('Pick at least one', 'Select which branches to keep before continuing.');
+      return;
+    }
+    if (cap > 0 && keptBranchIds.length > cap) {
+      toast.error('Too many selected', `This plan allows only ${cap} branches.`);
+      return;
+    }
+    if (mainBranchId && !keptBranchIds.includes(mainBranchId)) {
+      toast.error('Main branch required', 'The main branch must remain active. Switch your main branch first if you want to retire it.');
+      return;
+    }
+    setBranchKeepModal(false);
     setPaymentModal(true);
   };
 
@@ -69,6 +140,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
         plan_id: selectedPlan.id,
         payment_method: paymentMethod,
         billing_cycle: billingCycle,
+        ...(keptBranchIds.length > 0 ? { kept_branch_ids: keptBranchIds } : {}),
       });
     } catch (err: any) {
       toast.error('Could not start payment', err.response?.data?.message || 'Something went wrong');
@@ -496,6 +568,153 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
           </button>
         </div>
       )}
+
+      {/* Branch-keep Modal — shown only when downgrading shrinks max_branches.
+          Main branch is always kept (locked); the user picks up to (cap - 1)
+          additional sub-branches. Unselected branches will be deactivated on
+          plan activation (data preserved — re-upgrading restores them). */}
+      <Modal
+        isOpen={branchKeepModal}
+        toggle={() => !processing && setBranchKeepModal(false)}
+        centered
+        size="md"
+        className="pay-modal"
+      >
+        <ModalHeader toggle={() => !processing && setBranchKeepModal(false)} className="border-0 pb-0">
+          <span className="d-inline-flex align-items-center gap-2">
+            <i className="ri-git-branch-line" style={{ color: '#f7b84b', fontSize: 20 }} />
+            <span className="fw-bold">Choose branches to keep</span>
+          </span>
+        </ModalHeader>
+        <ModalBody className="pt-2">
+          {selectedPlan && (() => {
+            const cap = selectedPlan.max_branches ?? 0;
+            const remaining = Math.max(0, cap - keptBranchIds.length);
+            return (
+              <>
+                <div
+                  className="d-flex align-items-start gap-2 mb-3 px-3 py-2 rounded-2"
+                  style={{
+                    background: '#f7b84b15',
+                    border: '1px solid #f7b84b40',
+                    borderLeft: '3px solid #f7b84b',
+                  }}
+                >
+                  <i className="ri-information-line" style={{ color: '#f7b84b', fontSize: 16, marginTop: 2 }} />
+                  <div style={{ fontSize: 13, lineHeight: 1.45 }}>
+                    The <strong>{selectedPlan.name}</strong> plan allows up to <strong>{cap}</strong> branches.
+                    You currently have <strong>{activeBranches.length}</strong> active.
+                    Pick which <strong>{cap}</strong> to keep — the rest will be deactivated
+                    (their data is preserved and reactivated if you upgrade later).
+                  </div>
+                </div>
+
+                <div className="d-flex justify-content-between align-items-center mb-2 px-1">
+                  <span className="text-uppercase fw-bold" style={{ fontSize: 11, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>
+                    Your branches ({activeBranches.length})
+                  </span>
+                  <span
+                    className="rounded-pill px-2 py-1 fw-bold"
+                    style={{
+                      background: keptBranchIds.length === cap ? '#0ab39c20' : '#f7b84b20',
+                      color: keptBranchIds.length === cap ? '#0ab39c' : '#f7b84b',
+                      fontSize: 11,
+                    }}
+                  >
+                    {keptBranchIds.length} / {cap} selected
+                    {remaining > 0 && ` · ${remaining} left`}
+                  </span>
+                </div>
+
+                <div
+                  className="rounded-2"
+                  style={{
+                    border: '1px solid var(--vz-border-color)',
+                    maxHeight: 320,
+                    overflowY: 'auto',
+                  }}
+                >
+                  {activeBranches.map((b, idx) => {
+                    const isMain = b.id === mainBranchId;
+                    const isKept = keptBranchIds.includes(b.id);
+                    const atCap = !isKept && cap > 0 && keptBranchIds.length >= cap;
+                    return (
+                      <div
+                        key={b.id}
+                        onClick={() => !isMain && !atCap && toggleKeptBranch(b.id)}
+                        role="button"
+                        className="d-flex align-items-center gap-3 px-3 py-2"
+                        style={{
+                          borderTop: idx === 0 ? 'none' : '1px solid var(--vz-border-color)',
+                          background: isKept ? '#0ab39c10' : 'transparent',
+                          cursor: isMain ? 'not-allowed' : atCap ? 'not-allowed' : 'pointer',
+                          opacity: !isKept && atCap ? 0.5 : 1,
+                          transition: 'background 0.15s ease',
+                        }}
+                      >
+                        <Input
+                          type="checkbox"
+                          checked={isKept}
+                          disabled={isMain || atCap}
+                          onChange={() => toggleKeptBranch(b.id)}
+                          onClick={e => e.stopPropagation()}
+                          className="m-0 flex-shrink-0"
+                          style={{ cursor: isMain ? 'not-allowed' : 'pointer' }}
+                        />
+                        <div className="flex-grow-1 min-w-0">
+                          <div className="d-flex align-items-center gap-2">
+                            <span className="fw-semibold text-truncate" style={{ fontSize: 13.5 }}>{b.name}</span>
+                            {isMain && (
+                              <span
+                                className="rounded-pill px-2 fw-bold"
+                                style={{
+                                  background: '#40518915',
+                                  color: '#405189',
+                                  border: '1px solid #40518930',
+                                  fontSize: 9.5,
+                                  letterSpacing: '0.04em',
+                                  padding: '1px 6px',
+                                }}
+                              >
+                                MAIN · ALWAYS KEPT
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-muted text-truncate" style={{ fontSize: 11.5 }}>
+                            {[b.code, b.city, b.state].filter(Boolean).join(' · ') || '—'}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="text-muted mt-2 px-1" style={{ fontSize: 11.5 }}>
+                  <i className="ri-shield-check-line me-1" />
+                  Deactivated branches keep their data. To change which branch is "main",
+                  edit the branch settings before downgrading.
+                </div>
+              </>
+            );
+          })()}
+        </ModalBody>
+        <ModalFooter className="border-0 pt-0">
+          <Button
+            color="light"
+            className="rounded-pill fw-semibold px-4"
+            onClick={() => setBranchKeepModal(false)}
+          >
+            Cancel
+          </Button>
+          <Button
+            className="rounded-pill pay-primary-btn px-4 text-white"
+            onClick={confirmBranchSelection}
+          >
+            <i className="ri-arrow-right-line me-1" />
+            Continue to Payment
+          </Button>
+        </ModalFooter>
+      </Modal>
 
       {/* Payment Modal */}
       <Modal isOpen={paymentModal} toggle={() => !processing && setPaymentModal(false)} centered size="md" className="pay-modal">
