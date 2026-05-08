@@ -66,6 +66,30 @@ class User extends Authenticatable
         return $this->belongsTo(Branch::class);
     }
 
+    /**
+     * Resolve the tenant client this user effectively belongs to.
+     *
+     * Why: client_admin / client_user have client_id directly on the User row,
+     * but branch_user and employee may only carry branch_id — their client
+     * link comes through branch.client_id. Anything that needs to gate access
+     * on client status (login, the EnsureUserActive middleware) must look
+     * through both paths, otherwise an inactive client only locks out its
+     * direct users while branch users / employees keep getting in.
+     *
+     * Returns null only when the user has no client and no branch (e.g. the
+     * super_admin row), which callers treat as "no tenant gate to apply."
+     */
+    public function effectiveClient(): ?Client
+    {
+        if ($this->client_id && $this->client) {
+            return $this->client;
+        }
+        if ($this->branch_id && $this->branch && $this->branch->client) {
+            return $this->branch->client;
+        }
+        return null;
+    }
+
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);

@@ -28,8 +28,14 @@ class EnsureUserActive
             return $next($request);
         }
 
+        // effectiveClient() walks user.client_id first, then falls back to
+        // user.branch.client_id — needed because branch_user / employee rows
+        // often carry only branch_id, so a direct user.client lookup misses
+        // the parent org and an inactive client wouldn't lock them out.
+        $effectiveClient = $user->effectiveClient();
+
         $userInactive   = $user->status !== 'active';
-        $clientInactive = $user->client_id && $user->client && $user->client->status !== 'active';
+        $clientInactive = $effectiveClient && $effectiveClient->status !== 'active';
         $branchInactive = $user->branch_id && $user->branch && $user->branch->status !== 'active';
 
         if ($userInactive || $clientInactive || $branchInactive) {

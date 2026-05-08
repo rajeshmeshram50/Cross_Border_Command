@@ -35,7 +35,7 @@ function validatePlanForm(f: FormState): Record<string, string[]> {
   } else {
     const p = Number(f.price);
     if (isNaN(p)) e.price = ['Price must be a valid number'];
-    else if (p < 0) e.price = ['Price cannot be negative — enter 0 for a free plan'];
+    else if (p < 0) e.price = ['Price cannot be negative'];
     else if (p > 99999999) e.price = ['Price seems too high (max 99,999,999)'];
   }
 
@@ -44,22 +44,23 @@ function validatePlanForm(f: FormState): Record<string, string[]> {
     e.period = ['Choose a valid billing period'];
   }
 
-  // Max branches / users — optional but must be non-negative integers
+  // Max branches / users — optional, must be non-negative
   if (f.max_branches !== '') {
     const n = Number(f.max_branches);
-    if (!Number.isInteger(n) || n < 0) e.max_branches = ['Max branches must be 0 or a positive whole number (blank = unlimited)'];
-    else if (n > 100000) e.max_branches = ['Max branches seems too high (limit 100,000)'];
+    if (!isNaN(n) && n < 0) e.max_branches = ['Max branches cannot be negative'];
   }
   if (f.max_users !== '') {
     const n = Number(f.max_users);
-    if (!Number.isInteger(n) || n < 0) e.max_users = ['Max users must be 0 or a positive whole number (blank = unlimited)'];
-    else if (n > 1000000) e.max_users = ['Max users seems too high (limit 1,000,000)'];
+    if (!isNaN(n) && n < 0) e.max_users = ['Max users cannot be negative'];
   }
 
-  // Storage limit — free text but should look like "25GB", "500MB", "1TB"
+  // Storage limit — free text but should look like "25GB", "500MB", "1TB".
+  // Reject a leading minus before regex so users see why "-25GB" is invalid.
   if (f.storage_limit) {
-    if (f.storage_limit.length > 20) e.storage_limit = ['Storage limit cannot exceed 20 characters'];
-    else if (!/^\d+(\.\d+)?\s?(KB|MB|GB|TB)$/i.test(f.storage_limit.trim())) {
+    const s = f.storage_limit.trim();
+    if (s.length > 20) e.storage_limit = ['Storage limit cannot exceed 20 characters'];
+    else if (s.startsWith('-')) e.storage_limit = ['Storage limit cannot be negative'];
+    else if (!/^\d+(\.\d+)?\s?(KB|MB|GB|TB)$/i.test(s)) {
       e.storage_limit = ['Use a format like 25GB, 500MB, or 1TB'];
     }
   }
@@ -67,7 +68,9 @@ function validatePlanForm(f: FormState): Record<string, string[]> {
   // Trial days
   if (f.trial_days !== '') {
     const n = Number(f.trial_days);
-    if (!Number.isInteger(n) || n < 0) e.trial_days = ['Trial days must be 0 or a positive whole number'];
+    if (isNaN(n)) e.trial_days = ['Trial days must be a valid number'];
+    else if (n < 0) e.trial_days = ['Trial days cannot be negative'];
+    else if (!Number.isInteger(n)) e.trial_days = ['Trial days must be a whole number (no decimals)'];
     else if (n > 365) e.trial_days = ['Trial cannot exceed 365 days'];
   }
 
@@ -75,7 +78,8 @@ function validatePlanForm(f: FormState): Record<string, string[]> {
   if (f.yearly_discount !== '') {
     const n = Number(f.yearly_discount);
     if (isNaN(n)) e.yearly_discount = ['Yearly discount must be a number'];
-    else if (n < 0 || n > 100) e.yearly_discount = ['Yearly discount must be between 0 and 100'];
+    else if (n < 0) e.yearly_discount = ['Yearly discount cannot be negative'];
+    else if (n > 100) e.yearly_discount = ['Yearly discount cannot exceed 100%'];
   }
 
   // Accent color — must be a 7-char hex like #RRGGBB
@@ -246,7 +250,7 @@ export default function AddPlan({ onBack, editId }: Props) {
         <Alert color="danger"><i className="ri-error-warning-line me-1"></i>{errors.general[0]}</Alert>
       )}
 
-      <Form onSubmit={handleSubmit}>
+      <Form onSubmit={handleSubmit} noValidate>
         <Row className="g-3 mb-3 align-items-stretch">
 
           {/* ── LEFT: Unified form card (A + B inline sections) ── */}
@@ -376,11 +380,11 @@ export default function AddPlan({ onBack, editId }: Props) {
                         <i className="ri-money-rupee-circle-line" style={{ color: '#10b981' }} />
                         Price <span className="text-danger">*</span>
                       </label>
-                      <InputGroup size="sm">
+                      <InputGroup size="sm" className={fieldError('price') ? 'has-validation' : ''}>
                         <InputGroupText style={{ background: 'rgba(16,185,129,0.10)', border: '1px solid var(--vz-border-color)', color: '#10b981', fontWeight: 700 }}>₹</InputGroupText>
-                        <Input type="number" min={0} step="0.01" className="stylish-input" value={form.price} onChange={e => set('price', e.target.value)} invalid={!!fieldError('price')} placeholder="0" />
+                        <Input type="number" step="0.01" className="stylish-input" value={form.price} onChange={e => set('price', e.target.value)} invalid={!!fieldError('price')} placeholder="0" />
+                        {fieldError('price') && <div className="invalid-feedback d-block">{fieldError('price')}</div>}
                       </InputGroup>
-                      {fieldError('price') && <div className="invalid-feedback d-block">{fieldError('price')}</div>}
                     </Col>
                     <Col md={4}>
                       <label className="stylish-label">
