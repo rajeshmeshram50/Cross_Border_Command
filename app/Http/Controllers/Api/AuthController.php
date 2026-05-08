@@ -21,7 +21,11 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        $user = User::with(['client', 'branch'])->where('email', $request->email)->first();
+        // Eager-load branch.client too — branch_user / employee rows often
+        // have no direct client_id, so the parent-org check has to traverse
+        // branch → client. Without this, an inactive client would only lock
+        // out client_admin / client_user, leaving branch users able to log in.
+        $user = User::with(['client', 'branch.client'])->where('email', $request->email)->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
@@ -35,9 +39,10 @@ class AuthController extends Controller
             ]);
         }
 
-        if ($user->client_id && $user->client && $user->client->status !== 'active') {
+        $effectiveClient = $user->effectiveClient();
+        if ($effectiveClient && $effectiveClient->status !== 'active') {
             throw ValidationException::withMessages([
-                'email' => ['Your organization is ' . $user->client->status . '. Contact administrator.'],
+                'email' => ['Your organization is ' . $effectiveClient->status . '. Contact administrator.'],
             ]);
         }
 
@@ -93,7 +98,7 @@ class AuthController extends Controller
         $email = strtolower($payload['email']);
         $googleId = $payload['sub'];
 
-        $user = User::with(['client', 'branch'])->where('email', $email)->first();
+        $user = User::with(['client', 'branch.client'])->where('email', $email)->first();
 
         if (! $user) {
             return response()->json([
@@ -107,9 +112,10 @@ class AuthController extends Controller
             ], 403);
         }
 
-        if ($user->client_id && $user->client && $user->client->status !== 'active') {
+        $effectiveClient = $user->effectiveClient();
+        if ($effectiveClient && $effectiveClient->status !== 'active') {
             return response()->json([
-                'message' => 'Your organization is ' . $user->client->status . '. Contact administrator.',
+                'message' => 'Your organization is ' . $effectiveClient->status . '. Contact administrator.',
             ], 403);
         }
 
