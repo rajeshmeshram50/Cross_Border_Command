@@ -50,11 +50,16 @@ export default function Profile() {
     setProfileName(user.name || '');
     setProfilePhone(user.phone || '');
     setProfileDesignation(user.designation || '');
-    // Existing photo from tenant row (branch wins over client). Don't clobber
-    // a freshly-staged file the user hasn't saved yet.
-    const photo = user.branch_profile_photo || user.client_profile_photo || null;
+    // Existing photo: employee passport photo first (most personal), then
+    // tenant row (branch > client), then the user-row photo. Don't clobber a
+    // freshly-staged file the user hasn't saved yet.
+    const photo = user.employee_profile_photo
+      || user.branch_profile_photo
+      || user.client_profile_photo
+      || user.user_profile_photo
+      || null;
     setProfilePhotoPreview(prev => (profilePhotoFile ? prev : photo));
-  }, [user?.name, user?.phone, user?.designation, user?.branch_profile_photo, user?.client_profile_photo]);
+  }, [user?.name, user?.phone, user?.designation, user?.employee_profile_photo, user?.branch_profile_photo, user?.client_profile_photo, user?.user_profile_photo]);
 
   if (!user) return null;
 
@@ -66,7 +71,13 @@ export default function Profile() {
       r.readAsDataURL(file);
     } else {
       // Restore the saved photo if the user clears the picker
-      setProfilePhotoPreview(user?.branch_profile_photo || user?.client_profile_photo || null);
+      setProfilePhotoPreview(
+        user?.employee_profile_photo
+        || user?.branch_profile_photo
+        || user?.client_profile_photo
+        || user?.user_profile_photo
+        || null
+      );
     }
   };
 
@@ -431,8 +442,7 @@ export default function Profile() {
       <CardBody className="d-flex flex-column">
         <SectionHeader title="Personal Information" gradient={GRAD_PRIMARY} icon="ri-user-settings-line" />
         <Form onSubmit={(e) => { e.preventDefault(); handleSaveProfile(); }} className="d-flex flex-column flex-grow-1">
-          {!isSuperAdmin && (
-            <div className="d-flex align-items-center gap-3 mb-3">
+          <div className="d-flex align-items-center gap-3 mb-3">
               {profilePhotoPreview ? (
                 <img
                   src={profilePhotoPreview}
@@ -459,7 +469,6 @@ export default function Profile() {
                 <small className="text-muted" style={{ fontSize: 11 }}>JPG or PNG — Max 2MB</small>
               </div>
             </div>
-          )}
           <Row className="g-2">
             <Col md={6}>
               <Label className="pf-label">Full Name <span className="text-danger">*</span></Label>
@@ -706,19 +715,46 @@ export default function Profile() {
           />
           <Row className="g-4 align-items-center position-relative">
             <Col xs="auto">
-              <div
-                className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
-                style={{
-                  width: 96, height: 96, fontSize: 34,
-                  background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
-                  color: '#fff',
-                  border: '3px solid rgba(255,255,255,0.3)',
-                  backdropFilter: 'blur(6px)',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
-                }}
-              >
-                {user.initials}
-              </div>
+              {(() => {
+                // Hero avatar prefers a staged-but-unsaved upload, then the
+                // saved tenant photo (branch wins over client), and finally
+                // falls back to the gradient initials chip for super_admin or
+                // tenants without a photo.
+                const heroSrc = profilePhotoPreview
+                  || user.employee_profile_photo
+                  || user.branch_profile_photo
+                  || user.client_profile_photo
+                  || user.user_profile_photo
+                  || null;
+                return heroSrc ? (
+                  <img
+                    src={heroSrc}
+                    alt=""
+                    className="rounded-circle"
+                    style={{
+                      width: 96, height: 96, objectFit: 'cover',
+                      background: '#fff',
+                      padding: 3,
+                      border: '3px solid rgba(255,255,255,0.3)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
+                    style={{
+                      width: 96, height: 96, fontSize: 34,
+                      background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
+                      color: '#fff',
+                      border: '3px solid rgba(255,255,255,0.3)',
+                      backdropFilter: 'blur(6px)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+                    }}
+                  >
+                    {user.initials}
+                  </div>
+                );
+              })()}
             </Col>
 
             <Col className="min-w-0">

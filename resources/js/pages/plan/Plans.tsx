@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Badge, Button, Spinner, Modal, ModalBody } from 'reactstrap';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination, Autoplay } from 'swiper/modules';
@@ -30,6 +31,7 @@ const accessColors: Record<string, string> = {
 
 export default function Plans({ onNavigate }: { onNavigate?: (page: string, data?: any) => void }) {
   const toast = useToast();
+  const navigate = useNavigate();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<number | null>(null);
@@ -118,7 +120,29 @@ export default function Plans({ onNavigate }: { onNavigate?: (page: string, data
             </div>
           </div>
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              title="Back"
+              className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
+              style={{
+                height: 38,
+                padding: '0 18px',
+                background: 'color-mix(in srgb, #405189 8%, #ffffff)',
+                color: '#405189',
+                border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.18s ease',
+                whiteSpace: 'nowrap',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
+            >
+              <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
+              Back
+            </button>
             <Button
               color="secondary"
               className="btn-label waves-effect waves-light rounded-pill"

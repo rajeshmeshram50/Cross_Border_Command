@@ -956,7 +956,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <Row className="g-4 align-items-center" style={{ position: 'relative', zIndex: 2 }}>
           {/* Avatar */}
           <Col xs="auto">
-            <div className="ep-avatar-square">{initials}</div>
+            {employee?.photoUrl ? (
+              <img
+                src={employee.photoUrl}
+                alt={employee.name || 'employee'}
+                className="ep-avatar-square"
+                style={{ objectFit: 'cover', background: '#fff' }}
+              />
+            ) : (
+              <div className="ep-avatar-square">{initials}</div>
+            )}
           </Col>
 
           {/* Identity */}

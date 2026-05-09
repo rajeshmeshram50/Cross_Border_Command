@@ -856,7 +856,10 @@ tbody tr:nth-child(10) {
   padding: 20px;
 }
 
-/* KPI cards — compact */
+/* KPI cards — compact, with the same haptic hover lift used on the
+   Clients / ClientPayments KPIs so every list page feels alive on hover
+   instead of sitting flat. transform + layered shadow only — no layout
+   change so the row never reflows. */
 .pmt-kpi-card {
   border-radius: 12px;
   border: 1px solid var(--vz-border-color);
@@ -865,6 +868,31 @@ tbody tr:nth-child(10) {
   position: relative;
   overflow: hidden;
   height: 100%;
+  transition:
+    transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 220ms ease,
+    border-color 220ms ease;
+  will-change: transform;
+  cursor: default;
+}
+.pmt-kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 18px 36px -8px rgba(64, 81, 137, 0.28),
+    0 8px 16px -4px rgba(64, 81, 137, 0.18),
+    0 2px 4px rgba(0, 0, 0, 0.06);
+  border-color: rgba(64, 81, 137, 0.35);
+}
+.pmt-kpi-card:hover .pmt-kpi-icon {
+  transform: scale(1.08) rotate(-3deg);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.30);
+}
+[data-bs-theme="dark"] .pmt-kpi-card:hover {
+  box-shadow:
+    0 18px 36px -8px rgba(0, 0, 0, 0.65),
+    0 8px 16px -4px rgba(0, 0, 0, 0.45),
+    0 2px 4px rgba(0, 0, 0, 0.30);
+  border-color: rgba(124, 92, 252, 0.50);
 }
 .pmt-kpi-top-bar {
   position: absolute;
@@ -900,32 +928,58 @@ tbody tr:nth-child(10) {
   justify-content: center;
   flex-shrink: 0;
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition:
+    transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 220ms ease;
 }
 .pmt-kpi-icon i { font-size: 17px; color: #fff; }
 
-/* Export button — teal/green outline, signals "download data"
-   Uses .btn.pmt-btn-export to outrank Bootstrap's default .btn-secondary */
-.btn.pmt-btn-export {
-  background-color: rgba(10, 179, 156, 0.10) !important;
-  color: #0ab39c !important;
-  border: 1px solid rgba(10, 179, 156, 0.50) !important;
-  font-weight: 600 !important;
-  transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
+/* Export button — outlined emerald, matches the Clients / Branches
+   .export-btn so all listing pages share the same "download" affordance.
+   Distinct from the solid-purple Add / Record-Payment button so the two
+   never read as duplicates. */
+.btn.pmt-btn-export,
+.btn.pmt-btn-export:focus,
+.btn.pmt-btn-export:active {
+  background: transparent !important;
   background-image: none !important;
+  color: #0ab39c !important;
+  border: 1px solid #0ab39c !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+  transition:
+    background 200ms ease,
+    color 200ms ease,
+    border-color 200ms ease,
+    transform 200ms ease,
+    box-shadow 200ms ease;
 }
 .btn.pmt-btn-export:not(:disabled):hover {
-  background-color: #0ab39c !important;
-  background-image: linear-gradient(135deg, #0ab39c, #14c9b1) !important;
-  color: #fff !important;
-  border-color: transparent !important;
-  box-shadow: 0 6px 16px rgba(10, 179, 156, 0.40), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  background: rgba(10, 179, 156, 0.10) !important;
+  color: #099481 !important;
+  border-color: #099481 !important;
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(10, 179, 156, 0.18) !important;
+}
+.btn.pmt-btn-export:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 [data-bs-theme="dark"] .btn.pmt-btn-export,
-[data-layout-mode="dark"] .btn.pmt-btn-export {
-  background-color: rgba(10, 179, 156, 0.16) !important;
-  border-color: rgba(10, 179, 156, 0.60) !important;
-  color: #2dd4bf !important;
+[data-bs-theme="dark"] .btn.pmt-btn-export:focus,
+[data-bs-theme="dark"] .btn.pmt-btn-export:active,
+[data-layout-mode="dark"] .btn.pmt-btn-export,
+[data-layout-mode="dark"] .btn.pmt-btn-export:focus,
+[data-layout-mode="dark"] .btn.pmt-btn-export:active {
+  color: #2ec7b0 !important;
+  border-color: #2ec7b0 !important;
+}
+[data-bs-theme="dark"] .btn.pmt-btn-export:not(:disabled):hover,
+[data-layout-mode="dark"] .btn.pmt-btn-export:not(:disabled):hover {
+  background: rgba(46, 199, 176, 0.14) !important;
+  color: #5be0cb !important;
+  border-color: #5be0cb !important;
+  box-shadow: 0 4px 14px rgba(46, 199, 176, 0.28) !important;
 }
 
 /* Row action button (view / PDF / reminder / delete). Bootstrap's .btn

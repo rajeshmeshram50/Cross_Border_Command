@@ -230,16 +230,17 @@ const css = {
     color: 'var(--vz-body-color)',
   } as React.CSSProperties,
   input: {
-    fontSize: '13px', padding: '7px 11px', height: '34px',
-    borderRadius: '6px',
+    fontSize: '13px', padding: '7px 11px', height: '38px',
+    borderRadius: '10px',
   } as React.CSSProperties,
   textarea: {
-    fontSize: '13px', padding: '8px 11px', borderRadius: '6px',
+    fontSize: '13px', padding: '8px 11px', borderRadius: '10px',
   } as React.CSSProperties,
   ddToggle: {
-    fontSize: '13px', height: '34px', padding: '0 11px',
+    fontSize: '13px', height: '38px', padding: '0 11px',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     width: '100%', textAlign: 'left' as const, background: 'var(--vz-card-bg)',
+    borderRadius: '10px',
   } as React.CSSProperties,
   ddMenu: {
     fontSize: '13px', minWidth: '100%', padding: '5px 0',
@@ -800,6 +801,38 @@ export default function BranchForm({ onBack, editId }: Props) {
           border: 1px solid var(--vz-border-color);
           transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
           background: var(--vz-card-bg);
+        }
+        /* Uniform 38px height + 10px corners across every form control on
+           this page so single-line Inputs, InputGroup prefixes, MasterSelect
+           dropdowns and the Bootstrap dropdown all line up across the grid.
+           Was visually mismatched because bsSize="sm" inputs rendered ~31px
+           with 4px corners while MasterSelect rendered 38px with 10px. */
+        .bf-wrap .form-control,
+        .bf-wrap .form-select,
+        .bf-wrap .dropdown-toggle.btn-light,
+        .bf-wrap .input-group-sm > .form-control,
+        .bf-wrap .input-group-sm > .input-group-text,
+        .bf-wrap .input-group > .input-group-text {
+          height: 38px;
+          min-height: 38px;
+          padding-top: 7px;
+          padding-bottom: 7px;
+          font-size: 13px;
+          line-height: 1.4;
+          border-radius: 10px;
+        }
+        .bf-wrap textarea.form-control {
+          height: auto;
+          min-height: 56px;
+          border-radius: 10px;
+        }
+        .bf-wrap .input-group > .input-group-text:first-child {
+          border-top-left-radius: 10px;
+          border-bottom-left-radius: 10px;
+        }
+        .bf-wrap .input-group > .form-control:last-child {
+          border-top-right-radius: 10px;
+          border-bottom-right-radius: 10px;
         }
         .bf-wrap .form-control:hover,
         .bf-wrap .form-select:hover,

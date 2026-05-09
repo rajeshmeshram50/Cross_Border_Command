@@ -272,14 +272,25 @@ export default function Payments() {
       ),
     },
     {
+      header: 'Transaction ID',
+      accessorKey: 'txn_id',
+      cell: (info: any) => {
+        const txn = info.row.original.txn_id;
+        return txn
+          ? <span className="font-monospace fs-12 text-secondary">{txn}</span>
+          : <span className="text-muted">—</span>;
+      },
+    },
+    {
       header: 'Status',
       accessorKey: 'status',
       cell: (info: any) => {
-        const cfg = statusCfg[info.row.original.status] || statusCfg.pending;
+        const raw = String(info.row.original.status || 'pending');
+        const cfg = statusCfg[raw] || statusCfg.pending;
+        const label = raw.charAt(0).toUpperCase() + raw.slice(1);
         return (
-          <span className={`badge rounded-pill border border-${cfg.bsColor} text-${cfg.bsColor} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
-            <span className={`bg-${cfg.bsColor} rounded-circle pmt-status-dot`} />
-            {info.row.original.status}
+          <span className={`badge rounded-pill bg-${cfg.bsColor}-subtle text-${cfg.bsColor} fw-semibold px-3 py-2`}>
+            {label}
           </span>
         );
       },
