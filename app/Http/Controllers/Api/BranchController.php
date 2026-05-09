@@ -67,6 +67,19 @@ class BranchController extends Controller
             $query->where('branch_type', $request->query('type'));
         }
 
+        // BranchSwitcher narrowing — when user picks a specific branch from
+        // the dropdown, scope the list to that one branch. Validates the id
+        // belongs to the user's own client so a stale localStorage value
+        // from a previous login can't leak across tenants.
+        if ($branchFilter = $request->integer('branch_id') ?: null) {
+            $belongsToClient = $clientId
+                ? Branch::where('id', $branchFilter)->where('client_id', $clientId)->exists()
+                : true;  // super_admin can target any branch
+            if ($belongsToClient) {
+                $query->where('id', $branchFilter);
+            }
+        }
+
         $branches = $query->orderByDesc('is_main')->orderBy('name')
             ->paginate($request->query('per_page', 15));
 

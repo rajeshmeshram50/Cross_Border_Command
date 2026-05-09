@@ -186,34 +186,39 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
         >
           <Row className="g-4 align-items-center position-relative flex-nowrap">
             <Col xs="auto">
-              {client.logo ? (
-                <img
-                  src={client.logo}
-                  alt=""
-                  className="rounded-circle"
-                  style={{
-                    width: 110, height: 110, objectFit: 'cover',
-                    background: '#fff',
-                    padding: 4,
-                    border: '3px solid rgba(255,255,255,0.3)',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
-                  }}
-                />
-              ) : (
-                <div
-                  className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
-                  style={{
-                    width: 110, height: 110, fontSize: 40,
-                    background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
-                    color: '#fff',
-                    border: '3px solid rgba(255,255,255,0.3)',
-                    backdropFilter: 'blur(6px)',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
-                  }}
-                >
-                  {initials}
-                </div>
-              )}
+              {(() => {
+                // Profile photo wins over logo (it's the more "human" avatar);
+                // fall back to logo, then initials when neither exists.
+                const heroSrc = (client as any).profile_photo_url || (client as any).profile_photo || client.logo;
+                return heroSrc ? (
+                  <img
+                    src={heroSrc}
+                    alt=""
+                    className="rounded-circle"
+                    style={{
+                      width: 120, height: 120, objectFit: 'cover',
+                      background: '#fff',
+                      padding: 4,
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
+                    style={{
+                      width: 110, height: 110, fontSize: 40,
+                      background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
+                      color: '#fff',
+                      border: '3px solid rgba(255,255,255,0.3)',
+                      backdropFilter: 'blur(6px)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+                    }}
+                  >
+                    {initials}
+                  </div>
+                );
+              })()}
             </Col>
 
             <Col className="min-w-0">

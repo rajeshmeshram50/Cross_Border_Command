@@ -61,6 +61,7 @@ class PermissionController extends Controller
     public function manageableUsers(Request $request)
     {
         $authUser = $request->user();
+        $branchFilter = $request->integer('branch_id') ?: null;
 
         if ($authUser->isSuperAdmin()) {
             // Hide client_admins whose organization is inactive/suspended — granting
@@ -76,7 +77,7 @@ class PermissionController extends Controller
             // branch sees sibling sub-branches per the tenant model, so its
             // picker mirrors the client admin scope rather than its own
             // branch alone.
-            $users = User::where('client_id', $authUser->client_id)
+            $query = User::where('client_id', $authUser->client_id)
                 ->where('id', '!=', $authUser->id)
                 ->whereIn('user_type', ['branch_user', 'employee'])
                 ->where('status', 'active')
@@ -88,8 +89,21 @@ class PermissionController extends Controller
                              ->whereHas('branch', fn($qb) => $qb->where('status', 'active'));
                       });
                 })
-                ->with('branch:id,name,status')
-                ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
+                ->with('branch:id,name,status');
+
+            // BranchSwitcher narrowing — when user picks a specific branch,
+            // limit the picker to users in that branch (validated against the
+            // granter's own client to block cross-tenant ids).
+            if ($branchFilter !== null) {
+                $belongsToClient = \App\Models\Branch::where('id', $branchFilter)
+                    ->where('client_id', $authUser->client_id)
+                    ->exists();
+                if ($belongsToClient) {
+                    $query->where('branch_id', $branchFilter);
+                }
+            }
+
+            $users = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } else {
             $users = collect();
         }

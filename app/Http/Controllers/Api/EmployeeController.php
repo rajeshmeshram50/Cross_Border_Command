@@ -59,7 +59,7 @@ class EmployeeController extends Controller
         // DELETE /employees/{id} which soft-deletes — without this the
         // disabled employees would silently disappear from the list.
         $q = Employee::query()->withTrashed()->with(self::WITH);
-        $this->applyScope($q, $request->user());
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
@@ -102,9 +102,10 @@ class EmployeeController extends Controller
         $user = $request->user();
 
         // Same scope rules as the employee list — employees see managers in
-        // their own tenant, super_admins see everything.
+        // their own tenant, super_admins see everything. Honour the active
+        // BranchSwitcher selection so the manager picker matches the table.
         $eq = Employee::query()->whereNotNull('id');
-        $this->applyScope($eq, $user);
+        $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
         $employees = $eq
             ->select(['id', 'emp_code', 'display_name', 'first_name', 'last_name'])
             ->with(['designation:id,name'])
@@ -579,16 +580,26 @@ class EmployeeController extends Controller
         return [null, null];
     }
 
-    /** Same scoping rules as the master tables — keeps every list query consistent. */
-    private function applyScope($q, $user): void
+    /** Same scoping rules as the master tables — keeps every list query consistent.
+     *  When the SPA's BranchSwitcher injects `?branch_id=N`, we narrow further
+     *  within the user's existing tenant scope so client_admin and main-branch
+     *  user can drill into a single sibling branch's data. The narrow only
+     *  applies if the requested branch belongs to the user's own client (else
+     *  silently ignored — no cross-tenant leak even with a hostile param). */
+    private function applyScope($q, $user, ?int $branchFilter = null): void
     {
         if (!$user) return;
-        if ($user->user_type === 'super_admin') return;
+        if ($user->user_type === 'super_admin') {
+            // super_admin can pass branch_id directly; trust it (they cross tenants by design)
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
 
         if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
             $q->where(function ($w) use ($user) {
                 $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
             });
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
             return;
         }
 
@@ -601,6 +612,7 @@ class EmployeeController extends Controller
                 $q->where(function ($w) use ($clientId) {
                     $w->whereNull('client_id')->orWhere('client_id', $clientId);
                 });
+                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
                 return;
             }
 
@@ -614,10 +626,26 @@ class EmployeeController extends Controller
                       });
                   });
             });
+            // Sub-branch users can't switch — ignore any incoming branch_id.
             return;
         }
 
         $q->whereRaw('1 = 0');
+    }
+
+    /** Apply BranchSwitcher's selected-branch filter only after verifying the
+     *  branch belongs to the granter's own client. Cross-tenant ids are ignored
+     *  (not 403'd) so a stale localStorage value from a prior login doesn't
+     *  brick the page — they just see "all branches in my client" until they
+     *  re-pick. */
+    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
+    {
+        if ($branchFilter === null) return;
+        $belongsToClient = Branch::where('id', $branchFilter)
+            ->where('client_id', $user->client_id)
+            ->exists();
+        if (!$belongsToClient) return;
+        $q->where('branch_id', $branchFilter);
     }
 
     /** Find an employee row honouring the same tenant scope used in lists.

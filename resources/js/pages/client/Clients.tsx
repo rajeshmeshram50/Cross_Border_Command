@@ -169,56 +169,44 @@ export default function Clients({ onNavigate }: Props) {
       cell: (info: any) => <span className="text-muted fs-13">{(page - 1) * 15 + info.row.index + 1}</span>,
     },
     {
-      header: 'Photo',
-      accessorKey: 'profile_photo_url',
-      cell: (info: any) => {
-        const src = info.row.original.profile_photo_url || info.row.original.profile_photo;
-        return src ? (
-          <img
-            src={src}
-            alt="profile"
-            style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)' }}
-          />
-        ) : (
-          <span
-            className="d-inline-flex align-items-center justify-content-center rounded-circle text-muted"
-            style={{ width: 32, height: 32, background: 'var(--vz-secondary-bg)', fontSize: 14 }}
-            title="No photo"
-          >
-            <i className="ri-user-line" />
-          </span>
-        );
-      },
-    },
-    {
       header: 'Organization',
       accessorKey: 'org_name',
-      cell: (info: any) => (
-        // Cap the cell at 240px and truncate long org names with ellipsis
-        // — the full name lives in `title` so hovering shows it as a
-        // native tooltip. Without this, "Center for Biological Diversity
-        // Center for Biological Diversity" pushes the whole row wider
-        // than the viewport and makes the table scroll horizontally.
-        <div className="d-flex align-items-center gap-2" style={{ maxWidth: 240, minWidth: 0 }}>
-          <div
-            className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-            style={{
-              width: 34, height: 34, fontSize: 12,
-              background: `linear-gradient(135deg, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}cc)`,
-              boxShadow: `0 2px 6px ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}40`,
-            }}
-          >
-            {info.row.original.org_name.charAt(0)}{info.row.original.org_name.split(' ')[1]?.charAt(0) || ''}
+      cell: (info: any) => {
+        const photo = info.row.original.profile_photo_url || info.row.original.profile_photo;
+        return (
+          // Cap the cell at 240px and truncate long org names with ellipsis
+          // — the full name lives in `title` so hovering shows it as a
+          // native tooltip.
+          <div className="d-flex align-items-center gap-2" style={{ maxWidth: 240, minWidth: 0 }}>
+            {photo ? (
+              <img
+                src={photo}
+                alt={info.row.original.org_name}
+                className="rounded-circle flex-shrink-0"
+                style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+              />
+            ) : (
+              <div
+                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                style={{
+                  width: 34, height: 34, fontSize: 12,
+                  background: `linear-gradient(135deg, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}cc)`,
+                  boxShadow: `0 2px 6px ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}40`,
+                }}
+              >
+                {info.row.original.org_name.charAt(0)}{info.row.original.org_name.split(' ')[1]?.charAt(0) || ''}
+              </div>
+            )}
+            <span
+              className="fw-semibold fs-13 text-truncate"
+              title={info.row.original.org_name}
+              style={{ minWidth: 0 }}
+            >
+              {info.row.original.org_name}
+            </span>
           </div>
-          <span
-            className="fw-semibold fs-13 text-truncate"
-            title={info.row.original.org_name}
-            style={{ minWidth: 0 }}
-          >
-            {info.row.original.org_name}
-          </span>
-        </div>
-      ),
+        );
+      },
     },
     {
       header: 'Unique ID',

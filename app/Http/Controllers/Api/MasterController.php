@@ -143,7 +143,7 @@ class MasterController extends Controller
         $this->authorizeMaster($request, $slug, 'can_view');
         $modelClass = $this->resolveModel($slug);
         $q = $modelClass::query()->with(self::OWNERSHIP_WITH)->orderByDesc('id');
-        $this->applyScope($q, $request->user());
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($search = $request->query('search')) {
             $schema = self::SCHEMAS[$slug] ?? ['fields' => []];
@@ -514,16 +514,20 @@ class MasterController extends Controller
      *                                OR branch_id = main branch id        -- main-branch shared rows
      *                              ))
      */
-    private function applyScope($q, $user): void
+    private function applyScope($q, $user, ?int $branchFilter = null): void
     {
         if (!$user) return;
-        if ($user->user_type === 'super_admin') return;
+        if ($user->user_type === 'super_admin') {
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
 
         if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
             $clientId = $user->client_id;
             $q->where(function ($w) use ($clientId) {
                 $w->whereNull('client_id')->orWhere('client_id', $clientId);
             });
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
             return;
         }
 
@@ -545,6 +549,7 @@ class MasterController extends Controller
                 $q->where(function ($w) use ($clientId) {
                     $w->whereNull('client_id')->orWhere('client_id', $clientId);
                 });
+                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
                 return;
             }
 
@@ -567,11 +572,25 @@ class MasterController extends Controller
                          });
                   });
             });
+            // Sub-branch users can't switch — branchFilter ignored on this path.
             return;
         }
 
         // unknown type -> see nothing
         $q->whereRaw('1 = 0');
+    }
+
+    /** Narrow the already-tenant-scoped query to a single branch when the
+     *  SPA's BranchSwitcher injects `?branch_id=N`. The branch must belong to
+     *  the granter's own client; cross-tenant ids are silently dropped. */
+    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
+    {
+        if ($branchFilter === null) return;
+        $belongsToClient = \App\Models\Branch::where('id', $branchFilter)
+            ->where('client_id', $user->client_id)
+            ->exists();
+        if (!$belongsToClient) return;
+        $q->where('branch_id', $branchFilter);
     }
 
     /**
