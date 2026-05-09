@@ -5,6 +5,7 @@ import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -422,7 +423,7 @@ export default function HrCandidates() {
                     </thead>
                     <tbody>
                       {loading ? (
-                        <tr><td colSpan={12} className="text-center py-5 text-muted"><Spinner size="sm" /> Loading candidates…</td></tr>
+                        <ShimmerTableRows rows={6} cols={12} />
                       ) : filtered.length === 0 ? (
                         <tr>
                           <td colSpan={12} className="text-center py-5 text-muted">

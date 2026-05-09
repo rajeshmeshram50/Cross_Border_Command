@@ -16,6 +16,11 @@ const ProfileDropdown = () => {
 
   if (!user) return null;
 
+  // Tenant-uploaded profile photo (set on client/branch by super_admin via the
+  // Client/Branch form). Branch wins over client; falls back to the bundled
+  // generic avatar when neither is set.
+  const profilePhoto = user.branch_profile_photo || user.client_profile_photo || avatar1;
+
   const roleLabel = user.user_type.replace(/_/g, ' ');
   // Super admin's display name often equals the role ("Super Admin") — hide the
   // duplicate role sub-line on the chip when they match (still shown inside the menu header).
@@ -135,9 +140,9 @@ const ProfileDropdown = () => {
               <span className="rounded-circle d-inline-flex" style={{ padding: 1.5, background: 'var(--vz-card-bg, #fff)' }}>
                 <img
                   className="rounded-circle header-profile-user"
-                  src={avatar1}
+                  src={profilePhoto}
                   alt="Header Avatar"
-                  style={{ display: 'block' }}
+                  style={{ display: 'block', objectFit: 'cover' }}
                 />
               </span>
               <span
@@ -224,10 +229,10 @@ const ProfileDropdown = () => {
                 }}
               >
                 <img
-                  src={avatar1}
+                  src={profilePhoto}
                   alt=""
                   className="rounded-circle"
-                  style={{ width: 38, height: 38, display: 'block' }}
+                  style={{ width: 38, height: 38, display: 'block', objectFit: 'cover' }}
                 />
               </span>
               <div className="flex-grow-1 min-w-0">

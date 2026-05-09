@@ -8,6 +8,7 @@ import PermissionMatrix, {
   type PermKey,
   type PermModule,
 } from '../../components/PermissionMatrix';
+import { ShimmerPermissions } from '../../components/ui/Shimmer';
 
 interface Props {
   clientId: number;
@@ -25,12 +26,17 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
   const [matrix, setMatrix] = useState<Record<number, Record<PermKey, boolean>>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Fallback display name so the breadcrumb is meaningful when the parent
+  // wrapper navigates here without a clientName (deep links, refresh, etc.)
+  const [fetchedClientName, setFetchedClientName] = useState('');
+  const displayClientName = clientName || fetchedClientName;
 
   useEffect(() => {
     Promise.all([
       api.get(`/clients/${clientId}`),
       api.get('/modules'),
     ]).then(async ([clientRes, modRes]) => {
+      setFetchedClientName(clientRes.data.org_name || '');
       const admin = clientRes.data.admin_user;
       setAdminUser(admin);
       const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
@@ -72,23 +78,30 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
     }
   };
 
-  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
+  if (loading) return <ShimmerPermissions />;
 
   return (
     <>
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">
-              <button className="btn btn-sm btn-soft-primary me-2" onClick={onBack}>
-                <i className="ri-arrow-left-line"></i>
+            <div className="d-flex align-items-center gap-2">
+              <button
+                className="btn btn-soft-primary btn-icon rounded-circle"
+                style={{ width: 36, height: 36 }}
+                onClick={onBack}
+                title="Back to clients"
+              >
+                <i className="ri-arrow-left-line fs-16"></i>
               </button>
-              Permissions
-            </h4>
+              <h4 className="mb-sm-0">Permissions</h4>
+            </div>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
                 <li className="breadcrumb-item"><a href="#">Clients</a></li>
-                <li className="breadcrumb-item"><a href="#">{clientName}</a></li>
+                {displayClientName && (
+                  <li className="breadcrumb-item"><a href="#">{displayClientName}</a></li>
+                )}
                 <li className="breadcrumb-item active">Permissions</li>
               </ol>
             </div>
@@ -126,14 +139,22 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
               <Col className="text-end">
                 <Button
                   color="primary"
-                  className="btn-label waves-effect waves-light rounded-pill"
+                  className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
                   onClick={handleSave}
                   disabled={saving}
+                  style={{ minWidth: 180, justifyContent: 'center' }}
                 >
-                  {saving
-                    ? <Spinner size="sm" className="label-icon align-middle me-2" />
-                    : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
-                  {saving ? 'Saving...' : 'Save Permissions'}
+                  {saving ? (
+                    <>
+                      <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                      Save Permissions
+                    </>
+                  )}
                 </Button>
               </Col>
             </Row>
@@ -153,14 +174,22 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
             </span>
             <Button
               color="primary"
-              className="btn-label waves-effect waves-light rounded-pill"
+              className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
               onClick={handleSave}
               disabled={saving}
+              style={{ minWidth: 180, justifyContent: 'center' }}
             >
-              {saving
-                ? <Spinner size="sm" className="label-icon align-middle me-2" />
-                : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
-              {saving ? 'Saving...' : 'Save Permissions'}
+              {saving ? (
+                <>
+                  <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                  Save Permissions
+                </>
+              )}
             </Button>
           </CardBody>
         </Card>

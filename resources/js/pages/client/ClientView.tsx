@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardBody, Col, Row, Button, Spinner, Progress } from 'reactstrap';
 import api from '../../api';
+import { ShimmerProfile } from '../../components/ui/Shimmer';
 
 interface Props {
   clientId: number;
@@ -20,7 +21,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
     }).finally(() => setLoading(false));
   }, [clientId]);
 
-  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
+  if (loading) return <ShimmerProfile />;
   if (!client) return (
     <div className="text-center py-5">
       <p className="text-muted">Client not found.</p>
@@ -92,6 +93,65 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
         [data-layout-mode="dark"] .cv-info-table th {
           color: rgba(255, 255, 255, 0.94) !important;
         }
+
+        /* Hero banner — premium gradient that adapts per theme.
+           Light mode: rich royal blue. Dark mode: charcoal-violet with
+           a luminous accent for that high-end SaaS feel (Linear / Stripe
+           inspired) instead of a flat blue wash. */
+        .cv-hero {
+          background:
+            radial-gradient(circle at 18% 15%, rgba(255,255,255,0.18) 0%, transparent 42%),
+            radial-gradient(circle at 88% 85%, rgba(10,179,156,0.22) 0%, transparent 48%),
+            linear-gradient(135deg, #2d3a72 0%, #405189 40%, #5b78d6 100%) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.18),
+            0 12px 32px -10px rgba(64,81,137,0.45);
+        }
+        [data-bs-theme="dark"] .cv-hero,
+        [data-layout-mode="dark"] .cv-hero {
+          background:
+            radial-gradient(ellipse at 0% 0%, rgba(139,92,246,0.45) 0%, transparent 55%),
+            radial-gradient(ellipse at 100% 100%, rgba(56,189,248,0.30) 0%, transparent 55%),
+            radial-gradient(ellipse at 50% 50%, rgba(236,72,153,0.10) 0%, transparent 60%),
+            linear-gradient(135deg, #0a0e1f 0%, #14112e 50%, #1c1638 100%) !important;
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,0.06),
+            inset 0 0 60px rgba(139,92,246,0.08),
+            0 20px 50px -12px rgba(0,0,0,0.75) !important;
+        }
+        /* Premium glow ring in dark mode — violet → cyan gradient border,
+           the kind you see on Linear/Vercel marketing surfaces. */
+        [data-bs-theme="dark"] .cv-hero::before,
+        [data-layout-mode="dark"] .cv-hero::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          padding: 1px;
+          background: linear-gradient(135deg,
+            rgba(139,92,246,0.85) 0%,
+            rgba(56,189,248,0.55) 40%,
+            rgba(236,72,153,0.35) 75%,
+            rgba(139,92,246,0.0) 100%);
+          -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          -webkit-mask-composite: xor;
+                  mask-composite: exclude;
+          pointer-events: none;
+          z-index: 1;
+        }
+        /* Subtle grain/noise overlay in dark mode for that "matte film"
+           premium texture instead of flat color. */
+        [data-bs-theme="dark"] .cv-hero::after,
+        [data-layout-mode="dark"] .cv-hero::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background-image: radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px);
+          background-size: 3px 3px;
+          opacity: 0.5;
+          pointer-events: none;
+          mix-blend-mode: overlay;
+        }
       `}</style>
 
       {/* ── Page title + back button + Edit Profile ── */}
@@ -121,49 +181,44 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
       {/* ── Hero banner — velzon-style profile cover with all hero content inside ── */}
       <Card className="overflow-hidden mb-0 border-0" style={{ borderRadius: 20 }}>
         <div
-          className="position-relative overflow-hidden"
-          style={{
-            background: 'linear-gradient(135deg, #405189 0%, #4a63a8 45%, #6691e7 100%)',
-            padding: '32px 32px 28px',
-          }}
+          className="position-relative overflow-hidden cv-hero"
+          style={{ padding: '32px 32px 28px' }}
         >
-          <div
-            className="position-absolute top-0 start-0 w-100 h-100"
-            style={{
-              backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.15) 0%, transparent 40%), radial-gradient(circle at 85% 80%, rgba(10,179,156,0.22) 0%, transparent 45%)',
-              pointerEvents: 'none',
-            }}
-          />
           <Row className="g-4 align-items-center position-relative flex-nowrap">
             <Col xs="auto">
-              {client.logo ? (
-                <img
-                  src={client.logo}
-                  alt=""
-                  className="rounded-circle"
-                  style={{
-                    width: 110, height: 110, objectFit: 'cover',
-                    background: '#fff',
-                    padding: 4,
-                    border: '3px solid rgba(255,255,255,0.3)',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
-                  }}
-                />
-              ) : (
-                <div
-                  className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
-                  style={{
-                    width: 110, height: 110, fontSize: 40,
-                    background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
-                    color: '#fff',
-                    border: '3px solid rgba(255,255,255,0.3)',
-                    backdropFilter: 'blur(6px)',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
-                  }}
-                >
-                  {initials}
-                </div>
-              )}
+              {(() => {
+                // Profile photo wins over logo (it's the more "human" avatar);
+                // fall back to logo, then initials when neither exists.
+                const heroSrc = (client as any).profile_photo_url || (client as any).profile_photo || client.logo;
+                return heroSrc ? (
+                  <img
+                    src={heroSrc}
+                    alt=""
+                    className="rounded-circle"
+                    style={{
+                      width: 120, height: 120, objectFit: 'cover',
+                      background: '#fff',
+                      padding: 4,
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
+                    style={{
+                      width: 110, height: 110, fontSize: 40,
+                      background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
+                      color: '#fff',
+                      border: '3px solid rgba(255,255,255,0.3)',
+                      backdropFilter: 'blur(6px)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+                    }}
+                  >
+                    {initials}
+                  </div>
+                );
+              })()}
             </Col>
 
             <Col className="min-w-0">

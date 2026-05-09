@@ -304,10 +304,32 @@ body {
   background-size: 200% 100%;
 }
 
+/* Shimmer placeholder — visible contrast between the base and the
+   sweeping highlight is essential, otherwise the animation reads as a
+   static blank bar. The CSS vars in this theme (#E2E6F0 / #F7F8FC) are
+   too close together; using fixed colour stops with enough delta makes
+   the wave actually visible on white card surfaces. */
 .shimmer {
-  background: linear-gradient(90deg, var(--color-border) 25%, var(--color-surface-2) 50%, var(--color-border) 75%);
+  background-color: #eef0f4;
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.55) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
   background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
+  background-repeat: no-repeat;
+  animation: shimmer 2s ease-in-out infinite;
+}
+[data-bs-theme="dark"] .shimmer,
+[data-layout-mode="dark"] .shimmer {
+  background-color: #2a3142;
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.10) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
 }
 
 .animate-pulse-ring {
@@ -906,21 +928,39 @@ tbody tr:nth-child(10) {
   color: #2dd4bf !important;
 }
 
-/* Row action button (view / PDF / reminder / delete) */
-.pmt-action-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: var(--vz-secondary-bg);
-  border: 1px solid var(--vz-border-color);
-  color: var(--vz-secondary-color);
-  transition: all .15s ease;
+/* Row action button (view / PDF / reminder / delete). Bootstrap's .btn
+   forces transparent background + transparent border at higher
+   specificity, so this rule needs !important to actually paint the
+   pill shape — without it the icons render bare on the row.
+   Matches the inline-styles ActionBtn used by Clients / Branches /
+   HrEmployees so every list page shares the same crisp pill look. */
+.pmt-action-btn,
+button.pmt-action-btn,
+.btn.pmt-action-btn {
+  width: 30px !important;
+  height: 30px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  background: var(--vz-secondary-bg, #f3f4f6) !important;
+  border: 1px solid var(--vz-border-color, #e5e7eb) !important;
+  color: var(--vz-secondary-color, #6b7280) !important;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease, box-shadow .15s ease !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
 }
-.pmt-action-btn[data-color="primary"]:hover { border-color: var(--vz-primary); color: var(--vz-primary); }
-.pmt-action-btn[data-color="info"]:hover    { border-color: var(--vz-info);    color: var(--vz-info);    }
-.pmt-action-btn[data-color="success"]:hover { border-color: var(--vz-success); color: var(--vz-success); }
-.pmt-action-btn[data-color="warning"]:hover { border-color: var(--vz-warning); color: var(--vz-warning); }
-.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-danger);  color: var(--vz-danger);  }
+/* Hover: lift slightly + tint background to match the icon's brand
+   colour (uses the colour vars Velzon ships, with a 10% alpha wash). */
+.pmt-action-btn[data-color="primary"]:hover,
+button.pmt-action-btn[data-color="primary"]:hover { border-color: var(--vz-primary) !important; color: var(--vz-primary) !important; background: rgba(64,81,137,0.10) !important; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(64,81,137,0.18); }
+.pmt-action-btn[data-color="info"]:hover,
+button.pmt-action-btn[data-color="info"]:hover    { border-color: var(--vz-info)    !important; color: var(--vz-info)    !important; background: rgba(41,156,219,0.10) !important; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(41,156,219,0.18); }
+.pmt-action-btn[data-color="success"]:hover,
+button.pmt-action-btn[data-color="success"]:hover { border-color: var(--vz-success) !important; color: var(--vz-success) !important; background: rgba(10,179,156,0.10)  !important; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(10,179,156,0.18); }
+.pmt-action-btn[data-color="warning"]:hover,
+button.pmt-action-btn[data-color="warning"]:hover { border-color: var(--vz-warning) !important; color: var(--vz-warning) !important; background: rgba(247,184,75,0.10)  !important; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(247,184,75,0.18); }
+.pmt-action-btn[data-color="danger"]:hover,
+button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-danger)  !important; color: var(--vz-danger)  !important; background: rgba(240,101,72,0.10)  !important; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(240,101,72,0.18); }
 
 /* Status badge dot inside the table column */
 .pmt-status-dot { width: 6px; height: 6px; }

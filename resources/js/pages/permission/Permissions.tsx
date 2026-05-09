@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Spinner, Alert } from 'reactstrap';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import api from '../../api';
@@ -10,6 +11,7 @@ import PermissionMatrix, {
   type PermKey,
   type PermModule,
 } from '../../components/PermissionMatrix';
+import { ShimmerPermissions } from '../../components/ui/Shimmer';
 
 interface ManagedUser {
   id: number; name: string; email: string; user_type: string;
@@ -25,6 +27,7 @@ const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permi
 export default function Permissions() {
   const { user: authUser } = useAuth();
   const toast = useToast();
+  const navigate = useNavigate();
   const [modules, setModules] = useState<PermModule[]>([]);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
@@ -148,14 +151,24 @@ export default function Permissions() {
     };
   });
 
-  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
+  if (loading) return <ShimmerPermissions />;
 
   return (
     <>
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Permission Management</h4>
+            <div className="d-flex align-items-center gap-2">
+              <button
+                className="btn btn-soft-primary btn-icon rounded-circle"
+                style={{ width: 36, height: 36 }}
+                onClick={() => navigate(-1)}
+                title="Back"
+              >
+                <i className="ri-arrow-left-line fs-16"></i>
+              </button>
+              <h4 className="mb-sm-0">Permission Management</h4>
+            </div>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
                 <li className="breadcrumb-item"><a href="#">Admin</a></li>
@@ -300,19 +313,28 @@ export default function Permissions() {
                 <Col md={5} className="text-md-end">
                   <Button
                     color="primary"
-                    className="btn-label waves-effect waves-light rounded-pill"
+                    className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
                     style={{
                       background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
                       border: 'none',
                       boxShadow: '0 4px 12px rgba(30,64,175,0.30)',
+                      minWidth: 180,
+                      justifyContent: 'center',
                     }}
                   >
-                    {saving
-                      ? <Spinner size="sm" className="label-icon align-middle me-2" />
-                      : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
-                    {saving ? 'Saving...' : 'Save Permissions'}
+                    {saving ? (
+                      <>
+                        <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                        Save Permissions
+                      </>
+                    )}
                   </Button>
                 </Col>
               </Row>
@@ -456,19 +478,28 @@ export default function Permissions() {
                   </span>
                   <Button
                     color="primary"
-                    className="btn-label waves-effect waves-light rounded-pill"
+                    className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
                     disabled={saving || !selectedUserId}
                     onClick={handleSave}
                     style={{
                       background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
                       border: 'none',
                       boxShadow: '0 4px 12px rgba(30,64,175,0.30)',
+                      minWidth: 180,
+                      justifyContent: 'center',
                     }}
                   >
-                    {saving
-                      ? <Spinner size="sm" className="label-icon align-middle me-2" />
-                      : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
-                    {saving ? 'Saving...' : 'Save Permissions'}
+                    {saving ? (
+                      <>
+                        <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                        Save Permissions
+                      </>
+                    )}
                   </Button>
                 </CardBody>
               </>

@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import * as XLSX from 'xlsx';
@@ -170,32 +171,42 @@ export default function Clients({ onNavigate }: Props) {
     {
       header: 'Organization',
       accessorKey: 'org_name',
-      cell: (info: any) => (
-        // Cap the cell at 240px and truncate long org names with ellipsis
-        // — the full name lives in `title` so hovering shows it as a
-        // native tooltip. Without this, "Center for Biological Diversity
-        // Center for Biological Diversity" pushes the whole row wider
-        // than the viewport and makes the table scroll horizontally.
-        <div className="d-flex align-items-center gap-2" style={{ maxWidth: 240, minWidth: 0 }}>
-          <div
-            className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-            style={{
-              width: 34, height: 34, fontSize: 12,
-              background: `linear-gradient(135deg, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}cc)`,
-              boxShadow: `0 2px 6px ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}40`,
-            }}
-          >
-            {info.row.original.org_name.charAt(0)}{info.row.original.org_name.split(' ')[1]?.charAt(0) || ''}
+      cell: (info: any) => {
+        const photo = info.row.original.profile_photo_url || info.row.original.profile_photo;
+        return (
+          // Cap the cell at 240px and truncate long org names with ellipsis
+          // — the full name lives in `title` so hovering shows it as a
+          // native tooltip.
+          <div className="d-flex align-items-center gap-2" style={{ maxWidth: 240, minWidth: 0 }}>
+            {photo ? (
+              <img
+                src={photo}
+                alt={info.row.original.org_name}
+                className="rounded-circle flex-shrink-0"
+                style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+              />
+            ) : (
+              <div
+                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                style={{
+                  width: 34, height: 34, fontSize: 12,
+                  background: `linear-gradient(135deg, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}cc)`,
+                  boxShadow: `0 2px 6px ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}40`,
+                }}
+              >
+                {info.row.original.org_name.charAt(0)}{info.row.original.org_name.split(' ')[1]?.charAt(0) || ''}
+              </div>
+            )}
+            <span
+              className="fw-semibold fs-13 text-truncate"
+              title={info.row.original.org_name}
+              style={{ minWidth: 0 }}
+            >
+              {info.row.original.org_name}
+            </span>
           </div>
-          <span
-            className="fw-semibold fs-13 text-truncate"
-            title={info.row.original.org_name}
-            style={{ minWidth: 0 }}
-          >
-            {info.row.original.org_name}
-          </span>
-        </div>
-      ),
+        );
+      },
     },
     {
       header: 'Unique ID',
@@ -273,10 +284,10 @@ export default function Clients({ onNavigate }: Props) {
       cell: (info: any) => {
         const isActive = info.row.original.status === 'active';
         const color = isActive ? 'success' : 'danger';
+        const label = isActive ? 'Active' : 'Inactive';
         return (
-          <span className={`badge rounded-pill border border-${color} text-${color} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
-            <span className={`bg-${color} rounded-circle`} style={{ width: 6, height: 6 }} />
-            {info.row.original.status}
+          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2`}>
+            {label}
           </span>
         );
       },
@@ -312,6 +323,82 @@ export default function Clients({ onNavigate }: Props) {
       <style>{`
         .clients-surface { background: #ffffff; }
         [data-bs-theme="dark"] .clients-surface { background: #1c2531; }
+
+        /* KPI cards — clear lift on hover with a layered shadow so the
+           card visibly pops above the surface instead of sitting flat. */
+        .clients-kpi {
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease,
+            border-color 220ms ease;
+          will-change: transform;
+          cursor: default;
+        }
+        .clients-kpi:hover {
+          transform: translateY(-4px);
+          box-shadow:
+            0 18px 36px -8px rgba(64, 81, 137, 0.28),
+            0 8px 16px -4px rgba(64, 81, 137, 0.18),
+            0 2px 4px rgba(0, 0, 0, 0.06);
+          border-color: rgba(64, 81, 137, 0.35);
+        }
+        .clients-kpi:hover .clients-kpi-icon {
+          transform: scale(1.08) rotate(-3deg);
+          box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+        }
+        .clients-kpi-icon {
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease;
+        }
+        [data-bs-theme="dark"] .clients-kpi:hover {
+          box-shadow:
+            0 18px 36px -8px rgba(0, 0, 0, 0.65),
+            0 8px 16px -4px rgba(0, 0, 0, 0.45),
+            0 2px 4px rgba(0, 0, 0, 0.30);
+          border-color: rgba(124, 92, 252, 0.50);
+        }
+
+        /* Export button — outlined emerald style. Distinct from the
+           solid-purple Add button so the two never read as duplicates.
+           Uses transparent + theme-aware tints so dark mode doesn't
+           glow bright like a hard-coded #fff would. */
+        .export-btn,
+        .export-btn:focus,
+        .export-btn:active {
+          background: transparent !important;
+          color: #0ab39c !important;
+          border: 1px solid #0ab39c !important;
+          box-shadow: none !important;
+          transition:
+            background 200ms ease,
+            color 200ms ease,
+            border-color 200ms ease,
+            transform 200ms ease;
+        }
+        .export-btn:hover:not(:disabled) {
+          background: rgba(10, 179, 156, 0.10) !important;
+          color: #099481 !important;
+          border-color: #099481 !important;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(10, 179, 156, 0.18) !important;
+        }
+        .export-btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        [data-bs-theme="dark"] .export-btn,
+        [data-bs-theme="dark"] .export-btn:focus,
+        [data-bs-theme="dark"] .export-btn:active {
+          color: #2ec7b0 !important;
+          border-color: #2ec7b0 !important;
+        }
+        [data-bs-theme="dark"] .export-btn:hover:not(:disabled) {
+          background: rgba(46, 199, 176, 0.14) !important;
+          color: #5be0cb !important;
+          border-color: #5be0cb !important;
+          box-shadow: 0 4px 14px rgba(46, 199, 176, 0.28) !important;
+        }
       `}</style>
 
       <Row>
@@ -344,7 +431,7 @@ export default function Clients({ onNavigate }: Props) {
               {KPI_CARDS.map(k => (
                 <Col key={k.label} md={3} sm={6} xs={12}>
                   <div
-                    className="clients-surface"
+                    className="clients-surface clients-kpi"
                     style={{
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
@@ -365,7 +452,7 @@ export default function Clients({ onNavigate }: Props) {
                           {k.value.toLocaleString()}
                         </h3>
                       </div>
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                      <div className="clients-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
                         <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
                       </div>
                     </div>
@@ -376,7 +463,7 @@ export default function Clients({ onNavigate }: Props) {
               {/* Plan Distribution — donut + total count, same height as other KPIs */}
               <Col md={3} sm={6} xs={12}>
                 <div
-                  className="clients-surface"
+                  className="clients-surface clients-kpi"
                   style={{
                     borderRadius: 14,
                     border: '1px solid var(--vz-border-color)',
@@ -514,29 +601,8 @@ export default function Clients({ onNavigate }: Props) {
                 <Button
                   onClick={handleExport}
                   disabled={exporting}
-                  className="rounded-pill px-3"
-                  style={{
-                    background: '#fff',
-                    color: 'var(--vz-secondary)',
-                    border: '1px solid var(--vz-secondary)',
-                    fontWeight: 600,
-                    transition: 'background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease',
-                  }}
-                  onMouseEnter={e => {
-                    const el = e.currentTarget as HTMLButtonElement;
-                    if (el.disabled) return;
-                    el.style.background = 'var(--vz-secondary)';
-                    el.style.color = '#fff';
-                    el.style.boxShadow = '0 4px 12px rgba(135,138,153,0.35)';
-                    el.style.transform = 'translateY(-1px)';
-                  }}
-                  onMouseLeave={e => {
-                    const el = e.currentTarget as HTMLButtonElement;
-                    el.style.background = '#fff';
-                    el.style.color = 'var(--vz-secondary)';
-                    el.style.boxShadow = 'none';
-                    el.style.transform = 'translateY(0)';
-                  }}
+                  className="rounded-pill px-3 export-btn"
+                  style={{ fontWeight: 600 }}
                 >
                   {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
                   {exporting ? 'Exporting...' : 'Export'}
@@ -555,18 +621,23 @@ export default function Clients({ onNavigate }: Props) {
             {/* ── Table ── */}
             <Card className="border-0 shadow-none mb-0">
               <CardBody className="p-3">
-                <TableContainer
-                  columns={columns}
-                  data={clients}
-                  isGlobalFilter={false}
-                  customPageSize={10}
-                  tableClass="align-middle table-nowrap mb-0"
-                  theadClass="table-light"
-                  divClass="table-responsive table-card border rounded"
-                  SearchPlaceholder="Search by name or ID..."
-                />
-                {loading && <div className="text-center py-5"><Spinner color="secondary" /></div>}
-                {!loading && clients.length === 0 && <div className="text-center text-muted py-5">No clients found</div>}
+                {loading ? (
+                  <ShimmerTable rows={6} cols={9} />
+                ) : (
+                  <>
+                    <TableContainer
+                      columns={columns}
+                      data={clients}
+                      isGlobalFilter={false}
+                      customPageSize={10}
+                      tableClass="align-middle table-nowrap mb-0"
+                      theadClass="table-light"
+                      divClass="table-responsive table-card border rounded"
+                      SearchPlaceholder="Search by name or ID..."
+                    />
+                    {clients.length === 0 && <div className="text-center text-muted py-5">No clients found</div>}
+                  </>
+                )}
               </CardBody>
             </Card>
           </div>

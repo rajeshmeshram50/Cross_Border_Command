@@ -7,6 +7,7 @@ import {
 import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
 import Tooltip from '../components/ui/Tooltip';
+import { ShimmerTable } from '../components/ui/Shimmer';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
@@ -309,7 +310,7 @@ export default function Payments() {
       cell: (info: any) => {
         const p: Payment = info.row.original;
         return (
-          <div className="d-flex gap-1 justify-content-center">
+          <div className="d-flex gap-2 justify-content-center">
             <ActionBtn title="View" icon="ri-eye-line" color="info" onClick={() => setViewPayment(p)} />
             {p.status === 'success' && (
               <ActionBtn title="Invoice PDF" icon="ri-file-pdf-2-line" color="primary" onClick={() => viewInvoice(p)} />
@@ -463,22 +464,27 @@ export default function Payments() {
             {/* ── Table ── */}
             <Card className="border-0 shadow-none mb-0">
               <CardBody className="p-3">
-                <TableContainer
-                  columns={columns}
-                  data={filteredPayments}
-                  isGlobalFilter={false}
-                  customPageSize={10}
-                  tableClass="align-middle table-nowrap mb-0"
-                  theadClass="table-light"
-                  divClass="table-responsive table-card border rounded"
-                  SearchPlaceholder="Search by txn ID, invoice, client..."
-                />
-                {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
-                {!loading && filteredPayments.length === 0 && (
-                  <div className="text-center text-muted py-5">
-                    <i className="ri-bill-line display-4 d-block text-muted mb-2"></i>
-                    No payments found
-                  </div>
+                {loading ? (
+                  <ShimmerTable rows={6} cols={8} />
+                ) : (
+                  <>
+                    <TableContainer
+                      columns={columns}
+                      data={filteredPayments}
+                      isGlobalFilter={false}
+                      customPageSize={10}
+                      tableClass="align-middle table-nowrap mb-0"
+                      theadClass="table-light"
+                      divClass="table-responsive table-card border rounded"
+                      SearchPlaceholder="Search by txn ID, invoice, client..."
+                    />
+                    {filteredPayments.length === 0 && (
+                      <div className="text-center text-muted py-5">
+                        <i className="ri-bill-line display-4 d-block text-muted mb-2"></i>
+                        No payments found
+                      </div>
+                    )}
+                  </>
                 )}
               </CardBody>
             </Card>

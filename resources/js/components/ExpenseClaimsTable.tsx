@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { ShimmerTableRows } from './ui/Shimmer';
 // Reuses the polished confirmation-modal CSS classes already shipping with
 // the recruitment / candidate flows (cand-confirm-modal, cand-confirm-head,
 // cand-confirm-body, cand-confirm-footer, etc.).
@@ -137,12 +138,7 @@ export default function ExpenseClaimsTable({
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={9} className="text-center py-5 text-muted">
-                  <i className="ri-loader-2-line ri-spin d-block mb-2" style={{ fontSize: 24, opacity: 0.5 }} />
-                  Loading claims…
-                </td>
-              </tr>
+              <ShimmerTableRows rows={5} cols={9} />
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={9} className="text-center py-5 text-muted">

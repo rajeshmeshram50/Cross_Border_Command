@@ -1,39 +1,60 @@
-/* ── Base Shimmer ── */
-export function Shimmer({ className = '', style }: { className?: string; style?: React.CSSProperties }) {
-  return <div className={`shimmer rounded-lg ${className}`} style={style} />;
-}
+/**
+ * Shimmer placeholders. The base `.shimmer` class lives in app.css and
+ * provides the animated gradient. Width / height / spacing come from
+ * inline styles here because the project doesn't ship Tailwind — using
+ * Tailwind class names (h-4, w-100, gap-4, etc.) silently rendered as
+ * 0×0 invisible divs and made every shimmer disappear.
+ */
+import React from 'react';
 
-/* ── Stat Cards ── */
-export function ShimmerStatCards({ count = 6 }: { count?: number }) {
+const card: React.CSSProperties = {
+  background: 'var(--vz-card-bg, #fff)',
+  border: '1px solid var(--vz-border-color, #e5e7eb)',
+  borderRadius: 16,
+  overflow: 'hidden',
+};
+
+const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12 };
+const stack = (gap = 8): React.CSSProperties => ({ display: 'flex', flexDirection: 'column', gap });
+
+/* ── Base Shimmer ────────────────────────────────────────────────────── */
+export function Shimmer({
+  className = '',
+  style,
+  width,
+  height,
+  radius = 8,
+}: {
+  className?: string;
+  style?: React.CSSProperties;
+  width?: number | string;
+  height?: number | string;
+  radius?: number | string;
+}) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-surface border border-border rounded-2xl p-4 space-y-3">
-          <Shimmer className="w-10 h-10 rounded-xl" />
-          <Shimmer className="h-7 w-20" />
-          <Shimmer className="h-3 w-24" />
-        </div>
-      ))}
-    </div>
+    <div
+      className={`shimmer ${className}`}
+      style={{ width: width ?? '100%', height: height ?? 12, borderRadius: radius, ...style }}
+    />
   );
 }
 
-/* ── Card Grid ── */
-export function ShimmerCards({ count = 6 }: { count?: number }) {
+/* ── Stat Cards ─────────────────────────────────────────────────────── */
+export function ShimmerStatCards({ count = 6 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(auto-fit, minmax(160px, 1fr))`,
+        gap: 16,
+      }}
+    >
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-surface border border-border rounded-2xl overflow-hidden">
-          <Shimmer className="h-1.5 w-full rounded-none" />
-          <div className="p-4 space-y-3">
-            <div className="flex items-center gap-3">
-              <Shimmer className="w-11 h-11 rounded-xl flex-shrink-0" />
-              <div className="flex-1 space-y-2"><Shimmer className="h-4 w-3/4" /><Shimmer className="h-3 w-1/2" /></div>
-            </div>
-            <div className="space-y-2"><Shimmer className="h-3 w-full" /><Shimmer className="h-3 w-5/6" /><Shimmer className="h-3 w-2/3" /></div>
-            <div className="flex gap-2"><Shimmer className="h-6 w-16 rounded-full" /><Shimmer className="h-6 w-20 rounded-full" /></div>
-            <Shimmer className="h-14 w-full rounded-xl" />
-            <div className="flex gap-1.5 pt-2"><Shimmer className="h-9 flex-1 rounded-lg" /><Shimmer className="h-9 flex-1 rounded-lg" /><Shimmer className="h-9 flex-1 rounded-lg" /><Shimmer className="h-9 w-9 rounded-lg" /></div>
+        <div key={i} style={{ ...card, padding: 16 }}>
+          <div style={stack(12)}>
+            <Shimmer width={40} height={40} radius={12} />
+            <Shimmer height={28} width="50%" />
+            <Shimmer height={10} width="60%" />
           </div>
         </div>
       ))}
@@ -41,152 +62,397 @@ export function ShimmerCards({ count = 6 }: { count?: number }) {
   );
 }
 
-/* ── Table ── */
+/* ── Card Grid ──────────────────────────────────────────────────────── */
+export function ShimmerCards({ count = 6 }: { count?: number }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(auto-fit, minmax(280px, 1fr))`,
+        gap: 16,
+      }}
+    >
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} style={card}>
+          <Shimmer height={6} radius={0} />
+          <div style={{ padding: 16, ...stack(12) }}>
+            <div style={row}>
+              <Shimmer width={44} height={44} radius={12} />
+              <div style={{ flex: 1, ...stack(8) }}>
+                <Shimmer height={16} width="75%" />
+                <Shimmer height={12} width="50%" />
+              </div>
+            </div>
+            <div style={stack(8)}>
+              <Shimmer height={12} />
+              <Shimmer height={12} width="85%" />
+              <Shimmer height={12} width="65%" />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Shimmer width={64} height={24} radius={999} />
+              <Shimmer width={80} height={24} radius={999} />
+            </div>
+            <Shimmer height={56} radius={12} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Table Rows (for use INSIDE an existing <tbody>) ─────────────────
+ * Drop-in replacement for the inline `Array.from(...).map(...)<tr><td><Shimmer/></td>...</tr>`
+ * pattern that every page was repeating. Keeps the same look across the
+ * whole project — change the height / padding here and all tables follow.
+ *
+ * Usage:
+ *   <tbody>
+ *     {loading ? <ShimmerTableRows rows={5} cols={10} /> : visible.map(...)}
+ *   </tbody>
+ *
+ * The `keyPrefix` lets two tables on the same page (e.g. payroll tabs)
+ * coexist without React key collisions.
+ */
+export function ShimmerTableRows({
+  rows = 5,
+  cols = 6,
+  height = 14,
+  cellClassName = 'py-3',
+  keyPrefix = 'shim',
+}: {
+  rows?: number;
+  cols?: number;
+  height?: number | string;
+  cellClassName?: string;
+  keyPrefix?: string;
+}) {
+  return (
+    <>
+      {Array.from({ length: rows }).map((_, r) => (
+        <tr key={`${keyPrefix}-${r}`}>
+          {Array.from({ length: cols }).map((_, c) => (
+            <td key={c} className={cellClassName}>
+              <Shimmer height={height} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
+/* ── Table ──────────────────────────────────────────────────────────── */
 export function ShimmerTable({ rows = 5, cols = 6 }: { rows?: number; cols?: number }) {
   return (
-    <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-      <div className="px-4 py-3 bg-surface-2 border-b border-border/50 flex gap-4">
-        {Array.from({ length: cols }).map((_, i) => <Shimmer key={i} className="h-3 flex-1" />)}
+    <div style={card}>
+      <div
+        style={{
+          padding: '12px 16px',
+          background: 'var(--vz-secondary-bg, #f3f4f6)',
+          borderBottom: '1px solid var(--vz-border-color, #e5e7eb)',
+          display: 'flex', gap: 16,
+        }}
+      >
+        {Array.from({ length: cols }).map((_, i) => (
+          <Shimmer key={i} height={12} />
+        ))}
       </div>
       {Array.from({ length: rows }).map((_, r) => (
-        <div key={r} className="px-4 py-3.5 border-b border-border/20 flex items-center gap-4">
-          {Array.from({ length: cols }).map((_, c) => <Shimmer key={c} className={`h-4 flex-1 ${c === 0 ? 'max-w-[40px]' : ''}`} />)}
+        <div
+          key={r}
+          style={{
+            padding: '14px 16px',
+            borderBottom: '1px solid var(--vz-border-color, #e5e7eb)',
+            display: 'flex', alignItems: 'center', gap: 16,
+          }}
+        >
+          {Array.from({ length: cols }).map((_, c) => (
+            <Shimmer key={c} height={14} width={c === 0 ? 32 : '100%'} style={c === 0 ? { flex: 'none' } : undefined} />
+          ))}
         </div>
       ))}
     </div>
   );
 }
 
-/* ── List Items ── */
+/* ── List Items ─────────────────────────────────────────────────────── */
 export function ShimmerList({ count = 5 }: { count?: number }) {
   return (
-    <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-border/50 flex items-center gap-3">
-        <Shimmer className="w-8 h-8 rounded-lg" /><Shimmer className="h-4 w-32" />
+    <div style={card}>
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--vz-border-color, #e5e7eb)', ...row }}>
+        <Shimmer width={32} height={32} radius={8} />
+        <Shimmer width={140} height={14} />
       </div>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="px-5 py-3.5 border-b border-border/20 flex items-center gap-3.5">
-          <Shimmer className="w-10 h-10 rounded-xl flex-shrink-0" />
-          <div className="flex-1 space-y-2"><Shimmer className="h-4 w-2/3" /><Shimmer className="h-3 w-1/2" /></div>
-          <Shimmer className="h-6 w-16 rounded-full flex-shrink-0" />
+        <div
+          key={i}
+          style={{
+            padding: '12px 18px',
+            borderBottom: '1px solid var(--vz-border-color, #e5e7eb)',
+            ...row, gap: 14,
+          }}
+        >
+          <Shimmer width={40} height={40} radius={12} />
+          <div style={{ flex: 1, ...stack(8) }}>
+            <Shimmer height={14} width="65%" />
+            <Shimmer height={12} width="45%" />
+          </div>
+          <Shimmer width={64} height={22} radius={999} />
         </div>
       ))}
     </div>
   );
 }
 
-/* ── Payment Rows ── */
+/* ── Payment Rows ───────────────────────────────────────────────────── */
 export function ShimmerPaymentList({ count = 5 }: { count?: number }) {
   return (
-    <div className="space-y-3">
+    <div style={stack(12)}>
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-surface border border-border rounded-2xl p-4 flex items-center gap-4">
-          <Shimmer className="w-11 h-11 rounded-xl flex-shrink-0" />
-          <div className="flex-1 space-y-2"><Shimmer className="h-4 w-1/3" /><Shimmer className="h-3 w-1/2" /></div>
-          <div className="space-y-2 text-right"><Shimmer className="h-5 w-20 ml-auto" /><Shimmer className="h-3 w-14 ml-auto" /></div>
-          <div className="flex gap-1.5"><Shimmer className="w-8 h-8 rounded-lg" /><Shimmer className="w-8 h-8 rounded-lg" /></div>
+        <div key={i} style={{ ...card, padding: 16, ...row }}>
+          <Shimmer width={44} height={44} radius={12} />
+          <div style={{ flex: 1, ...stack(8) }}>
+            <Shimmer height={14} width="33%" />
+            <Shimmer height={12} width="50%" />
+          </div>
+          <div style={{ ...stack(8), alignItems: 'flex-end' }}>
+            <Shimmer height={18} width={80} />
+            <Shimmer height={12} width={56} />
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Shimmer width={32} height={32} radius={8} />
+            <Shimmer width={32} height={32} radius={8} />
+          </div>
         </div>
       ))}
     </div>
   );
 }
 
-/* ── Chart ── */
+/* ── Chart ──────────────────────────────────────────────────────────── */
 export function ShimmerChart() {
   return (
-    <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-border/50 flex items-center justify-between">
-        <div className="flex items-center gap-3"><Shimmer className="w-10 h-10 rounded-xl" /><div className="space-y-2"><Shimmer className="h-4 w-28" /><Shimmer className="h-3 w-20" /></div></div>
-        <Shimmer className="h-6 w-24" />
+    <div style={card}>
+      <div
+        style={{
+          padding: '14px 20px',
+          borderBottom: '1px solid var(--vz-border-color, #e5e7eb)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}
+      >
+        <div style={row}>
+          <Shimmer width={40} height={40} radius={12} />
+          <div style={stack(8)}>
+            <Shimmer width={120} height={14} />
+            <Shimmer width={80} height={12} />
+          </div>
+        </div>
+        <Shimmer width={96} height={24} />
       </div>
-      <div className="p-5"><div className="flex items-end gap-2 h-[220px]">
-        {[40,65,45,80,55,90,70,60,85,50,75,95].map((h,i) => <div key={i} className="flex-1 flex flex-col justify-end"><Shimmer className="w-full rounded-t-md" style={{ height: `${h}%` }} /></div>)}
-      </div></div>
+      <div style={{ padding: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 220 }}>
+          {[40, 65, 45, 80, 55, 90, 70, 60, 85, 50, 75, 95].map((h, i) => (
+            <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+              <Shimmer height={`${h}%`} radius={6} />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ── Hero Header ── */
+/* ── Hero Header ────────────────────────────────────────────────────── */
 export function ShimmerHero() {
   return (
-    <div className="bg-surface-2 border border-border rounded-2xl p-8 flex items-center gap-6">
-      <Shimmer className="w-14 h-14 rounded-2xl flex-shrink-0" />
-      <div className="flex-1 space-y-3"><Shimmer className="h-6 w-64" /><div className="flex gap-3"><Shimmer className="h-6 w-32 rounded-lg" /><Shimmer className="h-6 w-20 rounded-full" /></div><Shimmer className="h-3 w-48" /></div>
+    <div
+      style={{
+        ...card,
+        background: 'var(--vz-secondary-bg, #f3f4f6)',
+        padding: 28,
+        ...row, gap: 22,
+      }}
+    >
+      <Shimmer width={56} height={56} radius={16} />
+      <div style={{ flex: 1, ...stack(10) }}>
+        <Shimmer height={22} width={260} />
+        <div style={{ display: 'flex', gap: 12 }}>
+          <Shimmer width={130} height={22} radius={8} />
+          <Shimmer width={84} height={22} radius={999} />
+        </div>
+        <Shimmer height={12} width={200} />
+      </div>
     </div>
   );
 }
 
-/* ── Plan Cards ── */
+/* ── Plan Cards ─────────────────────────────────────────────────────── */
 export function ShimmerPlanCards({ count = 5 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5">
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(auto-fit, minmax(240px, 1fr))`,
+        gap: 20,
+      }}
+    >
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-surface border border-border rounded-2xl overflow-hidden"><Shimmer className="h-1.5 w-full rounded-none" />
-          <div className="p-5 space-y-4"><Shimmer className="w-11 h-11 rounded-xl" /><Shimmer className="h-5 w-24" /><Shimmer className="h-8 w-28" />
-            <div className="grid grid-cols-2 gap-2"><Shimmer className="h-14 rounded-xl" /><Shimmer className="h-14 rounded-xl" /><Shimmer className="h-14 rounded-xl" /><Shimmer className="h-14 rounded-xl" /></div>
-            <div className="space-y-2"><Shimmer className="h-3 w-full" /><Shimmer className="h-3 w-5/6" /><Shimmer className="h-3 w-4/6" /></div>
-            <Shimmer className="h-11 w-full rounded-xl" /></div>
+        <div key={i} style={card}>
+          <Shimmer height={6} radius={0} />
+          <div style={{ padding: 20, ...stack(16) }}>
+            <Shimmer width={44} height={44} radius={12} />
+            <Shimmer height={18} width={100} />
+            <Shimmer height={28} width={120} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <Shimmer height={56} radius={12} />
+              <Shimmer height={56} radius={12} />
+              <Shimmer height={56} radius={12} />
+              <Shimmer height={56} radius={12} />
+            </div>
+            <div style={stack(8)}>
+              <Shimmer height={12} />
+              <Shimmer height={12} width="85%" />
+              <Shimmer height={12} width="70%" />
+            </div>
+            <Shimmer height={42} radius={12} />
+          </div>
         </div>
       ))}
     </div>
   );
 }
 
-/* ── Profile ── */
+/* ── Profile ────────────────────────────────────────────────────────── */
 export function ShimmerProfile() {
   return (
-    <div className="space-y-6"><ShimmerHero />
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="space-y-5"><ShimmerList count={4} /><div className="bg-surface border border-border rounded-2xl p-5 space-y-3"><Shimmer className="h-4 w-24" /><Shimmer className="h-6 w-32" /><Shimmer className="h-10 w-full rounded-xl" /></div></div>
-        <div className="lg:col-span-2 space-y-5">
-          <div className="bg-surface border border-border rounded-2xl p-6 space-y-4"><div className="flex items-center gap-3 mb-2"><Shimmer className="w-9 h-9 rounded-xl" /><div className="space-y-2"><Shimmer className="h-4 w-36" /><Shimmer className="h-3 w-28" /></div></div><div className="grid grid-cols-2 gap-4"><Shimmer className="h-16 rounded-lg" /><Shimmer className="h-16 rounded-lg" /><Shimmer className="h-16 rounded-lg" /><Shimmer className="h-16 rounded-lg" /></div></div>
-          <div className="bg-surface border border-border rounded-2xl p-6 space-y-4"><div className="flex items-center gap-3 mb-2"><Shimmer className="w-9 h-9 rounded-xl" /><div className="space-y-2"><Shimmer className="h-4 w-32" /><Shimmer className="h-3 w-40" /></div></div><Shimmer className="h-12 w-full rounded-lg" /><div className="grid grid-cols-2 gap-4"><Shimmer className="h-12 rounded-lg" /><Shimmer className="h-12 rounded-lg" /></div></div>
+    <div style={stack(20)}>
+      <ShimmerHero />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
+        <ShimmerList count={4} />
+        <div style={stack(16)}>
+          <div style={{ ...card, padding: 24, ...stack(14) }}>
+            <div style={row}>
+              <Shimmer width={36} height={36} radius={12} />
+              <div style={stack(8)}>
+                <Shimmer width={144} height={14} />
+                <Shimmer width={112} height={12} />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <Shimmer height={64} radius={10} />
+              <Shimmer height={64} radius={10} />
+              <Shimmer height={64} radius={10} />
+              <Shimmer height={64} radius={10} />
+            </div>
+          </div>
+          <div style={{ ...card, padding: 24, ...stack(14) }}>
+            <div style={row}>
+              <Shimmer width={36} height={36} radius={12} />
+              <div style={stack(8)}>
+                <Shimmer width={128} height={14} />
+                <Shimmer width={160} height={12} />
+              </div>
+            </div>
+            <Shimmer height={48} radius={10} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <Shimmer height={48} radius={10} />
+              <Shimmer height={48} radius={10} />
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/* ── Settings ── */
+/* ── Settings ───────────────────────────────────────────────────────── */
 export function ShimmerSettings() {
   return (
-    <div className="space-y-6"><ShimmerHero />
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
-        <div className="bg-surface border border-border rounded-2xl p-3 space-y-1">
-          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="flex items-center gap-3 px-3 py-3 rounded-xl"><Shimmer className="w-9 h-9 rounded-xl flex-shrink-0" /><div className="flex-1 space-y-2"><Shimmer className="h-3 w-20" /><Shimmer className="h-2 w-28" /></div></div>)}
+    <div style={stack(20)}>
+      <ShimmerHero />
+      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: 16 }}>
+        <div style={{ ...card, padding: 12, ...stack(4) }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px', borderRadius: 12 }}>
+              <Shimmer width={36} height={36} radius={12} />
+              <div style={{ flex: 1, ...stack(8) }}>
+                <Shimmer height={12} width={80} />
+                <Shimmer height={10} width={112} />
+              </div>
+            </div>
+          ))}
         </div>
-        <div className="bg-surface border border-border rounded-2xl p-6 space-y-5">
-          <div className="flex items-center gap-3 pb-4 border-b border-border/50"><Shimmer className="w-10 h-10 rounded-xl" /><div className="space-y-2"><Shimmer className="h-4 w-28" /><Shimmer className="h-3 w-36" /></div></div>
-          <div className="grid grid-cols-2 gap-4"><Shimmer className="h-16 rounded-lg" /><Shimmer className="h-16 rounded-lg" /><Shimmer className="h-16 rounded-lg" /><Shimmer className="h-16 rounded-lg" /></div>
-          <Shimmer className="h-20 rounded-lg" />
+        <div style={{ ...card, padding: 24, ...stack(18) }}>
+          <div style={{ ...row, paddingBottom: 16, borderBottom: '1px solid var(--vz-border-color, #e5e7eb)' }}>
+            <Shimmer width={40} height={40} radius={12} />
+            <div style={stack(8)}>
+              <Shimmer width={112} height={14} />
+              <Shimmer width={144} height={12} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <Shimmer height={64} radius={10} />
+            <Shimmer height={64} radius={10} />
+            <Shimmer height={64} radius={10} />
+            <Shimmer height={64} radius={10} />
+          </div>
+          <Shimmer height={80} radius={10} />
         </div>
       </div>
     </div>
   );
 }
 
-/* ── Permissions ── */
+/* ── Permissions ────────────────────────────────────────────────────── */
 export function ShimmerPermissions() {
   return (
-    <div className="space-y-5"><ShimmerHero /><div className="flex items-center justify-between"><Shimmer className="h-10 w-80 rounded-xl" /><Shimmer className="h-10 w-24 rounded-lg" /></div><ShimmerTable rows={6} cols={8} /></div>
+    <div style={stack(18)}>
+      <ShimmerHero />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Shimmer width={320} height={40} radius={12} />
+        <Shimmer width={96} height={40} radius={10} />
+      </div>
+      <ShimmerTable rows={6} cols={8} />
+    </div>
   );
 }
 
-/* ── Dashboard ── */
+/* ── Dashboard ──────────────────────────────────────────────────────── */
 export function ShimmerDashboard() {
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between"><div className="space-y-2"><Shimmer className="h-7 w-48" /><Shimmer className="h-4 w-64" /></div><Shimmer className="h-8 w-16 rounded-xl" /></div>
+    <div style={stack(20)}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={stack(8)}>
+          <Shimmer height={26} width={192} />
+          <Shimmer height={14} width={256} />
+        </div>
+        <Shimmer width={64} height={32} radius={12} />
+      </div>
       <ShimmerStatCards count={6} />
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        <div className="lg:col-span-8"><ShimmerChart /></div>
-        <div className="lg:col-span-4 space-y-4">
-          {[1,2].map(i => <div key={i} className="bg-surface border border-border rounded-2xl p-5 flex items-center gap-4"><Shimmer className="w-[72px] h-[72px] rounded-full" /><div className="space-y-2"><Shimmer className="h-4 w-28" /><Shimmer className="h-3 w-20" /></div></div>)}
-          <Shimmer className="h-24 w-full rounded-2xl" />
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 18 }}>
+        <ShimmerChart />
+        <div style={stack(14)}>
+          {[1, 2].map(i => (
+            <div key={i} style={{ ...card, padding: 20, ...row, gap: 16 }}>
+              <Shimmer width={72} height={72} radius={999} />
+              <div style={stack(8)}>
+                <Shimmer width={112} height={14} />
+                <Shimmer width={80} height={12} />
+              </div>
+            </div>
+          ))}
+          <Shimmer height={96} radius={16} />
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5"><ShimmerChart /><ShimmerChart /><ShimmerList count={3} /></div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5"><ShimmerList count={5} /><ShimmerList count={5} /></div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18 }}>
+        <ShimmerChart />
+        <ShimmerChart />
+        <ShimmerList count={3} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+        <ShimmerList count={5} />
+        <ShimmerList count={5} />
+      </div>
     </div>
   );
 }

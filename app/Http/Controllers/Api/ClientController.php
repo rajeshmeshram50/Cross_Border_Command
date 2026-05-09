@@ -20,8 +20,17 @@ class ClientController extends Controller
 {
     public function index(Request $request)
     {
+        // Match the Branches list filter: exclude the auto-created "Head
+        // Office" placeholder (code 'HO' or name ending in "— Head Office")
+        // so the count column matches what the user sees on the Branches
+        // page when they click into a client.
         $query = Client::with(['plan', 'createdBy'])
-            ->withCount('branches')
+            ->withCount(['branches as branches_count' => function ($q) {
+                $q->where(function ($inner) {
+                    $inner->where('code', '!=', 'HO')
+                          ->orWhere('name', 'not ilike', '% — Head Office');
+                });
+            }])
             ->withCount('users');
 
         if ($search = $request->query('search')) {
@@ -115,6 +124,7 @@ class ClientController extends Controller
             'secondary_color' => 'nullable|string|max:7',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'favicon' => 'nullable|image|mimes:jpg,jpeg,png,ico,svg,webp|max:512',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
 
             // Notes
             'notes' => 'nullable|string',
@@ -179,6 +189,9 @@ class ClientController extends Controller
             }
             if ($request->hasFile('favicon')) {
                 $brandingUpdates['favicon'] = $request->file('favicon')->store('clients/favicons', 'public');
+            }
+            if ($request->hasFile('profile_photo')) {
+                $brandingUpdates['profile_photo'] = $request->file('profile_photo')->store('clients/profile-photos', 'public');
             }
             if ($brandingUpdates) {
                 $client->update($brandingUpdates);
@@ -291,6 +304,7 @@ class ClientController extends Controller
             'secondary_color' => 'nullable|string|max:7',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'favicon' => 'nullable|image|mimes:jpg,jpeg,png,ico,svg,webp|max:512',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             'notes' => 'nullable|string',
             'admin_name' => 'nullable|string|max:255',
             'admin_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($adminUser?->id)->whereNull('deleted_at')],
@@ -346,6 +360,12 @@ class ClientController extends Controller
                     Storage::disk('public')->delete($this->relativePath($client->favicon));
                 }
                 $client->update(['favicon' => $request->file('favicon')->store('clients/favicons', 'public')]);
+            }
+            if ($request->hasFile('profile_photo')) {
+                if ($client->profile_photo) {
+                    Storage::disk('public')->delete($this->relativePath($client->profile_photo));
+                }
+                $client->update(['profile_photo' => $request->file('profile_photo')->store('clients/profile-photos', 'public')]);
             }
 
             if ($statusBecomingInactive) {

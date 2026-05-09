@@ -217,12 +217,44 @@ class AuthController extends Controller
             'name' => 'required|string|min:2|max:255',
             'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'designation' => 'nullable|string|max:100',
+            // Profile photo lives on the tenant row (client/branch). Accepted only
+            // for tenant users; super_admin has no tenant to attach it to.
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
         ], [
             'phone.regex' => 'Phone may only contain digits, spaces, +, -, ( and ) and must be 7–20 characters.',
         ]);
 
         $user = $request->user();
         $user->update($request->only(['name', 'phone', 'designation']));
+
+        // Profile photo update — branch_user writes to their branch row,
+        // client_admin writes to their client row. Same fallback chain that
+        // formatUser surfaces (branch wins over client when both exist).
+        if ($request->hasFile('profile_photo')) {
+            if ($user->user_type === 'branch_user' && $user->branch_id) {
+                $branch = $user->branch;
+                if ($branch) {
+                    if ($branch->profile_photo) {
+                        \Illuminate\Support\Facades\Storage::disk('public')
+                            ->delete($this->relativeFilePath($branch->profile_photo));
+                    }
+                    $branch->update([
+                        'profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public'),
+                    ]);
+                }
+            } elseif ($user->user_type === 'client_admin' && $user->client_id) {
+                $client = $user->client;
+                if ($client) {
+                    if ($client->profile_photo) {
+                        \Illuminate\Support\Facades\Storage::disk('public')
+                            ->delete($this->relativeFilePath($client->profile_photo));
+                    }
+                    $client->update([
+                        'profile_photo' => $request->file('profile_photo')->store('clients/profile-photos', 'public'),
+                    ]);
+                }
+            }
+        }
 
         return response()->json([
             'message' => 'Profile updated successfully',
@@ -302,6 +334,8 @@ class AuthController extends Controller
             'branch_name' => $user->branch?->name,
             'client_logo' => file_url($user->client?->logo),
             'branch_logo' => file_url($user->branch?->logo),
+            'client_profile_photo' => file_url($user->client?->profile_photo),
+            'branch_profile_photo' => file_url($user->branch?->profile_photo),
             // Effective tenant theme colors — branch values win over client values,
             // null when neither is set so the frontend falls back to app defaults.
             // Only valid 7-char hex strings (#RRGGBB) are surfaced; anything else

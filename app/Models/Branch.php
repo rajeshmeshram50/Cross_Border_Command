@@ -26,6 +26,7 @@ class Branch extends Model
         'pan_number',
         'registration_number',
         'logo',
+        'profile_photo',
         'primary_color',
         'secondary_color',
         'address',
@@ -43,7 +44,7 @@ class Branch extends Model
         'created_by',
     ];
 
-    protected $appends = ['logo_url'];
+    protected $appends = ['logo_url', 'profile_photo_url'];
 
     protected function casts(): array
     {
@@ -57,6 +58,11 @@ class Branch extends Model
     public function getLogoUrlAttribute(): ?string
     {
         return file_url($this->logo);
+    }
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        return file_url($this->profile_photo);
     }
 
     // ── Relationships ──

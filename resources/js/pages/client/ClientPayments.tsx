@@ -114,11 +114,12 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
       header: 'Status',
       accessorKey: 'status',
       cell: (info: any) => {
-        const cfg = statusCfg[info.row.original.status] || statusCfg.pending;
+        const raw = String(info.row.original.status || 'pending');
+        const cfg = statusCfg[raw] || statusCfg.pending;
+        const label = raw.charAt(0).toUpperCase() + raw.slice(1);
         return (
-          <span className={`badge rounded-pill border border-${cfg.color} text-${cfg.color} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
-            <span className={`bg-${cfg.color} rounded-circle`} style={{ width: 6, height: 6 }} />
-            {info.row.original.status}
+          <span className={`badge rounded-pill bg-${cfg.color}-subtle text-${cfg.color} fw-semibold px-3 py-2`}>
+            {label}
           </span>
         );
       },
@@ -130,6 +131,41 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
       <style>{`
         .payments-surface { background: #ffffff; }
         [data-bs-theme="dark"] .payments-surface { background: #1c2531; }
+
+        /* KPI cards — clear lift on hover with a layered shadow so the
+           card visibly pops above the surface instead of sitting flat. */
+        .payments-kpi {
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease,
+            border-color 220ms ease;
+          will-change: transform;
+          cursor: default;
+        }
+        .payments-kpi:hover {
+          transform: translateY(-4px);
+          box-shadow:
+            0 18px 36px -8px rgba(64, 81, 137, 0.28),
+            0 8px 16px -4px rgba(64, 81, 137, 0.18),
+            0 2px 4px rgba(0, 0, 0, 0.06);
+          border-color: rgba(64, 81, 137, 0.35);
+        }
+        .payments-kpi:hover .payments-kpi-icon {
+          transform: scale(1.08) rotate(-3deg);
+          box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+        }
+        .payments-kpi-icon {
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease;
+        }
+        [data-bs-theme="dark"] .payments-kpi:hover {
+          box-shadow:
+            0 18px 36px -8px rgba(0, 0, 0, 0.65),
+            0 8px 16px -4px rgba(0, 0, 0, 0.45),
+            0 2px 4px rgba(0, 0, 0, 0.30);
+          border-color: rgba(124, 92, 252, 0.50);
+        }
       `}</style>
 
       <Row>
@@ -168,7 +204,7 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
               {KPI_CARDS.map(k => (
                 <Col key={k.label} md={3} sm={6} xs={12}>
                   <div
-                    className="payments-surface"
+                    className="payments-surface payments-kpi"
                     style={{
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
@@ -189,7 +225,7 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
                           {k.value}
                         </h3>
                       </div>
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                      <div className="payments-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
                         <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
                       </div>
                     </div>
