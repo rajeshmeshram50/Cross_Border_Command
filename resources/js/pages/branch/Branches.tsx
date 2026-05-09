@@ -305,10 +305,10 @@ export default function Branches({ onNavigate }: Props) {
       cell: (info: any) => {
         const isActive = info.row.original.status === 'active';
         const color = isActive ? 'success' : 'danger';
+        const label = isActive ? 'Active' : 'Inactive';
         return (
-          <span className={`badge rounded-pill border border-${color} text-${color} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
-            <span className={`bg-${color} rounded-circle`} style={{ width: 6, height: 6 }} />
-            {info.row.original.status}
+          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2`}>
+            {label}
           </span>
         );
       },
@@ -345,6 +345,47 @@ export default function Branches({ onNavigate }: Props) {
       <style>{`
         .branches-surface { background: #ffffff; }
         [data-bs-theme="dark"] .branches-surface { background: #1c2531; }
+
+        /* Export button — outlined emerald style. Distinct from the
+           solid-purple Add button so the two never read as duplicates.
+           Uses transparent + theme-aware tints so dark mode doesn't
+           glow bright like a hard-coded #fff would. */
+        .export-btn,
+        .export-btn:focus,
+        .export-btn:active {
+          background: transparent !important;
+          color: #0ab39c !important;
+          border: 1px solid #0ab39c !important;
+          box-shadow: none !important;
+          transition:
+            background 200ms ease,
+            color 200ms ease,
+            border-color 200ms ease,
+            transform 200ms ease;
+        }
+        .export-btn:hover:not(:disabled) {
+          background: rgba(10, 179, 156, 0.10) !important;
+          color: #099481 !important;
+          border-color: #099481 !important;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(10, 179, 156, 0.18) !important;
+        }
+        .export-btn:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+        [data-bs-theme="dark"] .export-btn,
+        [data-bs-theme="dark"] .export-btn:focus,
+        [data-bs-theme="dark"] .export-btn:active {
+          color: #2ec7b0 !important;
+          border-color: #2ec7b0 !important;
+        }
+        [data-bs-theme="dark"] .export-btn:hover:not(:disabled) {
+          background: rgba(46, 199, 176, 0.14) !important;
+          color: #5be0cb !important;
+          border-color: #5be0cb !important;
+          box-shadow: 0 4px 14px rgba(46, 199, 176, 0.28) !important;
+        }
       `}</style>
 
       <Row>
@@ -431,29 +472,8 @@ export default function Branches({ onNavigate }: Props) {
                 <Button
                   onClick={handleExport}
                   disabled={exporting}
-                  className="rounded-pill px-3"
-                  style={{
-                    background: '#fff',
-                    color: 'var(--vz-secondary)',
-                    border: '1px solid var(--vz-secondary)',
-                    fontWeight: 600,
-                    transition: 'background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease',
-                  }}
-                  onMouseEnter={e => {
-                    const el = e.currentTarget as HTMLButtonElement;
-                    if (el.disabled) return;
-                    el.style.background = 'var(--vz-secondary)';
-                    el.style.color = '#fff';
-                    el.style.boxShadow = '0 4px 12px rgba(135,138,153,0.35)';
-                    el.style.transform = 'translateY(-1px)';
-                  }}
-                  onMouseLeave={e => {
-                    const el = e.currentTarget as HTMLButtonElement;
-                    el.style.background = '#fff';
-                    el.style.color = 'var(--vz-secondary)';
-                    el.style.boxShadow = 'none';
-                    el.style.transform = 'translateY(0)';
-                  }}
+                  className="rounded-pill px-3 export-btn"
+                  style={{ fontWeight: 600 }}
                 >
                   {exporting ? <Spinner size="sm" className="me-1" /> : <i className="ri-download-2-line align-bottom me-1"></i>}
                   {exporting ? 'Exporting...' : 'Export'}
