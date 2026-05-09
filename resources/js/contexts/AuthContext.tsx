@@ -35,7 +35,8 @@ const Ctx = createContext<AuthCtx>({
 // v6 — added `employee_id` (linked Employee row, used for expense-claim ownership).
 // v7 — added `employee_code` (EMP-### string form, used for own-profile match).
 // v8 — added `client_profile_photo` / `branch_profile_photo` (profile dropdown).
-const USER_SCHEMA_VERSION = 8;
+// v9 — added `user_profile_photo` (super_admin & non-tenant users own photo).
+const USER_SCHEMA_VERSION = 9;
 
 function readCachedUser(): AuthUser | null {
   try {

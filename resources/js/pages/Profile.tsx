@@ -50,11 +50,12 @@ export default function Profile() {
     setProfileName(user.name || '');
     setProfilePhone(user.phone || '');
     setProfileDesignation(user.designation || '');
-    // Existing photo from tenant row (branch wins over client). Don't clobber
-    // a freshly-staged file the user hasn't saved yet.
-    const photo = user.branch_profile_photo || user.client_profile_photo || null;
+    // Existing photo: tenant row first (branch > client) then the user-row
+    // photo (super_admin / employees). Don't clobber a freshly-staged file
+    // the user hasn't saved yet.
+    const photo = user.branch_profile_photo || user.client_profile_photo || user.user_profile_photo || null;
     setProfilePhotoPreview(prev => (profilePhotoFile ? prev : photo));
-  }, [user?.name, user?.phone, user?.designation, user?.branch_profile_photo, user?.client_profile_photo]);
+  }, [user?.name, user?.phone, user?.designation, user?.branch_profile_photo, user?.client_profile_photo, user?.user_profile_photo]);
 
   if (!user) return null;
 
@@ -66,7 +67,7 @@ export default function Profile() {
       r.readAsDataURL(file);
     } else {
       // Restore the saved photo if the user clears the picker
-      setProfilePhotoPreview(user?.branch_profile_photo || user?.client_profile_photo || null);
+      setProfilePhotoPreview(user?.branch_profile_photo || user?.client_profile_photo || user?.user_profile_photo || null);
     }
   };
 
@@ -431,8 +432,7 @@ export default function Profile() {
       <CardBody className="d-flex flex-column">
         <SectionHeader title="Personal Information" gradient={GRAD_PRIMARY} icon="ri-user-settings-line" />
         <Form onSubmit={(e) => { e.preventDefault(); handleSaveProfile(); }} className="d-flex flex-column flex-grow-1">
-          {!isSuperAdmin && (
-            <div className="d-flex align-items-center gap-3 mb-3">
+          <div className="d-flex align-items-center gap-3 mb-3">
               {profilePhotoPreview ? (
                 <img
                   src={profilePhotoPreview}
@@ -459,7 +459,6 @@ export default function Profile() {
                 <small className="text-muted" style={{ fontSize: 11 }}>JPG or PNG — Max 2MB</small>
               </div>
             </div>
-          )}
           <Row className="g-2">
             <Col md={6}>
               <Label className="pf-label">Full Name <span className="text-danger">*</span></Label>
@@ -714,6 +713,7 @@ export default function Profile() {
                 const heroSrc = profilePhotoPreview
                   || user.branch_profile_photo
                   || user.client_profile_photo
+                  || user.user_profile_photo
                   || null;
                 return heroSrc ? (
                   <img
