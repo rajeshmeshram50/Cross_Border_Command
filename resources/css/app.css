@@ -2046,3 +2046,119 @@ body .modal.cbc-payment-modal .modal-dialog {
   .hr-mega-cat-btn { justify-content: space-between; }
   .hr-mega-leaves { justify-content: flex-start; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Global tooltip — opt-in via [data-tooltip="..."] attribute.
+
+   Why a custom tooltip: native title tooltips can't be styled (font,
+   colour, position, delay, dark mode). Using data-tooltip + ::after/
+   ::before lets us match the dark-pill look in the screenshot, control
+   the appear delay, and make it consistent across every page.
+
+   Usage:  <button data-tooltip="Delete">…</button>
+           <i  data-tooltip="Workstation" data-tooltip-pos="bottom" />
+
+   Positioning: defaults to top; pass data-tooltip-pos="bottom"|"left"|
+   "right" to override. The arrow flips automatically.
+   ───────────────────────────────────────────────────────────────────── */
+[data-tooltip] {
+  position: relative;
+}
+[data-tooltip]::after,
+[data-tooltip]::before {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 9999;
+  transition: opacity .15s ease, transform .15s ease;
+}
+/* Tooltip body (label) */
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  background: #1f2937;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  box-shadow: 0 6px 14px -4px rgba(15,23,42,0.35), 0 2px 4px rgba(15,23,42,0.18);
+  /* default = above */
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+}
+/* Tooltip arrow */
+[data-tooltip]::before {
+  content: '';
+  border: 5px solid transparent;
+  /* default = above (arrow points down toward element) */
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  border-top-color: #1f2937;
+}
+[data-tooltip]:hover::after,
+[data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::after,
+[data-tooltip]:focus-visible::before {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Position variants ── */
+[data-tooltip][data-tooltip-pos="bottom"]::after {
+  bottom: auto;
+  top: calc(100% + 8px);
+  transform: translateX(-50%) translateY(-4px);
+}
+[data-tooltip][data-tooltip-pos="bottom"]::before {
+  bottom: auto;
+  top: calc(100% + 3px);
+  border-top-color: transparent;
+  border-bottom-color: #1f2937;
+  transform: translateX(-50%) translateY(-4px);
+}
+[data-tooltip][data-tooltip-pos="bottom"]:hover::after,
+[data-tooltip][data-tooltip-pos="bottom"]:hover::before {
+  transform: translateX(-50%) translateY(0);
+}
+
+[data-tooltip][data-tooltip-pos="left"]::after {
+  bottom: 50%; left: auto;
+  right: calc(100% + 8px);
+  transform: translateY(50%) translateX(4px);
+}
+[data-tooltip][data-tooltip-pos="left"]::before {
+  bottom: 50%; left: auto;
+  right: calc(100% + 3px);
+  border-top-color: transparent;
+  border-left-color: #1f2937;
+  transform: translateY(50%) translateX(4px);
+}
+[data-tooltip][data-tooltip-pos="left"]:hover::after,
+[data-tooltip][data-tooltip-pos="left"]:hover::before {
+  transform: translateY(50%);
+}
+
+[data-tooltip][data-tooltip-pos="right"]::after {
+  bottom: 50%; left: calc(100% + 8px);
+  transform: translateY(50%) translateX(-4px);
+}
+[data-tooltip][data-tooltip-pos="right"]::before {
+  bottom: 50%; left: calc(100% + 3px);
+  border-top-color: transparent;
+  border-right-color: #1f2937;
+  transform: translateY(50%) translateX(-4px);
+}
+[data-tooltip][data-tooltip-pos="right"]:hover::after,
+[data-tooltip][data-tooltip-pos="right"]:hover::before {
+  transform: translateY(50%);
+}
+
+/* Disabled element shouldn't dim the tooltip — let it remain readable. */
+[data-tooltip]:disabled::after,
+[data-tooltip]:disabled::before { opacity: 0; }
+[data-tooltip]:disabled:hover::after,
+[data-tooltip]:disabled:hover::before { opacity: 1; }

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Spinner } from 'reactstrap';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import Tooltip from '../../components/ui/Tooltip';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import * as XLSX from 'xlsx';
@@ -129,40 +130,42 @@ export default function Branches({ onNavigate }: Props) {
   const ActionBtn = ({
     title, icon, color, onClick, disabled,
   }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      className="btn p-0 d-inline-flex align-items-center justify-content-center"
-      style={{
-        width: 30, height: 30, borderRadius: 8,
-        background: 'var(--vz-secondary-bg)',
-        border: '1px solid var(--vz-border-color)',
-        color: 'var(--vz-secondary-color)',
-        transition: 'all .15s ease',
-      }}
-      onMouseEnter={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        const tint =
-          color === 'primary' ? '#40518918' :
-            color === 'danger' ? '#f0654818' :
-              color === 'success' ? '#0ab39c18' :
-                color === 'info' ? '#299cdb18' :
-                  color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)';
-        el.style.background = tint;
-        el.style.borderColor = `var(--vz-${color})`;
-        el.style.color = `var(--vz-${color})`;
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.background = 'var(--vz-secondary-bg)';
-        el.style.borderColor = 'var(--vz-border-color)';
-        el.style.color = 'var(--vz-secondary-color)';
-      }}
-      onClick={onClick}
-    >
-      <i className={`${icon} fs-14`} />
-    </button>
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        disabled={disabled}
+        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        style={{
+          width: 30, height: 30, borderRadius: 8,
+          background: 'var(--vz-secondary-bg)',
+          border: '1px solid var(--vz-border-color)',
+          color: 'var(--vz-secondary-color)',
+          transition: 'all .15s ease',
+        }}
+        onMouseEnter={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          const tint =
+            color === 'primary' ? '#40518918' :
+              color === 'danger' ? '#f0654818' :
+                color === 'success' ? '#0ab39c18' :
+                  color === 'info' ? '#299cdb18' :
+                    color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)';
+          el.style.background = tint;
+          el.style.borderColor = `var(--vz-${color})`;
+          el.style.color = `var(--vz-${color})`;
+        }}
+        onMouseLeave={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = 'var(--vz-secondary-bg)';
+          el.style.borderColor = 'var(--vz-border-color)';
+          el.style.color = 'var(--vz-secondary-color)';
+        }}
+        onClick={onClick}
+      >
+        <i className={`${icon} fs-14`} />
+      </button>
+    </Tooltip>
   );
 
   // ── Table columns ──

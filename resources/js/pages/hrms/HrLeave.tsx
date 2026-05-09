@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
+import Tooltip from '../../components/ui/Tooltip';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 // Reuses the purple hero-card & hero-pill that HrEmployeeOnboarding ships
@@ -1636,16 +1637,17 @@ function ActionBtn({
     : tone === 'danger'  ? 'rec-act-tone-danger'
     : 'rec-act-tone-neutral';
   return (
-    <button
-      type="button"
-      title={title}
-      aria-label={title}
-      disabled={disabled}
-      onClick={onClick}
-      className={`rec-act-icon ${toneClass}`}
-    >
-      <i className={icon} />
-    </button>
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        disabled={disabled}
+        onClick={onClick}
+        className={`rec-act-icon ${toneClass}`}
+      >
+        <i className={icon} />
+      </button>
+    </Tooltip>
   );
 }
 

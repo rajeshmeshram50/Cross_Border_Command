@@ -28,14 +28,28 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
     </div>
   );
 
-  // Compute profile completeness — used for "Complete Your Profile" card
-  const completionFields = [
-    client.org_name, client.email, client.phone, client.website, client.industry || client.sports,
-    client.address, client.city, client.state, client.country, client.pincode,
-    client.gst_number, client.pan_number, client.logo, adminUser,
+  // Compute profile completeness — labelled list lets the card show
+  // exactly which fields are still missing (not just a percentage).
+  const completionFields: { label: string; value: any }[] = [
+    { label: 'Organization name', value: client.org_name },
+    { label: 'Email',             value: client.email },
+    { label: 'Phone',             value: client.phone },
+    { label: 'Website',           value: client.website },
+    { label: 'Industry',          value: client.industry || client.sports },
+    { label: 'Address',           value: client.address },
+    { label: 'City',              value: client.city },
+    { label: 'State',             value: client.state },
+    { label: 'Country',           value: client.country },
+    { label: 'Pincode',           value: client.pincode },
+    { label: 'GST number',        value: client.gst_number },
+    { label: 'PAN number',        value: client.pan_number },
+    { label: 'Logo',              value: client.logo },
+    { label: 'Client admin',      value: adminUser },
   ];
-  const filled = completionFields.filter(Boolean).length;
-  const completionPct = Math.round((filled / completionFields.length) * 100);
+  const filled = completionFields.filter(f => Boolean(f.value)).length;
+  const totalFields = completionFields.length;
+  const completionPct = Math.round((filled / totalFields) * 100);
+  const missingFields = completionFields.filter(f => !f.value).map(f => f.label);
 
   const location = [client.city, client.state, client.country].filter(Boolean).join(', ');
   const initials = `${client.org_name.charAt(0)}${client.org_name.split(' ')[1]?.charAt(0) || ''}`.toUpperCase();
@@ -252,11 +266,15 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
 
               return (
               <>
-                {/* ── ROW 1 — Complete Your Profile (narrow) + About (wide) ── */}
+                {/* ── ROW 1 — Complete Your Profile (narrow) + About (wide).
+                       Cards stretched to the same height; the left card
+                       fills its space with big % readout + progress bar
+                       + missing-fields summary + CTA so it doesn't read
+                       as half-empty next to About. ── */}
                 <Row className="mt-2 g-2 align-items-stretch">
                   <Col xxl={4} lg={5}>
                     <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
-                      <CardBody>
+                      <CardBody className="d-flex flex-column">
                         <SectionHeader
                           title="Complete Your Profile"
                           gradient={GRAD_DANGER}
@@ -271,13 +289,67 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                             </button>
                           )}
                         />
+
+                        {/* Big % + filled / total counter */}
+                        <div className="d-flex align-items-baseline justify-content-between mb-2">
+                          <div>
+                            <span style={{ fontSize: 32, fontWeight: 800, color: completionPct === 100 ? '#0ab39c' : '#f06548', letterSpacing: '-0.02em', lineHeight: 1 }}>
+                              {completionPct}%
+                            </span>
+                            <span className="text-muted ms-2" style={{ fontSize: 12.5 }}>complete</span>
+                          </div>
+                          <span className="text-muted" style={{ fontSize: 12 }}>
+                            <strong style={{ color: 'var(--vz-heading-color)' }}>{filled}</strong> / {totalFields} fields
+                          </span>
+                        </div>
+
                         <Progress
                           value={completionPct}
-                          color="danger"
-                          className="animated-progess custom-progress progress-label"
-                        >
-                          <div className="label">{completionPct}%</div>
-                        </Progress>
+                          color={completionPct === 100 ? 'success' : 'danger'}
+                          className="animated-progess custom-progress mb-3"
+                          style={{ height: 8, borderRadius: 999 }}
+                        />
+
+                        {/* Missing-fields summary or done-state */}
+                        {missingFields.length === 0 ? (
+                          <div className="d-flex align-items-center gap-2 p-3 rounded-3" style={{ background: 'rgba(10,179,156,0.10)', border: '1px solid rgba(10,179,156,0.25)' }}>
+                            <i className="ri-checkbox-circle-fill" style={{ color: '#0ab39c', fontSize: 20 }} />
+                            <div>
+                              <div className="fw-bold" style={{ fontSize: 13, color: '#065f46' }}>All set!</div>
+                              <div className="text-muted" style={{ fontSize: 11.5 }}>Every profile field is filled in.</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex-grow-1 d-flex flex-column">
+                            <div className="d-flex align-items-center gap-2 mb-2" style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)', textTransform: 'uppercase' }}>
+                              <i className="ri-error-warning-line" style={{ color: '#f06548' }} />
+                              Still missing ({missingFields.length})
+                            </div>
+                            <div className="d-flex flex-wrap gap-1 flex-grow-1" style={{ alignContent: 'flex-start' }}>
+                              {missingFields.slice(0, 8).map(f => (
+                                <span
+                                  key={f}
+                                  style={{
+                                    fontSize: 11,
+                                    padding: '3px 8px',
+                                    borderRadius: 999,
+                                    background: 'rgba(240,101,72,0.10)',
+                                    color: '#c2410c',
+                                    border: '1px solid rgba(240,101,72,0.22)',
+                                    fontWeight: 500,
+                                  }}
+                                >
+                                  {f}
+                                </span>
+                              ))}
+                              {missingFields.length > 8 && (
+                                <span className="text-muted" style={{ fontSize: 11, alignSelf: 'center' }}>
+                                  +{missingFields.length - 8} more
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </CardBody>
                     </Card>
                   </Col>
@@ -489,8 +561,13 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                   </Col>
                 </Row>
 
-                {/* ── ROW 3 — Brand Colors + Client Admin + Legal & Tax ── */}
-                <Row className="mb-3 g-2 mt-2 align-items-stretch">
+                {/* ── ROW 3 — Brand Colors + Client Admin + Legal & Tax.
+                       align-items-stretch + h-100 so all three cards
+                       sit at the same height. CardBody uses d-flex
+                       flex-column so each card's footer / empty-state
+                       sticks to the bottom instead of leaving an
+                       awkward gap in the middle. ── */}
+                <Row className="mb-2 g-2 mt-2 align-items-stretch">
                   <Col xxl={4} lg={4} md={6}>
                     <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
                       <CardBody>
@@ -529,7 +606,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
                   </Col>
 
                   <Col xxl={4} lg={4} md={6}>
-                    <Card className="mb- h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
+                    <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
                       <CardBody>
                         <SectionHeader
                           title="Client Admin"

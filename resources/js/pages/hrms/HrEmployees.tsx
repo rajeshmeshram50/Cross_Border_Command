@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
+import Tooltip from '../../components/ui/Tooltip';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -4755,32 +4756,34 @@ function ActionBtn({
   title, icon, color, onClick, disabled,
 }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      className="btn p-0 d-inline-flex align-items-center justify-content-center"
-      style={{
-        width: 30, height: 30, borderRadius: 8,
-        background: 'var(--vz-secondary-bg)',
-        border: '1px solid var(--vz-border-color)',
-        color: 'var(--vz-secondary-color)',
-        transition: 'all .15s ease',
-      }}
-      onMouseEnter={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.borderColor = `var(--vz-${color})`;
-        el.style.color = `var(--vz-${color})`;
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.borderColor = 'var(--vz-border-color)';
-        el.style.color = 'var(--vz-secondary-color)';
-      }}
-      onClick={onClick}
-    >
-      <i className={`${icon} fs-14`} />
-    </button>
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        disabled={disabled}
+        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        style={{
+          width: 30, height: 30, borderRadius: 8,
+          background: 'var(--vz-secondary-bg)',
+          border: '1px solid var(--vz-border-color)',
+          color: 'var(--vz-secondary-color)',
+          transition: 'all .15s ease',
+        }}
+        onMouseEnter={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.borderColor = `var(--vz-${color})`;
+          el.style.color = `var(--vz-${color})`;
+        }}
+        onMouseLeave={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.borderColor = 'var(--vz-border-color)';
+          el.style.color = 'var(--vz-secondary-color)';
+        }}
+        onClick={onClick}
+      >
+        <i className={`${icon} fs-14`} />
+      </button>
+    </Tooltip>
   );
 }
 
