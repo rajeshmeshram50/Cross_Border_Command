@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import PropTypes from "prop-types";
 import { Link } from 'react-router-dom';
 import { Col, Row } from 'reactstrap';
@@ -30,6 +30,36 @@ const HorizontalLayout = (props : any) => {
     // layout never sees toggleMenu() updates and the Collapse stays stale.
     const [, setTick] = useState(0);
     useEffect(() => subscribeMenu(() => setTick((t) => t + 1)), []);
+
+    // Keep open hr-mega-menu dropdowns inside the viewport. The CSS centers
+    // them under the trigger (left:50%, translateX(-50%)), but when a trigger
+    // sits near a viewport edge — common for branch/employee users whose
+    // fewer top-level items shift HR/More leftward — the wide mega-menu
+    // clips. Measure after layout and shift the transform by any overflow.
+    useLayoutEffect(() => {
+        const menus = document.querySelectorAll('.hr-mega-menu.show') as NodeListOf<HTMLElement>;
+        menus.forEach(menu => {
+            menu.style.transform = '';
+            const rect = menu.getBoundingClientRect();
+            const vw = window.innerWidth;
+            const PAD = 8;
+            const overflowLeft = PAD - rect.left;
+            const overflowRight = rect.right - (vw - PAD);
+            if (overflowLeft > 0) {
+                menu.style.transform = `translateX(calc(-50% + ${overflowLeft}px))`;
+            } else if (overflowRight > 0) {
+                menu.style.transform = `translateX(calc(-50% - ${overflowRight}px))`;
+            }
+        });
+    });
+
+    // Re-run the clamp on window resize so the dropdown follows the
+    // viewport width (e.g. user drags the window or rotates a tablet).
+    useEffect(() => {
+        const onResize = () => setTick(t => t + 1);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     // Single helper: collapse every open menu surface (sidebar dropdown set
     // + the local horizontal-layout state). Used by the outside-click
