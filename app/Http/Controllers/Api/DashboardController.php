@@ -89,9 +89,18 @@ class DashboardController extends Controller
             ->mapWithKeys(fn($item) => [$item->user_type => $item->count])
             ->toArray();
 
-        // Recent clients (top 5)
+        // Recent clients (top 5) — exclude the auto-created "Head Office"
+        // placeholder so the branch count matches the Branches page.
         $recentClients = Client::with('plan:id,name')
-            ->withCount(['branches', 'users'])
+            ->withCount([
+                'branches as branches_count' => function ($q) {
+                    $q->where(function ($inner) {
+                        $inner->where('code', '!=', 'HO')
+                              ->orWhere('name', 'not ilike', '% — Head Office');
+                    });
+                },
+                'users',
+            ])
             ->orderByDesc('created_at')
             ->limit(5)
             ->get(['id', 'org_name', 'email', 'status', 'plan_id', 'plan_type', 'created_at']);
