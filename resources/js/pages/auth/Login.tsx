@@ -114,22 +114,22 @@ export default function Login({ onForgotPassword }: LoginProps) {
       title="Access Command Center"
       subtitle="Enter your secure credentials to manage your global operations."
     >
-      <div className="space-y-4">
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          <div className="space-y-1">
-            <label className="text-[14px] font-semibold text-primary-hover ml-1">Email Id</label>
+      <div className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-2.5">
+          <div className="space-y-0.5">
+            <label className="text-[12.5px] font-semibold text-primary-hover ml-0.5">Email Id</label>
             <Input
               required
               type="email"
               placeholder="you@company.com"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              className="h-11 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30"
+              className="h-10 px-3 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30"
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[14px] font-semibold text-primary-hover ml-1">Password</label>
+          <div className="space-y-0.5">
+            <label className="text-[12.5px] font-semibold text-primary-hover ml-0.5">Password</label>
             {/* Custom show/hide toggle. Edge auto-injects its own ::-ms-reveal
                 eye button on every <input type="password">, which collided
                 with our custom one (two eye icons in Edge, none in Chrome).
@@ -150,7 +150,7 @@ export default function Login({ onForgotPassword }: LoginProps) {
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="h-11 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30 pr-10"
+                className="h-10 px-3 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30 pr-10"
               />
               <button
                 type="button"
@@ -168,12 +168,75 @@ export default function Login({ onForgotPassword }: LoginProps) {
           </div>
 
           <div className="flex items-center justify-between pt-0.5">
-            <label className="flex items-center gap-2 cursor-pointer group">
-              <input
-                type="checkbox"
-                className="w-3.5 h-3.5 rounded border-slate-300 text-primary focus:ring-primary/20 transition-all cursor-pointer group-hover:scale-110"
-              />
-              <span className="text-[12px] font-medium text-slate-500 group-hover:text-primary transition-colors">Remember Me</span>
+            {/* Custom-styled Remember Me — replaces the default browser
+                checkbox with a polished inset square + amber check tick
+                that animates in on toggle. Whole label is the hit target. */}
+            <label className="cbc-remember">
+              <input type="checkbox" className="cbc-remember-input" />
+              <span className="cbc-remember-box" aria-hidden>
+                <svg viewBox="0 0 16 16" fill="none">
+                  <path d="M3.5 8.5l3 3 6-6" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span className="cbc-remember-text">Remember Me</span>
+              <style>{`
+                .cbc-remember {
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 9px;
+                  cursor: pointer;
+                  user-select: none;
+                  -webkit-tap-highlight-color: transparent;
+                }
+                .cbc-remember-input {
+                  position: absolute;
+                  opacity: 0;
+                  pointer-events: none;
+                }
+                .cbc-remember-box {
+                  width: 18px;
+                  height: 18px;
+                  border-radius: 5px;
+                  background: rgba(255,255,255,0.65);
+                  border: 1.5px solid rgba(99,102,241,0.30);
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  flex-shrink: 0;
+                  color: transparent;
+                  transition:
+                    background 180ms ease,
+                    border-color 180ms ease,
+                    color 180ms ease,
+                    transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                    box-shadow 180ms ease;
+                }
+                .cbc-remember-box svg { width: 12px; height: 12px; }
+                .cbc-remember:hover .cbc-remember-box {
+                  border-color: rgba(99,102,241,0.55);
+                  background: #ffffff;
+                }
+                .cbc-remember-input:focus-visible + .cbc-remember-box {
+                  box-shadow: 0 0 0 3px rgba(99,102,241,0.25);
+                }
+                .cbc-remember-input:checked + .cbc-remember-box {
+                  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+                  border-color: transparent;
+                  color: #ffffff;
+                  transform: scale(1.05);
+                  box-shadow: 0 4px 12px rgba(99,102,241,0.30);
+                }
+                .cbc-remember-text {
+                  font-size: 12.5px;
+                  font-weight: 600;
+                  color: #475569;
+                  letter-spacing: -0.005em;
+                  transition: color 180ms ease;
+                }
+                .cbc-remember:hover .cbc-remember-text {
+                  color: #6366f1;
+                }
+              `}</style>
             </label>
             <button
               type="button"
