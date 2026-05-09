@@ -26,9 +26,10 @@ const ProfileDropdown = () => {
     logout();
   };
 
-  // Only the org owner (client_admin) and super_admin manage the subscription;
-  // hide /my-plan from branch_user, employee, client_user.
-  const canSeeMyPlan = user.user_type === 'super_admin' || user.user_type === 'client_admin';
+  // Only the org owner (client_admin) manages the subscription — super_admin
+  // operates above the tenant model and has no plan of their own, and
+  // branch_user / employee / client_user are downstream of the plan.
+  const canSeeMyPlan = user.user_type === 'client_admin';
 
   const menuItems: { to: string; icon: string; label: string; grad: string }[] = [
     { to: '/profile',  icon: 'ri-user-3-line',     label: 'Profile',  grad: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' },
