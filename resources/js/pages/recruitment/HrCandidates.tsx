@@ -4,6 +4,7 @@ import { Card, CardBody, Col, Row, Modal, ModalBody, Spinner, Input } from 'reac
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
+import Tooltip from '../../components/ui/Tooltip';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -465,45 +466,48 @@ export default function HrCandidates() {
                             </td>
                             <td className="pe-3">
                               <div className="rec-row-actions justify-content-center">
-                                <button
-                                  type="button"
-                                  className="rec-act rec-act--icon"
-                                  title="Edit Candidate"
-                                  aria-label="Edit Candidate"
-                                  onClick={() => { setEditing(c); setModalOpen(true); }}
-                                  style={{
-                                    background: '#ede9fe',
-                                    color: '#5b3fd1',
-                                    borderColor: '#ddd6fe',
-                                  }}
-                                >
-                                  <i className="ri-pencil-line" />
-                                </button>
+                                <Tooltip label="Edit Candidate">
+                                  <button
+                                    type="button"
+                                    className="rec-act rec-act--icon"
+                                    aria-label="Edit Candidate"
+                                    onClick={() => { setEditing(c); setModalOpen(true); }}
+                                    style={{
+                                      background: '#ede9fe',
+                                      color: '#5b3fd1',
+                                      borderColor: '#ddd6fe',
+                                    }}
+                                  >
+                                    <i className="ri-pencil-line" />
+                                  </button>
+                                </Tooltip>
                                 {/* Approve / Reject buttons hide once the candidate
                                     is already in that terminal state — no point
                                     re-selecting an already-selected row, or
                                     re-rejecting an already-rejected one. */}
                                 {c.status !== 'Selected' && c.status !== 'Offered' && (
-                                  <button
-                                    type="button"
-                                    className="rec-act rec-act-approve rec-act--icon"
-                                    title="Mark Selected"
-                                    aria-label="Mark Selected"
-                                    onClick={() => setConfirming({ row: c, mode: 'select' })}
-                                  >
-                                    <i className="ri-check-line" />
-                                  </button>
+                                  <Tooltip label="Mark Selected">
+                                    <button
+                                      type="button"
+                                      className="rec-act rec-act-approve rec-act--icon"
+                                      aria-label="Mark Selected"
+                                      onClick={() => setConfirming({ row: c, mode: 'select' })}
+                                    >
+                                      <i className="ri-check-line" />
+                                    </button>
+                                  </Tooltip>
                                 )}
                                 {c.status !== 'Rejected' && (
-                                  <button
-                                    type="button"
-                                    className="rec-act rec-act-reject rec-act--icon"
-                                    title="Mark Rejected"
-                                    aria-label="Mark Rejected"
-                                    onClick={() => setConfirming({ row: c, mode: 'reject' })}
-                                  >
-                                    <i className="ri-close-line" />
-                                  </button>
+                                  <Tooltip label="Mark Rejected">
+                                    <button
+                                      type="button"
+                                      className="rec-act rec-act-reject rec-act--icon"
+                                      aria-label="Mark Rejected"
+                                      onClick={() => setConfirming({ row: c, mode: 'reject' })}
+                                    >
+                                      <i className="ri-close-line" />
+                                    </button>
+                                  </Tooltip>
                                 )}
                               </div>
                             </td>

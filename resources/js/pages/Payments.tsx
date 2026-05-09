@@ -6,6 +6,7 @@ import {
 } from 'reactstrap';
 import TableContainer from '../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../components/ui/DeleteConfirmModal';
+import Tooltip from '../components/ui/Tooltip';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
@@ -208,16 +209,18 @@ export default function Payments() {
   const ActionBtn = ({
     title, icon, color, onClick, disabled,
   }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      data-color={color}
-      className="btn p-0 d-inline-flex align-items-center justify-content-center pmt-action-btn"
-      onClick={onClick}
-    >
-      <i className={`${icon} fs-14`} />
-    </button>
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        disabled={disabled}
+        data-color={color}
+        className="btn p-0 d-inline-flex align-items-center justify-content-center pmt-action-btn"
+        onClick={onClick}
+      >
+        <i className={`${icon} fs-14`} />
+      </button>
+    </Tooltip>
   );
 
   const columns = useMemo(() => [

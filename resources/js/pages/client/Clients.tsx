@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row, Button, Spinner, Input } from 'reactstrap';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import Tooltip from '../../components/ui/Tooltip';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import * as XLSX from 'xlsx';
@@ -121,38 +122,42 @@ export default function Clients({ onNavigate }: Props) {
     }
   };
 
-  // Reusable action button — outline icon pill with hover color
+  // Reusable action button — outline icon pill with hover color.
+  // Wrapped in <Tooltip> so the dark pill tooltip from the design
+  // system shows on hover/focus instead of the native browser title.
   const ActionBtn = ({
     title, icon, color, onClick, disabled,
   }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      className="btn p-0 d-inline-flex align-items-center justify-content-center"
-      style={{
-        width: 30, height: 30, borderRadius: 8,
-        background: 'var(--vz-secondary-bg)',
-        border: '1px solid var(--vz-border-color)',
-        color: 'var(--vz-secondary-color)',
-        transition: 'all .15s ease',
-      }}
-      onMouseEnter={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.background = `var(--vz-${color}-bg-subtle, ${color === 'primary' ? '#40518918' : color === 'danger' ? '#f0654818' : color === 'success' ? '#0ab39c18' : color === 'info' ? '#299cdb18' : color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)'})`;
-        el.style.borderColor = `var(--vz-${color})`;
-        el.style.color = `var(--vz-${color})`;
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.background = 'var(--vz-secondary-bg)';
-        el.style.borderColor = 'var(--vz-border-color)';
-        el.style.color = 'var(--vz-secondary-color)';
-      }}
-      onClick={onClick}
-    >
-      <i className={`${icon} fs-14`} />
-    </button>
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        disabled={disabled}
+        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        style={{
+          width: 30, height: 30, borderRadius: 8,
+          background: 'var(--vz-secondary-bg)',
+          border: '1px solid var(--vz-border-color)',
+          color: 'var(--vz-secondary-color)',
+          transition: 'all .15s ease',
+        }}
+        onMouseEnter={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = `var(--vz-${color}-bg-subtle, ${color === 'primary' ? '#40518918' : color === 'danger' ? '#f0654818' : color === 'success' ? '#0ab39c18' : color === 'info' ? '#299cdb18' : color === 'warning' ? '#f7b84b18' : 'var(--vz-secondary-bg)'})`;
+          el.style.borderColor = `var(--vz-${color})`;
+          el.style.color = `var(--vz-${color})`;
+        }}
+        onMouseLeave={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.background = 'var(--vz-secondary-bg)';
+          el.style.borderColor = 'var(--vz-border-color)';
+          el.style.color = 'var(--vz-secondary-color)';
+        }}
+        onClick={onClick}
+      >
+        <i className={`${icon} fs-14`} />
+      </button>
+    </Tooltip>
   );
 
   // Table columns for TableContainer
@@ -166,7 +171,12 @@ export default function Clients({ onNavigate }: Props) {
       header: 'Organization',
       accessorKey: 'org_name',
       cell: (info: any) => (
-        <div className="d-flex align-items-center gap-2">
+        // Cap the cell at 240px and truncate long org names with ellipsis
+        // — the full name lives in `title` so hovering shows it as a
+        // native tooltip. Without this, "Center for Biological Diversity
+        // Center for Biological Diversity" pushes the whole row wider
+        // than the viewport and makes the table scroll horizontally.
+        <div className="d-flex align-items-center gap-2" style={{ maxWidth: 240, minWidth: 0 }}>
           <div
             className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
             style={{
@@ -177,7 +187,13 @@ export default function Clients({ onNavigate }: Props) {
           >
             {info.row.original.org_name.charAt(0)}{info.row.original.org_name.split(' ')[1]?.charAt(0) || ''}
           </div>
-          <span className="fw-semibold fs-13">{info.row.original.org_name}</span>
+          <span
+            className="fw-semibold fs-13 text-truncate"
+            title={info.row.original.org_name}
+            style={{ minWidth: 0 }}
+          >
+            {info.row.original.org_name}
+          </span>
         </div>
       ),
     },

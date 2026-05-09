@@ -4,6 +4,7 @@ import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reac
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
+import Tooltip from '../../components/ui/Tooltip';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -2859,15 +2860,17 @@ function ActionBtn({
     : color === 'danger'  ? 'rec-act-tone-danger'
     : 'rec-act-tone-neutral';
   return (
-    <button
-      type="button"
-      title={title}
-      disabled={disabled}
-      onClick={onClick}
-      className={`rec-act-icon ${toneClass}`}
-    >
-      <i className={icon} />
-    </button>
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        disabled={disabled}
+        onClick={onClick}
+        className={`rec-act-icon ${toneClass}`}
+      >
+        <i className={icon} />
+      </button>
+    </Tooltip>
   );
 }
 

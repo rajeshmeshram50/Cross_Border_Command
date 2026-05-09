@@ -6,6 +6,7 @@ import {
   Modal, ModalBody, ModalHeader, ModalFooter, Spinner,
 } from 'reactstrap';
 import api from '../../api';
+import Tooltip from '../../components/ui/Tooltip';
 import MasterPlaceholder from '../MasterPlaceholder';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
@@ -398,9 +399,10 @@ function MasterPageInner({
   const ActionBtn = ({
     title, icon, color, onClick, disabled,
   }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
+    <Tooltip label={title}>
     <button
       type="button"
-      title={title}
+      aria-label={title}
       disabled={disabled}
       className="btn p-0 d-inline-flex align-items-center justify-content-center"
       style={{
@@ -472,6 +474,7 @@ function MasterPageInner({
         <i className={`${icon} fs-14`} />
       )}
     </button>
+    </Tooltip>
   );
 
   const validateForm = (fd: FormData): Record<string, string> => {
