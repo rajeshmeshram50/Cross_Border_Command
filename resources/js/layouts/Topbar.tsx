@@ -263,7 +263,9 @@ function UserDropdown({ open, setOpen, onNavigate }: { open: boolean; setOpen: (
           {/* Menu */}
           <div className="py-1">
             <DropdownItem icon={<UserIcon size={14} />} label="Profile" onClick={() => { setOpen(false); onNavigate('profile'); }} />
-            <DropdownItem icon={<Check size={14} />} label="My Plan" onClick={() => { setOpen(false); onNavigate('my-plan'); }} />
+            {user.user_type === 'client_admin' && (
+              <DropdownItem icon={<Check size={14} />} label="My Plan" onClick={() => { setOpen(false); onNavigate('my-plan'); }} />
+            )}
             <DropdownItem icon={<Settings size={14} />} label="Settings" onClick={() => { setOpen(false); onNavigate('settings'); }} />
             <div className="h-px bg-border my-1" />
             <DropdownItem
