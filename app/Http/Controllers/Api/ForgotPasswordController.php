@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\PasswordChangedMail;
 use App\Mail\PasswordResetOtpMail;
 use App\Models\User;
 use App\Traits\PasswordHistory;
@@ -217,8 +218,15 @@ class ForgotPasswordController extends Controller
         // Save the OLD hash to history BEFORE we overwrite it on the user.
         $this->recordPasswordHistory($user);
 
+        // Capture the plaintext password BEFORE hashing — the confirmation
+        // mail surfaces it so the user can recover their new credentials from
+        // their inbox if they forget what they just set. Mirrors the existing
+        // WelcomeCredentialsMail pattern. Drop this if policy ever bans
+        // emailing plaintext passwords.
+        $newPassword = $request->password;
+
         $user->update([
-            'password' => Hash::make($request->password),
+            'password' => Hash::make($newPassword),
         ]);
 
         // Delete all OTPs for this email
@@ -226,6 +234,22 @@ class ForgotPasswordController extends Controller
 
         // Revoke all tokens (force re-login)
         $user->tokens()->delete();
+
+        // Confirmation mail — non-fatal so a transient SMTP hiccup never
+        // blocks the password reset itself (the password IS already saved).
+        try {
+            Mail::to($user->email)->send(new PasswordChangedMail(
+                $user->name,
+                $user->email,
+                $newPassword,
+            ));
+        } catch (\Throwable $e) {
+            \Log::warning('Password-changed confirmation mail failed', [
+                'user_id' => $user->id,
+                'email'   => $user->email,
+                'error'   => $e->getMessage(),
+            ]);
+        }
 
         return response()->json([
             'message' => 'Password reset successfully. You can now login with your new password.',

@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\PasswordChangedMail;
 use App\Models\Permission;
 use App\Models\User;
 use App\Traits\PasswordHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
@@ -176,9 +179,29 @@ class AuthController extends Controller
         // Save the OLD hash to history BEFORE we overwrite it on the user.
         $this->recordPasswordHistory($user);
 
+        // Capture plaintext before hashing so the confirmation mail can echo
+        // the new credential. Matches the forgot-password flow's behaviour.
+        $newPassword = $request->password;
+
         $user->update([
-            'password' => Hash::make($request->password),
+            'password' => Hash::make($newPassword),
         ]);
+
+        // Confirmation mail — non-fatal so SMTP issues never roll back the
+        // (already persisted) password change.
+        try {
+            Mail::to($user->email)->send(new PasswordChangedMail(
+                $user->name,
+                $user->email,
+                $newPassword,
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('Password-changed confirmation mail failed (in-app change)', [
+                'user_id' => $user->id,
+                'email'   => $user->email,
+                'error'   => $e->getMessage(),
+            ]);
+        }
 
         return response()->json(['message' => 'Password changed successfully']);
     }

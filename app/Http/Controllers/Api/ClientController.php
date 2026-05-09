@@ -9,9 +9,11 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
 
 class ClientController extends Controller
@@ -360,11 +362,32 @@ class ClientController extends Controller
                     'status' => $request->admin_status,
                 ], fn($v) => $v !== null);
 
+                $passwordChanged = false;
                 if ($request->admin_password) {
                     $adminData['password'] = Hash::make($request->admin_password);
+                    $passwordChanged = true;
                 }
 
                 $adminUser->update($adminData);
+
+                // Notify the client_admin whenever super_admin actually rotates
+                // their password from the Client form. Read the post-update
+                // email so a simultaneous email change goes to the new mailbox.
+                if ($passwordChanged) {
+                    try {
+                        Mail::to($adminUser->email)->send(new PasswordChangedMail(
+                            $adminUser->name,
+                            $adminUser->email,
+                            $request->admin_password,
+                        ));
+                    } catch (\Throwable $e) {
+                        Log::warning('Password-changed confirmation mail failed (client admin update)', [
+                            'user_id' => $adminUser->id,
+                            'email'   => $adminUser->email,
+                            'error'   => $e->getMessage(),
+                        ]);
+                    }
+                }
             }
 
             $client->load(['plan', 'createdBy']);

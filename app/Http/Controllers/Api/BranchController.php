@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Database\QueryException;
+use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
 
 class BranchController extends Controller
@@ -406,11 +407,33 @@ class BranchController extends Controller
                     'status' => $request->user_status,
                 ], fn($v) => $v !== null);
 
+                $passwordChanged = false;
                 if ($request->user_password) {
                     $userData['password'] = Hash::make($request->user_password);
+                    $passwordChanged = true;
                 }
 
                 $branchUser->update($userData);
+
+                // Confirmation mail goes to the branch user whenever the
+                // admin actually rotates their password from the Branch form.
+                // Use the post-update email so a simultaneous email change
+                // delivers to the new mailbox, not the stale one.
+                if ($passwordChanged) {
+                    try {
+                        Mail::to($branchUser->email)->send(new PasswordChangedMail(
+                            $branchUser->name,
+                            $branchUser->email,
+                            $request->user_password,
+                        ));
+                    } catch (\Throwable $e) {
+                        Log::warning('Password-changed confirmation mail failed (branch update)', [
+                            'user_id' => $branchUser->id,
+                            'email'   => $branchUser->email,
+                            'error'   => $e->getMessage(),
+                        ]);
+                    }
+                }
             }
 
             $branch->loadCount(['users', 'departments']);
