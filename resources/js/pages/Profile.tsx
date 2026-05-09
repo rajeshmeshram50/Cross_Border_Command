@@ -19,6 +19,11 @@ export default function Profile() {
   const [profilePhone,       setProfilePhone]       = useState('');
   const [profileDesignation, setProfileDesignation] = useState('');
   const [savingProfile,      setSavingProfile]      = useState(false);
+  // Profile photo lives on the tenant (client/branch) row but is exposed to
+  // the user as part of their personal info. New file is held in memory until
+  // Save; preview is a data URL when staged, or the saved URL otherwise.
+  const [profilePhotoFile,    setProfilePhotoFile]    = useState<File | null>(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
 
   // ── Branding section (logo + colors) — tenant users only ──
   const [brandPrimary,   setBrandPrimary]   = useState<string>('#4F46E5');
@@ -45,9 +50,25 @@ export default function Profile() {
     setProfileName(user.name || '');
     setProfilePhone(user.phone || '');
     setProfileDesignation(user.designation || '');
-  }, [user?.name, user?.phone, user?.designation]);
+    // Existing photo from tenant row (branch wins over client). Don't clobber
+    // a freshly-staged file the user hasn't saved yet.
+    const photo = user.branch_profile_photo || user.client_profile_photo || null;
+    setProfilePhotoPreview(prev => (profilePhotoFile ? prev : photo));
+  }, [user?.name, user?.phone, user?.designation, user?.branch_profile_photo, user?.client_profile_photo]);
 
   if (!user) return null;
+
+  const handleProfilePhotoChange = (file: File | null) => {
+    setProfilePhotoFile(file);
+    if (file) {
+      const r = new FileReader();
+      r.onload = ev => setProfilePhotoPreview(ev.target?.result as string);
+      r.readAsDataURL(file);
+    } else {
+      // Restore the saved photo if the user clears the picker
+      setProfilePhotoPreview(user?.branch_profile_photo || user?.client_profile_photo || null);
+    }
+  };
 
   const handleBrandLogoChange = (file: File | null) => {
     setBrandLogoFile(file);
@@ -132,12 +153,23 @@ export default function Profile() {
     }
     setSavingProfile(true);
     try {
-      await api.post('/me/profile', {
-        name,
-        phone: profilePhone || null,
-        designation: profileDesignation || null,
-      });
+      // Use multipart whenever a photo is staged; backend accepts both shapes.
+      if (profilePhotoFile) {
+        const fd = new FormData();
+        fd.append('name', name);
+        if (profilePhone)       fd.append('phone', profilePhone);
+        if (profileDesignation) fd.append('designation', profileDesignation);
+        fd.append('profile_photo', profilePhotoFile);
+        await api.post('/me/profile', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      } else {
+        await api.post('/me/profile', {
+          name,
+          phone: profilePhone || null,
+          designation: profileDesignation || null,
+        });
+      }
       await refresh();
+      setProfilePhotoFile(null);
       toast.success('Updated', 'Your profile has been saved');
     } catch (err: any) {
       const data = err.response?.data;
@@ -399,6 +431,35 @@ export default function Profile() {
       <CardBody className="d-flex flex-column">
         <SectionHeader title="Personal Information" gradient={GRAD_PRIMARY} icon="ri-user-settings-line" />
         <Form onSubmit={(e) => { e.preventDefault(); handleSaveProfile(); }} className="d-flex flex-column flex-grow-1">
+          {!isSuperAdmin && (
+            <div className="d-flex align-items-center gap-3 mb-3">
+              {profilePhotoPreview ? (
+                <img
+                  src={profilePhotoPreview}
+                  alt="profile"
+                  className="rounded-circle"
+                  style={{ width: 64, height: 64, objectFit: 'cover', border: '2px solid var(--vz-border-color)' }}
+                />
+              ) : (
+                <div
+                  className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted"
+                  style={{ width: 64, height: 64, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 24 }}
+                >
+                  <i className="ri-user-line" />
+                </div>
+              )}
+              <div className="flex-grow-1 min-w-0">
+                <Label className="pf-label mb-1">Profile Photo</Label>
+                <Input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
+                  style={{ fontSize: 12 }}
+                />
+                <small className="text-muted" style={{ fontSize: 11 }}>JPG or PNG — Max 2MB</small>
+              </div>
+            </div>
+          )}
           <Row className="g-2">
             <Col md={6}>
               <Label className="pf-label">Full Name <span className="text-danger">*</span></Label>
