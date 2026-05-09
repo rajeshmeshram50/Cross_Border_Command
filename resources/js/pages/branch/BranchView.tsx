@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardBody, Col, Row, Button, Spinner, Progress } from 'reactstrap';
 import api from '../../api';
+import { ShimmerProfile } from '../../components/ui/Shimmer';
 
 interface Props {
   branchId: number;
@@ -22,7 +23,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
       .finally(() => setLoading(false));
   }, [branchId]);
 
-  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
+  if (loading) return <ShimmerProfile />;
   if (!branch) return (
     <div className="text-center py-5">
       <p className="text-muted">Branch not found.</p>

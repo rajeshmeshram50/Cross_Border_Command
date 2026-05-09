@@ -10,6 +10,7 @@ import PermissionMatrix, {
   type PermKey,
   type PermModule,
 } from '../../components/PermissionMatrix';
+import { ShimmerPermissions } from '../../components/ui/Shimmer';
 
 interface ManagedUser {
   id: number; name: string; email: string; user_type: string;
@@ -148,7 +149,7 @@ export default function Permissions() {
     };
   });
 
-  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
+  if (loading) return <ShimmerPermissions />;
 
   return (
     <>

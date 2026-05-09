@@ -9,6 +9,7 @@ import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { useToast } from '../../contexts/ToastContext';
+import { ShimmerPlanCards } from '../../components/ui/Shimmer';
 // @ts-ignore
 import 'swiper/css';
 // @ts-ignore
@@ -228,7 +229,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   const gst = Math.round(total * 0.18);
   const grandTotal = Math.round(total + gst);
 
-  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
+  if (loading) return <div className="p-3"><ShimmerPlanCards count={4} /></div>;
 
   const hasPlan = user?.plan?.has_plan && !user?.plan?.expired;
 

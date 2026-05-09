@@ -4,6 +4,7 @@ import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import PayslipViewerModal, { type PayslipLine } from '../../components/PayslipViewerModal';
 import PayrollRunModal, { type PayrollRunIssue } from '../../components/PayrollRunModal';
 import { useToast } from '../../contexts/ToastContext';
+import { ShimmerTableRows } from '../../components/ui/Shimmer';
 // Reuses the purple hero-card, hero-pill, KPI surface and table styles that
 // HrEmployeeOnboarding ships (.onb-hero-card / .onb-hero-pill / .onb-surface
 // / .onb-kpi-card / .onb-pill / .onb-id-pill / .onb-role-pill) so the page
@@ -269,6 +270,16 @@ export default function HrPayroll() {
 
   // Reset page when filters change.
   useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter, cycleKey, tab]);
+
+  // Initial mount shimmer — simulates the /api/payroll fetch so the first
+  // paint feels alive instead of dropping the full table cold. Once wired to
+  // the backend, swap the timeout for the real api.get(...) finally clause.
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    const t = setTimeout(() => setLoading(false), 700);
+    return () => clearTimeout(t);
+  }, [cycleKey, tab]);
 
   const cycle = useMemo(
     () => CYCLE_MONTHS.find(c => c.key === cycleKey) ?? CYCLE_MONTHS[0],
@@ -829,7 +840,9 @@ export default function HrPayroll() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
+                  {loading ? (
+                    <ShimmerTableRows rows={6} cols={11} keyPrefix="shim-proc" />
+                  ) : filtered.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="text-center py-5 text-muted">
                         <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -960,7 +973,9 @@ export default function HrPayroll() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visible.length === 0 ? (
+                    {loading ? (
+                      <ShimmerTableRows rows={6} cols={7} keyPrefix="shim-bio" />
+                    ) : visible.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="text-center py-5 text-muted">
                           <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -1082,7 +1097,9 @@ export default function HrPayroll() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visible.length === 0 ? (
+                    {loading ? (
+                      <ShimmerTableRows rows={6} cols={13} keyPrefix="shim-rep" />
+                    ) : visible.length === 0 ? (
                       <tr>
                         <td colSpan={13} className="text-center py-5 text-muted">
                           <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />

@@ -1,6 +1,7 @@
- import { useMemo, useState } from 'react';
+ import { useEffect, useMemo, useState } from 'react';
 import { Col, Row } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 import '../../../css/pip.css';
 
@@ -215,6 +216,17 @@ export default function HrCalculationMaster() {
     overtimeHrs: 4,
   });
 
+  // Brief mount / section-switch shimmer — keeps parity with the rest of the
+  // HR module so navigating into a section feels alive rather than flashing
+  // forms in instantly. Swap for the real api.get(...) finally clause when
+  // the rule store moves to the backend.
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    const t = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(t);
+  }, [section]);
+
   // Re-run the engine whenever any input OR rule changes — drives the
   // right-panel preview. Rules in state mean tweaking a threshold here
   // immediately shows its effect on the preview. No save needed to test.
@@ -289,12 +301,18 @@ export default function HrCalculationMaster() {
           {/* ── 2-column body — content + live preview ── */}
           <Row className="g-3">
             <Col xl={9} lg={8}>
-              {section === 'pt'         && <PtSection         rules={ptRules}        setRules={setPtRules} />}
-              {section === 'leave'      && <LeaveSection      rules={leaveRules}     setRules={setLeaveRules} />}
-              {section === 'late'       && <LateSection       config={lateConfig}    setConfig={setLateConfig} />}
-              {section === 'overtime'   && <OvertimeSection   config={overtimeConfig} setConfig={setOvertimeConfig} />}
-              {section === 'deduction'  && <DeductionSection  triggers={deductTriggers} setTriggers={setDeductTriggers} />}
-              {section === 'governance' && <GovernanceSection />}
+              {loading ? (
+                <CalcSectionShimmer />
+              ) : (
+                <>
+                  {section === 'pt'         && <PtSection         rules={ptRules}        setRules={setPtRules} />}
+                  {section === 'leave'      && <LeaveSection      rules={leaveRules}     setRules={setLeaveRules} />}
+                  {section === 'late'       && <LateSection       config={lateConfig}    setConfig={setLateConfig} />}
+                  {section === 'overtime'   && <OvertimeSection   config={overtimeConfig} setConfig={setOvertimeConfig} />}
+                  {section === 'deduction'  && <DeductionSection  triggers={deductTriggers} setTriggers={setDeductTriggers} />}
+                  {section === 'governance' && <GovernanceSection />}
+                </>
+              )}
             </Col>
             <Col xl={3} lg={4}>
               <RulePreview inputs={inputs} setInputs={setInputs} results={results} />
@@ -406,6 +424,44 @@ function RulePreview({ inputs, setInputs, results }: {
 // Generic section header (small uppercase label + card)
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div className="cm-section-label">{children}</div>;
+}
+
+// Loading placeholder for the section panel — mirrors the section's typical
+// shape (uppercase label, header strip, table rows) so the layout doesn't
+// jump when the real content swaps in.
+function CalcSectionShimmer() {
+  return (
+    <>
+      <div className="cm-section-label" style={{ display: 'flex' }}>
+        <Shimmer width={220} height={11} radius={3} />
+      </div>
+      <div className="pip-card">
+        <div className="pip-card-head">
+          <div style={{ width: '100%' }}>
+            <Shimmer width="40%" height={16} radius={4} style={{ marginBottom: 8 }} />
+            <Shimmer width="75%" height={12} radius={3} />
+          </div>
+        </div>
+        <div className="pip-active-table-wrap">
+          <table className="pip-active-table">
+            <thead>
+              <tr>
+                {Array.from({ length: 5 }).map((_, c) => (
+                  <th key={c}><Shimmer height={11} radius={3} /></th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <ShimmerTableRows rows={5} cols={5} cellClassName="" keyPrefix="shim-calc" />
+            </tbody>
+          </table>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <Shimmer width="60%" height={12} radius={3} />
+        </div>
+      </div>
+    </>
+  );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

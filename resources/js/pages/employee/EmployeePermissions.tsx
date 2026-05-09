@@ -8,6 +8,7 @@ import PermissionMatrix, {
   type PermKey,
   type PermModule,
 } from '../../components/PermissionMatrix';
+import { ShimmerPermissions } from '../../components/ui/Shimmer';
 
 // Same hidden slugs ClientPermissions hides — these are tenant/admin-level
 // modules that don't apply to a single employee.
@@ -114,7 +115,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
     }
   };
 
-  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
+  if (loading) return <ShimmerPermissions />;
 
   const initials = employee?.initials
     || (employee?.name ? employee.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase() : 'EM');

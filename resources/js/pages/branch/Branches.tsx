@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row, Button, Input, Spinner } from 'reactstrap';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import * as XLSX from 'xlsx';
@@ -471,21 +472,26 @@ export default function Branches({ onNavigate }: Props) {
             {/* ── Table ── */}
             <Card className="border-0 shadow-none mb-0">
               <CardBody className="p-3">
-                <TableContainer
-                  columns={columns}
-                  data={filtered}
-                  isGlobalFilter={false}
-                  customPageSize={10}
-                  tableClass="align-middle table-nowrap mb-0"
-                  theadClass="table-light"
-                  divClass="table-responsive table-card border rounded"
-                  SearchPlaceholder="Search by name, code, city..."
-                />
-                {loading && <div className="text-center py-5"><Spinner color="primary" /></div>}
-                {!loading && filtered.length === 0 && (
-                  <div className="text-center text-muted py-5">
-                    No branches found. Click "Add Branch" to create one.
-                  </div>
+                {loading ? (
+                  <ShimmerTable rows={6} cols={9} />
+                ) : (
+                  <>
+                    <TableContainer
+                      columns={columns}
+                      data={filtered}
+                      isGlobalFilter={false}
+                      customPageSize={10}
+                      tableClass="align-middle table-nowrap mb-0"
+                      theadClass="table-light"
+                      divClass="table-responsive table-card border rounded"
+                      SearchPlaceholder="Search by name, code, city..."
+                    />
+                    {filtered.length === 0 && (
+                      <div className="text-center text-muted py-5">
+                        No branches found. Click "Add Branch" to create one.
+                      </div>
+                    )}
+                  </>
                 )}
               </CardBody>
             </Card>

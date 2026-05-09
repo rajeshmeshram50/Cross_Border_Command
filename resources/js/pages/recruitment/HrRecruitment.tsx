@@ -392,7 +392,6 @@ export default function HrRecruitment() {
   // List state — fetched from /api/recruitments and kept in local state so
   // creates / updates / cancels reflect instantly.
   const [recruitments, setRecruitments] = useState<RecruitmentRow[]>([]);
-  const [loadingList, setLoadingList] = useState(true);
   const [tab, setTab] = useState<RecruitmentStatus>('In Progress');
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
@@ -428,7 +427,6 @@ export default function HrRecruitment() {
   // in parallel. Two endpoints, one render.
   const fetchRecruitments = async () => {
     try {
-      setLoadingList(true);
       const [listRes, statsRes] = await Promise.all([
         api.get('/recruitments'),
         // Stats may 404 in environments that haven't run the latest
@@ -442,8 +440,6 @@ export default function HrRecruitment() {
       toast.error('Could not load recruitments', err?.response?.data?.message || 'Please try again.');
       setRecruitments([]);
       setCandidateStats(ZERO_STATS);
-    } finally {
-      setLoadingList(false);
     }
   };
   useEffect(() => { fetchRecruitments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
@@ -1489,13 +1485,11 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
   // Server-fed list — loaded every time the modal opens (or whenever the
   // parent bumps `refreshKey` after a new request is submitted).
   const [requests, setRequests] = useState<HiringRequestRow[]>([]);
-  const [loading, setLoading]   = useState(false);
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
     (async () => {
       try {
-        setLoading(true);
         const { data } = await api.get('/hiring-requests');
         if (cancelled) return;
         const rows: any[] = Array.isArray(data) ? data : [];
@@ -1505,8 +1499,6 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
           toast.error('Could not load hiring requests', err?.response?.data?.message || 'Please try again.');
           setRequests([]);
         }
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -1676,13 +1668,7 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={11} className="text-center py-5 text-muted">
-                    <Spinner size="sm" className="me-2" />Loading hiring requests…
-                  </td>
-                </tr>
-              ) : filtered.length === 0 ? (
+              {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="text-center py-5 text-muted">
                     <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />

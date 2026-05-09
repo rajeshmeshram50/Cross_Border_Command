@@ -4,6 +4,7 @@ import { Card, CardBody, Col, Row, Modal, ModalBody, Spinner, Input } from 'reac
 import { MasterSelect, MasterFormStyles, MasterDatePicker } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
+import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -278,7 +279,7 @@ export default function HrBroadcastCentre() {
                       </thead>
                       <tbody>
                         {loading ? (
-                          <tr><td colSpan={10} className="text-center py-5 text-muted"><Spinner size="sm" /> Loading announcements…</td></tr>
+                          <ShimmerTableRows rows={5} cols={10} />
                         ) : visible.length === 0 ? (
                           <tr><td colSpan={10} className="text-center py-5 text-muted">
                             <i className="ri-send-plane-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />

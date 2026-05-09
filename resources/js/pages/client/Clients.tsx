@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
+import { ShimmerTable } from '../../components/ui/Shimmer';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import * as XLSX from 'xlsx';
@@ -555,18 +556,23 @@ export default function Clients({ onNavigate }: Props) {
             {/* ── Table ── */}
             <Card className="border-0 shadow-none mb-0">
               <CardBody className="p-3">
-                <TableContainer
-                  columns={columns}
-                  data={clients}
-                  isGlobalFilter={false}
-                  customPageSize={10}
-                  tableClass="align-middle table-nowrap mb-0"
-                  theadClass="table-light"
-                  divClass="table-responsive table-card border rounded"
-                  SearchPlaceholder="Search by name or ID..."
-                />
-                {loading && <div className="text-center py-5"><Spinner color="secondary" /></div>}
-                {!loading && clients.length === 0 && <div className="text-center text-muted py-5">No clients found</div>}
+                {loading ? (
+                  <ShimmerTable rows={6} cols={9} />
+                ) : (
+                  <>
+                    <TableContainer
+                      columns={columns}
+                      data={clients}
+                      isGlobalFilter={false}
+                      customPageSize={10}
+                      tableClass="align-middle table-nowrap mb-0"
+                      theadClass="table-light"
+                      divClass="table-responsive table-card border rounded"
+                      SearchPlaceholder="Search by name or ID..."
+                    />
+                    {clients.length === 0 && <div className="text-center text-muted py-5">No clients found</div>}
+                  </>
+                )}
               </CardBody>
             </Card>
           </div>

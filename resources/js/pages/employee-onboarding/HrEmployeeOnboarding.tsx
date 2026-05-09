@@ -6,6 +6,7 @@ import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } f
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
+import Tooltip from '../../components/ui/Tooltip';
 import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
@@ -896,24 +897,30 @@ export default function HrEmployeeOnboarding() {
                             </td>
                             <td className="pe-3">
                               {tab === 'completed' ? (
-                                <button type="button" className="onb-vault-btn" title="Evidence Vault" onClick={() => openVault(r)}>
-                                  <i className="ri-shield-check-line" style={{ fontSize: 14 }} />
-                                  Evidence Vault
-                                </button>
+                                <Tooltip label="View uploaded evidence documents">
+                                  <button type="button" className="onb-vault-btn" aria-label="Evidence Vault" onClick={() => openVault(r)}>
+                                    <i className="ri-shield-check-line" style={{ fontSize: 14 }} />
+                                    Evidence Vault
+                                  </button>
+                                </Tooltip>
                               ) : (
                                 <div className="d-flex align-items-center gap-2">
-                                  <button
-                                    type="button"
-                                    className="onb-edit-btn"
-                                    title="Edit Employee"
-                                    onClick={() => openEdit(r)}
-                                  >
-                                    <i className="ri-pencil-line" style={{ fontSize: 14 }} />
-                                  </button>
-                                  <button type="button" className="onb-init-btn" title="Initiate Onboarding" onClick={() => openInitiate(r)}>
-                                    <i className="ri-add-line" style={{ fontSize: 14 }} />
-                                    Initiate Onboarding
-                                  </button>
+                                  <Tooltip label="Edit Employee">
+                                    <button
+                                      type="button"
+                                      className="onb-edit-btn"
+                                      aria-label="Edit Employee"
+                                      onClick={() => openEdit(r)}
+                                    >
+                                      <i className="ri-pencil-line" style={{ fontSize: 14 }} />
+                                    </button>
+                                  </Tooltip>
+                                  <Tooltip label="Start the onboarding wizard for this employee">
+                                    <button type="button" className="onb-init-btn" aria-label="Initiate Onboarding" onClick={() => openInitiate(r)}>
+                                      <i className="ri-add-line" style={{ fontSize: 14 }} />
+                                      Initiate Onboarding
+                                    </button>
+                                  </Tooltip>
                                 </div>
                               )}
                             </td>

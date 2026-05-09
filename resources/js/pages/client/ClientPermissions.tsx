@@ -8,6 +8,7 @@ import PermissionMatrix, {
   type PermKey,
   type PermModule,
 } from '../../components/PermissionMatrix';
+import { ShimmerPermissions } from '../../components/ui/Shimmer';
 
 interface Props {
   clientId: number;
@@ -72,7 +73,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
     }
   };
 
-  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
+  if (loading) return <ShimmerPermissions />;
 
   return (
     <>

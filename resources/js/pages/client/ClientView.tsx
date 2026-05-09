@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardBody, Col, Row, Button, Spinner, Progress } from 'reactstrap';
 import api from '../../api';
+import { ShimmerProfile } from '../../components/ui/Shimmer';
 
 interface Props {
   clientId: number;
@@ -20,7 +21,7 @@ export default function ClientView({ clientId, onBack, onNavigate }: Props) {
     }).finally(() => setLoading(false));
   }, [clientId]);
 
-  if (loading) return <div className="text-center py-5"><Spinner color="primary" /></div>;
+  if (loading) return <ShimmerProfile />;
   if (!client) return (
     <div className="text-center py-5">
       <p className="text-muted">Client not found.</p>
