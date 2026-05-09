@@ -33,6 +33,8 @@ export interface AuthUser {
   branch_name?: string;
   client_logo?: string | null;
   branch_logo?: string | null;
+  client_profile_photo?: string | null;
+  branch_profile_photo?: string | null;
   // Effective tenant theme — server already resolves branch → client fallback,
   // so the frontend just applies these directly. null = use app defaults.
   primary_color?: string | null;

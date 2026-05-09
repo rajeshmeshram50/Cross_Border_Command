@@ -34,7 +34,8 @@ const Ctx = createContext<AuthCtx>({
 // v5 — added `primary_color` / `secondary_color` (tenant theme override).
 // v6 — added `employee_id` (linked Employee row, used for expense-claim ownership).
 // v7 — added `employee_code` (EMP-### string form, used for own-profile match).
-const USER_SCHEMA_VERSION = 7;
+// v8 — added `client_profile_photo` / `branch_profile_photo` (profile dropdown).
+const USER_SCHEMA_VERSION = 8;
 
 function readCachedUser(): AuthUser | null {
   try {

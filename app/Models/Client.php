@@ -37,11 +37,12 @@ class Client extends Model
         'secondary_color',
         'logo',
         'favicon',
+        'profile_photo',
         'notes',
         'created_by',
     ];
 
-    protected $appends = ['logo_url', 'favicon_url'];
+    protected $appends = ['logo_url', 'favicon_url', 'profile_photo_url'];
 
     protected function casts(): array
     {
@@ -58,6 +59,11 @@ class Client extends Model
     public function getFaviconUrlAttribute(): ?string
     {
         return file_url($this->favicon);
+    }
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        return file_url($this->profile_photo);
     }
 
     // ── Relationships ──

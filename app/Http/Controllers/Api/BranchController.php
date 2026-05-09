@@ -141,6 +141,7 @@ class BranchController extends Controller
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
 
@@ -203,6 +204,11 @@ class BranchController extends Controller
             if ($request->hasFile('logo')) {
                 $branch->update([
                     'logo' => $request->file('logo')->store('branches/logos', 'public'),
+                ]);
+            }
+            if ($request->hasFile('profile_photo')) {
+                $branch->update([
+                    'profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public'),
                 ]);
             }
 
@@ -344,6 +350,7 @@ class BranchController extends Controller
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
+            'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
             'user_name' => 'nullable|string|max:255',
@@ -391,6 +398,12 @@ class BranchController extends Controller
                     Storage::disk('public')->delete($this->relativePath($branch->logo));
                 }
                 $branch->update(['logo' => $request->file('logo')->store('branches/logos', 'public')]);
+            }
+            if ($request->hasFile('profile_photo')) {
+                if ($branch->profile_photo) {
+                    Storage::disk('public')->delete($this->relativePath($branch->profile_photo));
+                }
+                $branch->update(['profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public')]);
             }
 
             if ($statusBecomingInactive) {
