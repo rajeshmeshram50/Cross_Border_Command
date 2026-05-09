@@ -325,9 +325,11 @@ class AuthController extends Controller
         // form the URL slug carries — without an extra round-trip.
         $linkedEmployee = \App\Models\Employee::where('user_id', $user->id)
             ->select(['id', 'emp_code'])
+            ->with('photoDocument:id,employee_id,document_key,file_path')
             ->first();
         $linkedEmployeeId = $linkedEmployee?->id;
         $linkedEmployeeCode = $linkedEmployee?->emp_code;
+        $linkedEmployeePhoto = $linkedEmployee?->photo_url;
 
         return [
             'id' => $user->id,
@@ -345,6 +347,10 @@ class AuthController extends Controller
             'branch_logo' => file_url($user->branch?->logo),
             'client_profile_photo' => file_url($user->client?->profile_photo),
             'branch_profile_photo' => file_url($user->branch?->profile_photo),
+            // Passport-size photo from the employee onboarding documents
+            // (employee_documents.document_key='photo'). Only populated when
+            // the logged-in user is linked to an Employee row.
+            'employee_profile_photo' => $linkedEmployeePhoto,
             // Personal photo on the user row — always set for super_admin (no
             // tenant), and used as a fallback for tenant users when the
             // client/branch photo is blank.

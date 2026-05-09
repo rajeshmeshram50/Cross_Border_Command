@@ -221,6 +221,9 @@ function ProfileRouter() {
           manager: e.reporting_manager?.display_name
             || [e.reporting_manager?.first_name, e.reporting_manager?.last_name].filter(Boolean).join(' ').trim()
             || undefined,
+          // Passport-size photo from onboarding (employee_documents,
+          // document_key='photo'). Read by EmployeeProfile's hero avatar.
+          photoUrl: e.photo_url || user.employee_profile_photo || null,
         });
       })
       .catch(() => { /* fall back to the minimal stub built below */ });
@@ -235,6 +238,9 @@ function ProfileRouter() {
     id: stateEmp?.id || `EMP-${user!.employee_id}`,
     name: user!.name,
     email: user!.email,
+    // /me already carries the employee passport photo, so the hero shows it
+    // immediately even if the /employees/:id fetch hasn't resolved yet.
+    photoUrl: user!.employee_profile_photo || null,
   };
   return (
     <EmployeeProfile

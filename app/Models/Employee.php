@@ -10,6 +10,7 @@ use App\Models\Masters\Roles;
 use App\Models\Masters\States;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Employee extends Model
@@ -75,8 +76,11 @@ class Employee extends Model
 
     /** Accessors auto-included on every JSON serialization. The
      *  `other_assets_resolved` accessor short-circuits when the array
-     *  is empty, so rows without assets pay no DB cost. */
-    protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved'];
+     *  is empty, so rows without assets pay no DB cost.
+     *  `photo_url` resolves the passport-size photo uploaded as an
+     *  EmployeeDocument with document_key='photo' — eager-load
+     *  `photoDocument` to avoid N+1 on list endpoints. */
+    protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved', 'photo_url'];
 
     protected $casts = [
         'date_of_birth'  => 'date',
@@ -129,6 +133,25 @@ class Employee extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /** Passport-size photo doc uploaded during onboarding. The
+     *  `employee_documents` row with document_key='photo' is the canonical
+     *  source — also doubles as the employee's profile picture across the
+     *  app (list table avatar, EmployeeProfile hero, profile dropdown). */
+    public function photoDocument(): HasOne
+    {
+        return $this->hasOne(EmployeeDocument::class)->where('document_key', 'photo');
+    }
+
+    public function getPhotoUrlAttribute(): ?string
+    {
+        // Use the eager-loaded relation when present; fall back to a single
+        // lookup on detail views where eager-loading isn't worth it.
+        $doc = $this->relationLoaded('photoDocument')
+            ? $this->photoDocument
+            : $this->photoDocument()->first();
+        return $doc ? file_url($doc->file_path) : null;
     }
 
     // ── Asset assignments (Stage 1 Step 3) ──────────────────────────────

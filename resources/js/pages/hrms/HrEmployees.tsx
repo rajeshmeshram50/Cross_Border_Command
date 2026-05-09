@@ -135,6 +135,10 @@ interface EmployeeRow {
   email: string;
   initials: string;
   accent: string;
+  /** Passport-size photo from onboarding (employee_documents,
+   *  document_key='photo') — surfaced via the Employee model's `photo_url`
+   *  accessor. Used as the row avatar when present. */
+  photoUrl: string | null;
   department: string;
   designation: string;
   primaryRole: string;
@@ -248,6 +252,7 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
     email: e.email || '',
     initials: initialsFromName(name),
     accent: accentFromName(name),
+    photoUrl: (e as any).photo_url || null,
     department: e.department?.name || '—',
     designation: e.designation?.name || '—',
     primaryRole: e.primary_role?.name || '—',
@@ -2136,16 +2141,25 @@ export default function HrEmployees() {
                             <td className="ps-3 text-center text-muted fs-13">{idx + 1}</td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
-                                <div
-                                  className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                  style={{
-                                    width: 34, height: 34, fontSize: 12,
-                                    background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)`,
-                                    boxShadow: `0 2px 6px ${e.accent}40`,
-                                  }}
-                                >
-                                  {e.initials}
-                                </div>
+                                {e.photoUrl ? (
+                                  <img
+                                    src={e.photoUrl}
+                                    alt={e.name}
+                                    className="rounded-circle flex-shrink-0"
+                                    style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+                                  />
+                                ) : (
+                                  <div
+                                    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                                    style={{
+                                      width: 34, height: 34, fontSize: 12,
+                                      background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)`,
+                                      boxShadow: `0 2px 6px ${e.accent}40`,
+                                    }}
+                                  >
+                                    {e.initials}
+                                  </div>
+                                )}
                                 <div className="min-w-0">
                                   <div className="fw-semibold fs-13">{e.name}</div>
                                   <a
