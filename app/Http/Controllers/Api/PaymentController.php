@@ -3,16 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Mail\PaymentInvoiceMail;
 use App\Mail\PlanReminderMail;
 use App\Models\Payment;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\InvoiceMailer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 
 class PaymentController extends Controller
 {
+    public function __construct(private InvoiceMailer $invoiceMailer) {}
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -124,7 +125,7 @@ class PaymentController extends Controller
 
         // Generate invoice PDF and send email for successful payments
         if ($payment->status === 'success') {
-            $this->generateInvoiceAndSendEmail($payment);
+            $this->invoiceMailer->sendForPayment($payment);
         }
 
         return response()->json([
@@ -239,66 +240,16 @@ class PaymentController extends Controller
     }
 
     /**
-     * Ensure PDF exists, generate if missing
+     * Ensure PDF exists (delegates to InvoiceMailer) and abort if it
+     * couldn't be produced — used by view/download endpoints that need a
+     * file path to stream back to the browser.
      */
     private function ensureInvoicePdf(Payment $payment): string
     {
-        $path = storage_path("app/invoices/{$payment->invoice_number}.pdf");
-        if (!file_exists($path)) {
-            $this->generateInvoicePdf($payment);
-        }
+        $path = $this->invoiceMailer->ensureInvoicePdf($payment);
         if (!file_exists($path)) {
             abort(404, 'Invoice not found');
         }
         return $path;
-    }
-
-    /**
-     * Generate PDF and save to storage
-     */
-    private function generateInvoicePdf(Payment $payment): string
-    {
-        $invoicesDir = storage_path('app/invoices');
-        if (!is_dir($invoicesDir)) {
-            mkdir($invoicesDir, 0755, true);
-        }
-
-        $pdf = Pdf::loadView('invoices.payment-invoice', ['payment' => $payment]);
-        $pdf->setPaper('A4');
-
-        $path = $invoicesDir . "/{$payment->invoice_number}.pdf";
-        $pdf->save($path);
-
-        // Update invoice_path in DB
-        $payment->update(['invoice_path' => "invoices/{$payment->invoice_number}.pdf"]);
-
-        return $path;
-    }
-
-    /**
-     * Generate invoice PDF and send email
-     */
-    private function generateInvoiceAndSendEmail(Payment $payment): void
-    {
-        try {
-            $this->generateInvoicePdf($payment);
-
-            // Send to organization email + client admin email
-            $orgEmail = $payment->client->email;
-            $adminUser = \App\Models\User::where('client_id', $payment->client->id)
-                ->where('user_type', 'client_admin')
-                ->first();
-
-            $recipients = collect([$orgEmail]);
-            if ($adminUser && $adminUser->email !== $orgEmail) {
-                $recipients->push($adminUser->email);
-            }
-
-            Mail::to($recipients->toArray())->send(new PaymentInvoiceMail($payment));
-
-        } catch (\Exception $e) {
-            // Log error but don't fail the payment
-            \Log::error('Invoice generation/email failed: ' . $e->getMessage());
-        }
     }
 }
