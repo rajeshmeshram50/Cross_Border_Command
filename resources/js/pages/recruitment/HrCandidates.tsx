@@ -467,22 +467,44 @@ export default function HrCandidates() {
                               <div className="rec-row-actions justify-content-center">
                                 <button
                                   type="button"
-                                  className="rec-act rec-act-approve rec-act--icon"
-                                  title="Mark Selected"
-                                  aria-label="Mark Selected"
-                                  onClick={() => setConfirming({ row: c, mode: 'select' })}
+                                  className="rec-act rec-act--icon"
+                                  title="Edit Candidate"
+                                  aria-label="Edit Candidate"
+                                  onClick={() => { setEditing(c); setModalOpen(true); }}
+                                  style={{
+                                    background: '#ede9fe',
+                                    color: '#5b3fd1',
+                                    borderColor: '#ddd6fe',
+                                  }}
                                 >
-                                  <i className="ri-check-line" />
+                                  <i className="ri-pencil-line" />
                                 </button>
-                                <button
-                                  type="button"
-                                  className="rec-act rec-act-reject rec-act--icon"
-                                  title="Mark Rejected"
-                                  aria-label="Mark Rejected"
-                                  onClick={() => setConfirming({ row: c, mode: 'reject' })}
-                                >
-                                  <i className="ri-close-line" />
-                                </button>
+                                {/* Approve / Reject buttons hide once the candidate
+                                    is already in that terminal state — no point
+                                    re-selecting an already-selected row, or
+                                    re-rejecting an already-rejected one. */}
+                                {c.status !== 'Selected' && c.status !== 'Offered' && (
+                                  <button
+                                    type="button"
+                                    className="rec-act rec-act-approve rec-act--icon"
+                                    title="Mark Selected"
+                                    aria-label="Mark Selected"
+                                    onClick={() => setConfirming({ row: c, mode: 'select' })}
+                                  >
+                                    <i className="ri-check-line" />
+                                  </button>
+                                )}
+                                {c.status !== 'Rejected' && (
+                                  <button
+                                    type="button"
+                                    className="rec-act rec-act-reject rec-act--icon"
+                                    title="Mark Rejected"
+                                    aria-label="Mark Rejected"
+                                    onClick={() => setConfirming({ row: c, mode: 'reject' })}
+                                  >
+                                    <i className="ri-close-line" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1131,10 +1153,70 @@ function CandidateFormModal({
   }, [open, editing]);
 
   const handleSubmit = async () => {
+    // Client-side validation — surface every problem inline so the user
+    // doesn't need to round-trip to the backend to learn what's wrong.
+    // Constraints mirror the EmployeeController/CandidateController rules
+    // (max:9999.99 on salary, max:50 on experience, etc.) so what passes
+    // here also passes the server validator.
     const errs: Record<string, string> = {};
+
     if (!name.trim()) errs.name = 'Name is required';
+    else if (name.trim().length < 2) errs.name = 'Name must be at least 2 characters';
+    else if (name.trim().length > 100) errs.name = 'Name cannot exceed 100 characters';
+
     if (!recruitmentId) errs.recruitment_id = 'Recruitment is required';
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+
+    if (email.trim()) {
+      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRe.test(email.trim())) errs.email = 'Enter a valid email address';
+    }
+
+    if (mobile.trim()) {
+      // 10–15 digits, optional leading + and country code spaces.
+      const mobileRe = /^\+?[\d\s\-]{10,18}$/;
+      if (!mobileRe.test(mobile.trim())) errs.mobile = 'Enter a valid mobile number (10–15 digits)';
+    }
+
+    const expNum = Number(experience);
+    if (experience !== '' && (!Number.isFinite(expNum) || expNum < 0)) errs.experience_years = 'Experience cannot be negative';
+    else if (expNum > 50) errs.experience_years = 'Experience cannot exceed 50 years';
+
+    if (distance.trim()) {
+      const dNum = Number(distance);
+      if (!Number.isFinite(dNum) || dNum < 0) errs.distance_km = 'Distance cannot be negative';
+      else if (dNum > 9999) errs.distance_km = 'Distance cannot exceed 9999 KM';
+    }
+
+    if (currentSalary.trim()) {
+      const cs = Number(currentSalary);
+      if (!Number.isFinite(cs) || cs < 0) errs.current_salary_lpa = 'Salary cannot be negative';
+      else if (cs > 9999.99) errs.current_salary_lpa = 'Current salary cannot exceed 9999.99 LPA';
+    }
+
+    if (expectedSalary.trim()) {
+      const es = Number(expectedSalary);
+      if (!Number.isFinite(es) || es < 0) errs.expected_salary_lpa = 'Salary cannot be negative';
+      else if (es > 9999.99) errs.expected_salary_lpa = 'Expected salary cannot exceed 9999.99 LPA';
+    }
+
+    if (!source.trim()) errs.source = 'Source is required';
+    if (!status) errs.status = 'Status is required';
+
+    // CV is required on create, optional on edit (existing CV stays unless replaced).
+    if (!editing && !cvFile) errs.cv = 'Please attach a CV';
+    if (cvFile) {
+      const okExt = /\.(pdf|doc|docx)$/i.test(cvFile.name);
+      if (!okExt) errs.cv = 'CV must be a PDF, DOC, or DOCX file';
+      else if (cvFile.size > 10 * 1024 * 1024) errs.cv = 'CV must be under 10 MB';
+    }
+
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      const first = Object.values(errs)[0];
+      toast.error('Please fix the highlighted fields', String(first));
+      return;
+    }
+    setErrors({});
 
     const fd = new FormData();
     fd.append('recruitment_id', String(recruitmentId));
@@ -1223,11 +1305,13 @@ function CandidateFormModal({
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Email</label>
-                  <input type="email" className="rec-input" placeholder="name@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+                  <input type="email" className={`rec-input${errors.email ? ' is-invalid' : ''}`} placeholder="name@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+                  {errors.email && <div className="rec-error"><i className="ri-error-warning-line" />{errors.email}</div>}
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Mobile Number</label>
-                  <input type="text" className="rec-input" placeholder="+91 9XXXXXXXXX" value={mobile} onChange={e => setMobile(e.target.value)} />
+                  <input type="text" className={`rec-input${errors.mobile ? ' is-invalid' : ''}`} placeholder="+91 9XXXXXXXXX" value={mobile} onChange={e => setMobile(e.target.value)} />
+                  {errors.mobile && <div className="rec-error"><i className="ri-error-warning-line" />{errors.mobile}</div>}
                 </Col>
                 <Col md={6}>
                   <label className="rec-form-label">Current Address</label>
@@ -1239,7 +1323,8 @@ function CandidateFormModal({
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Experience (Years)</label>
-                  <input type="number" min={0} step={0.5} className="rec-input" value={experience} onChange={e => setExperience(e.target.value)} />
+                  <input type="number" min={0} step={0.5} className={`rec-input${errors.experience_years ? ' is-invalid' : ''}`} value={experience} onChange={e => setExperience(e.target.value)} />
+                  {errors.experience_years && <div className="rec-error"><i className="ri-error-warning-line" />{errors.experience_years}</div>}
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Mode of Transport</label>
@@ -1247,7 +1332,8 @@ function CandidateFormModal({
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Distance (KM)</label>
-                  <input type="number" min={0} step={0.1} className="rec-input" placeholder="e.g. 12" value={distance} onChange={e => setDistance(e.target.value)} />
+                  <input type="number" min={0} step={0.1} className={`rec-input${errors.distance_km ? ' is-invalid' : ''}`} placeholder="e.g. 12" value={distance} onChange={e => setDistance(e.target.value)} />
+                  {errors.distance_km && <div className="rec-error"><i className="ri-error-warning-line" />{errors.distance_km}</div>}
                 </Col>
               </Row>
             </div>
@@ -1261,11 +1347,13 @@ function CandidateFormModal({
               <Row className="g-2">
                 <Col md={4}>
                   <label className="rec-form-label">Current Salary (LPA)</label>
-                  <input type="number" min={0} step={0.5} className="rec-input" placeholder="e.g. 10" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
+                  <input type="number" min={0} max={9999.99} step={0.5} className={`rec-input${errors.current_salary_lpa ? ' is-invalid' : ''}`} placeholder="e.g. 10" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
+                  {errors.current_salary_lpa && <div className="rec-error"><i className="ri-error-warning-line" />{errors.current_salary_lpa}</div>}
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Expected Salary (LPA)</label>
-                  <input type="number" min={0} step={0.5} className="rec-input" placeholder="e.g. 15" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
+                  <input type="number" min={0} max={9999.99} step={0.5} className={`rec-input${errors.expected_salary_lpa ? ' is-invalid' : ''}`} placeholder="e.g. 15" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
+                  {errors.expected_salary_lpa && <div className="rec-error"><i className="ri-error-warning-line" />{errors.expected_salary_lpa}</div>}
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Notice Period</label>
@@ -1284,6 +1372,7 @@ function CandidateFormModal({
                   </div>
                   <label className="rec-form-label">Source<span className="req">*</span></label>
                   <MasterSelect value={source} onChange={setSource} options={SOURCES.map(s => ({ value: s, label: s }))} placeholder="— Select —" />
+                  {errors.source && <div className="rec-error"><i className="ri-error-warning-line" />{errors.source}</div>}
                 </div>
               </Col>
               <Col md={4}>
@@ -1292,8 +1381,8 @@ function CandidateFormModal({
                     <span className="cand-step cand-step-4">4</span>
                     <p className="rec-form-section-title">Attachment Details</p>
                   </div>
-                  <label className="rec-form-label">Upload CV<span className="req">*</span></label>
-                  <label className="cand-cv-drop">
+                  <label className="rec-form-label">Upload CV{!editing && <span className="req">*</span>}</label>
+                  <label className="cand-cv-drop" style={errors.cv ? { borderColor: '#f06548' } : undefined}>
                     <input type="file" accept=".pdf,.doc,.docx" onChange={e => setCvFile(e.target.files?.[0] ?? null)} style={{ display: 'none' }} />
                     <i className="ri-attachment-2" />
                     <span className="cand-cv-text">
@@ -1301,6 +1390,7 @@ function CandidateFormModal({
                       <span>PDF, DOC, DOCX · Max 10 MB</span>
                     </span>
                   </label>
+                  {errors.cv && <div className="rec-error"><i className="ri-error-warning-line" />{errors.cv}</div>}
                 </div>
               </Col>
               <Col md={4}>
@@ -1311,6 +1401,7 @@ function CandidateFormModal({
                   </div>
                   <label className="rec-form-label">Candidate Status<span className="req">*</span></label>
                   <MasterSelect value={status} onChange={(v) => setStatus(v as CandidateStatus)} options={STATUSES.map(s => ({ value: s, label: s }))} placeholder="— Select —" />
+                  {errors.status && <div className="rec-error"><i className="ri-error-warning-line" />{errors.status}</div>}
                 </div>
               </Col>
             </Row>

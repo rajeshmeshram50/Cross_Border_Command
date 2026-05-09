@@ -966,26 +966,13 @@ class EmployeeController extends Controller
      */
     private function grantSelfServicePermissions(User $user, $clientId, $branchId, $grantedBy): void
     {
-        $alwaysOnSlugs = ['profile', 'dashboard', 'master.employees'];
+        // Minimum baseline so the new hire can sign in and reach the basics.
+        // Anything beyond Dashboard + Profile must be granted explicitly by
+        // the branch / client admin from the Permissions screen — we no
+        // longer replicate the creator's master.* views by default.
+        $alwaysOnSlugs = ['dashboard', 'profile'];
 
-        // Pull every master.* module the admin can view. We replicate just
-        // can_view (never write/delete) so the employee can READ reference
-        // data without being able to change it.
-        $adminMasterIds = [];
-        if ($grantedBy) {
-            $adminMasterIds = Permission::where('user_id', $grantedBy)
-                ->where('can_view', true)
-                ->whereHas('module', fn ($q) => $q->where('slug', 'like', 'master.%'))
-                ->pluck('module_id')
-                ->all();
-        }
-
-        $modules = Module::where(function ($q) use ($alwaysOnSlugs, $adminMasterIds) {
-            $q->whereIn('slug', $alwaysOnSlugs);
-            if (!empty($adminMasterIds)) {
-                $q->orWhereIn('id', $adminMasterIds);
-            }
-        })->get();
+        $modules = Module::whereIn('slug', $alwaysOnSlugs)->get();
 
         foreach ($modules as $m) {
             Permission::firstOrCreate(

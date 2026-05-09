@@ -327,9 +327,15 @@ function DashboardRoutes({ user }: { user: any }) {
     super_admin: AdminDashboard,
     client_admin: ClientDashboard,
     branch_user: BranchDashboard,
+    // Employees + client_users get the branch-scoped dashboard (no
+    // clients / revenue / payments super-admin KPIs leak into their
+    // view). Fallback also points to BranchDashboard rather than
+    // AdminDashboard so any future user_type is safe-by-default.
+    client_user: BranchDashboard,
+    employee:    BranchDashboard,
   };
 
-  const DefaultDashboard = DashboardMap[user.user_type] || AdminDashboard;
+  const DefaultDashboard = DashboardMap[user.user_type] || BranchDashboard;
 
   return (
     <NavigateContext.Provider value={navigateContextValue}>

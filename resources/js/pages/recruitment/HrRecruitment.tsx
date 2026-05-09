@@ -461,10 +461,19 @@ export default function HrRecruitment() {
       candidates: candidateStats.total,
       selected:   candidateStats.selected,
       rejected:   candidateStats.rejected,
-      // "Pending Interviews" = candidates at the Final Interview stage —
-      // i.e. the final-round-selected bucket the user wants to surface
-      // here. Earlier rounds are tracked separately in candidateStats.
-      pending:    candidateStats.final_interview,
+      // "Pending Interviews" = every candidate still in the pipeline,
+      // i.e. NOT yet Selected / Offered / Rejected. This matches the
+      // count under the "Final Round Selected" tab on the candidate
+      // detail page — the bucket of names HR is still actively chasing.
+      // Earlier this only counted Final Interview which masked anyone
+      // sitting on Applied / Shortlisted / In Interview / On Hold.
+      pending: Math.max(
+        0,
+        candidateStats.total
+          - candidateStats.selected
+          - candidateStats.offered
+          - candidateStats.rejected,
+      ),
       tabs: { 'In Progress': inProgress, Completed: completed, Cancelled: cancelled },
     };
   }, [recruitments, candidateStats]);

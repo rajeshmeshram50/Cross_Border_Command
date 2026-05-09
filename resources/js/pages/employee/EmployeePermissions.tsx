@@ -138,13 +138,13 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
         style={{ borderRadius: 14, border: 'none' }}
       >
         <style>{`
-          /* Whole header card uses the same deep-navy hero gradient as
-             EmployeeProfile, with a subtle dotted overlay for texture. */
+          /* Deep blue hero — solid corporate navy palette
+             (#000066 → #00008b). Subtle dotted texture overlay only. */
           .ep-perm-card {
             position: relative;
             color: #fff;
-            background: linear-gradient(120deg,#08112b 0%,#0c1740 40%,#0f1e55 70%,#0d1848 100%);
-            box-shadow: 0 8px 26px rgba(8,17,43,0.30);
+            background: linear-gradient(120deg, #000066 0%, #00008b 100%);
+            box-shadow: 0 8px 26px rgba(0,0,102,0.30);
           }
           .ep-perm-card::before {
             content: ''; position: absolute; inset: 0;
