@@ -230,8 +230,14 @@ export default function AddPlan({ onBack, editId }: Props) {
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
             <div className="d-flex align-items-center gap-2">
-              <button className="btn btn-sm btn-soft-secondary rounded" onClick={onBack}>
-                <i className="ri-arrow-left-line"></i>
+              <button
+                type="button"
+                className="btn btn-soft-primary btn-icon rounded-circle d-inline-flex align-items-center justify-content-center"
+                style={{ width: 36, height: 36 }}
+                onClick={onBack}
+                title="Back"
+              >
+                <i className="ri-arrow-left-line fs-16"></i>
               </button>
               <div>
                 <h5 className="mb-0">{isEdit ? 'Edit Plan' : 'Add New Plan'}</h5>
@@ -274,6 +280,45 @@ export default function AddPlan({ onBack, editId }: Props) {
                     border: 1px solid var(--vz-border-color);
                     transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
                     background: var(--vz-card-bg);
+                  }
+                  /* Force every form control on this page to the same 38px
+                     height AND the same 10px corner radius so single-line
+                     Inputs, the InputGroup with the ₹ prefix, MasterSelect
+                     (which is fixed at 38px / 10px) and the textarea all
+                     match across the grid. Was visually mismatched because
+                     bsSize="sm" inputs rendered ~31px tall with 4px corners
+                     while the selects rendered 38px tall with 10px corners. */
+                  .stylish-input.form-control,
+                  .stylish-input.form-select,
+                  .input-group-sm > .stylish-input.form-control,
+                  .input-group-sm > .input-group-text {
+                    height: 38px;
+                    min-height: 38px;
+                    padding-top: 7px;
+                    padding-bottom: 7px;
+                    font-size: 13px;
+                    line-height: 1.4;
+                    border-radius: 10px;
+                  }
+                  /* InputGroup corners — left edge owned by the prefix,
+                     right edge owned by the input. Bootstrap normally
+                     squares the inner edges, restore them so the whole
+                     group reads as a single 10px-radius pill. */
+                  .input-group > .input-group-text:first-child {
+                    border-top-left-radius: 10px;
+                    border-bottom-left-radius: 10px;
+                  }
+                  .input-group > .stylish-input.form-control:last-child {
+                    border-top-right-radius: 10px;
+                    border-bottom-right-radius: 10px;
+                  }
+                  /* Textarea is multi-line — let it grow but match the
+                     same vertical padding rhythm + corner radius as the
+                     single-line inputs. */
+                  textarea.stylish-input.form-control {
+                    height: auto;
+                    min-height: 56px;
+                    border-radius: 10px;
                   }
                   .stylish-input.form-control:hover,
                   .stylish-input.form-select:hover {
