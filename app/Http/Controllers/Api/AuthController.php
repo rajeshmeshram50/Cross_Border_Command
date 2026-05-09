@@ -228,8 +228,9 @@ class AuthController extends Controller
         $user->update($request->only(['name', 'phone', 'designation']));
 
         // Profile photo update — branch_user writes to their branch row,
-        // client_admin writes to their client row. Same fallback chain that
-        // formatUser surfaces (branch wins over client when both exist).
+        // client_admin writes to their client row, everyone else (super_admin,
+        // employees, client_user) writes to their own user row. Same fallback
+        // chain that formatUser surfaces (branch > client > user_profile_photo).
         if ($request->hasFile('profile_photo')) {
             if ($user->user_type === 'branch_user' && $user->branch_id) {
                 $branch = $user->branch;
@@ -253,6 +254,14 @@ class AuthController extends Controller
                         'profile_photo' => $request->file('profile_photo')->store('clients/profile-photos', 'public'),
                     ]);
                 }
+            } else {
+                if ($user->profile_photo) {
+                    \Illuminate\Support\Facades\Storage::disk('public')
+                        ->delete($this->relativeFilePath($user->profile_photo));
+                }
+                $user->update([
+                    'profile_photo' => $request->file('profile_photo')->store('users/profile-photos', 'public'),
+                ]);
             }
         }
 
@@ -336,6 +345,10 @@ class AuthController extends Controller
             'branch_logo' => file_url($user->branch?->logo),
             'client_profile_photo' => file_url($user->client?->profile_photo),
             'branch_profile_photo' => file_url($user->branch?->profile_photo),
+            // Personal photo on the user row — always set for super_admin (no
+            // tenant), and used as a fallback for tenant users when the
+            // client/branch photo is blank.
+            'user_profile_photo' => file_url($user->profile_photo),
             // Effective tenant theme colors — branch values win over client values,
             // null when neither is set so the frontend falls back to app defaults.
             // Only valid 7-char hex strings (#RRGGBB) are surfaced; anything else

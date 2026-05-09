@@ -16,10 +16,12 @@ const ProfileDropdown = () => {
 
   if (!user) return null;
 
-  // Tenant-uploaded profile photo (set on client/branch by super_admin via the
-  // Client/Branch form). Branch wins over client; falls back to the bundled
-  // generic avatar when neither is set.
-  const profilePhoto = user.branch_profile_photo || user.client_profile_photo || avatar1;
+  // Profile photo: tenant row first (branch > client), then the user-row
+  // photo (super_admin / employees), then the bundled generic avatar.
+  const profilePhoto = user.branch_profile_photo
+    || user.client_profile_photo
+    || user.user_profile_photo
+    || avatar1;
 
   const roleLabel = user.user_type.replace(/_/g, ' ');
   // Super admin's display name often equals the role ("Super Admin") — hide the
