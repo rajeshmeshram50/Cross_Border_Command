@@ -706,19 +706,44 @@ export default function Profile() {
           />
           <Row className="g-4 align-items-center position-relative">
             <Col xs="auto">
-              <div
-                className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
-                style={{
-                  width: 96, height: 96, fontSize: 34,
-                  background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
-                  color: '#fff',
-                  border: '3px solid rgba(255,255,255,0.3)',
-                  backdropFilter: 'blur(6px)',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
-                }}
-              >
-                {user.initials}
-              </div>
+              {(() => {
+                // Hero avatar prefers a staged-but-unsaved upload, then the
+                // saved tenant photo (branch wins over client), and finally
+                // falls back to the gradient initials chip for super_admin or
+                // tenants without a photo.
+                const heroSrc = profilePhotoPreview
+                  || user.branch_profile_photo
+                  || user.client_profile_photo
+                  || null;
+                return heroSrc ? (
+                  <img
+                    src={heroSrc}
+                    alt=""
+                    className="rounded-circle"
+                    style={{
+                      width: 96, height: 96, objectFit: 'cover',
+                      background: '#fff',
+                      padding: 3,
+                      border: '3px solid rgba(255,255,255,0.3)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="rounded-circle fw-bold d-flex align-items-center justify-content-center"
+                    style={{
+                      width: 96, height: 96, fontSize: 34,
+                      background: 'linear-gradient(135deg,rgba(255,255,255,0.28),rgba(255,255,255,0.08))',
+                      color: '#fff',
+                      border: '3px solid rgba(255,255,255,0.3)',
+                      backdropFilter: 'blur(6px)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.28)',
+                    }}
+                  >
+                    {user.initials}
+                  </div>
+                );
+              })()}
             </Col>
 
             <Col className="min-w-0">
