@@ -11,6 +11,7 @@ use App\Models\Plan;
 use App\Models\PlanModule;
 use App\Models\Module;
 use App\Models\User;
+use App\Services\InvoiceMailer;
 use App\Services\RazorpayService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,8 @@ use Illuminate\Support\Str;
 
 class SubscriptionController extends Controller
 {
+    public function __construct(private InvoiceMailer $invoiceMailer) {}
+
     public function plans()
     {
         $plans = Plan::where('status', 'active')
@@ -323,6 +326,9 @@ class SubscriptionController extends Controller
     {
         DB::transaction(function () use ($payment, $plan, $client, $user) {
             $payment->update(['status' => 'success']);
+            // Mail dispatch deferred to AFTER the DB transaction commits — see
+            // the post-transaction call below. Doing it inside the transaction
+            // would risk emailing an invoice for state that later rolls back.
 
             $client->update([
                 'plan_id' => $plan->id,
@@ -369,6 +375,11 @@ class SubscriptionController extends Controller
             $this->cascadePruneDownstreamPermissions($user->id, $client->id);
             $this->enforceBranchLimit($client, $plan, $payment);
         });
+
+        // Send invoice mail AFTER the activation transaction commits — the
+        // service swallows its own failures so a transient SMTP/PDF problem
+        // can't reverse a payment we already confirmed with the gateway.
+        $this->invoiceMailer->sendForPayment($payment->fresh());
     }
 
     /**

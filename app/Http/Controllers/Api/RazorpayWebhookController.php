@@ -10,6 +10,7 @@ use App\Models\Module;
 use App\Models\PlanModule;
 use App\Models\Permission;
 use App\Models\User;
+use App\Services\InvoiceMailer;
 use App\Services\RazorpayService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,8 @@ use Illuminate\Support\Facades\Log;
 
 class RazorpayWebhookController extends Controller
 {
+    public function __construct(private InvoiceMailer $invoiceMailer) {}
+
     public function handle(Request $request, RazorpayService $razorpay)
     {
         $signature = $request->header('X-Razorpay-Signature', '');
@@ -82,6 +85,7 @@ class RazorpayWebhookController extends Controller
     {
         DB::transaction(function () use ($payment, $plan, $client, $user) {
             $payment->update(['status' => 'success']);
+            // Mail dispatched AFTER commit (see post-transaction call below).
 
             $client->update([
                 'plan_id' => $plan->id,
@@ -121,5 +125,10 @@ class RazorpayWebhookController extends Controller
                 }
             }
         });
+
+        // Send invoice mail AFTER the transaction commits. The service
+        // swallows its own failures so SMTP/PDF hiccups can't roll back the
+        // already-recorded gateway success.
+        $this->invoiceMailer->sendForPayment($payment->fresh());
     }
 }
