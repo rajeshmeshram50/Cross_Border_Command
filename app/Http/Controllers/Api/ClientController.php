@@ -20,8 +20,17 @@ class ClientController extends Controller
 {
     public function index(Request $request)
     {
+        // Match the Branches list filter: exclude the auto-created "Head
+        // Office" placeholder (code 'HO' or name ending in "— Head Office")
+        // so the count column matches what the user sees on the Branches
+        // page when they click into a client.
         $query = Client::with(['plan', 'createdBy'])
-            ->withCount('branches')
+            ->withCount(['branches as branches_count' => function ($q) {
+                $q->where(function ($inner) {
+                    $inner->where('code', '!=', 'HO')
+                          ->orWhere('name', 'not ilike', '% — Head Office');
+                });
+            }])
             ->withCount('users');
 
         if ($search = $request->query('search')) {
