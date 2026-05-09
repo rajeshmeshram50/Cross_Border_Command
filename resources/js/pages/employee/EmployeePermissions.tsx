@@ -217,7 +217,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
               </div>
             </div>
             <Button
-              className="btn-label waves-effect waves-light rounded-pill flex-shrink-0 btn-sm"
+              className={`waves-effect waves-light rounded-pill flex-shrink-0 btn-sm d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
               onClick={handleSave}
               disabled={saving}
               style={{
@@ -227,12 +227,21 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
                 boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
                 fontWeight: 600,
                 fontSize: 13,
+                minWidth: 170,
+                justifyContent: 'center',
               }}
             >
-              {saving
-                ? <Spinner size="sm" className="label-icon align-middle me-2" />
-                : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-15 me-2" style={{ color: '#0c1740' }}></i>}
-              {saving ? 'Saving...' : 'Save Permissions'}
+              {saving ? (
+                <>
+                  <Spinner size="sm" type="border" style={{ width: '0.95rem', height: '0.95rem', borderWidth: 2, color: '#0c1740' }} />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-15 me-2" style={{ color: '#0c1740' }}></i>
+                  Save Permissions
+                </>
+              )}
             </Button>
           </div>
         </div>
@@ -361,14 +370,22 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
           </span>
           <Button
             color="primary"
-            className="btn-label waves-effect waves-light rounded-pill"
+            className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
             onClick={handleSave}
             disabled={saving}
+            style={{ minWidth: 180, justifyContent: 'center' }}
           >
-            {saving
-              ? <Spinner size="sm" className="label-icon align-middle me-2" />
-              : <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>}
-            {saving ? 'Saving...' : 'Save Permissions'}
+            {saving ? (
+              <>
+                <Spinner size="sm" type="border" className="text-white" style={{ width: '1rem', height: '1rem', borderWidth: 2 }} />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                Save Permissions
+              </>
+            )}
           </Button>
         </CardBody>
       </Card>
