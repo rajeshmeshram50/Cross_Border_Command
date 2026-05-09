@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import AuthCardLayout from '../../layouts/AuthCardLayout';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
-import { LogIn, AlertCircle, Loader2 } from 'lucide-react';
+import { LogIn, AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 
 interface LoginProps {
@@ -24,6 +24,7 @@ export default function Login({ onForgotPassword }: LoginProps) {
   const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const handleCredentialRef = useRef<(resp: { credential?: string }) => void>(() => {});
 
@@ -129,14 +130,41 @@ export default function Login({ onForgotPassword }: LoginProps) {
 
           <div className="space-y-1">
             <label className="text-[14px] font-semibold text-primary-hover ml-1">Password</label>
-            <Input
-              required
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="h-11 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30"
-            />
+            {/* Custom show/hide toggle. Edge auto-injects its own ::-ms-reveal
+                eye button on every <input type="password">, which collided
+                with our custom one (two eye icons in Edge, none in Chrome).
+                The inline <style> below hides Edge's native reveal so the
+                custom button below behaves identically across browsers. */}
+            <style>{`
+              input[type="password"]::-ms-reveal,
+              input[type="password"]::-ms-clear {
+                display: none !important;
+                width: 0;
+                height: 0;
+              }
+            `}</style>
+            <div className="relative">
+              <Input
+                required
+                type={showPassword ? 'text' : 'password'}
+                placeholder="••••••••"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="h-11 text-[13px] bg-white/70 border-[#2f4fa3]/15 focus:bg-white focus:border-[#2f4fa3]/60 focus:ring-[#2f4fa3]/10 transition-all rounded-[10px] hover:border-primary/30 pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(s => !s)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors p-0 bg-transparent border-0"
+                style={{ lineHeight: 0 }}
+              >
+                {showPassword
+                  ? <EyeOff size={17} strokeWidth={2} />
+                  : <Eye size={17} strokeWidth={2} />}
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between pt-0.5">
