@@ -177,44 +177,32 @@ export default function Branches({ onNavigate }: Props) {
       cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
     },
     {
-      header: 'Photo',
-      accessorKey: 'profile_photo_url',
-      cell: (info: any) => {
-        const src = info.row.original.profile_photo_url || info.row.original.profile_photo;
-        return src ? (
-          <img
-            src={src}
-            alt="profile"
-            style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)' }}
-          />
-        ) : (
-          <span
-            className="d-inline-flex align-items-center justify-content-center rounded-circle text-muted"
-            style={{ width: 32, height: 32, background: 'var(--vz-secondary-bg)', fontSize: 14 }}
-            title="No photo"
-          >
-            <i className="ri-user-line" />
-          </span>
-        );
-      },
-    },
-    {
       header: 'Branch',
       accessorKey: 'name',
       cell: (info: any) => {
-        const b: Branch = info.row.original;
+        const b: any = info.row.original;
+        const photo = b.profile_photo_url || b.profile_photo;
         return (
           <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{
-                width: 34, height: 34, fontSize: 12,
-                background: `linear-gradient(135deg, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}cc)`,
-                boxShadow: `0 2px 6px ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}40`,
-              }}
-            >
-              {b.name.charAt(0)}{b.name.split(' ')[1]?.charAt(0) || ''}
-            </div>
+            {photo ? (
+              <img
+                src={photo}
+                alt={b.name}
+                className="rounded-circle flex-shrink-0"
+                style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+              />
+            ) : (
+              <div
+                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                style={{
+                  width: 34, height: 34, fontSize: 12,
+                  background: `linear-gradient(135deg, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}, ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}cc)`,
+                  boxShadow: `0 2px 6px ${AVATAR_COLORS[info.row.index % AVATAR_COLORS.length]}40`,
+                }}
+              >
+                {b.name.charAt(0)}{b.name.split(' ')[1]?.charAt(0) || ''}
+              </div>
+            )}
             <div className="min-w-0">
               <div className="fw-semibold fs-13 d-flex align-items-center gap-1 text-truncate">
                 {b.name}
