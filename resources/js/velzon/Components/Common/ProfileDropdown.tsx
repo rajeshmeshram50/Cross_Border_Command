@@ -16,9 +16,11 @@ const ProfileDropdown = () => {
 
   if (!user) return null;
 
-  // Profile photo: tenant row first (branch > client), then the user-row
-  // photo (super_admin / employees), then the bundled generic avatar.
-  const profilePhoto = user.branch_profile_photo
+  // Profile photo priority: employee passport photo (most personal) >
+  // tenant row (branch > client) > user-row photo (super_admin / employees
+  // who self-uploaded) > bundled generic avatar.
+  const profilePhoto = user.employee_profile_photo
+    || user.branch_profile_photo
     || user.client_profile_photo
     || user.user_profile_photo
     || avatar1;

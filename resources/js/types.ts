@@ -36,6 +36,9 @@ export interface AuthUser {
   client_profile_photo?: string | null;
   branch_profile_photo?: string | null;
   user_profile_photo?: string | null;
+  // Passport-size photo from employee onboarding (employee_documents,
+  // document_key='photo'). Set when the login is linked to an Employee row.
+  employee_profile_photo?: string | null;
   // Effective tenant theme — server already resolves branch → client fallback,
   // so the frontend just applies these directly. null = use app defaults.
   primary_color?: string | null;

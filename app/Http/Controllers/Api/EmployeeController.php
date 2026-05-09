@@ -44,6 +44,9 @@ class EmployeeController extends Controller
         'reportingManager:id,first_name,middle_name,last_name,display_name,emp_code',
         'laptopAsset:id,asset_name,code,asset_number',
         'mobileAsset:id,asset_name,code,asset_number',
+        // Passport-size photo doc — fed to the `photo_url` accessor so the
+        // list/detail JSON exposes it without an N+1 lookup.
+        'photoDocument:id,employee_id,document_key,file_path',
     ];
 
     /* ─────────────────────────────────────────────────────────────────

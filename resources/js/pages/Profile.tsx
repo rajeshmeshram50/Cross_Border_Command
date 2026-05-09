@@ -50,12 +50,16 @@ export default function Profile() {
     setProfileName(user.name || '');
     setProfilePhone(user.phone || '');
     setProfileDesignation(user.designation || '');
-    // Existing photo: tenant row first (branch > client) then the user-row
-    // photo (super_admin / employees). Don't clobber a freshly-staged file
-    // the user hasn't saved yet.
-    const photo = user.branch_profile_photo || user.client_profile_photo || user.user_profile_photo || null;
+    // Existing photo: employee passport photo first (most personal), then
+    // tenant row (branch > client), then the user-row photo. Don't clobber a
+    // freshly-staged file the user hasn't saved yet.
+    const photo = user.employee_profile_photo
+      || user.branch_profile_photo
+      || user.client_profile_photo
+      || user.user_profile_photo
+      || null;
     setProfilePhotoPreview(prev => (profilePhotoFile ? prev : photo));
-  }, [user?.name, user?.phone, user?.designation, user?.branch_profile_photo, user?.client_profile_photo, user?.user_profile_photo]);
+  }, [user?.name, user?.phone, user?.designation, user?.employee_profile_photo, user?.branch_profile_photo, user?.client_profile_photo, user?.user_profile_photo]);
 
   if (!user) return null;
 
@@ -67,7 +71,13 @@ export default function Profile() {
       r.readAsDataURL(file);
     } else {
       // Restore the saved photo if the user clears the picker
-      setProfilePhotoPreview(user?.branch_profile_photo || user?.client_profile_photo || user?.user_profile_photo || null);
+      setProfilePhotoPreview(
+        user?.employee_profile_photo
+        || user?.branch_profile_photo
+        || user?.client_profile_photo
+        || user?.user_profile_photo
+        || null
+      );
     }
   };
 
@@ -711,6 +721,7 @@ export default function Profile() {
                 // falls back to the gradient initials chip for super_admin or
                 // tenants without a photo.
                 const heroSrc = profilePhotoPreview
+                  || user.employee_profile_photo
                   || user.branch_profile_photo
                   || user.client_profile_photo
                   || user.user_profile_photo

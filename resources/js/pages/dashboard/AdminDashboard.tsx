@@ -105,18 +105,22 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
         background: gradient,
       }} />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 /* allow flex item to shrink so long values truncate instead of pushing the icon out */ }}>
+        <div style={{ flex: 1, minWidth: 0 /* allow flex item to shrink so long values still render full */ }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>{label}</p>
+          {/* Render full value — earlier we ellipsised long INR figures like
+              "₹8,398.82" into "₹8,3...", which lost information. The clamp()
+              shrinks the font when the column is narrow (6-up KPI row) so the
+              value still fits on one line at typical viewports, and wraps to
+              a second line only on extremely narrow widths. */}
           <h3 style={{
-            fontSize: 'clamp(20px, 1.8vw, 28px)',
+            fontSize: 'clamp(16px, 1.6vw, 26px)',
             fontWeight: 800,
             color: 'var(--vz-heading-color, var(--vz-body-color))',
             margin: 0,
-            lineHeight: 1.05,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }} title={typeof value === 'string' || typeof value === 'number' ? String(value) : undefined}>{value}</h3>
+            lineHeight: 1.1,
+            wordBreak: 'break-word',
+            fontVariantNumeric: 'tabular-nums',
+          }}>{value}</h3>
           {(change || changeText) && (
             <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: trendColor + '18', color: trendColor, borderRadius: 6, padding: '2px 7px', fontSize: 11, fontWeight: 700 }}>
