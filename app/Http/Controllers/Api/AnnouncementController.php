@@ -52,7 +52,7 @@ class AnnouncementController extends Controller
         $this->refreshLifecycleStatuses($request->user());
 
         $q = Announcement::query()->with(self::WITH);
-        $this->applyScope($q, $request->user());
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
@@ -93,7 +93,7 @@ class AnnouncementController extends Controller
         $this->authorize($request, 'can_view');
 
         $q = Announcement::query();
-        $this->applyScope($q, $request->user());
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         $rows = (clone $q)
             ->selectRaw('status, COUNT(*) as c')
@@ -258,15 +258,19 @@ class AnnouncementController extends Controller
         return [null, null];
     }
 
-    private function applyScope($q, $user): void
+    private function applyScope($q, $user, ?int $branchFilter = null): void
     {
         if (!$user) return;
-        if ($user->user_type === 'super_admin') return;
+        if ($user->user_type === 'super_admin') {
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
 
         if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
             $q->where(function ($w) use ($user) {
                 $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
             });
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
             return;
         }
 
@@ -279,6 +283,7 @@ class AnnouncementController extends Controller
                 $q->where(function ($w) use ($clientId) {
                     $w->whereNull('client_id')->orWhere('client_id', $clientId);
                 });
+                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
                 return;
             }
 
@@ -296,6 +301,17 @@ class AnnouncementController extends Controller
         }
 
         $q->whereRaw('1 = 0');
+    }
+
+    /** BranchSwitcher narrowing — see RecruitmentController for full notes. */
+    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
+    {
+        if ($branchFilter === null) return;
+        $belongsToClient = Branch::where('id', $branchFilter)
+            ->where('client_id', $user->client_id)
+            ->exists();
+        if (!$belongsToClient) return;
+        $q->where('branch_id', $branchFilter);
     }
 
     private function resolveRow(Request $request, int $id): Announcement

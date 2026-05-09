@@ -49,7 +49,7 @@ class RecruitmentController extends Controller
         $this->authorize($request, 'can_view');
 
         $q = Recruitment::query()->with(self::WITH);
-        $this->applyScope($q, $request->user());
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
@@ -266,16 +266,22 @@ class RecruitmentController extends Controller
         return [null, null];
     }
 
-    /** Tenant scoping — same rules used everywhere else. */
-    private function applyScope($q, $user): void
+    /** Tenant scoping — same rules used everywhere else. The optional
+     *  $branchFilter is honoured when the SPA's BranchSwitcher injects
+     *  ?branch_id=N for client_admin / main-branch user views. */
+    private function applyScope($q, $user, ?int $branchFilter = null): void
     {
         if (!$user) return;
-        if ($user->user_type === 'super_admin') return;
+        if ($user->user_type === 'super_admin') {
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
 
         if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
             $q->where(function ($w) use ($user) {
                 $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
             });
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
             return;
         }
 
@@ -288,6 +294,7 @@ class RecruitmentController extends Controller
                 $q->where(function ($w) use ($clientId) {
                     $w->whereNull('client_id')->orWhere('client_id', $clientId);
                 });
+                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
                 return;
             }
 
@@ -305,6 +312,18 @@ class RecruitmentController extends Controller
         }
 
         $q->whereRaw('1 = 0');
+    }
+
+    /** Narrow to BranchSwitcher's selected branch, validated to belong to
+     *  the user's own client (silent ignore for cross-tenant ids). */
+    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
+    {
+        if ($branchFilter === null) return;
+        $belongsToClient = Branch::where('id', $branchFilter)
+            ->where('client_id', $user->client_id)
+            ->exists();
+        if (!$belongsToClient) return;
+        $q->where('branch_id', $branchFilter);
     }
 
     private function resolveRow(Request $request, int $id): Recruitment
