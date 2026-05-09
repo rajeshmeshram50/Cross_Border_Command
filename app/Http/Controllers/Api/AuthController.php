@@ -302,6 +302,8 @@ class AuthController extends Controller
             'branch_name' => $user->branch?->name,
             'client_logo' => file_url($user->client?->logo),
             'branch_logo' => file_url($user->branch?->logo),
+            'client_profile_photo' => file_url($user->client?->profile_photo),
+            'branch_profile_photo' => file_url($user->branch?->profile_photo),
             // Effective tenant theme colors — branch values win over client values,
             // null when neither is set so the frontend falls back to app defaults.
             // Only valid 7-char hex strings (#RRGGBB) are surfaced; anything else

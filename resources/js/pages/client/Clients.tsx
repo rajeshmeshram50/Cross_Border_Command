@@ -169,6 +169,28 @@ export default function Clients({ onNavigate }: Props) {
       cell: (info: any) => <span className="text-muted fs-13">{(page - 1) * 15 + info.row.index + 1}</span>,
     },
     {
+      header: 'Photo',
+      accessorKey: 'profile_photo_url',
+      cell: (info: any) => {
+        const src = info.row.original.profile_photo_url || info.row.original.profile_photo;
+        return src ? (
+          <img
+            src={src}
+            alt="profile"
+            style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)' }}
+          />
+        ) : (
+          <span
+            className="d-inline-flex align-items-center justify-content-center rounded-circle text-muted"
+            style={{ width: 32, height: 32, background: 'var(--vz-secondary-bg)', fontSize: 14 }}
+            title="No photo"
+          >
+            <i className="ri-user-line" />
+          </span>
+        );
+      },
+    },
+    {
       header: 'Organization',
       accessorKey: 'org_name',
       cell: (info: any) => (

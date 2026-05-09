@@ -193,6 +193,8 @@ export default function ClientForm({ onBack, editId }: Props) {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [faviconFile, setFaviconFile]         = useState<File | null>(null);
   const [faviconPreview, setFaviconPreview]   = useState<string | null>(null);
+  const [profilePhotoFile, setProfilePhotoFile]       = useState<File | null>(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
   const toast = useToast();
   const [saving, setSaving]           = useState(false);
   const [loadingData, setLoadingData] = useState(false);
@@ -308,6 +310,11 @@ export default function ClientForm({ onBack, editId }: Props) {
     if (file) { const r = new FileReader(); r.onload = ev => setFaviconPreview(ev.target?.result as string); r.readAsDataURL(file); }
     else setFaviconPreview(null);
   };
+  const handleProfilePhotoChange = (file: File | null) => {
+    setProfilePhotoFile(file);
+    if (file) { const r = new FileReader(); r.onload = ev => setProfilePhotoPreview(ev.target?.result as string); r.readAsDataURL(file); }
+    else setProfilePhotoPreview(null);
+  };
 
   useEffect(() => {
     if (!editId) return;
@@ -330,6 +337,7 @@ export default function ClientForm({ onBack, editId }: Props) {
       });
       if (c.logo)    setLogoPreview(c.logo);
       if (c.favicon) setFaviconPreview(c.favicon);
+      if (c.profile_photo_url || c.profile_photo) setProfilePhotoPreview(c.profile_photo_url || c.profile_photo);
     }).catch(()=>{}).finally(()=>setLoadingData(false));
   }, [editId]);
 
@@ -344,19 +352,21 @@ export default function ClientForm({ onBack, editId }: Props) {
       const payload: Record<string, any> = { ...form };
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
       if (isEdit) {
-        if (logoFile || faviconFile) {
+        if (logoFile || faviconFile || profilePhotoFile) {
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, payload[k]); });
-          if (logoFile)    fd.append('logo', logoFile);
-          if (faviconFile) fd.append('favicon', faviconFile);
+          if (logoFile)         fd.append('logo', logoFile);
+          if (faviconFile)      fd.append('favicon', faviconFile);
+          if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           await api.post(`/clients/${editId}?_method=PUT`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else { await api.put(`/clients/${editId}`, payload); }
         toast.success('Updated', 'Client updated successfully');
       } else {
         const fd = new FormData();
         Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, payload[k]); });
-        if (logoFile)    fd.append('logo', logoFile);
-        if (faviconFile) fd.append('favicon', faviconFile);
+        if (logoFile)         fd.append('logo', logoFile);
+        if (faviconFile)      fd.append('favicon', faviconFile);
+        if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
         await api.post('/clients', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         toast.success('Created', 'Client registered successfully');
       }
@@ -1137,6 +1147,14 @@ export default function ClientForm({ onBack, editId }: Props) {
                   <Input style={{ fontSize: '11.5px' }} type="file" accept="image/x-icon,image/png" onChange={e => handleFaviconChange(e.target.files?.[0] || null)} />
                 </div>
                 <small style={css.small}>PNG, ICO — Max 512KB</small>
+              </Col>
+              <Col md={6}>
+                <Lbl>Profile Photo</Lbl>
+                <div className="d-flex gap-2 align-items-center">
+                  {profilePhotoPreview && <img src={profilePhotoPreview} alt="profile" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)} />
+                </div>
+                <small style={css.small}>JPG, PNG — Max 2MB</small>
               </Col>
             </Row>
 

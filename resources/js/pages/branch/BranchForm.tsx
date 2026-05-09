@@ -275,6 +275,8 @@ export default function BranchForm({ onBack, editId }: Props) {
   // a new file is staged, or the saved /storage/... URL when editing.
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
 
   const handleLogoChange = (file: File | null) => {
     setLogoFile(file);
@@ -284,6 +286,17 @@ export default function BranchForm({ onBack, editId }: Props) {
       r.readAsDataURL(file);
     } else {
       setLogoPreview(null);
+    }
+  };
+
+  const handleProfilePhotoChange = (file: File | null) => {
+    setProfilePhotoFile(file);
+    if (file) {
+      const r = new FileReader();
+      r.onload = ev => setProfilePhotoPreview(ev.target?.result as string);
+      r.readAsDataURL(file);
+    } else {
+      setProfilePhotoPreview(null);
     }
   };
 
@@ -391,6 +404,7 @@ export default function BranchForm({ onBack, editId }: Props) {
         user_status: u?.status || 'active',
       });
       if (b.logo) setLogoPreview(b.logo);
+      if (b.profile_photo_url || b.profile_photo) setProfilePhotoPreview(b.profile_photo_url || b.profile_photo);
     }).catch(() => {}).finally(() => setLoadingData(false));
   }, [editId]);
 
@@ -433,22 +447,24 @@ export default function BranchForm({ onBack, editId }: Props) {
       payload.max_users = parseInt(form.max_users) || 0;
 
       if (isEdit) {
-        if (logoFile) {
+        if (logoFile || profilePhotoFile) {
           // Multipart upload — Laravel reads PUT only as application/x-www-form-urlencoded,
           // so use POST + _method=PUT spoofing (same trick ClientForm uses).
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
-          fd.append('logo', logoFile);
+          if (logoFile)         fd.append('logo', logoFile);
+          if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           await api.post(`/branches/${editId}?_method=PUT`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
           await api.put(`/branches/${editId}`, payload);
         }
         toast.success('Branch Updated', 'Branch details have been updated successfully');
       } else {
-        if (logoFile) {
+        if (logoFile || profilePhotoFile) {
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
-          fd.append('logo', logoFile);
+          if (logoFile)         fd.append('logo', logoFile);
+          if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           await api.post('/branches', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
           await api.post('/branches', payload);
@@ -1116,6 +1132,14 @@ export default function BranchForm({ onBack, editId }: Props) {
                   <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" onChange={e => handleLogoChange(e.target.files?.[0] || null)} />
                 </div>
                 <small style={css.small}>PNG, JPG, SVG — Max 2MB. Falls back to client logo if blank.</small>
+              </Col>
+              <Col md={4}>
+                <Lbl>Profile Photo</Lbl>
+                <div className="d-flex gap-2 align-items-center">
+                  {profilePhotoPreview && <img src={profilePhotoPreview} alt="profile" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)} />
+                </div>
+                <small style={css.small}>JPG, PNG — Max 2MB</small>
               </Col>
               <Col md={6}>
                 <Lbl>Primary Color</Lbl>
