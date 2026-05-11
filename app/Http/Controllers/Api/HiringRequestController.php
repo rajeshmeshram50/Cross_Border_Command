@@ -3,13 +3,19 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\HiringRequestCreatedMail;
 use App\Models\Branch;
+use App\Models\Client;
+use App\Models\Employee;
 use App\Models\HiringRequest;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -120,8 +126,71 @@ class HiringRequestController extends Controller
             $row = HiringRequest::create($payload);
             $row->load(self::WITH);
 
+            // Notify the creator's reporting manager. Best-effort: a missing
+            // employee/manager link or an SMTP failure must not roll back
+            // the request itself. Gated by the master Settings → emailNotif
+            // toggle (no per-category toggle today; matches password mails).
+            $this->notifyManager($row, $auth);
+
             return response()->json($row, 201);
         });
+    }
+
+    /**
+     * Look up the creator's reporting manager and dispatch
+     * HiringRequestCreatedMail. Silent no-op if:
+     *   - the creator isn't linked to an Employee row (e.g. client_admin)
+     *   - the creator's Employee has no reporting_manager_id
+     *   - the manager has no usable email
+     *   - the platform emailNotif toggle is OFF
+     *
+     * Failures are logged but never re-thrown — the request was already
+     * saved before this is called.
+     */
+    private function notifyManager(HiringRequest $hr, $auth): void
+    {
+        if (!$auth || !Settings::shouldSendMail()) return;
+
+        try {
+            $creatorEmp = Employee::where('user_id', $auth->id)->first();
+            if (!$creatorEmp || !$creatorEmp->reporting_manager_id) return;
+
+            $manager = Employee::with('user:id,email,name')
+                ->find($creatorEmp->reporting_manager_id);
+            if (!$manager) return;
+
+            // Prefer Employee.email; fall back to linked User.email so a
+            // manager without an employee-row email still gets notified.
+            $managerEmail = $manager->email ?: $manager->user?->email;
+            if (!$managerEmail) {
+                Log::info('Hiring request manager mail skipped — no email', [
+                    'hiring_request_id' => $hr->id,
+                    'manager_employee_id' => $manager->id,
+                ]);
+                return;
+            }
+
+            $managerName = $manager->display_name
+                ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? ''))
+                ?: ($manager->user?->name ?? 'Manager');
+
+            $creatorName = $creatorEmp->display_name
+                ?: trim(($creatorEmp->first_name ?? '') . ' ' . ($creatorEmp->last_name ?? ''))
+                ?: ($auth->name ?? 'Employee');
+
+            $orgName = Client::find($hr->client_id)?->org_name
+                ?? config('mail.from.name', 'Cross Border Command');
+
+            Mail::to($managerEmail)->send(new HiringRequestCreatedMail(
+                $hr, $managerName, $creatorName, $orgName,
+            ));
+        } catch (\Throwable $e) {
+            Log::warning('Hiring request manager mail failed', [
+                'hiring_request_id' => $hr->id,
+                'creator_user_id'   => $auth->id,
+                'error'             => $e->getMessage(),
+            ]);
+        }
     }
 
     public function update(Request $request, $id)
