@@ -17,10 +17,19 @@ use ReflectionClass;
  *   branch_id  = NULL
  *   created_by = <super admin user id>
  *
- * On every run, previously admin-seeded global rows (matching this pattern:
- *   created_by = adminId AND client_id IS NULL AND branch_id IS NULL)
- * are cleared and re-seeded with the current definitions below. This keeps
- * the DB in sync with any edits made here without affecting client/branch data.
+ * Re-seed is IDEMPOTENT and ID-STABLE:
+ *
+ *   - Each row is identified by its NAME within the (admin-owned, client=null,
+ *     branch=null) scope and upserted via DB::updateOrInsert.
+ *   - Existing rows KEEP THEIR IDs across re-seeds. This is critical because
+ *     employee.department_id, recruitment.department_id, candidate.* etc all
+ *     store integer FKs pointing into these masters. Wiping + reinserting
+ *     would reassign auto-increment IDs and silently corrupt every record
+ *     that references them.
+ *   - New rows (defined here but absent in DB) are inserted.
+ *   - Rows present in DB but no longer in this file are LEFT ALONE — they
+ *     may be referenced by user data. Operator can delete them manually if
+ *     they're truly obsolete.
  *
  * Run:   php artisan db:seed --class=Database\\Seeders\\MasterDataSeeder
  */
@@ -62,31 +71,87 @@ class MasterDataSeeder extends Seeder
             $modelClass = $MODELS[$slug];
             $table = (new $modelClass)->getTable();
 
-            // Clear previously admin-seeded global rows (safe: leaves client/branch data alone).
-            DB::table($table)
-                ->where('created_by', $adminId)
-                ->whereNull('client_id')
-                ->whereNull('branch_id')
-                ->delete();
-
             $rows = $this->dataFor($slug, $MODELS);
             if (empty($rows)) {
                 $this->command->info(sprintf('skip   %-28s (no real-data definition)', $slug));
                 continue;
             }
 
-            $now = now();
-            $toInsert = array_map(fn ($r) => array_merge($r, [
-                'client_id'  => null,
-                'branch_id'  => null,
-                'created_by' => $adminId,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]), $rows);
+            // Pick the natural-key column to identify rows for idempotent
+            // upsert. Most masters use `name`; a few use `code`/`title`/etc.
+            // We probe in priority order and fall back to `name`.
+            $keyColumn = $this->resolveNaturalKey($table, $rows[0]);
 
-            DB::table($table)->insert($toInsert);
-            $this->command->info(sprintf('insert %-28s +%d rows', $slug, count($rows)));
+            $now = now();
+            $inserted = 0;
+            $updated  = 0;
+
+            foreach ($rows as $row) {
+                if (!array_key_exists($keyColumn, $row)) {
+                    // Defensive: row missing the natural key — skip to avoid
+                    // colliding with random first-row insert. Surfaces as a
+                    // log line so the operator sees it.
+                    $this->command->warn(sprintf("  %s: row missing '%s' — skipped", $slug, $keyColumn));
+                    continue;
+                }
+
+                // updateOrInsert PRESERVES the existing row's id. This is the
+                // whole point of the fix — see the docblock at top of file.
+                $matchedExisting = DB::table($table)
+                    ->where($keyColumn, $row[$keyColumn])
+                    ->where('created_by', $adminId)
+                    ->whereNull('client_id')
+                    ->whereNull('branch_id')
+                    ->exists();
+
+                $values = array_merge($row, [
+                    'client_id'  => null,
+                    'branch_id'  => null,
+                    'created_by' => $adminId,
+                    'updated_at' => $now,
+                ]);
+                if (!$matchedExisting) {
+                    $values['created_at'] = $now;
+                }
+
+                DB::table($table)->updateOrInsert(
+                    [
+                        $keyColumn   => $row[$keyColumn],
+                        'created_by' => $adminId,
+                        'client_id'  => null,
+                        'branch_id'  => null,
+                    ],
+                    $values
+                );
+
+                if ($matchedExisting) $updated++; else $inserted++;
+            }
+
+            $this->command->info(sprintf(
+                'upsert %-28s +%d new, %d updated (key=%s)',
+                $slug, $inserted, $updated, $keyColumn
+            ));
         }
+    }
+
+    /**
+     * Pick the most-likely natural-key column for a master. Used to identify
+     * existing rows so re-seed updates instead of inserts duplicates.
+     *
+     * Most masters have `name`. A handful (state_codes, hsn_codes) use `code`.
+     * We probe both the table schema and the seed row to pick safely.
+     */
+    private function resolveNaturalKey(string $table, array $sampleRow): string
+    {
+        // Order matters — first match wins. Pre-existing rows from this file
+        // mostly use `name`, so we try that first.
+        foreach (['name', 'title', 'code', 'slug', 'key'] as $candidate) {
+            if (array_key_exists($candidate, $sampleRow) && \Illuminate\Support\Facades\Schema::hasColumn($table, $candidate)) {
+                return $candidate;
+            }
+        }
+        // Last-ditch fallback: use whatever the seed row's first key is.
+        return array_key_first($sampleRow);
     }
 
     /** Resolve the id of an existing row in a referenced master by its name/title column. */
