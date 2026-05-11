@@ -21,54 +21,125 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
   const { settings } = useSettings();
   const platformName = settings.general.platform_name || 'Cross Border Command';
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-slate-950 font-sans relative">
-      {/* Background Layer */}
+    <div className="flex min-h-screen w-full bg-slate-950 font-sans relative overflow-x-hidden">
+      {/* Background image — sharper now (no auto-scale that was softening
+          edges) and revealed through a lighter overlay so the building
+          shot reads as the hero asset, not muddy backdrop. */}
       <div
-        className="absolute inset-0 bg-cover bg-center transition-transform duration-[10000ms] scale-105 pointer-events-none"
+        className="fixed inset-0 bg-cover bg-center pointer-events-none"
         style={{ backgroundImage: 'url(/images/loginbg.png)' }}
       />
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-950/80 via-slate-950/40 to-transparent pointer-events-none" />
-      <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(245,158,11,0.15),transparent_40%)] pointer-events-none animate-pulse-ring" />
+      {/* Lighter scrim — preserves contrast on the right card while
+          letting the photo's color and detail come through on the left. */}
+      <div className="fixed inset-0 bg-gradient-to-r from-slate-950/55 via-slate-950/25 to-slate-950/65 pointer-events-none" />
+      {/* Brand color accents — punchy radial glows that lift the dull
+          midtones of the photo without darkening it further. */}
+      <div className="fixed inset-0 pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(900px 600px at 12% 20%, rgba(139,92,246,0.22), transparent 60%),' +
+            'radial-gradient(700px 500px at 90% 85%, rgba(245,176,111,0.18), transparent 60%)',
+        }} />
+      <div className="fixed inset-0 opacity-[0.04] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
 
       {/* Main Content Container */}
-      <div className="relative z-10 flex w-full h-full">
-        {/* Left Side: Branding & Info */}
-        <div className="flex-1 hidden lg:flex flex-col justify-between p-8 xl:p-12 text-white">
+      <div className="relative z-10 flex w-full min-h-screen">
+        {/* Left Side: Branding & Info — visible only on lg+ (≥1024px).
+            Phone & tablet portrait collapse to just the centered card. */}
+        <div className="flex-1 hidden lg:flex flex-col justify-between p-6 lg:p-8 xl:p-12 text-white min-h-screen">
           <div className="max-w-xl animate-in fade-in slide-in-from-left duration-700">
             <div className="mb-2 animate-float">
-              <div className="w-48 h-32 hover-lift transition-transform duration-500">
+              <div className="w-36 lg:w-44 xl:w-48 h-24 lg:h-28 xl:h-32 hover-lift transition-transform duration-500">
                 <img src="/images/igc-logo.png" alt="IGC Group" className="w-full h-full object-contain object-left filter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]" />
               </div>
             </div>
 
-            <h1 className="text-4xl xl:text-5xl font-black tracking-tight leading-tight mb-4">
+            {/* Software product name — sits directly under the IGC mark.
+                Stylish typographic treatment: weight contrast across the
+                words (thin → medium → heavy gradient italic) so the wordmark
+                reads like a real product brand. Words come from Settings →
+                General → Platform Name, split on whitespace. Default
+                "Cross Border Command" renders as 3 distinct weights; a
+                custom 2-word name renders as thin + bold-italic; a single
+                word renders as the bold-italic treatment alone. */}
+            <div className="mb-6 ml-1 cbc-wordmark">
               {(() => {
-                const line1 = 'Welcome to';
-                const line2 = platformName;
-                let idx = 0;
-                return (
-                  <>
-                    {line1.split('').map((ch, i) => {
-                      const d = idx++;
-                      return <span key={`l1-${i}`} className="inline-block opacity-0" style={{ animation: `auth-letter-drop 0.5s cubic-bezier(0.22,1,0.36,1) ${0.5 + d * 0.06}s forwards`, display: ch === ' ' ? 'inline' : undefined, width: ch === ' ' ? '0.3em' : undefined }}>{ch}</span>;
-                    })}
-                    <br />
-                    {line2.split('').map((ch, i) => {
-                      const d = idx++;
-                      return <span key={`l2-${i}`} className="inline-block opacity-0 gradient-text italic drop-shadow-[0_0_10px_rgba(109,99,244,0.3)]" style={{ animation: `auth-letter-drop 0.5s cubic-bezier(0.22,1,0.36,1) ${0.5 + d * 0.06}s forwards`, display: ch === ' ' ? 'inline' : undefined, width: ch === ' ' ? '0.3em' : undefined }}>{ch}</span>;
-                    })}
-                  </>
-                );
+                const words = platformName.trim().split(/\s+/).filter(Boolean);
+                const classFor = (i: number, last: number) => {
+                  if (i === last) return 'cbc-w3';           // last word — heavy gradient italic
+                  if (i === last - 1) return 'cbc-w2';        // penultimate — medium white
+                  return 'cbc-w1';                             // earlier words — thin
+                };
+                return words.map((w, i) => (
+                  <span key={`${w}-${i}`} className={classFor(i, words.length - 1)}>{w}</span>
+                ));
               })()}
-            </h1>
+              <span className="cbc-underline" aria-hidden />
+            </div>
             <style>{`
-              @keyframes auth-letter-drop {
-                0% { opacity: 0; transform: translateY(-24px); filter: blur(3px); }
-                70% { opacity: 1; transform: translateY(2px); filter: blur(0); }
-                100% { opacity: 1; transform: translateY(0); }
+              .cbc-wordmark {
+                display: flex;
+                align-items: baseline;
+                gap: 10px;
+                position: relative;
+                font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+                font-size: 30px;
+                line-height: 1;
+                letter-spacing: -0.025em;
+                padding-bottom: 12px;
+                white-space: nowrap;
+                width: max-content;
+                max-width: 100%;
+              }
+              @media (min-width: 1280px) {
+                .cbc-wordmark { font-size: 40px; gap: 12px; padding-bottom: 14px; }
+              }
+              @media (min-width: 1536px) {
+                .cbc-wordmark { font-size: 48px; gap: 14px; padding-bottom: 16px; }
+              }
+              .cbc-w1 {
+                font-weight: 300;
+                color: rgba(255,255,255,0.78);
+              }
+              .cbc-w2 {
+                font-weight: 600;
+                color: #ffffff;
+              }
+              .cbc-w3 {
+                font-weight: 900;
+                font-style: italic;
+                background: linear-gradient(120deg,
+                  #ffffff 0%,
+                  #d8dcff 35%,
+                  #b9b3ff 60%,
+                  #f5b06f 100%);
+                -webkit-background-clip: text;
+                background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-size: 200% 100%;
+                animation: cbc-w3-shimmer 6s linear infinite;
+                text-shadow: 0 0 30px rgba(185,179,255,0.20);
+              }
+              .cbc-underline {
+                position: absolute;
+                left: 0; bottom: 0;
+                width: 90px;
+                height: 3px;
+                background: linear-gradient(90deg, #f5b06f, transparent);
+                border-radius: 999px;
+                animation: cbc-underline-grow 1.2s cubic-bezier(0.22,1,0.36,1) 0.4s both;
+                transform-origin: left center;
+              }
+              @keyframes cbc-w3-shimmer {
+                from { background-position: 0% 0; }
+                to   { background-position: 200% 0; }
+              }
+              @keyframes cbc-underline-grow {
+                from { transform: scaleX(0); opacity: 0; }
+                to   { transform: scaleX(1); opacity: 1; }
               }
             `}</style>
+
 
             <p className="text-base text-white/70 font-medium leading-relaxed max-w-md">
               An intelligent platform connecting Operations, Procurement, Logistics, Finance, and Compliance in one unified ecosystem.
@@ -107,32 +178,150 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
           </div>
         </div>
 
-        {/* Right Side: Login Form Card */}
-        <div className="flex-1 flex items-center justify-center p-4 lg:p-8">
-          <div className="w-full max-w-[400px] animate-in zoom-in-95 duration-500">
-            <div className="bg-white/75 backdrop-blur-xl rounded-[24px] shadow-[0_30px_60px_rgba(0,0,0,0.4)] p-6 sm:p-8 relative overflow-hidden border border-white/30 transition-all duration-700 ease-out hover:shadow-[0_45px_100px_rgba(90,81,232,0.25)] hover:scale-[1.01] hover:border-white/50 group/card">
+        {/* Right Side: Login Form Card — centered on every viewport.
+            Vertical padding on small screens accounts for the iOS notch /
+            Android chrome via env(safe-area-inset-*). The card width
+            scales from 92vw on tiny phones up to 460px on tablet+. */}
+        <div
+          className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:p-8 min-h-screen"
+          style={{
+            paddingTop: 'max(1rem, env(safe-area-inset-top))',
+            paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+          }}
+        >
+          <div className="w-full max-w-[92vw] sm:max-w-[440px] md:max-w-[480px] animate-in zoom-in-95 duration-500">
+            <div className="cbc-login-card relative overflow-hidden p-4 sm:p-5 transition-all duration-700 ease-out group/card">
+              {/* Animated gradient border ring — premium signature glow
+                  that breathes around the card. Sits in ::before so it
+                  doesn't interfere with content stacking. */}
 
               {/* Logo in Card */}
-              <div className="flex justify-center mb-4">
-                <img src="/images/igc-logo.png" alt="Logo" className="w-[80px] object-contain" />
+              <div className="flex justify-center mb-3 sm:mb-4 relative z-10">
+                <img src="/images/igc-logo.png" alt="Logo" className="w-[64px] sm:w-[72px] object-contain drop-shadow-[0_2px_8px_rgba(99,102,241,0.20)]" />
               </div>
 
               {(title || subtitle) && (
-                <div className="mb-6 text-center">
+                <div className="mb-3 sm:mb-3.5 text-center relative z-10">
                   {title && (
                     <div className="flex items-center justify-center gap-2 mb-1">
                       {icon && <span className="text-primary">{icon}</span>}
-                      <h2 className="text-[20px] font-bold gradient-text tracking-tight">{title}</h2>
+                      <h2 className="text-[24px] sm:text-[26px] font-extrabold gradient-text tracking-tight leading-tight">{title}</h2>
                     </div>
                   )}
-                  {subtitle && <p className="text-[11px] text-[#5e6b85] font-medium leading-tight">{subtitle}</p>}
+                  {subtitle && <p className="text-[12px] text-[#5e6b85] font-medium leading-snug">{subtitle}</p>}
                 </div>
               )}
 
-              {children}
+              <div className="relative z-10">{children}</div>
             </div>
+            <style>{`
+              /* Frosted light-glass card — opaque enough that the bg
+                 image doesn't bleed through, but soft and white so the
+                 page reads bright and friendly. Heavy blur preserves
+                 the layered glass feel. */
+              .cbc-login-card {
+                background:
+                  radial-gradient(circle at 0% 0%, rgba(139,92,246,0.10) 0%, transparent 50%),
+                  radial-gradient(circle at 100% 100%, rgba(245,176,111,0.08) 0%, transparent 55%),
+                  linear-gradient(180deg, rgba(255,255,255,0.86) 0%, rgba(248,250,255,0.82) 100%);
+                backdrop-filter: blur(28px) saturate(160%);
+                -webkit-backdrop-filter: blur(28px) saturate(160%);
+                border-radius: 22px;
+                border: 1px solid rgba(255,255,255,0.70);
+                box-shadow:
+                  0 1px 0 rgba(255,255,255,0.95) inset,
+                  0 -1px 0 rgba(99,102,241,0.06) inset,
+                  0 20px 48px rgba(15,23,42,0.30),
+                  0 40px 90px rgba(99,102,241,0.20);
+              }
+              @media (min-width: 640px) {
+                .cbc-login-card { border-radius: 26px; }
+              }
+              /* Top accent bar — thin gradient stripe across the top
+                 edge that catches the eye against the dark background. */
+              .cbc-login-card::after {
+                content: '';
+                position: absolute;
+                top: 0; left: 0; right: 0;
+                height: 2px;
+                background: linear-gradient(90deg,
+                  transparent 0%,
+                  rgba(139,92,246,0.85) 25%,
+                  rgba(245,176,111,0.85) 75%,
+                  transparent 100%);
+                z-index: 2;
+              }
+              /* Animated gradient border ring. */
+              .cbc-login-card::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                border-radius: inherit;
+                padding: 1px;
+                background: linear-gradient(135deg,
+                  rgba(139,92,246,0.55) 0%,
+                  rgba(255,255,255,0.18) 30%,
+                  rgba(245,176,111,0.55) 60%,
+                  rgba(255,255,255,0.18) 80%,
+                  rgba(139,92,246,0.55) 100%);
+                background-size: 220% 220%;
+                -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+                -webkit-mask-composite: xor;
+                        mask-composite: exclude;
+                pointer-events: none;
+                opacity: 0.6;
+                animation: cbc-card-glow 7s linear infinite;
+              }
+              .cbc-login-card:hover {
+                box-shadow:
+                  0 1px 0 rgba(255,255,255,0.35) inset,
+                  0 -1px 0 rgba(0,0,0,0.20) inset,
+                  0 24px 60px rgba(0,0,0,0.55),
+                  0 48px 100px rgba(139,92,246,0.30);
+                transform: translateY(-2px);
+              }
+              .cbc-login-card:hover::before { opacity: 0.95; }
+              @keyframes cbc-card-glow {
+                from { background-position: 0% 50%; }
+                to   { background-position: 220% 50%; }
+              }
 
-            <div className="mt-4 text-center text-white/40 text-[11px] font-medium lg:hidden">
+              /* Card is light/white — text reverts to dark indigo brand
+                 colors for proper contrast on the bright surface. */
+              .cbc-login-card .gradient-text {
+                background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #f5b06f 100%) !important;
+                -webkit-background-clip: text !important;
+                background-clip: text !important;
+                -webkit-text-fill-color: transparent !important;
+              }
+              .cbc-login-card label {
+                color: #4338ca !important;
+              }
+              .cbc-login-card p { color: #5b6378 !important; }
+              .cbc-login-card input.form-control,
+              .cbc-login-card input[type="email"],
+              .cbc-login-card input[type="password"],
+              .cbc-login-card input[type="text"] {
+                background: rgba(255,255,255,0.85) !important;
+                border-color: rgba(99,102,241,0.18) !important;
+                color: #1e293b !important;
+              }
+              .cbc-login-card input::placeholder {
+                color: rgba(100,116,139,0.55) !important;
+              }
+              .cbc-login-card input:focus {
+                background: #ffffff !important;
+                border-color: rgba(99,102,241,0.55) !important;
+                box-shadow: 0 0 0 3px rgba(99,102,241,0.15) !important;
+              }
+              .cbc-login-card .cbc-remember-text { color: #475569 !important; }
+              .cbc-login-card .cbc-remember-box {
+                background: rgba(255,255,255,0.90) !important;
+                border-color: rgba(99,102,241,0.30) !important;
+              }
+            `}</style>
+
+            <div className="mt-3 sm:mt-4 text-center text-white/40 text-[10px] sm:text-[11px] font-medium lg:hidden">
               © 2026 IGC Group. All rights reserved.
             </div>
           </div>

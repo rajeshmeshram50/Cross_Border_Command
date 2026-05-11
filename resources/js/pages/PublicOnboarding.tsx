@@ -39,6 +39,15 @@ export default function PublicOnboarding() {
   // Wizard step
   const [step, setStep] = useState<StepNum>(1);
 
+  // Latest allowed DOB = today − 18 years. Caps the picker so candidates
+  // can't even pick a date that would make them under 18 (the validator
+  // re-checks on submit). ISO yyyy-mm-dd format matches MasterDatePicker.
+  const dobMaxDate = (() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 18);
+    return d.toISOString().slice(0, 10);
+  })();
+
   // ── Step 1 — Personal
   const [firstName,  setFirstName]  = useState('');
   const [middleName, setMiddleName] = useState('');
@@ -200,23 +209,62 @@ export default function PublicOnboarding() {
   const designationOpts = designations.map(d => ({ value: String(d.id), label: d.name }));
   const roleOpts        = roles.map(r => ({ value: String(r.id), label: r.name }));
   const legalEntityOpts = legalEntities.map(l => ({ value: String(l.id), label: l.entity_name }));
+  // Backend enum is (Male, Female, Other) — keep options aligned so the
+  // submit doesn't fail validation. "Prefer not to say" was rejected server-
+  // side and surfaced as a generic "invalid" error.
   const genderOpts = [
     { value: 'Male', label: 'Male' },
     { value: 'Female', label: 'Female' },
     { value: 'Other', label: 'Other' },
-    { value: 'Prefer not to say', label: 'Prefer not to say' },
   ];
+
+  // Names accept letters, spaces, apostrophes, hyphens, periods only — no
+  // digits. Anchored so the WHOLE value is checked (a single digit anywhere
+  // fails). Used for first/middle/last in validateStep1.
+  const nameRe = /^[A-Za-z][A-Za-z\s'\-.]*$/;
+  // E.164-style mobile: 7-15 digits. Optional leading + or 0 stripped before
+  // checking so users can type +91 9876543210 / 09876543210 / 9876543210.
+  const isValidMobile = (raw: string) => {
+    const digits = raw.replace(/[^0-9]/g, '');
+    return /^\d{7,15}$/.test(digits);
+  };
+  // Pincode: 4-10 digits (covers India 6, US 5/9, UK alphanumeric is rare
+  // here and the field is a "pincode" in IN context).
+  const isValidPincode = (raw: string) => /^\d{4,10}$/.test(raw.trim());
 
   // Per-step validators
   const validateStep1 = (): Record<string, string> => {
     const e: Record<string, string> = {};
-    if (!firstName.trim())  e.first_name  = 'First name is required';
-    if (!lastName.trim())   e.last_name   = 'Last name is required';
+    if (!firstName.trim())             e.first_name  = 'First name is required';
+    else if (!nameRe.test(firstName.trim())) e.first_name = 'First name cannot contain numbers';
+    if (middleName.trim() && !nameRe.test(middleName.trim()))
+      e.middle_name = 'Middle name cannot contain numbers';
+    if (!lastName.trim())              e.last_name   = 'Last name is required';
+    else if (!nameRe.test(lastName.trim())) e.last_name = 'Last name cannot contain numbers';
     if (!gender)            e.gender      = 'Gender is required';
-    if (!dob)               e.date_of_birth = 'Date of birth is required';
+    if (!dob) {
+      e.date_of_birth = 'Date of birth is required';
+    } else {
+      // Onboardee must be at least 18 — same minimum age the internal Add
+      // Employee form enforces. Compare in days to avoid timezone drift.
+      const d = new Date(dob);
+      if (Number.isNaN(d.getTime())) {
+        e.date_of_birth = 'Enter a valid date of birth';
+      } else {
+        const today = new Date();
+        let age = today.getFullYear() - d.getFullYear();
+        const m = today.getMonth() - d.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age -= 1;
+        if (d > today)  e.date_of_birth = 'Date of birth cannot be in the future';
+        else if (age < 18) e.date_of_birth = 'You must be at least 18 years old';
+      }
+    }
     if (!nationality)       e.nationality_country_id = 'Nationality is required';
     if (!workCountry)       e.work_country_id = 'Work country is required';
-    if (!mobile.trim())     e.mobile      = 'Mobile is required';
+    if (!mobile.trim())            e.mobile = 'Mobile is required';
+    else if (!isValidMobile(mobile)) e.mobile = 'Enter 7–15 digits';
+    if (altMobile.trim() && !isValidMobile(altMobile))
+      e.alt_mobile = 'Enter 7–15 digits';
     return e;
   };
   const validateStep2 = (): Record<string, string> => {
@@ -226,6 +274,12 @@ export default function PublicOnboarding() {
     if (!curCountry)        e.country_id    = 'Country is required';
     if (!curState)          e.state_id      = 'State is required';
     if (!curPin.trim())     e.pincode       = 'Pincode is required';
+    else if (!isValidPincode(curPin)) e.pincode = 'Pincode must be 4–10 digits';
+    // Permanent pincode is optional UNLESS the candidate explicitly typed
+    // one. Only validate the format when present, since the field is
+    // hidden (and treated as null) when "Same as current" is checked.
+    if (!sameAsCurrent && permPin.trim() && !isValidPincode(permPin))
+      e.perm_pincode = 'Pincode must be 4–10 digits';
     return e;
   };
 
@@ -442,7 +496,8 @@ export default function PublicOnboarding() {
                 </div>
                 <div>
                   <label className="onb-label">Middle Name</label>
-                  <input className="onb-input" value={middleName} onChange={e => setMiddleName(e.target.value)} />
+                  <input className={`onb-input${errs.middle_name ? ' is-invalid' : ''}`} value={middleName} onChange={e => { setMiddleName(e.target.value); clearErr('middle_name'); }} />
+                  {errs.middle_name && <small className="onb-err">{errs.middle_name}</small>}
                 </div>
                 <div>
                   <label className="onb-label">Last Name<span className="req">*</span></label>
@@ -456,7 +511,7 @@ export default function PublicOnboarding() {
                 </div>
                 <div>
                   <label className="onb-label">Date of Birth<span className="req">*</span></label>
-                  <MasterDatePicker value={dob} onChange={v => { setDob(v); clearErr('date_of_birth'); }} placeholder="dd-mm-yyyy" invalid={!!errs.date_of_birth} />
+                  <MasterDatePicker value={dob} onChange={v => { setDob(v); clearErr('date_of_birth'); }} placeholder="dd-mm-yyyy" invalid={!!errs.date_of_birth} maxDate={dobMaxDate} />
                   {errs.date_of_birth && <small className="onb-err">{errs.date_of_birth}</small>}
                 </div>
                 <div>
@@ -476,7 +531,8 @@ export default function PublicOnboarding() {
                 </div>
                 <div>
                   <label className="onb-label">Alternate Mobile</label>
-                  <input className="onb-input" value={altMobile} onChange={e => setAltMobile(e.target.value)} placeholder="(optional)" />
+                  <input className={`onb-input${errs.alt_mobile ? ' is-invalid' : ''}`} value={altMobile} onChange={e => { setAltMobile(e.target.value); clearErr('alt_mobile'); }} placeholder="(optional)" />
+                  {errs.alt_mobile && <small className="onb-err">{errs.alt_mobile}</small>}
                 </div>
               </div>
             </div>
@@ -553,7 +609,8 @@ export default function PublicOnboarding() {
                   </div>
                   <div>
                     <label className="onb-label">Pincode</label>
-                    <input className="onb-input" value={permPin} onChange={e => setPermPin(e.target.value)} disabled={sameAsCurrent} />
+                    <input className={`onb-input${errs.perm_pincode ? ' is-invalid' : ''}`} value={permPin} onChange={e => { setPermPin(e.target.value); clearErr('perm_pincode'); }} disabled={sameAsCurrent} />
+                    {errs.perm_pincode && <small className="onb-err">{errs.perm_pincode}</small>}
                   </div>
                 </div>
               </div>
@@ -586,7 +643,17 @@ export default function PublicOnboarding() {
                 </div>
                 <div>
                   <label className="onb-label">Location</label>
-                  <input className="onb-input" value={location} onChange={e => setLocation(e.target.value)} placeholder="City / office" />
+                  {/* Auto-filled from the selected legal entity's city. Locked
+                      so candidates can't override it — pick a different
+                      entity to change the location. */}
+                  <input
+                    className="onb-input"
+                    value={location}
+                    onChange={e => setLocation(e.target.value)}
+                    placeholder={legalEntityId ? 'Set by legal entity' : 'Select a legal entity'}
+                    disabled={!!legalEntityId}
+                    readOnly={!!legalEntityId}
+                  />
                 </div>
                 <div>
                   <label className="onb-label">Joining Date</label>

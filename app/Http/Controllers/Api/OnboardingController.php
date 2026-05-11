@@ -388,16 +388,26 @@ class OnboardingController extends Controller
      */
     private function validateOnboardingPayload(Request $request, EmployeeOnboardingInvite $invite): array
     {
+        // Names accept letters/space/apostrophe/hyphen/period only — digits
+        // and other punctuation are rejected (mirrors the frontend nameRe).
+        $nameRule = ['regex:/^[A-Za-z][A-Za-z\s\'\-.]*$/'];
+        // E.164-style mobile: 7-15 digits after stripping +/0/spaces is what
+        // the frontend allows; here we accept the raw input and normalize.
+        $mobileRule = ['regex:/^[+\d\s\-()]{7,20}$/'];
+        // Pincode: 4-10 digits.
+        $pincodeRule = ['regex:/^\d{4,10}$/'];
+
         return $request->validate([
-            'first_name'   => 'required|string|max:100',
-            'middle_name'  => 'nullable|string|max:100',
-            'last_name'    => 'nullable|string|max:100',
+            'first_name'   => array_merge(['required', 'string', 'max:100'], $nameRule),
+            'middle_name'  => array_merge(['nullable', 'string', 'max:100'], $nameRule),
+            'last_name'    => array_merge(['nullable', 'string', 'max:100'], $nameRule),
             'gender'       => 'nullable|in:Male,Female,Other',
-            'date_of_birth' => 'nullable|date',
+            // Onboardee must be at least 18 (matches the frontend validator).
+            'date_of_birth' => 'nullable|date|before_or_equal:' . now()->subYears(18)->toDateString(),
             'nationality_country_id' => 'nullable|integer',
             'work_country_id'        => 'nullable|integer',
-            'mobile'       => 'nullable|string|max:30',
-            'alt_mobile'   => 'nullable|string|max:30',
+            'mobile'       => array_merge(['nullable', 'string', 'max:30'], $mobileRule),
+            'alt_mobile'   => array_merge(['nullable', 'string', 'max:30'], $mobileRule),
 
             // Current address
             'country_id'   => 'nullable|integer',
@@ -405,7 +415,7 @@ class OnboardingController extends Controller
             'city'         => 'nullable|string|max:100',
             'address_line1' => 'nullable|string|max:255',
             'address_line2' => 'nullable|string|max:255',
-            'pincode'      => 'nullable|string|max:20',
+            'pincode'      => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
             // Permanent address
             'perm_country_id'    => 'nullable|integer',
@@ -413,7 +423,7 @@ class OnboardingController extends Controller
             'perm_city'          => 'nullable|string|max:100',
             'perm_address_line1' => 'nullable|string|max:255',
             'perm_address_line2' => 'nullable|string|max:255',
-            'perm_pincode'       => 'nullable|string|max:20',
+            'perm_pincode'       => array_merge(['nullable', 'string', 'max:20'], $pincodeRule),
 
             // Job — defaults from invite when omitted
             'department_id'   => 'nullable|integer',
@@ -423,6 +433,15 @@ class OnboardingController extends Controller
             'legal_entity_id' => 'nullable|integer',
             'location'        => 'nullable|string|max:191',
             'date_of_joining' => 'nullable|date',
+        ], [
+            'first_name.regex'   => 'First name cannot contain numbers.',
+            'middle_name.regex'  => 'Middle name cannot contain numbers.',
+            'last_name.regex'    => 'Last name cannot contain numbers.',
+            'mobile.regex'       => 'Mobile must be 7–15 digits.',
+            'alt_mobile.regex'   => 'Alternate mobile must be 7–15 digits.',
+            'pincode.regex'      => 'Pincode must be 4–10 digits.',
+            'perm_pincode.regex' => 'Pincode must be 4–10 digits.',
+            'date_of_birth.before_or_equal' => 'You must be at least 18 years old.',
         ]);
     }
 }
