@@ -3,11 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Announcement;
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\Employee;
+use App\Models\ExpenseClaim;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -305,5 +309,282 @@ class DashboardController extends Controller
                 'branch_id' => $branchId,
             ],
         ]);
+    }
+
+    /**
+     *  Employee Dashboard — personal snapshot for the logged-in employee.
+     *  Returns the user's own profile + KPIs, their pending/recent expense
+     *  claims, any approvals waiting on them as a manager, peers in their
+     *  department, active announcements, upcoming birthdays/anniversaries
+     *  and (if still onboarding) wizard progress.
+     *
+     *  Falls back gracefully when the User has no Employee row attached:
+     *  `me` returns minimal fields, lists return empty arrays. The frontend
+     *  shows "Profile not yet set up" rather than crashing.
+     */
+    public function employeeStats(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        // Locate the Employee row paired with this login. Eager-load the
+        // bits we display in the hero so we don't N+1 the relations.
+        $emp = Employee::with(['department', 'designation', 'reportingManager', 'photoDocument'])
+            ->where('user_id', $user->id)
+            ->first();
+
+        $clientId = $user->client_id;
+        $branchId = $user->branch_id;
+        $employeeId = $emp?->id;
+
+        // ── Profile hero ────────────────────────────────────────────────
+        $manager = $emp?->reportingManager;
+        $me = [
+            'employee_id'     => $employeeId,
+            'display_name'    => $emp?->display_name ?: trim(($emp?->first_name ?? '') . ' ' . ($emp?->last_name ?? '')) ?: $user->name,
+            'emp_code'        => $emp?->emp_code,
+            'photo_url'       => $emp?->photo_url,
+            'status'          => $emp?->status ?: 'Active',
+            'department_name' => $emp?->department?->name,
+            'designation_name'=> $emp?->designation?->name,
+            'manager_id'      => $manager?->id,
+            'manager_name'    => $manager?->display_name,
+            'manager_photo'   => $manager?->photo_url,
+            'date_of_joining' => $emp?->date_of_joining?->toDateString(),
+            'email'           => $user->email,
+            'mobile'          => $emp?->mobile,
+            'profile_completion_pct' => $this->profileCompletion($emp),
+        ];
+
+        // ── Expense KPIs (mine) + recent + pending approvals ────────────
+        $myExpensesPending = 0;
+        $myExpensesApproved = 0;
+        $myExpensesRejected = 0;
+        $recentExpenses = collect();
+        $pendingApprovals = collect();
+        $approvalsPending = 0;
+
+        if ($employeeId) {
+            // Counts on claims I filed
+            $myExpensesPending = ExpenseClaim::where('employee_id', $employeeId)
+                ->where(function ($w) {
+                    $w->where('manager_status', 'pending')->orWhere('hr_status', 'pending');
+                })
+                ->whereNotIn('manager_status', ['rejected'])
+                ->whereNotIn('hr_status', ['rejected'])
+                ->count();
+            $myExpensesApproved = ExpenseClaim::where('employee_id', $employeeId)
+                ->where('manager_status', 'approved')
+                ->where('hr_status', 'approved')
+                ->count();
+            $myExpensesRejected = ExpenseClaim::where('employee_id', $employeeId)
+                ->where(function ($w) {
+                    $w->where('manager_status', 'rejected')->orWhere('hr_status', 'rejected');
+                })
+                ->count();
+
+            // Last 5 of mine
+            $recentExpenses = ExpenseClaim::where('employee_id', $employeeId)
+                ->orderByDesc('expense_date')
+                ->orderByDesc('id')
+                ->limit(5)
+                ->get(['id', 'claim_no', 'title', 'category_name', 'amount', 'currency', 'expense_date', 'status', 'manager_status', 'hr_status'])
+                ->map(fn ($c) => [
+                    'id'           => $c->id,
+                    'claim_no'     => $c->claim_no,
+                    'title'        => $c->title,
+                    'category'     => $c->category_name,
+                    'amount'       => (float) $c->amount,
+                    'currency'     => $c->currency ?: 'INR',
+                    'expense_date' => optional($c->expense_date)->toDateString(),
+                    'status'       => $this->rollupExpenseStatus($c->manager_status, $c->hr_status),
+                ]);
+
+            // Pending approvals where I'm the manager
+            $approvalsPending = ExpenseClaim::where('manager_id', $employeeId)
+                ->where('manager_status', 'pending')
+                ->count();
+            $pendingApprovals = ExpenseClaim::where('manager_id', $employeeId)
+                ->where('manager_status', 'pending')
+                ->with(['employee:id,display_name,emp_code'])
+                ->orderByDesc('created_at')
+                ->limit(5)
+                ->get(['id', 'claim_no', 'title', 'amount', 'currency', 'employee_id', 'category_name', 'created_at'])
+                ->map(fn ($c) => [
+                    'id'         => $c->id,
+                    'claim_no'   => $c->claim_no,
+                    'title'      => $c->title,
+                    'category'   => $c->category_name,
+                    'amount'     => (float) $c->amount,
+                    'currency'   => $c->currency ?: 'INR',
+                    'filed_by'   => optional($c->employee)->display_name,
+                    'emp_code'   => optional($c->employee)->emp_code,
+                    'created_at' => optional($c->created_at)->toDateString(),
+                ]);
+        }
+
+        // ── Team peers (same department, excl. self) ────────────────────
+        $teamPeers = collect();
+        $teamSize  = 0;
+        if ($emp?->department_id) {
+            $teamSize = Employee::where('department_id', $emp->department_id)
+                ->where('client_id', $clientId)
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                ->where('id', '!=', $employeeId)
+                ->count();
+            $teamPeers = Employee::with(['designation', 'photoDocument'])
+                ->where('department_id', $emp->department_id)
+                ->where('client_id', $clientId)
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                ->where('id', '!=', $employeeId)
+                ->orderBy('display_name')
+                ->limit(6)
+                ->get(['id', 'emp_code', 'display_name', 'designation_id', 'date_of_joining'])
+                ->map(fn ($p) => [
+                    'id'               => $p->id,
+                    'emp_code'         => $p->emp_code,
+                    'display_name'     => $p->display_name,
+                    'photo_url'        => $p->photo_url,
+                    'designation_name' => $p->designation?->name,
+                ]);
+        }
+
+        // ── Announcements (recent active, tenant-scoped) ────────────────
+        // AnnouncementController auto-flips Scheduled → Active when publish_at
+        // hits and Active → Expired past expires_at, so filtering by lowercase
+        // 'active' (the value the seed/migration writes) is enough here.
+        $announcements = collect();
+        if ($clientId) {
+            $announcements = Announcement::query()
+                ->where('client_id', $clientId)
+                ->whereRaw('LOWER(status) = ?', ['active'])
+                ->orderByDesc('created_at')
+                ->limit(5)
+                ->get(['id', 'title', 'description', 'created_at'])
+                ->map(fn ($a) => [
+                    'id'         => $a->id,
+                    'title'      => $a->title,
+                    'snippet'    => mb_strimwidth(strip_tags((string) $a->description), 0, 140, '…'),
+                    'created_at' => optional($a->created_at)->toDateString(),
+                ]);
+        }
+
+        // ── Upcoming events — birthdays + work anniversaries this month ─
+        // Compute "next occurrence within ±30 days" so end-of-month birthdays
+        // that fall a few days into next month still appear.
+        $upcomingEvents = collect();
+        if ($clientId) {
+            $today = Carbon::now();
+            $rangeEnd = $today->copy()->addDays(30);
+            $teamRows = Employee::where('client_id', $clientId)
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                ->whereNotNull(DB::raw('COALESCE(date_of_birth, date_of_joining)'))
+                ->get(['id', 'display_name', 'date_of_birth', 'date_of_joining']);
+            foreach ($teamRows as $row) {
+                foreach (['birthday' => $row->date_of_birth, 'anniversary' => $row->date_of_joining] as $kind => $d) {
+                    if (!$d) continue;
+                    try {
+                        $base = Carbon::parse($d);
+                        $thisYear = $base->copy()->setYear($today->year);
+                        $occur = $thisYear->lt($today->copy()->subDay())
+                            ? $thisYear->copy()->addYear()
+                            : $thisYear;
+                        if ($occur->between($today->copy()->subDays(1), $rangeEnd)) {
+                            $years = $today->year - $base->year + ($occur->year > $today->year ? 1 : 0);
+                            $upcomingEvents->push([
+                                'employee_id' => $row->id,
+                                'name'        => $row->display_name,
+                                'kind'        => $kind,
+                                'on'          => $occur->toDateString(),
+                                'years'       => $kind === 'anniversary' ? max(0, $years) : null,
+                            ]);
+                        }
+                    } catch (\Throwable $e) { /* skip bad dates */ }
+                }
+            }
+            $upcomingEvents = $upcomingEvents->sortBy('on')->take(6)->values();
+        }
+
+        // ── Onboarding progress (only surface if incomplete) ───────────
+        $onboarding = null;
+        if ($emp && (int) $emp->onboarding_stage_completed < 4) {
+            $stages = ['Basic Details', 'Job Details', 'Work Details', 'Compensation'];
+            $current = max(0, min(4, (int) $emp->onboarding_stage_completed));
+            $onboarding = [
+                'current_stage'  => $current,
+                'total_stages'   => 4,
+                'percent'        => (int) round(($current / 4) * 100),
+                'next_label'     => $stages[$current] ?? null,
+            ];
+        }
+
+        // ── Compensation tile — only if employee opted into payroll ────
+        $compensation = null;
+        if ($emp && $emp->enable_payroll) {
+            $compensation = [
+                'annual_salary'    => $emp->annual_salary !== null ? (float) $emp->annual_salary : null,
+                'salary_frequency' => $emp->salary_frequency,
+                'salary_structure' => $emp->salary_structure,
+                'tax_regime'       => $emp->tax_regime,
+                'effective_from'   => optional($emp->salary_effective_from)->toDateString(),
+            ];
+        }
+
+        // ── Tenure (days since joining) for the KPI row ────────────────
+        $daysSinceJoining = $emp?->date_of_joining
+            ? max(0, $emp->date_of_joining->diffInDays(Carbon::now()))
+            : null;
+
+        return response()->json([
+            'me' => $me,
+            'kpis' => [
+                'my_expenses_pending'  => $myExpensesPending,
+                'my_expenses_approved' => $myExpensesApproved,
+                'my_expenses_rejected' => $myExpensesRejected,
+                'approvals_pending'    => $approvalsPending,
+                'team_size'            => $teamSize,
+                'days_since_joining'   => $daysSinceJoining,
+            ],
+            'compensation'      => $compensation,
+            'recent_expenses'   => $recentExpenses,
+            'pending_approvals' => $pendingApprovals,
+            'team_peers'        => $teamPeers,
+            'announcements'     => $announcements,
+            'upcoming_events'   => $upcomingEvents,
+            'onboarding'        => $onboarding,
+        ]);
+    }
+
+    /** Roll up the two-stage expense status into a single chip value. */
+    private function rollupExpenseStatus(?string $managerStatus, ?string $hrStatus): string
+    {
+        if ($managerStatus === 'rejected' || $hrStatus === 'rejected') return 'Rejected';
+        if ($managerStatus === 'approved' && $hrStatus === 'approved') return 'Approved';
+        return 'Pending';
+    }
+
+    /**
+     *  Estimate how complete an Employee profile is, from a fixed set of
+     *  "would-show-on-the-business-card" fields. Lets the dashboard nudge
+     *  new joiners to finish their profile rather than reporting a flat
+     *  0%/100% based on `onboarding_stage_completed`.
+     */
+    private function profileCompletion(?Employee $emp): int
+    {
+        if (!$emp) return 0;
+        $fields = [
+            'first_name', 'last_name', 'gender', 'date_of_birth',
+            'email', 'mobile',
+            'department_id', 'designation_id', 'date_of_joining',
+            'address_line1', 'city', 'country_id',
+        ];
+        $hit = 0;
+        foreach ($fields as $f) {
+            $v = $emp->{$f};
+            if ($v !== null && $v !== '' && $v !== 0) $hit++;
+        }
+        return (int) round(($hit / count($fields)) * 100);
     }
 }

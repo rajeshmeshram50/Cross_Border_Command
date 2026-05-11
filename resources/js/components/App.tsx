@@ -22,6 +22,7 @@ import ResetPassword from '../pages/auth/ResetPassword';
 import AdminDashboard from '../pages/dashboard/AdminDashboard';
 import ClientDashboard from '../pages/dashboard/ClientDashboard';
 import BranchDashboard from '../pages/dashboard/BranchDashboard';
+import EmployeeDashboard from '../pages/dashboard/EmployeeDashboard';
 import Clients from '../pages/client/Clients';
 import ClientForm from '../pages/client/ClientForm';
 import Branches from '../pages/branch/Branches';
@@ -354,12 +355,12 @@ function DashboardRoutes({ user }: { user: any }) {
     super_admin: AdminDashboard,
     client_admin: ClientDashboard,
     branch_user: BranchDashboard,
-    // Employees + client_users get the branch-scoped dashboard (no
-    // clients / revenue / payments super-admin KPIs leak into their
-    // view). Fallback also points to BranchDashboard rather than
-    // AdminDashboard so any future user_type is safe-by-default.
     client_user: BranchDashboard,
-    employee:    BranchDashboard,
+    // Employees get a personal dashboard scoped to their own Employee row
+    // (profile hero, expense KPIs, approvals queue, team peers, etc.).
+    // Fallback below still points to BranchDashboard so any future
+    // user_type is safe-by-default.
+    employee:    EmployeeDashboard,
   };
 
   const DefaultDashboard = DashboardMap[user.user_type] || BranchDashboard;

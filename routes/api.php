@@ -50,8 +50,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/me/profile', [AuthController::class, 'updateProfile']);
 
     // Dashboard
-    Route::get('/dashboard/admin-stats', [DashboardController::class, 'adminStats']);
-    Route::get('/dashboard/client-stats', [DashboardController::class, 'clientStats']);
+    Route::get('/dashboard/admin-stats',    [DashboardController::class, 'adminStats']);
+    Route::get('/dashboard/client-stats',   [DashboardController::class, 'clientStats']);
+    Route::get('/dashboard/employee-stats', [DashboardController::class, 'employeeStats']);
 
     // Clients
     Route::get('/clients/stats', [ClientController::class, 'stats']);
