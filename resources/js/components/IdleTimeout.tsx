@@ -4,14 +4,14 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useToast } from '../contexts/ToastContext';
 
 /**
- * Auto-logout after 30 minutes of inactivity when Settings → Security →
- * "Session Timeout (30 min)" is ON. Listens for mouse / keyboard / touch /
- * scroll events to detect activity; resets the timer on any.
+ * Auto-logout after 2 hours of inactivity when Settings → Security →
+ * "Session Timeout" is ON. Listens for mouse / keyboard / touch / scroll
+ * events to detect activity; resets the timer on any.
  *
  * Mount-once component — must live INSIDE Auth + Settings providers so it
  * can read both. Renders nothing.
  */
-const TIMEOUT_MS = 30 * 60 * 1000; // 30 min
+const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 export default function IdleTimeout() {
   const { user, logout } = useAuth();
@@ -27,7 +27,7 @@ export default function IdleTimeout() {
     const reset = () => {
       if (timerRef.current) window.clearTimeout(timerRef.current);
       timerRef.current = window.setTimeout(async () => {
-        toast.info('Signed out', 'Your session timed out after 30 minutes of inactivity.');
+        toast.info('Signed out', 'Your session timed out after 2 hours of inactivity.');
         await logout();
       }, TIMEOUT_MS);
     };
