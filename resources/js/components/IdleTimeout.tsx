@@ -11,7 +11,7 @@ import { useToast } from '../contexts/ToastContext';
  * Mount-once component — must live INSIDE Auth + Settings providers so it
  * can read both. Renders nothing.
  */
-const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
+const TIMEOUT_MS = 5 * 60 * 60 * 1000; // 5 hours
 
 export default function IdleTimeout() {
   const { user, logout } = useAuth();
