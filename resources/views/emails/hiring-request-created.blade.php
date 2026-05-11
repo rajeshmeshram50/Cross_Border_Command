@@ -123,7 +123,7 @@
 
   <!-- CTA -->
   <tr><td style="padding:24px 40px 28px;text-align:center;">
-    <a href="{{ config('app.url') }}" style="display:inline-block;background:linear-gradient(135deg,#4F46E5,#7C3AED);color:#ffffff;font-size:14px;font-weight:700;padding:11px 26px;border-radius:10px;text-decoration:none;letter-spacing:0.2px;">Review Request</a>
+    <a href="{{ rtrim(config('app.frontend_url'), '/') }}/dashboard" style="display:inline-block;background:linear-gradient(135deg,#4F46E5,#7C3AED);color:#ffffff;font-size:14px;font-weight:700;padding:11px 26px;border-radius:10px;text-decoration:none;letter-spacing:0.2px;">Review Request</a>
   </td></tr>
 
   <!-- Footer -->

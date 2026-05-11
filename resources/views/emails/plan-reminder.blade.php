@@ -163,7 +163,7 @@
   <tr><td style="padding:0 40px 28px;text-align:center;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
     <tr><td style="background:linear-gradient(135deg,#4F46E5,#7C3AED);border-radius:10px;">
-      <a href="{{ config('app.url') }}" target="_blank" style="display:inline-block;padding:14px 40px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:0.2px;">
+      <a href="{{ rtrim(config('app.frontend_url'), '/') }}/my-plan" target="_blank" style="display:inline-block;padding:14px 40px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;letter-spacing:0.2px;">
         {{ $ctaLabel }} &rarr;
       </a>
     </td></tr>

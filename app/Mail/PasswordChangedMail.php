@@ -35,7 +35,11 @@ class PasswordChangedMail extends Mailable
         $this->userEmail   = $userEmail;
         $this->newPassword = $newPassword;
         $this->changedAt   = now()->format('M d, Y \· h:i A');
-        $this->loginUrl    = config('app.url');
+        // SPA login page — config('app.frontend_url') is APP_FRONTEND_URL
+        // when set (live deployments), falling back to APP_URL otherwise.
+        // Without this the button used config('app.url') which is the
+        // BACKEND base, so live recipients landed on a wrong-host page.
+        $this->loginUrl    = rtrim(config('app.frontend_url'), '/') . '/login';
         $this->appName     = config('mail.from.name', 'Cross Border Command');
     }
 
