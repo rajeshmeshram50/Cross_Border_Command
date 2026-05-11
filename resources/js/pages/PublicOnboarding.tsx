@@ -12,6 +12,8 @@ interface InvitePreview {
   expected_join_date: string | null;
   expires_at: string | null;
   org_name: string;
+  logo_url: string | null;
+  website: string | null;
 }
 
 interface MasterOption { id: number; name: string; country_id?: number }
@@ -416,160 +418,298 @@ export default function PublicOnboarding() {
   // jumps still go through goNext() so validators run.
   const jumpToStep = (n: StepNum) => { if (n < step) setStep(n); };
 
+  // Sidebar step config — title + description shown in the left rail.
+  const SIDE_STEPS: { n: StepNum; icon: string; title: string; sub: string }[] = [
+    { n: 1, icon: 'ri-user-3-line',     title: 'Your personal details', sub: 'Name, gender, contact info' },
+    { n: 2, icon: 'ri-map-pin-line',    title: 'Address details',       sub: 'Current & permanent address' },
+    { n: 3, icon: 'ri-briefcase-line',  title: 'Job details',           sub: 'Confirm role & joining date' },
+  ];
+  const stepCopy: Record<StepNum, { title: string; description: string }> = {
+    1: { title: 'Basic Info',        description: `Tell us a bit about yourself to get started with your ${invite?.org_name ?? ''} account.`.trim() },
+    2: { title: 'Address Details',   description: 'Where you currently live and your permanent address on record.' },
+    3: { title: 'Job Details',       description: 'These were set by HR when you were invited — confirm them or make small updates.' },
+  };
+  const current = stepCopy[step];
+
   return (
     <>
       <MasterFormStyles />
-      <div style={{ minHeight: '100vh', background: 'var(--vz-secondary-bg, #f7f8fc)' }}>
-        <style>{`
-          .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
-          .emp-input::placeholder { color: #9ca3af; }
-          .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
-          .emp-input.is-readonly { background: #f5f1ff; border-color: #d6c9ff; color: #5a3fd1; font-weight: 600; }
-          .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
-          .emp-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
-          [data-bs-theme="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
-          [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
-          .emp-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
-          [data-bs-theme="dark"] .emp-label { color: #c4b5fd; }
-          .emp-label .req { color: #f06548; margin-left: 2px; }
-          .emp-section {
-            background: #fff;
-            border: 1px solid #eef0f4;
-            border-radius: 12px;
-            padding: 16px 18px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-          }
-          [data-bs-theme="dark"] .emp-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
-          .emp-section + .emp-section { margin-top: 14px; }
-          .emp-section-title { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: var(--vz-heading-color, #1f2937); margin-bottom: 14px; }
-          .emp-section-title i { color: #7c5cfc; font-size: 16px; }
-          .emp-stepper-bar { background: #fff; }
-          [data-bs-theme="dark"] .emp-stepper-bar { background: var(--vz-card-bg); border-bottom-color: var(--vz-border-color); }
-          .emp-stepper-circle {
-            width: 32px; height: 32px; border-radius: 50%;
-            display: inline-flex; align-items: center; justify-content: center;
-            font-weight: 700; font-size: 13px;
-            background: #f1f3f7; color: #9ca3af; border: 2px solid #e5e7eb;
-            transition: all .2s ease;
-          }
-          .emp-stepper-circle.is-active { background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border-color: transparent; box-shadow: 0 4px 12px rgba(124,92,252,0.30); }
-          .emp-stepper-circle.is-done { background: #0ab39c; color: #fff; border-color: transparent; }
-          .emp-stepper-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca3af; margin-top: 6px; text-align: center; }
-          .emp-stepper-label.is-active { color: #5a3fd1; }
-          .emp-stepper-label.is-done { color: #0ab39c; }
-          .emp-stepper-line { flex: 1; height: 2px; background: #e5e7eb; margin: 0 6px; align-self: flex-start; margin-top: 16px; transition: background .2s ease; }
-          .emp-stepper-line.is-done { background: #0ab39c; }
-          .emp-stepper-btn {
-            background: transparent; border: none; padding: 0;
-            cursor: pointer; display: flex; flex-direction: column; align-items: center;
-            min-width: 92px;
-            transition: transform .15s ease;
-          }
-          .emp-stepper-btn:disabled { cursor: default; }
-          .emp-stepper-btn:focus-visible { outline: 2px solid #7c5cfc; outline-offset: 4px; border-radius: 8px; }
-          .emp-stepper-btn:not(:disabled):hover .emp-stepper-circle:not(.is-active):not(.is-done) {
-            border-color: #c4b5fd; color: #7c5cfc; background: #f5f3ff;
-          }
-          .emp-stepper-btn:not(:disabled):hover .emp-stepper-label:not(.is-active):not(.is-done) { color: #7c5cfc; }
-          .emp-stepper-btn:not(:disabled):hover { transform: translateY(-1px); }
-          [data-bs-theme="dark"] .emp-stepper-circle { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55); border-color: rgba(255,255,255,0.12); }
-          [data-bs-theme="dark"] .emp-stepper-label { color: rgba(255,255,255,0.55); }
-          [data-bs-theme="dark"] .emp-stepper-label.is-active { color: #c4b5fd; }
-          [data-bs-theme="dark"] .emp-stepper-line { background: rgba(255,255,255,0.10); }
-          .emp-footer-bar { background: #fff; border-top: 1px solid var(--vz-border-color, #eef0f4); }
-          [data-bs-theme="dark"] .emp-footer-bar { background: var(--vz-card-bg); border-top-color: var(--vz-border-color); }
-          .emp-ghost-btn { background: #fff; color: #475569; border: 1px solid #e5e7eb; }
-          [data-bs-theme="dark"] .emp-ghost-btn { background: rgba(255,255,255,0.04); color: var(--vz-body-color); border-color: var(--vz-border-color); }
-          .emp-ghost-btn:hover { background: #f3f4f6; color: #1f2937; }
-        `}</style>
+      <style>{`
+        .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 12px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
+        .emp-input::placeholder { color: #9ca3af; }
+        .emp-input:focus { outline: none; border-color: #1d4fc4; box-shadow: 0 0 0 3px rgba(29,79,196,0.15); }
+        .emp-input.is-readonly { background: #eef4ff; border-color: #c9d8f7; color: #1d4fc4; font-weight: 600; }
+        .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
+        .emp-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
+        [data-bs-theme="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
+        [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
+        .emp-label { font-size: 12px; font-weight: 600; color: var(--vz-heading-color, #374151); letter-spacing: 0; text-transform: none; margin-bottom: 5px; display: block; }
+        [data-bs-theme="dark"] .emp-label { color: var(--vz-body-color); }
+        .emp-label .req { color: #f06548; margin-left: 2px; }
 
-        {/* Gradient header — mirrors the Add Employee modal header */}
-        <div
-          style={{
-            padding: '18px 22px',
-            background: 'linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%)',
-            color: '#fff',
-          }}
-        >
-          <div style={{ maxWidth: 1100, margin: '0 auto' }} className="d-flex align-items-center justify-content-between gap-3">
-            <div className="d-flex align-items-center gap-3">
-              <div
-                className="d-flex align-items-center justify-content-center flex-shrink-0"
-                style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  background: 'rgba(255,255,255,0.18)',
-                  backdropFilter: 'blur(4px)',
-                }}
-              >
-                <i className="ri-user-add-line" style={{ fontSize: 20 }} />
-              </div>
-              <div>
-                <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 17, letterSpacing: '-0.01em' }}>
-                  Welcome to {invite?.org_name}
-                </h5>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
-                  Hi {invite?.invitee_name} · <strong>{invite?.invitee_email}</strong>
-                </div>
-              </div>
-            </div>
-            <div className="d-flex align-items-center gap-2 flex-shrink-0">
-              <span
-                className="badge rounded-pill"
-                style={{
-                  background: 'rgba(255,255,255,0.22)',
-                  color: '#fff',
-                  fontWeight: 600,
-                  fontSize: 11,
-                  padding: '6px 12px',
-                }}
-              >
-                Step {step} of 3
+        /* ── Split-view layout (Convertico-style) ─────────────────────── */
+        .onb-layout {
+          min-height: 100vh;
+          display: grid;
+          grid-template-columns: 320px minmax(0, 1fr);
+          background: var(--vz-secondary-bg, #f5f7fb);
+        }
+        @media (max-width: 900px) { .onb-layout { grid-template-columns: 1fr; } }
+
+        /* Left rail — deep blue gradient, sticky so only the right side scrolls */
+        .onb-side {
+          background:
+            radial-gradient(circle at 100% 0%, rgba(255,255,255,0.16) 0%, transparent 38%),
+            radial-gradient(circle at 0% 100%, rgba(96,165,250,0.32) 0%, transparent 48%),
+            linear-gradient(165deg, #0b2545 0%, #133e8c 45%, #1e62d6 100%);
+          color: #fff;
+          padding: 32px 14px 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 40px;
+          position: sticky;
+          top: 0;
+          align-self: start;
+          height: 100vh;
+          overflow: hidden auto;
+        }
+        .onb-side::before, .onb-side::after {
+          content: ''; position: absolute; pointer-events: none;
+          border: 1.5px solid rgba(255,255,255,0.10);
+        }
+        .onb-side::before { width: 380px; height: 380px; border-radius: 50%; bottom: -160px; left: -120px; }
+        .onb-side::after  { width: 240px; height: 240px; border-radius: 50%; top: -90px; right: -90px; }
+
+        .onb-side-brand {
+          display: flex; flex-direction: column; align-items: flex-start;
+          gap: 8px; position: relative; z-index: 1;
+        }
+        .onb-side-brand-logo {
+          display: inline-flex; align-items: center; justify-content: center;
+          backdrop-filter: blur(22px) ;
+          
+          padding: 14px 18px;
+          height: 90px; max-width: 100%;
+          
+        }
+        .onb-side-brand-logo img {
+          max-width: 100%; max-height: 100%;
+          width: auto; height: auto;
+          object-fit: contain;
+        }
+        .onb-side-brand-fallback {
+          color: #fff;
+          font-weight: 800; font-size: 64px; letter-spacing: -0.04em;
+          line-height: 1;
+          text-shadow: 0 6px 14px rgba(0,0,0,0.30);
+          padding: 4px 0;
+        }
+        .onb-side-brand-name {
+          font-size: 24px; font-weight: 800; letter-spacing: -0.01em;
+          line-height: 1.2; word-break: break-word; color: #fff;
+        }
+
+        .onb-side-steps { display: flex; flex-direction: column; position: relative; z-index: 1; margin-top: 4px; gap: 6px; }
+        .onb-step {
+          position: relative;
+          display: flex; align-items: flex-start; gap: 14px;
+          background: transparent; border: 0; padding: 16px 0;
+          color: inherit; text-align: left; width: 100%;
+          cursor: pointer; transition: opacity .15s ease;
+        }
+        .onb-step:disabled { cursor: default; }
+        .onb-step:not(:disabled):hover .onb-step-title { color: #fff; }
+        .onb-step-circle {
+          width: 36px; height: 36px; border-radius: 50%;
+          background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.80);
+          border: 1.5px solid rgba(255,255,255,0.26);
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0; font-size: 16px; z-index: 2;
+          transition: all .2s ease;
+        }
+        .onb-step.is-active .onb-step-circle {
+          background: #fff; color: #0b2545; border-color: #fff;
+          box-shadow: 0 10px 22px rgba(0,0,0,0.25);
+        }
+        .onb-step.is-done .onb-step-circle {
+          background: #0ab39c; color: #fff; border-color: #0ab39c;
+        }
+        .onb-step-text { display: flex; flex-direction: column; padding-top: 5px; }
+        .onb-step-title { font-size: 14.5px; font-weight: 600; color: rgba(255,255,255,0.88); line-height: 1.25; }
+        .onb-step.is-active .onb-step-title { color: #fff; font-weight: 700; }
+        .onb-step-sub { font-size: 12px; color: rgba(255,255,255,0.62); margin-top: 3px; }
+        .onb-step-line {
+          position: absolute; left: 17.25px; top: 56px;
+          width: 1.5px; height: 38px;
+          background: rgba(255,255,255,0.22);
+        }
+        .onb-step.is-done .onb-step-line { background: rgba(10,179,156,0.55); }
+
+        .onb-side-foot {
+          margin-top: auto; position: relative; z-index: 1;
+          display: flex; flex-direction: column; gap: 6px;
+        }
+        .onb-side-foot-copy { font-size: 11.5px; color: rgba(255,255,255,0.55); }
+        .onb-side-foot-site {
+          font-size: 12.5px; font-weight: 600; color: #fff;
+          text-decoration: none;
+          display: inline-flex; align-items: center; gap: 6px;
+          word-break: break-all;
+        }
+        .onb-side-foot-site:hover { color: #fff; text-decoration: underline; }
+        .onb-side-foot-site i { color: rgba(255,255,255,0.75); }
+
+        /* Right pane */
+        .onb-main {
+          padding: 36px 44px 32px;
+          display: flex; justify-content: center; align-items: flex-start;
+          background: #fff;
+          min-width: 0;
+        }
+        [data-bs-theme="dark"] .onb-main { background: var(--vz-card-bg); }
+        .onb-main-inner { width: 100%; max-width: 980px; }
+
+        /* Welcome banner at the very top of the right pane */
+        .onb-welcome {
+          display: flex; align-items: center; gap: 14px;
+          padding: 14px 18px; border-radius: 14px;
+          background: linear-gradient(120deg, rgba(29,79,196,0.08) 0%, rgba(96,165,250,0.10) 60%, rgba(13,148,136,0.06) 100%);
+          border: 1px solid rgba(29,79,196,0.14);
+          margin-bottom: 22px;
+        }
+        .onb-welcome-icon {
+          width: 44px; height: 44px; border-radius: 12px;
+          background: linear-gradient(135deg, #1d4fc4, #3b82f6);
+          color: #fff; display: flex; align-items: center; justify-content: center;
+          font-size: 22px; flex-shrink: 0;
+          box-shadow: 0 8px 18px rgba(29,79,196,0.32);
+        }
+        .onb-welcome-title { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; color: var(--vz-heading-color, #0b2545); line-height: 1.2; }
+        .onb-welcome-sub { font-size: 12.5px; color: var(--vz-secondary-color, #6b7280); margin-top: 2px; }
+        .onb-welcome-sub strong { color: var(--vz-heading-color, #374151); font-weight: 600; }
+
+        .onb-step-pill {
+          display: inline-block;
+          font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em;
+          color: #1d4fc4; background: rgba(29,79,196,0.10);
+          padding: 4px 10px; border-radius: 999px; margin-bottom: 10px;
+          text-transform: uppercase;
+        }
+        .onb-main-title {
+          font-size: 28px; font-weight: 800; letter-spacing: -0.02em;
+          color: var(--vz-heading-color, #0f172a); margin: 0 0 8px;
+          line-height: 1.15;
+        }
+        .onb-main-sub {
+          font-size: 14px; color: var(--vz-secondary-color, #6b7280);
+          margin: 0 0 18px; line-height: 1.6; max-width: 680px;
+        }
+        .onb-main-divider { height: 1px; background: var(--vz-border-color, #e5e7eb); margin-bottom: 18px; }
+
+        .onb-subhead {
+          display: flex; align-items: center; gap: 8px;
+          font-size: 13px; font-weight: 700; color: var(--vz-heading-color, #111827);
+          margin: 4px 0 12px;
+        }
+        .onb-subhead i { color: #1d4fc4; font-size: 16px; }
+        .onb-subhead-row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 12px; }
+        .onb-subhead-row .onb-subhead { margin: 0; }
+
+        .onb-main-foot {
+          display: flex; align-items: center; justify-content: space-between;
+          padding-top: 22px; margin-top: 20px;
+          border-top: 1px solid var(--vz-border-color, #e5e7eb);
+        }
+
+        @media (max-width: 900px) {
+          .onb-side { padding: 20px 20px 16px; gap: 18px; }
+          .onb-side-brand-logo, .onb-side-brand-fallback { width: 94px; height: 64px; }
+          .onb-main { padding: 24px 20px 22px; }
+          .onb-main-title { font-size: 22px; }
+          .onb-welcome { padding: 12px 14px; }
+          .onb-welcome-icon { width: 38px; height: 38px; font-size: 18px; }
+        }
+      `}</style>
+
+      <div className="onb-layout">
+        {/* ── Left rail — brand + step breadcrumbs ─────────────────────── */}
+        <aside className="onb-side">
+          <div className="onb-side-brand">
+            {invite?.logo_url ? (
+              <span className="onb-side-brand-logo"><img src={invite.logo_url} alt={invite.org_name} /></span>
+            ) : (
+              <span className="onb-side-brand-fallback">
+                {(invite?.org_name || '?').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || 'CB'}
               </span>
-            </div>
+            )}
+            {/* <span className="onb-side-brand-name">{invite?.org_name}</span> */}
           </div>
-        </div>
 
-        {/* Stepper */}
-        <div className="emp-stepper-bar" style={{ borderBottom: '1px solid var(--vz-border-color, #eef0f4)' }}>
-          <div style={{ maxWidth: 1100, margin: '0 auto', padding: '16px 28px' }} className="d-flex align-items-start">
-            {[
-              { n: 1 as StepNum, label: 'Personal' },
-              { n: 2 as StepNum, label: 'Address' },
-              { n: 3 as StepNum, label: 'Job & Submit' },
-            ].map((s, idx, arr) => {
-              const active = step === s.n;
-              const done2  = step > s.n;
+          <nav className="onb-side-steps" aria-label="Onboarding steps">
+            {SIDE_STEPS.map((s, idx) => {
+              const active  = step === s.n;
+              const done2   = step > s.n;
               const canJump = s.n < step;
               return (
-                <div key={s.n} className="d-flex align-items-start" style={{ flex: idx === arr.length - 1 ? '0 0 auto' : '1 1 0' }}>
-                  <button
-                    type="button"
-                    className="emp-stepper-btn"
-                    onClick={() => jumpToStep(s.n)}
-                    disabled={!canJump && !active}
-                    aria-label={`Step ${s.n}: ${s.label}`}
-                    aria-current={active ? 'step' : undefined}
-                  >
-                    <div className={`emp-stepper-circle${active ? ' is-active' : ''}${done2 ? ' is-done' : ''}`}>
-                      {done2 ? <i className="ri-check-line" style={{ fontSize: 16 }} /> : s.n}
-                    </div>
-                    <div className={`emp-stepper-label${active ? ' is-active' : ''}${done2 ? ' is-done' : ''}`}>
-                      {s.label}
-                    </div>
-                  </button>
-                  {idx < arr.length - 1 && <div className={`emp-stepper-line${done2 ? ' is-done' : ''}`} />}
-                </div>
+                <button
+                  key={s.n}
+                  type="button"
+                  className={`onb-step${active ? ' is-active' : ''}${done2 ? ' is-done' : ''}`}
+                  onClick={() => jumpToStep(s.n)}
+                  disabled={!canJump && !active}
+                  aria-current={active ? 'step' : undefined}
+                >
+                  <span className="onb-step-circle">
+                    {done2 ? <i className="ri-check-line" /> : <i className={s.icon} />}
+                  </span>
+                  <span className="onb-step-text">
+                    <span className="onb-step-title">{s.title}</span>
+                    <span className="onb-step-sub">{s.sub}</span>
+                  </span>
+                  {idx < SIDE_STEPS.length - 1 && <span className="onb-step-line" />}
+                </button>
               );
             })}
-          </div>
-        </div>
+          </nav>
 
-        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 22px 24px' }}>
+          <div className="onb-side-foot">
+            <div className="onb-side-foot-copy">All rights reserved © {invite?.org_name}</div>
+            {invite?.website && (() => {
+              const raw = invite.website.trim();
+              const href = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+              const display = raw.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+              return (
+                <a className="onb-side-foot-site" href={href} target="_blank" rel="noopener noreferrer">
+                  <i className="ri-global-line" /> {display}
+                </a>
+              );
+            })()}
+          </div>
+        </aside>
+
+        {/* ── Right pane — current step's form ─────────────────────────── */}
+        <main className="onb-main">
+          <div className="onb-main-inner">
+
+            {/* Welcome banner — sits above the per-step heading */}
+            <div className="onb-welcome">
+              <span className="onb-welcome-icon"><i className="ri-hand-heart-line" /></span>
+              <div className="min-w-0 flex-grow-1">
+                <div className="onb-welcome-title">Welcome to {invite?.org_name} · Onboarding Form</div>
+                <div className="onb-welcome-sub">
+                  Hi <strong>{invite?.invitee_name}</strong> · {invite?.invitee_email}
+                </div>
+              </div>
+            </div>
+
+            <div className="onb-step-pill">Step {step} of 3</div>
+            <h1 className="onb-main-title">{current.title}</h1>
+            <p className="onb-main-sub">{current.description}</p>
+            <div className="onb-main-divider" />
 
           {step === 1 && (
-            <div className="emp-section">
-              <div className="emp-section-title"><i className="ri-user-line" /> Personal Details</div>
-              <Row className="g-3">
+            <div>
+              <Row className="g-2">
                 <Col md={4}>
                   <label className="emp-label">First Name<span className="req">*</span></label>
                   <input className={`emp-input${errs.first_name ? ' is-invalid' : ''}`} placeholder="e.g. Aarav" value={firstName} onChange={e => { setFirstName(e.target.value); clearErr('first_name'); }} />
@@ -621,9 +761,9 @@ export default function PublicOnboarding() {
 
           {step === 2 && (
             <>
-              <div className="emp-section">
-                <div className="emp-section-title"><i className="ri-map-pin-line" /> Current Address</div>
-                <Row className="g-3">
+              <div>
+                <div className="onb-subhead"><i className="ri-map-pin-line" /> Current Address</div>
+                <Row className="g-2">
                   <Col md={8}>
                     <label className="emp-label">Address Line 1<span className="req">*</span></label>
                     <input className={`emp-input${errs.address_line1 ? ' is-invalid' : ''}`} value={curAddr1} onChange={e => { setCurAddr1(e.target.value); clearErr('address_line1'); }} />
@@ -656,10 +796,10 @@ export default function PublicOnboarding() {
                 </Row>
               </div>
 
-              <div className="emp-section">
-                <div className="emp-section-title" style={{ justifyContent: 'space-between' }}>
-                  <div className="d-flex align-items-center gap-2"><i className="ri-home-4-line" /> Permanent Address</div>
-                  <label style={{ fontSize: 12, color: '#6b7280', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, textTransform: 'none', letterSpacing: 0 }}>
+              <div style={{ marginTop: 24 }}>
+                <div className="onb-subhead-row">
+                  <div className="onb-subhead"><i className="ri-home-4-line" /> Permanent Address</div>
+                  <label style={{ fontSize: 12, color: '#6b7280', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <input type="checkbox" checked={sameAsCurrent} onChange={e => {
                       const c = e.target.checked;
                       setSameAsCurrent(c);
@@ -667,7 +807,7 @@ export default function PublicOnboarding() {
                     }} /> Same as Current Address
                   </label>
                 </div>
-                <Row className="g-3">
+                <Row className="g-2">
                   <Col md={8}>
                     <label className="emp-label">Address Line 1</label>
                     <input className="emp-input" value={permAddr1} onChange={e => setPermAddr1(e.target.value)} disabled={sameAsCurrent} />
@@ -699,9 +839,8 @@ export default function PublicOnboarding() {
           )}
 
           {step === 3 && (
-            <div className="emp-section">
-              <div className="emp-section-title"><i className="ri-briefcase-line" /> Job Details <span style={{ fontSize: 11, fontWeight: 500, color: '#9ca3af', letterSpacing: 0, textTransform: 'none' }}>(set by HR — confirm or update)</span></div>
-              <Row className="g-3">
+            <div>
+              <Row className="g-2">
                 <Col md={4}>
                   <label className="emp-label">Department</label>
                   <MasterSelect value={departmentId} onChange={setDepartmentId} options={departmentOpts} placeholder="Select department" />
@@ -744,45 +883,46 @@ export default function PublicOnboarding() {
             </div>
           )}
 
-          {/* Footer — Back / Next / Submit */}
-          <div className="d-flex align-items-center justify-content-between" style={{ padding: '16px 0 8px', marginTop: 14 }}>
-            {step > 1 ? (
-              <button
-                type="button" onClick={goBack}
-                className="btn emp-ghost-btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                style={{ fontSize: 13, padding: '8px 18px' }}
-              >
-                <i className="ri-arrow-left-s-line" /> Back
-              </button>
-            ) : <span />}
-            {step < 3 ? (
-              <button
-                type="button" onClick={goNext}
-                className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                style={{
-                  fontSize: 13, color: '#fff', border: 'none',
-                  background: 'linear-gradient(135deg,#7c5cfc,#a78bfa)',
-                  boxShadow: '0 6px 16px rgba(124,92,252,0.30)', padding: '10px 22px',
-                }}
-              >
-                Next <i className="ri-arrow-right-s-line" />
-              </button>
-            ) : (
-              <button
-                type="button" disabled={submitting} onClick={handleSubmit}
-                className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                style={{
-                  fontSize: 13, color: '#fff', border: 'none',
-                  background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                  boxShadow: '0 6px 16px rgba(10,179,156,0.30)', padding: '10px 22px',
-                  opacity: submitting ? 0.6 : 1,
-                }}
-              >
-                <i className={submitting ? 'ri-loader-4-line' : 'ri-check-line'} /> {submitting ? 'Submitting…' : 'Submit Onboarding'}
-              </button>
-            )}
+            {/* Footer — Back / Next / Submit */}
+            <div className="onb-main-foot">
+              {step > 1 ? (
+                <button
+                  type="button" onClick={goBack}
+                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill"
+                  style={{ fontSize: 13, padding: '8px 18px', background: '#fff', color: '#475569', border: '1px solid #e5e7eb' }}
+                >
+                  <i className="ri-arrow-left-s-line" /> Back
+                </button>
+              ) : <span />}
+              {step < 3 ? (
+                <button
+                  type="button" onClick={goNext}
+                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill"
+                  style={{
+                    fontSize: 13, color: '#fff', border: 'none',
+                    background: 'linear-gradient(135deg,#1d4fc4,#3b82f6)',
+                    boxShadow: '0 8px 18px rgba(29,79,196,0.32)', padding: '10px 26px',
+                  }}
+                >
+                  Next <i className="ri-arrow-right-s-line" />
+                </button>
+              ) : (
+                <button
+                  type="button" disabled={submitting} onClick={handleSubmit}
+                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill"
+                  style={{
+                    fontSize: 13, color: '#fff', border: 'none',
+                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                    boxShadow: '0 8px 18px rgba(10,179,156,0.30)', padding: '10px 26px',
+                    opacity: submitting ? 0.6 : 1,
+                  }}
+                >
+                  <i className={submitting ? 'ri-loader-4-line' : 'ri-check-line'} /> {submitting ? 'Submitting…' : 'Submit Onboarding'}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        </main>
       </div>
     </>
   );
