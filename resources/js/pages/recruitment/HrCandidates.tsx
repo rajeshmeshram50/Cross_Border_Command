@@ -1131,6 +1131,33 @@ function CandidateFormModal({
   const [errors, setErrors]                   = useState<Record<string, string>>({});
   const [saving, setSaving]                   = useState(false);
 
+  /** Validate a salary-style LPA input. Returns the error string or null.
+   *  Mirrors the backend rule `nullable|numeric|min:0|max:9999.99`. */
+  const validateSalaryLpa = (raw: string, label: string): string | null => {
+    if (!raw.trim()) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return `${label} must be a number`;
+    if (n < 0)               return `${label} cannot be negative`;
+    if (n > 9999.99)         return `${label} cannot exceed 9999.99 LPA`;
+    return null;
+  };
+
+  /** Set or clear a single field's error without touching the rest. Used
+   *  by per-field onBlur handlers so the input goes red + shows its inline
+   *  message immediately, instead of waiting for the Save button. */
+  const setFieldError = (key: string, msg: string | null) => {
+    setErrors(prev => {
+      if (msg) {
+        if (prev[key] === msg) return prev;
+        return { ...prev, [key]: msg };
+      }
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!open) return;
     if (editing) {
@@ -1192,17 +1219,14 @@ function CandidateFormModal({
       else if (dNum > 9999) errs.distance_km = 'Distance cannot exceed 9999 KM';
     }
 
-    if (currentSalary.trim()) {
-      const cs = Number(currentSalary);
-      if (!Number.isFinite(cs) || cs < 0) errs.current_salary_lpa = 'Salary cannot be negative';
-      else if (cs > 9999.99) errs.current_salary_lpa = 'Current salary cannot exceed 9999.99 LPA';
-    }
-
-    if (expectedSalary.trim()) {
-      const es = Number(expectedSalary);
-      if (!Number.isFinite(es) || es < 0) errs.expected_salary_lpa = 'Salary cannot be negative';
-      else if (es > 9999.99) errs.expected_salary_lpa = 'Expected salary cannot exceed 9999.99 LPA';
-    }
+    // Use the same helper the per-field onBlur uses — guarantees the
+    // submit-time error matches what's already on screen and lives on the
+    // exact same `errors.current_salary_lpa` key so the input picks up
+    // `.is-invalid` immediately.
+    const curErr = validateSalaryLpa(currentSalary, 'Current salary');
+    if (curErr) errs.current_salary_lpa = curErr;
+    const expErr = validateSalaryLpa(expectedSalary, 'Expected salary');
+    if (expErr) errs.expected_salary_lpa = expErr;
 
     if (!source.trim()) errs.source = 'Source is required';
     if (!status) errs.status = 'Status is required';
@@ -1352,12 +1376,33 @@ function CandidateFormModal({
               <Row className="g-2">
                 <Col md={4}>
                   <label className="rec-form-label">Current Salary (LPA)</label>
-                  <input type="number" min={0} max={9999.99} step={0.5} className={`rec-input${errors.current_salary_lpa ? ' is-invalid' : ''}`} placeholder="e.g. 10" value={currentSalary} onChange={e => setCurrentSalary(e.target.value)} />
+                  <input
+                    type="number" min={0} max={9999.99} step={0.5}
+                    className={`rec-input${errors.current_salary_lpa ? ' is-invalid' : ''}`}
+                    placeholder="e.g. 10"
+                    value={currentSalary}
+                    onChange={e => {
+                      setCurrentSalary(e.target.value);
+                      // Clear any prior error as the user types; revalidate on blur.
+                      if (errors.current_salary_lpa) setFieldError('current_salary_lpa', null);
+                    }}
+                    onBlur={e => setFieldError('current_salary_lpa', validateSalaryLpa(e.target.value, 'Current salary'))}
+                  />
                   {errors.current_salary_lpa && <div className="rec-error"><i className="ri-error-warning-line" />{errors.current_salary_lpa}</div>}
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Expected Salary (LPA)</label>
-                  <input type="number" min={0} max={9999.99} step={0.5} className={`rec-input${errors.expected_salary_lpa ? ' is-invalid' : ''}`} placeholder="e.g. 15" value={expectedSalary} onChange={e => setExpectedSalary(e.target.value)} />
+                  <input
+                    type="number" min={0} max={9999.99} step={0.5}
+                    className={`rec-input${errors.expected_salary_lpa ? ' is-invalid' : ''}`}
+                    placeholder="e.g. 15"
+                    value={expectedSalary}
+                    onChange={e => {
+                      setExpectedSalary(e.target.value);
+                      if (errors.expected_salary_lpa) setFieldError('expected_salary_lpa', null);
+                    }}
+                    onBlur={e => setFieldError('expected_salary_lpa', validateSalaryLpa(e.target.value, 'Expected salary'))}
+                  />
                   {errors.expected_salary_lpa && <div className="rec-error"><i className="ri-error-warning-line" />{errors.expected_salary_lpa}</div>}
                 </Col>
                 <Col md={4}>
