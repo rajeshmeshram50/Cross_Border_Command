@@ -10,6 +10,7 @@ import type { MenuChild, MenuGroup } from '../../types';
 // sidebar both navigate to the same destination. Leaves omitted from this
 // map render as disabled "Coming Soon" cards.
 const HR_LEAF_ROUTES: Record<string, string> = {
+  'hr.overview':    '/hr/overview',
   'hr.employee':    '/hr/employees',
   'hr.recruitment': '/hr/recruitment',
   'hr.exit':        '/hr/exit-management',

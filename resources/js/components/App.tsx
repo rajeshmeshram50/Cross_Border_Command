@@ -43,6 +43,7 @@ import ClientSettings from '../pages/client/ClientSettings';
 import MasterDashboard from '../pages/MasterDashboard';
 import MasterPage from '../pages/master/MasterPage';
 import HrDashboard from '../pages/hrms/HrDashboard';
+import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
 import HrRecruitment from '../pages/recruitment/HrRecruitment';
 import HrCandidates from '../pages/recruitment/HrCandidates';
@@ -413,6 +414,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/hr" element={<HrDashboard />} />
+              <Route path="/hr/overview" element={<HrOverview />} />
               <Route path="/hr/employees" element={<HrEmployees />} />
               <Route path="/hr/recruitment" element={<HrRecruitment />} />
               <Route path="/hr/recruitment/:id/candidates" element={<HrCandidates />} />

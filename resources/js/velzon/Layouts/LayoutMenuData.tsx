@@ -57,6 +57,7 @@ const slugToPath = (slug: string): string => {
 // them to the switch below; the rest keep falling back to /hr.
 const hrLeafLink = (leafId: string): string => {
   switch (leafId) {
+    case "hr.overview":    return "/hr/overview";
     case "hr.employee":    return "/hr/employees";
     case "hr.recruitment": return "/hr/recruitment";
     case "hr.exit":        return "/hr/exit-management";
