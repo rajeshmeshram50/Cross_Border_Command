@@ -406,7 +406,19 @@ function DashboardRoutes({ user }: { user: any }) {
                   </div>
                 </div>
               } />
-              <Route path="/payments" element={<Payments />} />
+              {/* Payments is a billing surface — only the account owner
+                  (super_admin) and the client_admin who paid the bills
+                  should see it. Other roles hitting the URL directly get
+                  bounced to their dashboard so an employee can't even
+                  load the empty Payments shell. */}
+              <Route
+                path="/payments"
+                element={
+                  user.user_type === 'super_admin' || user.user_type === 'client_admin'
+                    ? <Payments />
+                    : <Navigate to="/dashboard" replace />
+                }
+              />
               <Route path="/permissions" element={<Permissions />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<ProfileRouter />} />

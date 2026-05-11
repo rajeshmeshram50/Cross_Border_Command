@@ -731,6 +731,21 @@ class EmployeeController extends Controller
             ->whereNull('deleted_at')
             ->ignore($ignoreUserId);
 
+        // Step 4 (Compensation) is the wizard's terminal save — salary fields
+        // are mandatory there because zero-decision payroll setup was leaking
+        // employees into the DB with empty CTC (caught by QA). On earlier
+        // steps (wizard_step_completed < 4) salary stays nullable so partial
+        // PATCHes from steps 1-3 don't fail validation.
+        //
+        // `enable_payroll = false` is the explicit opt-out (contractor / paid
+        // externally) — in that case we don't require the numeric fields.
+        $isFinalStep   = (int) $request->input('wizard_step_completed', 0) >= 4;
+        $payrollOn     = (bool) $request->input('enable_payroll', true);
+        $requireSalary = $isFinalStep && $payrollOn;
+        $salaryRule    = $requireSalary ? ['required', 'numeric', 'min:0.01'] : ['nullable', 'numeric', 'min:0'];
+        $salaryFreqRule = $requireSalary ? ['required', 'string', 'max:30']   : ['nullable', 'string', 'max:30'];
+        $salaryFromRule = $requireSalary ? ['required', 'date']               : ['nullable', 'date'];
+
         return $request->validate([
             // Identity — first_name is the only field the server insists on
             // (drives display_name + login user.name). Everything else can
@@ -806,9 +821,9 @@ class EmployeeController extends Controller
             // Step 4 — Compensation
             'enable_payroll'        => 'nullable|boolean',
             'pay_group'             => 'nullable|string|max:100',
-            'annual_salary'         => 'nullable|numeric|min:0',
-            'salary_frequency'      => 'nullable|string|max:30',
-            'salary_effective_from' => 'nullable|date',
+            'annual_salary'         => $salaryRule,
+            'salary_frequency'      => $salaryFreqRule,
+            'salary_effective_from' => $salaryFromRule,
             'salary_structure'      => 'nullable|string|max:50',
             'tax_regime'            => 'nullable|string|max:50',
             'bonus_in_annual'       => 'nullable|boolean',

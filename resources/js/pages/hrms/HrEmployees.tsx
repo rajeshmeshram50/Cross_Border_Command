@@ -1498,7 +1498,27 @@ export default function HrEmployees() {
     return e;
   }, [eAadharFile, ePanFile, eExistingDocs]);
 
-  const validateStep4 = useCallback((): Record<string, string> => ({}), []);
+  // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
+  // for the employee (the default). The "Enable payroll" toggle is the
+  // explicit opt-out: when an admin turns it OFF they're declaring this
+  // hire isn't on our payroll (contractor, intern paid externally, etc.)
+  // so the salary fields stop applying. Without this check the wizard was
+  // saving employees with a blank annual salary — flagged by QA.
+  const validateStep4 = useCallback((): Record<string, string> => {
+    const e: Record<string, string> = {};
+    if (!eEnablePayroll) return e;
+    const amt = Number(eAnnualSalary);
+    if (eAnnualSalary === '' || !Number.isFinite(amt) || amt <= 0) {
+      e.annual_salary = 'Annual salary is required';
+    }
+    if (!eSalaryFreq) {
+      e.salary_frequency = 'Salary frequency is required';
+    }
+    if (!eSalaryFrom) {
+      e.salary_effective_from = 'Effective-from date is required';
+    }
+    return e;
+  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom]);
 
   // First step that contains any of the given error keys. Used to jump-back
   // when a deeper step's submit surfaces a problem in an earlier step.
@@ -1509,6 +1529,7 @@ export default function HrEmployees() {
       { step: 1, keys: new Set(['work_country_id','first_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
       { step: 3, keys: new Set(['doc_aadhaar','doc_pan']) },
+      { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from']) },
     ];
     for (const s of STEP_KEYS) {
       if (k.some(x => s.keys.has(x))) return s.step;
@@ -4062,17 +4083,27 @@ export default function HrEmployees() {
                       <MasterSelect value={ePayGroup} onChange={setEPayGroup} options={PAY_GROUP_OPTIONS} />
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Annual Salary</label>
+                      <label className="emp-label">Annual Salary{eEnablePayroll && <span className="req">*</span>}</label>
                       <div className="d-flex gap-2">
-                        <input className="emp-input" type="number" placeholder="Enter amount" value={eAnnualSalary} onChange={e => setEAnnualSalary(e.target.value)} style={{ flex: 1 }} />
+                        <input
+                          className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
+                          type="number"
+                          placeholder="Enter amount"
+                          value={eAnnualSalary}
+                          onChange={e => { setEAnnualSalary(e.target.value); clearEErr('annual_salary'); }}
+                          style={{ flex: 1 }}
+                        />
                         <div style={{ width: 130, flexShrink: 0 }}>
-                          <MasterSelect value={eSalaryFreq} onChange={setESalaryFreq} options={SALARY_FREQUENCY_OPTIONS} />
+                          <MasterSelect value={eSalaryFreq} onChange={(v) => { setESalaryFreq(v); clearEErr('salary_frequency'); }} options={SALARY_FREQUENCY_OPTIONS} invalid={!!eErrors.salary_frequency} />
                         </div>
                       </div>
+                      {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
+                      {eErrors.salary_frequency && <small className="emp-err">{eErrors.salary_frequency}</small>}
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Salary Effective From</label>
-                      <MasterDatePicker value={eSalaryFrom} onChange={setESalaryFrom} placeholder="dd-mm-yyyy" />
+                      <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
+                      <MasterDatePicker value={eSalaryFrom} onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }} placeholder="dd-mm-yyyy" invalid={!!eErrors.salary_effective_from} />
+                      {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Salary Structure Type</label>
