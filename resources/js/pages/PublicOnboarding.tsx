@@ -21,6 +21,22 @@ interface LegalEntityOption { id: number; entity_name: string; city?: string | n
 
 type StepNum = 1 | 2 | 3;
 
+/**
+ * Prefix-icon wrapper for form fields — mirrors masterFormKit's `.master-field`
+ * pattern. Defined at module scope (NOT inside the component) so React keeps
+ * the same component identity across re-renders. If this were declared inline
+ * inside `PublicOnboarding`, every keystroke would re-create the component
+ * type, unmount the input, and clobber focus after a single character.
+ */
+function IconField({ icon, children }: { icon: string; children: React.ReactNode }) {
+  return (
+    <div className="onb-field">
+      <i className={`onb-field-icon ${icon}`} />
+      {children}
+    </div>
+  );
+}
+
 export default function PublicOnboarding() {
   const { token } = useParams<{ token: string }>();
   const toast = useToast();
@@ -430,16 +446,6 @@ export default function PublicOnboarding() {
     3: { title: 'Job Details',       description: 'These were set by HR when you were invited — confirm them or make small updates.' },
   };
   const current = stepCopy[step];
-
-  // Prefix-icon wrapper — mirrors the master-field pattern. Icon sits on the
-  // left at vertical-center; the input/select inside gets extra left padding
-  // (handled by the `.onb-field .emp-input / .master-select-toggle` rules).
-  const IconField = ({ icon, children }: { icon: string; children: React.ReactNode }) => (
-    <div className="onb-field">
-      <i className={`onb-field-icon ${icon}`} />
-      {children}
-    </div>
-  );
 
   return (
     <>
