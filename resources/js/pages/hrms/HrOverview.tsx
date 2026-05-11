@@ -99,8 +99,8 @@ function KpiCard({ label, value, iconClass, gradient, hint, onClick }: KpiProps)
         borderRadius: 16,
         padding: '18px 18px 14px',
         boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
-        border: '1px solid #eef0f4',
-        background: '#fff',
+        border: '1px solid var(--vz-border-color)',
+        background: 'var(--vz-card-bg)',
         position: 'relative',
         overflow: 'hidden',
         height: '100%',
@@ -837,7 +837,7 @@ function ProbationSnapshot({ data }: { data: OverviewData['probation_snapshot'] 
       </div>
       {/* Visual share — amber chunk on left, teal chunk on right */}
       <div style={{
-        height: 10, borderRadius: 999, background: '#eef0f4',
+        height: 10, borderRadius: 999, background: 'var(--vz-border-color)',
         overflow: 'hidden', display: 'flex',
       }}>
         <div style={{ width: `${pctInProgress}%`, background: 'linear-gradient(90deg,#f7b84b,#fad07e)' }} />
@@ -880,7 +880,7 @@ function ExpenseByCategory({ rows }: { rows: OverviewData['expense_by_category']
                 {formatINRCompact(r.amount)}
               </span>
             </div>
-            <div style={{ height: 6, background: '#eef0f4', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{ height: 6, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden' }}>
               <div style={{ width: `${pct}%`, height: '100%', background: COLORS[i % COLORS.length], borderRadius: 999 }} />
             </div>
             <div className="mt-1" style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)' }}>

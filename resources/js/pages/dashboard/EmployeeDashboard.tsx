@@ -58,8 +58,8 @@ function KpiCard({ label, value, iconClass, gradient, hint, onClick }: KpiProps)
         borderRadius: 16,
         padding: '18px 18px 14px',
         boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
-        border: '1px solid #eef0f4',
-        background: '#fff',
+        border: '1px solid var(--vz-border-color)',
+        background: 'var(--vz-card-bg)',
         position: 'relative',
         overflow: 'hidden',
         height: '100%',
@@ -381,7 +381,7 @@ export default function EmployeeDashboard() {
               <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--vz-secondary-color)' }}>Profile completion</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#405189' }}>{me.profile_completion_pct}%</span>
             </div>
-            <div style={{ height: 8, background: '#eef0f4', borderRadius: 999, overflow: 'hidden' }}>
+            <div style={{ height: 8, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden' }}>
               <div style={{
                 width: `${Math.min(100, Math.max(0, me.profile_completion_pct))}%`,
                 height: '100%',
@@ -395,7 +395,14 @@ export default function EmployeeDashboard() {
 
       {/* ── Onboarding progress (only while incomplete) ─────────────────── */}
       {onboarding && (
-        <Card style={{ ...cardStyle, marginBottom: 16, background: 'linear-gradient(135deg, rgba(124,92,252,0.06), rgba(167,139,250,0.04))', border: '1px solid rgba(124,92,252,0.18)' }}>
+        <Card style={{
+          ...cardStyle, marginBottom: 16,
+          // Layer the violet tint on top of the theme-aware card bg so the
+          // strip still reads as a card (and not as transparent body) in
+          // dark mode where rgba(124,92,252,0.06) over dark renders ~black.
+          background: 'linear-gradient(135deg, rgba(124,92,252,0.10), rgba(167,139,250,0.06)), var(--vz-card-bg)',
+          border: '1px solid rgba(124,92,252,0.28)',
+        }}>
           <CardBody>
             <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
               <div className="d-flex align-items-center gap-3">
@@ -420,7 +427,7 @@ export default function EmployeeDashboard() {
                   <span style={{ fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>Progress</span>
                   <span style={{ fontSize: 12, color: '#7c5cfc', fontWeight: 800 }}>{onboarding.percent}%</span>
                 </div>
-                <div style={{ height: 8, background: '#eef0f4', borderRadius: 999, overflow: 'hidden' }}>
+                <div style={{ height: 8, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden' }}>
                   <div style={{ width: `${onboarding.percent}%`, height: '100%', background: 'linear-gradient(90deg,#7c5cfc,#a78bfa)' }} />
                 </div>
               </div>
