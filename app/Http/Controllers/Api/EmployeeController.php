@@ -314,6 +314,13 @@ class EmployeeController extends Controller
                 $auth = $request->user();
                 [$clientId, $branchId] = $this->resolveOwnership($request);
 
+                // Reject obvious duplicate hires within the same tenant.
+                // The Laravel validator already blocks identical login
+                // emails (unique on users.email), but the form accepted
+                // re-uses of the same human paired with a tweaked email.
+                // Catch those before the row is written.
+                $this->guardDuplicate($data, $clientId, null);
+
                 // Provision the login account first — if the email collides we
                 // want the whole txn to roll back before writing the employee row.
                 $rawPassword = $this->generatePassword();
@@ -420,6 +427,10 @@ class EmployeeController extends Controller
         $data = $this->validatePayload($request, $row->id);
         $data = $this->mirrorAncillaryRoles($data);
         $this->assertAssetsNotDoubleBooked($data, $row->id);
+        // Same duplicate guard as store(), but exclude the row being
+        // edited so saving an unchanged employee never reports itself
+        // as its own duplicate.
+        $this->guardDuplicate($data, $row->client_id, $row->id);
 
         // Track wizard progress as a high-watermark — never decrease it.
         // The frontend posts the step number it just completed; we keep
@@ -913,6 +924,70 @@ class EmployeeController extends Controller
             $data['ancillary_role_ids'] = [(int) $data['ancillary_role_id']];
         }
         return $data;
+    }
+
+    /**
+     * Reject duplicate human-being entries within the same tenant.
+     *
+     * Two signature checks run in order:
+     *   1. Mobile number — most reliable single field; same person almost
+     *      always reuses their phone.
+     *   2. (first_name + last_name + date_of_birth) — covers the case
+     *      where the admin retyped the mobile with a typo but everything
+     *      else points to the same human.
+     *
+     * Each check skips if its key fields are missing so partial drafts
+     * still persist. Soft-deleted employees don't block fresh hires.
+     */
+    private function guardDuplicate(array $data, $clientId, ?int $excludeId): void
+    {
+        $mobile    = trim((string) ($data['mobile']     ?? ''));
+        $firstName = trim((string) ($data['first_name'] ?? ''));
+        $lastName  = trim((string) ($data['last_name']  ?? ''));
+        $dob       = $data['date_of_birth'] ?? null;
+
+        $tenantScope = function ($q) use ($clientId, $excludeId) {
+            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+            if ($excludeId !== null) $q->where('id', '!=', $excludeId);
+        };
+
+        // 1) Same mobile number in this tenant → same person.
+        if ($mobile !== '') {
+            $q = \App\Models\Employee::query()->where('mobile', $mobile);
+            $tenantScope($q);
+            $existing = $q->first(['id', 'emp_code', 'display_name', 'first_name', 'last_name']);
+            if ($existing) {
+                $name = $existing->display_name
+                    ?: trim($existing->first_name . ' ' . $existing->last_name);
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'mobile' => [sprintf(
+                        'This mobile number is already in use by %s (%s).',
+                        $name ?: 'another employee',
+                        $existing->emp_code ?: ('#' . $existing->id),
+                    )],
+                ]);
+            }
+        }
+
+        // 2) Same name + DOB triple → same person even with new mobile.
+        if ($firstName !== '' && $lastName !== '' && $dob) {
+            $q = \App\Models\Employee::query()
+                ->whereRaw('LOWER(first_name) = ?', [mb_strtolower($firstName)])
+                ->whereRaw('LOWER(last_name)  = ?', [mb_strtolower($lastName)])
+                ->whereDate('date_of_birth', $dob);
+            $tenantScope($q);
+            $existing = $q->first(['id', 'emp_code', 'display_name']);
+            if ($existing) {
+                $name = $existing->display_name ?: ($firstName . ' ' . $lastName);
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'first_name' => [sprintf(
+                        'An employee with this name and date of birth already exists (%s — %s).',
+                        $name,
+                        $existing->emp_code ?: ('#' . $existing->id),
+                    )],
+                ]);
+            }
+        }
     }
 
     /**

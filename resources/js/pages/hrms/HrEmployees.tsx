@@ -1456,11 +1456,22 @@ export default function HrEmployees() {
   }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eLegalEntity,
       eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
 
-  // Steps 3 and 4 only have soft-required fields (defaults pre-filled), so
-  // their validators currently no-op. Adding them here keeps the contract
-  // uniform — wire field-level checks into them as those steps grow real
-  // mandatory inputs (e.g. Aadhar/Pan upload requirements).
-  const validateStep3 = useCallback((): Record<string, string> => ({}), []);
+  // Step 3 — Documents section requires Aadhar + PAN. A document counts
+  // as supplied if EITHER (a) the admin just picked a file in this
+  // session (eAadharFile / ePanFile) OR (b) a prior upload already lives
+  // on the server (eExistingDocs.aadhaar / .pan). The Passport-size photo
+  // is intentionally optional.
+  const validateStep3 = useCallback((): Record<string, string> => {
+    const e: Record<string, string> = {};
+    if (!eAadharFile && !eExistingDocs['aadhaar']) {
+      e.doc_aadhaar = 'Aadhar Card upload is required';
+    }
+    if (!ePanFile && !eExistingDocs['pan']) {
+      e.doc_pan = 'PAN Card upload is required';
+    }
+    return e;
+  }, [eAadharFile, ePanFile, eExistingDocs]);
+
   const validateStep4 = useCallback((): Record<string, string> => ({}), []);
 
   // First step that contains any of the given error keys. Used to jump-back
@@ -1469,8 +1480,9 @@ export default function HrEmployees() {
     if (Object.keys(errs).length === 0) return null;
     const k = Object.keys(errs);
     const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
-      { step: 1, keys: new Set(['work_country_id','first_name','last_name','display_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
+      { step: 1, keys: new Set(['work_country_id','first_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
+      { step: 3, keys: new Set(['doc_aadhaar','doc_pan']) },
     ];
     for (const s of STEP_KEYS) {
       if (k.some(x => s.keys.has(x))) return s.step;
@@ -3871,6 +3883,12 @@ export default function HrEmployees() {
                       const srv = eExistingDocs[d.key];
                       const busy = !!eDocBusy[d.key];
                       const hasUpload = !!srv;
+                      // Validation error key for this tile (only the
+                      // required ones map to keys; photo never errors).
+                      const errKey = d.key === 'aadhaar' ? 'doc_aadhaar'
+                                   : d.key === 'pan'     ? 'doc_pan'
+                                   : null;
+                      const tileError = errKey ? eErrors[errKey] : undefined;
                       return (
                         <Col md={4} key={d.key}>
                           <label className="emp-label">
@@ -3930,11 +3948,15 @@ export default function HrEmployees() {
                               className="d-flex align-items-center justify-content-center gap-2"
                               style={{
                                 height: 38,
-                                border: '1.5px dashed #a78bfa',
+                                // Switch the dashed border to a red error
+                                // tint when this tile failed validation,
+                                // so the user can spot the missing upload
+                                // at a glance after clicking Next/Save.
+                                border: tileError ? '1.5px dashed #f06548' : '1.5px dashed #a78bfa',
                                 borderRadius: 8,
-                                background: '#f5f0ff',
+                                background: tileError ? '#fff1ee' : '#f5f0ff',
                                 cursor: busy ? 'wait' : 'pointer',
-                                color: '#7c5cfc',
+                                color: tileError ? '#b1401d' : '#7c5cfc',
                                 fontSize: 12.5,
                                 fontWeight: 600,
                                 opacity: busy ? 0.6 : 1,
@@ -3950,11 +3972,16 @@ export default function HrEmployees() {
                                 onChange={e => {
                                   const f = e.target.files?.[0];
                                   e.target.value = '';
-                                  if (f) { d.set(f); uploadEmpDoc(d.key, d.label, f); }
+                                  if (f) {
+                                    d.set(f);
+                                    if (errKey) clearEErr(errKey);
+                                    uploadEmpDoc(d.key, d.label, f);
+                                  }
                                 }}
                               />
                             </label>
                           )}
+                          {tileError && <small className="emp-err">{tileError}</small>}
                         </Col>
                       );
                     })}
