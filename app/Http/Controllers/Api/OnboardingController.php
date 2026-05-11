@@ -156,8 +156,11 @@ class OnboardingController extends Controller
             return response()->json(['message' => 'This onboarding link has expired.'], 410);
         }
 
-        // Inviter context — tenant name shown in the form header.
-        $orgName = Client::find($invite->client_id)?->org_name ?? 'Your Organization';
+        // Inviter context — tenant name, logo and website shown in the form sidebar.
+        $client  = Client::find($invite->client_id);
+        $orgName = $client?->org_name ?? 'Your Organization';
+        $logoUrl = $client?->logo_url;
+        $website = $client?->website;
 
         // Master lists scoped to the inviting tenant. Public endpoint, so we
         // construct the queries manually rather than going through MasterController
@@ -177,6 +180,8 @@ class OnboardingController extends Controller
                 'expected_join_date' => $invite->expected_join_date?->toDateString(),
                 'expires_at'         => $invite->expires_at?->toIso8601String(),
                 'org_name'           => $orgName,
+                'logo_url'           => $logoUrl,
+                'website'            => $website,
             ],
             'masters' => [
                 'countries'    => \App\Models\Masters\Countries::orderBy('name')->get(['id', 'name']),
