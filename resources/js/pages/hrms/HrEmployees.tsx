@@ -1079,128 +1079,14 @@ export default function HrEmployees() {
     });
   };
 
-  // ── Add Employee — draft persistence ─────────────────────────────────
-  // localStorage key. Bump the suffix when the draft shape changes so old
-  // drafts can't crash hydrate.
-  const ADD_DRAFT_KEY = 'cbc:hr-employees:add-draft:v1';
+  // ── Add Employee — partial save persistence ──────────────────────────
+  // Drafts are NOT cached client-side anymore. Instead, every Next click
+  // calls `persistCurrentStep()` which writes the row to the backend as a
+  // soft-deleted employee. Closing the wizard mid-flow leaves that row in
+  // the Disabled tab, where the user can re-open it to continue. Add
+  // Employee therefore always opens with a clean form.
 
-  /** Snapshot every wizard field into a single plain object. */
-  const collectDraft = () => ({
-    empStep,
-    eWorkCountry, eFirstName, eMiddleName, eLastName,
-    eDisplayName, eDisplayNameTouched, eActualName,
-    eGender, eDob, eNationality,
-    eWorkEmail, eMobile, eEmpId, eStatus,
-    eCurAddr1, eCurAddr2, eCurCity, eCurState, eCurCountry, eCurPin,
-    eSameAsCurrent,
-    ePermAddr1, ePermAddr2, ePermCity, ePermState, ePermCountry, ePermPin,
-    eJoinDate, eDept, eDesignation, ePrimaryRole, eAncillaryRole, eWorkType,
-    eLegalEntity, eLocation, eReportingMgr,
-    eProbationPolicy, eNoticePeriod, eCustomProbation, eCustomNotice,
-    eLeavePlan, eHolidayList, eAttendanceTracking, eShift, eWeeklyOff,
-    eAttendanceNumber, eTimeTracking, ePenalizationPolicy, eOvertime, eExpensePolicy,
-    eLaptopAssigned, eLaptopAssetId, eMobileDevice, eOtherAssets,
-    eEnablePayroll, ePayGroup, eAnnualSalary, eSalaryFreq, eSalaryFrom,
-    eSalaryStructure, eTaxRegime, eBonusInAnnual, ePfEligible, eDetailedBreakup,
-  });
-
-  /** Apply a previously-saved draft back onto state. Quietly skips unknown keys. */
-  const applyDraft = (d: Record<string, any>) => {
-    if (typeof d !== 'object' || !d) return;
-    if (d.empStep === 1 || d.empStep === 2 || d.empStep === 3 || d.empStep === 4) setEmpStep(d.empStep);
-    if (d.eWorkCountry !== undefined) setEWorkCountry(d.eWorkCountry || '');
-    if (d.eFirstName !== undefined) setEFirstName(d.eFirstName || '');
-    if (d.eMiddleName !== undefined) setEMiddleName(d.eMiddleName || '');
-    if (d.eLastName !== undefined) setELastName(d.eLastName || '');
-    if (d.eDisplayName !== undefined) setEDisplayName(d.eDisplayName || '');
-    if (d.eDisplayNameTouched !== undefined) setEDisplayNameTouched(!!d.eDisplayNameTouched);
-    if (d.eActualName !== undefined) setEActualName(d.eActualName || '');
-    if (d.eGender !== undefined) setEGender(d.eGender || '');
-    if (d.eDob !== undefined) setEDob(d.eDob || '');
-    if (d.eNationality !== undefined) setENationality(d.eNationality || '');
-    if (d.eWorkEmail !== undefined) setEWorkEmail(d.eWorkEmail || '');
-    if (d.eMobile !== undefined) setEMobile(d.eMobile || '');
-    if (d.eEmpId !== undefined) setEEmpId(d.eEmpId || '');
-    if (d.eStatus !== undefined) setEStatus(d.eStatus || 'Active');
-    if (d.eCurAddr1 !== undefined) setECurAddr1(d.eCurAddr1 || '');
-    if (d.eCurAddr2 !== undefined) setECurAddr2(d.eCurAddr2 || '');
-    if (d.eCurCity !== undefined)  setECurCity(d.eCurCity || '');
-    if (d.eCurState !== undefined) setECurState(d.eCurState || '');
-    if (d.eCurCountry !== undefined) setECurCountry(d.eCurCountry || '');
-    if (d.eCurPin !== undefined)   setECurPin(d.eCurPin || '');
-    if (d.eSameAsCurrent !== undefined) setESameAsCurrent(!!d.eSameAsCurrent);
-    if (d.ePermAddr1 !== undefined) setEPermAddr1(d.ePermAddr1 || '');
-    if (d.ePermAddr2 !== undefined) setEPermAddr2(d.ePermAddr2 || '');
-    if (d.ePermCity !== undefined)  setEPermCity(d.ePermCity || '');
-    if (d.ePermState !== undefined) setEPermState(d.ePermState || '');
-    if (d.ePermCountry !== undefined) setEPermCountry(d.ePermCountry || '');
-    if (d.ePermPin !== undefined)   setEPermPin(d.ePermPin || '');
-    if (d.eJoinDate !== undefined) setEJoinDate(d.eJoinDate || '');
-    if (d.eDept !== undefined) setEDept(d.eDept || '');
-    if (d.eDesignation !== undefined) setEDesignation(d.eDesignation || '');
-    if (d.ePrimaryRole !== undefined) setEPrimaryRole(d.ePrimaryRole || '');
-    if (Array.isArray(d.eAncillaryRole)) setEAncillaryRole(d.eAncillaryRole);
-    if (d.eWorkType !== undefined) setEWorkType(d.eWorkType || 'Full Time');
-    if (d.eLegalEntity !== undefined) setELegalEntity(d.eLegalEntity || '');
-    if (d.eLocation !== undefined) setELocation(d.eLocation || '');
-    if (d.eReportingMgr !== undefined) setEReportingMgr(d.eReportingMgr || '');
-    if (d.eProbationPolicy !== undefined) setEProbationPolicy(d.eProbationPolicy || 'Default Probation Policy');
-    if (d.eNoticePeriod !== undefined) setENoticePeriod(d.eNoticePeriod || 'Default Notice Period');
-    if (d.eCustomProbation !== undefined) setECustomProbation(d.eCustomProbation || '');
-    if (d.eCustomNotice !== undefined) setECustomNotice(d.eCustomNotice || '');
-    if (d.eLeavePlan !== undefined) setELeavePlan(d.eLeavePlan || 'Leave Policy');
-    if (d.eHolidayList !== undefined) setEHolidayList(d.eHolidayList || 'Holiday Calendar');
-    if (d.eAttendanceTracking !== undefined) setEAttendanceTracking(!!d.eAttendanceTracking);
-    if (d.eShift !== undefined) setEShift(d.eShift || 'General Shift');
-    if (d.eWeeklyOff !== undefined) setEWeeklyOff(d.eWeeklyOff || 'Week Off Policy');
-    if (d.eAttendanceNumber !== undefined) setEAttendanceNumber(d.eAttendanceNumber || '');
-    if (d.eTimeTracking !== undefined) setETimeTracking(d.eTimeTracking || 'Manual');
-    if (d.ePenalizationPolicy !== undefined) setEPenalizationPolicy(d.ePenalizationPolicy || 'Tracking Policy');
-    if (d.eOvertime !== undefined) setEOvertime(d.eOvertime || 'Not applicable');
-    if (d.eExpensePolicy !== undefined) setEExpensePolicy(d.eExpensePolicy || '');
-    if (d.eLaptopAssigned !== undefined) setELaptopAssigned(d.eLaptopAssigned || 'No');
-    if (d.eLaptopAssetId !== undefined) setELaptopAssetId(d.eLaptopAssetId || '');
-    if (d.eMobileDevice !== undefined) setEMobileDevice(d.eMobileDevice || '');
-    if (d.eOtherAssets !== undefined) setEOtherAssets(d.eOtherAssets || '');
-    if (d.eEnablePayroll !== undefined) setEEnablePayroll(!!d.eEnablePayroll);
-    if (d.ePayGroup !== undefined) setEPayGroup(d.ePayGroup || 'Default pay group');
-    if (d.eAnnualSalary !== undefined) setEAnnualSalary(d.eAnnualSalary || '');
-    if (d.eSalaryFreq !== undefined) setESalaryFreq(d.eSalaryFreq || 'Per annum');
-    if (d.eSalaryFrom !== undefined) setESalaryFrom(d.eSalaryFrom || '');
-    if (d.eSalaryStructure !== undefined) setESalaryStructure(d.eSalaryStructure || 'Range Based');
-    if (d.eTaxRegime !== undefined) setETaxRegime(d.eTaxRegime || 'New Regime (115BAC)');
-    if (d.eBonusInAnnual !== undefined) setEBonusInAnnual(!!d.eBonusInAnnual);
-    if (d.ePfEligible !== undefined) setEPfEligible(!!d.ePfEligible);
-    if (d.eDetailedBreakup !== undefined) setEDetailedBreakup(!!d.eDetailedBreakup);
-  };
-
-  const clearDraft = () => {
-    try { localStorage.removeItem(ADD_DRAFT_KEY); } catch { /* noop */ }
-  };
-
-  /**
-   * Persist draft on every relevant change while the modal is open in ADD
-   * mode. Edit-mode changes never overwrite the draft — that would mix two
-   * unrelated employees' data. Only saves when the user has typed at least
-   * one field of substance (empty drafts add noise to localStorage).
-   */
-  const draftSnapshot = JSON.stringify(collectDraft());
-  useEffect(() => {
-    if (!empOpen || empMode !== 'add') return;
-    const hasContent = !!(eFirstName.trim() || eLastName.trim() || eWorkEmail.trim()
-      || eMobile.trim() || empStep > 1);
-    if (!hasContent) return;
-    try {
-      localStorage.setItem(ADD_DRAFT_KEY, JSON.stringify({ ...JSON.parse(draftSnapshot), _ts: Date.now() }));
-    } catch { /* quota / private mode — silently skip */ }
-  }, [empOpen, empMode, draftSnapshot, eFirstName, eLastName, eWorkEmail, eMobile, empStep]);
-
-  // Draft-resume prompt state. Modal is rendered at the bottom of the
-  // page tree so it can sit ABOVE the Add Employee modal without z-index
-  // wrestling. Pending draft data is held here while the user decides.
-  const [draftPromptOpen, setDraftPromptOpen] = useState(false);
-  const [pendingDraft, setPendingDraft] = useState<{ data: any; hint: string } | null>(null);
-
+  /** Pull the next EMP-### code so the new-row preview is populated. */
   const proceedFresh = async () => {
     try {
       const r = await api.get('/employees/next-code');
@@ -1213,58 +1099,8 @@ export default function HrEmployees() {
     setEmpMode('add');
     setEmpEditingName('');
     setEditingDbId(null);
-
-    // Look for a saved draft BEFORE opening the modal so we can either
-    // (a) prompt the user via our own styled modal, or (b) open fresh.
-    try {
-      const raw = localStorage.getItem(ADD_DRAFT_KEY);
-      if (raw) {
-        const draft = JSON.parse(raw);
-        const hint = [draft?.eFirstName, draft?.eLastName].filter(Boolean).join(' ').trim()
-          || draft?.eWorkEmail
-          || `Step ${draft?.empStep || 1}`;
-        setPendingDraft({ data: draft, hint });
-        setDraftPromptOpen(true);
-        return; // wait for user's choice — modal handlers continue the flow
-      }
-    } catch { /* corrupt draft — ignore, fall through to fresh state */ }
-
-    // No draft path — open clean form and pre-fill the next EMP-### code.
     setEmpOpen(true);
     await proceedFresh();
-  };
-
-  const resumeDraft = () => {
-    const draft = pendingDraft?.data;
-    setDraftPromptOpen(false);
-    setPendingDraft(null);
-    setEmpOpen(true);
-    if (!draft) return;
-    applyDraft(draft);
-    const restoredStep = (draft.empStep as 1 | 2 | 3 | 4) || 1;
-    toast.success(
-      'Draft resumed',
-      `Continuing at step ${restoredStep}. Use "Discard draft" in the header to start over.`,
-    );
-  };
-
-  const startFreshFromPrompt = async () => {
-    localStorage.removeItem(ADD_DRAFT_KEY);
-    setDraftPromptOpen(false);
-    setPendingDraft(null);
-    setEmpOpen(true);
-    await proceedFresh();
-  };
-
-  /** Discard the saved draft and reset the form to a clean step 1. */
-  const discardAddDraft = () => {
-    clearDraft();
-    resetEmpForm();
-    // Re-prime the EMP-### field so the user still sees the next code.
-    api.get('/employees/next-code')
-      .then(r => { if (r?.data?.code) setEEmpId(r.data.code); })
-      .catch(() => { /* noop */ });
-    toast.success('Draft discarded', 'Form reset to a fresh start.');
   };
 
   const openEditEmployee = (row: EmployeeRow) => {
@@ -1741,7 +1577,6 @@ export default function HrEmployees() {
           `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`,
         );
       }
-      clearDraft();
       await reloadEmployees();
       await reloadManagers();
       closeEmp();
@@ -2992,93 +2827,6 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
-      {/* ── Draft-resume prompt — styled in-app modal that replaces the
-          native window.confirm() the old flow used. Asks the user whether
-          to resume a previously-saved Add Employee draft or start fresh. */}
-      <Modal
-        isOpen={draftPromptOpen}
-        toggle={() => setDraftPromptOpen(false)}
-        centered
-        backdrop="static"
-        keyboard={false}
-        modalClassName="emp-draft-prompt"
-      >
-        <style>{`
-          .emp-draft-prompt .modal-dialog { max-width: 460px; }
-          .emp-draft-prompt .modal-content {
-            border: none;
-            border-radius: 18px !important;
-            overflow: hidden;
-            box-shadow: 0 24px 60px rgba(18,38,63,0.30);
-          }
-        `}</style>
-        <ModalBody className="p-0">
-          {/* Gradient header — same indigo→violet palette as the Add
-              Employee modal so the prompt reads as part of the flow. */}
-          <div
-            style={{
-              padding: '20px 22px',
-              background: 'linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%)',
-              color: '#fff',
-            }}
-          >
-            <div className="d-flex align-items-center gap-3">
-              <div
-                className="d-flex align-items-center justify-content-center flex-shrink-0"
-                style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  background: 'rgba(255,255,255,0.18)',
-                  backdropFilter: 'blur(4px)',
-                }}
-              >
-                <i className="ri-history-line" style={{ fontSize: 20 }} />
-              </div>
-              <div>
-                <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
-                  Unsaved draft found
-                </h5>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
-                  Pick up where you left off, or start a fresh record
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ padding: '20px 22px 18px', background: '#fff' }}>
-            <p className="mb-3" style={{ fontSize: 13.5, color: 'var(--vz-body-color)', lineHeight: 1.55 }}>
-              You have an in-progress Add Employee draft for{' '}
-              <strong style={{ color: '#5a3fd1' }}>{pendingDraft?.hint || 'an earlier session'}</strong>.
-              Choose what to do with it.
-            </p>
-
-            <div className="d-flex justify-content-end gap-2 mt-3">
-              <button
-                type="button"
-                onClick={startFreshFromPrompt}
-                className="rec-btn-ghost"
-              >
-                <i className="ri-add-line" />
-                Start fresh
-              </button>
-              <button
-                type="button"
-                onClick={resumeDraft}
-                className="rec-btn-primary"
-                style={{
-                  background: 'linear-gradient(120deg, #5a3fd1 0%, #7c5cfc 55%, #a78bfa 100%)',
-                  boxShadow:
-                    '0 6px 16px rgba(124,92,252,0.40), 0 2px 4px rgba(90,63,209,0.22), inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.08)',
-                }}
-              >
-                <i className="ri-history-line" />
-                Resume draft
-                <i className="ri-arrow-right-line" />
-              </button>
-            </div>
-          </div>
-        </ModalBody>
-      </Modal>
-
       {/* ── Add / Edit Employee modal (4-step wizard) ── */}
       <Modal
         isOpen={empOpen}
@@ -3249,26 +2997,6 @@ export default function HrEmployees() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-shrink-0">
-                {/* Discard-draft chip — only visible in Add mode while a
-                    draft is in progress. Lets the user toss the saved state
-                    and start fresh without having to clear localStorage. */}
-                {empMode === 'add' && (eFirstName || eLastName || eWorkEmail || empStep > 1) && (
-                  <button
-                    type="button"
-                    onClick={discardAddDraft}
-                    title="Discard the saved draft and reset the form"
-                    className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                    style={{
-                      fontSize: 11,
-                      background: 'rgba(255,255,255,0.18)',
-                      color: '#fff',
-                      border: '1px solid rgba(255,255,255,0.28)',
-                      padding: '4px 10px',
-                    }}
-                  >
-                    <i className="ri-eraser-line" /> Discard draft
-                  </button>
-                )}
                 <span
                   className="badge rounded-pill"
                   style={{

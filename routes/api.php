@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
+use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OrganizationTypeController;
@@ -76,6 +77,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Employees — full CRUD + auto-numbered EMP-### + welcome-mail provisioning.
     // Declared BEFORE the generic /master/{slug} routes so apiResource params
     // resolve cleanly.
+    // HRMS Overview — one aggregate endpoint feeding /hr/overview dashboard
+    // (KPIs + headcount breakdowns + 12-month trends + recent/upcoming joiners).
+    Route::get   ('/hrms/overview',               [HrOverviewController::class, 'index']);
+
     Route::get   ('/employees/next-code',         [EmployeeController::class, 'nextCode']);
     Route::get   ('/employees/managers',          [EmployeeController::class, 'managers']);
     Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
