@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\User;
+use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -240,22 +241,26 @@ class BranchController extends Controller
 
             $branch->loadCount(['users', 'departments']);
 
-            // Send welcome email (non-fatal — branch creation succeeds even if mail fails)
-            try {
-                $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
-                Mail::to($request->user_email)->send(new WelcomeCredentialsMail(
-                    $request->user_name,
-                    $request->user_email,
-                    $request->user_password,
-                    'branch_user',
-                    $clientName,
-                ));
-            } catch (\Exception $e) {
-                Log::warning('Branch welcome mail failed', [
-                    'branch_id' => $branch->id,
-                    'user_email' => $request->user_email,
-                    'error' => $e->getMessage(),
-                ]);
+            // Send welcome email — gated by Settings → Notifications →
+            // newUser (and the master emailNotif). Non-fatal so branch
+            // creation succeeds even if mail fails or is disabled.
+            if (Settings::shouldSendMail('newUser')) {
+                try {
+                    $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
+                    Mail::to($request->user_email)->send(new WelcomeCredentialsMail(
+                        $request->user_name,
+                        $request->user_email,
+                        $request->user_password,
+                        'branch_user',
+                        $clientName,
+                    ));
+                } catch (\Exception $e) {
+                    Log::warning('Branch welcome mail failed', [
+                        'branch_id' => $branch->id,
+                        'user_email' => $request->user_email,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             return response()->json([
@@ -445,7 +450,7 @@ class BranchController extends Controller
                 // admin actually rotates their password from the Branch form.
                 // Use the post-update email so a simultaneous email change
                 // delivers to the new mailbox, not the stale one.
-                if ($passwordChanged) {
+                if ($passwordChanged && Settings::shouldSendMail()) {
                     try {
                         Mail::to($branchUser->email)->send(new PasswordChangedMail(
                             $branchUser->name,

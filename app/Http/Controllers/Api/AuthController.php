@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Mail\PasswordChangedMail;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\Settings;
 use App\Traits\PasswordHistory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -24,6 +26,21 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
+        $lockKey = 'login_attempts:' . strtolower(trim($request->email));
+
+        // Brute-force lockout — gated by Settings → Security → bruteForce.
+        // After 5 failed attempts within 15 min, the account is locked for
+        // 15 min. Cache-based so it survives a fresh DB but resets on cache
+        // clear (intentional — admin can force-unlock by clearing cache).
+        if (Settings::is('security', 'bruteForce', true)) {
+            $attempts = (int) Cache::get($lockKey, 0);
+            if ($attempts >= 5) {
+                throw ValidationException::withMessages([
+                    'email' => ['Too many failed login attempts. Try again in 15 minutes.'],
+                ]);
+            }
+        }
+
         // Eager-load branch.client too — branch_user / employee rows often
         // have no direct client_id, so the parent-org check has to traverse
         // branch → client. Without this, an inactive client would only lock
@@ -31,10 +48,16 @@ class AuthController extends Controller
         $user = User::with(['client', 'branch.client'])->where('email', $request->email)->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
+            if (Settings::is('security', 'bruteForce', true)) {
+                Cache::put($lockKey, ((int) Cache::get($lockKey, 0)) + 1, now()->addMinutes(15));
+            }
             throw ValidationException::withMessages([
                 'email' => ['Invalid email or password.'],
             ]);
         }
+
+        // Successful login → clear any prior failed-attempt counter
+        Cache::forget($lockKey);
 
         if ($user->status !== 'active') {
             throw ValidationException::withMessages([
@@ -188,19 +211,24 @@ class AuthController extends Controller
         ]);
 
         // Confirmation mail — non-fatal so SMTP issues never roll back the
-        // (already persisted) password change.
-        try {
-            Mail::to($user->email)->send(new PasswordChangedMail(
-                $user->name,
-                $user->email,
-                $newPassword,
-            ));
-        } catch (\Throwable $e) {
-            Log::warning('Password-changed confirmation mail failed (in-app change)', [
-                'user_id' => $user->id,
-                'email'   => $user->email,
-                'error'   => $e->getMessage(),
-            ]);
+        // (already persisted) password change. Master notifications.emailNotif
+        // toggle gates ALL platform mail; transactional sends honour it too
+        // because once an admin globally disables email they accept the
+        // trade-off (no OTP, no welcome creds, etc.).
+        if (Settings::shouldSendMail()) {
+            try {
+                Mail::to($user->email)->send(new PasswordChangedMail(
+                    $user->name,
+                    $user->email,
+                    $newPassword,
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('Password-changed confirmation mail failed (in-app change)', [
+                    'user_id' => $user->id,
+                    'email'   => $user->email,
+                    'error'   => $e->getMessage(),
+                ]);
+            }
         }
 
         return response()->json(['message' => 'Password changed successfully']);

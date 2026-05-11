@@ -10,6 +10,9 @@ import SplashLoader from './ui/SplashLoader';
 import { ToastProvider } from '../contexts/ToastContext';
 import { LayoutProvider } from '../contexts/LayoutContext';
 import { BranchSwitcherProvider } from '../contexts/BranchSwitcherContext';
+import { SettingsProvider } from '../contexts/SettingsContext';
+import CookieBanner from './CookieBanner';
+import IdleTimeout from './IdleTimeout';
 import VelzonShell from '../velzon/VelzonShell';
 import { FEATURE_FLAGS } from '../constants';
 import Login from '../pages/auth/Login';
@@ -468,9 +471,19 @@ export default function App() {
         <VariantProvider>
           <ToastProvider>
             <AuthProvider>
-              <BrowserRouter>
-                <Router />
-              </BrowserRouter>
+              {/* SettingsProvider sits inside Auth so its API call carries the
+                  bearer token; it sets document.title, favicon, and platform
+                  default theme colors as live dependencies. */}
+              <SettingsProvider>
+                <BrowserRouter>
+                  <Router />
+                </BrowserRouter>
+                {/* CookieBanner reads privacy.cookie + the user's prior
+                    accept state. Hidden when disabled or already accepted. */}
+                <CookieBanner />
+                {/* Auto-logout after 30 min idle when security.sessTimeout is ON */}
+                <IdleTimeout />
+              </SettingsProvider>
             </AuthProvider>
           </ToastProvider>
         </VariantProvider>

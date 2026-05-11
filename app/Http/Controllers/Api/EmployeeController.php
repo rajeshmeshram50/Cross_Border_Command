@@ -9,6 +9,7 @@ use App\Models\Employee;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\Settings;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -365,9 +366,10 @@ class EmployeeController extends Controller
 
                 $employee->load(self::WITH);
 
-                // Welcome email with credentials — non-fatal on failure so the
+                // Welcome email with credentials — gated by Settings →
+                // Notifications → newUser. Non-fatal on failure so the
                 // employee record still saves if SMTP is down.
-                try {
+                if (Settings::shouldSendMail('newUser')) try {
                     $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
                     Mail::to($data['email'])->send(new WelcomeCredentialsMail(
                         $loginUser->name,

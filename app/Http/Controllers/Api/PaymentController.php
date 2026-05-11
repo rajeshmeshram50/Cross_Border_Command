@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\PlanReminderMail;
 use App\Models\Payment;
 use App\Services\InvoiceMailer;
+use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
@@ -163,6 +164,13 @@ class PaymentController extends Controller
 
         if (!$payment->client || !$payment->client->email) {
             return response()->json(['message' => 'Client email not found'], 422);
+        }
+
+        // Gated by Settings → Notifications → planExp (and master emailNotif)
+        if (!Settings::shouldSendMail('planExp')) {
+            return response()->json([
+                'message' => 'Plan expiry notifications are disabled in Settings → Notifications.',
+            ], 503);
         }
 
         try {

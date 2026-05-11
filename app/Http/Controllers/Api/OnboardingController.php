@@ -12,6 +12,7 @@ use App\Models\Masters\Departments;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\Settings;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -94,7 +95,8 @@ class OnboardingController extends Controller
         // any trailing slash before composing the final URL.
         $url = $this->buildOnboardingUrl($token, $data['app_origin'] ?? null);
 
-        try {
+        // Onboarding invite mail — gated by Settings → Notifications → newUser
+        if (Settings::shouldSendMail('newUser')) try {
             $orgName = Client::find($clientId)?->org_name ?? config('mail.from.name', 'Cross Border Command');
             $deptName = $invite->department_id ? Departments::find($invite->department_id)?->name : null;
             Mail::to($invite->invitee_email)->send(new OnboardingInviteMail(
@@ -247,8 +249,8 @@ class OnboardingController extends Controller
                     'employee_id'  => $employee->id,
                 ]);
 
-                // Welcome email with credentials so the new hire can log in.
-                try {
+                // Welcome email — gated by Settings → Notifications → newUser
+                if (Settings::shouldSendMail('newUser')) try {
                     $orgName = Client::find($invite->client_id)?->org_name ?? 'Your Organization';
                     Mail::to($invite->invitee_email)->send(new WelcomeCredentialsMail(
                         $loginUser->name,

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { FaLinkedin, FaInstagram, FaFacebook } from 'react-icons/fa';
+import { useSettings } from '../contexts/SettingsContext';
 interface AuthCardLayoutProps {
   children: ReactNode;
   title?: string;
@@ -14,6 +15,11 @@ const socialLinks = [
 ];
 
 export default function AuthCardLayout({ children, title, subtitle, icon }: AuthCardLayoutProps) {
+  // Pull platform name from settings so super_admin's General-tab change
+  // appears here (e.g. branding the login screen for white-label customers).
+  // Falls back to the default if settings haven't loaded (first visit).
+  const { settings } = useSettings();
+  const platformName = settings.general.platform_name || 'Cross Border Command';
   return (
     <div className="flex w-full bg-slate-950 font-sans relative overflow-x-hidden cbc-shell">
       {/* Background image — sharper now (no auto-scale that was softening
@@ -68,13 +74,24 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
 
             {/* Software product name — sits directly under the IGC mark.
                 Stylish typographic treatment: weight contrast across the
-                three words ("Cross" thin → "Border" medium → "Command"
-                heavy gradient italic) so the wordmark reads like a real
-                product brand instead of plain text. */}
+                words (thin → medium → heavy gradient italic) so the wordmark
+                reads like a real product brand. Words come from Settings →
+                General → Platform Name, split on whitespace. Default
+                "Cross Border Command" renders as 3 distinct weights; a
+                custom 2-word name renders as thin + bold-italic; a single
+                word renders as the bold-italic treatment alone. */}
             <div className="mb-6 ml-1 cbc-wordmark">
-              <span className="cbc-w1">Cross</span>
-              <span className="cbc-w2">Border</span>
-              <span className="cbc-w3">Command</span>
+              {(() => {
+                const words = platformName.trim().split(/\s+/).filter(Boolean);
+                const classFor = (i: number, last: number) => {
+                  if (i === last) return 'cbc-w3';           // last word — heavy gradient italic
+                  if (i === last - 1) return 'cbc-w2';        // penultimate — medium white
+                  return 'cbc-w1';                             // earlier words — thin
+                };
+                return words.map((w, i) => (
+                  <span key={`${w}-${i}`} className={classFor(i, words.length - 1)}>{w}</span>
+                ));
+              })()}
               <span className="cbc-underline" aria-hidden />
             </div>
             <style>{`
