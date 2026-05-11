@@ -465,6 +465,7 @@ class BranchController extends Controller
                             $branchUser->name,
                             $branchUser->email,
                             $request->user_password,
+                            PasswordChangedMail::resolveLoginUrl($request),
                         ));
                     } catch (\Throwable $e) {
                         Log::warning('Password-changed confirmation mail failed (branch update)', [

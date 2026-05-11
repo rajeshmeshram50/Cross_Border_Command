@@ -402,6 +402,7 @@ class ClientController extends Controller
                             $adminUser->name,
                             $adminUser->email,
                             $request->admin_password,
+                            PasswordChangedMail::resolveLoginUrl($request),
                         ));
                     } catch (\Throwable $e) {
                         Log::warning('Password-changed confirmation mail failed (client admin update)', [
