@@ -71,6 +71,10 @@ export interface EmployeeProfileTarget {
    *  legacy single `ancillaryRole`. */
   ancillaryRoles?: string[];
   manager?: string;
+  /** Passport-size photo URL — populated by ProfileRouter and HrEmployees
+   *  apiToUiRow. The hero avatar (and a couple of fallback render sites)
+   *  read it. */
+  photoUrl?: string | null;
   profile?: number;
   onboarding?: 'Completed' | 'In Progress' | 'Pending';
   status?: 'active' | 'on_leave' | 'high_attention' | 'probation' | 'inactive';
@@ -419,6 +423,71 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [payrollTab, setPayrollTab] = useState<PayrollTab>('summary');
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
+
+  // ── Change-password modal state ─────────────────────────────────────
+  // The signed-in employee uses this to rotate their own login password.
+  // Backend lives at POST /api/change-password (AuthController::changePassword),
+  // which enforces min:8 + confirmed, blocks last-3-password reuse, and
+  // dispatches PasswordChangedMail with the new credential. We keep field
+  // errors here as a map so the inline <small className="text-danger"> hints
+  // light up the right input.
+  const [pwOpen, setPwOpen]         = useState(false);
+  const [pwCurrent, setPwCurrent]   = useState('');
+  const [pwNew, setPwNew]           = useState('');
+  const [pwConfirm, setPwConfirm]   = useState('');
+  const [pwSaving, setPwSaving]     = useState(false);
+  const [pwShow, setPwShow]         = useState<{ cur: boolean; nw: boolean; cf: boolean }>({ cur: false, nw: false, cf: false });
+  const [pwErrors, setPwErrors]     = useState<Record<string, string>>({});
+
+  const resetPwForm = () => {
+    setPwCurrent(''); setPwNew(''); setPwConfirm('');
+    setPwShow({ cur: false, nw: false, cf: false });
+    setPwErrors({});
+  };
+
+  const handleChangePassword = async () => {
+    // Client-side guards first so the user sees mistakes without a round-trip.
+    const errs: Record<string, string> = {};
+    if (!pwCurrent) errs.current_password = 'Current password is required';
+    if (!pwNew) errs.password = 'New password is required';
+    else if (pwNew.length < 8) errs.password = 'Password must be at least 8 characters';
+    if (pwNew !== pwConfirm) errs.password_confirmation = 'Passwords do not match';
+    if (Object.keys(errs).length > 0) { setPwErrors(errs); return; }
+
+    setPwSaving(true);
+    setPwErrors({});
+    try {
+      await api.post('/change-password', {
+        current_password: pwCurrent,
+        password: pwNew,
+        password_confirmation: pwConfirm,
+      });
+      toast.success('Password updated', 'A confirmation email has been sent.');
+      setPwOpen(false);
+      resetPwForm();
+    } catch (err: any) {
+      const fieldErrors = err?.response?.data?.errors;
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const flat: Record<string, string> = {};
+        for (const k of Object.keys(fieldErrors)) {
+          flat[k] = Array.isArray(fieldErrors[k]) ? fieldErrors[k][0] : String(fieldErrors[k]);
+        }
+        setPwErrors(flat);
+      } else {
+        const msg = err?.response?.data?.message || err?.message || 'Could not change password';
+        // 422 from the controller for wrong-current / re-use lands here.
+        if (/current password/i.test(String(msg))) {
+          setPwErrors({ current_password: String(msg) });
+        } else if (/reuse|previous/i.test(String(msg))) {
+          setPwErrors({ password: String(msg) });
+        } else {
+          toast.error('Password change failed', String(msg));
+        }
+      }
+    } finally {
+      setPwSaving(false);
+    }
+  };
 
   // Apply Leave wizard — rendered inline as the "Apply Leave" tab content.
   // All form state lives here so navigating between tabs preserves a draft.
@@ -1420,6 +1489,41 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </Col>
           </Row>
+
+          {/* Security — Change Password section. Sits at the bottom of the
+              profile tab so identity/contact/address details remain the top
+              of fold. Backend endpoint already enforces the password policy
+              (min:8, no last-3 reuse) and sends a confirmation email. */}
+          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #f43f5e' }}>
+            <div
+              className="d-flex align-items-center gap-3 px-3 py-2"
+              style={{
+                borderBottom: '1px solid rgba(244,63,94,0.18)',
+                background: 'linear-gradient(135deg, rgba(244,63,94,0.12) 0%, rgba(244,63,94,0.03) 60%, rgba(244,63,94,0.01) 100%)',
+              }}
+            >
+              <span className="ep-section-icon" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c' }}>
+                <i className="ri-shield-keyhole-line" />
+              </span>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Security</h6>
+            </div>
+            <div className="px-3 py-3 d-flex align-items-center justify-content-between flex-wrap gap-3">
+              <div>
+                <div className="fw-semibold" style={{ fontSize: 13 }}>Login password</div>
+                <small className="text-muted">
+                  Rotate your password regularly. We'll email you a confirmation each time it changes.
+                </small>
+              </div>
+              <Button
+                color="danger"
+                size="sm"
+                className="d-inline-flex align-items-center gap-2"
+                onClick={() => { resetPwForm(); setPwOpen(true); }}
+              >
+                <i className="ri-lock-password-line" /> Change Password
+              </Button>
+            </div>
+          </div>
         </>
       )}
 
@@ -4219,6 +4323,123 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 : 'Submit Advance Request'}
             </button>
           </div>
+        </div>
+      </EpModal>
+
+      {/* ── Change Password modal ──
+          Three inputs (current / new / confirm), per-field error display,
+          and an eye-toggle for each field so the user can verify what they
+          typed. Submit calls POST /api/change-password — the backend
+          enforces the min:8 + no-reuse-of-last-3 policy and emails a
+          confirmation via PasswordChangedMail. */}
+      <EpModal open={pwOpen} onClose={() => { if (!pwSaving) { setPwOpen(false); resetPwForm(); } }} size="sm">
+        <div className="d-flex align-items-center justify-content-between px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+          <div className="d-flex align-items-center gap-2">
+            <span className="ep-section-icon" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c' }}>
+              <i className="ri-lock-password-line" />
+            </span>
+            <h6 className="mb-0 fw-bold">Change Password</h6>
+          </div>
+          <button
+            type="button"
+            className="btn btn-light btn-sm"
+            onClick={() => { if (!pwSaving) { setPwOpen(false); resetPwForm(); } }}
+            disabled={pwSaving}
+            aria-label="Close"
+          >
+            <i className="ri-close-line" />
+          </button>
+        </div>
+        <div className="px-3 py-3">
+          <div className="mb-3">
+            <label className="emp-label fw-semibold" style={{ fontSize: 12 }}>Current Password<span className="text-danger">*</span></label>
+            <div className="position-relative">
+              <input
+                type={pwShow.cur ? 'text' : 'password'}
+                className={`form-control${pwErrors.current_password ? ' is-invalid' : ''}`}
+                value={pwCurrent}
+                onChange={e => { setPwCurrent(e.target.value); if (pwErrors.current_password) setPwErrors(p => ({ ...p, current_password: '' })); }}
+                placeholder="Enter your current password"
+                autoComplete="current-password"
+                disabled={pwSaving}
+                style={{ paddingRight: 38 }}
+              />
+              <button
+                type="button"
+                className="btn btn-link p-0 position-absolute"
+                style={{ right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)' }}
+                onClick={() => setPwShow(s => ({ ...s, cur: !s.cur }))}
+                tabIndex={-1}
+                aria-label={pwShow.cur ? 'Hide password' : 'Show password'}
+              >
+                <i className={pwShow.cur ? 'ri-eye-off-line' : 'ri-eye-line'} />
+              </button>
+            </div>
+            {pwErrors.current_password && <small className="text-danger">{pwErrors.current_password}</small>}
+          </div>
+
+          <div className="mb-3">
+            <label className="emp-label fw-semibold" style={{ fontSize: 12 }}>New Password<span className="text-danger">*</span></label>
+            <div className="position-relative">
+              <input
+                type={pwShow.nw ? 'text' : 'password'}
+                className={`form-control${pwErrors.password ? ' is-invalid' : ''}`}
+                value={pwNew}
+                onChange={e => { setPwNew(e.target.value); if (pwErrors.password) setPwErrors(p => ({ ...p, password: '' })); }}
+                placeholder="At least 8 characters"
+                autoComplete="new-password"
+                disabled={pwSaving}
+                style={{ paddingRight: 38 }}
+              />
+              <button
+                type="button"
+                className="btn btn-link p-0 position-absolute"
+                style={{ right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)' }}
+                onClick={() => setPwShow(s => ({ ...s, nw: !s.nw }))}
+                tabIndex={-1}
+                aria-label={pwShow.nw ? 'Hide password' : 'Show password'}
+              >
+                <i className={pwShow.nw ? 'ri-eye-off-line' : 'ri-eye-line'} />
+              </button>
+            </div>
+            {pwErrors.password && <small className="text-danger">{pwErrors.password}</small>}
+          </div>
+
+          <div className="mb-2">
+            <label className="emp-label fw-semibold" style={{ fontSize: 12 }}>Confirm New Password<span className="text-danger">*</span></label>
+            <div className="position-relative">
+              <input
+                type={pwShow.cf ? 'text' : 'password'}
+                className={`form-control${pwErrors.password_confirmation ? ' is-invalid' : ''}`}
+                value={pwConfirm}
+                onChange={e => { setPwConfirm(e.target.value); if (pwErrors.password_confirmation) setPwErrors(p => ({ ...p, password_confirmation: '' })); }}
+                placeholder="Re-enter the new password"
+                autoComplete="new-password"
+                disabled={pwSaving}
+                style={{ paddingRight: 38 }}
+                onKeyDown={e => { if (e.key === 'Enter' && !pwSaving) handleChangePassword(); }}
+              />
+              <button
+                type="button"
+                className="btn btn-link p-0 position-absolute"
+                style={{ right: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)' }}
+                onClick={() => setPwShow(s => ({ ...s, cf: !s.cf }))}
+                tabIndex={-1}
+                aria-label={pwShow.cf ? 'Hide password' : 'Show password'}
+              >
+                <i className={pwShow.cf ? 'ri-eye-off-line' : 'ri-eye-line'} />
+              </button>
+            </div>
+            {pwErrors.password_confirmation && <small className="text-danger">{pwErrors.password_confirmation}</small>}
+          </div>
+        </div>
+        <div className="d-flex justify-content-end gap-2 px-3 py-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+          <Button color="light" size="sm" onClick={() => { setPwOpen(false); resetPwForm(); }} disabled={pwSaving}>
+            Cancel
+          </Button>
+          <Button color="danger" size="sm" onClick={handleChangePassword} disabled={pwSaving}>
+            {pwSaving ? (<><span className="spinner-border spinner-border-sm me-2" /> Updating…</>) : 'Update Password'}
+          </Button>
         </div>
       </EpModal>
     </>
