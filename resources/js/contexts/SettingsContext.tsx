@@ -93,6 +93,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    // /settings is behind auth — if there's no token (i.e. we're on /login)
+    // we MUST NOT issue the request. Doing so returns 401, which axios's
+    // response interceptor used to reload the page → reload re-mounted the
+    // provider → re-fetched → re-401 → infinite loop. We keep the cached /
+    // fallback values until the user actually logs in (the user?.id effect
+    // below re-runs this function post-login).
+    if (!localStorage.getItem('cbc_token')) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await api.get('/settings');
       const merged: PlatformSettings = { ...FALLBACK };
@@ -105,8 +116,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       writeCache(merged);
     } catch {
       // Silent — fall back to cached/default values; the rest of the app
-      // shouldn't break just because settings can't be fetched (e.g. network
-      // issue or pre-login).
+      // shouldn't break just because settings can't be fetched.
     } finally {
       setLoading(false);
     }

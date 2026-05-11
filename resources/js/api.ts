@@ -57,14 +57,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 → force logout
+// Handle 401 → force logout. Only triggers a reload when we ACTUALLY had a
+// token (i.e. it was invalidated mid-session). A 401 with no prior token
+// means the request was made before login (e.g. SettingsContext probing
+// /settings while user is still on /login) — reloading there would loop
+// forever because every reload re-issues the same unauthenticated request.
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
-      localStorage.removeItem('cbc_token');
-      localStorage.removeItem('cbc_user');
-      window.location.reload();
+      const hadToken = !!localStorage.getItem('cbc_token');
+      if (hadToken) {
+        localStorage.removeItem('cbc_token');
+        localStorage.removeItem('cbc_user');
+        window.location.reload();
+      }
     }
     return Promise.reject(err);
   }
