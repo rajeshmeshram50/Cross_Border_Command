@@ -21,6 +21,22 @@ interface LegalEntityOption { id: number; entity_name: string; city?: string | n
 
 type StepNum = 1 | 2 | 3;
 
+/**
+ * Prefix-icon wrapper for form fields — mirrors masterFormKit's `.master-field`
+ * pattern. Defined at module scope (NOT inside the component) so React keeps
+ * the same component identity across re-renders. If this were declared inline
+ * inside `PublicOnboarding`, every keystroke would re-create the component
+ * type, unmount the input, and clobber focus after a single character.
+ */
+function IconField({ icon, children }: { icon: string; children: React.ReactNode }) {
+  return (
+    <div className="onb-field">
+      <i className={`onb-field-icon ${icon}`} />
+      {children}
+    </div>
+  );
+}
+
 export default function PublicOnboarding() {
   const { token } = useParams<{ token: string }>();
   const toast = useToast();
@@ -447,6 +463,23 @@ export default function PublicOnboarding() {
         [data-bs-theme="dark"] .emp-label { color: var(--vz-body-color); }
         .emp-label .req { color: #f06548; margin-left: 2px; }
 
+        /* Prefix-icon wrapper for fields — mirrors masterFormKit's .master-field */
+        .onb-field { position: relative; }
+        .onb-field-icon {
+          position: absolute; left: 12px; top: 50%;
+          transform: translateY(-50%);
+          font-size: 15px; color: #9ca3af;
+          pointer-events: none; z-index: 3; line-height: 1;
+          transition: color .18s ease, transform .18s ease;
+        }
+        .onb-field .emp-input { padding-left: 36px; }
+        .onb-field .emp-input:focus ~ .onb-field-icon,
+        .onb-field:focus-within > .onb-field-icon { color: #1d4fc4; transform: translateY(-50%) scale(1.08); }
+        /* MasterSelect toggle inside an .onb-field — push the toggle's text past the icon */
+        .onb-field .master-select-toggle { padding-left: 36px !important; }
+        /* MasterDatePicker toggle inside an .onb-field */
+        .onb-field .master-datepicker-toggle { padding-left: 36px !important; }
+
         /* ── Split-view layout (Convertico-style) ─────────────────────── */
         .onb-layout {
           min-height: 100vh;
@@ -567,7 +600,7 @@ export default function PublicOnboarding() {
           min-width: 0;
         }
         [data-bs-theme="dark"] .onb-main { background: var(--vz-card-bg); }
-        .onb-main-inner { width: 100%; max-width: 980px; }
+        .onb-main-inner { width: 100%; max-width: 1100px; }
 
         /* Welcome banner at the very top of the right pane */
         .onb-welcome {
@@ -712,22 +745,30 @@ export default function PublicOnboarding() {
               <Row className="g-2">
                 <Col md={4}>
                   <label className="emp-label">First Name<span className="req">*</span></label>
-                  <input className={`emp-input${errs.first_name ? ' is-invalid' : ''}`} placeholder="e.g. Aarav" value={firstName} onChange={e => { setFirstName(e.target.value); clearErr('first_name'); }} />
+                  <IconField icon="ri-user-line">
+                    <input className={`emp-input${errs.first_name ? ' is-invalid' : ''}`} placeholder="e.g. Aarav" value={firstName} onChange={e => { setFirstName(e.target.value); clearErr('first_name'); }} />
+                  </IconField>
                   {errs.first_name && <small className="emp-err">{errs.first_name}</small>}
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Middle Name</label>
-                  <input className={`emp-input${errs.middle_name ? ' is-invalid' : ''}`} placeholder="Middle name (optional)" value={middleName} onChange={e => { setMiddleName(e.target.value); clearErr('middle_name'); }} />
+                  <IconField icon="ri-user-line">
+                    <input className={`emp-input${errs.middle_name ? ' is-invalid' : ''}`} placeholder="Middle name (optional)" value={middleName} onChange={e => { setMiddleName(e.target.value); clearErr('middle_name'); }} />
+                  </IconField>
                   {errs.middle_name && <small className="emp-err">{errs.middle_name}</small>}
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Last Name<span className="req">*</span></label>
-                  <input className={`emp-input${errs.last_name ? ' is-invalid' : ''}`} placeholder="e.g. Kale" value={lastName} onChange={e => { setLastName(e.target.value); clearErr('last_name'); }} />
+                  <IconField icon="ri-user-line">
+                    <input className={`emp-input${errs.last_name ? ' is-invalid' : ''}`} placeholder="e.g. Kale" value={lastName} onChange={e => { setLastName(e.target.value); clearErr('last_name'); }} />
+                  </IconField>
                   {errs.last_name && <small className="emp-err">{errs.last_name}</small>}
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Gender<span className="req">*</span></label>
-                  <MasterSelect value={gender} onChange={v => { setGender(v); clearErr('gender'); }} options={genderOpts} placeholder="Select gender" invalid={!!errs.gender} />
+                  <IconField icon="ri-user-2-line">
+                    <MasterSelect value={gender} onChange={v => { setGender(v); clearErr('gender'); }} options={genderOpts} placeholder="Select gender" invalid={!!errs.gender} />
+                  </IconField>
                   {errs.gender && <small className="emp-err">{errs.gender}</small>}
                 </Col>
                 <Col md={4}>
@@ -737,22 +778,30 @@ export default function PublicOnboarding() {
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Nationality<span className="req">*</span></label>
-                  <MasterSelect value={nationality} onChange={v => { setNationality(v); clearErr('nationality_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.nationality_country_id} />
+                  <IconField icon="ri-flag-line">
+                    <MasterSelect value={nationality} onChange={v => { setNationality(v); clearErr('nationality_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.nationality_country_id} />
+                  </IconField>
                   {errs.nationality_country_id && <small className="emp-err">{errs.nationality_country_id}</small>}
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Work Country<span className="req">*</span></label>
-                  <MasterSelect value={workCountry} onChange={v => { setWorkCountry(v); clearErr('work_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.work_country_id} />
+                  <IconField icon="ri-earth-line">
+                    <MasterSelect value={workCountry} onChange={v => { setWorkCountry(v); clearErr('work_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.work_country_id} />
+                  </IconField>
                   {errs.work_country_id && <small className="emp-err">{errs.work_country_id}</small>}
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Mobile Number<span className="req">*</span></label>
-                  <input className={`emp-input${errs.mobile ? ' is-invalid' : ''}`} value={mobile} onChange={e => { setMobile(e.target.value); clearErr('mobile'); }} placeholder="10-digit mobile" />
+                  <IconField icon="ri-phone-line">
+                    <input className={`emp-input${errs.mobile ? ' is-invalid' : ''}`} value={mobile} onChange={e => { setMobile(e.target.value); clearErr('mobile'); }} placeholder="10-digit mobile" />
+                  </IconField>
                   {errs.mobile && <small className="emp-err">{errs.mobile}</small>}
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Alternate Mobile</label>
-                  <input className={`emp-input${errs.alt_mobile ? ' is-invalid' : ''}`} value={altMobile} onChange={e => { setAltMobile(e.target.value); clearErr('alt_mobile'); }} placeholder="(optional)" />
+                  <IconField icon="ri-phone-line">
+                    <input className={`emp-input${errs.alt_mobile ? ' is-invalid' : ''}`} value={altMobile} onChange={e => { setAltMobile(e.target.value); clearErr('alt_mobile'); }} placeholder="(optional)" />
+                  </IconField>
                   {errs.alt_mobile && <small className="emp-err">{errs.alt_mobile}</small>}
                 </Col>
               </Row>
@@ -766,31 +815,43 @@ export default function PublicOnboarding() {
                 <Row className="g-2">
                   <Col md={8}>
                     <label className="emp-label">Address Line 1<span className="req">*</span></label>
-                    <input className={`emp-input${errs.address_line1 ? ' is-invalid' : ''}`} value={curAddr1} onChange={e => { setCurAddr1(e.target.value); clearErr('address_line1'); }} />
+                    <IconField icon="ri-road-map-line">
+                      <input className={`emp-input${errs.address_line1 ? ' is-invalid' : ''}`} value={curAddr1} onChange={e => { setCurAddr1(e.target.value); clearErr('address_line1'); }} />
+                    </IconField>
                     {errs.address_line1 && <small className="emp-err">{errs.address_line1}</small>}
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">Address Line 2</label>
-                    <input className="emp-input" value={curAddr2} onChange={e => setCurAddr2(e.target.value)} placeholder="(optional)" />
+                    <IconField icon="ri-road-map-line">
+                      <input className="emp-input" value={curAddr2} onChange={e => setCurAddr2(e.target.value)} placeholder="(optional)" />
+                    </IconField>
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">City<span className="req">*</span></label>
-                    <input className={`emp-input${errs.city ? ' is-invalid' : ''}`} value={curCity} onChange={e => { setCurCity(e.target.value); clearErr('city'); }} />
+                    <IconField icon="ri-building-2-line">
+                      <input className={`emp-input${errs.city ? ' is-invalid' : ''}`} value={curCity} onChange={e => { setCurCity(e.target.value); clearErr('city'); }} />
+                    </IconField>
                     {errs.city && <small className="emp-err">{errs.city}</small>}
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">Country<span className="req">*</span></label>
-                    <MasterSelect value={curCountry} onChange={v => { setCurCountry(v); if (curState) setCurState(''); clearErr('country_id'); clearErr('state_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.country_id} />
+                    <IconField icon="ri-earth-line">
+                      <MasterSelect value={curCountry} onChange={v => { setCurCountry(v); if (curState) setCurState(''); clearErr('country_id'); clearErr('state_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.country_id} />
+                    </IconField>
                     {errs.country_id && <small className="emp-err">{errs.country_id}</small>}
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">State<span className="req">*</span></label>
-                    <MasterSelect value={curState} onChange={v => { setCurState(v); clearErr('state_id'); }} options={curStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={curCountry ? 'Select state' : 'Pick country first'} disabled={!curCountry} invalid={!!errs.state_id} />
+                    <IconField icon="ri-map-pin-line">
+                      <MasterSelect value={curState} onChange={v => { setCurState(v); clearErr('state_id'); }} options={curStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={curCountry ? 'Select state' : 'Pick country first'} disabled={!curCountry} invalid={!!errs.state_id} />
+                    </IconField>
                     {errs.state_id && <small className="emp-err">{errs.state_id}</small>}
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">Pincode<span className="req">*</span></label>
-                    <input className={`emp-input${errs.pincode ? ' is-invalid' : ''}`} value={curPin} onChange={e => { setCurPin(e.target.value); clearErr('pincode'); }} />
+                    <IconField icon="ri-mail-send-line">
+                      <input className={`emp-input${errs.pincode ? ' is-invalid' : ''}`} value={curPin} onChange={e => { setCurPin(e.target.value); clearErr('pincode'); }} />
+                    </IconField>
                     {errs.pincode && <small className="emp-err">{errs.pincode}</small>}
                   </Col>
                 </Row>
@@ -810,27 +871,39 @@ export default function PublicOnboarding() {
                 <Row className="g-2">
                   <Col md={8}>
                     <label className="emp-label">Address Line 1</label>
-                    <input className="emp-input" value={permAddr1} onChange={e => setPermAddr1(e.target.value)} disabled={sameAsCurrent} />
+                    <IconField icon="ri-road-map-line">
+                      <input className="emp-input" value={permAddr1} onChange={e => setPermAddr1(e.target.value)} disabled={sameAsCurrent} />
+                    </IconField>
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">Address Line 2</label>
-                    <input className="emp-input" value={permAddr2} onChange={e => setPermAddr2(e.target.value)} disabled={sameAsCurrent} />
+                    <IconField icon="ri-road-map-line">
+                      <input className="emp-input" value={permAddr2} onChange={e => setPermAddr2(e.target.value)} disabled={sameAsCurrent} />
+                    </IconField>
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">City</label>
-                    <input className="emp-input" value={permCity} onChange={e => setPermCity(e.target.value)} disabled={sameAsCurrent} />
+                    <IconField icon="ri-building-2-line">
+                      <input className="emp-input" value={permCity} onChange={e => setPermCity(e.target.value)} disabled={sameAsCurrent} />
+                    </IconField>
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">Country</label>
-                    <MasterSelect value={permCountry} onChange={v => { setPermCountry(v); if (permState) setPermState(''); }} options={countryOpts} placeholder="Select country" disabled={sameAsCurrent} />
+                    <IconField icon="ri-earth-line">
+                      <MasterSelect value={permCountry} onChange={v => { setPermCountry(v); if (permState) setPermState(''); }} options={countryOpts} placeholder="Select country" disabled={sameAsCurrent} />
+                    </IconField>
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">State</label>
-                    <MasterSelect value={permState} onChange={setPermState} options={permStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={permCountry ? 'Select state' : 'Pick country first'} disabled={sameAsCurrent || !permCountry} />
+                    <IconField icon="ri-map-pin-line">
+                      <MasterSelect value={permState} onChange={setPermState} options={permStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={permCountry ? 'Select state' : 'Pick country first'} disabled={sameAsCurrent || !permCountry} />
+                    </IconField>
                   </Col>
                   <Col md={4}>
                     <label className="emp-label">Pincode</label>
-                    <input className={`emp-input${errs.perm_pincode ? ' is-invalid' : ''}`} value={permPin} onChange={e => { setPermPin(e.target.value); clearErr('perm_pincode'); }} disabled={sameAsCurrent} />
+                    <IconField icon="ri-mail-send-line">
+                      <input className={`emp-input${errs.perm_pincode ? ' is-invalid' : ''}`} value={permPin} onChange={e => { setPermPin(e.target.value); clearErr('perm_pincode'); }} disabled={sameAsCurrent} />
+                    </IconField>
                     {errs.perm_pincode && <small className="emp-err">{errs.perm_pincode}</small>}
                   </Col>
                 </Row>
@@ -843,37 +916,47 @@ export default function PublicOnboarding() {
               <Row className="g-2">
                 <Col md={4}>
                   <label className="emp-label">Department</label>
-                  <MasterSelect value={departmentId} onChange={setDepartmentId} options={departmentOpts} placeholder="Select department" />
+                  <IconField icon="ri-organization-chart">
+                    <MasterSelect value={departmentId} onChange={setDepartmentId} options={departmentOpts} placeholder="Select department" />
+                  </IconField>
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Designation</label>
-                  <MasterSelect value={designationId} onChange={setDesignationId} options={designationOpts} placeholder="Select designation" />
+                  <IconField icon="ri-medal-line">
+                    <MasterSelect value={designationId} onChange={setDesignationId} options={designationOpts} placeholder="Select designation" />
+                  </IconField>
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Primary Role</label>
-                  <MasterSelect value={primaryRoleId} onChange={setPrimaryRoleId} options={roleOpts} placeholder="Select role" />
+                  <IconField icon="ri-shield-user-line">
+                    <MasterSelect value={primaryRoleId} onChange={setPrimaryRoleId} options={roleOpts} placeholder="Select role" />
+                  </IconField>
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Legal Entity</label>
-                  <MasterSelect value={legalEntityId} onChange={v => {
-                    setLegalEntityId(v);
-                    const ent = legalEntities.find(le => String(le.id) === String(v));
-                    setLocation(ent?.city || '');
-                  }} options={legalEntityOpts} placeholder="Select entity" />
+                  <IconField icon="ri-building-line">
+                    <MasterSelect value={legalEntityId} onChange={v => {
+                      setLegalEntityId(v);
+                      const ent = legalEntities.find(le => String(le.id) === String(v));
+                      setLocation(ent?.city || '');
+                    }} options={legalEntityOpts} placeholder="Select entity" />
+                  </IconField>
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Location</label>
                   {/* Auto-filled from the selected legal entity's city. Locked
                       so candidates can't override it — pick a different
                       entity to change the location. */}
-                  <input
-                    className={`emp-input${legalEntityId ? ' is-readonly' : ''}`}
-                    value={location}
-                    onChange={e => setLocation(e.target.value)}
-                    placeholder={legalEntityId ? 'Set by legal entity' : 'Select a legal entity'}
-                    disabled={!!legalEntityId}
-                    readOnly={!!legalEntityId}
-                  />
+                  <IconField icon="ri-map-pin-2-line">
+                    <input
+                      className={`emp-input${legalEntityId ? ' is-readonly' : ''}`}
+                      value={location}
+                      onChange={e => setLocation(e.target.value)}
+                      placeholder={legalEntityId ? 'Set by legal entity' : 'Select a legal entity'}
+                      disabled={!!legalEntityId}
+                      readOnly={!!legalEntityId}
+                    />
+                  </IconField>
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Joining Date</label>
