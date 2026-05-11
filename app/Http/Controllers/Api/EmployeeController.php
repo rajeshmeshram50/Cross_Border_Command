@@ -550,6 +550,49 @@ class EmployeeController extends Controller
         ]);
     }
 
+    /**
+     * Permanently delete a soft-deleted employee. Only callable on a row
+     * already in the Disabled tab — we refuse to force-delete an active
+     * employee outright to prevent accidental data loss from a single
+     * misclick on the wrong tab.
+     *
+     * The paired login user is NOT hard-deleted: it gets locked to
+     * inactive and its tokens revoked, but the row stays so permissions
+     * + activity_logs + audit trails that reference user_id don't go
+     * dangling. Only the Employee row itself is removed for good.
+     */
+    public function forceDestroy(Request $request, $id)
+    {
+        $this->authorize($request, 'can_delete');
+        $row = $this->resolveRow($request, (int) $id);
+        $this->guardHierarchicalAction($request->user(), $row, 'delete');
+
+        if (!$row->trashed()) {
+            return response()->json([
+                'message' => 'This employee is still active. Disable them first, then delete.',
+            ], 422);
+        }
+
+        $displayName = $row->display_name ?: trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
+
+        DB::transaction(function () use ($row) {
+            // Lock + revoke the login but keep the user row — permissions,
+            // activity_logs and other tables FK to users.id and we don't
+            // want orphans.
+            $row->user?->update(['status' => 'inactive']);
+            $row->user?->tokens()->delete();
+            // Wipe the Employee row itself. Soft-deletes related rows
+            // (documents, exit, previous_employments) usually cascade via
+            // model events or FK ON DELETE — verify on your schema if you
+            // add new related tables.
+            $row->forceDelete();
+        });
+
+        return response()->json([
+            'message' => "Permanently removed {$displayName}.",
+        ]);
+    }
+
     /* ─────────────────────────────────────────────────────────────────
      *  HELPERS
      * ───────────────────────────────────────────────────────────────── */

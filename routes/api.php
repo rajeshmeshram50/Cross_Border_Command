@@ -89,6 +89,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/employees/onboarding-invite', [OnboardingController::class, 'createInvite']);
     // Re-enable a soft-deleted employee (inverse of DELETE /employees/{id}).
     Route::patch ('/employees/{id}/restore',      [EmployeeController::class, 'restore']);
+    // Permanently remove a soft-deleted employee. Only callable from the
+    // Disabled tab — the controller refuses if the row is still trashed=false.
+    Route::delete('/employees/{id}/force',        [EmployeeController::class, 'forceDestroy']);
     Route::apiResource('employees', EmployeeController::class);
 
     // Stage 2 — Document Management. List + upload are nested under the

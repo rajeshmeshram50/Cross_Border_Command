@@ -653,6 +653,36 @@ export default function HrEmployees() {
     setOnboardOpen(true);
   };
 
+  // Permanent-delete confirmation (Disabled tab only). Holds the row pending
+  // confirmation so the modal can show the name + emp_code; null when closed.
+  const [confirmDelete, setConfirmDelete] = useState<EmployeeRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  /** Force-delete the row currently held in `confirmDelete`. Hits the
+   *  /employees/{id}/force endpoint which only accepts already-trashed rows
+   *  server-side, then refreshes the list. */
+  const handleForceDelete = async () => {
+    const row = confirmDelete;
+    if (!row || deleting) return;
+    const dbId = (row as any)._dbId as number | undefined;
+    if (!dbId) {
+      toast.error('Could not delete', 'Missing employee id.');
+      return;
+    }
+    setDeleting(true);
+    try {
+      const r = await api.delete(`/employees/${dbId}/force`);
+      toast.success('Employee deleted', r?.data?.message || `${row.name} has been permanently removed.`);
+      await reloadEmployees();
+      setConfirmDelete(null);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Could not delete this employee.';
+      toast.error('Delete failed', String(msg));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // Add / Edit employee modal state
   const [empOpen, setEmpOpen] = useState(false);
   const [empMode, setEmpMode] = useState<'add' | 'edit'>('add');
@@ -2278,6 +2308,11 @@ export default function HrEmployees() {
                                 <ActionBtn title="Asset" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} />
                                 <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} />
                                 <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} />
+                                {/* Permanent-delete is only offered on the Disabled tab so
+                                    an admin can't wipe an active employee in one click. */}
+                                {tab === 'disabled' && (
+                                  <ActionBtn title="Delete permanently" icon="ri-delete-bin-line" color="danger" onClick={() => setConfirmDelete(e)} />
+                                )}
                                 <ToggleSwitch
                                   initial={e.enabled}
                                   onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
@@ -2302,6 +2337,108 @@ export default function HrEmployees() {
           </div>
         </Col>
       </Row>
+
+      {/* ── Permanent-delete confirmation (Disabled tab only) ─────────── */}
+      <Modal
+        isOpen={!!confirmDelete}
+        toggle={() => !deleting && setConfirmDelete(null)}
+        centered
+        backdrop="static"
+        keyboard={!deleting}
+        modalClassName="emp-delete-confirm"
+      >
+        <style>{`
+          .emp-delete-confirm .modal-dialog { max-width: 460px; }
+          .emp-delete-confirm .modal-content {
+            border: none;
+            border-radius: 18px !important;
+            overflow: hidden;
+            box-shadow: 0 24px 60px rgba(18,38,63,0.30);
+          }
+        `}</style>
+        <ModalBody className="p-0">
+          {/* Red gradient header signals the destructive nature of the action. */}
+          <div
+            style={{
+              padding: '20px 22px',
+              background: 'linear-gradient(120deg,#a02e15 0%,#f06548 55%,#ff9e7c 100%)',
+              color: '#fff',
+            }}
+          >
+            <div className="d-flex align-items-center gap-3">
+              <div
+                className="d-flex align-items-center justify-content-center flex-shrink-0"
+                style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.18)',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <i className="ri-delete-bin-line" style={{ fontSize: 20 }} />
+              </div>
+              <div>
+                <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
+                  Delete employee permanently?
+                </h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
+                  This action cannot be undone
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '20px 22px 18px', background: 'var(--vz-card-bg)' }}>
+            <p className="mb-2" style={{ fontSize: 13.5, color: 'var(--vz-body-color)', lineHeight: 1.55 }}>
+              You're about to remove{' '}
+              <strong style={{ color: '#f06548' }}>{confirmDelete?.name}</strong>
+              {confirmDelete?.id ? <> (<span style={{ fontFamily: 'monospace' }}>{confirmDelete.id}</span>)</> : null}
+              {' '}from the system.
+            </p>
+            <p className="mb-3 text-muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+              Their employee record will be erased. The paired login account is
+              kept (deactivated) so historical audit logs &amp; permissions stay
+              intact, but they will no longer appear in the Disabled tab or
+              anywhere else.
+            </p>
+
+            <div className="d-flex justify-content-end gap-2 mt-3">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmDelete(null)}
+                className="btn btn-sm fw-semibold rounded-pill px-3"
+                style={{
+                  fontSize: 12.5,
+                  background: 'var(--vz-secondary-bg)',
+                  color: 'var(--vz-body-color)',
+                  border: '1px solid var(--vz-border-color)',
+                  padding: '7px 18px',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleForceDelete}
+                className="btn btn-sm fw-semibold rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                style={{
+                  fontSize: 12.5,
+                  color: '#fff',
+                  border: 'none',
+                  background: 'linear-gradient(135deg,#a02e15,#f06548)',
+                  boxShadow: '0 6px 16px rgba(240,101,72,0.32)',
+                  padding: '7px 20px',
+                  opacity: deleting ? 0.7 : 1,
+                }}
+              >
+                <i className={deleting ? 'ri-loader-4-line' : 'ri-delete-bin-line'} />
+                {deleting ? 'Deleting…' : 'Delete permanently'}
+              </button>
+            </div>
+          </div>
+        </ModalBody>
+      </Modal>
 
       {/* ── Generate Onboarding Link modal ── */}
       <Modal
