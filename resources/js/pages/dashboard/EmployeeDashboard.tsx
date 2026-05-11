@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
-import { useNavigate } from 'react-router-dom';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
@@ -47,13 +46,20 @@ interface KpiProps {
   iconClass: string;
   gradient: string;
   hint?: string;
-  onClick?: () => void;
 }
 
-function KpiCard({ label, value, iconClass, gradient, hint, onClick }: KpiProps) {
+/**
+ * Stat-only KPI tile. Intentionally not clickable — employees have a
+ * restricted nav, so routing them off the dashboard could land them on
+ * a page they don't have permission to view. The hover effect is purely
+ * visual polish (subtle lift + stronger shadow), no routing attached.
+ *
+ * Theme-aware white: `var(--vz-card-bg)` resolves to `#fff` in the light
+ * theme and to the dark surface token in `[data-bs-theme="dark"]`.
+ */
+function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
   return (
     <div
-      onClick={onClick}
       style={{
         borderRadius: 16,
         padding: '18px 18px 14px',
@@ -63,11 +69,20 @@ function KpiCard({ label, value, iconClass, gradient, hint, onClick }: KpiProps)
         position: 'relative',
         overflow: 'hidden',
         height: '100%',
-        cursor: onClick ? 'pointer' : 'default',
-        transition: 'transform .15s ease, box-shadow .15s ease',
+        transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
       }}
-      onMouseEnter={e => { if (onClick) (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; }}
-      onMouseLeave={e => { if (onClick) (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)'; }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLDivElement;
+        el.style.transform = 'translateY(-3px)';
+        el.style.boxShadow = '0 12px 28px rgba(64,81,137,0.14)';
+        el.style.borderColor = 'rgba(102,145,231,0.45)';
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLDivElement;
+        el.style.transform = 'translateY(0)';
+        el.style.boxShadow = '0 2px 20px rgba(0,0,0,0.06)';
+        el.style.borderColor = 'var(--vz-border-color)';
+      }}
     >
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: gradient }} />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
@@ -203,7 +218,6 @@ function EmptyState({ icon, text }: { icon: string; text: string }) {
 
 export default function EmployeeDashboard() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -332,65 +346,26 @@ export default function EmployeeDashboard() {
                 {me.date_of_joining && <span>· Joined {fmtDate(me.date_of_joining)}</span>}
               </div>
             </Col>
-            <Col xs={12} md="auto">
-              <div className="d-flex flex-wrap gap-2 justify-content-md-end">
-                <button
-                  onClick={() => me.employee_id && navigate(`/hr/employees/${me.employee_id}/profile`)}
-                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                  style={{
-                    fontSize: 12, background: 'rgba(255,255,255,0.18)',
-                    color: '#fff', border: '1px solid rgba(255,255,255,0.30)',
-                    padding: '7px 16px',
-                  }}
-                >
-                  <i className="ri-user-line" /> View profile
-                </button>
-                <button
-                  onClick={() => navigate('/hr/expense')}
-                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                  style={{
-                    fontSize: 12, background: '#fff', color: '#405189',
-                    border: 'none', padding: '7px 18px',
-                    boxShadow: '0 6px 14px rgba(0,0,0,0.15)',
-                  }}
-                >
-                  <i className="ri-add-circle-line" /> Raise expense
-                </button>
-              </div>
-            </Col>
           </Row>
         </div>
 
-        {/* Manager + profile completion strip */}
-        <div className="d-flex flex-wrap align-items-center justify-content-between gap-3" style={{ padding: '14px 22px', background: 'var(--vz-card-bg)' }}>
-          {me.manager_name ? (
-            <div className="d-flex align-items-center gap-2">
-              <Avatar src={me.manager_photo} name={me.manager_name} size={36} />
-              <div>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                  Reporting Manager
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                  {me.manager_name}
-                </div>
+        {/* Manager strip — the profile-completion bar lived here too, but
+            removed: the dedicated Onboarding strip below already shows a
+            progress bar when setup is incomplete, so showing both reads
+            as duplicate. */}
+        {me.manager_name && (
+          <div className="d-flex flex-wrap align-items-center gap-2" style={{ padding: '14px 22px', background: 'var(--vz-card-bg)' }}>
+            <Avatar src={me.manager_photo} name={me.manager_name} size={36} />
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                Reporting Manager
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
+                {me.manager_name}
               </div>
             </div>
-          ) : <span />}
-          <div style={{ flex: 1, maxWidth: 340 }}>
-            <div className="d-flex justify-content-between mb-1">
-              <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--vz-secondary-color)' }}>Profile completion</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#405189' }}>{me.profile_completion_pct}%</span>
-            </div>
-            <div style={{ height: 8, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden' }}>
-              <div style={{
-                width: `${Math.min(100, Math.max(0, me.profile_completion_pct))}%`,
-                height: '100%',
-                background: 'linear-gradient(90deg,#405189,#6691e7)',
-                borderRadius: 999, transition: 'width .6s ease',
-              }} />
-            </div>
           </div>
-        </div>
+        )}
       </Card>
 
       {/* ── Onboarding progress (only while incomplete) ─────────────────── */}
@@ -445,7 +420,6 @@ export default function EmployeeDashboard() {
             iconClass="ri-time-line"
             gradient="linear-gradient(135deg,#f7b84b,#fad07e)"
             hint="Mine awaiting approval"
-            onClick={() => navigate('/hr/expense')}
           />
         </Col>
         <Col xs={6} md={4} lg={2}>
@@ -473,7 +447,6 @@ export default function EmployeeDashboard() {
             iconClass="ri-shield-check-line"
             gradient="linear-gradient(135deg,#7c5cfc,#a993fd)"
             hint="As reporting manager"
-            onClick={() => navigate('/hr/expense')}
           />
         </Col>
         <Col xs={6} md={4} lg={2}>
@@ -545,17 +518,11 @@ export default function EmployeeDashboard() {
                 <h6 className="mb-0 fw-bold">My Recent Expenses</h6>
                 <small className="text-muted">Last 5 claims you filed</small>
               </div>
-              <button
-                onClick={() => navigate('/hr/expense')}
-                className="btn btn-sm fw-semibold rounded-pill px-3"
-                style={{ fontSize: 11, background: 'rgba(64,81,137,0.10)', color: '#405189', border: 'none' }}
-              >
-                View all <i className="ri-arrow-right-s-line" />
-              </button>
+              <i className="ri-bill-line" style={{ fontSize: 18, color: '#405189' }} />
             </div>
             <CardBody style={{ padding: 0 }}>
               {recent_expenses.length === 0 ? (
-                <EmptyState icon="ri-bill-line" text="No expense claims yet. Click 'Raise expense' to file one." />
+                <EmptyState icon="ri-bill-line" text="No expense claims yet." />
               ) : (
                 recent_expenses.map(c => (
                   <div key={c.id} className="d-flex align-items-center gap-2" style={{ padding: '12px 18px', borderBottom: '1px solid var(--vz-border-color)' }}>
@@ -598,13 +565,7 @@ export default function EmployeeDashboard() {
                 <h6 className="mb-0 fw-bold">Pending Your Approval</h6>
                 <small className="text-muted">Claims filed by your team</small>
               </div>
-              <button
-                onClick={() => navigate('/hr/expense')}
-                className="btn btn-sm fw-semibold rounded-pill px-3"
-                style={{ fontSize: 11, background: 'rgba(124,92,252,0.10)', color: '#7c5cfc', border: 'none' }}
-              >
-                Review <i className="ri-arrow-right-s-line" />
-              </button>
+              <i className="ri-shield-check-line" style={{ fontSize: 18, color: '#7c5cfc' }} />
             </div>
             <CardBody style={{ padding: 0 }}>
               {pending_approvals.length === 0 ? (
@@ -738,22 +699,10 @@ export default function EmployeeDashboard() {
               {team_peers.map(p => (
                 <Col key={p.id} xs={6} md={4} lg={2}>
                   <div
-                    onClick={() => navigate(`/hr/employees/${p.id}/profile`)}
                     style={{
                       borderRadius: 12, padding: 14, textAlign: 'center',
                       border: '1px solid var(--vz-border-color)',
-                      cursor: 'pointer', transition: 'transform .15s ease, border-color .15s ease',
                       background: 'var(--vz-card-bg)',
-                    }}
-                    onMouseEnter={e => {
-                      const el = e.currentTarget as HTMLDivElement;
-                      el.style.transform = 'translateY(-3px)';
-                      el.style.borderColor = '#6691e7';
-                    }}
-                    onMouseLeave={e => {
-                      const el = e.currentTarget as HTMLDivElement;
-                      el.style.transform = 'translateY(0)';
-                      el.style.borderColor = 'var(--vz-border-color)';
                     }}
                   >
                     <div className="mx-auto mb-2" style={{ width: 48, height: 48 }}>
