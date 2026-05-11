@@ -5,7 +5,6 @@ import {
   PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { useNavigate } from 'react-router-dom';
 import api from '../../api';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
@@ -87,14 +86,20 @@ interface KpiProps {
   iconClass: string;
   gradient: string;
   hint?: string;
-  onClick?: () => void;
 }
 
-function KpiCard({ label, value, iconClass, gradient, hint, onClick }: KpiProps) {
+/**
+ * Stat-only KPI tile. No `onClick` — the overview is informational; users
+ * navigate from the actual HR module pages, not the dashboard. Hover lift
+ * is pure visual polish.
+ *
+ * Background uses `var(--vz-card-bg)` (white in light mode, dark-surface
+ * token in dark mode) so the card stays readable on either theme.
+ */
+function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
   return (
     <div
       className="dashboard-kpi-card"
-      onClick={onClick}
       style={{
         borderRadius: 16,
         padding: '18px 18px 14px',
@@ -104,11 +109,20 @@ function KpiCard({ label, value, iconClass, gradient, hint, onClick }: KpiProps)
         position: 'relative',
         overflow: 'hidden',
         height: '100%',
-        cursor: onClick ? 'pointer' : 'default',
-        transition: 'transform .15s ease, box-shadow .15s ease',
+        transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
       }}
-      onMouseEnter={e => { if (onClick) (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; }}
-      onMouseLeave={e => { if (onClick) (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)'; }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLDivElement;
+        el.style.transform = 'translateY(-3px)';
+        el.style.boxShadow = '0 12px 28px rgba(64,81,137,0.14)';
+        el.style.borderColor = 'rgba(102,145,231,0.45)';
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLDivElement;
+        el.style.transform = 'translateY(0)';
+        el.style.boxShadow = '0 2px 20px rgba(0,0,0,0.06)';
+        el.style.borderColor = 'var(--vz-border-color)';
+      }}
     >
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: gradient }} />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
@@ -181,7 +195,6 @@ function fmtDate(s: string | null): string {
 
 export default function HrOverview() {
   const { selectedBranchId } = useBranchSwitcher();
-  const navigate = useNavigate();
   const [data, setData]     = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState<string | null>(null);
@@ -301,7 +314,6 @@ export default function HrOverview() {
             iconClass="ri-team-line"
             gradient="linear-gradient(135deg,#405189,#6691e7)"
             hint="Currently on rolls"
-            onClick={() => navigate('/hr/employees')}
           />
         </Col>
         <Col xs={6} md={4} lg={2}>
@@ -320,7 +332,6 @@ export default function HrOverview() {
             iconClass="ri-briefcase-line"
             gradient="linear-gradient(135deg,#299cdb,#63bcec)"
             hint="In recruitment"
-            onClick={() => navigate('/hr/recruitment')}
           />
         </Col>
         <Col xs={6} md={4} lg={2}>
@@ -330,7 +341,6 @@ export default function HrOverview() {
             iconClass="ri-mail-send-line"
             gradient="linear-gradient(135deg,#7c5cfc,#a993fd)"
             hint="Invitations sent"
-            onClick={() => navigate('/hr/employee-onboarding')}
           />
         </Col>
         <Col xs={6} md={4} lg={2}>
@@ -349,7 +359,6 @@ export default function HrOverview() {
             iconClass="ri-bill-line"
             gradient="linear-gradient(135deg,#f7b84b,#fad07e)"
             hint="Awaiting approval"
-            onClick={() => navigate('/hr/expense')}
           />
         </Col>
       </Row>
