@@ -57,6 +57,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::apiResource('clients', ClientController::class);
 
     // Branches
+    Route::get('/branches/next-code', [BranchController::class, 'nextCode']);
     Route::apiResource('branches', BranchController::class);
 
     // Plans (admin CRUD)

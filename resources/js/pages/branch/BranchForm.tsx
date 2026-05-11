@@ -377,6 +377,22 @@ export default function BranchForm({ onBack, editId }: Props) {
   const fieldError = useCallback((key: string) => serverErrors[key]?.[0] || validationErrors[key], [serverErrors, validationErrors]);
   const fieldInvalid = (key: string) => !!fieldError(key);
 
+  // Pre-fill the Branch Code field with the next auto-allocated value
+  // (BR-001, BR-002, …) on add-mode only. The server is authoritative
+  // — it re-locks and re-allocates inside store(), so the previewed
+  // code matches what gets persisted unless two creates race.
+  useEffect(() => {
+    if (isEdit) return;
+    let cancelled = false;
+    api.get('/branches/next-code')
+      .then(({ data }) => {
+        if (cancelled || !data?.code) return;
+        setForm(prev => (prev.code ? prev : { ...prev, code: data.code }));
+      })
+      .catch(() => { /* falls back to manual entry */ });
+    return () => { cancelled = true; };
+  }, [isEdit]);
+
   useEffect(() => {
     if (!editId) return;
     setLoadingData(true);
@@ -1092,9 +1108,30 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <FormFeedback style={css.formFeedback}>{fieldError('name')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Lbl>Branch Code</Lbl>
-                <Input style={css.input} value={form.code} onChange={e => set('code', e.target.value.toUpperCase())}
-                  placeholder="HO-MUM" maxLength={20} />
+                <Lbl>
+                  Branch Code
+                  {!isEdit && (
+                    <span style={{ fontSize: 10.5, fontWeight: 600, color: '#7c5cfc', marginLeft: 6, padding: '1px 7px', borderRadius: 999, background: 'rgba(124,92,252,0.10)', border: '1px solid rgba(124,92,252,0.25)' }}>
+                      auto-assigned
+                    </span>
+                  )}
+                </Lbl>
+                <Input
+                  style={{
+                    ...css.input,
+                    // Tint the input subtly so the user sees it's a
+                    // system-allocated value, not a free-text field —
+                    // they can still override if they really want.
+                    background: !isEdit && form.code?.startsWith('BR-') ? '#f5f1ff' : (css.input as any).background,
+                    color: !isEdit && form.code?.startsWith('BR-') ? '#5a3fd1' : (css.input as any).color,
+                    fontWeight: !isEdit && form.code?.startsWith('BR-') ? 600 : (css.input as any).fontWeight,
+                    letterSpacing: !isEdit && form.code?.startsWith('BR-') ? '0.02em' : undefined,
+                  }}
+                  value={form.code}
+                  onChange={e => set('code', e.target.value.toUpperCase())}
+                  placeholder="BR-001"
+                  maxLength={20}
+                />
               </Col>
               <Col md={4}>
                 <Lbl>Branch Type</Lbl>
