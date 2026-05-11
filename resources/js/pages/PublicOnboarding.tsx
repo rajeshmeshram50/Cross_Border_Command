@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { Row, Col } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
@@ -411,174 +412,254 @@ export default function PublicOnboarding() {
     );
   }
 
-  // Step indicator
-  const stepIndicator = (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 22px', borderBottom: '1px solid #eef0f4', background: '#fff' }}>
-      {([1, 2, 3] as StepNum[]).map((n, i) => {
-        const active = step === n;
-        const done2  = step > n;
-        const labels: Record<StepNum, string> = { 1: 'PERSONAL', 2: 'ADDRESS', 3: 'JOB & SUBMIT' };
-        return (
-          <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{
-              width: 28, height: 28, borderRadius: '50%',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 12, fontWeight: 800,
-              background: done2 ? '#0ab39c' : active ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : '#f1f3f7',
-              color: done2 || active ? '#fff' : '#9ca3af',
-              border: done2 || active ? 'none' : '2px solid #e5e7eb',
-            }}>
-              {done2 ? '✓' : n}
-            </div>
-            <span style={{
-              fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em',
-              color: active ? '#5a3fd1' : done2 ? '#0a8a78' : '#9ca3af',
-              textTransform: 'uppercase',
-            }}>{labels[n]}</span>
-            {i < 2 && <div style={{ width: 32, height: 2, background: done2 ? '#0ab39c' : '#e5e7eb', margin: '0 4px' }} />}
-          </div>
-        );
-      })}
-    </div>
-  );
-
-  const sectionStyle: React.CSSProperties = {
-    background: '#fff', border: '1px solid #eef0f4', borderRadius: 12,
-    padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
-  };
-  const sectionTitleStyle: React.CSSProperties = {
-    display: 'flex', alignItems: 'center', gap: 8,
-    fontSize: 13.5, fontWeight: 700, color: '#1f2937', marginBottom: 14,
-  };
+  // Allow clicking earlier (already-visited) steps to jump back. Forward
+  // jumps still go through goNext() so validators run.
+  const jumpToStep = (n: StepNum) => { if (n < step) setStep(n); };
 
   return (
     <>
       <MasterFormStyles />
-      <div style={{ minHeight: '100vh', background: '#f7f8fc' }}>
+      <div style={{ minHeight: '100vh', background: 'var(--vz-secondary-bg, #f7f8fc)' }}>
         <style>{`
-          .onb-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; width: 100%; transition: border-color .15s ease, box-shadow .15s ease; }
-          .onb-input::placeholder { color: #9ca3af; }
-          .onb-input:focus { outline: none; border-color: #7c5cfc; box-shadow: 0 0 0 3px rgba(124,92,252,0.18); }
-          .onb-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
-          .onb-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
-          .onb-label .req { color: #f06548; margin-left: 2px; }
-          .onb-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
-          .onb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-          @media (max-width: 720px) { .onb-grid { grid-template-columns: 1fr; } }
+          .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
+          .emp-input::placeholder { color: #9ca3af; }
+          .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
+          .emp-input.is-readonly { background: #f5f1ff; border-color: #d6c9ff; color: #5a3fd1; font-weight: 600; }
+          .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
+          .emp-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
+          [data-bs-theme="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
+          [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
+          .emp-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
+          [data-bs-theme="dark"] .emp-label { color: #c4b5fd; }
+          .emp-label .req { color: #f06548; margin-left: 2px; }
+          .emp-section {
+            background: #fff;
+            border: 1px solid #eef0f4;
+            border-radius: 12px;
+            padding: 16px 18px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+          }
+          [data-bs-theme="dark"] .emp-section { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
+          .emp-section + .emp-section { margin-top: 14px; }
+          .emp-section-title { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; color: var(--vz-heading-color, #1f2937); margin-bottom: 14px; }
+          .emp-section-title i { color: #7c5cfc; font-size: 16px; }
+          .emp-stepper-bar { background: #fff; }
+          [data-bs-theme="dark"] .emp-stepper-bar { background: var(--vz-card-bg); border-bottom-color: var(--vz-border-color); }
+          .emp-stepper-circle {
+            width: 32px; height: 32px; border-radius: 50%;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 13px;
+            background: #f1f3f7; color: #9ca3af; border: 2px solid #e5e7eb;
+            transition: all .2s ease;
+          }
+          .emp-stepper-circle.is-active { background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border-color: transparent; box-shadow: 0 4px 12px rgba(124,92,252,0.30); }
+          .emp-stepper-circle.is-done { background: #0ab39c; color: #fff; border-color: transparent; }
+          .emp-stepper-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca3af; margin-top: 6px; text-align: center; }
+          .emp-stepper-label.is-active { color: #5a3fd1; }
+          .emp-stepper-label.is-done { color: #0ab39c; }
+          .emp-stepper-line { flex: 1; height: 2px; background: #e5e7eb; margin: 0 6px; align-self: flex-start; margin-top: 16px; transition: background .2s ease; }
+          .emp-stepper-line.is-done { background: #0ab39c; }
+          .emp-stepper-btn {
+            background: transparent; border: none; padding: 0;
+            cursor: pointer; display: flex; flex-direction: column; align-items: center;
+            min-width: 92px;
+            transition: transform .15s ease;
+          }
+          .emp-stepper-btn:disabled { cursor: default; }
+          .emp-stepper-btn:focus-visible { outline: 2px solid #7c5cfc; outline-offset: 4px; border-radius: 8px; }
+          .emp-stepper-btn:not(:disabled):hover .emp-stepper-circle:not(.is-active):not(.is-done) {
+            border-color: #c4b5fd; color: #7c5cfc; background: #f5f3ff;
+          }
+          .emp-stepper-btn:not(:disabled):hover .emp-stepper-label:not(.is-active):not(.is-done) { color: #7c5cfc; }
+          .emp-stepper-btn:not(:disabled):hover { transform: translateY(-1px); }
+          [data-bs-theme="dark"] .emp-stepper-circle { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55); border-color: rgba(255,255,255,0.12); }
+          [data-bs-theme="dark"] .emp-stepper-label { color: rgba(255,255,255,0.55); }
+          [data-bs-theme="dark"] .emp-stepper-label.is-active { color: #c4b5fd; }
+          [data-bs-theme="dark"] .emp-stepper-line { background: rgba(255,255,255,0.10); }
+          .emp-footer-bar { background: #fff; border-top: 1px solid var(--vz-border-color, #eef0f4); }
+          [data-bs-theme="dark"] .emp-footer-bar { background: var(--vz-card-bg); border-top-color: var(--vz-border-color); }
+          .emp-ghost-btn { background: #fff; color: #475569; border: 1px solid #e5e7eb; }
+          [data-bs-theme="dark"] .emp-ghost-btn { background: rgba(255,255,255,0.04); color: var(--vz-body-color); border-color: var(--vz-border-color); }
+          .emp-ghost-btn:hover { background: #f3f4f6; color: #1f2937; }
         `}</style>
 
-        {/* Hero */}
-        <div style={{ padding: '20px 22px', background: 'linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%)', color: '#fff' }}>
-          <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>👋</div>
-            <div>
-              <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>Welcome to {invite?.org_name}</h1>
-              <p style={{ margin: '2px 0 0', fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>
-                Hi {invite?.invitee_name} · <strong>{invite?.invitee_email}</strong> · Step {step} of 3
-              </p>
+        {/* Gradient header — mirrors the Add Employee modal header */}
+        <div
+          style={{
+            padding: '18px 22px',
+            background: 'linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%)',
+            color: '#fff',
+          }}
+        >
+          <div style={{ maxWidth: 1100, margin: '0 auto' }} className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-3">
+              <div
+                className="d-flex align-items-center justify-content-center flex-shrink-0"
+                style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.18)',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <i className="ri-user-add-line" style={{ fontSize: 20 }} />
+              </div>
+              <div>
+                <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 17, letterSpacing: '-0.01em' }}>
+                  Welcome to {invite?.org_name}
+                </h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
+                  Hi {invite?.invitee_name} · <strong>{invite?.invitee_email}</strong>
+                </div>
+              </div>
+            </div>
+            <div className="d-flex align-items-center gap-2 flex-shrink-0">
+              <span
+                className="badge rounded-pill"
+                style={{
+                  background: 'rgba(255,255,255,0.22)',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: 11,
+                  padding: '6px 12px',
+                }}
+              >
+                Step {step} of 3
+              </span>
             </div>
           </div>
         </div>
 
-        {/* Step indicator strip */}
-        <div style={{ maxWidth: 1100, margin: '0 auto' }}>{stepIndicator}</div>
+        {/* Stepper */}
+        <div className="emp-stepper-bar" style={{ borderBottom: '1px solid var(--vz-border-color, #eef0f4)' }}>
+          <div style={{ maxWidth: 1100, margin: '0 auto', padding: '16px 28px' }} className="d-flex align-items-start">
+            {[
+              { n: 1 as StepNum, label: 'Personal' },
+              { n: 2 as StepNum, label: 'Address' },
+              { n: 3 as StepNum, label: 'Job & Submit' },
+            ].map((s, idx, arr) => {
+              const active = step === s.n;
+              const done2  = step > s.n;
+              const canJump = s.n < step;
+              return (
+                <div key={s.n} className="d-flex align-items-start" style={{ flex: idx === arr.length - 1 ? '0 0 auto' : '1 1 0' }}>
+                  <button
+                    type="button"
+                    className="emp-stepper-btn"
+                    onClick={() => jumpToStep(s.n)}
+                    disabled={!canJump && !active}
+                    aria-label={`Step ${s.n}: ${s.label}`}
+                    aria-current={active ? 'step' : undefined}
+                  >
+                    <div className={`emp-stepper-circle${active ? ' is-active' : ''}${done2 ? ' is-done' : ''}`}>
+                      {done2 ? <i className="ri-check-line" style={{ fontSize: 16 }} /> : s.n}
+                    </div>
+                    <div className={`emp-stepper-label${active ? ' is-active' : ''}${done2 ? ' is-done' : ''}`}>
+                      {s.label}
+                    </div>
+                  </button>
+                  {idx < arr.length - 1 && <div className={`emp-stepper-line${done2 ? ' is-done' : ''}`} />}
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         <div style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 22px 24px' }}>
 
           {step === 1 && (
-            <div style={sectionStyle}>
-              <div style={sectionTitleStyle}><i className="ri-user-line" style={{ color: '#7c5cfc', fontSize: 16 }} /> Personal Details</div>
-              <div className="onb-grid">
-                <div>
-                  <label className="onb-label">First Name<span className="req">*</span></label>
-                  <input className={`onb-input${errs.first_name ? ' is-invalid' : ''}`} value={firstName} onChange={e => { setFirstName(e.target.value); clearErr('first_name'); }} />
-                  {errs.first_name && <small className="onb-err">{errs.first_name}</small>}
-                </div>
-                <div>
-                  <label className="onb-label">Middle Name</label>
-                  <input className={`onb-input${errs.middle_name ? ' is-invalid' : ''}`} value={middleName} onChange={e => { setMiddleName(e.target.value); clearErr('middle_name'); }} />
-                  {errs.middle_name && <small className="onb-err">{errs.middle_name}</small>}
-                </div>
-                <div>
-                  <label className="onb-label">Last Name<span className="req">*</span></label>
-                  <input className={`onb-input${errs.last_name ? ' is-invalid' : ''}`} value={lastName} onChange={e => { setLastName(e.target.value); clearErr('last_name'); }} />
-                  {errs.last_name && <small className="onb-err">{errs.last_name}</small>}
-                </div>
-                <div>
-                  <label className="onb-label">Gender<span className="req">*</span></label>
+            <div className="emp-section">
+              <div className="emp-section-title"><i className="ri-user-line" /> Personal Details</div>
+              <Row className="g-3">
+                <Col md={4}>
+                  <label className="emp-label">First Name<span className="req">*</span></label>
+                  <input className={`emp-input${errs.first_name ? ' is-invalid' : ''}`} placeholder="e.g. Aarav" value={firstName} onChange={e => { setFirstName(e.target.value); clearErr('first_name'); }} />
+                  {errs.first_name && <small className="emp-err">{errs.first_name}</small>}
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Middle Name</label>
+                  <input className={`emp-input${errs.middle_name ? ' is-invalid' : ''}`} placeholder="Middle name (optional)" value={middleName} onChange={e => { setMiddleName(e.target.value); clearErr('middle_name'); }} />
+                  {errs.middle_name && <small className="emp-err">{errs.middle_name}</small>}
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Last Name<span className="req">*</span></label>
+                  <input className={`emp-input${errs.last_name ? ' is-invalid' : ''}`} placeholder="e.g. Kale" value={lastName} onChange={e => { setLastName(e.target.value); clearErr('last_name'); }} />
+                  {errs.last_name && <small className="emp-err">{errs.last_name}</small>}
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Gender<span className="req">*</span></label>
                   <MasterSelect value={gender} onChange={v => { setGender(v); clearErr('gender'); }} options={genderOpts} placeholder="Select gender" invalid={!!errs.gender} />
-                  {errs.gender && <small className="onb-err">{errs.gender}</small>}
-                </div>
-                <div>
-                  <label className="onb-label">Date of Birth<span className="req">*</span></label>
+                  {errs.gender && <small className="emp-err">{errs.gender}</small>}
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Date of Birth<span className="req">*</span></label>
                   <MasterDatePicker value={dob} onChange={v => { setDob(v); clearErr('date_of_birth'); }} placeholder="dd-mm-yyyy" invalid={!!errs.date_of_birth} maxDate={dobMaxDate} />
-                  {errs.date_of_birth && <small className="onb-err">{errs.date_of_birth}</small>}
-                </div>
-                <div>
-                  <label className="onb-label">Nationality<span className="req">*</span></label>
+                  {errs.date_of_birth && <small className="emp-err">{errs.date_of_birth}</small>}
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Nationality<span className="req">*</span></label>
                   <MasterSelect value={nationality} onChange={v => { setNationality(v); clearErr('nationality_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.nationality_country_id} />
-                  {errs.nationality_country_id && <small className="onb-err">{errs.nationality_country_id}</small>}
-                </div>
-                <div>
-                  <label className="onb-label">Work Country<span className="req">*</span></label>
+                  {errs.nationality_country_id && <small className="emp-err">{errs.nationality_country_id}</small>}
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Work Country<span className="req">*</span></label>
                   <MasterSelect value={workCountry} onChange={v => { setWorkCountry(v); clearErr('work_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.work_country_id} />
-                  {errs.work_country_id && <small className="onb-err">{errs.work_country_id}</small>}
-                </div>
-                <div>
-                  <label className="onb-label">Mobile Number<span className="req">*</span></label>
-                  <input className={`onb-input${errs.mobile ? ' is-invalid' : ''}`} value={mobile} onChange={e => { setMobile(e.target.value); clearErr('mobile'); }} placeholder="10-digit mobile" />
-                  {errs.mobile && <small className="onb-err">{errs.mobile}</small>}
-                </div>
-                <div>
-                  <label className="onb-label">Alternate Mobile</label>
-                  <input className={`onb-input${errs.alt_mobile ? ' is-invalid' : ''}`} value={altMobile} onChange={e => { setAltMobile(e.target.value); clearErr('alt_mobile'); }} placeholder="(optional)" />
-                  {errs.alt_mobile && <small className="onb-err">{errs.alt_mobile}</small>}
-                </div>
-              </div>
+                  {errs.work_country_id && <small className="emp-err">{errs.work_country_id}</small>}
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Mobile Number<span className="req">*</span></label>
+                  <input className={`emp-input${errs.mobile ? ' is-invalid' : ''}`} value={mobile} onChange={e => { setMobile(e.target.value); clearErr('mobile'); }} placeholder="10-digit mobile" />
+                  {errs.mobile && <small className="emp-err">{errs.mobile}</small>}
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Alternate Mobile</label>
+                  <input className={`emp-input${errs.alt_mobile ? ' is-invalid' : ''}`} value={altMobile} onChange={e => { setAltMobile(e.target.value); clearErr('alt_mobile'); }} placeholder="(optional)" />
+                  {errs.alt_mobile && <small className="emp-err">{errs.alt_mobile}</small>}
+                </Col>
+              </Row>
             </div>
           )}
 
           {step === 2 && (
             <>
-              <div style={sectionStyle}>
-                <div style={sectionTitleStyle}><i className="ri-map-pin-line" style={{ color: '#7c5cfc', fontSize: 16 }} /> Current Address</div>
-                <div className="onb-grid">
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label className="onb-label">Address Line 1<span className="req">*</span></label>
-                    <input className={`onb-input${errs.address_line1 ? ' is-invalid' : ''}`} value={curAddr1} onChange={e => { setCurAddr1(e.target.value); clearErr('address_line1'); }} />
-                    {errs.address_line1 && <small className="onb-err">{errs.address_line1}</small>}
-                  </div>
-                  <div>
-                    <label className="onb-label">Address Line 2</label>
-                    <input className="onb-input" value={curAddr2} onChange={e => setCurAddr2(e.target.value)} placeholder="(optional)" />
-                  </div>
-                  <div>
-                    <label className="onb-label">City<span className="req">*</span></label>
-                    <input className={`onb-input${errs.city ? ' is-invalid' : ''}`} value={curCity} onChange={e => { setCurCity(e.target.value); clearErr('city'); }} />
-                    {errs.city && <small className="onb-err">{errs.city}</small>}
-                  </div>
-                  <div>
-                    <label className="onb-label">Country<span className="req">*</span></label>
+              <div className="emp-section">
+                <div className="emp-section-title"><i className="ri-map-pin-line" /> Current Address</div>
+                <Row className="g-3">
+                  <Col md={8}>
+                    <label className="emp-label">Address Line 1<span className="req">*</span></label>
+                    <input className={`emp-input${errs.address_line1 ? ' is-invalid' : ''}`} value={curAddr1} onChange={e => { setCurAddr1(e.target.value); clearErr('address_line1'); }} />
+                    {errs.address_line1 && <small className="emp-err">{errs.address_line1}</small>}
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">Address Line 2</label>
+                    <input className="emp-input" value={curAddr2} onChange={e => setCurAddr2(e.target.value)} placeholder="(optional)" />
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">City<span className="req">*</span></label>
+                    <input className={`emp-input${errs.city ? ' is-invalid' : ''}`} value={curCity} onChange={e => { setCurCity(e.target.value); clearErr('city'); }} />
+                    {errs.city && <small className="emp-err">{errs.city}</small>}
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">Country<span className="req">*</span></label>
                     <MasterSelect value={curCountry} onChange={v => { setCurCountry(v); if (curState) setCurState(''); clearErr('country_id'); clearErr('state_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.country_id} />
-                    {errs.country_id && <small className="onb-err">{errs.country_id}</small>}
-                  </div>
-                  <div>
-                    <label className="onb-label">State<span className="req">*</span></label>
+                    {errs.country_id && <small className="emp-err">{errs.country_id}</small>}
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">State<span className="req">*</span></label>
                     <MasterSelect value={curState} onChange={v => { setCurState(v); clearErr('state_id'); }} options={curStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={curCountry ? 'Select state' : 'Pick country first'} disabled={!curCountry} invalid={!!errs.state_id} />
-                    {errs.state_id && <small className="onb-err">{errs.state_id}</small>}
-                  </div>
-                  <div>
-                    <label className="onb-label">Pincode<span className="req">*</span></label>
-                    <input className={`onb-input${errs.pincode ? ' is-invalid' : ''}`} value={curPin} onChange={e => { setCurPin(e.target.value); clearErr('pincode'); }} />
-                    {errs.pincode && <small className="onb-err">{errs.pincode}</small>}
-                  </div>
-                </div>
+                    {errs.state_id && <small className="emp-err">{errs.state_id}</small>}
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">Pincode<span className="req">*</span></label>
+                    <input className={`emp-input${errs.pincode ? ' is-invalid' : ''}`} value={curPin} onChange={e => { setCurPin(e.target.value); clearErr('pincode'); }} />
+                    {errs.pincode && <small className="emp-err">{errs.pincode}</small>}
+                  </Col>
+                </Row>
               </div>
 
-              <div style={{ ...sectionStyle, marginTop: 14 }}>
-                <div style={{ ...sectionTitleStyle, justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><i className="ri-home-4-line" style={{ color: '#7c5cfc', fontSize: 16 }} /> Permanent Address</div>
-                  <label style={{ fontSize: 12, color: '#6b7280', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <div className="emp-section">
+                <div className="emp-section-title" style={{ justifyContent: 'space-between' }}>
+                  <div className="d-flex align-items-center gap-2"><i className="ri-home-4-line" /> Permanent Address</div>
+                  <label style={{ fontSize: 12, color: '#6b7280', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, textTransform: 'none', letterSpacing: 0 }}>
                     <input type="checkbox" checked={sameAsCurrent} onChange={e => {
                       const c = e.target.checked;
                       setSameAsCurrent(c);
@@ -586,93 +667,90 @@ export default function PublicOnboarding() {
                     }} /> Same as Current Address
                   </label>
                 </div>
-                <div className="onb-grid">
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <label className="onb-label">Address Line 1</label>
-                    <input className="onb-input" value={permAddr1} onChange={e => setPermAddr1(e.target.value)} disabled={sameAsCurrent} />
-                  </div>
-                  <div>
-                    <label className="onb-label">Address Line 2</label>
-                    <input className="onb-input" value={permAddr2} onChange={e => setPermAddr2(e.target.value)} disabled={sameAsCurrent} />
-                  </div>
-                  <div>
-                    <label className="onb-label">City</label>
-                    <input className="onb-input" value={permCity} onChange={e => setPermCity(e.target.value)} disabled={sameAsCurrent} />
-                  </div>
-                  <div>
-                    <label className="onb-label">Country</label>
+                <Row className="g-3">
+                  <Col md={8}>
+                    <label className="emp-label">Address Line 1</label>
+                    <input className="emp-input" value={permAddr1} onChange={e => setPermAddr1(e.target.value)} disabled={sameAsCurrent} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">Address Line 2</label>
+                    <input className="emp-input" value={permAddr2} onChange={e => setPermAddr2(e.target.value)} disabled={sameAsCurrent} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">City</label>
+                    <input className="emp-input" value={permCity} onChange={e => setPermCity(e.target.value)} disabled={sameAsCurrent} />
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">Country</label>
                     <MasterSelect value={permCountry} onChange={v => { setPermCountry(v); if (permState) setPermState(''); }} options={countryOpts} placeholder="Select country" disabled={sameAsCurrent} />
-                  </div>
-                  <div>
-                    <label className="onb-label">State</label>
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">State</label>
                     <MasterSelect value={permState} onChange={setPermState} options={permStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={permCountry ? 'Select state' : 'Pick country first'} disabled={sameAsCurrent || !permCountry} />
-                  </div>
-                  <div>
-                    <label className="onb-label">Pincode</label>
-                    <input className={`onb-input${errs.perm_pincode ? ' is-invalid' : ''}`} value={permPin} onChange={e => { setPermPin(e.target.value); clearErr('perm_pincode'); }} disabled={sameAsCurrent} />
-                    {errs.perm_pincode && <small className="onb-err">{errs.perm_pincode}</small>}
-                  </div>
-                </div>
+                  </Col>
+                  <Col md={4}>
+                    <label className="emp-label">Pincode</label>
+                    <input className={`emp-input${errs.perm_pincode ? ' is-invalid' : ''}`} value={permPin} onChange={e => { setPermPin(e.target.value); clearErr('perm_pincode'); }} disabled={sameAsCurrent} />
+                    {errs.perm_pincode && <small className="emp-err">{errs.perm_pincode}</small>}
+                  </Col>
+                </Row>
               </div>
             </>
           )}
 
           {step === 3 && (
-            <div style={sectionStyle}>
-              <div style={sectionTitleStyle}><i className="ri-briefcase-line" style={{ color: '#7c5cfc', fontSize: 16 }} /> Job Details (set by HR — confirm or update)</div>
-              <div className="onb-grid">
-                <div>
-                  <label className="onb-label">Department</label>
+            <div className="emp-section">
+              <div className="emp-section-title"><i className="ri-briefcase-line" /> Job Details <span style={{ fontSize: 11, fontWeight: 500, color: '#9ca3af', letterSpacing: 0, textTransform: 'none' }}>(set by HR — confirm or update)</span></div>
+              <Row className="g-3">
+                <Col md={4}>
+                  <label className="emp-label">Department</label>
                   <MasterSelect value={departmentId} onChange={setDepartmentId} options={departmentOpts} placeholder="Select department" />
-                </div>
-                <div>
-                  <label className="onb-label">Designation</label>
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Designation</label>
                   <MasterSelect value={designationId} onChange={setDesignationId} options={designationOpts} placeholder="Select designation" />
-                </div>
-                <div>
-                  <label className="onb-label">Primary Role</label>
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Primary Role</label>
                   <MasterSelect value={primaryRoleId} onChange={setPrimaryRoleId} options={roleOpts} placeholder="Select role" />
-                </div>
-                <div>
-                  <label className="onb-label">Legal Entity</label>
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Legal Entity</label>
                   <MasterSelect value={legalEntityId} onChange={v => {
                     setLegalEntityId(v);
                     const ent = legalEntities.find(le => String(le.id) === String(v));
                     setLocation(ent?.city || '');
                   }} options={legalEntityOpts} placeholder="Select entity" />
-                </div>
-                <div>
-                  <label className="onb-label">Location</label>
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Location</label>
                   {/* Auto-filled from the selected legal entity's city. Locked
                       so candidates can't override it — pick a different
                       entity to change the location. */}
                   <input
-                    className="onb-input"
+                    className={`emp-input${legalEntityId ? ' is-readonly' : ''}`}
                     value={location}
                     onChange={e => setLocation(e.target.value)}
                     placeholder={legalEntityId ? 'Set by legal entity' : 'Select a legal entity'}
                     disabled={!!legalEntityId}
                     readOnly={!!legalEntityId}
                   />
-                </div>
-                <div>
-                  <label className="onb-label">Joining Date</label>
+                </Col>
+                <Col md={4}>
+                  <label className="emp-label">Joining Date</label>
                   <MasterDatePicker value={joiningDate} onChange={setJoiningDate} placeholder="dd-mm-yyyy" />
-                </div>
-              </div>
+                </Col>
+              </Row>
             </div>
           )}
 
           {/* Footer — Back / Next / Submit */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '16px 0 8px', marginTop: 14,
-          }}>
+          <div className="d-flex align-items-center justify-content-between" style={{ padding: '16px 0 8px', marginTop: 14 }}>
             {step > 1 ? (
               <button
                 type="button" onClick={goBack}
-                className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                style={{ fontSize: 13, background: '#fff', color: '#475569', border: '1px solid #e5e7eb', padding: '8px 16px' }}
+                className="btn emp-ghost-btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
+                style={{ fontSize: 13, padding: '8px 18px' }}
               >
                 <i className="ri-arrow-left-s-line" /> Back
               </button>
@@ -684,7 +762,7 @@ export default function PublicOnboarding() {
                 style={{
                   fontSize: 13, color: '#fff', border: 'none',
                   background: 'linear-gradient(135deg,#7c5cfc,#a78bfa)',
-                  boxShadow: '0 6px 16px rgba(124,92,252,0.30)', padding: '10px 20px',
+                  boxShadow: '0 6px 16px rgba(124,92,252,0.30)', padding: '10px 22px',
                 }}
               >
                 Next <i className="ri-arrow-right-s-line" />
