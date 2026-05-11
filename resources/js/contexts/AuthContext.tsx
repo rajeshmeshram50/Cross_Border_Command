@@ -109,11 +109,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh();
   }, []);
 
-  // Also refresh when the tab regains focus (catches perms granted while away)
+  // Also refresh when the tab regains focus (catches perms granted while
+  // away). THROTTLED to once per 60s — without this, every alt-tab fires
+  // /me, and on a flaky live server even a transient 401 would clear the
+  // session and bounce the user to /login. With throttling, brief tab
+  // hops don't fire /me at all; only after a real away period.
   useEffect(() => {
+    let lastFocusRefreshAt = 0;
+    const FOCUS_REFRESH_THROTTLE_MS = 60 * 1000;
     const onFocus = () => {
       const token = localStorage.getItem('cbc_token');
-      if (token && user) refresh();
+      if (!token || !user) return;
+      const now = Date.now();
+      if (now - lastFocusRefreshAt < FOCUS_REFRESH_THROTTLE_MS) return;
+      lastFocusRefreshAt = now;
+      refresh();
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);

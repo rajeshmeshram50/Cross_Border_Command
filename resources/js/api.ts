@@ -57,14 +57,43 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 → force logout
+// Handle 401 → force logout. Safeguards:
+//
+//   1. Only reload when we ACTUALLY had a token (i.e. it was invalidated
+//      mid-session). A 401 with no prior token means the request was made
+//      before login — reloading would loop forever.
+//
+//   2. Skip /me — AuthContext's refresh() has its own try/catch that quietly
+//      clears state without a jarring reload. The on-focus refresh fires
+//      every time the user alt-tabs back, and if /me happens to 401 due to
+//      a transient backend issue we DON'T want to bounce them to /login.
+//      That was the "auto-logout after a few seconds of idle" symptom on
+//      live: alt-tab away → click back → focus fires → /me 401s → reload.
+//
+//   3. Capture last 401 source to localStorage so devs can inspect after
+//      reload — `localStorage.getItem('cbc_last_auth_error')`.
+const TOLERATED_401_URLS = ['/me'];
+
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('cbc_token');
-      localStorage.removeItem('cbc_user');
-      window.location.reload();
+    const status = err.response?.status;
+    const url = (err.config?.url as string | undefined) || '';
+    if (status === 401) {
+      const hadToken = !!localStorage.getItem('cbc_token');
+      const tolerated = TOLERATED_401_URLS.some(p => url === p || url.startsWith(p + '?'));
+      if (hadToken && !tolerated) {
+        try {
+          localStorage.setItem('cbc_last_auth_error', JSON.stringify({
+            url, status, at: new Date().toISOString(),
+            message: err.response?.data?.message || '(no message)',
+          }));
+        } catch {}
+        console.warn('[api] 401 from', url, '— clearing session');
+        localStorage.removeItem('cbc_token');
+        localStorage.removeItem('cbc_user');
+        window.location.reload();
+      }
     }
     return Promise.reject(err);
   }
