@@ -1067,6 +1067,24 @@ export default function HrEmployees() {
    *  and refresh `eExistingDocs` with the server's row. Used for both
    *  first-time upload and replace — the backend already deletes the
    *  prior file when the same key is uploaded again. */
+  /**
+   *  Match a File against an `accept`-style spec (e.g. `.pdf,.jpg,image/png`).
+   *  The HTML `accept` attribute only filters the OS picker — drag-drop and
+   *  files renamed to a permitted extension still slip through. This helper
+   *  is the real gate: callers must run it before storing or uploading the
+   *  file so `.php` / `.xss` / scripts can't be saved into employee state.
+   */
+  const isAcceptedFile = (file: File, accept: string): boolean => {
+    if (!accept || !accept.trim()) return true;
+    const name = file.name.toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    return accept.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).some(spec => {
+      if (spec.startsWith('.')) return name.endsWith(spec);
+      if (spec.endsWith('/*'))  return type.startsWith(spec.slice(0, -1));
+      return type === spec;
+    });
+  };
+
   const uploadEmpDoc = async (docKey: string, docName: string, file: File) => {
     if (!editingDbId) {
       toast.error('Save the employee first', `Add the basic details, then come back to upload ${docName}.`);
@@ -3012,7 +3030,7 @@ export default function HrEmployees() {
           [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
           .emp-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
           [data-bs-theme="dark"] .emp-label { color: #c4b5fd; }
-          .emp-label .req { color: #f06548; margin-left: 2px; }
+          .emp-label .req { color: #f06548; margin-left: 4px; font-size: 13px; font-weight: 800; line-height: 1; vertical-align: middle; }
           .emp-label .hint { color: #9ca3af; font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 4px; font-size: 10px; }
           .emp-section {
             background: #fff;
@@ -3850,7 +3868,13 @@ export default function HrEmployees() {
                                   onChange={e => {
                                     const f = e.target.files?.[0];
                                     e.target.value = '';
-                                    if (f) { d.set(f); uploadEmpDoc(d.key, d.label, f); }
+                                    if (!f) return;
+                                    if (!isAcceptedFile(f, d.accept)) {
+                                      toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
+                                      return;
+                                    }
+                                    d.set(f);
+                                    uploadEmpDoc(d.key, d.label, f);
                                   }}
                                 />
                               </label>
@@ -3884,11 +3908,14 @@ export default function HrEmployees() {
                                 onChange={e => {
                                   const f = e.target.files?.[0];
                                   e.target.value = '';
-                                  if (f) {
-                                    d.set(f);
-                                    if (errKey) clearEErr(errKey);
-                                    uploadEmpDoc(d.key, d.label, f);
+                                  if (!f) return;
+                                  if (!isAcceptedFile(f, d.accept)) {
+                                    toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
+                                    return;
                                   }
+                                  d.set(f);
+                                  if (errKey) clearEErr(errKey);
+                                  uploadEmpDoc(d.key, d.label, f);
                                 }}
                               />
                             </label>
