@@ -82,7 +82,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'branches': return '/branches';
     case 'branch-form': return data?.editId ? `/branches/${data.editId}/edit` : '/branches/new';
     case 'branch-view': return `/branches/${data?.branchId}`;
-    case 'branch-users': return '/branches/users';
+    case 'branch-users': return data?.branchId ? `/branches/${data.branchId}/users` : '/branches/users';
     case 'client-users': return '/clients/users';
     case 'hr-employees': return '/hr/employees';
     case 'hr-recruitment': return '/hr/recruitment';
@@ -163,6 +163,20 @@ function AddPlanWrapper() {
   const { id } = useParams();
   const navigateFn = useNavigateContext().navigate;
   return <AddPlan onBack={() => navigateFn('plans')} editId={id ? Number(id) : undefined} />;
+}
+
+function BranchUsersWrapper() {
+  const { id } = useParams();
+  const location = useLocation();
+  const navigateFn = useNavigateContext().navigate;
+  const stateBranchName = (location.state as any)?.branchName;
+  return (
+    <UsersPage
+      branchId={id ? Number(id) : undefined}
+      branchName={stateBranchName}
+      onBack={() => navigateFn('branches')}
+    />
+  );
 }
 
 function EmployeePermissionsWrapper() {
@@ -305,14 +319,17 @@ function DashboardRoutes({ user }: { user: any }) {
     return <SplashLoader onComplete={() => setSplashDone(true)} />;
   }
 
-  // Navigate function compatible with existing components
+  // Navigate function compatible with existing components.
+  // Forwarding `data` as react-router state means pages that need extra
+  // context (e.g. UsersPage needs the branchName when navigating from the
+  // Branches table) can read it via useLocation().state.
   const navigateFn = (p: string, data?: any) => {
     const path = getPagePath(p, data);
     if (planExpiredOrMissing && !defaultPages.includes(path)) {
       navigate('/my-plan', { replace: true });
       return;
     }
-    navigate(path);
+    navigate(path, data ? { state: data } : undefined);
   };
 
   // Provide navigate context to all child components
@@ -362,6 +379,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/branches/new" element={<BranchFormWrapper />} />
               <Route path="/branches/:id" element={<BranchViewWrapper />} />
               <Route path="/branches/:id/edit" element={<BranchFormWrapper />} />
+              <Route path="/branches/:id/users" element={<BranchUsersWrapper />} />
               <Route path="/branches/users" element={<UsersPage />} />
               <Route path="/clients/users" element={<UsersPage />} />
               <Route path="/plans" element={<Plans onNavigate={navigateFn} />} />

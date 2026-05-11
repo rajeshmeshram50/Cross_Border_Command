@@ -104,7 +104,7 @@ function KpiCard({ label, value, iconClass, gradient, changeText, trend = 'neutr
             </div>
           )}
         </div>
-        <div style={{
+        <div className="dashboard-kpi-icon" style={{
           width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: gradient, flexShrink: 0,
         }}>
@@ -172,8 +172,40 @@ export default function BranchDashboard() {
   return (
     <>
       <style>{`
-        .dashboard-kpi-card { background: #ffffff; }
+        .dashboard-kpi-card {
+          background: #ffffff;
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease,
+            border-color 220ms ease;
+          will-change: transform;
+          cursor: default;
+        }
+        .dashboard-kpi-card:hover {
+          transform: translateY(-4px);
+          box-shadow:
+            0 18px 36px -8px rgba(64, 81, 137, 0.28),
+            0 8px 16px -4px rgba(64, 81, 137, 0.18),
+            0 2px 4px rgba(0, 0, 0, 0.06) !important;
+          border-color: rgba(64, 81, 137, 0.35) !important;
+        }
+        .dashboard-kpi-card:hover .dashboard-kpi-icon {
+          transform: scale(1.08) rotate(-3deg);
+          box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+        }
+        .dashboard-kpi-icon {
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease;
+        }
         [data-bs-theme="dark"] .dashboard-kpi-card { background: #1c2531; }
+        [data-bs-theme="dark"] .dashboard-kpi-card:hover {
+          box-shadow:
+            0 18px 36px -8px rgba(0, 0, 0, 0.65),
+            0 8px 16px -4px rgba(0, 0, 0, 0.45),
+            0 2px 4px rgba(0, 0, 0, 0.30) !important;
+          border-color: rgba(124, 92, 252, 0.50) !important;
+        }
         .bd-list-row {
           transition: background 0.18s ease, box-shadow 0.18s ease;
           cursor: pointer;
