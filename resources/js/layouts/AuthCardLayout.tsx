@@ -21,7 +21,7 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
   const { settings } = useSettings();
   const platformName = settings.general.platform_name || 'Cross Border Command';
   return (
-    <div className="flex min-h-screen w-full bg-slate-950 font-sans relative overflow-x-hidden">
+    <div className="flex w-full bg-slate-950 font-sans relative overflow-x-hidden cbc-shell">
       {/* Background image — sharper now (no auto-scale that was softening
           edges) and revealed through a lighter overlay so the building
           shot reads as the hero asset, not muddy backdrop. */}
@@ -42,11 +42,29 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
         }} />
       <div className="fixed inset-0 opacity-[0.04] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '32px 32px' }} />
 
+      {/* Page-level CSS — uses dvh (dynamic viewport height) so the page
+          doesn't jump when mobile browser chrome (URL bar) hides/shows.
+          Falls back to vh on browsers that don't support dvh. */}
+      <style>{`
+        .cbc-shell { min-height: 100vh; min-height: 100dvh; }
+        .cbc-pane  { min-height: 100vh; min-height: 100dvh; }
+        /* On phones the keyboard pushes layout up — keep card area
+           scrollable rather than clipping the form below the fold. */
+        @media (max-width: 1023px) {
+          .cbc-pane-card { padding-top: max(1.25rem, env(safe-area-inset-top)); padding-bottom: max(1.25rem, env(safe-area-inset-bottom)); }
+        }
+        @media (max-width: 380px) {
+          /* Very narrow phones (e.g. iPhone SE) — pull card padding in
+             a notch so inputs aren't squashed against the rounded edge. */
+          .cbc-login-card { padding: 14px !important; }
+        }
+      `}</style>
+
       {/* Main Content Container */}
-      <div className="relative z-10 flex w-full min-h-screen">
+      <div className="relative z-10 flex w-full">
         {/* Left Side: Branding & Info — visible only on lg+ (≥1024px).
             Phone & tablet portrait collapse to just the centered card. */}
-        <div className="flex-1 hidden lg:flex flex-col justify-between p-6 lg:p-8 xl:p-12 text-white min-h-screen">
+        <div className="flex-1 hidden lg:flex flex-col justify-between p-6 lg:p-8 xl:p-12 text-white cbc-pane">
           <div className="max-w-xl animate-in fade-in slide-in-from-left duration-700">
             <div className="mb-2 animate-float">
               <div className="w-36 lg:w-44 xl:w-48 h-24 lg:h-28 xl:h-32 hover-lift transition-transform duration-500">
@@ -183,11 +201,7 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
             Android chrome via env(safe-area-inset-*). The card width
             scales from 92vw on tiny phones up to 460px on tablet+. */}
         <div
-          className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:p-8 min-h-screen"
-          style={{
-            paddingTop: 'max(1rem, env(safe-area-inset-top))',
-            paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
-          }}
+          className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:p-8 cbc-pane cbc-pane-card"
         >
           <div className="w-full max-w-[92vw] sm:max-w-[440px] md:max-w-[480px] animate-in zoom-in-95 duration-500">
             <div className="cbc-login-card relative overflow-hidden p-4 sm:p-5 transition-all duration-700 ease-out group/card">
