@@ -7,6 +7,10 @@ import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } f
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
+// Borrow the polished pill-button styles used by the recruitment / hiring
+// request modal so the Add Employee wizard footer matches the same design
+// language (gradient primary CTA + soft outlined secondary).
+import '../../../css/recruitment.css';
 
 // ── Evidence Vault — mock document catalogue (per-employee view) ────────────
 type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
@@ -370,7 +374,19 @@ type ExpiryDays = 3 | 7 | 15;
 export default function HrEmployees() {
   const [tab, setTab] = useState<'active' | 'disabled'>('active');
   const [q, setQ] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'Active' | 'All'>('Active');
+  const [statusFilter, setStatusFilter] = useState<'Active' | 'Disabled' | 'All'>('Active');
+
+  // Keep the Active/Disabled tabs in sync with the Status dropdown so the
+  // user never lands on a filter combination that returns zero rows
+  // (Status=Disabled on the Active tab and vice-versa). Picking "All"
+  // leaves whatever tab the user is currently on — that's the only state
+  // where the two controls can legitimately diverge.
+  useEffect(() => {
+    if (statusFilter === 'Active'   && tab !== 'active')   setTab('active');
+    if (statusFilter === 'Disabled' && tab !== 'disabled') setTab('disabled');
+    // statusFilter === 'All' is intentionally a no-op
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
   const [deptFilter, setDeptFilter] = useState<string>('All Depts');
 
   // KPI marquee strip — wheel-to-horizontal scroll. While the user is
@@ -1179,45 +1195,65 @@ export default function HrEmployees() {
     } catch { /* quota / private mode — silently skip */ }
   }, [empOpen, empMode, draftSnapshot, eFirstName, eLastName, eWorkEmail, eMobile, empStep]);
 
+  // Draft-resume prompt state. Modal is rendered at the bottom of the
+  // page tree so it can sit ABOVE the Add Employee modal without z-index
+  // wrestling. Pending draft data is held here while the user decides.
+  const [draftPromptOpen, setDraftPromptOpen] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<{ data: any; hint: string } | null>(null);
+
+  const proceedFresh = async () => {
+    try {
+      const r = await api.get('/employees/next-code');
+      if (r?.data?.code) setEEmpId(r.data.code);
+    } catch { /* server will still allocate at create time */ }
+  };
+
   const openAddEmployee = async () => {
     resetEmpForm();
     setEmpMode('add');
     setEmpEditingName('');
     setEditingDbId(null);
-    setEmpOpen(true);
 
-    // Hydrate from saved draft if one exists. Anything in the draft wins
-    // over the freshly-reset state, so the user lands on whichever step
-    // they last reached with all their typed values intact.
-    let restored = false;
-    let restoredStep: 1 | 2 | 3 | 4 = 1;
+    // Look for a saved draft BEFORE opening the modal so we can either
+    // (a) prompt the user via our own styled modal, or (b) open fresh.
     try {
       const raw = localStorage.getItem(ADD_DRAFT_KEY);
       if (raw) {
         const draft = JSON.parse(raw);
-        applyDraft(draft);
-        restored = true;
-        restoredStep = (draft.empStep as 1 | 2 | 3 | 4) || 1;
+        const hint = [draft?.eFirstName, draft?.eLastName].filter(Boolean).join(' ').trim()
+          || draft?.eWorkEmail
+          || `Step ${draft?.empStep || 1}`;
+        setPendingDraft({ data: draft, hint });
+        setDraftPromptOpen(true);
+        return; // wait for user's choice — modal handlers continue the flow
       }
     } catch { /* corrupt draft — ignore, fall through to fresh state */ }
 
-    if (restored) {
-      // Brief toast so the user knows why their fields are pre-populated.
-      toast.success(
-        'Draft restored',
-        `Resumed at step ${restoredStep}. Use "Discard draft" in the header to start over.`,
-      );
-    } else {
-      // Pre-fill the EMP-### code from the server only on a fresh start —
-      // when restoring a draft we keep the previously-shown code so the
-      // displayed value matches what the user saw before closing.
-      try {
-        const r = await api.get('/employees/next-code');
-        if (r?.data?.code) setEEmpId(r.data.code);
-      } catch {
-        /* server will still allocate at create time */
-      }
-    }
+    // No draft path — open clean form and pre-fill the next EMP-### code.
+    setEmpOpen(true);
+    await proceedFresh();
+  };
+
+  const resumeDraft = () => {
+    const draft = pendingDraft?.data;
+    setDraftPromptOpen(false);
+    setPendingDraft(null);
+    setEmpOpen(true);
+    if (!draft) return;
+    applyDraft(draft);
+    const restoredStep = (draft.empStep as 1 | 2 | 3 | 4) || 1;
+    toast.success(
+      'Draft resumed',
+      `Continuing at step ${restoredStep}. Use "Discard draft" in the header to start over.`,
+    );
+  };
+
+  const startFreshFromPrompt = async () => {
+    localStorage.removeItem(ADD_DRAFT_KEY);
+    setDraftPromptOpen(false);
+    setPendingDraft(null);
+    setEmpOpen(true);
+    await proceedFresh();
   };
 
   /** Discard the saved draft and reset the form to a clean step 1. */
@@ -1373,13 +1409,23 @@ export default function HrEmployees() {
     if (!eFirstName.trim())   e.first_name      = 'First name is required';
     if (!eLastName.trim())    e.last_name       = 'Last name is required';
     if (!eDisplayName.trim()) e.display_name    = 'Display name is required';
+    if (!eActualName.trim())  e.actual_name     = 'Employee actual name is required';
     if (!eGender)             e.gender          = 'Gender is required';
     if (!eDob)                e.date_of_birth   = 'Date of birth is required';
     if (!eNationality)        e.nationality_country_id = 'Nationality is required';
     // Contact
     if (!eWorkEmail.trim())   e.email           = 'Email is required';
     else if (!emailRe.test(eWorkEmail.trim())) e.email = 'Enter a valid email address';
-    if (!eMobile.trim())      e.mobile          = 'Mobile is required';
+    if (!eMobile.trim()) {
+      e.mobile = 'Mobile is required';
+    } else {
+      // Catch invalid mobile shapes before the backend does. 6–15 digits
+      // covers every reasonable international format (E.164 max is 15).
+      const digits = eMobile.replace(/\D/g, '');
+      if (digits.length < 6 || digits.length > 15) {
+        e.mobile = 'Mobile must be 6–15 digits';
+      }
+    }
     // Address (current)
     if (!eCurAddr1.trim())    e.address_line1   = 'Address Line 1 is required';
     if (!eCurCity.trim())     e.city            = 'City is required';
@@ -1388,7 +1434,7 @@ export default function HrEmployees() {
     if (!eCurPin.trim())      e.pincode         = 'Pincode is required';
     else if (!/^\d{4,10}$/.test(eCurPin.trim())) e.pincode = 'Enter a valid pincode';
     return e;
-  }, [eWorkCountry, eFirstName, eLastName, eDisplayName, eGender, eDob, eNationality,
+  }, [eWorkCountry, eFirstName, eLastName, eDisplayName, eActualName, eGender, eDob, eNationality,
       eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin]);
 
   const validateStep2 = useCallback((): Record<string, string> => {
@@ -1690,10 +1736,19 @@ export default function HrEmployees() {
     }
   };
 
-  const departments = useMemo(
-    () => ['All Depts', ...Array.from(new Set(apiRows.map(e => e.department).filter(d => d && d !== '—')))],
-    [apiRows]
-  );
+  // Filter options pull straight from the Departments master (mDepts).
+  // Earlier we derived this from existing employees' departments, which
+  // hid any newly-created master row that didn't yet have an employee
+  // assigned. Fall back to employee-derived names if the master hasn't
+  // loaded yet so the dropdown is never empty on first paint.
+  const departments = useMemo(() => {
+    const fromMaster = mDepts.map((d: any) => d.name).filter(Boolean);
+    const fromRows   = apiRows.map(e => e.department).filter(d => d && d !== '—');
+    const merged     = fromMaster.length > 0
+      ? Array.from(new Set([...fromMaster, ...fromRows]))
+      : Array.from(new Set(fromRows));
+    return ['All Depts', ...merged];
+  }, [mDepts, apiRows]);
 
   // KPI counts derived from real data. Probation buckets are computed
   // from `date_of_joining + probation_months` since the schema has no
@@ -1778,6 +1833,14 @@ export default function HrEmployees() {
     return apiRows.filter(e => {
       if (tab === 'active' && !e.enabled) return false;
       if (tab === 'disabled' && e.enabled) return false;
+      // Status dropdown uses the same concept as the Active/Disabled tabs
+      // above — the employee's `enabled` flag — so the two controls stay
+      // semantically consistent and the user never sees conflicting filters.
+      //   "Active"   → enabled === true
+      //   "Disabled" → enabled === false
+      //   "All"      → no status filter
+      if (statusFilter === 'Active'   && !e.enabled) return false;
+      if (statusFilter === 'Disabled' &&  e.enabled) return false;
       if (deptFilter !== 'All Depts' && e.department !== deptFilter) return false;
       if (!s) return true;
       return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
@@ -1787,7 +1850,7 @@ export default function HrEmployees() {
     // initial empty-array filter result forever and only re-runs when one of
     // the other deps (q / tab / deptFilter) changes. That's why the table
     // looked empty on first load and only populated after a tab switch.
-  }, [q, tab, deptFilter, apiRows]);
+  }, [q, tab, deptFilter, statusFilter, apiRows]);
 
   return (
     <>
@@ -2028,7 +2091,12 @@ export default function HrEmployees() {
                       <button
                         key={t.key}
                         type="button"
-                        onClick={() => setTab(t.key)}
+                        onClick={() => {
+                          setTab(t.key);
+                          // Keep the dropdown in lockstep with the tab —
+                          // they represent the same enabled/disabled axis.
+                          setStatusFilter(t.key === 'active' ? 'Active' : 'Disabled');
+                        }}
                         className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
                         style={{
                           borderRadius: 8,
@@ -2079,10 +2147,11 @@ export default function HrEmployees() {
                   <div style={{ minWidth: 130 }}>
                     <MasterSelect
                       value={statusFilter}
-                      onChange={(v) => setStatusFilter((v as 'Active' | 'All') || 'Active')}
+                      onChange={(v) => setStatusFilter((v as 'Active' | 'Disabled' | 'All') || 'Active')}
                       options={[
-                        { value: 'Active', label: 'Active' },
-                        { value: 'All',    label: 'All' },
+                        { value: 'Active',   label: 'Active' },
+                        { value: 'Disabled', label: 'Disabled' },
+                        { value: 'All',      label: 'All' },
                       ]}
                       placeholder="Status"
                     />
@@ -2312,7 +2381,7 @@ export default function HrEmployees() {
                                   // with this employee's name, email, and department.
                                   <ActionBtn title="Send Onboarding" icon="ri-user-add-line" color="info" onClick={() => openOnboardingForEmployee(e)} />
                                 ) : null}
-                                <ActionBtn title="Workstation" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} />
+                                <ActionBtn title="Asset" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} />
                                 <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} />
                                 <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} />
                                 <ToggleSwitch
@@ -2864,6 +2933,93 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
+      {/* ── Draft-resume prompt — styled in-app modal that replaces the
+          native window.confirm() the old flow used. Asks the user whether
+          to resume a previously-saved Add Employee draft or start fresh. */}
+      <Modal
+        isOpen={draftPromptOpen}
+        toggle={() => setDraftPromptOpen(false)}
+        centered
+        backdrop="static"
+        keyboard={false}
+        modalClassName="emp-draft-prompt"
+      >
+        <style>{`
+          .emp-draft-prompt .modal-dialog { max-width: 460px; }
+          .emp-draft-prompt .modal-content {
+            border: none;
+            border-radius: 18px !important;
+            overflow: hidden;
+            box-shadow: 0 24px 60px rgba(18,38,63,0.30);
+          }
+        `}</style>
+        <ModalBody className="p-0">
+          {/* Gradient header — same indigo→violet palette as the Add
+              Employee modal so the prompt reads as part of the flow. */}
+          <div
+            style={{
+              padding: '20px 22px',
+              background: 'linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%)',
+              color: '#fff',
+            }}
+          >
+            <div className="d-flex align-items-center gap-3">
+              <div
+                className="d-flex align-items-center justify-content-center flex-shrink-0"
+                style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.18)',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <i className="ri-history-line" style={{ fontSize: 20 }} />
+              </div>
+              <div>
+                <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
+                  Unsaved draft found
+                </h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
+                  Pick up where you left off, or start a fresh record
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '20px 22px 18px', background: '#fff' }}>
+            <p className="mb-3" style={{ fontSize: 13.5, color: 'var(--vz-body-color)', lineHeight: 1.55 }}>
+              You have an in-progress Add Employee draft for{' '}
+              <strong style={{ color: '#5a3fd1' }}>{pendingDraft?.hint || 'an earlier session'}</strong>.
+              Choose what to do with it.
+            </p>
+
+            <div className="d-flex justify-content-end gap-2 mt-3">
+              <button
+                type="button"
+                onClick={startFreshFromPrompt}
+                className="rec-btn-ghost"
+              >
+                <i className="ri-add-line" />
+                Start fresh
+              </button>
+              <button
+                type="button"
+                onClick={resumeDraft}
+                className="rec-btn-primary"
+                style={{
+                  background: 'linear-gradient(120deg, #5a3fd1 0%, #7c5cfc 55%, #a78bfa 100%)',
+                  boxShadow:
+                    '0 6px 16px rgba(124,92,252,0.40), 0 2px 4px rgba(90,63,209,0.22), inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.08)',
+                }}
+              >
+                <i className="ri-history-line" />
+                Resume draft
+                <i className="ri-arrow-right-line" />
+              </button>
+            </div>
+          </div>
+        </ModalBody>
+      </Modal>
+
       {/* ── Add / Edit Employee modal (4-step wizard) ── */}
       <Modal
         isOpen={empOpen}
@@ -2879,6 +3035,29 @@ export default function HrEmployees() {
         <style>{`
           .emp-modal-wide .modal-dialog { max-width: min(1280px, 95vw); }
           .emp-modal-wide .modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
+          /* Repaint the borrowed recruitment buttons to match the Add
+             Employee header palette (deep indigo → violet → lavender)
+             instead of the recruitment form's pink-purple. Keeps the
+             button feel identical but the colour family in sync. */
+          .emp-modal-wide .rec-btn-primary {
+            background: linear-gradient(120deg, #5a3fd1 0%, #7c5cfc 55%, #a78bfa 100%) !important;
+            box-shadow:
+              0 6px 16px rgba(124,92,252,0.40),
+              0 2px 4px rgba(90,63,209,0.22),
+              inset 0 1px 0 rgba(255,255,255,0.28),
+              inset 0 -1px 0 rgba(0,0,0,0.08) !important;
+          }
+          .emp-modal-wide .rec-btn-primary:hover {
+            box-shadow:
+              0 10px 22px rgba(124,92,252,0.50),
+              0 3px 6px rgba(90,63,209,0.28),
+              inset 0 1px 0 rgba(255,255,255,0.35),
+              inset 0 -1px 0 rgba(0,0,0,0.08) !important;
+          }
+          .emp-modal-wide .rec-btn-ghost:hover {
+            border-color: #a78bfa !important;
+            color: #5a3fd1 !important;
+          }
           .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
           .emp-input::placeholder { color: #9ca3af; }
           .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
@@ -3165,7 +3344,14 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Employee Actual Name<span className="req">*</span></label>
-                      <input className="emp-input" type="text" placeholder="Full legal name as per records" value={eActualName} onChange={e => setEActualName(e.target.value)} />
+                      <input
+                        className={`emp-input${eErrors.actual_name ? ' is-invalid' : ''}`}
+                        type="text"
+                        placeholder="Full legal name as per records"
+                        value={eActualName}
+                        onChange={e => { setEActualName(e.target.value); clearEErr('actual_name'); }}
+                      />
+                      {eErrors.actual_name && <small className="emp-err">{eErrors.actual_name}</small>}
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Gender<span className="req">*</span></label>
@@ -3213,9 +3399,19 @@ export default function HrEmployees() {
                       <input
                         className={`emp-input${eErrors.mobile ? ' is-invalid' : ''}`}
                         type="tel"
+                        inputMode="numeric"
                         placeholder="10-digit mobile number"
+                        maxLength={15}
                         value={eMobile}
-                        onChange={e => { setEMobile(e.target.value); clearEErr('mobile'); }}
+                        onChange={e => {
+                          // Allow only digits + leading +. Caps at 15 chars
+                          // (E.164 international max). Without this, users
+                          // could paste 20–30 chars and trigger a backend
+                          // 500 when the DB length limit kicked in.
+                          const cleaned = e.target.value.replace(/[^\d+]/g, '').slice(0, 15);
+                          setEMobile(cleaned);
+                          clearEErr('mobile');
+                        }}
                       />
                       {eErrors.mobile && <small className="emp-err">{eErrors.mobile}</small>}
                     </Col>
@@ -3998,8 +4194,7 @@ export default function HrEmployees() {
               <button
                 type="button"
                 onClick={() => setEmpStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
-                className="btn emp-ghost-btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                style={{ fontSize: 13 }}
+                className="rec-btn-ghost"
               >
                 <i className="ri-arrow-left-s-line" /> Back
               </button>
@@ -4013,14 +4208,7 @@ export default function HrEmployees() {
                 <button
                   type="button"
                   onClick={handleNextStep}
-                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                  style={{
-                    fontSize: 13,
-                    color: '#fff',
-                    border: 'none',
-                    background: 'linear-gradient(135deg,#7c5cfc,#a78bfa)',
-                    boxShadow: '0 6px 16px rgba(124,92,252,0.30)',
-                  }}
+                  className="rec-btn-primary"
                 >
                   Next <i className="ri-arrow-right-s-line" />
                 </button>
@@ -4030,29 +4218,22 @@ export default function HrEmployees() {
                     type="button"
                     disabled={saving}
                     onClick={handleSaveEmployee}
-                    className="btn emp-ghost-btn fw-semibold rounded-pill px-3"
-                    style={{
-                      fontSize: 13,
-                      opacity: saving ? 0.6 : 1,
-                    }}
+                    className="rec-btn-ghost"
+                    style={{ opacity: saving ? 0.6 : 1 }}
                   >
+                    <i className="ri-skip-forward-line" />
                     Skip this Step
                   </button>
                   <button
                     type="button"
                     disabled={saving}
                     onClick={handleSaveEmployee}
-                    className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                    style={{
-                      fontSize: 13,
-                      color: '#fff',
-                      border: 'none',
-                      background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                      boxShadow: '0 6px 16px rgba(10,179,156,0.30)',
-                      opacity: saving ? 0.6 : 1,
-                    }}
+                    className="rec-btn-primary"
+                    style={{ opacity: saving ? 0.6 : 1 }}
                   >
-                    <i className={saving ? 'ri-loader-4-line' : 'ri-check-line'} /> {saving ? 'Saving…' : (empMode === 'edit' ? 'Update Employee' : 'Save Employee')}
+                    <i className={saving ? 'ri-loader-4-line' : 'ri-check-line'} />
+                    {saving ? 'Saving…' : (empMode === 'edit' ? 'Update Employee' : 'Save Employee')}
+                    {!saving && <i className="ri-arrow-right-line" />}
                   </button>
                 </>
               )}

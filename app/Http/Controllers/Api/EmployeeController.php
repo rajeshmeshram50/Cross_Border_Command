@@ -727,13 +727,19 @@ class EmployeeController extends Controller
             'first_name'   => $isUpdate ? 'nullable|string|max:100' : 'required|string|max:100',
             'middle_name'  => 'nullable|string|max:100',
             'last_name'    => 'nullable|string|max:100',
-            'gender'       => 'nullable|in:Male,Female,Other',
+            // "Prefer not to say" is offered in the frontend GENDER_OPTIONS;
+            // the backend was rejecting it as out-of-enum which surfaced as
+            // a confusing 500/422 when the user picked it.
+            'gender'       => 'nullable|in:Male,Female,Other,Prefer not to say',
             'date_of_birth' => 'nullable|date',
             'nationality_country_id' => 'nullable|integer',
             'work_country_id'        => 'nullable|integer',
             'email'        => $emailRule,
-            'mobile'       => 'nullable|string|max:30',
-            'alt_mobile'   => 'nullable|string|max:30',
+            // Tightened from max:30 → max:15 (E.164 international cap).
+            // Without this the DB layer rejected 20–30-digit input with a
+            // hard 500 error instead of a friendly 422.
+            'mobile'       => ['nullable', 'string', 'max:15', 'regex:/^[+0-9\s\-()]{6,15}$/'],
+            'alt_mobile'   => ['nullable', 'string', 'max:15', 'regex:/^[+0-9\s\-()]{6,15}$/'],
 
             // Current address
             'country_id'   => 'nullable|integer',
