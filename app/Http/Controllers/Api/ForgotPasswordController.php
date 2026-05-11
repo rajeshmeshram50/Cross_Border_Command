@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\PasswordChangedMail;
 use App\Mail\PasswordResetOtpMail;
 use App\Models\User;
+use App\Support\Settings;
 use App\Traits\PasswordHistory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -77,7 +78,13 @@ class ForgotPasswordController extends Controller
             'created_at' => now(),
         ]);
 
-        // Send email
+        // Send email — master email toggle applies even to OTPs. If admin
+        // globally disables email they accept that password reset breaks.
+        if (!Settings::shouldSendMail()) {
+            return response()->json([
+                'message' => 'Email is disabled by platform admin. Contact support.',
+            ], 503);
+        }
         try {
             Mail::to($email)->cc('php@inhpl.com')->send(new PasswordResetOtpMail(
                 $otp,
@@ -235,9 +242,10 @@ class ForgotPasswordController extends Controller
         // Revoke all tokens (force re-login)
         $user->tokens()->delete();
 
-        // Confirmation mail — non-fatal so a transient SMTP hiccup never
-        // blocks the password reset itself (the password IS already saved).
-        try {
+        // Confirmation mail — gated by master emailNotif. Non-fatal so a
+        // transient SMTP hiccup never blocks the password reset itself
+        // (the password IS already saved).
+        if (Settings::shouldSendMail()) try {
             Mail::to($user->email)->send(new PasswordChangedMail(
                 $user->name,
                 $user->email,

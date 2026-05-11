@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\RecruitmentController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RazorpayWebhookController;
+use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SubscriptionController;
 use Illuminate\Support\Facades\Route;
 
@@ -174,6 +175,14 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/permissions/users', [PermissionController::class, 'manageableUsers']);
     Route::get('/permissions/user/{userId}', [PermissionController::class, 'getUserPermissions']);
     Route::post('/permissions/user/{userId}', [PermissionController::class, 'savePermissions']);
+
+    // Platform Settings — read for all authenticated users (Contact Us, FAQs,
+    // branding render in every layout); writes restricted to super_admin
+    // inside the controller itself, not at the route level, so the same
+    // routes work for everyone but only the granted user can persist.
+    Route::get ('/settings',                          [SettingsController::class, 'index']);
+    Route::put ('/settings/{section}',                [SettingsController::class, 'update']);
+    Route::post('/settings/appearance/asset',         [SettingsController::class, 'uploadAsset']);
 });
 
 // Invoice routes (auth via query token, outside sanctum middleware)

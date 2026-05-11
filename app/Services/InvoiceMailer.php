@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Mail\PaymentInvoiceMail;
 use App\Models\Payment;
 use App\Models\User;
+use App\Support\Settings;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -34,10 +35,20 @@ class InvoiceMailer
      */
     public function sendForPayment(Payment $payment): void
     {
+        // Gated by Settings → Notifications → payAlerts (and master emailNotif).
+        // Still generates the PDF on disk so admin can download it from the
+        // Payments page — only the mail dispatch is skipped.
         try {
             $payment->loadMissing(['client', 'plan']);
 
             $this->ensureInvoicePdf($payment);
+
+            if (!Settings::shouldSendMail('payAlerts')) {
+                Log::info('Invoice mail skipped by Settings → Notifications → payAlerts', [
+                    'payment_id' => $payment->id,
+                ]);
+                return;
+            }
 
             $orgEmail = $payment->client?->email;
             if (!$orgEmail) {

@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
+use App\Support\Settings;
 
 class ClientController extends Controller
 {
@@ -225,17 +226,19 @@ class ClientController extends Controller
             $client->load(['plan', 'createdBy']);
             $client->loadCount(['branches', 'users']);
 
-            // Send welcome email
-            try {
-                Mail::to($request->admin_email)->send(new WelcomeCredentialsMail(
-                    $request->admin_name,
-                    $request->admin_email,
-                    $request->admin_password,
-                    'client_admin',
-                    $request->org_name,
-                ));
-            } catch (\Exception $e) {
-                // Don't fail the request if email fails
+            // Send welcome email — gated by Settings → Notifications → newUser
+            if (Settings::shouldSendMail('newUser')) {
+                try {
+                    Mail::to($request->admin_email)->send(new WelcomeCredentialsMail(
+                        $request->admin_name,
+                        $request->admin_email,
+                        $request->admin_password,
+                        'client_admin',
+                        $request->org_name,
+                    ));
+                } catch (\Exception $e) {
+                    // Don't fail the request if email fails
+                }
             }
 
             return response()->json([
@@ -393,7 +396,7 @@ class ClientController extends Controller
                 // Notify the client_admin whenever super_admin actually rotates
                 // their password from the Client form. Read the post-update
                 // email so a simultaneous email change goes to the new mailbox.
-                if ($passwordChanged) {
+                if ($passwordChanged && Settings::shouldSendMail()) {
                     try {
                         Mail::to($adminUser->email)->send(new PasswordChangedMail(
                             $adminUser->name,

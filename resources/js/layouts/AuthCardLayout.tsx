@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { FaLinkedin, FaInstagram, FaFacebook } from 'react-icons/fa';
+import { useSettings } from '../contexts/SettingsContext';
 interface AuthCardLayoutProps {
   children: ReactNode;
   title?: string;
@@ -14,6 +15,11 @@ const socialLinks = [
 ];
 
 export default function AuthCardLayout({ children, title, subtitle, icon }: AuthCardLayoutProps) {
+  // Pull platform name from settings so super_admin's General-tab change
+  // appears here (e.g. branding the login screen for white-label customers).
+  // Falls back to the default if settings haven't loaded (first visit).
+  const { settings } = useSettings();
+  const platformName = settings.general.platform_name || 'Cross Border Command';
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-950 font-sans relative">
       {/* Background Layer */}
@@ -39,7 +45,7 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
             <h1 className="text-4xl xl:text-5xl font-black tracking-tight leading-tight mb-4">
               {(() => {
                 const line1 = 'Welcome to';
-                const line2 = 'Cross Border Command';
+                const line2 = platformName;
                 let idx = 0;
                 return (
                   <>
