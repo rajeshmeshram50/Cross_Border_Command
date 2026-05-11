@@ -182,10 +182,19 @@ class BranchController extends Controller
                     ->update(['is_main' => false]);
             }
 
+            // Auto-allocate BR-### when the user didn't supply a code.
+            // Race-safe — allocateBranchCode() uses lockForUpdate() inside
+            // the surrounding transaction so two concurrent creates can't
+            // both grab the same number.
+            $branchCode = trim((string) $request->code);
+            if ($branchCode === '') {
+                $branchCode = $this->allocateBranchCode($clientId);
+            }
+
             $branch = Branch::create([
                 'client_id' => $clientId,
                 'name' => $request->name,
-                'code' => $request->code,
+                'code' => $branchCode,
                 'email' => $request->email,
                 'phone' => $request->phone,
                 'website' => $request->website,
@@ -560,5 +569,57 @@ class BranchController extends Controller
             $stored = substr($stored, strlen('storage/'));
         }
         return $stored;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  AUTO-CODE — BR-### sequential, per tenant
+     *
+     *  Two endpoints share the same generator: a read-only `nextCode`
+     *  used by the SPA to pre-fill the Branch Code field, and the
+     *  row-locked `allocateCode` used inside store() so two concurrent
+     *  creates can't both grab BR-005.
+     *
+     *  Format intentionally mirrors HiringRequest's HRQ-### so codes
+     *  across the platform read with the same visual rhythm.
+     * ───────────────────────────────────────────────────────────────── */
+
+    public function nextCode(Request $request)
+    {
+        $user = $request->user();
+        $clientId = $user->client_id;
+        if (!$clientId) {
+            return response()->json(['code' => 'BR-001', 'prefix' => 'BR-']);
+        }
+        return response()->json([
+            'code'   => $this->peekNextBranchCode($clientId),
+            'prefix' => 'BR-',
+        ]);
+    }
+
+    private function allocateBranchCode($clientId): string
+    {
+        $q = Branch::withTrashed()->where('client_id', $clientId)->lockForUpdate();
+        return $this->buildNextBranchCode($q->pluck('code'));
+    }
+
+    private function peekNextBranchCode($clientId): string
+    {
+        $q = Branch::withTrashed()->where('client_id', $clientId);
+        return $this->buildNextBranchCode($q->pluck('code'));
+    }
+
+    private function buildNextBranchCode($codes): string
+    {
+        $max = 0;
+        foreach ($codes as $c) {
+            // Only count codes that match our auto-generated pattern.
+            // Legacy / manually-entered codes (e.g. 'HO', 'MUM-WH-01')
+            // are ignored so they don't poison the sequence.
+            if (preg_match('/^BR-(\d+)$/i', (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $max) $max = $n;
+            }
+        }
+        return 'BR-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 }

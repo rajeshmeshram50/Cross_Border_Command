@@ -1411,7 +1411,33 @@ export default function HrEmployees() {
     if (!eDisplayName.trim()) e.display_name    = 'Display name is required';
     if (!eActualName.trim())  e.actual_name     = 'Employee actual name is required';
     if (!eGender)             e.gender          = 'Gender is required';
-    if (!eDob)                e.date_of_birth   = 'Date of birth is required';
+    if (!eDob) {
+      e.date_of_birth = 'Date of birth is required';
+    } else {
+      // 18+ employability check — reject anyone whose birth date is
+      // either in the future or less than 18 full years ago.
+      const dob = new Date(eDob);
+      if (isNaN(dob.getTime())) {
+        e.date_of_birth = 'Enter a valid date of birth';
+      } else {
+        const today = new Date();
+        if (dob > today) {
+          e.date_of_birth = 'Date of birth cannot be in the future';
+        } else {
+          let age = today.getFullYear() - dob.getFullYear();
+          const monthDiff = today.getMonth() - dob.getMonth();
+          // Adjust down if the birthday hasn't occurred yet this year.
+          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+            age--;
+          }
+          if (age < 18) {
+            e.date_of_birth = 'Employee must be at least 18 years old';
+          } else if (age > 100) {
+            e.date_of_birth = 'Enter a valid date of birth';
+          }
+        }
+      }
+    }
     if (!eNationality)        e.nationality_country_id = 'Nationality is required';
     // Contact
     if (!eWorkEmail.trim())   e.email           = 'Email is required';
