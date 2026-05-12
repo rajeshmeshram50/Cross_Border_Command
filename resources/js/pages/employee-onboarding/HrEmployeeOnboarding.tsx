@@ -7,7 +7,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import Tooltip from '../../components/ui/Tooltip';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
@@ -658,7 +658,9 @@ export default function HrEmployeeOnboarding() {
                     {k.label}
                   </p>
                   <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                    <AnimatedNumber value={(counts as any)[k.key] ?? 0} />
+                    {loadingRows
+                      ? <Shimmer height={26} width={64} />
+                      : <AnimatedNumber value={(counts as any)[k.key] ?? 0} />}
                   </h3>
                 </div>
                 <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

@@ -8,7 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 // Borrow the polished pill-button styles used by the recruitment / hiring
 // request modal so the Add Employee wizard footer matches the same design
 // language (gradient primary CTA + soft outlined secondary).
@@ -2115,7 +2115,9 @@ export default function HrEmployees() {
                           {k.label}
                         </p>
                         <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                          <AnimatedNumber value={(counts as any)[k.key]} />
+                          {loadingEmployees
+                            ? <Shimmer height={26} width={64} />
+                            : <AnimatedNumber value={(counts as any)[k.key]} />}
                         </h3>
                       </div>
                       <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>

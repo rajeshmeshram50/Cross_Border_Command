@@ -5,7 +5,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/mast
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -608,7 +608,9 @@ export default function HrRecruitment() {
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
                       <span className="rec-kpi-num">
-                        <AnimatedNumber value={(counts as any)[k.key]} />
+                        {loadingRecruitments
+                          ? <Shimmer height={22} width={56} />
+                          : <AnimatedNumber value={(counts as any)[k.key]} />}
                       </span>
                     </div>
                     <span className="rec-kpi-icon" style={{ background: k.gradient }}>
