@@ -1571,8 +1571,12 @@ export default function HrEmployees() {
         }
       }
       // Refresh background lists so the half-filled row appears in the
-      // disabled directory immediately.
-      await reloadEmployees();
+      // disabled directory — fire-and-forget so the wizard can advance
+      // immediately instead of waiting for a full /employees roundtrip
+      // (used to be `await`ed here, which made every Next click feel
+      // stuck for the duration of the list refetch even though the
+      // step's own save had already returned).
+      reloadEmployees().catch(() => { /* swallow — table just stays stale */ });
       return true;
     } catch (err: any) {
       const fieldErrors = err?.response?.data?.errors;
@@ -1667,8 +1671,11 @@ export default function HrEmployees() {
           `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`,
         );
       }
-      await reloadEmployees();
-      await reloadManagers();
+      // Same fire-and-forget treatment as persistCurrentStep — the modal
+      // closes immediately and the table refreshes in the background, so
+      // the user isn't held by the network roundtrip on the final Save.
+      reloadEmployees().catch(() => { /* swallow */ });
+      reloadManagers().catch(() => { /* swallow */ });
       closeEmp();
     } catch (err: any) {
       // Surface server-side 422 errors as inline field errors so the same
