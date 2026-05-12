@@ -56,6 +56,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend (SPA) URL
+    |--------------------------------------------------------------------------
+    |
+    | Public-facing URL where the React SPA is served. Used by mailables and
+    | controllers that generate links the recipient is expected to OPEN IN
+    | A BROWSER (e.g. "Sign In", "Review Request", onboarding invite). Falls
+    | back to APP_URL for setups where the SPA and Laravel share a domain.
+    |
+    | Set APP_FRONTEND_URL in `.env` to your live platform URL — without it
+    | mail links land on the backend domain (or worse, a placeholder like
+    | `http://cbc/`) which won't match the running SPA.
+    |
+    */
+
+    'frontend_url' => rtrim(env('APP_FRONTEND_URL', env('APP_URL', 'http://localhost')), '/'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

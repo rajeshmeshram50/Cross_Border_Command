@@ -135,8 +135,9 @@ class PaymentController extends Controller
         ], 201);
     }
 
-    public function show(Payment $payment)
+    public function show(Request $request, Payment $payment)
     {
+        $this->authorizeViewPayment($request, $payment);
         $payment->load(['client:id,org_name,email', 'plan:id,name,price', 'processedBy:id,name']);
         return response()->json($payment);
     }
@@ -204,6 +205,7 @@ class PaymentController extends Controller
     {
         // Support token via query param for direct browser downloads
         $this->authenticateFromQuery($request);
+        $this->authorizeViewPayment($request, $payment);
 
         $payment->load(['client', 'plan']);
         $path = $this->ensureInvoicePdf($payment);
@@ -219,6 +221,7 @@ class PaymentController extends Controller
     public function viewInvoice(Request $request, Payment $payment)
     {
         $this->authenticateFromQuery($request);
+        $this->authorizeViewPayment($request, $payment);
 
         $payment->load(['client', 'plan']);
         $path = $this->ensureInvoicePdf($payment);
@@ -245,6 +248,28 @@ class PaymentController extends Controller
         if (!$request->user()) {
             abort(401, 'Unauthorized');
         }
+    }
+
+    /**
+     * Single source of truth for "can this user see this payment / invoice".
+     *
+     *   - super_admin    → any payment, any tenant.
+     *   - client_admin   → only payments belonging to their own client_id.
+     *   - everyone else  → 403. Payments is a billing surface aimed at
+     *     account owners only; employees / branch users / client_users have
+     *     no business reading another row's invoice PDF or details.
+     *
+     * Previously `show()` and the invoice view/download endpoints had no
+     * role check at all — any authenticated user could fetch any payment
+     * by id, which the QA team flagged as an employee-side data leak.
+     */
+    private function authorizeViewPayment(Request $request, Payment $payment): void
+    {
+        $user = $request->user();
+        if (!$user) abort(401, 'Unauthorized');
+        if ($user->isSuperAdmin()) return;
+        if ($user->isClientAdmin() && (int) $payment->client_id === (int) $user->client_id) return;
+        abort(403, 'You do not have access to this payment.');
     }
 
     /**

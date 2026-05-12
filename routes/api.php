@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
+use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OrganizationTypeController;
@@ -49,8 +50,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/me/profile', [AuthController::class, 'updateProfile']);
 
     // Dashboard
-    Route::get('/dashboard/admin-stats', [DashboardController::class, 'adminStats']);
-    Route::get('/dashboard/client-stats', [DashboardController::class, 'clientStats']);
+    Route::get('/dashboard/admin-stats',    [DashboardController::class, 'adminStats']);
+    Route::get('/dashboard/client-stats',   [DashboardController::class, 'clientStats']);
+    Route::get('/dashboard/employee-stats', [DashboardController::class, 'employeeStats']);
 
     // Clients
     Route::get('/clients/stats', [ClientController::class, 'stats']);
@@ -76,6 +78,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Employees — full CRUD + auto-numbered EMP-### + welcome-mail provisioning.
     // Declared BEFORE the generic /master/{slug} routes so apiResource params
     // resolve cleanly.
+    // HRMS Overview — one aggregate endpoint feeding /hr/overview dashboard
+    // (KPIs + headcount breakdowns + 12-month trends + recent/upcoming joiners).
+    Route::get   ('/hrms/overview',               [HrOverviewController::class, 'index']);
+
     Route::get   ('/employees/next-code',         [EmployeeController::class, 'nextCode']);
     Route::get   ('/employees/managers',          [EmployeeController::class, 'managers']);
     Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
@@ -83,6 +89,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/employees/onboarding-invite', [OnboardingController::class, 'createInvite']);
     // Re-enable a soft-deleted employee (inverse of DELETE /employees/{id}).
     Route::patch ('/employees/{id}/restore',      [EmployeeController::class, 'restore']);
+    // Permanently remove a soft-deleted employee. Only callable from the
+    // Disabled tab — the controller refuses if the row is still trashed=false.
+    Route::delete('/employees/{id}/force',        [EmployeeController::class, 'forceDestroy']);
     Route::apiResource('employees', EmployeeController::class);
 
     // Stage 2 — Document Management. List + upload are nested under the

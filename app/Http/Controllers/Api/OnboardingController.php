@@ -314,10 +314,13 @@ class OnboardingController extends Controller
 
     private function buildOnboardingUrl(string $token, ?string $appOrigin = null): string
     {
-        // Caller-supplied origin wins (it knows where the SPA actually
-        // serves). Falls back to APP_URL for non-browser callers (cron,
-        // queue jobs) that have no Origin header.
-        $base = rtrim($appOrigin ?: config('app.url'), '/');
+        // Caller-supplied Origin wins (it knows where the SPA actually
+        // served the request from). Falls back to app.frontend_url for
+        // non-browser callers (cron, queue jobs) that have no Origin —
+        // and finally APP_URL as a last-resort floor inside frontend_url's
+        // env() chain. The candidate opens this in a browser, so it MUST
+        // resolve to the SPA host, not the Laravel API host.
+        $base = rtrim($appOrigin ?: config('app.frontend_url'), '/');
         return "{$base}/onboarding/{$token}";
     }
 

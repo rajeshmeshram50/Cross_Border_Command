@@ -22,6 +22,7 @@ import ResetPassword from '../pages/auth/ResetPassword';
 import AdminDashboard from '../pages/dashboard/AdminDashboard';
 import ClientDashboard from '../pages/dashboard/ClientDashboard';
 import BranchDashboard from '../pages/dashboard/BranchDashboard';
+import EmployeeDashboard from '../pages/dashboard/EmployeeDashboard';
 import Clients from '../pages/client/Clients';
 import ClientForm from '../pages/client/ClientForm';
 import Branches from '../pages/branch/Branches';
@@ -43,6 +44,7 @@ import ClientSettings from '../pages/client/ClientSettings';
 import MasterDashboard from '../pages/MasterDashboard';
 import MasterPage from '../pages/master/MasterPage';
 import HrDashboard from '../pages/hrms/HrDashboard';
+import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
 import HrRecruitment from '../pages/recruitment/HrRecruitment';
 import HrCandidates from '../pages/recruitment/HrCandidates';
@@ -353,12 +355,12 @@ function DashboardRoutes({ user }: { user: any }) {
     super_admin: AdminDashboard,
     client_admin: ClientDashboard,
     branch_user: BranchDashboard,
-    // Employees + client_users get the branch-scoped dashboard (no
-    // clients / revenue / payments super-admin KPIs leak into their
-    // view). Fallback also points to BranchDashboard rather than
-    // AdminDashboard so any future user_type is safe-by-default.
     client_user: BranchDashboard,
-    employee:    BranchDashboard,
+    // Employees get a personal dashboard scoped to their own Employee row
+    // (profile hero, expense KPIs, approvals queue, team peers, etc.).
+    // Fallback below still points to BranchDashboard so any future
+    // user_type is safe-by-default.
+    employee:    EmployeeDashboard,
   };
 
   const DefaultDashboard = DashboardMap[user.user_type] || BranchDashboard;
@@ -406,13 +408,26 @@ function DashboardRoutes({ user }: { user: any }) {
                   </div>
                 </div>
               } />
-              <Route path="/payments" element={<Payments />} />
+              {/* Payments is a billing surface — only the account owner
+                  (super_admin) and the client_admin who paid the bills
+                  should see it. Other roles hitting the URL directly get
+                  bounced to their dashboard so an employee can't even
+                  load the empty Payments shell. */}
+              <Route
+                path="/payments"
+                element={
+                  user.user_type === 'super_admin' || user.user_type === 'client_admin'
+                    ? <Payments />
+                    : <Navigate to="/dashboard" replace />
+                }
+              />
               <Route path="/permissions" element={<Permissions />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<ProfileRouter />} />
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/hr" element={<HrDashboard />} />
+              <Route path="/hr/overview" element={<HrOverview />} />
               <Route path="/hr/employees" element={<HrEmployees />} />
               <Route path="/hr/recruitment" element={<HrRecruitment />} />
               <Route path="/hr/recruitment/:id/candidates" element={<HrCandidates />} />

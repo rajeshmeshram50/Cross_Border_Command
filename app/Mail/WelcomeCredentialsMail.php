@@ -32,7 +32,8 @@ class WelcomeCredentialsMail extends Mailable
         $this->password = $password;
         $this->userType = $userType;
         $this->orgName = $orgName;
-        $this->loginUrl = config('app.url');
+        // SPA login page — see PasswordChangedMail for the same rationale.
+        $this->loginUrl = rtrim(config('app.frontend_url'), '/') . '/login';
         $this->appName = config('mail.from.name', 'Cross Border Command');
     }
 

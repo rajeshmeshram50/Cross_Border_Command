@@ -221,6 +221,7 @@ class AuthController extends Controller
                     $user->name,
                     $user->email,
                     $newPassword,
+                    PasswordChangedMail::resolveLoginUrl($request),
                 ));
             } catch (\Throwable $e) {
                 Log::warning('Password-changed confirmation mail failed (in-app change)', [

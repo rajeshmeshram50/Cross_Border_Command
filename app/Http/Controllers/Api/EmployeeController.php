@@ -323,6 +323,14 @@ class EmployeeController extends Controller
 
                 // Provision the login account first — if the email collides we
                 // want the whole txn to roll back before writing the employee row.
+                //
+                // user.status mirrors the forced employee.status='Inactive' below.
+                // The wizard only captures half the onboarding data; admins must
+                // flip the row to Active explicitly once the rest is filled in
+                // (assets, payroll review, etc.) and that flip cascades the
+                // login open via update(). Without this mirror, fresh hires
+                // could sign in immediately even though their employee record
+                // was deliberately held Inactive — a hole QA flagged.
                 $rawPassword = $this->generatePassword();
                 $loginUser = User::create([
                     'name'          => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
@@ -332,7 +340,7 @@ class EmployeeController extends Controller
                     'user_type'     => 'employee',
                     'client_id'     => $clientId,
                     'branch_id'     => $branchId,
-                    'status'        => 'active',
+                    'status'        => 'inactive',
                     'designation'   => $request->input('designation_name'),
                     'employee_code' => null, // populated after we know emp_code
                 ]);
@@ -555,6 +563,49 @@ class EmployeeController extends Controller
         ]);
     }
 
+    /**
+     * Permanently delete a soft-deleted employee. Only callable on a row
+     * already in the Disabled tab — we refuse to force-delete an active
+     * employee outright to prevent accidental data loss from a single
+     * misclick on the wrong tab.
+     *
+     * The paired login user is NOT hard-deleted: it gets locked to
+     * inactive and its tokens revoked, but the row stays so permissions
+     * + activity_logs + audit trails that reference user_id don't go
+     * dangling. Only the Employee row itself is removed for good.
+     */
+    public function forceDestroy(Request $request, $id)
+    {
+        $this->authorize($request, 'can_delete');
+        $row = $this->resolveRow($request, (int) $id);
+        $this->guardHierarchicalAction($request->user(), $row, 'delete');
+
+        if (!$row->trashed()) {
+            return response()->json([
+                'message' => 'This employee is still active. Disable them first, then delete.',
+            ], 422);
+        }
+
+        $displayName = $row->display_name ?: trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
+
+        DB::transaction(function () use ($row) {
+            // Lock + revoke the login but keep the user row — permissions,
+            // activity_logs and other tables FK to users.id and we don't
+            // want orphans.
+            $row->user?->update(['status' => 'inactive']);
+            $row->user?->tokens()->delete();
+            // Wipe the Employee row itself. Soft-deletes related rows
+            // (documents, exit, previous_employments) usually cascade via
+            // model events or FK ON DELETE — verify on your schema if you
+            // add new related tables.
+            $row->forceDelete();
+        });
+
+        return response()->json([
+            'message' => "Permanently removed {$displayName}.",
+        ]);
+    }
+
     /* ─────────────────────────────────────────────────────────────────
      *  HELPERS
      * ───────────────────────────────────────────────────────────────── */
@@ -736,6 +787,21 @@ class EmployeeController extends Controller
             ->whereNull('deleted_at')
             ->ignore($ignoreUserId);
 
+        // Step 4 (Compensation) is the wizard's terminal save — salary fields
+        // are mandatory there because zero-decision payroll setup was leaking
+        // employees into the DB with empty CTC (caught by QA). On earlier
+        // steps (wizard_step_completed < 4) salary stays nullable so partial
+        // PATCHes from steps 1-3 don't fail validation.
+        //
+        // `enable_payroll = false` is the explicit opt-out (contractor / paid
+        // externally) — in that case we don't require the numeric fields.
+        $isFinalStep   = (int) $request->input('wizard_step_completed', 0) >= 4;
+        $payrollOn     = (bool) $request->input('enable_payroll', true);
+        $requireSalary = $isFinalStep && $payrollOn;
+        $salaryRule    = $requireSalary ? ['required', 'numeric', 'min:0.01'] : ['nullable', 'numeric', 'min:0'];
+        $salaryFreqRule = $requireSalary ? ['required', 'string', 'max:30']   : ['nullable', 'string', 'max:30'];
+        $salaryFromRule = $requireSalary ? ['required', 'date']               : ['nullable', 'date'];
+
         return $request->validate([
             // Identity — first_name is the only field the server insists on
             // (drives display_name + login user.name). Everything else can
@@ -811,9 +877,9 @@ class EmployeeController extends Controller
             // Step 4 — Compensation
             'enable_payroll'        => 'nullable|boolean',
             'pay_group'             => 'nullable|string|max:100',
-            'annual_salary'         => 'nullable|numeric|min:0',
-            'salary_frequency'      => 'nullable|string|max:30',
-            'salary_effective_from' => 'nullable|date',
+            'annual_salary'         => $salaryRule,
+            'salary_frequency'      => $salaryFreqRule,
+            'salary_effective_from' => $salaryFromRule,
             'salary_structure'      => 'nullable|string|max:50',
             'tax_regime'            => 'nullable|string|max:50',
             'bonus_in_annual'       => 'nullable|boolean',

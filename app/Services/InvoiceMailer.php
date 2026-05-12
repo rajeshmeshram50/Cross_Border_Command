@@ -35,16 +35,24 @@ class InvoiceMailer
      */
     public function sendForPayment(Payment $payment): void
     {
-        // Gated by Settings → Notifications → payAlerts (and master emailNotif).
-        // Still generates the PDF on disk so admin can download it from the
-        // Payments page — only the mail dispatch is skipped.
+        // Invoice is TRANSACTIONAL — every successful payment must produce
+        // an invoice in the customer's inbox. We honour ONLY the master
+        // `emailNotif` kill-switch (explicit nuclear option for admins who
+        // disable ALL platform mail) — we deliberately do NOT gate on the
+        // `payAlerts` category. That toggle is reserved for non-transactional
+        // payment alerts (e.g. "card expiring soon"), so an admin who turns
+        // off "Payment Alerts" doesn't silently break invoicing — which would
+        // be a billing/audit compliance gap.
+        //
+        // PDF is generated regardless of mail outcome so super_admin can
+        // always download it from the Payments page even when SMTP is down.
         try {
             $payment->loadMissing(['client', 'plan']);
 
             $this->ensureInvoicePdf($payment);
 
-            if (!Settings::shouldSendMail('payAlerts')) {
-                Log::info('Invoice mail skipped by Settings → Notifications → payAlerts', [
+            if (!Settings::shouldSendMail()) {
+                Log::info('Invoice mail skipped — master emailNotif is OFF', [
                     'payment_id' => $payment->id,
                 ]);
                 return;

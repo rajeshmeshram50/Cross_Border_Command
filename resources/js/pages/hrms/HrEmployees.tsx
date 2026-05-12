@@ -653,6 +653,36 @@ export default function HrEmployees() {
     setOnboardOpen(true);
   };
 
+  // Permanent-delete confirmation (Disabled tab only). Holds the row pending
+  // confirmation so the modal can show the name + emp_code; null when closed.
+  const [confirmDelete, setConfirmDelete] = useState<EmployeeRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  /** Force-delete the row currently held in `confirmDelete`. Hits the
+   *  /employees/{id}/force endpoint which only accepts already-trashed rows
+   *  server-side, then refreshes the list. */
+  const handleForceDelete = async () => {
+    const row = confirmDelete;
+    if (!row || deleting) return;
+    const dbId = (row as any)._dbId as number | undefined;
+    if (!dbId) {
+      toast.error('Could not delete', 'Missing employee id.');
+      return;
+    }
+    setDeleting(true);
+    try {
+      const r = await api.delete(`/employees/${dbId}/force`);
+      toast.success('Employee deleted', r?.data?.message || `${row.name} has been permanently removed.`);
+      await reloadEmployees();
+      setConfirmDelete(null);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Could not delete this employee.';
+      toast.error('Delete failed', String(msg));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // Add / Edit employee modal state
   const [empOpen, setEmpOpen] = useState(false);
   const [empMode, setEmpMode] = useState<'add' | 'edit'>('add');
@@ -1045,6 +1075,24 @@ export default function HrEmployees() {
    *  and refresh `eExistingDocs` with the server's row. Used for both
    *  first-time upload and replace — the backend already deletes the
    *  prior file when the same key is uploaded again. */
+  /**
+   *  Match a File against an `accept`-style spec (e.g. `.pdf,.jpg,image/png`).
+   *  The HTML `accept` attribute only filters the OS picker — drag-drop and
+   *  files renamed to a permitted extension still slip through. This helper
+   *  is the real gate: callers must run it before storing or uploading the
+   *  file so `.php` / `.xss` / scripts can't be saved into employee state.
+   */
+  const isAcceptedFile = (file: File, accept: string): boolean => {
+    if (!accept || !accept.trim()) return true;
+    const name = file.name.toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    return accept.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).some(spec => {
+      if (spec.startsWith('.')) return name.endsWith(spec);
+      if (spec.endsWith('/*'))  return type.startsWith(spec.slice(0, -1));
+      return type === spec;
+    });
+  };
+
   const uploadEmpDoc = async (docKey: string, docName: string, file: File) => {
     if (!editingDbId) {
       toast.error('Save the employee first', `Add the basic details, then come back to upload ${docName}.`);
@@ -1087,128 +1135,14 @@ export default function HrEmployees() {
     });
   };
 
-  // ── Add Employee — draft persistence ─────────────────────────────────
-  // localStorage key. Bump the suffix when the draft shape changes so old
-  // drafts can't crash hydrate.
-  const ADD_DRAFT_KEY = 'cbc:hr-employees:add-draft:v1';
+  // ── Add Employee — partial save persistence ──────────────────────────
+  // Drafts are NOT cached client-side anymore. Instead, every Next click
+  // calls `persistCurrentStep()` which writes the row to the backend as a
+  // soft-deleted employee. Closing the wizard mid-flow leaves that row in
+  // the Disabled tab, where the user can re-open it to continue. Add
+  // Employee therefore always opens with a clean form.
 
-  /** Snapshot every wizard field into a single plain object. */
-  const collectDraft = () => ({
-    empStep,
-    eWorkCountry, eFirstName, eMiddleName, eLastName,
-    eDisplayName, eDisplayNameTouched, eActualName,
-    eGender, eDob, eNationality,
-    eWorkEmail, eMobile, eEmpId, eStatus,
-    eCurAddr1, eCurAddr2, eCurCity, eCurState, eCurCountry, eCurPin,
-    eSameAsCurrent,
-    ePermAddr1, ePermAddr2, ePermCity, ePermState, ePermCountry, ePermPin,
-    eJoinDate, eDept, eDesignation, ePrimaryRole, eAncillaryRole, eWorkType,
-    eLegalEntity, eLocation, eReportingMgr,
-    eProbationPolicy, eNoticePeriod, eCustomProbation, eCustomNotice,
-    eLeavePlan, eHolidayList, eAttendanceTracking, eShift, eWeeklyOff,
-    eAttendanceNumber, eTimeTracking, ePenalizationPolicy, eOvertime, eExpensePolicy,
-    eLaptopAssigned, eLaptopAssetId, eMobileDevice, eOtherAssets,
-    eEnablePayroll, ePayGroup, eAnnualSalary, eSalaryFreq, eSalaryFrom,
-    eSalaryStructure, eTaxRegime, eBonusInAnnual, ePfEligible, eDetailedBreakup,
-  });
-
-  /** Apply a previously-saved draft back onto state. Quietly skips unknown keys. */
-  const applyDraft = (d: Record<string, any>) => {
-    if (typeof d !== 'object' || !d) return;
-    if (d.empStep === 1 || d.empStep === 2 || d.empStep === 3 || d.empStep === 4) setEmpStep(d.empStep);
-    if (d.eWorkCountry !== undefined) setEWorkCountry(d.eWorkCountry || '');
-    if (d.eFirstName !== undefined) setEFirstName(d.eFirstName || '');
-    if (d.eMiddleName !== undefined) setEMiddleName(d.eMiddleName || '');
-    if (d.eLastName !== undefined) setELastName(d.eLastName || '');
-    if (d.eDisplayName !== undefined) setEDisplayName(d.eDisplayName || '');
-    if (d.eDisplayNameTouched !== undefined) setEDisplayNameTouched(!!d.eDisplayNameTouched);
-    if (d.eActualName !== undefined) setEActualName(d.eActualName || '');
-    if (d.eGender !== undefined) setEGender(d.eGender || '');
-    if (d.eDob !== undefined) setEDob(d.eDob || '');
-    if (d.eNationality !== undefined) setENationality(d.eNationality || '');
-    if (d.eWorkEmail !== undefined) setEWorkEmail(d.eWorkEmail || '');
-    if (d.eMobile !== undefined) setEMobile(d.eMobile || '');
-    if (d.eEmpId !== undefined) setEEmpId(d.eEmpId || '');
-    if (d.eStatus !== undefined) setEStatus(d.eStatus || 'Active');
-    if (d.eCurAddr1 !== undefined) setECurAddr1(d.eCurAddr1 || '');
-    if (d.eCurAddr2 !== undefined) setECurAddr2(d.eCurAddr2 || '');
-    if (d.eCurCity !== undefined)  setECurCity(d.eCurCity || '');
-    if (d.eCurState !== undefined) setECurState(d.eCurState || '');
-    if (d.eCurCountry !== undefined) setECurCountry(d.eCurCountry || '');
-    if (d.eCurPin !== undefined)   setECurPin(d.eCurPin || '');
-    if (d.eSameAsCurrent !== undefined) setESameAsCurrent(!!d.eSameAsCurrent);
-    if (d.ePermAddr1 !== undefined) setEPermAddr1(d.ePermAddr1 || '');
-    if (d.ePermAddr2 !== undefined) setEPermAddr2(d.ePermAddr2 || '');
-    if (d.ePermCity !== undefined)  setEPermCity(d.ePermCity || '');
-    if (d.ePermState !== undefined) setEPermState(d.ePermState || '');
-    if (d.ePermCountry !== undefined) setEPermCountry(d.ePermCountry || '');
-    if (d.ePermPin !== undefined)   setEPermPin(d.ePermPin || '');
-    if (d.eJoinDate !== undefined) setEJoinDate(d.eJoinDate || '');
-    if (d.eDept !== undefined) setEDept(d.eDept || '');
-    if (d.eDesignation !== undefined) setEDesignation(d.eDesignation || '');
-    if (d.ePrimaryRole !== undefined) setEPrimaryRole(d.ePrimaryRole || '');
-    if (Array.isArray(d.eAncillaryRole)) setEAncillaryRole(d.eAncillaryRole);
-    if (d.eWorkType !== undefined) setEWorkType(d.eWorkType || 'Full Time');
-    if (d.eLegalEntity !== undefined) setELegalEntity(d.eLegalEntity || '');
-    if (d.eLocation !== undefined) setELocation(d.eLocation || '');
-    if (d.eReportingMgr !== undefined) setEReportingMgr(d.eReportingMgr || '');
-    if (d.eProbationPolicy !== undefined) setEProbationPolicy(d.eProbationPolicy || 'Default Probation Policy');
-    if (d.eNoticePeriod !== undefined) setENoticePeriod(d.eNoticePeriod || 'Default Notice Period');
-    if (d.eCustomProbation !== undefined) setECustomProbation(d.eCustomProbation || '');
-    if (d.eCustomNotice !== undefined) setECustomNotice(d.eCustomNotice || '');
-    if (d.eLeavePlan !== undefined) setELeavePlan(d.eLeavePlan || 'Leave Policy');
-    if (d.eHolidayList !== undefined) setEHolidayList(d.eHolidayList || 'Holiday Calendar');
-    if (d.eAttendanceTracking !== undefined) setEAttendanceTracking(!!d.eAttendanceTracking);
-    if (d.eShift !== undefined) setEShift(d.eShift || 'General Shift');
-    if (d.eWeeklyOff !== undefined) setEWeeklyOff(d.eWeeklyOff || 'Week Off Policy');
-    if (d.eAttendanceNumber !== undefined) setEAttendanceNumber(d.eAttendanceNumber || '');
-    if (d.eTimeTracking !== undefined) setETimeTracking(d.eTimeTracking || 'Manual');
-    if (d.ePenalizationPolicy !== undefined) setEPenalizationPolicy(d.ePenalizationPolicy || 'Tracking Policy');
-    if (d.eOvertime !== undefined) setEOvertime(d.eOvertime || 'Not applicable');
-    if (d.eExpensePolicy !== undefined) setEExpensePolicy(d.eExpensePolicy || '');
-    if (d.eLaptopAssigned !== undefined) setELaptopAssigned(d.eLaptopAssigned || 'No');
-    if (d.eLaptopAssetId !== undefined) setELaptopAssetId(d.eLaptopAssetId || '');
-    if (d.eMobileDevice !== undefined) setEMobileDevice(d.eMobileDevice || '');
-    if (d.eOtherAssets !== undefined) setEOtherAssets(d.eOtherAssets || '');
-    if (d.eEnablePayroll !== undefined) setEEnablePayroll(!!d.eEnablePayroll);
-    if (d.ePayGroup !== undefined) setEPayGroup(d.ePayGroup || 'Default pay group');
-    if (d.eAnnualSalary !== undefined) setEAnnualSalary(d.eAnnualSalary || '');
-    if (d.eSalaryFreq !== undefined) setESalaryFreq(d.eSalaryFreq || 'Per annum');
-    if (d.eSalaryFrom !== undefined) setESalaryFrom(d.eSalaryFrom || '');
-    if (d.eSalaryStructure !== undefined) setESalaryStructure(d.eSalaryStructure || 'Range Based');
-    if (d.eTaxRegime !== undefined) setETaxRegime(d.eTaxRegime || 'New Regime (115BAC)');
-    if (d.eBonusInAnnual !== undefined) setEBonusInAnnual(!!d.eBonusInAnnual);
-    if (d.ePfEligible !== undefined) setEPfEligible(!!d.ePfEligible);
-    if (d.eDetailedBreakup !== undefined) setEDetailedBreakup(!!d.eDetailedBreakup);
-  };
-
-  const clearDraft = () => {
-    try { localStorage.removeItem(ADD_DRAFT_KEY); } catch { /* noop */ }
-  };
-
-  /**
-   * Persist draft on every relevant change while the modal is open in ADD
-   * mode. Edit-mode changes never overwrite the draft — that would mix two
-   * unrelated employees' data. Only saves when the user has typed at least
-   * one field of substance (empty drafts add noise to localStorage).
-   */
-  const draftSnapshot = JSON.stringify(collectDraft());
-  useEffect(() => {
-    if (!empOpen || empMode !== 'add') return;
-    const hasContent = !!(eFirstName.trim() || eLastName.trim() || eWorkEmail.trim()
-      || eMobile.trim() || empStep > 1);
-    if (!hasContent) return;
-    try {
-      localStorage.setItem(ADD_DRAFT_KEY, JSON.stringify({ ...JSON.parse(draftSnapshot), _ts: Date.now() }));
-    } catch { /* quota / private mode — silently skip */ }
-  }, [empOpen, empMode, draftSnapshot, eFirstName, eLastName, eWorkEmail, eMobile, empStep]);
-
-  // Draft-resume prompt state. Modal is rendered at the bottom of the
-  // page tree so it can sit ABOVE the Add Employee modal without z-index
-  // wrestling. Pending draft data is held here while the user decides.
-  const [draftPromptOpen, setDraftPromptOpen] = useState(false);
-  const [pendingDraft, setPendingDraft] = useState<{ data: any; hint: string } | null>(null);
-
+  /** Pull the next EMP-### code so the new-row preview is populated. */
   const proceedFresh = async () => {
     try {
       const r = await api.get('/employees/next-code');
@@ -1222,58 +1156,8 @@ export default function HrEmployees() {
     setEmpEditingName('');
     setEditingDbId(null);
     editingDbIdRef.current = null;
-
-    // Look for a saved draft BEFORE opening the modal so we can either
-    // (a) prompt the user via our own styled modal, or (b) open fresh.
-    try {
-      const raw = localStorage.getItem(ADD_DRAFT_KEY);
-      if (raw) {
-        const draft = JSON.parse(raw);
-        const hint = [draft?.eFirstName, draft?.eLastName].filter(Boolean).join(' ').trim()
-          || draft?.eWorkEmail
-          || `Step ${draft?.empStep || 1}`;
-        setPendingDraft({ data: draft, hint });
-        setDraftPromptOpen(true);
-        return; // wait for user's choice — modal handlers continue the flow
-      }
-    } catch { /* corrupt draft — ignore, fall through to fresh state */ }
-
-    // No draft path — open clean form and pre-fill the next EMP-### code.
     setEmpOpen(true);
     await proceedFresh();
-  };
-
-  const resumeDraft = () => {
-    const draft = pendingDraft?.data;
-    setDraftPromptOpen(false);
-    setPendingDraft(null);
-    setEmpOpen(true);
-    if (!draft) return;
-    applyDraft(draft);
-    const restoredStep = (draft.empStep as 1 | 2 | 3 | 4) || 1;
-    toast.success(
-      'Draft resumed',
-      `Continuing at step ${restoredStep}. Use "Discard draft" in the header to start over.`,
-    );
-  };
-
-  const startFreshFromPrompt = async () => {
-    localStorage.removeItem(ADD_DRAFT_KEY);
-    setDraftPromptOpen(false);
-    setPendingDraft(null);
-    setEmpOpen(true);
-    await proceedFresh();
-  };
-
-  /** Discard the saved draft and reset the form to a clean step 1. */
-  const discardAddDraft = () => {
-    clearDraft();
-    resetEmpForm();
-    // Re-prime the EMP-### field so the user still sees the next code.
-    api.get('/employees/next-code')
-      .then(r => { if (r?.data?.code) setEEmpId(r.data.code); })
-      .catch(() => { /* noop */ });
-    toast.success('Draft discarded', 'Form reset to a fresh start.');
   };
 
   const openEditEmployee = (row: EmployeeRow) => {
@@ -1508,7 +1392,27 @@ export default function HrEmployees() {
     return e;
   }, [eAadharFile, ePanFile, eExistingDocs]);
 
-  const validateStep4 = useCallback((): Record<string, string> => ({}), []);
+  // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
+  // for the employee (the default). The "Enable payroll" toggle is the
+  // explicit opt-out: when an admin turns it OFF they're declaring this
+  // hire isn't on our payroll (contractor, intern paid externally, etc.)
+  // so the salary fields stop applying. Without this check the wizard was
+  // saving employees with a blank annual salary — flagged by QA.
+  const validateStep4 = useCallback((): Record<string, string> => {
+    const e: Record<string, string> = {};
+    if (!eEnablePayroll) return e;
+    const amt = Number(eAnnualSalary);
+    if (eAnnualSalary === '' || !Number.isFinite(amt) || amt <= 0) {
+      e.annual_salary = 'Annual salary is required';
+    }
+    if (!eSalaryFreq) {
+      e.salary_frequency = 'Salary frequency is required';
+    }
+    if (!eSalaryFrom) {
+      e.salary_effective_from = 'Effective-from date is required';
+    }
+    return e;
+  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom]);
 
   // First step that contains any of the given error keys. Used to jump-back
   // when a deeper step's submit surfaces a problem in an earlier step.
@@ -1519,6 +1423,7 @@ export default function HrEmployees() {
       { step: 1, keys: new Set(['work_country_id','first_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
       { step: 3, keys: new Set(['doc_aadhaar','doc_pan']) },
+      { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from']) },
     ];
     for (const s of STEP_KEYS) {
       if (k.some(x => s.keys.has(x))) return s.step;
@@ -1746,7 +1651,6 @@ export default function HrEmployees() {
           `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`,
         );
       }
-      clearDraft();
       await reloadEmployees();
       await reloadManagers();
       closeEmp();
@@ -2528,6 +2432,11 @@ export default function HrEmployees() {
                                 <ActionBtn title="Asset" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} />
                                 <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} />
                                 <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} />
+                                {/* Permanent-delete is only offered on the Disabled tab so
+                                    an admin can't wipe an active employee in one click. */}
+                                {tab === 'disabled' && (
+                                  <ActionBtn title="Delete permanently" icon="ri-delete-bin-line" color="danger" onClick={() => setConfirmDelete(e)} />
+                                )}
                                 <ToggleSwitch
                                   initial={e.enabled}
                                   onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
@@ -2552,6 +2461,108 @@ export default function HrEmployees() {
           </div>
         </Col>
       </Row>
+
+      {/* ── Permanent-delete confirmation (Disabled tab only) ─────────── */}
+      <Modal
+        isOpen={!!confirmDelete}
+        toggle={() => !deleting && setConfirmDelete(null)}
+        centered
+        backdrop="static"
+        keyboard={!deleting}
+        modalClassName="emp-delete-confirm"
+      >
+        <style>{`
+          .emp-delete-confirm .modal-dialog { max-width: 460px; }
+          .emp-delete-confirm .modal-content {
+            border: none;
+            border-radius: 18px !important;
+            overflow: hidden;
+            box-shadow: 0 24px 60px rgba(18,38,63,0.30);
+          }
+        `}</style>
+        <ModalBody className="p-0">
+          {/* Red gradient header signals the destructive nature of the action. */}
+          <div
+            style={{
+              padding: '20px 22px',
+              background: 'linear-gradient(120deg,#a02e15 0%,#f06548 55%,#ff9e7c 100%)',
+              color: '#fff',
+            }}
+          >
+            <div className="d-flex align-items-center gap-3">
+              <div
+                className="d-flex align-items-center justify-content-center flex-shrink-0"
+                style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: 'rgba(255,255,255,0.18)',
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <i className="ri-delete-bin-line" style={{ fontSize: 20 }} />
+              </div>
+              <div>
+                <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
+                  Delete employee permanently?
+                </h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
+                  This action cannot be undone
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '20px 22px 18px', background: 'var(--vz-card-bg)' }}>
+            <p className="mb-2" style={{ fontSize: 13.5, color: 'var(--vz-body-color)', lineHeight: 1.55 }}>
+              You're about to remove{' '}
+              <strong style={{ color: '#f06548' }}>{confirmDelete?.name}</strong>
+              {confirmDelete?.id ? <> (<span style={{ fontFamily: 'monospace' }}>{confirmDelete.id}</span>)</> : null}
+              {' '}from the system.
+            </p>
+            <p className="mb-3 text-muted" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+              Their employee record will be erased. The paired login account is
+              kept (deactivated) so historical audit logs &amp; permissions stay
+              intact, but they will no longer appear in the Disabled tab or
+              anywhere else.
+            </p>
+
+            <div className="d-flex justify-content-end gap-2 mt-3">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setConfirmDelete(null)}
+                className="btn btn-sm fw-semibold rounded-pill px-3"
+                style={{
+                  fontSize: 12.5,
+                  background: 'var(--vz-secondary-bg)',
+                  color: 'var(--vz-body-color)',
+                  border: '1px solid var(--vz-border-color)',
+                  padding: '7px 18px',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleForceDelete}
+                className="btn btn-sm fw-semibold rounded-pill px-3 d-inline-flex align-items-center gap-1"
+                style={{
+                  fontSize: 12.5,
+                  color: '#fff',
+                  border: 'none',
+                  background: 'linear-gradient(135deg,#a02e15,#f06548)',
+                  boxShadow: '0 6px 16px rgba(240,101,72,0.32)',
+                  padding: '7px 20px',
+                  opacity: deleting ? 0.7 : 1,
+                }}
+              >
+                <i className={deleting ? 'ri-loader-4-line' : 'ri-delete-bin-line'} />
+                {deleting ? 'Deleting…' : 'Delete permanently'}
+              </button>
+            </div>
+          </div>
+        </ModalBody>
+      </Modal>
 
       {/* ── Generate Onboarding Link modal ── */}
       <Modal
@@ -3077,93 +3088,6 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
-      {/* ── Draft-resume prompt — styled in-app modal that replaces the
-          native window.confirm() the old flow used. Asks the user whether
-          to resume a previously-saved Add Employee draft or start fresh. */}
-      <Modal
-        isOpen={draftPromptOpen}
-        toggle={() => setDraftPromptOpen(false)}
-        centered
-        backdrop="static"
-        keyboard={false}
-        modalClassName="emp-draft-prompt"
-      >
-        <style>{`
-          .emp-draft-prompt .modal-dialog { max-width: 460px; }
-          .emp-draft-prompt .modal-content {
-            border: none;
-            border-radius: 18px !important;
-            overflow: hidden;
-            box-shadow: 0 24px 60px rgba(18,38,63,0.30);
-          }
-        `}</style>
-        <ModalBody className="p-0">
-          {/* Gradient header — same indigo→violet palette as the Add
-              Employee modal so the prompt reads as part of the flow. */}
-          <div
-            style={{
-              padding: '20px 22px',
-              background: 'linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%)',
-              color: '#fff',
-            }}
-          >
-            <div className="d-flex align-items-center gap-3">
-              <div
-                className="d-flex align-items-center justify-content-center flex-shrink-0"
-                style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  background: 'rgba(255,255,255,0.18)',
-                  backdropFilter: 'blur(4px)',
-                }}
-              >
-                <i className="ri-history-line" style={{ fontSize: 20 }} />
-              </div>
-              <div>
-                <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
-                  Unsaved draft found
-                </h5>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
-                  Pick up where you left off, or start a fresh record
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ padding: '20px 22px 18px', background: '#fff' }}>
-            <p className="mb-3" style={{ fontSize: 13.5, color: 'var(--vz-body-color)', lineHeight: 1.55 }}>
-              You have an in-progress Add Employee draft for{' '}
-              <strong style={{ color: '#5a3fd1' }}>{pendingDraft?.hint || 'an earlier session'}</strong>.
-              Choose what to do with it.
-            </p>
-
-            <div className="d-flex justify-content-end gap-2 mt-3">
-              <button
-                type="button"
-                onClick={startFreshFromPrompt}
-                className="rec-btn-ghost"
-              >
-                <i className="ri-add-line" />
-                Start fresh
-              </button>
-              <button
-                type="button"
-                onClick={resumeDraft}
-                className="rec-btn-primary"
-                style={{
-                  background: 'linear-gradient(120deg, #5a3fd1 0%, #7c5cfc 55%, #a78bfa 100%)',
-                  boxShadow:
-                    '0 6px 16px rgba(124,92,252,0.40), 0 2px 4px rgba(90,63,209,0.22), inset 0 1px 0 rgba(255,255,255,0.28), inset 0 -1px 0 rgba(0,0,0,0.08)',
-                }}
-              >
-                <i className="ri-history-line" />
-                Resume draft
-                <i className="ri-arrow-right-line" />
-              </button>
-            </div>
-          </div>
-        </ModalBody>
-      </Modal>
-
       {/* ── Add / Edit Employee modal (4-step wizard) ── */}
       <Modal
         isOpen={empOpen}
@@ -3212,7 +3136,7 @@ export default function HrEmployees() {
           [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
           .emp-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
           [data-bs-theme="dark"] .emp-label { color: #c4b5fd; }
-          .emp-label .req { color: #f06548; margin-left: 2px; }
+          .emp-label .req { color: #f06548; margin-left: 4px; font-size: 13px; font-weight: 800; line-height: 1; vertical-align: middle; }
           .emp-label .hint { color: #9ca3af; font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 4px; font-size: 10px; }
           .emp-section {
             background: #fff;
@@ -3334,26 +3258,6 @@ export default function HrEmployees() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-shrink-0">
-                {/* Discard-draft chip — only visible in Add mode while a
-                    draft is in progress. Lets the user toss the saved state
-                    and start fresh without having to clear localStorage. */}
-                {empMode === 'add' && (eFirstName || eLastName || eWorkEmail || empStep > 1) && (
-                  <button
-                    type="button"
-                    onClick={discardAddDraft}
-                    title="Discard the saved draft and reset the form"
-                    className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                    style={{
-                      fontSize: 11,
-                      background: 'rgba(255,255,255,0.18)',
-                      color: '#fff',
-                      border: '1px solid rgba(255,255,255,0.28)',
-                      padding: '4px 10px',
-                    }}
-                  >
-                    <i className="ri-eraser-line" /> Discard draft
-                  </button>
-                )}
                 <span
                   className="badge rounded-pill"
                   style={{
@@ -4070,7 +3974,13 @@ export default function HrEmployees() {
                                   onChange={e => {
                                     const f = e.target.files?.[0];
                                     e.target.value = '';
-                                    if (f) { d.set(f); uploadEmpDoc(d.key, d.label, f); }
+                                    if (!f) return;
+                                    if (!isAcceptedFile(f, d.accept)) {
+                                      toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
+                                      return;
+                                    }
+                                    d.set(f);
+                                    uploadEmpDoc(d.key, d.label, f);
                                   }}
                                 />
                               </label>
@@ -4104,11 +4014,14 @@ export default function HrEmployees() {
                                 onChange={e => {
                                   const f = e.target.files?.[0];
                                   e.target.value = '';
-                                  if (f) {
-                                    d.set(f);
-                                    if (errKey) clearEErr(errKey);
-                                    uploadEmpDoc(d.key, d.label, f);
+                                  if (!f) return;
+                                  if (!isAcceptedFile(f, d.accept)) {
+                                    toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
+                                    return;
                                   }
+                                  d.set(f);
+                                  if (errKey) clearEErr(errKey);
+                                  uploadEmpDoc(d.key, d.label, f);
                                 }}
                               />
                             </label>
@@ -4168,17 +4081,27 @@ export default function HrEmployees() {
                       <MasterSelect value={ePayGroup} onChange={setEPayGroup} options={PAY_GROUP_OPTIONS} />
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Annual Salary</label>
+                      <label className="emp-label">Annual Salary{eEnablePayroll && <span className="req">*</span>}</label>
                       <div className="d-flex gap-2">
-                        <input className="emp-input" type="number" placeholder="Enter amount" value={eAnnualSalary} onChange={e => setEAnnualSalary(e.target.value)} style={{ flex: 1 }} />
+                        <input
+                          className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
+                          type="number"
+                          placeholder="Enter amount"
+                          value={eAnnualSalary}
+                          onChange={e => { setEAnnualSalary(e.target.value); clearEErr('annual_salary'); }}
+                          style={{ flex: 1 }}
+                        />
                         <div style={{ width: 130, flexShrink: 0 }}>
-                          <MasterSelect value={eSalaryFreq} onChange={setESalaryFreq} options={SALARY_FREQUENCY_OPTIONS} />
+                          <MasterSelect value={eSalaryFreq} onChange={(v) => { setESalaryFreq(v); clearEErr('salary_frequency'); }} options={SALARY_FREQUENCY_OPTIONS} invalid={!!eErrors.salary_frequency} />
                         </div>
                       </div>
+                      {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
+                      {eErrors.salary_frequency && <small className="emp-err">{eErrors.salary_frequency}</small>}
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Salary Effective From</label>
-                      <MasterDatePicker value={eSalaryFrom} onChange={setESalaryFrom} placeholder="dd-mm-yyyy" />
+                      <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
+                      <MasterDatePicker value={eSalaryFrom} onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }} placeholder="dd-mm-yyyy" invalid={!!eErrors.salary_effective_from} />
+                      {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Salary Structure Type</label>
