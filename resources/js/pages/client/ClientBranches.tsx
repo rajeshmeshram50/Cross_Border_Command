@@ -48,6 +48,41 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
       <style>{`
         .branches-surface { background: #ffffff; }
         [data-bs-theme="dark"] .branches-surface { background: #1c2531; }
+
+        /* KPI hover — mirrors the lift/shadow/icon-rotate used on the
+           BranchDashboard and Branches list KPI cards so this view feels
+           consistent with the rest of the app. */
+        .cb-kpi {
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease,
+            border-color 220ms ease;
+          will-change: transform;
+        }
+        .cb-kpi:hover {
+          transform: translateY(-4px);
+          box-shadow:
+            0 18px 36px -8px rgba(64, 81, 137, 0.28),
+            0 8px 16px -4px rgba(64, 81, 137, 0.18),
+            0 2px 4px rgba(0, 0, 0, 0.06) !important;
+          border-color: rgba(64, 81, 137, 0.35) !important;
+        }
+        .cb-kpi:hover .cb-kpi-icon {
+          transform: scale(1.08) rotate(-3deg);
+          box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+        }
+        .cb-kpi-icon {
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease;
+        }
+        [data-bs-theme="dark"] .cb-kpi:hover {
+          box-shadow:
+            0 18px 36px -8px rgba(0, 0, 0, 0.65),
+            0 8px 16px -4px rgba(0, 0, 0, 0.45),
+            0 2px 4px rgba(0, 0, 0, 0.30) !important;
+          border-color: rgba(124, 92, 252, 0.50) !important;
+        }
       `}</style>
 
       <Row>
@@ -86,7 +121,7 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
               {KPI_CARDS.map(k => (
                 <Col key={k.label} md={3} sm={6} xs={12}>
                   <div
-                    className="branches-surface"
+                    className="branches-surface cb-kpi"
                     style={{
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
@@ -107,7 +142,7 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                           {k.value.toLocaleString()}
                         </h3>
                       </div>
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                      <div className="cb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
                         <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
                       </div>
                     </div>
@@ -223,9 +258,8 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
                           </span>
                         </td>
                         <td>
-                          <span className={`badge rounded-pill border border-${color} text-${color} text-uppercase fw-semibold fs-10 px-2 py-1 d-inline-flex align-items-center gap-1`}>
-                            <span className={`bg-${color} rounded-circle`} style={{ width: 6, height: 6 }} />
-                            {b.status}
+                          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2`}>
+                            {isActive ? 'Active' : 'Inactive'}
                           </span>
                         </td>
                       </tr>
