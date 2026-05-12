@@ -991,6 +991,14 @@ export default function HrEmployees() {
   // Db id of the employee currently being edited. Null in add mode. Stored
   // on the row by apiToRow() as `_dbId`.
   const [editingDbId, setEditingDbId] = useState<number | null>(null);
+  // Mirror the editing ID into a ref so persistCurrentStep can read the
+  // freshly-allocated ID inside the SAME async function call. Without
+  // this, the React state closure on step 2 still saw editingDbId=null
+  // (state update from step 1 hadn't propagated yet) and each Next click
+  // POST'ed a fresh employee row — producing the duplicate-row bug the
+  // user saw in the list.
+  const editingDbIdRef = useRef<number | null>(null);
+  useEffect(() => { editingDbIdRef.current = editingDbId; }, [editingDbId]);
 
   // ── Step 3 asset pools — laptop / mobile / other. Refetched whenever
   //    the wizard opens (add or edit). The backend filter excludes
@@ -1213,6 +1221,7 @@ export default function HrEmployees() {
     setEmpMode('add');
     setEmpEditingName('');
     setEditingDbId(null);
+    editingDbIdRef.current = null;
 
     // Look for a saved draft BEFORE opening the modal so we can either
     // (a) prompt the user via our own styled modal, or (b) open fresh.
@@ -1274,6 +1283,7 @@ export default function HrEmployees() {
     setEmpMode('edit');
     setEmpEditingName(row.name);
     setEditingDbId(dbId ?? null);
+    editingDbIdRef.current = dbId ?? null;
 
     // Hydrate from the raw API row when present so step-2 selects map back
     // to ids (not labels). Falls back to the projected row when not.
@@ -1619,8 +1629,13 @@ export default function HrEmployees() {
     setSaving(true);
     try {
       const payload = buildEmployeePayload(stepCompleted);
-      if (editingDbId) {
-        await api.put(`/employees/${editingDbId}`, payload);
+      // Read the ID from the ref instead of state — the ref is updated
+      // synchronously via the useEffect mirror, so when step 2 clicks
+      // Next within the same render cycle as step 1's POST returning,
+      // we still see the freshly-allocated ID.
+      const currentId = editingDbIdRef.current ?? editingDbId;
+      if (currentId) {
+        await api.put(`/employees/${currentId}`, payload);
       } else {
         const r = await api.post('/employees', payload);
         const newId: number | undefined = r?.data?.employee?.id;
@@ -1628,6 +1643,9 @@ export default function HrEmployees() {
           // Flip into edit mode so the next Next/Save patches the same
           // row instead of creating a duplicate. Mode stays visually
           // "Add" in the header — the user is mid-wizard, not done yet.
+          // Write the ref FIRST so any subsequent persistCurrentStep
+          // call within the same tick sees it immediately.
+          editingDbIdRef.current = newId;
           setEditingDbId(newId);
         }
       }
@@ -1705,9 +1723,13 @@ export default function HrEmployees() {
 
     setSaving(true);
     try {
-      if (editingDbId) {
-        await api.put(`/employees/${editingDbId}`, payload);
-        toast.success('Employee saved', `${eFirstName} ${eLastName}`.trim() + ' · marked complete (still Inactive — toggle Active when ready).');
+      // Same stale-state guard as persistCurrentStep — read from the
+      // ref so we never POST a 5th duplicate row when state hasn't
+      // propagated yet from the last Next click.
+      const currentId = editingDbIdRef.current ?? editingDbId;
+      if (currentId) {
+        await api.put(`/employees/${currentId}`, payload);
+        toast.success('Employee saved', `${eFirstName} ${eLastName}`.trim() + ' · marked complete.');
       } else {
         // Edge case: somehow Submit was clicked without any prior step
         // saving (e.g. user filled all 4 steps offline then clicked
@@ -1715,6 +1737,10 @@ export default function HrEmployees() {
         // create at step 4.
         const r = await api.post('/employees', payload);
         const emp = r?.data?.employee;
+        if (emp?.id) {
+          editingDbIdRef.current = emp.id;
+          setEditingDbId(emp.id);
+        }
         toast.success(
           'Employee saved',
           `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`,
@@ -1907,6 +1933,57 @@ export default function HrEmployees() {
            overflow-x switches to auto so the user can scroll-wheel
            through the cards manually (the wheel listener in the
            component converts vertical wheel into horizontal scroll). */
+        /* Outer wrapper holds the side-gutter prev/next arrow buttons
+           (same affordance as the Plans page swiper). The arrows sit
+           absolutely-positioned at the left/right edges and call
+           kpiStripRef.scrollBy() to step the viewport one card width. */
+        .hr-emp-kpi-outer {
+          position: relative;
+          padding: 0 48px;
+        }
+        .hr-emp-kpi-nav {
+          position: absolute;
+          top: 50%;
+          transform: translateY(-50%);
+          z-index: 10;
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          border: 1.5px solid var(--vz-border-color);
+          background: var(--vz-card-bg, #fff);
+          color: var(--vz-primary, #405189);
+          font-size: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
+          transition: background .2s ease, color .2s ease, box-shadow .2s ease, transform .2s ease, border-color .2s ease;
+          outline: none;
+        }
+        .hr-emp-kpi-nav:hover {
+          background: var(--vz-primary, #405189);
+          color: #fff;
+          border-color: var(--vz-primary, #405189);
+          box-shadow: 0 6px 20px rgba(64, 81, 137, 0.35);
+          transform: translateY(-50%) scale(1.08);
+        }
+        .hr-emp-kpi-nav-prev { left: 4px; }
+        .hr-emp-kpi-nav-next { right: 4px; }
+        [data-bs-theme="dark"] .hr-emp-kpi-nav,
+        [data-layout-mode="dark"] .hr-emp-kpi-nav {
+          background: var(--vz-card-bg);
+          border-color: var(--vz-border-color);
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+          color: #c4b5fd;
+        }
+        /* Hide nav arrows on narrow phones — finger-swipe is the natural
+           gesture there and the side-gutter eats too much width. */
+        @media (max-width: 575.98px) {
+          .hr-emp-kpi-outer { padding: 0; }
+          .hr-emp-kpi-nav { display: none; }
+        }
+
         .hr-emp-kpi-grid {
           position: relative;
           overflow-x: hidden;
@@ -2072,7 +2149,30 @@ export default function HrEmployees() {
                 ref + wheel handler below let the user scroll the strip
                 horizontally with a vertical mouse wheel while the
                 animation is paused on hover. */}
-            <div ref={kpiStripRef} className="hr-emp-kpi-grid mb-3">
+            {/* Wrap viewport in a relative container so prev/next arrows
+                can sit on the side gutters like Plans page's swiper nav.
+                Arrows scroll the marquee viewport by ~280px (~one card)
+                with smooth behavior. Auto-marquee animation continues as
+                before — the buttons just give the user explicit control
+                if they don't want to wait for the strip to cycle around. */}
+            <div className="hr-emp-kpi-outer mb-3">
+              <button
+                type="button"
+                aria-label="Scroll left"
+                className="hr-emp-kpi-nav hr-emp-kpi-nav-prev"
+                onClick={() => kpiStripRef.current?.scrollBy({ left: -280, behavior: 'smooth' })}
+              >
+                <i className="ri-arrow-left-s-line"></i>
+              </button>
+              <button
+                type="button"
+                aria-label="Scroll right"
+                className="hr-emp-kpi-nav hr-emp-kpi-nav-next"
+                onClick={() => kpiStripRef.current?.scrollBy({ left: 280, behavior: 'smooth' })}
+              >
+                <i className="ri-arrow-right-s-line"></i>
+              </button>
+            <div ref={kpiStripRef} className="hr-emp-kpi-grid">
               <div className="hr-emp-kpi-track">
                 {[...KPI_CARDS, ...KPI_CARDS].map((k, idx) => (
                   <div
@@ -2105,6 +2205,7 @@ export default function HrEmployees() {
                   </div>
                 ))}
               </div>
+            </div>
             </div>
 
             {/* ── Tabs (Active / Disabled) ── */}
@@ -2241,7 +2342,12 @@ export default function HrEmployees() {
                         const primary = tone(e.primaryRole);
                         return (
                           <tr
-                            key={e.id}
+                            // Use the DB primary key for React's reconciliation
+                            // key — emp_code can collide when a code is reused
+                            // after a soft-delete (the live + trashed rows then
+                            // shared the same `e.id` and React rendered the
+                            // newer row in BOTH active and disabled tabs).
+                            key={(e as any)._dbId ?? e.id}
                             onClick={() => navigate(`/hr/employees/${encodeURIComponent(e.id)}/profile`, { state: { employee: e } })}
                             style={{ cursor: 'pointer' }}
                           >
