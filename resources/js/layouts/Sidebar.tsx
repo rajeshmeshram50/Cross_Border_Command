@@ -95,9 +95,21 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
     });
   }, [user, perms, planExpiredOrMissing]);
 
+  // True when `current` is the parent itself OR any descendant of it.
+  // Prefix match catches deep / unmapped child ids like `hr.employee_profile`
+  // (sub-routes that don't have a dedicated leaf in the sidebar but still
+  // belong to the HR module). Falls back to the child-id list match for
+  // ids that don't follow the `parent.leaf` dot convention.
+  const isDescendantOf = (parent: MenuItem & { _filteredGroups?: MenuGroup[] }, cur: string) => {
+    if (!cur) return false;
+    if (cur === parent.id) return true;
+    if (cur.startsWith(parent.id + '.')) return true;
+    return !!parent._filteredGroups?.some(g => g.children.some(c => c.id === cur));
+  };
+
   // Auto-open parent containing the current page
   useEffect(() => {
-    const parent = items.find(m => m._filteredGroups?.some(g => g.children.some(c => c.id === current)));
+    const parent = items.find(m => isDescendantOf(m, current));
     if (parent && !openParents[parent.id]) {
       setOpenParents(prev => ({ ...prev, [parent.id]: true }));
     }
@@ -132,7 +144,7 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
 
           const Icon = getIcon(m.icon);
           const hasGroups = (m._filteredGroups?.length || 0) > 0;
-          const parentActive = current === m.id || !!m._filteredGroups?.some(g => g.children.some(c => c.id === current));
+          const parentActive = isDescendantOf(m, current);
           const parentOpen = !!openParents[m.id];
 
           if (hasGroups) {
@@ -157,7 +169,10 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
                     {m._filteredGroups!.map(group => {
                       const groupOpen = openGroups[group.id] !== false; // default open
                       const GroupIcon = getIcon(group.icon);
-                      const activeInGroup = group.children.some(c => c.id === current);
+                      // Same prefix-tolerant match as parentActive so a
+                      // sub-route under hr.employee still highlights both
+                      // the "HR Core" group label and the "HR" parent.
+                      const activeInGroup = group.children.some(c => c.id === current || current.startsWith(c.id + '.'));
                       return (
                         <div key={group.id}>
                           <button
@@ -175,7 +190,10 @@ export default function Sidebar({ current, onNavigate, collapsed, onToggle }: Pr
                             <div className="space-y-0.5 mt-0.5 mb-1">
                               {group.children.map(child => {
                                 const CIcon = getIcon(child.icon);
-                                const active = current === child.id;
+                                // Prefix match so deeper SPA routes like
+                                // /hr/employees/42/profile still light up
+                                // the "Employee" leaf, not just /hr/employees.
+                                const active = current === child.id || current.startsWith(child.id + '.');
                                 return (
                                   <button
                                     key={child.id}
