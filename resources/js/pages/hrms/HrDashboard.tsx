@@ -97,10 +97,15 @@ export default function HrDashboard() {
   const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
 
+  // Strip any leaf that isn't wired to a real route — the overview page
+  // is meant to surface working modules only, so "Coming Soon" cards are
+  // filtered out here rather than rendered greyed-out.
   const groups = useMemo<MenuGroup[]>(() => {
-    if (isSuperAdmin) return HR_GROUPS;
-    return HR_GROUPS
-      .map(g => ({ ...g, children: g.children.filter(c => !!perms[c.id]?.can_view) }))
+    const base = isSuperAdmin
+      ? HR_GROUPS
+      : HR_GROUPS.map(g => ({ ...g, children: g.children.filter(c => !!perms[c.id]?.can_view) }));
+    return base
+      .map(g => ({ ...g, children: g.children.filter(c => !!HR_LEAF_ROUTES[c.id]) }))
       .filter(g => g.children.length > 0);
   }, [isSuperAdmin, perms]);
 
@@ -117,11 +122,13 @@ export default function HrDashboard() {
   const totals = useMemo(() => {
     const total = groups.reduce((s, g) => s + g.children.length, 0);
     const findCount = (id: string) => groups.find(g => g.id === id)?.children.length ?? 0;
+    // Every rendered card is live now — coming-soon entries are filtered
+    // out upstream, so "active" mirrors total and "soon" is always 0.
     return {
       total,
       categories: groups.length,
-      active: 0,
-      soon: total,
+      active: total,
+      soon: 0,
       timePay: findCount('hr.time_pay'),
       documents: findCount('hr.documents'),
     };

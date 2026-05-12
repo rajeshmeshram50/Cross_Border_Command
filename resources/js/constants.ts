@@ -146,7 +146,6 @@ export const HR_GROUPS: MenuGroup[] = [
       { id: 'hr.overview',  icon: 'LayoutGrid',     label: 'HRMS Overview' },
       { id: 'hr.pip',       icon: 'ClipboardCheck', label: 'PIP' },
       { id: 'hr.reports',   icon: 'BarChart3',      label: 'HR Reports' },
-      { id: 'hr.ai_master', icon: 'Sparkles',       label: 'AI Master' },
     ],
   },
   {
