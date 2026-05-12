@@ -353,11 +353,16 @@ class EmployeeController extends Controller
                 // first save corresponds to step 1 of the wizard.
                 $stepCompleted = max(1, min(4, (int) $request->input('wizard_step_completed', 1)));
 
-                // Force `Inactive` for wizard-created employees regardless of
-                // what the frontend sent. The 4-step wizard captures only
-                // half the data we eventually want — admin must explicitly
-                // flip the row to Active once the rest of the onboarding
-                // (assets, payroll review, etc.) is done.
+                // Newly-added employees default to Active so they show
+                // up in the Active tab immediately. The frontend can
+                // still override (e.g. for a pre-joining record), but
+                // when no status is sent we want a sensible default.
+                //
+                // The earlier "Force Inactive" policy was creating UX
+                // confusion — admins clicked "Add Employee", completed
+                // the wizard, then couldn't find their new hire in the
+                // Active list. Defaulting to Active matches the natural
+                // mental model: I just added them, they're working here.
                 $payload = array_merge($data, [
                     'client_id'             => $clientId,
                     'branch_id'             => $branchId,
@@ -365,7 +370,7 @@ class EmployeeController extends Controller
                     'user_id'               => $loginUser->id,
                     'emp_code'              => $empCode,
                     'display_name'          => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
-                    'status'                => 'Inactive',
+                    'status'                => $data['status'] ?? 'Active',
                     'wizard_step_completed' => $stepCompleted,
                 ]);
                 $employee = Employee::create($payload);
