@@ -135,6 +135,19 @@ export const MASTER_GROUPS: MenuGroup[] = [
       { id: 'master.freezers',          icon: 'Snowflake',   label: 'Freezer Management' },
     ],
   },
+  // Attendance Master Management — branch-level configuration of leave
+  // categories & leave plans. Visibility on this dashboard is permission-
+  // driven; the matching HR_GROUPS entry below mirrors these leaves into the
+  // branch-only HR sidebar.
+  {
+    id: 'master.attendance',
+    label: 'Attendance Master Management',
+    icon: 'CalendarCheck',
+    children: [
+      { id: 'master.leave_type', icon: 'CalendarOff',   label: 'Leave Type Master' },
+      { id: 'master.leave_plan', icon: 'CalendarRange', label: 'Leave Plan Master' },
+    ],
+  },
 ];
 
 export const HR_GROUPS: MenuGroup[] = [
@@ -179,6 +192,18 @@ export const HR_GROUPS: MenuGroup[] = [
     icon: 'FileText',
     children: [
       { id: 'hr.broadcast', icon: 'Megaphone', label: 'Broadcast Centre' },
+    ],
+  },
+  // Attendance Master Management — branch-only configuration of leave
+  // categories & leave plans. Items use `master.*` ids so they leverage the
+  // generic MasterController + MasterPage shell (CRUD + delete confirm + toast).
+  {
+    id: 'master.attendance',
+    label: 'Attendance Master Management',
+    icon: 'CalendarCheck',
+    children: [
+      { id: 'master.leave_type', icon: 'CalendarOff',   label: 'Leave Type Master' },
+      { id: 'master.leave_plan', icon: 'CalendarRange', label: 'Leave Plan Master' },
     ],
   },
 ];

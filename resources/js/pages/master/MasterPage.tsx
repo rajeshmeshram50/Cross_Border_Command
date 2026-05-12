@@ -111,6 +111,11 @@ function MasterPageInner({
   // not a single input. They're synced to local state via the sub-modal and merged into
   // the JSON payload at save time.
   const [sublistValues, setSublistValues] = useState<Record<string, any[]>>({});
+  // Tracks the current value of any `t: 'radio'` field so other fields can
+  // conditionally show/hide based on it (`showWhen`). Uncontrolled inputs
+  // alone can't drive re-renders — this lightweight controlled state powers
+  // the "Calendar vs If Joining" style branches in the Leave Plan form.
+  const [radioValues, setRadioValues] = useState<Record<string, string>>({});
 
   // "Manage Banks" — legal_entities-only focused modal that lets the user view
   // and edit just the bank accounts attached to a row, without opening the
@@ -349,12 +354,31 @@ function MasterPageInner({
     return next;
   }, [refData, records, cfg]);
 
+  // Initialize controlled radio state from a record (or defaults). Used on
+  // both Add and Edit so `showWhen` immediately reflects the form's value
+  // — without this, the conditional inputs would always start hidden.
+  const seedRadioValues = (row?: any) => {
+    const next: Record<string, string> = {};
+    for (const f of cfg.fields) {
+      if (f.t !== 'radio') continue;
+      const v = row?.[f.n];
+      if (v != null && v !== '') {
+        next[f.n] = String(v);
+      } else {
+        const first = normalizeOpts(f.opts)[0]?.value;
+        if (first != null) next[f.n] = String(first);
+      }
+    }
+    setRadioValues(next);
+  };
+
   const openAdd = () => {
     setFieldErrors({});
     setEditingId(null);
     setViewOnly(false);
     setSublistValues({});
     setApiAutogen({});
+    seedRadioValues(null);
     setModalOpen(true);
     // Refresh referenced masters so dropdowns reflect anything added elsewhere.
     fetchRefs();
@@ -391,6 +415,7 @@ function MasterPageInner({
       }
     }
     setSublistValues(init);
+    seedRadioValues(row);
     setModalOpen(true);
     fetchRefs();
   };
@@ -479,6 +504,18 @@ function MasterPageInner({
 
   const validateForm = (fd: FormData): Record<string, string> => {
     const errs: Record<string, string> = {};
+    // Helper — a field gated by `showWhen` shouldn't be validated when its
+    // controlling field's current value doesn't match (it's not in the DOM).
+    const isHiddenByShowWhen = (f: FieldDef): boolean => {
+      if (!f.showWhen) return false;
+      const live = radioValues[f.showWhen.field];
+      const fromRow = editing?.[f.showWhen.field];
+      const cur = String((live ?? fromRow) ?? '');
+      const need = Array.isArray(f.showWhen.equals)
+        ? f.showWhen.equals.map(String)
+        : [String(f.showWhen.equals)];
+      return !need.includes(cur);
+    };
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
       // Auto-generated fields are filled by the server, never the user.
@@ -486,6 +523,7 @@ function MasterPageInner({
       // Sublist values aren't tied to a single FormData input — they live in
       // their own state and are validated by the sub-modal at add/edit time.
       if (f.t === 'sublist') continue;
+      if (isHiddenByShowWhen(f)) continue;
       // File inputs: required check uses File.size; skip the rest of validation.
       // On EDIT the existing file already lives on the server, so we don't
       // force a re-upload — only the size cap (when a new file is chosen)
@@ -556,6 +594,20 @@ function MasterPageInner({
       return s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
     };
 
+    // Helper — same gate used in validateForm. A field hidden by `showWhen`
+    // must be sent as NULL on save so toggling away wipes the stale value
+    // (otherwise switching "Calendar → If Joining" would silently leave the
+    // previously-picked month attached on the row).
+    const isHiddenByShowWhenForPayload = (f: FieldDef): boolean => {
+      if (!f.showWhen) return false;
+      const live = radioValues[f.showWhen.field];
+      const fromRow = editing?.[f.showWhen.field];
+      const cur = String((live ?? fromRow) ?? '');
+      const need = Array.isArray(f.showWhen.equals)
+        ? f.showWhen.equals.map(String)
+        : [String(f.showWhen.equals)];
+      return !need.includes(cur);
+    };
     const payload: Record<string, any> = {};
     for (const f of cfg.fields) {
       if (f.sec || !f.n) continue;
@@ -571,6 +623,10 @@ function MasterPageInner({
       // current array for each so the controller can sync child rows.
       if (f.t === 'sublist') {
         payload[f.n] = sublistValues[f.n] || [];
+        continue;
+      }
+      if (isHiddenByShowWhenForPayload(f)) {
+        payload[f.n] = null;
         continue;
       }
       const raw = fd.get(f.n);
@@ -1646,7 +1702,22 @@ function MasterPageInner({
                     </div>
                   )}
                   <Row className="g-2">
-                    {group.fields.map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next })), apiAutogen))}
+                    {group.fields
+                      .filter((f) => {
+                        // showWhen — hide a field unless the controlling field
+                        // currently equals one of the listed values. Falls back
+                        // to `editing` so already-saved rows still gate correctly
+                        // on first render before any radio change fires.
+                        if (!f.showWhen) return true;
+                        const live = radioValues[f.showWhen.field];
+                        const fromRow = editing?.[f.showWhen.field];
+                        const cur = String((live ?? fromRow) ?? '');
+                        const need = Array.isArray(f.showWhen.equals)
+                          ? f.showWhen.equals.map(String)
+                          : [String(f.showWhen.equals)];
+                        return need.includes(cur);
+                      })
+                      .map((f, i) => renderField(f, i, editing, viewOnly, refData, labelFieldForRef, fieldErrors, clearFieldError, defaultFieldSpan, tenantScopedRecords, sublistValues, (field, next) => setSublistValues(prev => ({ ...prev, [field.n]: next })), apiAutogen, radioValues, (name, value) => setRadioValues((prev) => ({ ...prev, [name]: value }))))}
                   </Row>
                 </div>
               );
@@ -3171,6 +3242,8 @@ function renderField(
   sublistValues: Record<string, any[]> = {},
   onSublistChange: (field: FieldDef, next: any[]) => void = () => {},
   apiAutogen: Record<string, string> = {},
+  radioValues: Record<string, string> = {},
+  onRadioChange: (name: string, value: string) => void = () => {},
 ): React.ReactNode {
   if (f.sec) {
     return (
@@ -3204,7 +3277,7 @@ function renderField(
     );
   }
 
-  const span = f.full ? 12 : f.t === 'textarea' ? 12 : defaultSpan;
+  const span = f.full ? 12 : (f.t === 'textarea' || f.t === 'radio') ? 12 : defaultSpan;
   // Auto-generated fields are locked in BOTH add and edit flows: on add the
   // value is computed from existing records, on edit we keep whatever was
   // saved. Either way the input is rendered read-only so users can't override
@@ -3280,6 +3353,56 @@ function renderField(
         invalid={!!err}
         onChange={onFieldChange}
       />
+    );
+  } else if (f.t === 'radio') {
+    // Vertical radio group with optional per-option helper text. Drives the
+    // controlled `radioValues` map so sibling fields can toggle visibility
+    // via `showWhen`. The actual posted value comes from the checked
+    // <input>'s `name`, picked up by FormData on submit.
+    const options = normalizeOpts(f.opts);
+    const current = radioValues[f.n] ?? (defaultVal ? String(defaultVal) : (options[0]?.value ?? ''));
+    input = (
+      <div className="d-flex flex-column gap-2" style={{ paddingTop: 4 }}>
+        {options.map((o) => {
+          const checked = String(current) === String(o.value);
+          const desc = f.optDesc?.[o.value];
+          return (
+            <label
+              key={o.value}
+              className="d-flex align-items-start gap-2"
+              style={{
+                padding: '10px 12px',
+                border: `1px solid ${checked ? 'var(--vz-primary)' : 'var(--vz-border-color)'}`,
+                background: checked ? 'rgba(64,81,137,0.05)' : 'transparent',
+                borderRadius: 8,
+                cursor: viewOnly ? 'not-allowed' : 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <input
+                type="radio"
+                name={f.n}
+                value={o.value}
+                checked={checked}
+                disabled={viewOnly}
+                onChange={() => {
+                  onRadioChange(f.n, String(o.value));
+                  onFieldChange();
+                }}
+                style={{ marginTop: 3, accentColor: 'var(--vz-primary)' }}
+              />
+              <span className="d-flex flex-column">
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--vz-body-color)' }}>{o.label}</span>
+                {desc && (
+                  <span style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
+                    {desc}
+                  </span>
+                )}
+              </span>
+            </label>
+          );
+        })}
+      </div>
     );
   } else if (f.t === 'textarea') {
     input = (
@@ -3419,7 +3542,7 @@ function renderField(
           </span>
         )}
       </Label>
-      {f.t === 'file' ? (
+      {f.t === 'file' || f.t === 'radio' ? (
         <div>{input}</div>
       ) : (
         <div className={`master-field${isTextarea ? ' ta' : ''}${isSelect ? ' sel' : ''}`}>

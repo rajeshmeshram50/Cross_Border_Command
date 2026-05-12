@@ -71,6 +71,11 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.payroll":     return "/hr/payroll";
     case "hr.pip":         return "/hr/pip";
     case "hr.calculation_master": return "/hr/calculation-master";
+    // Attendance Master Management leaves — these live under the HR sidebar
+    // (branch-only) but reuse the generic /master/:slug page shell because
+    // they're standard MasterController-backed CRUD masters.
+    case "master.leave_type": return "/master/leave_type";
+    case "master.leave_plan": return "/master/leave_plan";
     default:               return "/hr";
   }
 };
@@ -112,8 +117,15 @@ const Navdata = () => {
   const hasAnyHrView = () => {
     if (isSuperAdmin) return true;
     if (planExpiredOrMissing) return false;
+    // The Attendance Master Management group lives under HR in HR_GROUPS but
+    // its leaves use `master.*` ids (so they reuse the generic MasterPage
+    // shell). Include them in the "any HR view" check so a branch user with
+    // ONLY these perms still sees the HR menu open up.
+    const hrAttendanceLeafSlugs = new Set(['master.leave_type', 'master.leave_plan']);
     return Object.keys(perms).some(
-      (slug) => slug.startsWith("hr.") && !!perms[slug]?.can_view
+      (slug) =>
+        (slug.startsWith("hr.") || hrAttendanceLeafSlugs.has(slug)) &&
+        !!perms[slug]?.can_view
     );
   };
 
