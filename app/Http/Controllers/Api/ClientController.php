@@ -235,6 +235,7 @@ class ClientController extends Controller
                         $request->admin_password,
                         'client_admin',
                         $request->org_name,
+                        PasswordChangedMail::resolveLoginUrl($request),
                     ));
                 } catch (\Exception $e) {
                     // Don't fail the request if email fails

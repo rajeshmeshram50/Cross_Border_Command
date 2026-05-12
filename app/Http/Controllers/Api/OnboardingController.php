@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\OnboardingInviteMail;
+use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
 use App\Models\Client;
 use App\Models\Employee;
@@ -263,6 +264,7 @@ class OnboardingController extends Controller
                         $rawPassword,
                         'employee',
                         $orgName,
+                        PasswordChangedMail::resolveLoginUrl($request),
                     ));
                 } catch (\Throwable $e) {
                     Log::warning('Onboarding welcome mail failed', [

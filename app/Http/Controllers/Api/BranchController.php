@@ -262,6 +262,7 @@ class BranchController extends Controller
                         $request->user_password,
                         'branch_user',
                         $clientName,
+                        PasswordChangedMail::resolveLoginUrl($request),
                     ));
                 } catch (\Exception $e) {
                     Log::warning('Branch welcome mail failed', [
