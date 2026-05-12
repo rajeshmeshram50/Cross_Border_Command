@@ -20,10 +20,18 @@ export default function BranchSwitcher() {
 
   if (!user || user.user_type === 'super_admin') return null;
 
-  // Sub-branch user (non-main) — locked to their own branch, no dropdown
-  if (user.user_type === 'branch_user' && !isMainBranchUser) {
+  // Employees and sub-branch users (non-main branch_user) are both
+  // hard-locked to their assigned branch — no dropdown, no cross-branch
+  // visibility. Renders a static read-only badge so the user can still
+  // see WHICH branch they're scoped to, but cannot change it.
+  const isEmployeeRole = user.user_type === 'employee';
+  const isSubBranchUser = user.user_type === 'branch_user' && !isMainBranchUser;
+  if (isEmployeeRole || isSubBranchUser) {
     return (
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-[12px] font-medium text-text">
+      <div
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-surface text-[12px] font-medium text-text"
+        title={isEmployeeRole ? 'Branch switching is not available for employees' : undefined}
+      >
         <Building2 size={13} className="text-primary" />
         <span className="max-w-[160px] truncate">{user.branch_name || 'My Branch'}</span>
       </div>

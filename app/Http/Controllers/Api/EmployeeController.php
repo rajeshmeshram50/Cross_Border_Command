@@ -340,7 +340,12 @@ class EmployeeController extends Controller
                     'user_type'     => 'employee',
                     'client_id'     => $clientId,
                     'branch_id'     => $branchId,
-                    'status'        => 'inactive',
+                    // Match the Employee row default (now Active). Without
+                    // this, a wizard-created employee could open the
+                    // welcome email, try to log in, and get "Your account
+                    // is not active" even though the admin never disabled
+                    // them and the Employees list showed them as Active.
+                    'status'        => 'active',
                     'designation'   => $request->input('designation_name'),
                     'employee_code' => null, // populated after we know emp_code
                 ]);

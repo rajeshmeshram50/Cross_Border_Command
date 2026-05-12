@@ -1117,20 +1117,26 @@ export default function BranchForm({ onBack, editId }: Props) {
                   )}
                 </Lbl>
                 <Input
+                  // Read-only at all times — the server is the source of
+                  // truth for branch codes. On add: pre-filled with the
+                  // next BR-### the API allocated; on edit: the existing
+                  // code that this branch was assigned. Letting the user
+                  // hand-edit it caused collisions with the auto sequence
+                  // and broke the "Showing N of M" counter when an admin
+                  // typed a custom string.
+                  readOnly
                   style={{
                     ...css.input,
-                    // Tint the input subtly so the user sees it's a
-                    // system-allocated value, not a free-text field —
-                    // they can still override if they really want.
-                    background: !isEdit && form.code?.startsWith('BR-') ? '#f5f1ff' : (css.input as any).background,
-                    color: !isEdit && form.code?.startsWith('BR-') ? '#5a3fd1' : (css.input as any).color,
-                    fontWeight: !isEdit && form.code?.startsWith('BR-') ? 600 : (css.input as any).fontWeight,
-                    letterSpacing: !isEdit && form.code?.startsWith('BR-') ? '0.02em' : undefined,
+                    background: '#f5f1ff',
+                    color: '#5a3fd1',
+                    fontWeight: 600,
+                    letterSpacing: '0.02em',
+                    cursor: 'not-allowed',
                   }}
                   value={form.code}
-                  onChange={e => set('code', e.target.value.toUpperCase())}
                   placeholder="BR-001"
                   maxLength={20}
+                  title="Branch code is auto-assigned and cannot be edited"
                 />
               </Col>
               <Col md={4}>

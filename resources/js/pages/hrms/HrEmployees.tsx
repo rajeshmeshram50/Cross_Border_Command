@@ -3095,7 +3095,7 @@ export default function HrEmployees() {
         centered
         size="lg"
         contentClassName="border-0"
-        modalClassName="emp-modal-wide"
+        modalClassName={`emp-modal-wide${saving ? ' is-saving' : ''}`}
         scrollable
         backdrop="static"
         keyboard={false}
@@ -3103,6 +3103,45 @@ export default function HrEmployees() {
         <style>{`
           .emp-modal-wide .modal-dialog { max-width: min(1280px, 95vw); }
           .emp-modal-wide .modal-content { border-radius: 22px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
+          /* Spinning loader for the Next / Save button when the step is
+             persisting. Uses ri-loader-4-line which already looks like a
+             circular spinner — we just rotate it. */
+          @keyframes emp-spin-rotate {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+          }
+          .emp-spin {
+            display: inline-block;
+            animation: emp-spin-rotate 0.7s linear infinite;
+            font-size: 16px;
+          }
+          /* Top progress bar — slim animated stripe across the very top
+             of the modal when a step save is in flight. Mirrors the
+             feedback pattern used on iOS Safari + GitHub's command bar:
+             a thin indeterminate sweep tells the user "something is
+             happening" without blocking the form. */
+          .emp-modal-wide .modal-content {
+            position: relative;
+          }
+          .emp-modal-wide.is-saving .modal-content::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg,
+              transparent 0%,
+              #a78bfa 20%,
+              #f5b06f 50%,
+              #a78bfa 80%,
+              transparent 100%);
+            background-size: 200% 100%;
+            animation: emp-progress-sweep 1.1s linear infinite;
+            z-index: 100;
+          }
+          @keyframes emp-progress-sweep {
+            from { background-position:  100% 0; }
+            to   { background-position: -100% 0; }
+          }
           /* Repaint the borrowed recruitment buttons to match the Add
              Employee header palette (deep indigo → violet → lavender)
              instead of the recruitment form's pink-purple. Keeps the
@@ -4290,9 +4329,25 @@ export default function HrEmployees() {
                 <button
                   type="button"
                   onClick={handleNextStep}
+                  disabled={saving}
                   className="rec-btn-primary"
+                  style={{
+                    minWidth: 110,
+                    justifyContent: 'center',
+                    cursor: saving ? 'wait' : 'pointer',
+                    opacity: saving ? 0.9 : 1,
+                  }}
                 >
-                  Next <i className="ri-arrow-right-s-line" />
+                  {saving ? (
+                    <>
+                      <i className="ri-loader-4-line emp-spin" />
+                      <span>Saving…</span>
+                    </>
+                  ) : (
+                    <>
+                      Next <i className="ri-arrow-right-s-line" />
+                    </>
+                  )}
                 </button>
               ) : (
                 <>
@@ -4311,11 +4366,20 @@ export default function HrEmployees() {
                     disabled={saving}
                     onClick={handleSaveEmployee}
                     className="rec-btn-primary"
-                    style={{ opacity: saving ? 0.6 : 1 }}
+                    style={{ minWidth: 170, justifyContent: 'center', cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.9 : 1 }}
                   >
-                    <i className={saving ? 'ri-loader-4-line' : 'ri-check-line'} />
-                    {saving ? 'Saving…' : (empMode === 'edit' ? 'Update Employee' : 'Save Employee')}
-                    {!saving && <i className="ri-arrow-right-line" />}
+                    {saving ? (
+                      <>
+                        <i className="ri-loader-4-line emp-spin" />
+                        <span>Saving…</span>
+                      </>
+                    ) : (
+                      <>
+                        <i className="ri-check-line" />
+                        {empMode === 'edit' ? 'Update Employee' : 'Save Employee'}
+                        <i className="ri-arrow-right-line" />
+                      </>
+                    )}
                   </button>
                 </>
               )}
