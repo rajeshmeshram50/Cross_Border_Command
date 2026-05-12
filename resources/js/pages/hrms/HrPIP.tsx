@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Col, Row, Progress, Modal, ModalBody } from 'reactstrap';
+import ComingSoonShell from '../../components/ComingSoonShell';
 import '../../../css/recruitment.css';
 import '../../../css/pip.css';
 
@@ -292,6 +293,10 @@ export default function HrPIP() {
   };
 
   return (
+    <ComingSoonShell
+      title="Performance Improvement Plan"
+      subtitle="Evidence-backed governance · MCA-controlled · Multi-source signal engine"
+    >
     <Row>
       <Col xs={12}>
         <div className="rec-page">
@@ -434,6 +439,7 @@ export default function HrPIP() {
         onSubmit={onSubmitPip}
       />
     </Row>
+    </ComingSoonShell>
   );
 }
 

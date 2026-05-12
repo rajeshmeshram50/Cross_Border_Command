@@ -5,6 +5,7 @@ import PayslipViewerModal, { type PayslipLine } from '../../components/PayslipVi
 import PayrollRunModal, { type PayrollRunIssue } from '../../components/PayrollRunModal';
 import { useToast } from '../../contexts/ToastContext';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import ComingSoonShell from '../../components/ComingSoonShell';
 // Reuses the purple hero-card, hero-pill, KPI surface and table styles that
 // HrEmployeeOnboarding ships (.onb-hero-card / .onb-hero-pill / .onb-surface
 // / .onb-kpi-card / .onb-pill / .onb-id-pill / .onb-role-pill) so the page
@@ -363,6 +364,10 @@ export default function HrPayroll() {
   const monthOptions = CYCLE_MONTHS.map(m => ({ value: m.key, label: m.label }));
 
   return (
+    <ComingSoonShell
+      title="Payroll"
+      subtitle="Salary cycles, payslips, biometric inputs · backend wiring in progress"
+    >
     <>
       <MasterFormStyles />
 
@@ -1278,5 +1283,6 @@ export default function HrPayroll() {
         );
       })()}
     </>
+    </ComingSoonShell>
   );
 }

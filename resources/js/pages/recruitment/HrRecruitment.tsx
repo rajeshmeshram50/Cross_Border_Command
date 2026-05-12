@@ -5,6 +5,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/mast
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -392,6 +393,9 @@ export default function HrRecruitment() {
   // List state — fetched from /api/recruitments and kept in local state so
   // creates / updates / cancels reflect instantly.
   const [recruitments, setRecruitments] = useState<RecruitmentRow[]>([]);
+  // Drives the table shimmer; flips off once the first /recruitments
+  // response (success or error) settles.
+  const [loadingRecruitments, setLoadingRecruitments] = useState(true);
   const [tab, setTab] = useState<RecruitmentStatus>('In Progress');
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
@@ -440,6 +444,8 @@ export default function HrRecruitment() {
       toast.error('Could not load recruitments', err?.response?.data?.message || 'Please try again.');
       setRecruitments([]);
       setCandidateStats(ZERO_STATS);
+    } finally {
+      setLoadingRecruitments(false);
     }
   };
   useEffect(() => { fetchRecruitments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
@@ -602,7 +608,9 @@ export default function HrRecruitment() {
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
                       <span className="rec-kpi-num">
-                        <AnimatedNumber value={(counts as any)[k.key]} />
+                        {loadingRecruitments
+                          ? <Shimmer height={22} width={56} />
+                          : <AnimatedNumber value={(counts as any)[k.key]} />}
                       </span>
                     </div>
                     <span className="rec-kpi-icon" style={{ background: k.gradient }}>
@@ -687,7 +695,9 @@ export default function HrRecruitment() {
                       </tr>
                     </thead>
                     <tbody>
-                      {visible.length === 0 ? (
+                      {loadingRecruitments ? (
+                        <ShimmerTableRows rows={6} cols={15} keyPrefix="rec" />
+                      ) : visible.length === 0 ? (
                         <tr>
                           <td colSpan={15} className="text-center py-5 text-muted">
                             <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />

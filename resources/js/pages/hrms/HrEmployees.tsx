@@ -8,6 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 // Borrow the polished pill-button styles used by the recruitment / hiring
 // request modal so the Add Employee wizard footer matches the same design
 // language (gradient primary CTA + soft outlined secondary).
@@ -433,6 +434,10 @@ export default function HrEmployees() {
   //             reverse-mapping label strings.
   const [apiEmployees, setApiEmployees] = useState<ApiEmployee[]>([]);
   const [saving, setSaving] = useState(false);
+  // True until the first /employees response lands — drives the table
+  // shimmer skeleton so the page never shows the "No employees" empty
+  // state while the network call is still in flight.
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
 
   // Master dropdown rows — fetched once on mount, reused across the wizard.
   // Each is the raw API row; option-mapping happens at render-time.
@@ -483,6 +488,8 @@ export default function HrEmployees() {
       setApiEmployees(Array.isArray(r.data) ? r.data : []);
     } catch {
       setApiEmployees([]);
+    } finally {
+      setLoadingEmployees(false);
     }
   }, []);
 
@@ -2108,7 +2115,9 @@ export default function HrEmployees() {
                           {k.label}
                         </p>
                         <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                          <AnimatedNumber value={(counts as any)[k.key]} />
+                          {loadingEmployees
+                            ? <Shimmer height={26} width={64} />
+                            : <AnimatedNumber value={(counts as any)[k.key]} />}
                         </h3>
                       </div>
                       <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
@@ -2244,7 +2253,9 @@ export default function HrEmployees() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.length === 0 ? (
+                      {loadingEmployees ? (
+                        <ShimmerTableRows rows={6} cols={11} keyPrefix="emp" />
+                      ) : filtered.length === 0 ? (
                         <tr>
                           <td colSpan={11} className="text-center py-5 text-muted">
                             <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />

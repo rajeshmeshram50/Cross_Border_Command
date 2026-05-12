@@ -276,6 +276,212 @@ class DashboardController extends Controller
             ->mapWithKeys(fn($item) => [$item->user_type => $item->count])
             ->toArray();
 
+        // ── Employee analytics ──────────────────────────────────────────
+        // Scope mirrors the user/branch counts above: a sub-branch user is
+        // pinned to their own branch (via the $branchId rewrite up top), a
+        // main-branch user sees the whole client unless they pick a branch.
+        $empBase = fn() => Employee::where('client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
+
+        // Status counts (enum values are Title-Case in the migration).
+        $empStatusRows = $empBase()
+            ->select('status', DB::raw('count(*) as count'))
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->toArray();
+        $empStatusLabels = ['Active', 'Inactive', 'On Leave', 'Probation', 'Notice Period', 'Resigned', 'Terminated'];
+        $empStatus = [];
+        foreach ($empStatusLabels as $label) {
+            $empStatus[] = ['name' => $label, 'value' => (int) ($empStatusRows[$label] ?? 0)];
+        }
+
+        $totalEmployees    = (int) $empBase()->count();
+        $activeEmployees   = (int) ($empStatusRows['Active'] ?? 0);
+        $onLeaveEmployees  = (int) ($empStatusRows['On Leave'] ?? 0);
+        $probationEmployees= (int) ($empStatusRows['Probation'] ?? 0);
+        $noticeEmployees   = (int) ($empStatusRows['Notice Period'] ?? 0);
+        $exitedEmployees   = (int) (($empStatusRows['Resigned'] ?? 0) + ($empStatusRows['Terminated'] ?? 0));
+
+        // Hiring activity windows.
+        $newJoinersMonth = (int) $empBase()
+            ->whereNotNull('date_of_joining')
+            ->where('date_of_joining', '>=', now()->startOfMonth())
+            ->count();
+        $newJoinersLast30 = (int) $empBase()
+            ->whereNotNull('date_of_joining')
+            ->where('date_of_joining', '>=', now()->subDays(30)->toDateString())
+            ->count();
+
+        // Gender split.
+        $empGenderRows = $empBase()
+            ->whereNotNull('gender')
+            ->select('gender', DB::raw('count(*) as count'))
+            ->groupBy('gender')
+            ->pluck('count', 'gender')
+            ->toArray();
+        $empGender = [
+            ['name' => 'Male',   'value' => (int) ($empGenderRows['Male']   ?? 0)],
+            ['name' => 'Female', 'value' => (int) ($empGenderRows['Female'] ?? 0)],
+            ['name' => 'Other',  'value' => (int) ($empGenderRows['Other']  ?? 0)],
+        ];
+
+        // Department headcount — top 8 by count, joined to master_departments
+        // for the readable name. Employees with no department are folded into
+        // an "Unassigned" bucket so they don't disappear from the total.
+        // Tenant filters must be qualified because master_departments also
+        // carries client_id / branch_id columns (multi-tenant masters).
+        $empByDeptRows = Employee::query()
+            ->leftJoin('master_departments', 'employees.department_id', '=', 'master_departments.id')
+            ->where('employees.client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('employees.branch_id', $branchId))
+            ->select(DB::raw("COALESCE(master_departments.name, 'Unassigned') as name"), DB::raw('count(*) as count'))
+            ->groupBy('name')
+            ->orderByDesc('count')
+            ->limit(8)
+            ->get()
+            ->map(fn ($r) => ['name' => $r->name, 'count' => (int) $r->count])
+            ->toArray();
+
+        // Designation top 5 — useful "who's most of the org" signal.
+        // INNER join + non-null name filter: orphaned designation_id FKs or
+        // master rows with blank names just drop out of this chart rather
+        // than rendering as "null".
+        $empByDesigRows = Employee::query()
+            ->join('master_designations', 'employees.designation_id', '=', 'master_designations.id')
+            ->where('employees.client_id', $clientId)
+            ->when($branchId, fn ($q) => $q->where('employees.branch_id', $branchId))
+            ->whereNotNull('master_designations.name')
+            ->where('master_designations.name', '!=', '')
+            ->select(DB::raw('master_designations.name as name'), DB::raw('count(*) as count'))
+            ->groupBy('master_designations.name')
+            ->orderByDesc('count')
+            ->limit(5)
+            ->get()
+            ->map(fn ($r) => ['name' => $r->name, 'count' => (int) $r->count])
+            ->toArray();
+
+        // Joining trend (last 6 months) — count rows whose date_of_joining
+        // falls in each month bucket. Pre-seed all 6 buckets so the chart
+        // axis is stable even for months with no hires.
+        $joiningTrend = [];
+        for ($i = 5; $i >= 0; $i--) {
+            $month = now()->subMonths($i);
+            $count = (int) $empBase()
+                ->whereNotNull('date_of_joining')
+                ->whereYear('date_of_joining', $month->year)
+                ->whereMonth('date_of_joining', $month->month)
+                ->count();
+            $joiningTrend[] = ['month' => $month->format('M'), 'count' => $count];
+        }
+
+        // Tenure buckets — driven by date_of_joining vs today. Skip rows
+        // with no joining date so the buckets sum to "joined" not "all".
+        $tenureBuckets = ['<1 yr' => 0, '1-3 yr' => 0, '3-5 yr' => 0, '5-10 yr' => 0, '10+ yr' => 0];
+        $tenureRows = $empBase()
+            ->whereNotNull('date_of_joining')
+            ->pluck('date_of_joining');
+        foreach ($tenureRows as $d) {
+            $years = Carbon::parse($d)->diffInYears(now());
+            if ($years < 1)       $tenureBuckets['<1 yr']++;
+            elseif ($years < 3)   $tenureBuckets['1-3 yr']++;
+            elseif ($years < 5)   $tenureBuckets['3-5 yr']++;
+            elseif ($years < 10)  $tenureBuckets['5-10 yr']++;
+            else                  $tenureBuckets['10+ yr']++;
+        }
+        $tenure = collect($tenureBuckets)
+            ->map(fn ($v, $k) => ['name' => $k, 'count' => $v])
+            ->values()
+            ->toArray();
+
+        // Age buckets — driven by date_of_birth.
+        $ageBuckets = ['18-25' => 0, '26-35' => 0, '36-45' => 0, '46-55' => 0, '56+' => 0];
+        $ageRows = $empBase()
+            ->whereNotNull('date_of_birth')
+            ->pluck('date_of_birth');
+        foreach ($ageRows as $d) {
+            $age = Carbon::parse($d)->diffInYears(now());
+            if ($age < 26)        $ageBuckets['18-25']++;
+            elseif ($age < 36)    $ageBuckets['26-35']++;
+            elseif ($age < 46)    $ageBuckets['36-45']++;
+            elseif ($age < 56)    $ageBuckets['46-55']++;
+            else                  $ageBuckets['56+']++;
+        }
+        $ageDistribution = collect($ageBuckets)
+            ->map(fn ($v, $k) => ['name' => $k, 'count' => $v])
+            ->values()
+            ->toArray();
+
+        // Average tenure (years) — uses the same population as the buckets
+        // so empty/missing joining dates don't drag the average to zero.
+        $avgTenureYears = 0.0;
+        if ($tenureRows->isNotEmpty()) {
+            $sum = 0.0;
+            foreach ($tenureRows as $d) {
+                $sum += Carbon::parse($d)->floatDiffInYears(now());
+            }
+            $avgTenureYears = round($sum / $tenureRows->count(), 1);
+        }
+
+        // Face-biometric enrollment progress.
+        $facesRegistered = (int) $empBase()->whereNotNull('face_registered_at')->count();
+
+        // Upcoming birthdays + work anniversaries in the next 30 days.
+        // Same logic the employee dashboard uses — kept inline so this
+        // endpoint stays self-contained.
+        $today = Carbon::now();
+        $rangeEnd = $today->copy()->addDays(30);
+        $upcomingEvents = collect();
+        $eventRows = $empBase()
+            ->whereNotNull(DB::raw('COALESCE(date_of_birth, date_of_joining)'))
+            ->get(['id', 'display_name', 'emp_code', 'date_of_birth', 'date_of_joining']);
+        foreach ($eventRows as $row) {
+            foreach (['birthday' => $row->date_of_birth, 'anniversary' => $row->date_of_joining] as $kind => $d) {
+                if (!$d) continue;
+                try {
+                    $base = Carbon::parse($d);
+                    $thisYear = $base->copy()->setYear($today->year);
+                    $occur = $thisYear->lt($today->copy()->subDay())
+                        ? $thisYear->copy()->addYear()
+                        : $thisYear;
+                    if ($occur->between($today->copy()->subDays(1), $rangeEnd)) {
+                        $years = $today->year - $base->year + ($occur->year > $today->year ? 1 : 0);
+                        $upcomingEvents->push([
+                            'employee_id' => $row->id,
+                            'emp_code'    => $row->emp_code,
+                            'name'        => $row->display_name,
+                            'kind'        => $kind,
+                            'on'          => $occur->toDateString(),
+                            'years'       => $kind === 'anniversary' ? max(0, $years) : null,
+                        ]);
+                    }
+                } catch (\Throwable $e) { /* skip bad dates */ }
+            }
+        }
+        $upcomingEvents = $upcomingEvents->sortBy('on')->take(6)->values();
+
+        $employeeAnalytics = [
+            'totals' => [
+                'total'           => $totalEmployees,
+                'active'          => $activeEmployees,
+                'on_leave'        => $onLeaveEmployees,
+                'probation'       => $probationEmployees,
+                'notice_period'   => $noticeEmployees,
+                'exited'          => $exitedEmployees,
+                'new_this_month'  => $newJoinersMonth,
+                'new_last_30d'    => $newJoinersLast30,
+                'avg_tenure_yrs'  => $avgTenureYears,
+                'faces_registered'=> $facesRegistered,
+            ],
+            'status'           => $empStatus,
+            'gender'           => $empGender,
+            'by_department'    => $empByDeptRows,
+            'by_designation'   => $empByDesigRows,
+            'joining_trend'    => $joiningTrend,
+            'tenure'           => $tenure,
+            'age_distribution' => $ageDistribution,
+            'upcoming_events'  => $upcomingEvents,
+        ];
+
         return response()->json([
             'client' => [
                 'org_name' => $client?->org_name,
@@ -304,6 +510,7 @@ class DashboardController extends Controller
             'recent_payments' => $recentPayments,
             'payment_trend' => $paymentTrend,
             'user_roles' => $userRoles,
+            'employees' => $employeeAnalytics,
             'can_view_payments' => $canViewPayments,
             'filter' => [
                 'branch_id' => $branchId,

@@ -7,6 +7,7 @@ import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import Tooltip from '../../components/ui/Tooltip';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
@@ -481,13 +482,17 @@ export default function HrEmployeeOnboarding() {
   // wizard progress + status. Empty array on error so the page still
   // renders (shows zero counts + empty table) instead of crashing.
   const [apiRows, setApiRows] = useState<OnboardRow[]>([]);
+  // True until the first /employees response settles — drives the
+  // shimmer skeleton on the onboarding table.
+  const [loadingRows, setLoadingRows] = useState(true);
   const reloadApiRows = () => {
     api.get('/employees')
       .then(r => {
         const list = Array.isArray(r.data) ? r.data : [];
         setApiRows(list.map(apiToOnboardRow));
       })
-      .catch(() => setApiRows([]));
+      .catch(() => setApiRows([]))
+      .finally(() => setLoadingRows(false));
   };
   useEffect(() => { reloadApiRows(); }, []);
   // Split by status pill so the Pending tab keeps showing only employees
@@ -653,7 +658,9 @@ export default function HrEmployeeOnboarding() {
                     {k.label}
                   </p>
                   <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                    <AnimatedNumber value={(counts as any)[k.key] ?? 0} />
+                    {loadingRows
+                      ? <Shimmer height={26} width={64} />
+                      : <AnimatedNumber value={(counts as any)[k.key] ?? 0} />}
                   </h3>
                 </div>
                 <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -768,7 +775,9 @@ export default function HrEmployeeOnboarding() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.length === 0 ? (
+                      {loadingRows ? (
+                        <ShimmerTableRows rows={6} cols={11} keyPrefix="onb" />
+                      ) : filtered.length === 0 ? (
                         <tr>
                           <td colSpan={11} className="text-center py-5 text-muted">
                             <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />

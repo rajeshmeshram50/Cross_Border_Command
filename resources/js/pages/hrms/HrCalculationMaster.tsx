@@ -2,6 +2,7 @@
 import { Col, Row } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import ComingSoonShell from '../../components/ComingSoonShell';
 import '../../../css/recruitment.css';
 import '../../../css/pip.css';
 
@@ -241,6 +242,10 @@ export default function HrCalculationMaster() {
   };
 
   return (
+    <ComingSoonShell
+      title="Calculation Master"
+      subtitle="PT, leave, late-mark, overtime & deduction rule engine · backend wiring in progress"
+    >
     <Row>
       <Col xs={12}>
         <div className="rec-page cm-page">
@@ -321,6 +326,7 @@ export default function HrCalculationMaster() {
         </div>
       </Col>
     </Row>
+    </ComingSoonShell>
   );
 }
 

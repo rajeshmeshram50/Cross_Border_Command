@@ -146,7 +146,6 @@ export const HR_GROUPS: MenuGroup[] = [
       { id: 'hr.overview',  icon: 'LayoutGrid',     label: 'HRMS Overview' },
       { id: 'hr.pip',       icon: 'ClipboardCheck', label: 'PIP' },
       { id: 'hr.reports',   icon: 'BarChart3',      label: 'HR Reports' },
-      { id: 'hr.ai_master', icon: 'Sparkles',       label: 'AI Master' },
     ],
   },
   {
@@ -179,14 +178,7 @@ export const HR_GROUPS: MenuGroup[] = [
     label: 'Document & Evidence',
     icon: 'FileText',
     children: [
-      { id: 'hr.doc_dashboard',  icon: 'LayoutGrid',  label: 'Dashboard' },
-      { id: 'hr.templates',      icon: 'FileText',    label: 'Templates' },
-      { id: 'hr.policies',       icon: 'BookOpen',    label: 'Policies' },
-      { id: 'hr.broadcast',      icon: 'Megaphone',   label: 'Broadcast Centre' },
-      { id: 'hr.doc_category',   icon: 'FolderOpen',  label: 'Category' },
-      { id: 'hr.doc_types',      icon: 'FileBadge',   label: 'Document Types' },
-      { id: 'hr.doc_gen_rules',  icon: 'Settings2',   label: 'Doc Generation Rules' },
-      { id: 'hr.custom_fields',  icon: 'PlusSquare',  label: 'Custom Fields' },
+      { id: 'hr.broadcast', icon: 'Megaphone', label: 'Broadcast Centre' },
     ],
   },
 ];
