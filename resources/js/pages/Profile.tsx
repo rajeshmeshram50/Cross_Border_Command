@@ -4,10 +4,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
 import { validatePhone } from '../utils/validatePhone';
+import { ShimmerProfile } from '../components/ui/Shimmer';
 
 export default function Profile() {
   const { user, logout, refresh } = useAuth();
   const toast = useToast();
+  // Shimmer on every visit — the auth context keeps `user` hydrated
+  // across navigations, so without this the profile page would flash
+  // straight in with no loading state. Toggle true for the first paint
+  // (and during the mount-time /me refresh) so the shimmer is visible.
+  const [pageLoading, setPageLoading] = useState(true);
   const [changingPw, setChangingPw] = useState(false);
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
@@ -44,6 +50,29 @@ export default function Profile() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.primary_color, user?.secondary_color, user?.branch_logo, user?.client_logo]);
 
+  // Refresh /me on mount so the page always reflects the latest server
+  // state (designation, photo, etc.). Show the shimmer for the duration
+  // of the round-trip — bottoms out at a tiny minimum so even a fast
+  // cached response gives the user a clear "loading" cue.
+  useEffect(() => {
+    let cancelled = false;
+    const started = Date.now();
+    const MIN_MS = 450;
+    (async () => {
+      try {
+        await refresh();
+      } finally {
+        const elapsed = Date.now() - started;
+        const wait = Math.max(0, MIN_MS - elapsed);
+        window.setTimeout(() => {
+          if (!cancelled) setPageLoading(false);
+        }, wait);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Sync the personal-info form whenever /me reloads.
   useEffect(() => {
     if (!user) return;
@@ -61,7 +90,7 @@ export default function Profile() {
     setProfilePhotoPreview(prev => (profilePhotoFile ? prev : photo));
   }, [user?.name, user?.phone, user?.designation, user?.employee_profile_photo, user?.branch_profile_photo, user?.client_profile_photo, user?.user_profile_photo]);
 
-  if (!user) return null;
+  if (pageLoading || !user) return <ShimmerProfile />;
 
   const handleProfilePhotoChange = (file: File | null) => {
     setProfilePhotoFile(file);
@@ -678,6 +707,13 @@ export default function Profile() {
   } else {
     row1LeftCard = accountInfoCard;
     row2LeftCard = null;
+  }
+
+  // While the /me payload is still loading the user object is null —
+  // render the ShimmerProfile placeholder so the page doesn't flash
+  // empty cards or a generic spinner before the data shows up.
+  if (!user) {
+    return <ShimmerProfile />;
   }
 
   return (

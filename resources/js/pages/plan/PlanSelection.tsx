@@ -287,20 +287,6 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
           </div>
         </div>
 
-        {user?.client_name && (
-          <span
-            className="d-inline-flex align-items-center gap-1 rounded-pill px-2 py-1 text-uppercase fw-semibold"
-            style={{
-              background: '#40518915',
-              color: '#405189',
-              border: '1px solid #40518930',
-              fontSize: 10.5,
-              letterSpacing: '0.05em',
-            }}
-          >
-            <i className="ri-building-line" />{user.client_name}
-          </span>
-        )}
       </div>
 
       {/* ── Expired alert (only shown when urgent action needed) ── */}
