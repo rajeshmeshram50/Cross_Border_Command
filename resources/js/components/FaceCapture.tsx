@@ -89,6 +89,23 @@ export default function FaceCapture({ onCapture, captureLabel = 'Capture', hideC
     let cancelled = false;
     (async () => {
       try {
+        // HTTPS gate — `navigator.mediaDevices` is undefined on plain http://
+        // (outside localhost). Browsers refuse to expose camera access on
+        // non-secure origins. Surface a clear, actionable error here instead
+        // of letting the `getUserMedia` call below throw a cryptic
+        // "Cannot read properties of undefined" TypeError.
+        const isLocalhost = /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/.test(window.location.host);
+        const isSecure    = window.isSecureContext || isLocalhost;
+        if (!isSecure || !navigator.mediaDevices?.getUserMedia) {
+          setPhase('error');
+          setErrorMsg(
+            'Camera access requires HTTPS. This page is loaded over '
+            + window.location.protocol + ' — switch the site to https:// '
+            + '(or open it on localhost) and reload.'
+          );
+          return;
+        }
+
         await ensureFaceApi();
         if (cancelled) return;
         setPhase('opening-camera');
