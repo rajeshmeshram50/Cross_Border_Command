@@ -329,7 +329,10 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
                 box-shadow: 0 0 0 3px rgba(99,102,241,0.15) !important;
               }
               .cbc-login-card .cbc-remember-text { color: #475569 !important; }
-              .cbc-login-card .cbc-remember-box {
+              /* Scoped to the UNCHECKED state only — the checked styling
+                 (purple gradient + white tick) is owned by Login.tsx and
+                 used to be stomped by an unconditional !important rule. */
+              .cbc-login-card .cbc-remember-box[data-checked="false"] {
                 background: rgba(255,255,255,0.90) !important;
                 border-color: rgba(99,102,241,0.30) !important;
               }

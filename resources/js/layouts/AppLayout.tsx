@@ -12,7 +12,32 @@ import { Moon, Sun, Bell, Menu, Maximize2, Minimize2 } from 'lucide-react';
 import { useState, useCallback, useEffect, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
-// Helper to get page name from path
+// Reverse of `hrLeafLink` in velzon/Layouts/LayoutMenuData.tsx — maps the
+// URL slug after `/hr/` back to the menu leaf id. Keeping this here (instead
+// of importing) avoids a circular dep with the menu data and matches the
+// `pathToPage` style already used below. If you add an HR route to
+// hrLeafLink, mirror it here so the sidebar "HR" parent highlights when
+// the user lands on the new sub-page.
+const HR_PATH_TO_LEAF: Record<string, string> = {
+  'overview':            'hr.overview',
+  'employees':           'hr.employee',
+  'recruitment':         'hr.recruitment',
+  'exit-management':     'hr.exit',
+  'employee-onboarding': 'hr.onboarding',
+  'attendance':          'hr.attendance',
+  'broadcast':           'hr.broadcast',
+  'leave':               'hr.leave',
+  'leave-plans':         'hr.leave',
+  'expense':             'hr.expense',
+  'payroll':             'hr.payroll',
+  'pip':                 'hr.pip',
+  'calculation-master':  'hr.calculation_master',
+};
+
+// Helper to get page name from path. The Sidebar uses the returned id to
+// decide which leaf is highlighted AND bubbles that up to highlight the
+// parent group ("HR") and the top-level item, so deep paths like
+// /hr/employees/42/profile must still resolve to `hr.employee`.
 const getPageFromPath = (pathname: string): string => {
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length === 0) return 'dashboard';
@@ -22,6 +47,12 @@ const getPageFromPath = (pathname: string): string => {
   // Master leaf routes: /master/:slug -> master.slug
   if (page === 'master') {
     return segments[1] ? `master.${segments[1]}` : 'master';
+  }
+
+  // HR leaf routes: /hr/<slug>[/...] -> hr.<leaf>. Falls back to the bare
+  // 'hr' id so the parent still highlights for unknown HR sub-paths.
+  if (page === 'hr') {
+    return (segments[1] && HR_PATH_TO_LEAF[segments[1]]) || 'hr';
   }
 
   // Map URL paths to page names
