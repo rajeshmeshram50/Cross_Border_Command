@@ -35,7 +35,17 @@ export default function UsersPage({ branchId, branchName, onBack }: Props) {
     api.get('/permissions/users', { params })
       .then(({ data }) => {
         if (cancelled) return;
-        setUsers(Array.isArray(data) ? data : []);
+        // When opened from the Branches → Users action, "users" really
+        // means "people working at this branch" → employees only.
+        // The /permissions/users endpoint returns every user the admin
+        // can manage (branch_user logins, employees, etc.), so we
+        // narrow the list client-side. When branchId isn't passed
+        // (sidebar entry) we keep the full list.
+        const list = Array.isArray(data) ? data : [];
+        const narrowed = branchId
+          ? list.filter((u: UserRow) => u.user_type === 'employee')
+          : list;
+        setUsers(narrowed);
       })
       .catch(() => { if (!cancelled) setUsers([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -86,7 +96,7 @@ export default function UsersPage({ branchId, branchName, onBack }: Props) {
                   <i className="ri-arrow-left-line fs-16"></i>
                 </button>
               )}
-              <h4 className="mb-sm-0">Users</h4>
+              <h4 className="mb-sm-0">{branchId ? 'Employees' : 'Users'}</h4>
             </div>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
@@ -94,7 +104,7 @@ export default function UsersPage({ branchId, branchName, onBack }: Props) {
                 {displayBranchName && (
                   <li className="breadcrumb-item"><a href="#">{displayBranchName}</a></li>
                 )}
-                <li className="breadcrumb-item active">Users</li>
+                <li className="breadcrumb-item active">{branchId ? 'Employees' : 'Users'}</li>
               </ol>
             </div>
           </div>
@@ -109,7 +119,7 @@ export default function UsersPage({ branchId, branchName, onBack }: Props) {
                 <Input
                   type="text"
                   className="form-control"
-                  placeholder="Search by name, email or role..."
+                  placeholder={branchId ? 'Search employees by name, email or role...' : 'Search by name, email or role...'}
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                 />
@@ -119,7 +129,7 @@ export default function UsersPage({ branchId, branchName, onBack }: Props) {
             <Col md={6} sm={12} className="text-md-end text-muted fs-13">
               {loading
                 ? <Spinner size="sm" />
-                : <>Showing <strong className="text-dark">{filtered.length}</strong> of <strong className="text-dark">{users.length}</strong> users{displayBranchName ? <> in <strong className="text-dark">{displayBranchName}</strong></> : null}</>
+                : <>Showing <strong className="text-dark">{filtered.length}</strong> of <strong className="text-dark">{users.length}</strong> {branchId ? 'employees' : 'users'}{displayBranchName ? <> in <strong className="text-dark">{displayBranchName}</strong></> : null}</>
               }
             </Col>
           </Row>
@@ -143,8 +153,8 @@ export default function UsersPage({ branchId, branchName, onBack }: Props) {
                     <td colSpan={5} className="text-center py-5 text-muted">
                       <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                       {users.length === 0
-                        ? `No users found${displayBranchName ? ` for ${displayBranchName}` : ''}`
-                        : 'No users match your search'}
+                        ? `No ${branchId ? 'employees' : 'users'} found${displayBranchName ? ` for ${displayBranchName}` : ''}`
+                        : `No ${branchId ? 'employees' : 'users'} match your search`}
                     </td>
                   </tr>
                 ) : filtered.map((u, idx) => {

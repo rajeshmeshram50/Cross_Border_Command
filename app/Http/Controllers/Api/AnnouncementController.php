@@ -9,6 +9,7 @@ use App\Models\Employee;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
+use App\Services\AnnouncementMailer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -17,6 +18,8 @@ use Illuminate\Validation\Rule;
 
 class AnnouncementController extends Controller
 {
+    public function __construct(private AnnouncementMailer $announcementMailer) {}
+
     /** Eager-loads used by every read endpoint. */
     private const WITH = [
         'client:id,org_name',
@@ -155,6 +158,13 @@ class AnnouncementController extends Controller
 
             $row->load(self::WITH);
 
+            // Fire the email blast once the row is live. Scheduled / Draft
+            // never mail here — they'll be re-evaluated on the publish action
+            // that promotes them to Active.
+            if ($row->status === 'Active') {
+                $this->announcementMailer->sendForAnnouncement($row, $auth);
+            }
+
             return response()->json($row, 201);
         });
     }
@@ -196,6 +206,7 @@ class AnnouncementController extends Controller
         $data['status'] = $this->resolveLifecycleStatus($merged);
         $data['updated_by'] = $request->user()?->id;
 
+        $previousStatus = $row->status;
         $row->update($data);
 
         if ($request->hasFile('attachment') && $oldPath && $oldPath !== ($data['attachment_path'] ?? null)) {
@@ -203,6 +214,15 @@ class AnnouncementController extends Controller
         }
 
         $row->load(self::WITH);
+
+        // Fire the email only when this update actually publishes the
+        // announcement (Draft/Scheduled → Active). Editing an already-Active
+        // row must NOT re-blast every recipient, otherwise a typo fix would
+        // spam everyone again.
+        if ($previousStatus !== 'Active' && $row->status === 'Active') {
+            $this->announcementMailer->sendForAnnouncement($row, $request->user());
+        }
+
         return response()->json($row);
     }
 

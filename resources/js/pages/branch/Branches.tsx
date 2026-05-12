@@ -356,6 +356,43 @@ export default function Branches({ onNavigate }: Props) {
         .branches-surface { background: #ffffff; }
         [data-bs-theme="dark"] .branches-surface { background: #1c2531; }
 
+        /* KPI cards — haptic hover lift, identical feel to the Clients /
+           Payments / Branch-dashboard KPIs so every list page feels alive
+           on hover instead of sitting flat. Transform + layered shadow
+           only — no layout change so the row never reflows. */
+        .branches-kpi {
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease,
+            border-color 220ms ease;
+          will-change: transform;
+          cursor: default;
+        }
+        .branches-kpi:hover {
+          transform: translateY(-4px);
+          box-shadow:
+            0 18px 36px -8px rgba(64, 81, 137, 0.28),
+            0 8px 16px -4px rgba(64, 81, 137, 0.18),
+            0 2px 4px rgba(0, 0, 0, 0.06);
+          border-color: rgba(64, 81, 137, 0.35);
+        }
+        .branches-kpi:hover .branches-kpi-icon {
+          transform: scale(1.08) rotate(-3deg);
+          box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
+        }
+        .branches-kpi-icon {
+          transition:
+            transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 220ms ease;
+        }
+        [data-bs-theme="dark"] .branches-kpi:hover {
+          box-shadow:
+            0 18px 36px -8px rgba(0, 0, 0, 0.65),
+            0 8px 16px -4px rgba(0, 0, 0, 0.45),
+            0 2px 4px rgba(0, 0, 0, 0.30);
+          border-color: rgba(124, 92, 252, 0.50);
+        }
+
         /* Export button — outlined emerald style. Distinct from the
            solid-purple Add button so the two never read as duplicates.
            Uses transparent + theme-aware tints so dark mode doesn't
@@ -428,7 +465,7 @@ export default function Branches({ onNavigate }: Props) {
               {KPI_CARDS.map(k => (
                 <Col key={k.label} md={3} sm={6} xs={12}>
                   <div
-                    className="branches-surface"
+                    className="branches-surface branches-kpi"
                     style={{
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
@@ -455,7 +492,7 @@ export default function Branches({ onNavigate }: Props) {
                           </p>
                         )}
                       </div>
-                      <div style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                      <div className="branches-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
                         <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
                       </div>
                     </div>

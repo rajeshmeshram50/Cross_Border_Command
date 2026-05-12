@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
-import { MasterSelect, MasterFormStyles, MasterDatePicker } from '../master/masterFormKit';
+import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
@@ -12,9 +11,6 @@ type AnnType    = 'General' | 'Policy' | 'Urgent';
 type AnnPriority = 'Normal' | 'High' | 'Critical';
 type AnnStatus  = 'Draft' | 'Scheduled' | 'Active' | 'Expired' | 'Archived';
 type AudienceType = 'all_employees' | 'roles' | 'designations';
-type PublishType  = 'immediate' | 'scheduled';
-type AckMode      = 'Mandatory' | 'Optional';
-type AckFreq      = 'Daily' | 'Weekly' | 'Never';
 
 interface AnnRow {
   id: number;
@@ -31,13 +27,13 @@ interface AnnRow {
   audience_designation_ids: number[] | null;
   exclude_employee_ids: number[] | null;
   audience_count: number;
-  publish_type: PublishType;
+  // Legacy lifecycle fields kept on the API row for back-compat with the
+  // list view's date columns. The wizard no longer surfaces scheduling or
+  // acknowledgement controls — every publish is immediate.
+  publish_type: 'immediate' | 'scheduled';
   publish_at: string | null;
   expires_at: string | null;
   ack_required: boolean;
-  ack_mode: AckMode;
-  ack_reminder_frequency: AckFreq;
-  ack_escalation_days: number;
   notify_email: boolean;
   notify_in_app: boolean;
   notify_sms: boolean;
@@ -392,14 +388,16 @@ function AudienceCell({ row }: { row: AnnRow }) {
 // Create / Edit Announcement — 6-step wizard
 // ─────────────────────────────────────────────────────────────────────────────
 
+// 4-step wizard. Scheduling and Acknowledgement steps were removed —
+// announcements always publish immediately, and the Publish action triggers
+// the email blast (when Email Notification is enabled in step 3).
 const STEPS: Array<{ key: number; label: string; sub: string }> = [
   { key: 1, label: 'Basic Details',    sub: 'Title, type & priority' },
   { key: 2, label: 'Audience',         sub: 'Who receives this?' },
-  { key: 3, label: 'Scheduling',       sub: 'When to publish' },
-  { key: 4, label: 'Acknowledgement',  sub: 'Confirmation settings' },
-  { key: 5, label: 'Notifications',    sub: 'Delivery channels' },
-  { key: 6, label: 'Review & Publish', sub: 'Final confirmation' },
+  { key: 3, label: 'Notifications',    sub: 'Delivery channels' },
+  { key: 4, label: 'Review & Publish', sub: 'Final confirmation' },
 ];
+const TOTAL_STEPS = STEPS.length;
 
 function CreateAnnouncementModal({
   isOpen, editing, onClose, onSaved,
@@ -426,18 +424,7 @@ function CreateAnnouncementModal({
   const [designationIds, setDesignationIds]   = useState<number[]>([]);
   const [excludeIds, setExcludeIds]           = useState<number[]>([]);
 
-  // Step 3
-  const [publishType, setPublishType] = useState<PublishType>('immediate');
-  const [publishAt, setPublishAt]     = useState('');
-  const [expiresAt, setExpiresAt]     = useState('');
-
-  // Step 4
-  const [ackRequired, setAckRequired] = useState(false);
-  const [ackMode, setAckMode]         = useState<AckMode>('Mandatory');
-  const [ackFreq, setAckFreq]         = useState<AckFreq>('Weekly');
-  const [ackEscalation, setAckEscalation] = useState('3');
-
-  // Step 5 — only Email is exposed to the user. The other channels stay
+  // Step 3 — only Email is exposed to the user. The other channels stay
   // in the schema (and default to false) but the form doesn't surface them.
   const [notifyEmail, setNotifyEmail] = useState(true);
 
@@ -466,20 +453,11 @@ function CreateAnnouncementModal({
       setRoleIds(editing.audience_role_ids || []);
       setDesignationIds(editing.audience_designation_ids || []);
       setExcludeIds(editing.exclude_employee_ids || []);
-      setPublishType(editing.publish_type || 'immediate');
-      setPublishAt(editing.publish_at ? toLocalDtInput(editing.publish_at) : '');
-      setExpiresAt(editing.expires_at ? toLocalDtInput(editing.expires_at) : '');
-      setAckRequired(!!editing.ack_required);
-      setAckMode(editing.ack_mode || 'Mandatory');
-      setAckFreq(editing.ack_reminder_frequency || 'Weekly');
-      setAckEscalation(String(editing.ack_escalation_days ?? 3));
       setNotifyEmail(!!editing.notify_email);
     } else {
       setTitle(''); setDescription('');
       setType('General'); setPriority('Normal');
       setAudienceType('all_employees'); setRoleIds([]); setDesignationIds([]); setExcludeIds([]);
-      setPublishType('immediate'); setPublishAt(''); setExpiresAt('');
-      setAckRequired(false); setAckMode('Mandatory'); setAckFreq('Weekly'); setAckEscalation('3');
       setNotifyEmail(true);
     }
   }, [isOpen, editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -534,14 +512,11 @@ function CreateAnnouncementModal({
       if (!title.trim()) e.title = 'Title is required';
       if (!description.trim()) e.description = 'Description is required';
     }
-    if (s === 3 && publishType === 'scheduled' && !publishAt) {
-      e.publish_at = 'Publish date is required when scheduling for later';
-    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const handleNext = () => { if (validateStep(step)) setStep(s => Math.min(6, s + 1)); };
+  const handleNext = () => { if (validateStep(step)) setStep(s => Math.min(TOTAL_STEPS, s + 1)); };
   const handleBack = () => setStep(s => Math.max(1, s - 1));
 
   const buildPayload = (forceStatus?: 'Draft' | null): FormData => {
@@ -556,14 +531,16 @@ function CreateAnnouncementModal({
     if (audienceType === 'designations') designationIds.forEach(id => fd.append('audience_designation_ids[]', String(id)));
     excludeIds.forEach(id => fd.append('exclude_employee_ids[]', String(id)));
 
-    fd.append('publish_type', publishType);
-    if (publishAt) fd.append('publish_at', publishAt);
-    if (expiresAt) fd.append('expires_at', expiresAt);
+    // Scheduling step was removed — every publish is immediate. Backend
+    // resolveLifecycleStatus then maps this to status='Active'.
+    fd.append('publish_type', 'immediate');
 
-    fd.append('ack_required', ackRequired ? '1' : '0');
-    fd.append('ack_mode', ackMode);
-    fd.append('ack_reminder_frequency', ackFreq);
-    fd.append('ack_escalation_days', ackEscalation || '0');
+    // Acknowledgement step was removed — defaults preserve schema NOT NULL
+    // constraints without surfacing the controls.
+    fd.append('ack_required', '0');
+    fd.append('ack_mode', 'Optional');
+    fd.append('ack_reminder_frequency', 'Never');
+    fd.append('ack_escalation_days', '0');
 
     fd.append('notify_email',    notifyEmail ? '1' : '0');
     // Other channels are disabled in the UI — always send false so a
@@ -714,32 +691,14 @@ function CreateAnnouncementModal({
               />
             )}
             {step === 3 && (
-              <Step3Schedule
-                publishType={publishType} setPublishType={setPublishType}
-                publishAt={publishAt} setPublishAt={setPublishAt}
-                expiresAt={expiresAt} setExpiresAt={setExpiresAt}
-                errors={errors}
-              />
-            )}
-            {step === 4 && (
-              <Step4Ack
-                ackRequired={ackRequired} setAckRequired={setAckRequired}
-                ackMode={ackMode} setAckMode={setAckMode}
-                ackFreq={ackFreq} setAckFreq={setAckFreq}
-                ackEscalation={ackEscalation} setAckEscalation={setAckEscalation}
-              />
-            )}
-            {step === 5 && (
-              <Step5Notify
+              <Step3Notify
                 notifyEmail={notifyEmail} setNotifyEmail={setNotifyEmail}
               />
             )}
-            {step === 6 && (
-              <Step6Review
+            {step === 4 && (
+              <Step4Review
                 title={title} description={description} type={type} priority={priority}
                 audienceLabel={audienceLabel} audienceCount={audienceCount}
-                publishType={publishType} publishAt={publishAt} expiresAt={expiresAt}
-                ackRequired={ackRequired} ackMode={ackMode}
                 notifyEmail={notifyEmail}
                 editing={editing}
               />
@@ -761,12 +720,10 @@ function CreateAnnouncementModal({
               </div>
             </div>
             <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: 12, fontSize: 12.5, color: '#0c4a6e' }}>
-              <div><strong>Status:</strong> {editing?.status || (publishType === 'scheduled' ? 'Scheduled' : 'Draft')}</div>
+              <div><strong>Status:</strong> {editing?.status || 'Active'}</div>
               <div><strong>Priority:</strong> {priority}</div>
               <div><strong>Audience:</strong> {audienceLabel.replace(/^(Roles|Desig): /, '')} ({audienceCount})</div>
-              <div><strong>Publish:</strong> {publishType === 'scheduled' && publishAt ? formatDateTime(publishAt) : 'Immediately'}</div>
-              <div><strong>Expiry:</strong> {expiresAt ? formatDateTime(expiresAt) : '—'}</div>
-              <div><strong>Ack:</strong> {ackRequired ? ackMode : 'No'}</div>
+              <div><strong>Publish:</strong> Immediately</div>
               <div><strong>Notify:</strong> {notifyEmail ? 'Email' : '—'}</div>
             </div>
           </div>
@@ -774,7 +731,7 @@ function CreateAnnouncementModal({
 
         {/* Footer */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb', background: '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span className="text-muted" style={{ fontSize: 12 }}>Step {step} of 6</span>
+          <span className="text-muted" style={{ fontSize: 12 }}>Step {step} of {TOTAL_STEPS}</span>
           <div className="d-flex gap-2">
             <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
             {step > 1 && (
@@ -785,7 +742,7 @@ function CreateAnnouncementModal({
             <button type="button" className="rec-btn-ghost" onClick={() => handleSubmit(true)} disabled={saving}>
               {saving ? <Spinner size="sm" /> : <i className="ri-save-3-line" />}Save Draft
             </button>
-            {step < 6 ? (
+            {step < TOTAL_STEPS ? (
               <button type="button" className="rec-btn-primary" onClick={handleNext} disabled={saving}>
                 Save & Next<i className="ri-arrow-right-line" />
               </button>
@@ -1073,290 +1030,11 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
   );
 }
 
-// ── Step 3 — Scheduling ─────────────────────────────────────────────────────
-function Step3Schedule({ publishType, setPublishType, publishAt, setPublishAt, expiresAt, setExpiresAt, errors }: any) {
-  return (
-    <>
-      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0c63b0' }}>
-        <i className="ri-calendar-line" /> Scheduling
-      </div>
-      <div className="mb-3">
-        <label className="rec-form-label">Publish Type<span className="req">*</span></label>
-        <div className="d-flex gap-2 flex-wrap">
-          {([
-            { key: 'immediate', label: 'Publish Immediately', icon: 'ri-flashlight-line' },
-            { key: 'scheduled', label: 'Schedule for Later',  icon: 'ri-calendar-line' },
-          ] as { key: PublishType; label: string; icon: string }[]).map(o => {
-            const active = publishType === o.key;
-            return (
-              <button key={o.key} type="button" onClick={() => setPublishType(o.key)} className="rec-priority-pill" style={{
-                background: active ? '#e0f2fe' : '#fff',
-                color: active ? '#0c63b0' : '#475569',
-                border: active ? '1px solid #0c63b0' : '1px solid #e5e7eb',
-              }}>
-                <i className={o.icon + ' me-1'} />{o.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {publishType === 'scheduled' && (
-        <div className="mb-3" style={{ maxWidth: 360 }}>
-          <label className="rec-form-label">Publish On<span className="req">*</span></label>
-          <DateTimeField value={publishAt} onChange={setPublishAt} invalid={!!errors.publish_at} />
-          {errors.publish_at && <div className="rec-error"><i className="ri-error-warning-line" />{errors.publish_at}</div>}
-        </div>
-      )}
-
-      <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: 12, marginBottom: 12, color: '#0c4a6e', fontSize: 13 }}>
-        <i className="ri-flashlight-line" /> {publishType === 'scheduled'
-          ? 'This announcement will go live at the scheduled date/time.'
-          : 'This announcement will go live immediately upon final publish.'}
-      </div>
-
-      <div style={{ maxWidth: 360 }}>
-        <label className="rec-form-label">Active Until — Expiry Date<span className="req">*</span></label>
-        <DateTimeField value={expiresAt} onChange={setExpiresAt} />
-      </div>
-    </>
-  );
-}
-
-
-function DateTimeField({ value, onChange, invalid }: {
-  value: string; onChange: (v: string) => void; invalid?: boolean;
-}) {
-  // Split the bound datetime-local string into its date / time halves so the
-  // two pickers can edit them independently. Re-combine on every change.
-  const datePart = value && value.length >= 10 ? value.slice(0, 10) : '';
-  const timePart = value && value.length >= 16 ? value.slice(11, 16) : '';
-
-  const setDate = (d: string) => {
-    if (!d) { onChange(''); return; }
-    onChange(`${d}T${timePart || '09:00'}`);
-  };
-  const setTime = (t: string) => {
-    // If no date picked yet, default to today so the user isn't blocked
-    // when they pick the time first.
-    const d = datePart || new Date().toISOString().slice(0, 10);
-    onChange(`${d}T${t}`);
-  };
-
-  return (
-    <div className="d-flex" style={{ gap: 6 }}>
-      <div style={{ flex: '1 1 0', minWidth: 0 }}>
-        <MasterDatePicker value={datePart} onChange={setDate} placeholder="Select date" invalid={invalid} />
-      </div>
-      <div style={{ width: 110, flexShrink: 0 }}>
-        <MasterTimePicker value={timePart} onChange={setTime} />
-      </div>
-    </div>
-  );
-}
-
-/* ── MasterTimePicker ────────────────────────────────────────────────────────
- * A pop-over time picker styled to match MasterDatePicker — same toggle
- * height/border/focus-ring, same popup-card chrome, same gradient on the
- * selected cell. Two scrollable columns (hours 0–23, minutes in 5-min steps)
- * so it stays compact next to the calendar.
- */
-function MasterTimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
-  // Portal-positioned popup, same pattern MasterDatePicker uses — keeps the
-  // popup out of the modal's overflow:auto scroll container so it can't get
-  // clipped behind the footer.
-  const [popupPos, setPopupPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
-
-  // Parse "HH:MM" into numeric h/m. -1 sentinel means "nothing picked yet"
-  // so the popup doesn't pre-highlight a default we never committed.
-  const parts = value && /^\d{1,2}:\d{1,2}$/.test(value) ? value.split(':').map(Number) : [-1, -1];
-  const h = parts[0]!;
-  const m = parts[1]!;
-
-  // Compute popup position from the toggle's bounding rect on every open;
-  // also re-compute on resize so a window-resize while open doesn't strand
-  // the popup. Aligns the popup's right edge with the toggle so a 200-px
-  // popup doesn't overflow the right side of a narrow modal slot.
-  useEffect(() => {
-    if (!open || !wrapRef.current) { setPopupPos(null); return; }
-    const update = () => {
-      if (!wrapRef.current) return;
-      const rect = wrapRef.current.getBoundingClientRect();
-      const popupWidth = 200;
-      // Right-align by default; clamp so the popup never leaks off the
-      // viewport edge when the toggle sits near the right.
-      const right = rect.right;
-      const left = Math.max(8, right - popupWidth);
-      setPopupPos({ top: rect.bottom + 5, left, width: popupWidth });
-    };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, [open]);
-
-  // Close on outside click, Esc, and any ancestor scroll (so the portalled
-  // popup doesn't float in a stale position when the modal body scrolls).
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const inWrap = wrapRef.current?.contains(target);
-      const inPopup = popupRef.current?.contains(target);
-      if (!inWrap && !inPopup) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    const onScroll = () => setOpen(false);
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', onScroll, true);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', onScroll, true);
-    };
-  }, [open]);
-
-  const pad2 = (n: number) => String(n).padStart(2, '0');
-  const setHour = (newH: number) => {
-    const newM = m >= 0 ? m : 0;
-    onChange(`${pad2(newH)}:${pad2(newM)}`);
-  };
-  const setMinute = (newM: number) => {
-    const newH = h >= 0 ? h : 9;
-    onChange(`${pad2(newH)}:${pad2(newM)}`);
-  };
-
-  const display = (h >= 0 && m >= 0) ? `${pad2(h)}:${pad2(m)}` : '';
-
-  // Selected-cell gradient mirrors the date picker's accent.
-  const cellSelectedBg = 'linear-gradient(135deg,#6366f1 0%,#818cf8 100%)';
-
-  return (
-    <div ref={wrapRef} className="master-datepicker-wrap" style={{ position: 'relative', width: '100%' }}>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setOpen(o => !o)}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); } }}
-        className={`master-datepicker-toggle${open ? ' open' : ''}`}
-      >
-        <span className={display ? 'master-datepicker-value' : 'master-datepicker-placeholder'}>
-          {display || 'HH:MM'}
-        </span>
-        <i className="ri-time-line master-datepicker-icon" />
-      </div>
-      {open && popupPos && createPortal(
-        <div
-          ref={popupRef}
-          className="master-datepicker-popup"
-          // Override the .master-datepicker-popup defaults (which assume
-          // absolute-to-wrapper positioning) so the portalled element shows
-          // up at the viewport coords we computed above.
-          style={{
-            position: 'fixed',
-            top: popupPos.top,
-            left: popupPos.left,
-            minWidth: popupPos.width,
-            maxWidth: popupPos.width,
-            padding: 10,
-          }}
-        >
-          <div style={{ display: 'flex', gap: 6 }}>
-            <TimeColumn label="Hr"  count={24} step={1} selected={h} onPick={setHour}   selectedBg={cellSelectedBg} />
-            <TimeColumn label="Min" count={12} step={5} selected={m} onPick={setMinute} selectedBg={cellSelectedBg} />
-          </div>
-        </div>,
-        document.body,
-      )}
-    </div>
-  );
-}
-
-function TimeColumn({ label, count, step, selected, onPick, selectedBg }: {
-  label: string; count: number; step: number; selected: number; onPick: (v: number) => void; selectedBg: string;
-}) {
-  return (
-    <div style={{ flex: 1 }}>
-      <div style={{
-        textAlign: 'center', fontSize: 10.5, fontWeight: 700,
-        textTransform: 'uppercase', letterSpacing: '0.06em',
-        color: '#6b7280', padding: '4px 0 6px',
-      }}>{label}</div>
-      <div style={{ maxHeight: 170, overflowY: 'auto', paddingRight: 2 }}>
-        {Array.from({ length: count }).map((_, i) => {
-          const v = i * step;
-          const active = selected === v;
-          return (
-            <div
-              key={v}
-              role="button"
-              tabIndex={0}
-              onClick={() => onPick(v)}
-              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick(v); } }}
-              style={{
-                padding: '6px 0', textAlign: 'center', fontSize: 12.5, fontWeight: 600,
-                borderRadius: 6, cursor: 'pointer', userSelect: 'none',
-                background: active ? selectedBg : 'transparent',
-                color: active ? '#fff' : '#475569',
-                marginBottom: 2,
-              }}
-              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLDivElement).style.background = '#eef2ff'; }}
-              onMouseLeave={e => { if (!active) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
-            >
-              {String(v).padStart(2, '0')}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Step 4 — Acknowledgement ────────────────────────────────────────────────
-function Step4Ack({ ackRequired, setAckRequired, ackMode, setAckMode, ackFreq, setAckFreq, ackEscalation, setAckEscalation }: any) {
-  return (
-    <>
-      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0c63b0' }}>
-        <i className="ri-checkbox-line" /> Acknowledgement Settings
-      </div>
-      <label className="d-flex align-items-start gap-2 p-3 mb-3" style={{ border: ackRequired ? '1px solid #0c63b0' : '1px solid #e5e7eb', borderRadius: 10, cursor: 'pointer', background: ackRequired ? '#e0f2fe' : '#fff' }}>
-        <input type="checkbox" checked={ackRequired} onChange={e => setAckRequired(e.target.checked)} />
-        <div>
-          <div className="fw-bold">Require Employee Acknowledgement</div>
-          <div className="text-muted" style={{ fontSize: 12 }}>Employees must confirm they've read this announcement</div>
-        </div>
-      </label>
-
-      {ackRequired && (
-        <>
-          <Row className="g-3 mb-3">
-            <Col md={4}>
-              <label className="rec-form-label">Mode<span className="req">*</span></label>
-              <MasterSelect value={ackMode} onChange={(v) => setAckMode(v as AckMode)} options={[{ value: 'Mandatory', label: 'Mandatory' }, { value: 'Optional', label: 'Optional' }]} placeholder="Mandatory" />
-            </Col>
-            <Col md={4}>
-              <label className="rec-form-label">Reminder Frequency<span className="req">*</span></label>
-              <MasterSelect value={ackFreq} onChange={(v) => setAckFreq(v as AckFreq)} options={[{ value: 'Daily', label: 'Daily' }, { value: 'Weekly', label: 'Weekly' }, { value: 'Never', label: 'Never' }]} placeholder="Weekly" />
-            </Col>
-            <Col md={4}>
-              <label className="rec-form-label">Escalation Days<span className="req">*</span></label>
-              <input type="number" min={0} className="rec-input" value={ackEscalation} onChange={e => setAckEscalation(e.target.value)} />
-            </Col>
-          </Row>
-          <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: 12, color: '#0c4a6e', fontSize: 13 }}>
-            <i className="ri-information-line" /> Manager is notified after the set days if the employee hasn't acknowledged.
-          </div>
-        </>
-      )}
-    </>
-  );
-}
-
-// ── Step 5 — Notifications ──────────────────────────────────────────────────
-function Step5Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; setNotifyEmail: (v: boolean) => void }) {
+// ── Step 3 — Notifications ──────────────────────────────────────────────────
+// Email is the only delivery channel exposed to the user. The schema still
+// carries notify_in_app / notify_sms / notify_whatsapp; buildPayload sends
+// false for all of them so a previously-checked value gets cleared on edit.
+function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; setNotifyEmail: (v: boolean) => void }) {
   return (
     <>
       <div className="d-flex align-items-center gap-2 mb-3" style={{ color: '#0c63b0' }}>
@@ -1365,9 +1043,6 @@ function Step5Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
       </div>
       <hr className="mt-1 mb-3" style={{ borderColor: '#e5e7eb' }} />
 
-      {/* Single full-width email card — checkbox + icon + title + subtitle.
-          Border + tinted background swap when the channel is enabled so it
-          reads as a clear "selected / not selected" pair. */}
       <label
         className="d-flex align-items-center gap-3 p-3 mb-3"
         style={{
@@ -1387,12 +1062,10 @@ function Step5Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
         <i className="ri-mail-line" style={{ fontSize: 18, color: notifyEmail ? '#0ea5e9' : '#6b7280' }} />
         <div className="d-flex flex-column">
           <span className="fw-bold" style={{ fontSize: 14, color: '#111827' }}>Email Notification</span>
-          <span style={{ fontSize: 12, color: '#6b7280' }}>Send directly to each employee's inbox</span>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>Send directly to each recipient's inbox when you publish</span>
         </div>
       </label>
 
-      {/* Soft footnote — explains that the channel is optional since the
-          announcement still shows in the in-app list regardless. */}
       <div
         style={{
           background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 10,
@@ -1405,12 +1078,10 @@ function Step5Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
   );
 }
 
-// ── Step 6 — Review & Publish ───────────────────────────────────────────────
-function Step6Review({
+// ── Step 4 — Review & Publish ───────────────────────────────────────────────
+function Step4Review({
   title, description, type, priority,
   audienceLabel, audienceCount,
-  publishType, publishAt, expiresAt,
-  ackRequired, ackMode,
   notifyEmail,
   editing,
 }: any) {
@@ -1433,9 +1104,7 @@ function Step6Review({
           <Col md={3}><Field label="Priority" value={priority} /></Col>
           <Col md={3}><Field label="Audience" value={audienceLabel} /></Col>
           <Col md={3}><Field label="Count" value={`${audienceCount} employees`} /></Col>
-          <Col md={3}><Field label="Publish" value={publishType === 'scheduled' && publishAt ? formatDateTime(publishAt) : 'Immediately'} /></Col>
-          <Col md={3}><Field label="Expires" value={expiresAt ? formatDateTime(expiresAt) : '—'} /></Col>
-          <Col md={3}><Field label="Ack" value={ackRequired ? ackMode : 'No'} /></Col>
+          <Col md={3}><Field label="Publish" value="Immediately" /></Col>
           <Col md={3}><Field label="Notify" value={notifyEmail ? 'Email' : '—'} /></Col>
         </Row>
       </div>
@@ -1446,16 +1115,9 @@ function Step6Review({
         </div>
       )}
       <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, padding: 12, color: '#0c4a6e', fontSize: 13, marginTop: 12 }}>
-        <i className="ri-information-line" /> Clicking <strong>Publish</strong> will make this announcement live immediately.
+        <i className="ri-information-line" /> Clicking <strong>Publish</strong> will make this announcement live immediately
+        {notifyEmail ? ' and email every selected recipient.' : '.'}
       </div>
     </>
   );
-}
-
-// Helper: convert ISO datetime to value accepted by <input type="datetime-local">.
-function toLocalDtInput(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
