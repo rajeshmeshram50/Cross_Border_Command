@@ -481,13 +481,120 @@ export default function PublicOnboarding() {
         .onb-field .master-datepicker-toggle { padding-left: 36px !important; }
 
         /* ── Split-view layout (Convertico-style) ─────────────────────── */
+        /* Outer page — soft blue-tinted backdrop matching the reference's
+           ambient background, with two decorative quarter-circle arcs in
+           the top-right and bottom-right corners. */
+        .onb-page-bg {
+          position: fixed; inset: 0;
+          background:
+            radial-gradient(900px 700px at 100% -20%,  rgba(59,130,246,0.10) 0%, transparent 60%),
+            radial-gradient(700px 900px at 100% 120%, rgba(29,79,196,0.10)  0%, transparent 60%),
+            linear-gradient(135deg, #eef3fb 0%, #e6ecf7 100%);
+          z-index: 0;
+          pointer-events: none;
+        }
+        [data-bs-theme="dark"] .onb-page-bg {
+          background:
+            radial-gradient(900px 700px at 100% -20%,  rgba(59,130,246,0.18) 0%, transparent 60%),
+            radial-gradient(700px 900px at 100% 120%, rgba(29,79,196,0.18)  0%, transparent 60%),
+            linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+        /* Decorative arc rings — mimics the quarter-circle motifs in the
+           reference template's corners. Pure CSS borders so no SVG dep. */
+        .onb-arc {
+          position: fixed;
+          border: 60px solid rgba(59,130,246,0.06);
+          border-radius: 50%;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .onb-arc-tr {
+          width: 360px; height: 360px;
+          top: -180px; right: -180px;
+        }
+        .onb-arc-br {
+          width: 420px; height: 420px;
+          bottom: -210px; right: -210px;
+          border-color: rgba(29,79,196,0.07);
+          border-width: 80px;
+        }
+        @media (max-width: 900px) { .onb-arc { display: none; } }
+
         .onb-layout {
           min-height: 100vh;
           display: grid;
-          grid-template-columns: 320px minmax(0, 1fr);
-          background: var(--vz-secondary-bg, #f5f7fb);
+          grid-template-columns: 300px minmax(0, 1fr);
+          /* Contained card feel — page edges have padding so the white
+             form pane reads as a card on top of the tinted backdrop. */
+          margin: 0 auto;
+          max-width: 1440px;
+          padding: 28px;
+          gap: 0;
+          position: relative;
+          z-index: 1;
+          background: transparent;
         }
-        @media (max-width: 900px) { .onb-layout { grid-template-columns: 1fr; } }
+        @media (max-width: 900px) {
+          .onb-layout { grid-template-columns: 1fr; padding: 0; }
+        }
+        /* Curved transition between the blue sidebar and the white form
+           pane — matches the reference template's notched ribbon edge.
+           A small white tab on the inside of the sidebar's right edge
+           so the form card "tucks into" the sidebar. */
+        .onb-layout::before {
+          content: '';
+          position: absolute;
+          top: 28px; bottom: 28px;
+          left: calc(28px + 300px - 1px);
+          width: 28px;
+          background: #ffffff;
+          border-top-left-radius: 28px;
+          border-bottom-left-radius: 28px;
+          pointer-events: none;
+          z-index: 2;
+        }
+        [data-bs-theme="dark"] .onb-layout::before { background: var(--vz-card-bg); }
+        @media (max-width: 900px) { .onb-layout::before { display: none; } }
+
+        /* SVG wave-edge overlay — extends the blue sidebar into the
+           form area along an S-curve silhouette. The bulges at top and
+           bottom (with a concave middle) match the reference template's
+           distinctive wave shape. Sits behind the form content (z:2)
+           but above the page background (z:0). */
+        .onb-wave {
+          position: absolute;
+          top: 28px; bottom: 28px;
+          left: calc(28px + 300px - 1px);
+          width: 60px;
+          z-index: 2;
+          pointer-events: none;
+          overflow: visible;
+        }
+        .onb-wave svg {
+          width: 100%; height: 100%;
+          display: block;
+          filter: drop-shadow(6px 0 16px rgba(13,38,76,0.18));
+        }
+        @media (max-width: 900px) { .onb-wave { display: none; } }
+
+        /* Vertical brand label on the sidebar's outer-right edge — the
+           "DiveShop360" rotated text in the reference template. Uses
+           the tenant org name so each customer's white-label name shows. */
+        .onb-side-vlabel {
+          position: absolute;
+          top: 50%;
+          right: -10px;
+          transform: translateY(-50%) rotate(90deg);
+          transform-origin: center;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.32em;
+          text-transform: uppercase;
+          color: rgba(255,255,255,0.55);
+          white-space: nowrap;
+          z-index: 1;
+        }
+        @media (max-width: 900px) { .onb-side-vlabel { display: none; } }
 
         /* Left rail — deep blue gradient, sticky so only the right side scrolls */
         .onb-side {
@@ -496,15 +603,22 @@ export default function PublicOnboarding() {
             radial-gradient(circle at 0% 100%, rgba(96,165,250,0.32) 0%, transparent 48%),
             linear-gradient(165deg, #0b2545 0%, #133e8c 45%, #1e62d6 100%);
           color: #fff;
-          padding: 32px 14px 24px;
+          padding: 32px 24px 24px;
           display: flex;
           flex-direction: column;
           gap: 40px;
+          /* Rounded card-style sidebar matching the reference template
+             where the blue panel sits inside the page with corner radii. */
+          border-radius: 20px 0 0 20px;
+          height: calc(100vh - 56px);
           position: sticky;
-          top: 0;
+          top: 28px;
           align-self: start;
-          height: 100vh;
           overflow: hidden auto;
+          box-shadow: 0 18px 40px -10px rgba(13,38,76,0.35);
+        }
+        @media (max-width: 900px) {
+          .onb-side { border-radius: 0; height: auto; position: static; }
         }
         .onb-side::before, .onb-side::after {
           content: ''; position: absolute; pointer-events: none;
@@ -554,18 +668,34 @@ export default function PublicOnboarding() {
         .onb-step:not(:disabled):hover .onb-step-title { color: #fff; }
         .onb-step-circle {
           width: 36px; height: 36px; border-radius: 50%;
-          background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.80);
-          border: 1.5px solid rgba(255,255,255,0.26);
+          background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85);
+          border: 1.5px solid rgba(255,255,255,0.30);
           display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0; font-size: 16px; z-index: 2;
+          flex-shrink: 0; font-size: 14px; z-index: 2;
           transition: all .2s ease;
         }
-        .onb-step.is-active .onb-step-circle {
-          background: #fff; color: #0b2545; border-color: #fff;
-          box-shadow: 0 10px 22px rgba(0,0,0,0.25);
+        /* Step NUMBER inside the circle — bold, slightly larger so it
+           reads as a "1", "2", "3" badge (matches the reference). */
+        .onb-step-num {
+          font-size: 13.5px;
+          font-weight: 800;
+          letter-spacing: -0.01em;
+          font-feature-settings: 'tnum';
         }
+        /* Current step — solid white-on-blue gradient ring with a soft
+           outer glow, matches the active node in the reference. */
+        .onb-step.is-active .onb-step-circle {
+          background: linear-gradient(135deg, #3b82f6 0%, #1d4fc4 100%);
+          color: #fff;
+          border-color: rgba(255,255,255,0.55);
+          box-shadow: 0 0 0 4px rgba(255,255,255,0.18), 0 8px 20px rgba(29,79,196,0.45);
+        }
+        /* Done step — solid green badge with the check icon. */
         .onb-step.is-done .onb-step-circle {
-          background: #0ab39c; color: #fff; border-color: #0ab39c;
+          background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+          color: #fff;
+          border-color: transparent;
+          box-shadow: 0 6px 16px rgba(16,185,129,0.35);
         }
         .onb-step-text { display: flex; flex-direction: column; padding-top: 5px; }
         .onb-step-title { font-size: 14.5px; font-weight: 600; color: rgba(255,255,255,0.88); line-height: 1.25; }
@@ -594,31 +724,70 @@ export default function PublicOnboarding() {
 
         /* Right pane */
         .onb-main {
-          padding: 36px 44px 32px;
-          display: flex; justify-content: center; align-items: flex-start;
-          background: #fff;
+          /* White card matching the reference template — rounded right
+             corners, soft shadow, sits flush with the blue sidebar's
+             rounded left edge to form one continuous interlocked card. */
+          background: #ffffff;
+          border-radius: 0 20px 20px 0;
+          box-shadow: 0 18px 40px -10px rgba(13,38,76,0.18);
           min-width: 0;
+          padding: 36px 44px 28px;
+          display: flex; justify-content: center; align-items: flex-start;
         }
         [data-bs-theme="dark"] .onb-main { background: var(--vz-card-bg); }
-        .onb-main-inner { width: 100%; max-width: 1100px; }
+        .onb-main-inner {
+          width: 100%;
+          max-width: 1000px;
+          background: transparent;
+        }
+        @media (max-width: 900px) {
+          .onb-main { padding: 24px 20px 22px; border-radius: 0; }
+        }
+        /* Form field rhythm — make every input/select/datepicker the same
+           40px height and the same 10px corner radius so a Step 1 with 8
+           fields reads as a unified grid instead of an uneven stack. The
+           .emp-input global may not match on this page (it's used across
+           several modules), so we scope to .onb-main and override. */
+        .onb-main .emp-input,
+        .onb-main .emp-input.form-control,
+        .onb-main .form-select,
+        .onb-main .master-select-toggle,
+        .onb-main .master-datepicker-toggle {
+          height: 40px;
+          min-height: 40px;
+          padding-top: 8px;
+          padding-bottom: 8px;
+          font-size: 13.5px;
+          border-radius: 10px;
+        }
+        /* Bring the field icon up a notch so it centers in the taller input */
+        .onb-main .onb-field-icon { top: 50%; }
+        /* Label-to-input gap — tighter, consistent. */
+        .onb-main .emp-label { margin-bottom: 6px; font-size: 12.5px; }
+        /* Inline error text — slim red helper aligned to the field. */
+        .onb-main .emp-err { display: block; margin-top: 4px; font-size: 11.5px; color: #b1401d; }
 
         /* Welcome banner at the very top of the right pane */
+        /* Slim welcome strip — compact greeting above the form title,
+           takes ~50px instead of 80px+ so the actual fields sit higher
+           on the page. Matches the reference template's "no big banner"
+           treatment while preserving the tenant context. */
         .onb-welcome {
-          display: flex; align-items: center; gap: 14px;
-          padding: 14px 18px; border-radius: 14px;
-          background: linear-gradient(120deg, rgba(29,79,196,0.08) 0%, rgba(96,165,250,0.10) 60%, rgba(13,148,136,0.06) 100%);
-          border: 1px solid rgba(29,79,196,0.14);
-          margin-bottom: 22px;
+          display: flex; align-items: center; gap: 10px;
+          padding: 8px 14px; border-radius: 10px;
+          background: linear-gradient(120deg, rgba(29,79,196,0.06) 0%, rgba(96,165,250,0.07) 100%);
+          border: 1px solid rgba(29,79,196,0.10);
+          margin-bottom: 14px;
         }
         .onb-welcome-icon {
-          width: 44px; height: 44px; border-radius: 12px;
+          width: 32px; height: 32px; border-radius: 8px;
           background: linear-gradient(135deg, #1d4fc4, #3b82f6);
           color: #fff; display: flex; align-items: center; justify-content: center;
-          font-size: 22px; flex-shrink: 0;
-          box-shadow: 0 8px 18px rgba(29,79,196,0.32);
+          font-size: 15px; flex-shrink: 0;
+          box-shadow: 0 4px 10px rgba(29,79,196,0.28);
         }
-        .onb-welcome-title { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; color: var(--vz-heading-color, #0b2545); line-height: 1.2; }
-        .onb-welcome-sub { font-size: 12.5px; color: var(--vz-secondary-color, #6b7280); margin-top: 2px; }
+        .onb-welcome-title { font-size: 13px; font-weight: 700; letter-spacing: -0.005em; color: var(--vz-heading-color, #0b2545); line-height: 1.2; }
+        .onb-welcome-sub { font-size: 11.5px; color: var(--vz-secondary-color, #6b7280); margin-top: 1px; }
         .onb-welcome-sub strong { color: var(--vz-heading-color, #374151); font-weight: 600; }
 
         .onb-step-pill {
@@ -628,16 +797,197 @@ export default function PublicOnboarding() {
           padding: 4px 10px; border-radius: 999px; margin-bottom: 10px;
           text-transform: uppercase;
         }
+
+        /* Horizontal step indicator — slim circle-line-circle progress
+           strip sitting just below the welcome banner. Mirrors what the
+           user sketched: each step is a small circle, completed steps
+           filled, current step highlighted with a glowing ring, future
+           steps dimmed. The connector line tints in proportion to
+           progress so the strip works as both a step indicator AND a
+           progress meter. */
+        .onb-stepper {
+          display: flex;
+          align-items: center;
+          gap: 0;
+          margin: 0 0 22px;
+          padding: 14px 18px;
+          background: linear-gradient(120deg, rgba(29,79,196,0.04), rgba(96,165,250,0.05));
+          border: 1px solid rgba(29,79,196,0.10);
+          border-radius: 12px;
+        }
+        .onb-stepper-node {
+          display: flex; flex-direction: column;
+          align-items: center; gap: 6px;
+          flex-shrink: 0;
+          position: relative;
+        }
+        .onb-stepper-dot {
+          width: 28px; height: 28px;
+          border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 12px; font-weight: 800;
+          background: #ffffff;
+          border: 2px solid var(--vz-border-color, #e5e7eb);
+          color: var(--vz-secondary-color, #94a3b8);
+          transition: all .25s ease;
+        }
+        .onb-stepper-node.is-done .onb-stepper-dot {
+          background: linear-gradient(135deg, #10b981, #34d399);
+          border-color: transparent;
+          color: #fff;
+        }
+        .onb-stepper-node.is-current .onb-stepper-dot {
+          background: linear-gradient(135deg, #1d4fc4, #3b82f6);
+          border-color: transparent;
+          color: #fff;
+          box-shadow: 0 0 0 4px rgba(29,79,196,0.18), 0 4px 12px rgba(29,79,196,0.30);
+        }
+        .onb-stepper-label {
+          font-size: 11px; font-weight: 600;
+          color: var(--vz-secondary-color, #94a3b8);
+          text-align: center;
+          line-height: 1.2;
+          max-width: 110px;
+        }
+        .onb-stepper-node.is-done .onb-stepper-label,
+        .onb-stepper-node.is-current .onb-stepper-label {
+          color: var(--vz-heading-color, #0f172a);
+        }
+        .onb-stepper-line {
+          flex: 1; height: 2px;
+          background: var(--vz-border-color, #e5e7eb);
+          margin: 0 6px; margin-bottom: 22px;
+          align-self: center;
+          position: relative;
+          overflow: hidden;
+        }
+        .onb-stepper-line::after {
+          content: '';
+          position: absolute; inset: 0;
+          background: linear-gradient(90deg, #10b981, #34d399);
+          width: var(--fill, 0%);
+          transition: width .35s ease;
+        }
+
+        /* Bottom progress bar — slim track + filled gradient with the
+           "X of Y · NN% complete" label next to it. Sits inside the
+           foot row, replaces the lonely Next button at the bottom. */
+        .onb-progress {
+          display: flex; align-items: center; gap: 12px;
+          flex: 1; max-width: 380px;
+        }
+        .onb-progress-track {
+          flex: 1; height: 6px;
+          background: var(--vz-secondary-bg, #eef2f6);
+          border-radius: 999px;
+          overflow: hidden;
+        }
+        .onb-progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #1d4fc4, #3b82f6 60%, #34d399);
+          border-radius: 999px;
+          transition: width .35s ease;
+        }
+        .onb-progress-label {
+          font-size: 11.5px; font-weight: 700; letter-spacing: 0.04em;
+          color: var(--vz-secondary-color, #6b7280);
+          white-space: nowrap;
+          font-variant-numeric: tabular-nums;
+        }
         .onb-main-title {
-          font-size: 28px; font-weight: 800; letter-spacing: -0.02em;
-          color: var(--vz-heading-color, #0f172a); margin: 0 0 8px;
+          font-size: 26px; font-weight: 800; letter-spacing: -0.02em;
+          color: var(--vz-heading-color, #0f172a); margin: 0 0 6px;
           line-height: 1.15;
         }
         .onb-main-sub {
-          font-size: 14px; color: var(--vz-secondary-color, #6b7280);
-          margin: 0 0 18px; line-height: 1.6; max-width: 680px;
+          font-size: 13.5px; color: var(--vz-secondary-color, #6b7280);
+          margin: 0 0 14px; line-height: 1.55; max-width: 680px;
         }
         .onb-main-divider { height: 1px; background: var(--vz-border-color, #e5e7eb); margin-bottom: 18px; }
+
+        /* Title row — title block on the left, "Approx Time" badge on
+           the right (matches the reference template's top-right corner
+           approx-time chip). Stacks on mobile so the title doesn't
+           wrap awkwardly. */
+        .onb-title-row {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 16px;
+          flex-wrap: wrap;
+        }
+        .onb-title-block { flex: 1; min-width: 0; }
+        .onb-approx-time {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          background: rgba(29,79,196,0.06);
+          border: 1px solid rgba(29,79,196,0.18);
+          border-radius: 999px;
+          font-size: 11.5px;
+          font-weight: 600;
+          color: var(--vz-secondary-color, #6b7280);
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+        .onb-approx-time i { color: #1d4fc4; font-size: 14px; }
+        .onb-approx-time strong { color: var(--vz-heading-color, #0f172a); font-weight: 700; }
+
+        /* Foot buttons — match the reference template's uppercase
+           Previous (outlined) and Next (solid blue) treatment. */
+        .onb-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 9px 22px;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          border-radius: 10px;
+          cursor: pointer;
+          transition: all .18s ease;
+          border: none;
+        }
+        .onb-btn-ghost {
+          background: #ffffff;
+          color: #475569;
+          border: 1.5px solid #cbd5e1;
+        }
+        .onb-btn-ghost:hover:not(:disabled) {
+          border-color: #1d4fc4;
+          color: #1d4fc4;
+          background: rgba(29,79,196,0.04);
+        }
+        .onb-btn-primary {
+          background: linear-gradient(135deg, #1d4fc4 0%, #3b82f6 100%);
+          color: #ffffff;
+          box-shadow: 0 6px 16px rgba(29,79,196,0.32);
+        }
+        .onb-btn-primary:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 22px rgba(29,79,196,0.42);
+          filter: brightness(1.05);
+        }
+        .onb-btn-success {
+          background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+          color: #ffffff;
+          box-shadow: 0 6px 16px rgba(16,185,129,0.32);
+        }
+        .onb-btn-success:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 10px 22px rgba(16,185,129,0.42);
+          filter: brightness(1.05);
+        }
+        .emp-spin {
+          display: inline-block;
+          animation: emp-spin-rotate 0.7s linear infinite;
+        }
+        @keyframes emp-spin-rotate {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
 
         .onb-subhead {
           display: flex; align-items: center; gap: 8px;
@@ -650,9 +1000,42 @@ export default function PublicOnboarding() {
 
         .onb-main-foot {
           display: flex; align-items: center; justify-content: space-between;
-          padding-top: 22px; margin-top: 20px;
+          padding-top: 18px; margin-top: 22px;
           border-top: 1px solid var(--vz-border-color, #e5e7eb);
         }
+
+        /* Compact density for Step 3 — shrinks field height, label gap and
+           row spacing so the 6 Job-details fields plus chrome (welcome
+           banner, title, footer) fit in one viewport without scroll. */
+        .onb-main .onb-compact .emp-input,
+        .onb-main .onb-compact .emp-input.form-control,
+        .onb-main .onb-compact .form-select,
+        .onb-main .onb-compact .master-select-toggle,
+        .onb-main .onb-compact .master-datepicker-toggle {
+          height: 34px;
+          min-height: 34px;
+          padding-top: 6px;
+          padding-bottom: 6px;
+          font-size: 12.5px;
+          border-radius: 8px;
+        }
+        .onb-main .onb-compact .emp-label {
+          margin-bottom: 3px;
+          font-size: 11.5px;
+        }
+        .onb-main .onb-compact .row { --bs-gutter-y: 8px; }
+        .onb-main .onb-compact .onb-field .emp-input { padding-left: 32px; }
+        .onb-main .onb-compact .onb-field-icon { font-size: 13px; }
+        /* On step 3 also shrink the chrome above the form so the whole
+           pane fits in one viewport. */
+        .onb-main-inner.is-compact .onb-welcome { margin-bottom: 10px; padding: 6px 12px; }
+        .onb-main-inner.is-compact .onb-welcome-icon { width: 28px; height: 28px; font-size: 13px; }
+        .onb-main-inner.is-compact .onb-welcome-title { font-size: 12.5px; }
+        .onb-main-inner.is-compact .onb-welcome-sub { font-size: 11px; }
+        .onb-main-inner.is-compact .onb-main-title { font-size: 22px; margin-bottom: 4px; }
+        .onb-main-inner.is-compact .onb-main-sub { font-size: 12.5px; margin-bottom: 10px; }
+        .onb-main-inner.is-compact .onb-main-divider { margin-bottom: 12px; }
+        .onb-main-inner.is-compact .onb-main-foot { padding-top: 12px; margin-top: 14px; }
 
         @media (max-width: 900px) {
           .onb-side { padding: 20px 20px 16px; gap: 18px; }
@@ -664,9 +1047,50 @@ export default function PublicOnboarding() {
         }
       `}</style>
 
+      {/* Tinted backdrop + decorative quarter-circle arcs that mimic
+          the reference template's outer corner motifs. Sit on top of
+          the page bg with z-index: 0 so all content layers above. */}
+      <div className="onb-page-bg" aria-hidden />
+      <div className="onb-arc onb-arc-tr" aria-hidden />
+      <div className="onb-arc onb-arc-br" aria-hidden />
+
       <div className="onb-layout">
+        {/* SVG wave silhouette extending the sidebar's blue color into
+            the form area along an S-curve. The two bulges + middle
+            concave dent recreate the reference template's distinctive
+            wave-edge motif. SVG path is normalized to 100x800 viewBox
+            and stretches with preserveAspectRatio="none". */}
+        <div className="onb-wave" aria-hidden>
+          <svg viewBox="0 0 100 800" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="onb-wave-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#0b2545" />
+                <stop offset="45%" stopColor="#133e8c" />
+                <stop offset="100%" stopColor="#1e62d6" />
+              </linearGradient>
+            </defs>
+            <path
+              d="
+                M 0 0
+                L 0 800
+                L 0 800
+                Q 0 800 0 780
+                C 30 720, 70 700, 60 620
+                C 50 540, 0 520, 0 460
+                C 0 400, 60 380, 60 300
+                C 60 220, 0 200, 0 140
+                Q 0 80 30 40
+                L 0 0
+                Z
+              "
+              fill="url(#onb-wave-grad)"
+            />
+          </svg>
+        </div>
+
         {/* ── Left rail — brand + step breadcrumbs ─────────────────────── */}
         <aside className="onb-side">
+          <span className="onb-side-vlabel">{invite?.org_name || 'CrossBorder'}</span>
           <div className="onb-side-brand">
             {invite?.logo_url ? (
               <span className="onb-side-brand-logo"><img src={invite.logo_url} alt={invite.org_name} /></span>
@@ -693,7 +1117,9 @@ export default function PublicOnboarding() {
                   aria-current={active ? 'step' : undefined}
                 >
                   <span className="onb-step-circle">
-                    {done2 ? <i className="ri-check-line" /> : <i className={s.icon} />}
+                    {done2
+                      ? <i className="ri-check-line" />
+                      : <span className="onb-step-num">{s.n}</span>}
                   </span>
                   <span className="onb-step-text">
                     <span className="onb-step-title">{s.title}</span>
@@ -722,7 +1148,7 @@ export default function PublicOnboarding() {
 
         {/* ── Right pane — current step's form ─────────────────────────── */}
         <main className="onb-main">
-          <div className="onb-main-inner">
+          <div className={`onb-main-inner${step === 3 ? ' is-compact' : ''}`}>
 
             {/* Welcome banner — sits above the per-step heading */}
             <div className="onb-welcome">
@@ -735,9 +1161,23 @@ export default function PublicOnboarding() {
               </div>
             </div>
 
-            <div className="onb-step-pill">Step {step} of 3</div>
-            <h1 className="onb-main-title">{current.title}</h1>
-            <p className="onb-main-sub">{current.description}</p>
+            {/* Horizontal stepper removed — the left sidebar already
+                shows the step list (Personal / Address / Job) with the
+                done-check and current-highlight states, so duplicating
+                it at the top of the form was visual noise that pushed
+                the actual fields below the fold. */}
+
+            <div className="onb-title-row">
+              <div className="onb-title-block">
+                <h1 className="onb-main-title">{current.title}</h1>
+                <p className="onb-main-sub">{current.description}</p>
+              </div>
+              <div className="onb-approx-time" aria-label="Approximate time to complete this step">
+                <i className="ri-time-line" />
+                <span>Approx Time:</span>
+                <strong>2 Mins</strong>
+              </div>
+            </div>
             <div className="onb-main-divider" />
 
           {step === 1 && (
@@ -912,7 +1352,7 @@ export default function PublicOnboarding() {
           )}
 
           {step === 3 && (
-            <div>
+            <div className="onb-compact">
               <Row className="g-2">
                 <Col md={4}>
                   <label className="emp-label">Department</label>
@@ -944,9 +1384,6 @@ export default function PublicOnboarding() {
                 </Col>
                 <Col md={4}>
                   <label className="emp-label">Location</label>
-                  {/* Auto-filled from the selected legal entity's city. Locked
-                      so candidates can't override it — pick a different
-                      entity to change the location. */}
                   <IconField icon="ri-map-pin-2-line">
                     <input
                       className={`emp-input${legalEntityId ? ' is-readonly' : ''}`}
@@ -971,36 +1408,41 @@ export default function PublicOnboarding() {
               {step > 1 ? (
                 <button
                   type="button" onClick={goBack}
-                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill"
-                  style={{ fontSize: 13, padding: '8px 18px', background: '#fff', color: '#475569', border: '1px solid #e5e7eb' }}
+                  className="onb-btn onb-btn-ghost"
                 >
-                  <i className="ri-arrow-left-s-line" /> Back
+                  <i className="ri-arrow-left-line" /> PREVIOUS
                 </button>
               ) : <span />}
+
+              {/* Inline progress bar — shows the user how much of the
+                  3-step flow is done. Sits between Back and Next so it
+                  centers naturally inside the foot row. */}
+              <div className="onb-progress">
+                <div className="onb-progress-track">
+                  <div
+                    className="onb-progress-fill"
+                    style={{ width: `${Math.round(((step - 1) / 3) * 100)}%` }}
+                  />
+                </div>
+                <div className="onb-progress-label">
+                  {100 - Math.round(((step - 1) / 3) * 100)}% Left
+                </div>
+              </div>
               {step < 3 ? (
                 <button
                   type="button" onClick={goNext}
-                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill"
-                  style={{
-                    fontSize: 13, color: '#fff', border: 'none',
-                    background: 'linear-gradient(135deg,#1d4fc4,#3b82f6)',
-                    boxShadow: '0 8px 18px rgba(29,79,196,0.32)', padding: '10px 26px',
-                  }}
+                  className="onb-btn onb-btn-primary"
                 >
-                  Next <i className="ri-arrow-right-s-line" />
+                  NEXT <i className="ri-arrow-right-line" />
                 </button>
               ) : (
                 <button
                   type="button" disabled={submitting} onClick={handleSubmit}
-                  className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill"
-                  style={{
-                    fontSize: 13, color: '#fff', border: 'none',
-                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                    boxShadow: '0 8px 18px rgba(10,179,156,0.30)', padding: '10px 26px',
-                    opacity: submitting ? 0.6 : 1,
-                  }}
+                  className="onb-btn onb-btn-success"
+                  style={{ opacity: submitting ? 0.6 : 1 }}
                 >
-                  <i className={submitting ? 'ri-loader-4-line' : 'ri-check-line'} /> {submitting ? 'Submitting…' : 'Submit Onboarding'}
+                  <i className={submitting ? 'ri-loader-4-line emp-spin' : 'ri-check-line'} />
+                  {submitting ? 'SUBMITTING…' : 'SUBMIT'}
                 </button>
               )}
             </div>

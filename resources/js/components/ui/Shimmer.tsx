@@ -322,43 +322,135 @@ export function ShimmerPlanCards({ count = 5 }: { count?: number }) {
   );
 }
 
-/* ── Profile ────────────────────────────────────────────────────────── */
+/* ── Profile ──────────────────────────────────────────────────────────
+ * Matches the live Profile page layout:
+ *   1. Page title row (heading + breadcrumb)
+ *   2. Hero banner — avatar + name/role/email on the left, 3 chip cards
+ *      (ROLE / STATUS / PLAN) on the right
+ *   3. Row 1 — 4/8 split: left card (subscription / account info)
+ *               + right card (personal information)
+ *   4. Row 2 — 4/8 split: left card + change password card
+ *   5. Full-width branding card
+ */
 export function ShimmerProfile() {
+  /* ── Reusable hero — wider banner with chip cards on the right ── */
+  const hero = (
+    <div
+      style={{
+        ...card,
+        background: 'linear-gradient(135deg, var(--vz-secondary-bg, #f3f4f6), var(--vz-card-bg, #fff))',
+        padding: '28px 32px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div style={{ ...row, gap: 22, flex: '1 1 320px', minWidth: 280 }}>
+        <Shimmer width={84} height={84} radius={999} />
+        <div style={{ flex: 1, ...stack(10) }}>
+          <Shimmer height={22} width={180} />
+          <Shimmer height={14} width={220} />
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <Shimmer width={150} height={14} />
+            <Shimmer width={120} height={14} />
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{ ...stack(8), alignItems: 'center', padding: '14px 22px', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, minWidth: 120 }}>
+            <Shimmer width={50} height={10} />
+            <Shimmer width={84} height={14} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  /* ── Reusable narrow side card (subscription / account info shape) ── */
+  const sideCard = (
+    <div style={{ ...card, padding: 24, ...stack(16), height: '100%' }}>
+      <div style={{ ...row, justifyContent: 'space-between' }}>
+        <div style={row}>
+          <Shimmer width={40} height={40} radius={12} />
+          <Shimmer width={120} height={16} />
+        </div>
+        <Shimmer width={64} height={22} radius={999} />
+      </div>
+      <div style={{ ...stack(12), alignItems: 'center', padding: 16, borderRadius: 12, background: 'var(--vz-secondary-bg, #f3f4f6)' }}>
+        <Shimmer width={56} height={56} radius={999} />
+        <Shimmer width={100} height={10} />
+        <Shimmer width={80} height={18} />
+        <Shimmer width={140} height={12} />
+      </div>
+    </div>
+  );
+
+  /* ── Reusable wide card (personal info / password shape) ── */
+  const wideCard = (
+    <div style={{ ...card, padding: 24, ...stack(16), height: '100%' }}>
+      <div style={row}>
+        <Shimmer width={40} height={40} radius={12} />
+        <div style={stack(8)}>
+          <Shimmer width={160} height={16} />
+          <Shimmer width={220} height={12} />
+        </div>
+      </div>
+      {/* Photo + browse row */}
+      <div style={{ ...row, gap: 16 }}>
+        <Shimmer width={72} height={72} radius={999} />
+        <div style={{ flex: 1, ...stack(8) }}>
+          <Shimmer height={12} width={100} />
+          <Shimmer height={38} radius={10} />
+          <Shimmer height={10} width={140} />
+        </div>
+      </div>
+      {/* 2x2 form grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} style={stack(8)}>
+            <Shimmer height={10} width={90} />
+            <Shimmer height={38} radius={10} />
+          </div>
+        ))}
+      </div>
+      {/* Action button row */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <Shimmer width={140} height={38} radius={10} />
+      </div>
+    </div>
+  );
+
   return (
-    <div style={stack(20)}>
-      <ShimmerHero />
+    <div style={stack(18)}>
+      {/* Page title */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <Shimmer width={120} height={20} />
+        <Shimmer width={140} height={14} />
+      </div>
+      {hero}
+      {/* Row 1 — 4/8 split */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
-        <ShimmerList count={4} />
-        <div style={stack(16)}>
-          <div style={{ ...card, padding: 24, ...stack(14) }}>
-            <div style={row}>
-              <Shimmer width={36} height={36} radius={12} />
-              <div style={stack(8)}>
-                <Shimmer width={144} height={14} />
-                <Shimmer width={112} height={12} />
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <Shimmer height={64} radius={10} />
-              <Shimmer height={64} radius={10} />
-              <Shimmer height={64} radius={10} />
-              <Shimmer height={64} radius={10} />
-            </div>
+        {sideCard}
+        {wideCard}
+      </div>
+      {/* Row 2 — 4/8 split */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16 }}>
+        {sideCard}
+        {wideCard}
+      </div>
+      {/* Branding card — full width */}
+      <div style={{ ...card, padding: 24, ...stack(16) }}>
+        <div style={row}>
+          <Shimmer width={40} height={40} radius={12} />
+          <div style={stack(8)}>
+            <Shimmer width={200} height={16} />
+            <Shimmer width={260} height={12} />
           </div>
-          <div style={{ ...card, padding: 24, ...stack(14) }}>
-            <div style={row}>
-              <Shimmer width={36} height={36} radius={12} />
-              <div style={stack(8)}>
-                <Shimmer width={128} height={14} />
-                <Shimmer width={160} height={12} />
-              </div>
-            </div>
-            <Shimmer height={48} radius={10} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <Shimmer height={48} radius={10} />
-              <Shimmer height={48} radius={10} />
-            </div>
-          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18 }}>
+          <Shimmer height={120} radius={12} />
+          <Shimmer height={120} radius={12} />
+          <Shimmer height={120} radius={12} />
         </div>
       </div>
     </div>

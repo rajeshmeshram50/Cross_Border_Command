@@ -6,6 +6,7 @@ import {
 } from 'recharts';
 import api from '../../api';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
+import { formatCompact } from '../../utils/formatNumber';
 // Reuse the recruitment module's modal styling so the dashboard popups
 // match the Hiring Requests modal exactly (rec-req-* classes).
 import '../../../css/recruitment.css';
@@ -33,16 +34,6 @@ const methodLabels: Record<string, string> = {
   upi: 'UPI', credit_card: 'Credit Card', debit_card: 'Debit Card',
   net_banking: 'Net Banking', wallet: 'Wallet', cash: 'Cash', card: 'Card',
 };
-
-// Compact INR formatter — keeps the KPI value short enough to share its row
-// with the icon without wrapping. <1L stays grouped (e.g. "98,500"), 1L–99L
-// becomes "1.52L", crores become "1.50Cr".
-function formatINRCompact(n: number): string {
-  const v = Math.max(0, Number(n) || 0);
-  if (v < 100000) return v.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  if (v < 10000000) return (v / 100000).toFixed(2) + 'L';
-  return (v / 10000000).toFixed(2) + 'Cr';
-}
 
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
   const [display, setDisplay] = useState(0);
@@ -243,7 +234,7 @@ export default function AdminDashboard() {
             trend="up" change="+5%" changeText="vs last month" />
         </Col>
         <Col xl={2} md={4} xs={6}>
-          <KpiCard label="Revenue" value={<>₹{formatINRCompact(revenue.total)}</>}
+          <KpiCard label="Revenue" value={<>₹{formatCompact(revenue.total)}</>}
             iconClass="ri-money-dollar-circle-line" color="#0ab39c" gradient="linear-gradient(135deg,#0ab39c,#405189)"
             trend="up" change="+24%" changeText="vs last period" />
         </Col>
@@ -265,7 +256,7 @@ export default function AdminDashboard() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }} title={`₹${revenue.total.toLocaleString('en-IN')}`}>₹{formatINRCompact(revenue.total)}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }} title={`₹${revenue.total.toLocaleString('en-IN')}`}>₹{formatCompact(revenue.total)}</div>
                   <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>TOTAL REVENUE</div>
                 </div>
                 <button type="button" onClick={() => setOpenModal('revenue')} style={{

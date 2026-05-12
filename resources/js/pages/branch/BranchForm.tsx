@@ -5,6 +5,7 @@ import {
 } from 'reactstrap';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { validatePhone } from '../../utils/validatePhone';
 
@@ -263,6 +264,8 @@ const css = {
 
 export default function BranchForm({ onBack, editId }: Props) {
   const isEdit = !!editId;
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [form, setForm] = useState<FormState>(empty);
   const toast = useToast();
   const [saving, setSaving] = useState(false);
@@ -1127,8 +1130,9 @@ export default function BranchForm({ onBack, editId }: Props) {
                   readOnly
                   style={{
                     ...css.input,
-                    background: '#f5f1ff',
-                    color: '#5a3fd1',
+                    background: isDark ? 'rgba(124,92,252,0.14)' : '#f5f1ff',
+                    color: isDark ? '#b9a8ff' : '#5a3fd1',
+                    borderColor: isDark ? 'rgba(124,92,252,0.35)' : 'rgba(124,92,252,0.30)',
                     fontWeight: 600,
                     letterSpacing: '0.02em',
                     cursor: 'not-allowed',
