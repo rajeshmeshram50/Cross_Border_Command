@@ -6,7 +6,7 @@ export type FieldOption = string | { value: string; label: string };
 export type FieldDef = {
   n: string;                // field name (row key)
   l: string;                // label
-  t: 'text' | 'number' | 'email' | 'date' | 'textarea' | 'select' | 'file' | 'sublist';
+  t: 'text' | 'number' | 'email' | 'date' | 'textarea' | 'select' | 'radio' | 'file' | 'sublist';
   r?: boolean;              // required
   p?: string;               // placeholder
   full?: boolean;           // span full row
@@ -34,6 +34,13 @@ export type FieldDef = {
   subCardSubtitleField?: string;  // small text under the title (e.g. 'branch_name')
   subCardLines?: string[];        // additional lines rendered on the card (field names)
   subPrimaryFlagField?: string;   // boolean field that marks an item as PRIMARY (e.g. 'is_primary')
+  // Per-option helper text shown under each choice — used by 'radio' fields
+  // when `opts` are { value, label } objects. Keyed by option value.
+  optDesc?: Record<string, string>;
+  // Conditional visibility — only render this field when the referenced
+  // field's current value matches. Useful for forms where one choice unlocks
+  // a follow-up input (e.g. show Calendar From Month only when From Month = Calendar).
+  showWhen?: { field: string; equals: string | string[] };
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
@@ -1734,6 +1741,75 @@ const C: Record<string, MasterConfig> = {
       { icon: 'ri-pie-chart-line', title: 'Live Occupancy', desc: 'Color-coded fill bars per rack' },
       { icon: 'ri-cursor-line', title: 'Click Any Rack', desc: 'Sidebar shows full rack + shelf detail' },
       { icon: 'ri-filter-line', title: 'Filter by Warehouse', desc: 'Scope view to one or all warehouses' },
+    ],
+  },
+
+  // ---------- ATTENDANCE MASTER MANAGEMENT ----------
+  leave_type: {
+    key: 'leave_type', slug: 'leave_type', title: 'Leave Type Master', titleSingular: 'Leave Type',
+    icon: 'ri-calendar-close-line', iconColor: 'success', iconBg: 'success',
+    desc: 'Define leave categories (Regular, Incident Based, Unpaid) with short codes',
+    cat: 'Attendance Master Management',
+    fields: [
+      { n: 'name', l: 'Leave Name', t: 'text', r: true, p: 'e.g. Annual Leave' },
+      { n: 'type', l: 'Type', t: 'select', r: true, opts: ['Regular', 'Incident Based Leave', 'Unpaid Leave'] },
+      { n: 'short_code', l: 'Short Code', t: 'text', r: true, p: 'e.g. AL', hint: 'Used on payslips & attendance grids' },
+      { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
+    ],
+    cols: ['name', 'type', 'short_code', 'status'],
+    colL: ['Leave Name', 'Type', 'Short Code', 'Status'],
+    uFields: ['short_code'],
+    data: [],
+    wtd: [
+      { icon: 'ri-bookmark-line', title: 'Name the Leave Type', desc: 'e.g. Annual Leave, Sick Leave, Maternity' },
+      { icon: 'ri-list-check', title: 'Pick a Type', desc: 'Regular, Incident Based or Unpaid' },
+      { icon: 'ri-text', title: 'Set a Short Code', desc: 'e.g. AL — shown on payslip & roster' },
+      { icon: 'ri-checkbox-circle-line', title: 'Activate', desc: 'Visible across leave plans once Active' },
+    ],
+  },
+
+  leave_plan: {
+    key: 'leave_plan', slug: 'leave_plan', title: 'Leave Plan Master', titleSingular: 'Leave Plan',
+    icon: 'ri-calendar-2-line', iconColor: 'info', iconBg: 'info',
+    desc: 'Configure leave plans with calendar year and start-month rules',
+    cat: 'Attendance Master Management',
+    fields: [
+      { n: 'plan_name', l: 'Leave Plan Name', t: 'text', r: true, p: 'e.g. Default Plan 2026', full: true },
+      { n: 'description', l: 'Description', t: 'textarea', p: 'Optional — short note describing this plan', full: true },
+      // Radio group mirrors the reference UX: one path picks a fixed calendar
+      // start month, the other ties the calendar year to each employee's
+      // joining date. The from_month picker below appears only when the
+      // "Calendar" path is selected (showWhen).
+      {
+        n: 'from_month_type',
+        l: 'Leave calendar year under this plan',
+        t: 'radio',
+        r: true,
+        opts: ['Calendar', 'If Joining'],
+        optDesc: {
+          Calendar: 'Starts from a particular month — pick the month below.',
+          'If Joining': 'The calendar year for the employee will start from the date of their joining and end on their work anniversary.',
+        },
+      },
+      {
+        n: 'from_month',
+        l: 'Starts from month',
+        t: 'select',
+        r: true,
+        opts: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+        showWhen: { field: 'from_month_type', equals: 'Calendar' },
+      },
+      { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
+    ],
+    cols: ['plan_name', 'from_month_type', 'from_month', 'status'],
+    colL: ['Leave Plan Name', 'Calendar Mode', 'Start Month', 'Status'],
+    uFields: ['plan_name'],
+    data: [],
+    wtd: [
+      { icon: 'ri-calendar-2-line', title: 'Name the Plan', desc: 'e.g. Default Plan 2026' },
+      { icon: 'ri-edit-line',       title: 'Add a Description', desc: 'Optional — a short note for clarity' },
+      { icon: 'ri-time-line',       title: 'Choose Start Mode', desc: 'Calendar month or each employee’s joining date' },
+      { icon: 'ri-checkbox-circle-line', title: 'Activate', desc: 'Active plans are selectable in employee setup' },
     ],
   },
 

@@ -22,6 +22,7 @@ const CATEGORY_STYLES: Record<string, CategoryStyle> = {
   'master.operations': { color: '#299cdb', icon: 'ri-tools-line',      gradient: 'linear-gradient(135deg,#299cdb,#63bcec)' },
   'master.p2p':        { color: '#7c5cfc', icon: 'ri-exchange-funds-line',  gradient: 'linear-gradient(135deg,#7c5cfc,#a993fd)' },
   'master.warehouse':  { color: '#10b981', icon: 'ri-building-2-line', gradient: 'linear-gradient(135deg,#10b981,#34d399)' },
+  'master.attendance': { color: '#0ab39c', icon: 'ri-calendar-check-line', gradient: 'linear-gradient(135deg,#0ab39c,#3dd6c3)' },
 };
 
 const LEAF_ICONS: Record<string, string> = {
@@ -44,6 +45,7 @@ const LEAF_ICONS: Record<string, string> = {
   Warehouse: 'ri-building-2-line', Grid3x3: 'ri-grid-line', Layers: 'ri-stack-line',
   Thermometer: 'ri-temp-cold-line', Rows3: 'ri-layout-row-line', Rows4: 'ri-layout-grid-line',
   Monitor: 'ri-computer-line', Snowflake: 'ri-snowy-line',
+  CalendarCheck: 'ri-calendar-check-line', CalendarOff: 'ri-calendar-close-line', CalendarRange: 'ri-calendar-2-line',
 };
 const leafIcon = (name?: string) => (name && LEAF_ICONS[name]) || 'ri-file-list-3-line';
 
@@ -97,6 +99,8 @@ const LEAF_DESCRIPTIONS: Record<string, string> = {
   'master.shelf_master':            'Add and manage shelves (levels) inside each rack',
   'master.digital_twin':            'Visual warehouse location view — Warehouse → Zone → Rack',
   'master.freezers':                'Cold storage units — direct placement, no bins required',
+  'master.leave_type':              'Define leave categories (Regular, Incident Based, Unpaid) with short codes',
+  'master.leave_plan':              'Configure leave plans with calendar year & start-month rules',
 };
 const leafDescription = (leaf: MenuChild) =>
   LEAF_DESCRIPTIONS[leaf.id] || `Manage ${leaf.label.toLowerCase()} records`;

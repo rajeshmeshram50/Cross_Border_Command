@@ -68,6 +68,8 @@ class MasterController extends Controller
         'shelf_master' => \App\Models\Masters\ShelfMaster::class,
         'digital_twin' => \App\Models\Masters\DigitalTwin::class,
         'freezers' => \App\Models\Masters\Freezers::class,
+        'leave_type' => \App\Models\Masters\LeaveTypes::class,
+        'leave_plan' => \App\Models\Masters\LeavePlans::class,
     ];
 
     /**
@@ -126,6 +128,8 @@ class MasterController extends Controller
         'shelf_master' => ['fields' => [['n' => 'rack_ref', 't' => 'select', 'r' => true, 'ref' => 'racks'], ['n' => 'shelf_name', 't' => 'text', 'r' => true], ['n' => 'level_no', 't' => 'number', 'r' => true], ['n' => 'shelf_type', 't' => 'select', 'r' => true, 'opts' => ['Standard Shelf', 'Cold Shelf', 'Heavy Duty Shelf', 'Cantilever Shelf', 'Mesh Shelf', 'Wire Deck Shelf']], ['n' => 'max_weight', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Available', 'Partially Used', 'Full', 'Blocked', 'Under Maintenance']]], 'uFields' => ['shelf_name']],
         'digital_twin' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'freezers' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'warehouse', 't' => 'select', 'r' => true, 'ref' => 'warehouse_master'], ['n' => 'capacity', 't' => 'number', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name', 'warehouse']],
+        'leave_type' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'type', 't' => 'select', 'r' => true, 'opts' => ['Regular', 'Incident Based Leave', 'Unpaid Leave']], ['n' => 'short_code', 't' => 'text', 'r' => true, 'normalize' => 'upper'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['short_code'], 'tenantScoped' => true],
+        'leave_plan' => ['fields' => [['n' => 'plan_name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'from_month_type', 't' => 'select', 'r' => true, 'opts' => ['Calendar', 'If Joining']], ['n' => 'from_month', 't' => 'select', 'opts' => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']], ['n' => 'calendar_year', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['plan_name'], 'tenantScoped' => true],
     ];
 
     /**

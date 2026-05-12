@@ -41,6 +41,7 @@ class ModuleSeeder extends Seeder
             ['name' => 'Operations & Support',  'slug' => 'master.operations',   'icon' => 'Wrench',      'description' => 'Assets and asset categories'],
             ['name' => 'P2P Masters',           'slug' => 'master.p2p',          'icon' => 'Handshake',   'description' => 'Procure-to-pay configuration'],
             ['name' => 'Warehouse Masters',     'slug' => 'master.warehouse',    'icon' => 'Warehouse',   'description' => 'Warehouse, zones, racks, freezers'],
+            ['name' => 'Attendance Master Management', 'slug' => 'master.attendance', 'icon' => 'CalendarCheck', 'description' => 'Branch attendance configuration: leave types & leave plans'],
         ];
 
         $catIds = [];
@@ -124,6 +125,10 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Shelf / Level Master',      'slug' => 'master.shelf_master',       'icon' => 'RowsIcon',      'description' => 'Shelves/levels inside each rack'],
                 ['name' => 'Digital Twin',              'slug' => 'master.digital_twin',       'icon' => 'Monitor',       'description' => 'Visual warehouse location view'],
                 ['name' => 'Freezer Management',        'slug' => 'master.freezers',           'icon' => 'Snowflake',     'description' => 'Cold storage units, direct placement'],
+            ],
+            'master.attendance' => [
+                ['name' => 'Leave Type Master', 'slug' => 'master.leave_type', 'icon' => 'CalendarOff',   'description' => 'Define leave categories (Regular, Incident Based, Unpaid) with short codes'],
+                ['name' => 'Leave Plan Master', 'slug' => 'master.leave_plan', 'icon' => 'CalendarRange', 'description' => 'Configure leave plans with calendar year & start-month rules'],
             ],
         ];
 
