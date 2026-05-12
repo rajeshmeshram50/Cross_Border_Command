@@ -6,6 +6,7 @@ import velzonStore from '../velzon/store';
 import { ThemeProvider } from '../contexts/ThemeContext';
 import { VariantProvider } from '../contexts/VariantContext';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
+import { resolveFileUrl } from '../utils/resolveFileUrl';
 import SplashLoader from './ui/SplashLoader';
 import { ToastProvider } from '../contexts/ToastContext';
 import { LayoutProvider } from '../contexts/LayoutContext';
@@ -244,7 +245,11 @@ function ProfileRouter() {
             || undefined,
           // Passport-size photo from onboarding (employee_documents,
           // document_key='photo'). Read by EmployeeProfile's hero avatar.
-          photoUrl: e.photo_url || user.employee_profile_photo || null,
+          // Resolve relative `/storage/...` paths to absolute URLs.
+          photoUrl: (() => {
+            const raw = e.photo_url || user.employee_profile_photo || null;
+            return raw ? resolveFileUrl(raw) : null;
+          })(),
         });
       })
       .catch(() => { /* fall back to the minimal stub built below */ });
@@ -261,7 +266,7 @@ function ProfileRouter() {
     email: user!.email,
     // /me already carries the employee passport photo, so the hero shows it
     // immediately even if the /employees/:id fetch hasn't resolved yet.
-    photoUrl: user!.employee_profile_photo || null,
+    photoUrl: user!.employee_profile_photo ? resolveFileUrl(user!.employee_profile_photo) : null,
   };
   return (
     <EmployeeProfile

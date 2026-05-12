@@ -5,6 +5,7 @@ import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from 'reactstrap
 // Use CBC's AuthContext instead of Velzon's Profile slice (which we stripped)
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
+import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import avatar1 from "../../assets/images/users/image.png";
 
 const ProfileDropdown = () => {
@@ -18,12 +19,15 @@ const ProfileDropdown = () => {
 
   // Profile photo priority: employee passport photo (most personal) >
   // tenant row (branch > client) > user-row photo (super_admin / employees
-  // who self-uploaded) > bundled generic avatar.
-  const profilePhoto = user.employee_profile_photo
+  // who self-uploaded) > bundled generic avatar. Backend returns
+  // `/storage/...` relative paths — resolveFileUrl prefixes the API origin
+  // so the <img> can actually load.
+  const rawProfilePhoto = user.employee_profile_photo
     || user.branch_profile_photo
     || user.client_profile_photo
     || user.user_profile_photo
-    || avatar1;
+    || null;
+  const profilePhoto = rawProfilePhoto ? resolveFileUrl(rawProfilePhoto) : avatar1;
 
   const roleLabel = user.user_type.replace(/_/g, ' ');
   // Super admin's display name often equals the role ("Super Admin") — hide the

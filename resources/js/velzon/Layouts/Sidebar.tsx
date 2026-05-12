@@ -12,14 +12,17 @@ import TwoColumnLayout from "./TwoColumnLayout";
 import { Container } from "reactstrap";
 import HorizontalLayout from "./HorizontalLayout";
 import { useAuth } from "../../contexts/AuthContext";
+import { resolveFileUrl } from "../../utils/resolveFileUrl";
 
 const Sidebar = ({ layoutType } : any) => {
   // Logo fallback chain — branch logo wins for branch users, then client logo
   // (used by client_admin and as fallback for branch_user without their own
   // logo), then the system IGC default for super admin or any client without
-  // an uploaded logo.
+  // an uploaded logo. The backend returns `/storage/...` relative paths;
+  // resolveFileUrl prefixes the API origin so the <img> can actually load.
   const { user } = useAuth();
-  const tenantLogo = user?.branch_logo || user?.client_logo || null;
+  const rawTenantLogo = user?.branch_logo || user?.client_logo || null;
+  const tenantLogo = rawTenantLogo ? resolveFileUrl(rawTenantLogo) : null;
   const smallLogo = tenantLogo || logoSm;
   const largeLogoDark = tenantLogo || logoDark;
   const largeLogoLight = tenantLogo || logoLight;

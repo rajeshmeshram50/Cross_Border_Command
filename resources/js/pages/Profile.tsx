@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Input, Label, Spinner, Form } from 'reactstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
 import { validatePhone } from '../utils/validatePhone';
+import { resolveFileUrl } from '../utils/resolveFileUrl';
 import { ShimmerProfile } from '../components/ui/Shimmer';
+import ImageCropperModal from '../components/ui/ImageCropperModal';
 
 export default function Profile() {
   const { user, logout, refresh } = useAuth();
@@ -30,6 +32,9 @@ export default function Profile() {
   // Save; preview is a data URL when staged, or the saved URL otherwise.
   const [profilePhotoFile,    setProfilePhotoFile]    = useState<File | null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
+  // Cropper modal state — the data URL the user just picked + open flag.
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropSrc,  setCropSrc]  = useState<string | null>(null);
 
   // ── Branding section (logo + colors) — tenant users only ──
   const [brandPrimary,   setBrandPrimary]   = useState<string>('#4F46E5');
@@ -37,6 +42,11 @@ export default function Profile() {
   const [brandLogoFile,  setBrandLogoFile]  = useState<File | null>(null);
   const [brandLogoPreview, setBrandLogoPreview] = useState<string | null>(null);
   const [savingBrand, setSavingBrand] = useState(false);
+  // Refs to the file inputs so we can reset their `.value` after a rejected
+  // upload — otherwise the browser keeps showing the filename and the user
+  // thinks the file is queued for save.
+  const brandLogoInputRef = useRef<HTMLInputElement | null>(null);
+  const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Initialize the branding form from the current /me values once we know
   // them. Re-syncs whenever the user object changes (e.g. after refresh()).
@@ -46,7 +56,7 @@ export default function Profile() {
     if (user.primary_color)   setBrandPrimary(user.primary_color);
     if (user.secondary_color) setBrandSecondary(user.secondary_color);
     const logo = user.branch_logo || user.client_logo || null;
-    if (logo) setBrandLogoPreview(logo);
+    if (logo) setBrandLogoPreview(resolveFileUrl(logo));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.primary_color, user?.secondary_color, user?.branch_logo, user?.client_logo]);
 
@@ -81,44 +91,149 @@ export default function Profile() {
     setProfileDesignation(user.designation || '');
     // Existing photo: employee passport photo first (most personal), then
     // tenant row (branch > client), then the user-row photo. Don't clobber a
-    // freshly-staged file the user hasn't saved yet.
+    // freshly-staged file the user hasn't saved yet. Backend returns
+    // `/storage/...` relative paths — resolveFileUrl prefixes the API origin.
     const photo = user.employee_profile_photo
       || user.branch_profile_photo
       || user.client_profile_photo
       || user.user_profile_photo
       || null;
-    setProfilePhotoPreview(prev => (profilePhotoFile ? prev : photo));
+    const resolved = photo ? resolveFileUrl(photo) : null;
+    setProfilePhotoPreview(prev => (profilePhotoFile ? prev : resolved));
   }, [user?.name, user?.phone, user?.designation, user?.employee_profile_photo, user?.branch_profile_photo, user?.client_profile_photo, user?.user_profile_photo]);
 
   if (pageLoading || !user) return <ShimmerProfile />;
 
-  const handleProfilePhotoChange = (file: File | null) => {
-    setProfilePhotoFile(file);
-    if (file) {
-      const r = new FileReader();
-      r.onload = ev => setProfilePhotoPreview(ev.target?.result as string);
-      r.readAsDataURL(file);
-    } else {
-      // Restore the saved photo if the user clears the picker
-      setProfilePhotoPreview(
-        user?.employee_profile_photo
-        || user?.branch_profile_photo
-        || user?.client_profile_photo
-        || user?.user_profile_photo
-        || null
-      );
-    }
+  // Restore the currently-saved photo (resolved to a fetchable URL).
+  const restoreSavedProfilePhoto = () => {
+    const saved = user?.employee_profile_photo
+      || user?.branch_profile_photo
+      || user?.client_profile_photo
+      || user?.user_profile_photo
+      || null;
+    setProfilePhotoPreview(saved ? resolveFileUrl(saved) : null);
   };
 
-  const handleBrandLogoChange = (file: File | null) => {
-    setBrandLogoFile(file);
-    if (file) {
-      const r = new FileReader();
-      r.onload = ev => setBrandLogoPreview(ev.target?.result as string);
-      r.readAsDataURL(file);
-    } else {
-      setBrandLogoPreview(user.branch_logo || user.client_logo || null);
+  // Lightweight pre-cropper sanity check — only catches non-images, files
+  // too big to load, and unreadable formats. Aspect ratio is now solved by
+  // the WhatsApp-style cropper, so we don't reject portrait/landscape inputs.
+  const validateProfilePhoto = (file: File): string | null => {
+    const MAX_BYTES = 4 * 1024 * 1024;
+    const OK_TYPES  = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!OK_TYPES.includes(file.type)) return 'Use a PNG, JPG or WebP file.';
+    if (file.size > MAX_BYTES)         return `Photo is larger than 4 MB (got ${(file.size / 1024 / 1024).toFixed(1)} MB).`;
+    return null;
+  };
+
+  // Two-stage flow:
+  //   1. user picks file  → validate basics → open cropper with source data URL
+  //   2. user adjusts crop → confirm → produces a square JPEG Blob → stage as the
+  //      pending profile photo (preview updates; Save Changes uploads it).
+  const handleProfilePhotoChange = (file: File | null) => {
+    if (!file) {
+      setProfilePhotoFile(null);
+      restoreSavedProfilePhoto();
+      return;
     }
+    const err = validateProfilePhoto(file);
+    if (err) {
+      toast.error('Invalid Photo', err);
+      if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = '';
+      return;
+    }
+    const r = new FileReader();
+    r.onload = ev => {
+      setCropSrc(ev.target?.result as string);
+      setCropOpen(true);
+    };
+    r.readAsDataURL(file);
+    // Don't keep the original filename in the input — once the cropper
+    // confirms, we replace with a synthetic .jpg anyway. Resetting here
+    // also lets the user re-pick the same file to re-open the cropper.
+    if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = '';
+  };
+
+  const handleCropConfirm = (blob: Blob) => {
+    const file = new File([blob], `profile-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    setProfilePhotoFile(file);
+    const r = new FileReader();
+    r.onload = ev => setProfilePhotoPreview(ev.target?.result as string);
+    r.readAsDataURL(blob);
+    setCropOpen(false);
+    setCropSrc(null);
+  };
+
+  // Logo validation rules — relaxed so common company logos (Coca-Cola
+  // square wordmarks, Nike-style 2:1, plus the wider 3:1 IGC reference)
+  // all pass. Anything too tall (portrait) is still rejected because the
+  // brand mark renders into a horizontal sidebar/topbar slot.
+  //   • size    ≤ 2 MB
+  //   • type    png / jpg / webp / svg
+  //   • width   ≥ 120 px
+  //   • height  ≥ 40 px
+  //   • ratio   0.8 : 1 … 6 : 1   (allow near-square through wide; block portrait)
+  // SVGs skip dimension checks — they're vector.
+  const validateLogo = (file: File): Promise<string | null> =>
+    new Promise(resolve => {
+      const MAX_BYTES   = 2 * 1024 * 1024;
+      const MIN_WIDTH   = 120;
+      const MIN_HEIGHT  = 40;
+      const MIN_RATIO   = 0.8;
+      const MAX_RATIO   = 6;
+      const OK_TYPES    = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
+
+      if (!OK_TYPES.includes(file.type)) {
+        resolve('Use a PNG, JPG, WebP or SVG file.');
+        return;
+      }
+      if (file.size > MAX_BYTES) {
+        resolve(`Logo is larger than 2 MB (got ${(file.size / 1024 / 1024).toFixed(1)} MB).`);
+        return;
+      }
+      if (file.type === 'image/svg+xml') { resolve(null); return; }
+
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const { naturalWidth: w, naturalHeight: h } = img;
+        if (w < MIN_WIDTH || h < MIN_HEIGHT) {
+          resolve(`Logo is too small (${w}×${h}). Use at least ${MIN_WIDTH}×${MIN_HEIGHT}.`);
+          return;
+        }
+        const ratio = w / h;
+        if (ratio < MIN_RATIO || ratio > MAX_RATIO) {
+          resolve(`Logo aspect ratio is ${ratio.toFixed(2)}:1 — use a horizontal logo (recommended ~3:1, e.g. 600×200).`);
+          return;
+        }
+        resolve(null);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve('Could not read this image file.');
+      };
+      img.src = url;
+    });
+
+  const handleBrandLogoChange = async (file: File | null) => {
+    if (!file) {
+      setBrandLogoFile(null);
+      const saved = user.branch_logo || user.client_logo || null;
+      setBrandLogoPreview(saved ? resolveFileUrl(saved) : null);
+      return;
+    }
+    const err = await validateLogo(file);
+    if (err) {
+      toast.error('Invalid Logo', err);
+      // Wipe the file input so the rejected filename doesn't linger and
+      // mislead the user into thinking the file is queued for save.
+      if (brandLogoInputRef.current) brandLogoInputRef.current.value = '';
+      return;
+    }
+    setBrandLogoFile(file);
+    const r = new FileReader();
+    r.onload = ev => setBrandLogoPreview(ev.target?.result as string);
+    r.readAsDataURL(file);
   };
 
   const handleSaveBranding = async () => {
@@ -490,12 +605,15 @@ export default function Profile() {
               <div className="flex-grow-1 min-w-0">
                 <Label className="pf-label mb-1">Profile Photo</Label>
                 <Input
+                  innerRef={profilePhotoInputRef}
                   type="file"
-                  accept="image/jpeg,image/png"
+                  accept="image/jpeg,image/png,image/webp"
                   onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
                   style={{ fontSize: 12 }}
                 />
-                <small className="text-muted" style={{ fontSize: 11 }}>JPG or PNG — Max 2MB</small>
+                <small className="text-muted" style={{ fontSize: 11 }}>
+                  JPG, PNG, WebP — Max 4MB · you'll be able to crop &amp; zoom after picking
+                </small>
               </div>
             </div>
           <Row className="g-2">
@@ -977,9 +1095,11 @@ export default function Profile() {
                         )}
                       </div>
                       <div className="flex-grow-1 min-w-0">
-                        <Input type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" style={{ fontSize: 12 }}
+                        <Input innerRef={brandLogoInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" style={{ fontSize: 12 }}
                           onChange={e => handleBrandLogoChange(e.target.files?.[0] || null)} />
-                        <small className="text-muted d-block mt-1" style={{ fontSize: 10.5 }}>PNG, JPG, SVG — max 2MB</small>
+                        <small className="text-muted d-block mt-1" style={{ fontSize: 10.5 }}>
+                          PNG, JPG, SVG — max 2MB · recommended 600×200 (horizontal, ~3:1)
+                        </small>
                       </div>
                     </div>
                   </Col>
@@ -1202,6 +1322,20 @@ export default function Profile() {
           </Col>
         </Row>
       )}
+
+      {/* WhatsApp/Instagram-style square crop dialog for the profile photo.
+          Confirming produces a 512×512 JPEG that gets staged as the pending
+          upload — Save Changes posts it via the existing handleSaveProfile. */}
+      <ImageCropperModal
+        open={cropOpen}
+        src={cropSrc}
+        aspect={1}
+        cropShape="round"
+        outputSize={512}
+        title="Adjust profile photo"
+        onCancel={() => { setCropOpen(false); setCropSrc(null); }}
+        onConfirm={handleCropConfirm}
+      />
     </>
   );
 }

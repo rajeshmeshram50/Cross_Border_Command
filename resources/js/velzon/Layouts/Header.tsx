@@ -14,6 +14,7 @@ import ProfileDropdown from '../Components/Common/ProfileDropdown';
 import LightDark from '../Components/Common/LightDark';
 import BranchSwitcher from '../../components/BranchSwitcher';
 import { useAuth } from '../../contexts/AuthContext';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 
 import { changeSidebarVisibility } from '../slices/thunks';
 import { useSelector, useDispatch } from "react-redux";
@@ -28,8 +29,11 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
     // Header's `horizontal-logo` block shows the brand mark in horizontal /
     // twocolumn layouts (where the sidebar is hidden / collapsed). Use the
     // same fallback chain as Sidebar.tsx so a tenant's logo replaces the
-    // static IGC defaults whenever it's available.
-    const tenantLogo = user?.branch_logo || user?.client_logo || null;
+    // static IGC defaults whenever it's available. Backend returns
+    // `/storage/...` relative paths — resolveFileUrl prefixes the API origin
+    // so the <img> can actually load.
+    const rawTenantLogo = user?.branch_logo || user?.client_logo || null;
+    const tenantLogo = rawTenantLogo ? resolveFileUrl(rawTenantLogo) : null;
     const headerLogoSm    = tenantLogo || logoSm;
     const headerLogoDark  = tenantLogo || logoDark;
     const headerLogoLight = tenantLogo || logoLight;
