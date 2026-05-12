@@ -31,6 +31,7 @@ const iconMap: Record<string, string> = {
   UserCircle: "ri-account-circle-line",
   Database: "ri-database-2-line",
   Users: "ri-team-line",
+  CalendarCheck: "ri-calendar-check-line",
 };
 
 const resolveIcon = (name?: string) => (name && iconMap[name]) || "ri-circle-line";
@@ -41,6 +42,7 @@ const slugToPath = (slug: string): string => {
     case "clients":     return "/clients";
     case "plans":       return "/plans";
     case "payments":    return "/payments";
+    case "clock-in":    return "/clock-in";
     case "branches":    return "/branches";
     case "my-plan":     return "/my-plan";
     case "permissions": return "/permissions";
@@ -94,7 +96,9 @@ const Navdata = () => {
   const planExpiredOrMissing =
     isTenantUser && user?.plan && (!user.plan.has_plan || user.plan.expired);
   const perms = user?.permissions || {};
-  const defaultSlugs = ["dashboard", "profile", "my-plan"];
+  // clock-in is added to defaults so it surfaces even when the user has
+  // zero module permissions — every employee can clock themselves in.
+  const defaultSlugs = ["dashboard", "profile", "my-plan", "clock-in"];
   const roleOnlySlugs = ["clients", "plans", "payments", "settings", "permissions"];
 
   const hasAnyMasterView = () => {

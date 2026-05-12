@@ -94,6 +94,113 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Face-based login. The SPA captures a face frame, computes the 128-d
+     * descriptor with face-api.js and POSTs it here along with the user's
+     * email. We compare against the enrolled descriptor on that user's
+     * linked Employee row.
+     *
+     * Threshold is tighter than attendance (0.50 vs 0.55) because this is
+     * authentication — a false match here hands over the session. The face
+     * is a SECOND factor in spirit, not the only factor: the user still
+     * has to know which email account to identify themselves as.
+     *
+     * All the same active-account / org / branch gates fire as the password
+     * login, plus brute-force lockout on the same Cache key so an attacker
+     * can't bypass rate-limiting by switching login methods.
+     */
+    public function faceLogin(Request $request)
+    {
+        $request->validate([
+            'email'        => 'required|email',
+            'descriptor'   => 'required|array|size:128',
+            'descriptor.*' => 'required|numeric',
+        ]);
+
+        $lockKey = 'login_attempts:' . strtolower(trim($request->email));
+
+        if (Settings::is('security', 'bruteForce', true)) {
+            $attempts = (int) Cache::get($lockKey, 0);
+            if ($attempts >= 5) {
+                throw ValidationException::withMessages([
+                    'email' => ['Too many failed login attempts. Try again in 15 minutes.'],
+                ]);
+            }
+        }
+
+        $user = User::with(['client', 'branch.client'])->where('email', $request->email)->first();
+        $employee = $user ? \App\Models\Employee::where('user_id', $user->id)->first() : null;
+
+        // Combine "no user", "no linked employee", "no face on file" into
+        // ONE generic failure — we don't want to leak which condition failed
+        // (otherwise an attacker can probe valid emails).
+        if (!$user || !$employee || empty($employee->face_descriptor) || $employee->face_registered_at === null) {
+            if (Settings::is('security', 'bruteForce', true)) {
+                Cache::put($lockKey, ((int) Cache::get($lockKey, 0)) + 1, now()->addMinutes(15));
+            }
+            throw ValidationException::withMessages([
+                'email' => ['Face login is not available for this account. Try password login.'],
+            ]);
+        }
+
+        // Euclidean distance between the captured descriptor and the enrolled one.
+        $sum = 0.0;
+        $captured = $request->input('descriptor');
+        for ($i = 0; $i < 128; $i++) {
+            $d = (float) $captured[$i] - (float) $employee->face_descriptor[$i];
+            $sum += $d * $d;
+        }
+        $distance = sqrt($sum);
+        $threshold = 0.50;
+
+        if ($distance > $threshold) {
+            if (Settings::is('security', 'bruteForce', true)) {
+                Cache::put($lockKey, ((int) Cache::get($lockKey, 0)) + 1, now()->addMinutes(15));
+            }
+            throw ValidationException::withMessages([
+                'email' => ['Face did not match. Please try again with better lighting or use password login.'],
+            ]);
+        }
+
+        Cache::forget($lockKey);
+
+        // Same status / org / branch gates as the password login. We refuse
+        // to issue a token if any of these are inactive so a "face match"
+        // alone can't bypass account-disabled state.
+        if ($user->status !== 'active') {
+            throw ValidationException::withMessages([
+                'email' => ['Your account is not active. Contact administrator.'],
+            ]);
+        }
+        $effectiveClient = $user->effectiveClient();
+        if ($effectiveClient && $effectiveClient->status !== 'active') {
+            throw ValidationException::withMessages([
+                'email' => ['Your organization is ' . $effectiveClient->status . '. Contact administrator.'],
+            ]);
+        }
+        if ($user->branch_id && $user->branch && $user->branch->status !== 'active') {
+            throw ValidationException::withMessages([
+                'email' => ['Your branch is not active. Contact administrator.'],
+            ]);
+        }
+
+        $user->update([
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+            'login_count'   => ($user->login_count ?? 0) + 1,
+            'login_source'  => 'face',
+        ]);
+
+        $user->tokens()->delete();
+        $token = $user->createToken('cbc-token')->plainTextToken;
+
+        return response()->json([
+            'token'     => $token,
+            'user'      => $this->formatUser($user),
+            'distance'  => round($distance, 4),
+        ]);
+    }
+
     public function googleLogin(Request $request)
     {
         $request->validate([

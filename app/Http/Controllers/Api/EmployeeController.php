@@ -206,19 +206,25 @@ class EmployeeController extends Controller
             abort(422, 'category must be one of laptop, mobile, other');
         }
 
-        // System-managed Laptop / Mobile categories live as global rows
-        // (client_id = null). Build the [name → id] map manually rather
-        // than via pluck(DB::raw()) — Postgres returns LOWER(name) under
-        // the column alias `lower`, which Laravel can't resolve back to
-        // the raw expression so the pluck silently degrades to a single
-        // empty-string key.
-        $sysCatRows = \App\Models\Masters\AssetCategories::query()
-            ->where('is_system', true)
+        // Match by category NAME (case-insensitive), accepting any category
+        // whose name is "Laptop" or "Mobile" — not just the seeded system
+        // rows. In real tenants we found assets linked to user-created
+        // categories that share the name (a manager named their own "Laptop"
+        // category while the seeded one already existed), which caused the
+        // Stage 1 dropdown to silently come back empty even though the
+        // Asset Master page clearly listed 25 laptops. Matching by name is
+        // forgiving of that data divergence while still scoped to laptop /
+        // mobile only — "other" excludes any category named laptop/mobile,
+        // so accidental double-counting is impossible.
+        $catRows = \App\Models\Masters\AssetCategories::query()
             ->whereRaw('LOWER(name) IN (?, ?)', ['laptop', 'mobile'])
             ->get(['id', 'name']);
-        $sysCatIds = [];
-        foreach ($sysCatRows as $row) {
-            $sysCatIds[strtolower($row->name)] = (int) $row->id;
+        $laptopCatIds = [];
+        $mobileCatIds = [];
+        foreach ($catRows as $row) {
+            $n = strtolower($row->name);
+            if ($n === 'laptop') $laptopCatIds[] = (int) $row->id;
+            if ($n === 'mobile') $mobileCatIds[] = (int) $row->id;
         }
 
         $assetQ = \App\Models\Masters\Assets::query();
@@ -232,19 +238,15 @@ class EmployeeController extends Controller
         }
 
         if ($category === 'laptop') {
-            // Stage 1 only surfaces laptops belonging to the seeded
-            // system "Laptop" category. If the seed is missing for any
-            // reason, abort the list so we don't accidentally return
-            // every asset under the wrong header.
-            if (!isset($sysCatIds['laptop'])) return response()->json([]);
-            $assetQ->where('asset_type_id', $sysCatIds['laptop']);
+            if (empty($laptopCatIds)) return response()->json([]);
+            $assetQ->whereIn('asset_type_id', $laptopCatIds);
         } elseif ($category === 'mobile') {
-            if (!isset($sysCatIds['mobile'])) return response()->json([]);
-            $assetQ->where('asset_type_id', $sysCatIds['mobile']);
+            if (empty($mobileCatIds)) return response()->json([]);
+            $assetQ->whereIn('asset_type_id', $mobileCatIds);
         } elseif ($category === 'other') {
-            $sysIds = array_values($sysCatIds);
-            if (!empty($sysIds)) {
-                $assetQ->whereNotIn('asset_type_id', $sysIds);
+            $excludeIds = array_merge($laptopCatIds, $mobileCatIds);
+            if (!empty($excludeIds)) {
+                $assetQ->whereNotIn('asset_type_id', $excludeIds);
             }
         }
 

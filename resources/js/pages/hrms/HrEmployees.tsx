@@ -7,6 +7,7 @@ import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } f
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
+import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 // Borrow the polished pill-button styles used by the recruitment / hiring
 // request modal so the Add Employee wizard footer matches the same design
 // language (gradient primary CTA + soft outlined secondary).
@@ -297,6 +298,10 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
     })(),
     status: statusMap[e.status || 'Active'] || 'active',
     enabled,
+    // Face-biometric enrolment status — surfaced as a green dot on the
+    // Register Face row action so admins can see at a glance which
+    // employees are already enrolled.
+    faceRegistered: !!e.face_registered,
     // Smuggle the DB id + raw row through so handlers can act on the API row
     // without re-fetching.
     _dbId: e.id,
@@ -656,6 +661,10 @@ export default function HrEmployees() {
   // Permanent-delete confirmation (Disabled tab only). Holds the row pending
   // confirmation so the modal can show the name + emp_code; null when closed.
   const [confirmDelete, setConfirmDelete] = useState<EmployeeRow | null>(null);
+  // Face-biometric enrolment for an employee. Admin clicks the face icon
+  // on a row → modal opens with that employee's DB id so the descriptor is
+  // POSTed against `/api/face/register` with `employee_id: <that row>`.
+  const [faceRegEmployeeId, setFaceRegEmployeeId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   /** Force-delete the row currently held in `confirmDelete`. Hits the
@@ -2430,6 +2439,19 @@ export default function HrEmployees() {
                                   <ActionBtn title="Send Onboarding" icon="ri-user-add-line" color="info" onClick={() => openOnboardingForEmployee(e)} />
                                 ) : null}
                                 <ActionBtn title="Asset" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} />
+                                {/* Face biometric — enrols (or re-enrols) the employee's face
+                                    so they can clock in / sign in via face match. A small
+                                    green dot in the corner of the button signals "already
+                                    enrolled" so admins can tell which rows still need work
+                                    without clicking each one. Tooltip flips Re-register
+                                    when a face is already on file. */}
+                                <ActionBtn
+                                  title={(e as any).faceRegistered ? 'Re-register Face (already enrolled)' : 'Register Face'}
+                                  icon="ri-user-smile-line"
+                                  color={(e as any).faceRegistered ? 'success' : 'secondary'}
+                                  badge={(e as any).faceRegistered ? 'dot' : undefined}
+                                  onClick={() => setFaceRegEmployeeId((e as any)._dbId)}
+                                />
                                 <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} />
                                 <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} />
                                 {/* Permanent-delete is only offered on the Disabled tab so
@@ -4933,6 +4955,17 @@ export default function HrEmployees() {
           </Modal>
         );
       })()}
+
+      {/* Face Registration modal — opened from the row action. Posts the
+          128-d descriptor (with consent flag) to /api/face/register, with
+          employee_id set to the row's DB id so the admin enrols another
+          employee's face (not their own). */}
+      <FaceRegistrationModal
+        open={faceRegEmployeeId !== null}
+        onClose={() => setFaceRegEmployeeId(null)}
+        employeeId={faceRegEmployeeId ?? undefined}
+        onRegistered={() => reloadEmployees()}
+      />
     </>
   );
 }
@@ -5094,15 +5127,15 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
 // Outline icon-pill action button — same recipe as Clients.tsx ActionBtn so
 // the table actions read identically across both pages.
 function ActionBtn({
-  title, icon, color, onClick, disabled,
-}: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) {
+  title, icon, color, onClick, disabled, badge,
+}: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean; badge?: 'dot' }) {
   return (
     <Tooltip label={title}>
       <button
         type="button"
         aria-label={title}
         disabled={disabled}
-        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        className="btn p-0 d-inline-flex align-items-center justify-content-center position-relative"
         style={{
           width: 30, height: 30, borderRadius: 8,
           background: 'var(--vz-secondary-bg)',
@@ -5123,6 +5156,22 @@ function ActionBtn({
         onClick={onClick}
       >
         <i className={`${icon} fs-14`} />
+        {/* Small "already enrolled" indicator — green dot in the top-right
+            corner. Currently only used by the Register Face action to signal
+            an existing enrolment, but the prop is generic so other actions
+            can reuse the same dot later. */}
+        {badge === 'dot' && (
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute', top: -2, right: -2,
+              width: 9, height: 9, borderRadius: '50%',
+              background: '#10b981',
+              border: '2px solid var(--vz-card-bg, #fff)',
+              boxShadow: '0 0 0 1px rgba(16,185,129,0.35)',
+            }}
+          />
+        )}
       </button>
     </Tooltip>
   );

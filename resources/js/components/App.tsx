@@ -61,6 +61,7 @@ import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboard
 import EmployeePermissions from '../pages/employee/EmployeePermissions';
 import EmployeeProfile from '../pages/employee/EmployeeProfile';
 import PublicOnboarding from '../pages/PublicOnboarding';
+import ClockIn from '../pages/ClockIn';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -104,6 +105,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'my-plan': return '/my-plan';
     case 'plan-blocked': return '/plan-blocked';
     case 'payments': return '/payments';
+    case 'clock-in': return '/clock-in';
     case 'permissions': return '/permissions';
     case 'settings': return '/settings';
     case 'profile': return '/profile';
@@ -424,6 +426,10 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/permissions" element={<Permissions />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<ProfileRouter />} />
+              {/* Face-driven attendance — open to any signed-in tenant user.
+                  The controller hard-checks `user.employee_id`, so non-employees
+                  hitting this URL get a friendly 404 toast from the page. */}
+              <Route path="/clock-in" element={<ClockIn />} />
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/hr" element={<HrDashboard />} />

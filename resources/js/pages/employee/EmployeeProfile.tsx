@@ -7,6 +7,7 @@ import ComingSoonShell from '../../components/ComingSoonShell';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import ExpenseClaimsTable from '../../components/ExpenseClaimsTable';
+import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import './EmployeeProfile.css';
 
 // Custom portal-based modal — renders directly to document.body so it always
@@ -210,6 +211,400 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
     return () => clearInterval(timer);
   }, [value]);
   return <>{prefix}{display.toLocaleString()}{suffix}</>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Attendance — live panel rendered on the Employee Profile's Attendance tab.
+//
+// Replaces the old "Coming Soon" mock-data block. Calls the dedicated
+// /attendance/employee/{employeeId}/summary endpoint which returns:
+//   - today (Attendance row + punches)
+//   - month stats (present, late, missing biometric, leave)
+//   - history (every Attendance row in the selected month with its punches)
+//
+// One `employeeId` prop — the route slug (emp_code like "EMP-001"). The
+// backend resolves either numeric DB id or emp_code so we don't have to.
+// ─────────────────────────────────────────────────────────────────────────────
+interface AttendancePanelPunch {
+  id: number;
+  punched_at: string;
+  direction: 'in' | 'out';
+  label: string;
+  method: 'face' | 'manual' | 'auto';
+}
+interface AttendancePanelRecord {
+  id: number;
+  attendance_date: string;
+  check_in_at: string | null;
+  check_out_at: string | null;
+  status: string;
+  total_worked_seconds: number;
+  punches_count: number;
+  punches: AttendancePanelPunch[];
+}
+interface AttendancePanelResponse {
+  employee: { id: number; emp_code: string | null; name: string; face_registered: boolean };
+  month: string;
+  stats: { present_days: number; late_marks: number; missing_biometric: number; total_leaves: number };
+  today: AttendancePanelRecord | null;
+  history: AttendancePanelRecord[];
+}
+
+// Activity-label palette — mirrors the ClockIn page so the same Step Out /
+// Lunch In / Meeting chip looks identical across the two surfaces.
+const ATT_LABEL_TONE: Record<string, { bg: string; fg: string; dot: string; icon: string }> = {
+  'Check In':  { bg: 'rgba(16,185,129,0.12)',  fg: '#047857', dot: '#10b981', icon: 'ri-login-circle-line'  },
+  'Step Out':  { bg: 'rgba(245,158,11,0.12)',  fg: '#a16207', dot: '#f59e0b', icon: 'ri-walk-line'          },
+  'Step In':   { bg: 'rgba(20,184,166,0.12)',  fg: '#0f766e', dot: '#14b8a6', icon: 'ri-walk-line'          },
+  'Lunch Out': { bg: 'rgba(244,114,182,0.12)', fg: '#9d174d', dot: '#f472b6', icon: 'ri-restaurant-line'    },
+  'Lunch In':  { bg: 'rgba(34,197,94,0.12)',   fg: '#166534', dot: '#22c55e', icon: 'ri-restaurant-line'    },
+  'Meeting':   { bg: 'rgba(99,102,241,0.12)',  fg: '#4338ca', dot: '#6366f1', icon: 'ri-presentation-line'  },
+  'Check Out': { bg: 'rgba(244,63,94,0.12)',   fg: '#9f1239', dot: '#f43f5e', icon: 'ri-logout-circle-line' },
+};
+const attLabelTone = (label: string) => ATT_LABEL_TONE[label] || {
+  bg: 'rgba(100,116,139,0.12)', fg: '#475569', dot: '#64748b', icon: 'ri-time-line',
+};
+
+const attFmtClock = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
+const attFmtHM    = (secs: number) => {
+  const h = Math.floor(Math.max(0, secs) / 3600);
+  const m = Math.floor((Math.max(0, secs) % 3600) / 60);
+  return `${h}h ${String(m).padStart(2, '0')}m`;
+};
+const attFmtDate  = (iso: string) => {
+  const d = new Date(iso);
+  return d.toLocaleDateString([], { day: '2-digit', month: 'short' });
+};
+const attDayName  = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: 'short' });
+
+function AttendanceTabPanel({ employeeId }: { employeeId: string }) {
+  const [data, setData] = useState<AttendancePanelResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
+  // YYYY-MM. Defaults to the current month — admins can paginate backwards
+  // via the < > arrows next to the month label.
+  const [month, setMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 8;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.get(`/attendance/employee/${encodeURIComponent(employeeId)}/summary`, { params: { month } })
+      .then((r: any) => { if (!cancelled) { setData(r.data); setPage(0); } })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setError(err?.response?.data?.message || err?.message || 'Failed to load attendance.');
+        setData(null);
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [employeeId, month]);
+
+  const stepMonth = (delta: number) => {
+    const [y, m] = month.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  if (loading) {
+    return (
+      <div className="d-flex align-items-center justify-content-center py-5">
+        <span className="spinner-border spinner-border-sm me-2" /> Loading attendance…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="p-4 text-center text-muted" style={{ fontSize: 13 }}>
+        <i className="ri-error-warning-line me-1" /> {error}
+      </div>
+    );
+  }
+  if (!data) return null;
+
+  const { stats, today, history } = data;
+  const todayPunches = today?.punches || [];
+  const pageStart = page * PAGE_SIZE;
+  const pageEnd   = pageStart + PAGE_SIZE;
+  const pageRows  = history.slice(pageStart, pageEnd);
+  const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
+
+  // Same gradient palette EmployeeProfile uses for the other KPI strips so
+  // the visual rhythm matches the rest of the page.
+  const G_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
+  const G_WARNING = 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)';
+  const G_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
+  const G_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
+
+  return (
+    <>
+      {/* KPI strip */}
+      <Row className="g-3 mb-3 align-items-stretch">
+        <Col xl><KpiTile label="Present Days"      value={<AnimatedNumber value={stats.present_days} />}      sub="This month"         icon="ri-checkbox-circle-line" gradient={G_SUCCESS} /></Col>
+        <Col xl><KpiTile label="Late Marks"        value={<AnimatedNumber value={stats.late_marks} />}        sub="This month"         icon="ri-time-line"            gradient={G_WARNING} /></Col>
+        <Col xl><KpiTile label="Missing Biometric" value={<AnimatedNumber value={stats.missing_biometric} />} sub="Entries this month" icon="ri-error-warning-line"   gradient={G_DANGER}  /></Col>
+        <Col xl><KpiTile label="Total Leaves"      value={<AnimatedNumber value={stats.total_leaves} />}      sub="This month"         icon="ri-calendar-todo-line"   gradient={G_PURPLE}  /></Col>
+      </Row>
+
+      {/* Today + Timeline side-by-side */}
+      <Row className="g-3 mb-3 align-items-stretch">
+        <Col xl={6}>
+          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #0ab39c' }}>
+            <div
+              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+              style={{
+                borderBottom: '1px solid rgba(10,179,156,0.18)',
+                background: 'linear-gradient(135deg, rgba(10,179,156,0.14) 0%, rgba(10,179,156,0.04) 60%, rgba(10,179,156,0.01) 100%)',
+              }}
+            >
+              <div className="d-flex align-items-center gap-2">
+                <span className="ep-section-icon" style={{ background: 'rgba(10,179,156,0.18)', color: '#0a8a78' }}>
+                  <i className="ri-calendar-check-line" />
+                </span>
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Today's Record</h6>
+              </div>
+              <small className="text-muted" style={{ fontSize: 11 }}>
+                {new Date().toLocaleDateString([], { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
+              </small>
+            </div>
+            <div className="px-3 py-3 flex-grow-1">
+              {today ? (
+                <>
+                  <span
+                    className="d-inline-flex align-items-center gap-1 fw-semibold mb-3"
+                    style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 999,
+                      background: '#d6f4e3', color: '#108548',
+                    }}
+                  >
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981' }} />
+                    {today.status}
+                  </span>
+                  <Row className="g-2 mb-2">
+                    <Col xs={6}>
+                      <div className="ep-field-label">First In</div>
+                      <div className="ep-field-value font-monospace">{attFmtClock(today.check_in_at)}</div>
+                    </Col>
+                    <Col xs={6}>
+                      <div className="ep-field-label">Last Out</div>
+                      <div className="ep-field-value font-monospace">{attFmtClock(today.check_out_at)}</div>
+                    </Col>
+                    <Col xs={4}>
+                      <div className="ep-field-label">Punches</div>
+                      <div className="ep-field-value">{today.punches_count}</div>
+                    </Col>
+                    <Col xs={4}>
+                      <div className="ep-field-label">Worked</div>
+                      <div className="ep-field-value">{attFmtHM(today.total_worked_seconds)}</div>
+                    </Col>
+                    <Col xs={4}>
+                      <div className="ep-field-label">Expected</div>
+                      <div className="ep-field-value">9h 00m</div>
+                    </Col>
+                  </Row>
+                </>
+              ) : (
+                <div className="text-center text-muted py-3" style={{ fontSize: 13 }}>
+                  No attendance record for today yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </Col>
+
+        <Col xl={6}>
+          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column" style={{ borderTop: '3px solid #6366f1' }}>
+            <div
+              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+              style={{
+                borderBottom: '1px solid rgba(99,102,241,0.18)',
+                background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(99,102,241,0.03) 60%, rgba(99,102,241,0.01) 100%)',
+              }}
+            >
+              <div className="d-flex align-items-center gap-2">
+                <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
+                  <i className="ri-pulse-line" />
+                </span>
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Intraday Punch Timeline</h6>
+              </div>
+              <small className="text-muted" style={{ fontSize: 11 }}>
+                {todayPunches.length} {todayPunches.length === 1 ? 'punch today' : 'punches today'}
+              </small>
+            </div>
+            <div className="px-3 py-3 flex-grow-1" style={{ overflowX: 'auto' }}>
+              {todayPunches.length === 0 ? (
+                <div className="text-center text-muted py-3" style={{ fontSize: 13 }}>
+                  No punches yet today.
+                </div>
+              ) : (
+                <div className="d-flex gap-3 align-items-stretch" style={{ minWidth: 'fit-content' }}>
+                  {todayPunches.map((p, idx) => {
+                    const t = attLabelTone(p.label);
+                    return (
+                      <div
+                        key={p.id}
+                        className="position-relative d-flex flex-column align-items-center"
+                        style={{ minWidth: 92, flex: '0 0 auto' }}
+                      >
+                        {idx < todayPunches.length - 1 && (
+                          <div
+                            aria-hidden
+                            style={{
+                              position: 'absolute', top: 20, left: '60%', right: '-50%',
+                              height: 2, background: 'rgba(148,163,184,0.35)',
+                            }}
+                          />
+                        )}
+                        <div
+                          className="d-inline-flex align-items-center justify-content-center"
+                          style={{
+                            width: 40, height: 40, borderRadius: '50%',
+                            background: t.bg, color: t.fg,
+                            border: `2px solid ${t.dot}`,
+                            fontSize: 16, zIndex: 1,
+                          }}
+                        >
+                          <i className={t.icon} />
+                        </div>
+                        <div className="text-center mt-2" style={{ fontSize: 11.5, fontWeight: 700 }}>
+                          {attFmtClock(p.punched_at)}
+                        </div>
+                        <div className="text-center" style={{ fontSize: 11, color: t.fg, fontWeight: 600 }}>
+                          {p.label}
+                        </div>
+                        <div
+                          className="text-uppercase mt-1"
+                          style={{ fontSize: 9, letterSpacing: 0.6, color: 'var(--vz-secondary-color)' }}
+                        >
+                          {p.method}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </Col>
+      </Row>
+
+      {/* Attendance Timelog History */}
+      <Row className="g-3">
+        <Col xs={12}>
+          <div className="ep-section-card-flat ep-section-card" style={{ borderTop: '3px solid #f59e0b' }}>
+            <div
+              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap"
+              style={{
+                borderBottom: '1px solid rgba(245,158,11,0.18)',
+                background: 'linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(245,158,11,0.03) 60%, rgba(245,158,11,0.01) 100%)',
+              }}
+            >
+              <div className="d-flex align-items-center gap-2">
+                <span className="ep-section-icon" style={{ background: 'rgba(245,158,11,0.18)', color: '#a16207' }}>
+                  <i className="ri-history-line" />
+                </span>
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Attendance Timelog History</h6>
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <button type="button" className="btn btn-sm btn-light" onClick={() => stepMonth(-1)} aria-label="Previous month">
+                  <i className="ri-arrow-left-s-line" />
+                </button>
+                <span className="fw-semibold" style={{ fontSize: 12, minWidth: 80, textAlign: 'center' }}>
+                  {new Date(month + '-01').toLocaleDateString([], { month: 'long', year: 'numeric' })}
+                </span>
+                <button type="button" className="btn btn-sm btn-light" onClick={() => stepMonth(1)} aria-label="Next month">
+                  <i className="ri-arrow-right-s-line" />
+                </button>
+              </div>
+            </div>
+            <div className="px-3 py-3">
+              {history.length === 0 ? (
+                <div className="text-center text-muted py-4" style={{ fontSize: 13 }}>
+                  No attendance records for {new Date(month + '-01').toLocaleDateString([], { month: 'long', year: 'numeric' })}.
+                </div>
+              ) : (
+                <>
+                  <div className="table-responsive">
+                    <table className="table table-sm mb-0" style={{ fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(15,23,42,0.04)' }}>
+                          <th>Date</th>
+                          <th>Day</th>
+                          <th>First In</th>
+                          <th>Last Out</th>
+                          <th>Punches</th>
+                          <th>Worked</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pageRows.map(r => (
+                          <tr key={r.id}>
+                            <td className="fw-semibold">{attFmtDate(r.attendance_date)}</td>
+                            <td>{attDayName(r.attendance_date)}</td>
+                            <td className="font-monospace">{attFmtClock(r.check_in_at)}</td>
+                            <td className="font-monospace">{attFmtClock(r.check_out_at)}</td>
+                            <td>{r.punches_count}</td>
+                            <td>{attFmtHM(r.total_worked_seconds)}</td>
+                            <td>
+                              <span
+                                className="d-inline-flex align-items-center gap-1 fw-semibold"
+                                style={{
+                                  fontSize: 10.5, padding: '2px 8px', borderRadius: 999,
+                                  background: r.status === 'Present' ? '#d6f4e3' :
+                                              r.status === 'Late'    ? '#fef3c7' :
+                                              r.status === 'Leave'   ? '#e0e7ff' : '#f1f5f9',
+                                  color: r.status === 'Present' ? '#108548' :
+                                         r.status === 'Late'    ? '#92400e' :
+                                         r.status === 'Leave'   ? '#3730a3' : '#475569',
+                                }}
+                              >
+                                {r.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {pageCount > 1 && (
+                    <div className="d-flex align-items-center justify-content-between mt-2 pt-2 border-top">
+                      <small className="text-muted">
+                        Showing {pageStart + 1}–{Math.min(pageEnd, history.length)} of {history.length}
+                      </small>
+                      <ul className="pagination pagination-sm mb-0">
+                        <li className={page === 0 ? 'page-item disabled' : 'page-item'}>
+                          <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (page > 0) setPage(p => p - 1); }}>
+                            <i className="ri-arrow-left-s-line" />
+                          </a>
+                        </li>
+                        {Array.from({ length: pageCount }, (_, i) => (
+                          <li key={i} className={page === i ? 'page-item active' : 'page-item'}>
+                            <a href="#" className="page-link" onClick={e => { e.preventDefault(); setPage(i); }}>{i + 1}</a>
+                          </li>
+                        ))}
+                        <li className={page >= pageCount - 1 ? 'page-item disabled' : 'page-item'}>
+                          <a href="#" className="page-link" onClick={e => { e.preventDefault(); if (page < pageCount - 1) setPage(p => p + 1); }}>
+                            <i className="ri-arrow-right-s-line" />
+                          </a>
+                        </li>
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </Col>
+      </Row>
+    </>
+  );
 }
 
 // Generic KPI tile — same recipe as the admin/client/branch dashboard
@@ -432,6 +827,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // errors here as a map so the inline <small className="text-danger"> hints
   // light up the right input.
   const [pwOpen, setPwOpen]         = useState(false);
+  // Face-biometric enrolment modal. Self-service path so the employee can
+  // (re-)register their face for attendance from this same Security card.
+  const [faceRegOpen, setFaceRegOpen] = useState(false);
   const [pwCurrent, setPwCurrent]   = useState('');
   const [pwNew, setPwNew]           = useState('');
   const [pwConfirm, setPwConfirm]   = useState('');
@@ -1523,6 +1921,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-lock-password-line" /> Change Password
               </Button>
             </div>
+            <div className="px-3 py-3 d-flex align-items-center justify-content-between flex-wrap gap-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+              <div>
+                <div className="fw-semibold" style={{ fontSize: 13 }}>Face biometric for attendance</div>
+                <small className="text-muted">
+                  Register your face once so you can clock in / out from <a href="/clock-in">/clock-in</a> without a card or password.
+                </small>
+              </div>
+              <Button
+                color="primary"
+                size="sm"
+                className="d-inline-flex align-items-center gap-2"
+                onClick={() => setFaceRegOpen(true)}
+              >
+                <i className="ri-user-smile-line" /> Register Face
+              </Button>
+            </div>
           </div>
         </>
       )}
@@ -1745,8 +2159,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         </>
       )}
 
-      {/* ── Tab: Attendance — Coming Soon ── */}
+      {/* ── Tab: Attendance — LIVE (face-driven, multi-punch). The
+           ComingSoonShell wrapper was removed; the panel below renders
+           real /api/attendance/employee/{id}/summary data. ── */}
       {tab === 'attendance' && (
+        <AttendanceTabPanel employeeId={employeeId} />
+      )}
+
+      {/* Legacy mock-data block below was the "Coming Soon" placeholder.
+          Kept commented in case design wants to A/B back. Safe to delete
+          after the real panel ships. */}
+      {false && (
         <ComingSoonShell title="Attendance" subtitle="Punch-in, biometric sync, compliance score">
           <Row className="g-3 mb-3 align-items-stretch">
             <Col xl><KpiTile label="Present Days"    value={<AnimatedNumber value={14} />}            sub="This month"      icon="ri-checkbox-circle-line" gradient={GRAD_SUCCESS} tint="#ecfaf3" /></Col>
@@ -4442,6 +4865,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </Button>
         </div>
       </EpModal>
+
+      {/* Face-biometric enrolment — opens from the Security card and posts
+          the 128-d descriptor (with consent) to /api/face/register. */}
+      <FaceRegistrationModal open={faceRegOpen} onClose={() => setFaceRegOpen(false)} />
     </>
   );
 }

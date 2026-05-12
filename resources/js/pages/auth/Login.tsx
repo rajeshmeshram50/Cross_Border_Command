@@ -5,6 +5,7 @@ import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { LogIn, AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import FaceLoginModal from '../../components/FaceLoginModal';
 
 interface LoginProps {
   onForgotPassword?: () => void;
@@ -20,7 +21,10 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undef
 const GOOGLE_SCRIPT_SRC = 'https://accounts.google.com/gsi/client';
 
 export default function Login({ onForgotPassword }: LoginProps) {
-  const { login, googleLogin, loading } = useAuth();
+  const { login, googleLogin, faceLogin, loading } = useAuth();
+  // Face-login modal state. The modal handles its own email field + face
+  // capture; we just pipe its result through AuthContext.faceLogin.
+  const [faceOpen, setFaceOpen] = useState(false);
   const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -266,7 +270,26 @@ export default function Login({ onForgotPassword }: LoginProps) {
         </div>
 
         <div ref={googleBtnRef} className="w-full flex justify-center min-h-[44px]" />
+
+        {/* Face-based sign-in. Hidden behind a tertiary button so users who
+            haven't enrolled (the default) aren't distracted by it. Backend
+            still demands an email so the descriptor compare is scoped to
+            ONE enrolled user — there's no "any face wins" attack surface. */}
+        <button
+          type="button"
+          onClick={() => setFaceOpen(true)}
+          className="w-full mt-2 h-10 rounded-full text-[13px] font-semibold border border-primary/25 text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2"
+        >
+          <i className="ri-user-smile-line" /> Sign in with Face
+        </button>
       </div>
+
+      <FaceLoginModal
+        open={faceOpen}
+        onClose={() => setFaceOpen(false)}
+        initialEmail={email}
+        onSubmit={faceLogin}
+      />
     </AuthCardLayout>
   );
 }

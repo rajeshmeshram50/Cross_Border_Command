@@ -28,4 +28,12 @@ export default defineConfig({
             ignored: ['**/storage/framework/views/**'],
         },
     },
+    // face-api.js is dynamically imported only on the FaceCapture component's
+    // first mount, so Vite's initial dep scan misses it and the dev server
+    // 404s the pre-bundled chunk ("Failed to fetch dynamically imported
+    // module: …/node_modules/.vite/deps/face-api___js.js"). Force-include
+    // it here so Vite pre-bundles it on boot and the dynamic import resolves.
+    optimizeDeps: {
+        include: ['face-api.js'],
+    },
 });

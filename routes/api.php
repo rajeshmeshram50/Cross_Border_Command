@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Api\AnnouncementController;
+use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BranchController;
+use App\Http\Controllers\Api\FaceBiometricController;
 use App\Http\Controllers\Api\CandidateController;
 use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\DashboardController;
@@ -35,6 +37,7 @@ Route::post('/onboarding/{token}/complete', [OnboardingController::class, 'compl
 
 // Public
 Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login/face', [AuthController::class, 'faceLogin']);
 Route::post('/google-login', [AuthController::class, 'googleLogin']);
 Route::post('/forgot-password/send-otp', [ForgotPasswordController::class, 'sendOtp']);
 Route::post('/forgot-password/verify-otp', [ForgotPasswordController::class, 'verifyOtp']);
@@ -179,6 +182,25 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/payments/stats', [PaymentController::class, 'stats']);
     Route::post('/payments/{payment}/send-reminder', [PaymentController::class, 'sendReminder']);
     Route::apiResource('payments', PaymentController::class);
+
+    // Face Biometric — employee opts in to face-based attendance. Stores a
+    // 128-d descriptor produced by face-api.js in the browser; never the
+    // raw photo. Self-service by default; admins can manage another
+    // employee's enrolment by passing ?employee_id= in the same tenant.
+    Route::get   ('/face/status',   [FaceBiometricController::class, 'status']);
+    Route::post  ('/face/register', [FaceBiometricController::class, 'register']);
+    Route::delete('/face/data',     [FaceBiometricController::class, 'revoke']);
+
+    // Attendance — face-driven clock-in / clock-out + read endpoints.
+    // /attendance       → HR / admin tenant-scoped list
+    // /attendance/my    → signed-in employee's own history
+    // /attendance/today → today's row for the signed-in employee
+    Route::get ('/attendance',                                 [AttendanceController::class, 'index']);
+    Route::get ('/attendance/my',                              [AttendanceController::class, 'my']);
+    Route::get ('/attendance/today',                           [AttendanceController::class, 'today']);
+    Route::get ('/attendance/employee/{employeeId}/summary',   [AttendanceController::class, 'employeeSummary']);
+    Route::post('/attendance/face/clock-in',                   [AttendanceController::class, 'faceClockIn']);
+    Route::post('/attendance/face/clock-out',                  [AttendanceController::class, 'faceClockOut']);
 
     // Permissions
     Route::get('/modules', [PermissionController::class, 'modules']);

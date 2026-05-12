@@ -228,10 +228,19 @@ export const MENU_ITEMS: MenuItem[] = [
     id: 'hr',
     icon: 'Users',
     label: 'HR',
-    // HR is tenant-only — super admin doesn't manage employees, leave, payroll, etc.
-    roles: ['client_admin', 'client_user', 'branch_user', 'employee'],
+    // Branch-only by product call — super_admin and client_admin manage at
+    // the tenant level (Clients / Plans / Settings), and don't need the
+    // day-to-day employee / leave / payroll menus. Branch users run HR for
+    // their branch. Direct URLs still work for client_admin (they can
+    // navigate to /hr/employees etc.) — this just hides the sidebar entry.
+    roles: ['branch_user'],
     groups: HR_GROUPS,
   },
+
+  // Face-driven attendance — only employees punch in. The signed-in admin /
+  // branch user has no Employee row to clock in for; surfaced ONLY to the
+  // employee role so admins don't see a dead-end menu entry.
+  { id: 'clock-in', icon: 'CalendarCheck', label: 'Clock-In', roles: ['employee'] },
 
   // Permissions panel — only admins should grant. Employees never manage
   // their peers' access, so no `employee` here.

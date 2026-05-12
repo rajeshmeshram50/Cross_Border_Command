@@ -61,6 +61,9 @@ class Employee extends Model
 
         // Stage 3 — Physical Setup & Identification (added 2026-05-03).
         'biometric_status', 'desk_workstation_no', 'id_card_status',
+        // Face-biometric attendance (added 2026-05-12).
+        'face_descriptor', 'face_registered_at',
+        'face_consent_given_at', 'face_consent_revoked_at',
 
         // Stage 4 — Payroll & Finance Setup (added 2026-05-03)
         'salary_payment_mode',
@@ -80,7 +83,12 @@ class Employee extends Model
      *  `photo_url` resolves the passport-size photo uploaded as an
      *  EmployeeDocument with document_key='photo' — eager-load
      *  `photoDocument` to avoid N+1 on list endpoints. */
-    protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved', 'photo_url'];
+    protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved', 'photo_url', 'face_registered'];
+
+    /** Never ship the raw 128-d descriptor on list/detail responses.
+     *  It's biometric data, ~1.5 KB per row, and the only legitimate
+     *  reader is the auth flow which fetches it directly from the DB. */
+    protected $hidden = ['face_descriptor'];
 
     protected $casts = [
         'date_of_birth'  => 'date',
@@ -97,6 +105,10 @@ class Employee extends Model
         'pf_eligible' => 'boolean',
         'detailed_breakup' => 'boolean',
         'annual_salary' => 'decimal:2',
+        'face_descriptor'          => 'array',
+        'face_registered_at'       => 'datetime',
+        'face_consent_given_at'    => 'datetime',
+        'face_consent_revoked_at'  => 'datetime',
         'agreed_ctc_lpa' => 'decimal:2',
         'stage4_completed_at' => 'datetime',
         'wizard_step_completed' => 'integer',
@@ -142,6 +154,19 @@ class Employee extends Model
     public function photoDocument(): HasOne
     {
         return $this->hasOne(EmployeeDocument::class)->where('document_key', 'photo');
+    }
+
+    /**
+     * True when this employee has an enrolled face on file. Surfaces in the
+     * HR list so admins can see at a glance who has registered vs hasn't,
+     * without leaking the raw descriptor. The flag flips back to false
+     * after a revoke (which clears both the descriptor and the timestamp).
+     */
+    public function getFaceRegisteredAttribute(): bool
+    {
+        return $this->face_registered_at !== null
+            && is_array($this->face_descriptor)
+            && count($this->face_descriptor) > 0;
     }
 
     public function getPhotoUrlAttribute(): ?string
