@@ -8,21 +8,12 @@ import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
+import { formatCompact } from '../../utils/formatNumber';
 
 const methodLabels: Record<string, string> = {
   upi: 'UPI', credit_card: 'Credit Card', debit_card: 'Debit Card',
   net_banking: 'Net Banking', wallet: 'Wallet', cash: 'Cash', cheque: 'Cheque',
 };
-
-// Indian-format currency helper — under ₹1L shows real rupees with comma
-// grouping and up to 2 decimals (so ₹1.18 doesn't collapse to ₹1); ₹1L-99L
-// as "1.20L"; crores as "1.50Cr".
-function formatINRCompact(n: number): string {
-  const v = Math.max(0, Number(n) || 0);
-  if (v < 100000) return v.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  if (v < 10000000) return (v / 100000).toFixed(2) + 'L';
-  return (v / 10000000).toFixed(2) + 'Cr';
-}
 
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
   const [display, setDisplay] = useState(0);
@@ -718,7 +709,7 @@ export default function BranchDashboard() {
       {can_view_payments && (
         <Row className="g-3 mb-3">
           <Col md={6} xs={6}>
-            <KpiCard label="Total Paid" value={<>₹{formatINRCompact(counts.total_paid)}</>}
+            <KpiCard label="Total Paid" value={<>₹{formatCompact(counts.total_paid)}</>}
               iconClass="ri-money-dollar-circle-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
               trend="up" change={`${counts.success_payments}`} changeText="payments" />
           </Col>
@@ -741,7 +732,7 @@ export default function BranchDashboard() {
                 <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Monthly cash flow</p>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }} title={`₹${counts.total_paid.toLocaleString('en-IN')}`}>₹{formatINRCompact(counts.total_paid)}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#0ab39c' }} title={`₹${counts.total_paid.toLocaleString('en-IN')}`}>₹{formatCompact(counts.total_paid)}</div>
                 <div style={{ fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 600 }}>TOTAL PAID</div>
               </div>
             </div>

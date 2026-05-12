@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
 use App\Models\Branch;
 use App\Models\Employee;
@@ -404,6 +405,7 @@ class EmployeeController extends Controller
                         $rawPassword,
                         'employee',
                         $clientName,
+                        PasswordChangedMail::resolveLoginUrl($request),
                     ));
                 } catch (\Throwable $e) {
                     Log::warning('Employee welcome mail failed', [

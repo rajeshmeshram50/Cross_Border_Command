@@ -37,7 +37,24 @@ export default function Permissions() {
   const [saving, setSaving] = useState(false);
   const [loadingPerms, setLoadingPerms] = useState(false);
 
-  const isSuperAdmin = authUser?.user_type === 'super_admin';
+  const isSuperAdmin  = authUser?.user_type === 'super_admin';
+  const isClientAdmin = authUser?.user_type === 'client_admin';
+  const isBranchUser  = authUser?.user_type === 'branch_user';
+
+  // Scope of users an admin can grant permissions to:
+  //   super_admin  → client_admin only  (manages tenants)
+  //   client_admin → branch_user only   (manages branch staff, NOT employees)
+  //   branch_user  → employee only      (manages their own team)
+  // The /permissions/users API may return a wider set (legacy/joined data);
+  // we filter client-side so the picker matches the role's mandate.
+  const manageableType: 'client_admin' | 'branch_user' | 'employee' | null =
+    isSuperAdmin  ? 'client_admin' :
+    isClientAdmin ? 'branch_user'  :
+    isBranchUser  ? 'employee'     : null;
+  const targetLabel = manageableType === 'client_admin' ? 'Client Admin'
+    : manageableType === 'branch_user' ? 'Branch User'
+    : manageableType === 'employee' ? 'Employee'
+    : 'User';
 
   useEffect(() => {
     Promise.all([
@@ -132,11 +149,17 @@ export default function Permissions() {
     }
   };
 
-  const selectedUser = users.find(u => u.id === Number(selectedUserId));
+  // Filter users by the role's manageable scope (client-side guard — the
+  // backend returns the broader pool used by the legacy super-admin view).
+  const visibleUsers = manageableType
+    ? users.filter(u => u.user_type === manageableType)
+    : users;
+
+  const selectedUser = visibleUsers.find(u => u.id === Number(selectedUserId));
 
   // Options for the searchable Select. Keep the original user record on `raw`
   // so the custom Option / SingleValue components can render rich rows.
-  const userOptions = users.map(u => {
+  const userOptions = visibleUsers.map(u => {
     // Super admin scans by organization; client admin scans by branch.
     const primary = isSuperAdmin
       ? (u.client?.org_name || 'No Organization')
@@ -187,16 +210,16 @@ export default function Permissions() {
                 <Col md={7}>
                   <label className="form-label text-muted fs-11 fw-bold text-uppercase mb-1">
                     <i className="ri-user-settings-line me-1"></i>
-                    {isSuperAdmin ? 'Client Admin' : 'Branch User'}
+                    {targetLabel}
                   </label>
                   <SearchableSelect
                     value={selectedUserId || null}
                     onChange={v => setSelectedUserId(v || '')}
                     options={userOptions}
-                    placeholder={isSuperAdmin ? 'Select client admin...' : 'Select branch user...'}
+                    placeholder={`Select ${targetLabel.toLowerCase()}...`}
                     searchPlaceholder={isSuperAdmin
                       ? 'Search by organization, name or email...'
-                      : 'Search branch user by name, email or branch...'}
+                      : `Search ${targetLabel.toLowerCase()} by name, email or branch...`}
                     emptyLabel="No match — try a different search"
                     getSearchText={(u: ManagedUser) =>
                       [u.client?.org_name, u.name, u.email, u.branch?.name, u.user_type]
@@ -340,16 +363,18 @@ export default function Permissions() {
               </Row>
             </CardHeader>
 
-            {users.length === 0 && (
+            {visibleUsers.length === 0 && (
               <CardBody>
                 <Alert color="warning" className="mb-0">
                   <i className="ri-alert-line me-1"></i>
-                  {isSuperAdmin ? 'No client admins found. Create a client first to assign permissions.' : 'No branch users found. Create a branch first to assign permissions.'}
+                  {manageableType === 'client_admin' && 'No client admins found. Create a client first to assign permissions.'}
+                  {manageableType === 'branch_user'  && 'No branch users found. Create a branch first to assign permissions.'}
+                  {manageableType === 'employee'     && 'No employees found in your branch yet.'}
                 </Alert>
               </CardBody>
             )}
 
-            {!isSuperAdmin && users.length > 0 && (
+            {!isSuperAdmin && visibleUsers.length > 0 && (
               <CardBody className="pt-0">
                 <Alert color="info" className="mb-0">
                   <i className="ri-shield-check-line me-1"></i>
@@ -359,7 +384,7 @@ export default function Permissions() {
             )}
 
             {/* ── Animated empty state when no user is selected ── */}
-            {!selectedUserId && users.length > 0 && (
+            {!selectedUserId && visibleUsers.length > 0 && (
               <CardBody className="py-5 text-center position-relative" style={{ overflow: 'hidden' }}>
                 <style>{`
                   @keyframes perm-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }

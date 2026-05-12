@@ -6,6 +6,7 @@ import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useSettings } from '../contexts/SettingsContext';
+import Tooltip from '../components/ui/Tooltip';
 
 /* ──────────────────────────────────────────────────────────────────
  * Section-shape types — mirror SettingsController::RULES on the API.
@@ -257,19 +258,14 @@ export default function Settings() {
         .settings-tab-btn.active::before { content: ''; position: absolute; left: 0; top: 15%; bottom: 15%; width: 3px; border-radius: 3px; background: var(--accent-col-strong, #405189); box-shadow: 0 0 8px var(--accent-col-strong, #405189); }
         .settings-pane { animation: settings-fade-up .25s ease; }
         .toggle-row-hover:last-child { border-bottom: none !important; }
-        .settings-tab-btn .settings-tip { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%) translateX(-4px); background: #1f2937; color: #fff; font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 6px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .15s ease, transform .15s ease; z-index: 50; box-shadow: 0 6px 18px rgba(0,0,0,0.18); }
-        .settings-tab-btn .settings-tip::before { content: ''; position: absolute; left: -4px; top: 50%; transform: translateY(-50%) rotate(45deg); width: 8px; height: 8px; background: #1f2937; }
-        .settings-tab-btn:hover .settings-tip, .settings-tab-btn:focus-visible .settings-tip { opacity: 1; transform: translateY(-50%) translateX(0); }
         @media (max-width: 1399.98px) {
           .settings-sidebar-label, .settings-sidebar-header-text, .settings-sidebar-active-arrow { display: none !important; }
           .settings-tab-btn { justify-content: center; padding: 8px; }
           .settings-sidebar-header { justify-content: center !important; }
         }
-        @media (min-width: 1400px) { .settings-tab-btn .settings-tip { display: none; } }
         @media (max-width: 575.98px) {
           .settings-tab-list { flex-direction: row !important; overflow-x: auto; gap: 6px !important; }
           .settings-tab-list .settings-tab-btn { flex: 0 0 auto; width: auto; padding: 8px 10px; }
-          .settings-tab-btn .settings-tip { display: none; }
         }
       `}</style>
 
@@ -290,13 +286,6 @@ export default function Settings() {
         </ol>
       </div>
 
-      {!isSuper && (
-        <div className="alert alert-info d-flex align-items-center gap-2 py-2 px-3 mb-3" style={{ fontSize: 12 }}>
-          <i className="ri-information-line" />
-          You're viewing settings in read-only mode. Only super admin can save changes.
-        </div>
-      )}
-
       <Row className="g-3 align-items-start pb-3">
         {/* Sidebar */}
         <Col xxl={3} xl={3} lg="auto" md="auto" xs={12}>
@@ -313,19 +302,20 @@ export default function Settings() {
                 {TABS.map(t => {
                   const isActive = tab === t.id;
                   return (
-                    <button key={t.id} type="button" onClick={() => setTab(t.id)} aria-label={t.label} title={t.label}
-                      className={`settings-tab-btn ${isActive ? 'active' : ''}`}
-                      style={{ ['--accent-col' as any]: t.color + '14', ['--accent-col-border' as any]: t.color + '28', ['--accent-col-strong' as any]: t.color }}>
-                      <div className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0" style={{ width: 32, height: 32, background: isActive ? t.color + '22' : 'var(--vz-secondary-bg)', border: `1px solid ${isActive ? t.color + '40' : 'var(--vz-border-color)'}`, transition: 'all .18s ease' }}>
-                        <i className={t.icon} style={{ color: t.color, fontSize: 15 }} />
-                      </div>
-                      <div className="settings-sidebar-label flex-grow-1 min-w-0">
-                        <div className="fw-semibold text-truncate" style={{ fontSize: 13, color: isActive ? t.color : 'var(--vz-heading-color, var(--vz-body-color))', transition: 'color .18s ease' }}>{t.label}</div>
-                        <div className="text-muted text-truncate" style={{ fontSize: 10.5 }}>{t.desc}</div>
-                      </div>
-                      {isActive && <i className="settings-sidebar-active-arrow ri-arrow-right-s-line" style={{ color: t.color, fontSize: 16 }} />}
-                      <span className="settings-tip">{t.label}</span>
-                    </button>
+                    <Tooltip key={t.id} label={t.label} position="right">
+                      <button type="button" onClick={() => setTab(t.id)} aria-label={t.label}
+                        className={`settings-tab-btn ${isActive ? 'active' : ''}`}
+                        style={{ ['--accent-col' as any]: t.color + '14', ['--accent-col-border' as any]: t.color + '28', ['--accent-col-strong' as any]: t.color }}>
+                        <div className="d-inline-flex align-items-center justify-content-center rounded-2 flex-shrink-0" style={{ width: 32, height: 32, background: isActive ? t.color + '22' : 'var(--vz-secondary-bg)', border: `1px solid ${isActive ? t.color + '40' : 'var(--vz-border-color)'}`, transition: 'all .18s ease' }}>
+                          <i className={t.icon} style={{ color: t.color, fontSize: 15 }} />
+                        </div>
+                        <div className="settings-sidebar-label flex-grow-1 min-w-0">
+                          <div className="fw-semibold text-truncate" style={{ fontSize: 13, color: isActive ? t.color : 'var(--vz-heading-color, var(--vz-body-color))', transition: 'color .18s ease' }}>{t.label}</div>
+                          <div className="text-muted text-truncate" style={{ fontSize: 10.5 }}>{t.desc}</div>
+                        </div>
+                        {isActive && <i className="settings-sidebar-active-arrow ri-arrow-right-s-line" style={{ color: t.color, fontSize: 16 }} />}
+                      </button>
+                    </Tooltip>
                   );
                 })}
               </div>

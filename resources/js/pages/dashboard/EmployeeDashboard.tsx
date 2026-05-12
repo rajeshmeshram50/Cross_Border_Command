@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row } from 'reactstrap';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
+import { formatCurrencyCompact as formatINRCompact } from '../../utils/formatNumber';
 
 /* ───────────────────────────────────────────────────────────────────────────
  *  Employee Dashboard — personal landing page for `user_type === 'employee'`.
@@ -12,13 +13,6 @@ import { ShimmerDashboard } from '../../components/ui/Shimmer';
  *  a single visual family. All data comes from /api/dashboard/employee-stats
  *  which is auto-scoped to the current logged-in employee.
  * ───────────────────────────────────────────────────────────────────────── */
-
-function formatINRCompact(n: number | null | undefined): string {
-  const v = Math.max(0, Number(n) || 0);
-  if (v < 100000) return '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: 0 });
-  if (v < 10000000) return '₹' + (v / 100000).toFixed(2) + 'L';
-  return '₹' + (v / 10000000).toFixed(2) + 'Cr';
-}
 
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
   const [display, setDisplay] = useState(0);
