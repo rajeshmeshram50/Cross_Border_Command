@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
@@ -159,13 +162,8 @@ export default function BranchDashboard() {
   if (loading) return <ShimmerDashboard />;
   if (!data) return null;
 
-  const { counts, plan, branches: allBranches, recent_payments, payment_trend, can_view_payments } = data;
-  const branches = isMainBranchUser && !selectedBranchId
-    ? allBranches
-    : allBranches.filter((b: any) => b.id === (selectedBranchId || user?.branch_id));
-
+  const { counts, plan, recent_payments, payment_trend, can_view_payments, employees: emp } = data;
   const displayName = selectedBranch?.name || (isMainBranchUser ? user?.client_name : user?.branch_name);
-  const branchUsers = branches.reduce((s: number, b: any) => s + (b.users_count ?? 0), 0);
   const successRate = counts.total_payments > 0
     ? Math.round((counts.success_payments / counts.total_payments) * 100) : 0;
 
@@ -391,34 +389,346 @@ export default function BranchDashboard() {
         );
       })()}
 
-      {/* KPI Cards — billing tiles (Total Paid / Payments) are hidden for
-          users without payment access; remaining tiles widen to fill. */}
-      <Row className="g-3 mb-3">
-        <Col md={can_view_payments ? 3 : 6} xs={6}>
-          <KpiCard label="Branches" value={<AnimatedNumber value={branches.length} />}
-            iconClass="ri-git-branch-line" gradient="linear-gradient(135deg,#299cdb,#50c3e6)"
-            changeText="visible" />
-        </Col>
-        <Col md={can_view_payments ? 3 : 6} xs={6}>
-          <KpiCard label="Users" value={<AnimatedNumber value={branchUsers} />}
-            iconClass="ri-user-3-line" gradient="linear-gradient(135deg,#9b72cf,#865ce2)"
-            changeText="branch staff" />
-        </Col>
-        {can_view_payments && (
-          <Col md={3} xs={6}>
+      {/* ── Workforce analytics ────────────────────────────────────────
+          Promoted above the billing tiles per request — gives branch users
+          the headcount snapshot first, with the same branch-scoping logic
+          as the rest of the dashboard. */}
+      {emp && (
+        <>
+          <Row className="mb-2">
+            <Col xs={12}>
+              <div style={{ padding: '4px 0 8px' }}>
+                <h5 style={{ fontWeight: 800, fontSize: 16, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Workforce Analytics</h5>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
+                  Employee headcount, hiring activity and demographics
+                </p>
+              </div>
+            </Col>
+          </Row>
+
+          {/* Workforce KPI cards */}
+          <Row className="g-3 mb-3">
+            <Col md={3} sm={6} xs={6}>
+              <KpiCard label="Total Employees" value={<AnimatedNumber value={emp.totals.total} />}
+                iconClass="ri-team-line" gradient="linear-gradient(135deg,#405189,#6691e7)"
+                changeText="on payroll" />
+            </Col>
+            <Col md={3} sm={6} xs={6}>
+              <KpiCard label="Active" value={<AnimatedNumber value={emp.totals.active} />}
+                iconClass="ri-user-follow-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
+                trend="up"
+                change={emp.totals.total > 0 ? `${Math.round((emp.totals.active / emp.totals.total) * 100)}%` : '0%'}
+                changeText="of total" />
+            </Col>
+            <Col md={3} sm={6} xs={6}>
+              <KpiCard label="On Leave" value={<AnimatedNumber value={emp.totals.on_leave} />}
+                iconClass="ri-calendar-event-line" gradient="linear-gradient(135deg,#f7b84b,#f1963b)"
+                changeText="away today" />
+            </Col>
+            <Col md={3} sm={6} xs={6}>
+              <KpiCard label="Probation" value={<AnimatedNumber value={emp.totals.probation} />}
+                iconClass="ri-hourglass-2-line" gradient="linear-gradient(135deg,#9b72cf,#865ce2)"
+                changeText="under review" />
+            </Col>
+            <Col md={3} sm={6} xs={6}>
+              <KpiCard label="Notice Period" value={<AnimatedNumber value={emp.totals.notice_period} />}
+                iconClass="ri-logout-box-r-line" gradient="linear-gradient(135deg,#f06548,#fb6e52)"
+                changeText="leaving" />
+            </Col>
+            <Col md={3} sm={6} xs={6}>
+              <KpiCard label="New Joiners" value={<AnimatedNumber value={emp.totals.new_this_month} />}
+                iconClass="ri-user-add-line" gradient="linear-gradient(135deg,#299cdb,#50c3e6)"
+                trend={emp.totals.new_this_month > 0 ? 'up' : 'neutral'}
+                change={`+${emp.totals.new_last_30d}`} changeText="last 30 days" />
+            </Col>
+            <Col md={3} sm={6} xs={6}>
+              <KpiCard label="Avg Tenure" value={<>{emp.totals.avg_tenure_yrs} <span style={{ fontSize: 14, fontWeight: 700 }}>yrs</span></>}
+                iconClass="ri-time-line" gradient="linear-gradient(135deg,#1cbb8c,#0ab39c)"
+                changeText="across active staff" />
+            </Col>
+            <Col md={3} sm={6} xs={6}>
+              <KpiCard label="Exited" value={<AnimatedNumber value={emp.totals.exited} />}
+                iconClass="ri-user-unfollow-line" gradient="linear-gradient(135deg,#878a99,#6c7080)"
+                changeText="resigned + terminated" />
+            </Col>
+          </Row>
+
+          {/* Charts row: Status donut + Joining trend + Gender split */}
+          <Row className="g-3 mb-3">
+            <Col xl={4} md={6}>
+              <Card style={cardStyle}>
+                <div style={cardHeaderStyle}>
+                  <div>
+                    <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Status Breakdown</h5>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Where everyone stands</p>
+                  </div>
+                </div>
+                <CardBody style={{ padding: '8px 4px 0' }}>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={emp.status.filter((s: any) => s.value > 0)}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={48}
+                        outerRadius={80}
+                        paddingAngle={2}
+                      >
+                        {emp.status.map((_: any, i: number) => (
+                          <Cell key={i} fill={['#0ab39c', '#878a99', '#f7b84b', '#9b72cf', '#f06548', '#6c7080', '#dc3545'][i % 7]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend
+                        verticalAlign="bottom"
+                        iconType="circle"
+                        wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardBody>
+              </Card>
+            </Col>
+
+            <Col xl={4} md={6}>
+              <Card style={cardStyle}>
+                <div style={cardHeaderStyle}>
+                  <div>
+                    <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Joining Trend</h5>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Last 6 months</p>
+                  </div>
+                </div>
+                <CardBody style={{ padding: '12px 16px 8px' }}>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={emp.joining_trend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
+                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(64,81,137,0.06)' }} />
+                      <Bar dataKey="count" fill="#405189" radius={[6, 6, 0, 0]} barSize={26} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardBody>
+              </Card>
+            </Col>
+
+            <Col xl={4} md={12}>
+              <Card style={cardStyle}>
+                <div style={cardHeaderStyle}>
+                  <div>
+                    <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Gender Diversity</h5>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Composition</p>
+                  </div>
+                </div>
+                <CardBody style={{ padding: '8px 4px 0' }}>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={emp.gender.filter((g: any) => g.value > 0)}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={80}
+                        label={(entry: any) => `${entry.name}: ${entry.value}`}
+                        labelLine={false}
+                        style={{ fontSize: 11 }}
+                      >
+                        {emp.gender.map((_: any, i: number) => (
+                          <Cell key={i} fill={['#299cdb', '#f06548', '#9b72cf'][i % 3]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </CardBody>
+              </Card>
+            </Col>
+          </Row>
+
+          {/* Department headcount + Top designations */}
+          <Row className="g-3 mb-3">
+            <Col xl={7}>
+              <Card style={cardStyle}>
+                <div style={cardHeaderStyle}>
+                  <div>
+                    <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Headcount by Department</h5>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Top {emp.by_department.length}</p>
+                  </div>
+                </div>
+                <CardBody style={{ padding: '12px 16px 8px' }}>
+                  {emp.by_department.length === 0 ? (
+                    <div className="text-center text-muted py-4">No departments configured</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={Math.max(220, emp.by_department.length * 36)}>
+                      <BarChart data={emp.by_department} layout="vertical" margin={{ top: 5, right: 16, left: 8, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" horizontal={false} />
+                        <XAxis type="number" tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: '#5f6975', fontWeight: 600 }} axisLine={false} tickLine={false} width={120} />
+                        <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(155,114,207,0.06)' }} />
+                        <Bar dataKey="count" fill="#9b72cf" radius={[0, 6, 6, 0]} barSize={20} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </CardBody>
+              </Card>
+            </Col>
+
+            <Col xl={5}>
+              <Card style={cardStyle}>
+                <div style={cardHeaderStyle}>
+                  <div>
+                    <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Top Designations</h5>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Most common roles</p>
+                  </div>
+                </div>
+                <CardBody style={{ padding: 0 }}>
+                  {emp.by_designation.length === 0 ? (
+                    <div className="text-center text-muted py-4">No designations configured</div>
+                  ) : emp.by_designation.map((d: any, i: number) => {
+                    const max = emp.by_designation[0].count || 1;
+                    const pct = Math.round((d.count / max) * 100);
+                    return (
+                      <div key={i} className="bd-list-row" style={{ padding: '12px 20px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                            <div style={{
+                              width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              background: ['#405189', '#0ab39c', '#9b72cf', '#f7b84b', '#299cdb'][i % 5],
+                              color: '#fff', fontWeight: 800, fontSize: 11, flexShrink: 0,
+                            }}>{i + 1}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {d.name}
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', flexShrink: 0, marginLeft: 8 }}>{d.count}</div>
+                        </div>
+                        <div style={{ height: 5, background: '#f0f3f8', borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ width: `${pct}%`, height: '100%', background: ['#405189', '#0ab39c', '#9b72cf', '#f7b84b', '#299cdb'][i % 5], transition: 'width 0.4s ease' }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardBody>
+              </Card>
+            </Col>
+          </Row>
+
+          {/* Tenure + Age + Upcoming events */}
+          <Row className="g-3 mb-3">
+            <Col xl={4} md={6}>
+              <Card style={cardStyle}>
+                <div style={cardHeaderStyle}>
+                  <div>
+                    <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Tenure Distribution</h5>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Time at company</p>
+                  </div>
+                </div>
+                <CardBody style={{ padding: '12px 16px 8px' }}>
+                  <ResponsiveContainer width="100%" height={230}>
+                    <BarChart data={emp.tenure} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(10,179,156,0.06)' }} />
+                      <Bar dataKey="count" fill="#0ab39c" radius={[6, 6, 0, 0]} barSize={28} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardBody>
+              </Card>
+            </Col>
+
+            <Col xl={4} md={6}>
+              <Card style={cardStyle}>
+                <div style={cardHeaderStyle}>
+                  <div>
+                    <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Age Distribution</h5>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Demographics</p>
+                  </div>
+                </div>
+                <CardBody style={{ padding: '12px 16px 8px' }}>
+                  <ResponsiveContainer width="100%" height={230}>
+                    <BarChart data={emp.age_distribution} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(247,184,75,0.08)' }} />
+                      <Bar dataKey="count" fill="#f7b84b" radius={[6, 6, 0, 0]} barSize={28} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardBody>
+              </Card>
+            </Col>
+
+            <Col xl={4} md={12}>
+              <Card style={cardStyle}>
+                <div style={cardHeaderStyle}>
+                  <div>
+                    <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Upcoming Events</h5>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Next 30 days</p>
+                  </div>
+                </div>
+                <CardBody style={{ padding: 0, maxHeight: 260, overflowY: 'auto' }}>
+                  {emp.upcoming_events.length === 0 ? (
+                    <div className="text-center text-muted py-4">Nothing in the next 30 days</div>
+                  ) : emp.upcoming_events.map((e: any, i: number) => {
+                    const cfg = e.kind === 'birthday'
+                      ? { color: '#f06548', icon: 'ri-cake-2-line', bg: '#f0654818', label: 'Birthday' }
+                      : { color: '#0ab39c', icon: 'ri-medal-line',  bg: '#0ab39c18', label: `${e.years || ''} yr${e.years === 1 ? '' : 's'}`.trim() };
+                    return (
+                      <div key={i} className="bd-list-row" style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '11px 20px',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                          <div style={{
+                            width: 34, height: 34, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            background: cfg.bg, color: cfg.color, flexShrink: 0, fontSize: 16,
+                          }}>
+                            <i className={cfg.icon}></i>
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
+                              {cfg.label}{e.emp_code ? ` · ${e.emp_code}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{
+                          fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+                          background: cfg.bg, color: cfg.color, flexShrink: 0,
+                        }}>
+                          {new Date(e.on).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardBody>
+              </Card>
+            </Col>
+          </Row>
+        </>
+      )}
+
+      {/* Billing KPIs — Total Paid / Payments. Hidden entirely for users
+          without payment access. (Branches / Users tiles were removed; that
+          info is still shown in the Branches list and Workforce KPIs above.) */}
+      {can_view_payments && (
+        <Row className="g-3 mb-3">
+          <Col md={6} xs={6}>
             <KpiCard label="Total Paid" value={<>₹{formatINRCompact(counts.total_paid)}</>}
               iconClass="ri-money-dollar-circle-line" gradient="linear-gradient(135deg,#0ab39c,#02c8a7)"
               trend="up" change={`${counts.success_payments}`} changeText="payments" />
           </Col>
-        )}
-        {can_view_payments && (
-          <Col md={3} xs={6}>
+          <Col md={6} xs={6}>
             <KpiCard label="Payments" value={<AnimatedNumber value={counts.total_payments} />}
               iconClass="ri-bank-card-line" gradient="linear-gradient(135deg,#405189,#6691e7)"
               trend={successRate > 80 ? 'up' : 'down'} change={`${successRate}%`} changeText="success rate" />
           </Col>
-        )}
-      </Row>
+        </Row>
+      )}
 
       {/* Payment Trend — billing data, gated like Recent Payments */}
       {can_view_payments && (
@@ -457,57 +767,12 @@ export default function BranchDashboard() {
       </Row>
       )}
 
-      {/* Branches + Recent Payments — payments are hidden for non-main
-          branch users (server also strips them, so the data is gone). */}
+      {/* Recent Payments — only for users with billing access. The Branches
+          list card was removed per request; branch info still surfaces in
+          the Workforce KPIs above and the branch switcher in the navbar. */}
+      {can_view_payments && (
       <Row className="g-3">
-        <Col xl={can_view_payments ? 6 : 12}>
-          <Card style={cardStyle}>
-            <div style={cardHeaderStyle}>
-              <div>
-                <h5 style={{ fontWeight: 700, fontSize: 15, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Branches</h5>
-                <p style={{ margin: 0, fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2 }}>{branches.length} accessible</p>
-              </div>
-            </div>
-            <CardBody style={{ padding: 0 }}>
-              {branches.map((b: any) => (
-                <div key={b.id} className="bd-list-row" style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 20px',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{
-                      width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      background: b.is_main
-                        ? 'linear-gradient(135deg,#f7b84b,#f1963b)'
-                        : 'linear-gradient(135deg,#299cdb,#50c3e6)',
-                      color: '#fff', fontWeight: 800, fontSize: 12, flexShrink: 0,
-                    }}>
-                      {b.code?.substring(0, 2).toUpperCase() || b.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        {b.name}
-                        {b.is_main && <i className="ri-star-fill" style={{ color: '#f7b84b', fontSize: 12 }}></i>}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
-                        {b.users_count} users
-                      </div>
-                    </div>
-                  </div>
-                  <span style={{
-                    fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.04em',
-                    background: b.status === 'active' ? '#0ab39c18' : '#f0654818',
-                    color: b.status === 'active' ? '#0ab39c' : '#f06548',
-                  }}>{b.status}</span>
-                </div>
-              ))}
-              {branches.length === 0 && <div className="text-center text-muted py-4">No branches</div>}
-            </CardBody>
-          </Card>
-        </Col>
-
-        {can_view_payments && (
-        <Col xl={6}>
+        <Col xs={12}>
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
@@ -554,8 +819,8 @@ export default function BranchDashboard() {
             </CardBody>
           </Card>
         </Col>
-        )}
       </Row>
+      )}
     </>
   );
 }
