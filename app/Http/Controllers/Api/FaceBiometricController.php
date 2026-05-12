@@ -24,11 +24,33 @@ class FaceBiometricController extends Controller
     /** Length of the face descriptor face-api.js's recognizer emits. */
     private const DESCRIPTOR_LEN = 128;
 
+    /** Euclidean-distance threshold below which two captures are treated as
+     *  the SAME PERSON. Used by the uniqueness check at enrolment time so
+     *  an admin can't accidentally (or intentionally) link the same face
+     *  to two different employee records.
+     *
+     *  Tuned slightly stricter than the attendance match threshold (0.55):
+     *  for de-dup we'd rather catch borderline cases than let an obvious
+     *  duplicate slip through. Same value the face-login flow uses.
+     */
+    private const DUPLICATE_THRESHOLD = 0.50;
+
     public function status(Request $request)
     {
+        // Eager-load photoDocument so the photo_url accessor fires without
+        // an extra round-trip. We deliberately do NOT return the raw face
+        // descriptor — only the binary "are they enrolled?" flag plus the
+        // employee's existing PROFILE photo (the passport-size shot uploaded
+        // during onboarding, which is unrelated to the face biometric and
+        // safe to surface).
         $employee = $this->resolveTarget($request);
+        $employee->loadMissing('photoDocument');
+
         return response()->json([
             'employee_id'              => $employee->id,
+            'employee_name'            => $employee->display_name,
+            'employee_code'            => $employee->emp_code,
+            'photo_url'                => $employee->photo_url,
             'registered'               => !empty($employee->face_descriptor) && $employee->face_registered_at !== null,
             'registered_at'            => optional($employee->face_registered_at)->toIso8601String(),
             'consent_given_at'         => optional($employee->face_consent_given_at)->toIso8601String(),
@@ -52,9 +74,28 @@ class FaceBiometricController extends Controller
         ]);
 
         $employee = $this->resolveTarget($request);
+        $captured = array_map(static fn ($v) => (float) $v, $data['descriptor']);
+
+        // Uniqueness check — block the enrolment if this face is already
+        // linked to ANOTHER employee in the same tenant. Without this guard,
+        // an admin could (accidentally or maliciously) register the same
+        // person's face under two employee records, which would then make
+        // face login / clock-in ambiguous. Re-enrolment of the SAME employee
+        // is excluded from the scan.
+        $conflict = $this->findDuplicateOwner($employee, $captured);
+        if ($conflict !== null) {
+            $who = $conflict->display_name ?: ('Employee #' . $conflict->id);
+            $code = $conflict->emp_code ? " ({$conflict->emp_code})" : '';
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'descriptor' => [sprintf(
+                    'This face is already registered for %s%s. Each face can only be linked to one employee.',
+                    $who, $code,
+                )],
+            ]);
+        }
 
         $employee->update([
-            'face_descriptor'          => array_map(static fn ($v) => (float) $v, $data['descriptor']),
+            'face_descriptor'          => $captured,
             'face_registered_at'       => now(),
             // Only stamp consent_given_at the FIRST time. Re-enrolment keeps
             // the original opt-in date so the audit trail isn't smashed.
@@ -134,5 +175,64 @@ class FaceBiometricController extends Controller
         }
 
         abort(403, 'You do not have access to this employee.');
+    }
+
+    /**
+     * Scan every OTHER employee in the same tenant that has a face on file
+     * and return the first one whose descriptor matches the captured one
+     * within DUPLICATE_THRESHOLD. Returns null if no duplicate exists.
+     *
+     * Tenant scope:
+     *   - If the target row carries a client_id, we look at OTHER rows with
+     *     the same client_id PLUS globally-scoped rows (client_id IS NULL) —
+     *     same rule the EmployeeController scope helpers use, so we won't
+     *     accuse a different tenant's employee.
+     *   - If the target row is globally scoped (client_id IS NULL), only
+     *     other global rows are checked — cross-tenant matches don't make
+     *     sense for de-dup.
+     *
+     *   N enrolled employees → N (128-d, ~256-mul) distance computes per
+     *   register call. Negligible up to thousands of employees; if a tenant
+     *   ever crosses ~10k enrolled faces, swap to a vector index (pgvector).
+     */
+    private function findDuplicateOwner(Employee $target, array $captured): ?Employee
+    {
+        $q = Employee::query()
+            ->where('id', '!=', $target->id)
+            ->whereNotNull('face_descriptor')
+            ->whereNotNull('face_registered_at');
+
+        // Tenant scope mirrors EmployeeController's list rules.
+        if ($target->client_id === null) {
+            $q->whereNull('client_id');
+        } else {
+            $q->where(function ($w) use ($target) {
+                $w->whereNull('client_id')->orWhere('client_id', $target->client_id);
+            });
+        }
+
+        foreach ($q->get(['id', 'display_name', 'emp_code', 'client_id', 'face_descriptor']) as $other) {
+            $stored = $other->face_descriptor;
+            if (!is_array($stored) || count($stored) !== self::DESCRIPTOR_LEN) continue;
+            $d = self::euclideanDistance($captured, $stored);
+            if ($d <= self::DUPLICATE_THRESHOLD) return $other;
+        }
+        return null;
+    }
+
+    /**
+     * Euclidean distance between two 128-d descriptors. Same routine the
+     * attendance + face-login paths use; kept inline here so this controller
+     * has no dependency on AttendanceController internals.
+     */
+    private static function euclideanDistance(array $a, array $b): float
+    {
+        $sum = 0.0;
+        $n = count($a);
+        for ($i = 0; $i < $n; $i++) {
+            $diff = (float) $a[$i] - (float) $b[$i];
+            $sum += $diff * $diff;
+        }
+        return sqrt($sum);
     }
 }
