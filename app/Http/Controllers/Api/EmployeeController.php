@@ -323,6 +323,14 @@ class EmployeeController extends Controller
 
                 // Provision the login account first — if the email collides we
                 // want the whole txn to roll back before writing the employee row.
+                //
+                // user.status mirrors the forced employee.status='Inactive' below.
+                // The wizard only captures half the onboarding data; admins must
+                // flip the row to Active explicitly once the rest is filled in
+                // (assets, payroll review, etc.) and that flip cascades the
+                // login open via update(). Without this mirror, fresh hires
+                // could sign in immediately even though their employee record
+                // was deliberately held Inactive — a hole QA flagged.
                 $rawPassword = $this->generatePassword();
                 $loginUser = User::create([
                     'name'          => Employee::composeDisplayName($data['first_name'], $data['middle_name'] ?? null, $data['last_name'] ?? null),
@@ -332,7 +340,7 @@ class EmployeeController extends Controller
                     'user_type'     => 'employee',
                     'client_id'     => $clientId,
                     'branch_id'     => $branchId,
-                    'status'        => 'active',
+                    'status'        => 'inactive',
                     'designation'   => $request->input('designation_name'),
                     'employee_code' => null, // populated after we know emp_code
                 ]);
