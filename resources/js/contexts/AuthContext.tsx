@@ -7,6 +7,8 @@ interface AuthCtx {
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   googleLogin: (idToken: string) => Promise<{ success: boolean; error?: string }>;
+  /** Face-based login: email + 128-d face descriptor → Sanctum token. */
+  faceLogin: (email: string, descriptor: number[]) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   // Toggle for tenant theme override. When false, the sidebar/topbar render
@@ -21,6 +23,7 @@ const Ctx = createContext<AuthCtx>({
   loading: false,
   login: async () => ({ success: false }),
   googleLogin: async () => ({ success: false }),
+  faceLogin: async () => ({ success: false }),
   logout: async () => {},
   refresh: async () => {},
   tenantThemeEnabled: true,
@@ -261,6 +264,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const faceLogin = async (email: string, descriptor: number[]) => {
+    setLoading(true);
+    try {
+      const res = await api.post('/login/face', { email, descriptor });
+      const { token, user: userData } = res.data;
+      localStorage.setItem('cbc_token', token);
+      writeCachedUser(userData);
+      setUser(userData);
+      return { success: true };
+    } catch (err: any) {
+      const msg = err.response?.data?.errors?.email?.[0]
+        || err.response?.data?.message
+        || 'Face login failed';
+      return { success: false, error: msg };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const logout = async () => {
     try {
       await api.post('/logout');
@@ -274,7 +296,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  return <Ctx.Provider value={{ user, loading, login, googleLogin, logout, refresh, tenantThemeEnabled, toggleTenantTheme }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ user, loading, login, googleLogin, faceLogin, logout, refresh, tenantThemeEnabled, toggleTenantTheme }}>{children}</Ctx.Provider>;
 }
 
 export const useAuth = () => useContext(Ctx);
