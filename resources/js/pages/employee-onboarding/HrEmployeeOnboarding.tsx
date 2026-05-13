@@ -2941,48 +2941,80 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
       : 'Save Draft'}
   </button>
   
-  {activeStage < 6 ? (
-    <button
-      type="button"
-      className="onb-init-btn-next"
-      disabled={
-        (activeStage === 1 && s1Saving) ||
-        (activeStage === 3 && s1Saving) ||
-        (activeStage === 4 && s4Saving)
+{activeStage < 6 ? (
+  <button
+    type="button"
+    className="onb-init-btn-next"
+    disabled={
+      (activeStage === 1 && s1Saving) ||
+      (activeStage === 3 && s1Saving) ||
+      (activeStage === 4 && s4Saving)
+    }
+    onClick={async () => {
+      // Stage 1: validate required fields and save before advancing
+      if (activeStage === 1) {
+        if (!validateStage1()) return;
+        setNextLoading(true);
+        const ok = await saveStage1(true);
+        setNextLoading(false);
+        if (!ok) return;
       }
-      onClick={async () => {
-        // Stage 1: validate required fields and save before advancing
-        if (activeStage === 1) {
-          if (!validateStage1()) return;
-          const ok = await saveStage1(true);
-          if (!ok) return;
-        }
-        
-        // Stage 4: validate and save before advancing
-        if (activeStage === 4) {
-          const ok = await saveStage4(stage4Pass === stage4Total4);
-          if (!ok) return;
-        }
-        
-        // Move to next stage
-        setActiveStage(activeStage + 1);
-      }}
-    >
-      Next Stage <i className="ri-arrow-right-s-line" />
-    </button>
-  ) : (
-    <button
-      type="button"
-      className="onb-init-btn-complete"
-      onClick={async () => {
-        // Stamp the macro stage at 6 so profile% hits 100%.
-        await bumpMacroStage(6);
-        onClose();
-      }}
-    >
-      <i className="ri-checkbox-circle-line" /> Complete Onboarding
-    </button>
-  )}
+      
+      // Stage 4: validate and save before advancing
+      if (activeStage === 4) {
+        setNextLoading(true);
+        const ok = await saveStage4(stage4Pass === stage4Total4);
+        setNextLoading(false);
+        if (!ok) return;
+      }
+      
+      // For other stages (2, 3, 5)
+      if (activeStage !== 1 && activeStage !== 4) {
+        setNextLoading(true);
+        // Add any stage-specific save logic here if needed
+        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate loading
+        setNextLoading(false);
+      }
+      
+      // Move to next stage
+      setActiveStage(activeStage + 1);
+    }}
+  >
+    {nextLoading ? (
+      <>
+        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" style={{ width: '0.8rem', height: '0.8rem' }} />
+        Loading...
+      </>
+    ) : (
+      <>
+        Next Stage <i className="ri-arrow-right-s-line" />
+      </>
+    )}
+  </button>
+) : (
+  <button
+    type="button"
+    className="onb-init-btn-complete"
+    onClick={async () => {
+      setNextLoading(true);
+      // Stamp the macro stage at 6 so profile% hits 100%.
+      await bumpMacroStage(6);
+      setNextLoading(false);
+      onClose();
+    }}
+  >
+    {nextLoading ? (
+      <>
+        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" style={{ width: '0.8rem', height: '0.8rem' }} />
+        Completing...
+      </>
+    ) : (
+      <>
+        <i className="ri-checkbox-circle-line" /> Complete Onboarding
+      </>
+    )}
+  </button>
+)}
 </div>
         </div>
       </ModalBody>
