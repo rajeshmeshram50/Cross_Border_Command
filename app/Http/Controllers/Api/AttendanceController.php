@@ -35,6 +35,19 @@ class AttendanceController extends Controller
     private const MATCH_THRESHOLD = 0.55;
     private const DESCRIPTOR_LEN  = 128;
 
+    /**
+     * Timezone used when surfacing punch times to the SPA. The app stores
+     * UTC (Laravel default) so a face-punch at 10:48 AM IST lands in the
+     * DB as 05:18 UTC. Formatting with Carbon's default tz then echoes
+     * 05:18 back to HR, which looks like a 5h-30m time-travel bug. We
+     * convert every displayed time to this tz before formatting so the
+     * branch dashboard matches the wall-clock the employee saw.
+     *
+     * Single-region SaaS today; if you ever sell across tz boundaries,
+     * promote this to a per-client setting.
+     */
+    private const DISPLAY_TZ = 'Asia/Kolkata';
+
     /** Whitelist of well-known activity labels. Anything not in this list is
      *  still allowed (saved verbatim) so HR can record one-off activities,
      *  but the SPA picks from this set so the colour mapping stays stable. */
@@ -250,6 +263,348 @@ class AttendanceController extends Controller
         if ($status = $request->query('status'))      $q->where('status', $status);
 
         return response()->json($q->paginate((int) $request->query('per_page', 50)));
+    }
+
+    /**
+     * Daily View endpoint for the HR Attendance page.
+     *
+     * Returns every attendance-tracked employee under the current user's
+     * scope, hydrated with: today's status (or any past day via `?date=`),
+     * today's punch timeline, month-to-date KPIs (present / late / missing /
+     * compliance %), and a 30-day history log for the right-side table.
+     *
+     * Tenant scoping mirrors AttendanceController::index() — branch_user is
+     * pinned to their branch (unless main-branch), super_admin sees all,
+     * and a `?branch_id=` filter is honoured when it belongs to the caller's
+     * tenant.
+     *
+     * Shape returned is intentionally aligned with the AttendanceEmployee
+     * type in resources/js/pages/hrms/HrAttendance.tsx so the SPA can
+     * consume the payload directly without a translation layer.
+     */
+    public function dailyView(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401, 'Unauthenticated');
+        if ($user->user_type === 'employee') abort(403, 'Use /api/attendance/my for your own records.');
+
+        $date = (string) $request->query('date', now()->toDateString());
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $date = now()->toDateString();
+        }
+        $dateC      = \Carbon\Carbon::parse($date);
+        $monthStart = (clone $dateC)->startOfMonth()->toDateString();
+        $monthEnd   = (clone $dateC)->endOfMonth()->toDateString();
+        // 90-day log window so the month range pills (THIS MONTH + previous
+        // 6 months on the SPA) actually have data to filter against — and so
+        // the Calendar tab can light up cells in any of those months without
+        // a separate refetch.
+        $histStart  = (clone $dateC)->subDays(89)->toDateString();
+
+        // ── 1) Resolve which employees the caller is allowed to see ──
+        $empQ = Employee::query()
+            ->where('attendance_tracking', true)
+            ->where('status', 'Active')
+            ->with([
+                'department:id,name',
+                'designation:id,name',
+                'reportingManager:id,first_name,last_name,display_name',
+            ])
+            ->orderBy('display_name');
+
+        if ($user->user_type !== 'super_admin') {
+            $empQ->where('client_id', $user->client_id);
+            $branchFilter = $request->integer('branch_id') ?: null;
+            if ($branchFilter !== null) {
+                $belongs = Branch::where('id', $branchFilter)
+                    ->where('client_id', $user->client_id)
+                    ->exists();
+                if ($belongs) $empQ->where('branch_id', $branchFilter);
+            } elseif ($user->user_type === 'branch_user' && !optional($user->branch)->is_main) {
+                $empQ->where('branch_id', $user->branch_id);
+            }
+        } elseif ($branchFilter = $request->integer('branch_id') ?: null) {
+            $empQ->where('branch_id', $branchFilter);
+        }
+
+        $employees = $empQ->get();
+        if ($employees->isEmpty()) {
+            return response()->json([]);
+        }
+
+        $empIds = $employees->pluck('id')->all();
+
+        // ── 2) Load attendance for selected date + MTD + last 30 days ──
+        $dailyRows = Attendance::with('punches')
+            ->whereIn('employee_id', $empIds)
+            ->whereDate('attendance_date', $date)
+            ->get()
+            ->keyBy('employee_id');
+
+        $monthRows = Attendance::whereIn('employee_id', $empIds)
+            ->whereBetween('attendance_date', [$monthStart, $monthEnd])
+            ->get(['employee_id', 'attendance_date', 'status', 'check_in_at', 'check_out_at'])
+            ->groupBy('employee_id');
+
+        $historyRows = Attendance::with('punches')
+            ->whereIn('employee_id', $empIds)
+            ->whereBetween('attendance_date', [$histStart, $date])
+            ->orderByDesc('attendance_date')
+            ->get()
+            ->groupBy('employee_id');
+
+        // ── 3) Compose per-employee payload in the shape the SPA expects ──
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date) {
+            [$shiftStart, $shiftEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
+            $expectedMinutes = $this->expectedMinutesFromWindow($shiftStart, $shiftEnd);
+            $weeklyOffSet    = $this->parseWeeklyOff((string) ($emp->weekly_off ?? ''));
+            $isWeeklyOff     = isset($weeklyOffSet[\Carbon\Carbon::parse($date)->dayOfWeek]);
+
+            $today    = $dailyRows->get($emp->id);
+            $todayPunches = $today ? $today->punches->sortBy('punched_at')->values() : collect();
+
+            // Determine status for the selected date.
+            $statusToday = $this->resolveDayStatus($today, $isWeeklyOff, $shiftStart, $date);
+            $firstIn     = $today?->check_in_at ? $today->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
+            $lastOut     = $today?->check_out_at ? $today->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
+            $workedSecs  = $today ? (int) $today->total_worked_seconds : 0;
+            $workedMins  = (int) floor($workedSecs / 60);
+
+            $lateByMinutes = 0;
+            if ($firstIn && $shiftStart) {
+                $diff = $this->minutesBetween($shiftStart, $firstIn);
+                if ($diff > 0) $lateByMinutes = $diff;
+            }
+
+            // KPIs — month-to-date
+            $mRows = $monthRows->get($emp->id, collect());
+            $presentDays = 0; $lateMarks = 0; $missingPunch = 0; $tracked = 0;
+            foreach ($mRows as $r) {
+                $st = strtolower((string) $r->status);
+                if (in_array($st, ['present', 'late', 'on duty', 'work from home', 'corrected', 'half day'], true)) {
+                    $presentDays++;
+                }
+                if ($st === 'late' || $st === 'half day') $lateMarks++;
+                if ($st === 'missing in' || $st === 'missing out') $missingPunch++;
+                // Heuristic late on top of stored status — shift_start is in
+                // local time, so the punch timestamp must be converted from
+                // UTC before comparing.
+                if ($r->check_in_at && $shiftStart) {
+                    $localIn = $r->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
+                    $late = $this->minutesBetween($shiftStart, $localIn);
+                    if ($late > 10 && $st === 'present') $lateMarks++;
+                }
+                $tracked++;
+            }
+            $compliancePct = $tracked === 0 ? 100 : (int) round(max(0, ($presentDays - $missingPunch) / max($tracked, 1) * 100));
+
+            // 30-day log
+            $hRows = $historyRows->get($emp->id, collect());
+            $logs = $this->buildHistoryLogs($hRows, $emp, $shiftStart, $expectedMinutes, $weeklyOffSet);
+
+            return [
+                'id'                => $emp->id,
+                'empCode'           => (string) ($emp->emp_code ?? ''),
+                'name'              => (string) ($emp->display_name ?? trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''))),
+                'initials'          => $this->initials((string) ($emp->display_name ?? '')),
+                'accent'            => '',                            // SPA picks colour from index
+                'department'        => $emp->department?->name ?? '—',
+                'designation'       => $emp->designation?->name ?? '—',
+                'managerName'       => $emp->reportingManager?->display_name
+                    ?? trim((string) ($emp->reportingManager?->first_name ?? '') . ' ' . (string) ($emp->reportingManager?->last_name ?? ''))
+                    ?: '—',
+                'shift'             => (string) ($emp->shift ?? 'General (09:00 – 18:00)'),
+                'shiftStart'        => $shiftStart ?: '09:00',
+                'shiftEnd'          => $shiftEnd   ?: '18:00',
+                'weeklyOff'         => (string) ($emp->weekly_off ?? 'Sun'),
+                'attendanceNumber'  => (string) ($emp->attendance_number ?? ''),
+                'status'            => $statusToday,
+                'firstIn'           => $firstIn,
+                'lastOut'           => $lastOut,
+                'workedMinutes'     => $workedMins,
+                'expectedMinutes'   => $expectedMinutes,
+                'lateByMinutes'     => $lateByMinutes,
+                'punches'           => $this->renderPunches($todayPunches),
+                'presentDays'       => $presentDays,
+                'lateMarks'         => $lateMarks,
+                'missingPunch'      => $missingPunch,
+                'compliancePct'     => $compliancePct,
+                'logs'              => $logs,
+            ];
+        })->values();
+
+        return response()->json($out);
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  DAILY-VIEW HELPERS
+     * ───────────────────────────────────────────────────────────────── */
+
+    /**
+     * Parse a shift string like "General (09:00 – 18:00)" or "Night (21:00 -
+     * 06:00)" into ["09:00", "18:00"]. Returns [null, null] when no parse.
+     * Accepts both en-dash and hyphen separators.
+     */
+    private function parseShiftWindow(string $shift): array
+    {
+        if ($shift === '') return [null, null];
+        if (preg_match('/(\d{1,2}:\d{2})\s*[–\-]\s*(\d{1,2}:\d{2})/u', $shift, $m)) {
+            return [$m[1], $m[2]];
+        }
+        return [null, null];
+    }
+
+    /** Expected minutes between two HH:MM strings — wraps midnight for night shifts. */
+    private function expectedMinutesFromWindow(?string $start, ?string $end): int
+    {
+        if (!$start || !$end) return 540; // default 9h
+        $diff = $this->minutesBetween($start, $end);
+        if ($diff <= 0) $diff += 24 * 60;
+        return $diff;
+    }
+
+    /** Minutes from $from ("HH:MM") to $to ("HH:MM"); negative if $to earlier. */
+    private function minutesBetween(string $from, string $to): int
+    {
+        [$fh, $fm] = array_map('intval', explode(':', $from));
+        [$th, $tm] = array_map('intval', explode(':', $to));
+        return ($th * 60 + $tm) - ($fh * 60 + $fm);
+    }
+
+    /**
+     * Decompose a weekly-off label like "Sun" or "Sat, Sun" into a set of
+     * Carbon dayOfWeek integers (Sun = 0 .. Sat = 6).
+     */
+    private function parseWeeklyOff(string $label): array
+    {
+        $map = ['sun' => 0, 'mon' => 1, 'tue' => 2, 'wed' => 3, 'thu' => 4, 'fri' => 5, 'sat' => 6];
+        $set = [];
+        foreach (preg_split('/[\s,]+/', strtolower($label)) as $tok) {
+            $key = substr($tok, 0, 3);
+            if (isset($map[$key])) $set[$map[$key]] = true;
+        }
+        return $set;
+    }
+
+    /** Resolve the day-level status string surfaced to the SPA. */
+    private function resolveDayStatus(?Attendance $row, bool $weeklyOff, ?string $shiftStart, string $date): string
+    {
+        if ($row && !empty($row->status)) {
+            return (string) $row->status;
+        }
+        if ($weeklyOff) return 'Weekly Off';
+        if ($date > now()->toDateString()) return 'Present'; // future placeholder
+        return 'Absent';
+    }
+
+    /** Two-letter initials from a display name. */
+    private function initials(string $name): string
+    {
+        $name = trim($name);
+        if ($name === '') return '?';
+        $parts = preg_split('/\s+/', $name);
+        $first = mb_substr($parts[0] ?? '', 0, 1);
+        $second = count($parts) > 1 ? mb_substr($parts[count($parts) - 1], 0, 1) : '';
+        return strtoupper($first . $second);
+    }
+
+    /** Map AttendancePunch rows to the PunchEvent shape the SPA renders. */
+    private function renderPunches($punches): array
+    {
+        $out = [];
+        $lastIn = null;
+        foreach ($punches as $p) {
+            $whenUtc = $p->punched_at;
+            if (!$whenUtc) continue;
+            $when = $whenUtc->copy()->setTimezone(self::DISPLAY_TZ);
+            $time = $when->format('h:i A');
+            $type = $p->direction === 'out' ? 'out' : 'in';
+            $source = match ((string) $p->method) {
+                'face'    => 'BIOMETRIC',
+                'manual'  => 'MANUAL',
+                'auto'    => 'WEB',
+                default   => 'WEB',
+            };
+            $label = $p->label ?: ($type === 'in' ? 'Check In' : 'Check Out');
+            $entry = [
+                'time'   => $time,
+                'type'   => $type,
+                'source' => $source,
+                'label'  => $label,
+            ];
+            if ($type === 'out' && $lastIn) {
+                $minutes = max(0, (int) round(($when->getTimestamp() - $lastIn->getTimestamp()) / 60));
+                $entry['worked'] = sprintf('%dh %02dm', intdiv($minutes, 60), $minutes % 60);
+            }
+            if ($type === 'in' && !empty($out)) {
+                $prev = $out[count($out) - 1];
+                if (isset($prev['_outTs']) && $prev['_outTs'] > 0) {
+                    $breakMin = max(0, (int) round(($when->getTimestamp() - $prev['_outTs']) / 60));
+                    $entry['breakAfter'] = sprintf('%dh %02dm', intdiv($breakMin, 60), $breakMin % 60);
+                }
+            }
+            if ($type === 'out') $entry['_outTs'] = $when->getTimestamp();
+            $out[] = $entry;
+            if ($type === 'in') $lastIn = $when; else $lastIn = null;
+        }
+        // Strip the internal timestamp hint we used for break computation.
+        foreach ($out as &$row) unset($row['_outTs']);
+        return $out;
+    }
+
+    /** Build the 30-day Logs & Requests history rows. */
+    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, array $weeklyOffSet): array
+    {
+        $out = [];
+        foreach ($rows as $r) {
+            $dateC = \Carbon\Carbon::parse($r->attendance_date);
+            $isWO  = isset($weeklyOffSet[$dateC->dayOfWeek]);
+            $status = $r->status ?: ($isWO ? 'Weekly Off' : 'Absent');
+
+            $firstIn = $r->check_in_at  ? $r->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i')  : '—';
+            $lastOut = $r->check_out_at ? $r->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : '—';
+            $worked  = (int) floor(((int) $r->total_worked_seconds) / 60);
+            $deviation = $worked === 0 ? '—' : sprintf('%+dh %02dm', intdiv($worked - $expectedMinutes, 60), abs(($worked - $expectedMinutes) % 60));
+            $lateMin = 0;
+            if ($firstIn !== '—' && $shiftStart) {
+                $lateMin = max(0, $this->minutesBetween($shiftStart, $firstIn));
+            }
+
+            $segments = [];
+            $pairs = $r->punches?->sortBy('punched_at')->values() ?? collect();
+            $openIn = null;
+            foreach ($pairs as $p) {
+                $tsUtc = $p->punched_at;
+                if (!$tsUtc) continue;
+                $ts = $tsUtc->copy()->setTimezone(self::DISPLAY_TZ);
+                $hf = $ts->hour + $ts->minute / 60;
+                if ($p->direction === 'in') {
+                    $openIn = $hf;
+                } elseif ($p->direction === 'out' && $openIn !== null) {
+                    $segments[] = ['start' => round($openIn, 2), 'end' => round($hf, 2)];
+                    $openIn = null;
+                }
+            }
+
+            $out[] = [
+                'iso'              => $dateC->toDateString(),
+                'date'             => $dateC->format('d M Y'),
+                'weekday'          => $dateC->format('D'),
+                'status'           => $status,
+                'shift'            => (string) ($emp->shift ?: '—'),
+                'firstIn'          => $firstIn,
+                'lastOut'          => $lastOut,
+                'worked'           => $worked === 0 ? '—' : sprintf('%dh %02dm', intdiv($worked, 60), $worked % 60),
+                'deviation'        => $deviation,
+                'exception'        => in_array(strtolower($status), ['late', 'half day', 'absent', 'corrected'], true) ? $status : null,
+                'workSegments'     => $segments,
+                'effectiveMinutes' => $worked,
+                'grossMinutes'     => $worked,
+                'expectedMinutes'  => $expectedMinutes,
+                'lateMinutes'      => $lateMin,
+            ];
+        }
+        return $out;
     }
 
     /* ─────────────────────────────────────────────────────────────────

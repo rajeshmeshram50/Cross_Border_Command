@@ -162,6 +162,11 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/announcements/next-code', [AnnouncementController::class, 'nextCode']);
     Route::apiResource('announcements', AnnouncementController::class);
 
+    // Batch counts for the Master dashboard — one round-trip returns
+    // active/inactive/total for every master the user can view.
+    // Declared BEFORE `/master/{slug}` so the literal segment doesn't get
+    // captured as a slug.
+    Route::get   ('/master-counts',           [MasterController::class, 'counts']);
     Route::get   ('/master/{slug}',           [MasterController::class, 'list']);
     Route::post  ('/master/{slug}',           [MasterController::class, 'store']);
     // Next auto-generated code for masters that use a prefixed sequence (e.g. DEPT-001).
@@ -196,6 +201,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // /attendance/my    → signed-in employee's own history
     // /attendance/today → today's row for the signed-in employee
     Route::get ('/attendance',                                 [AttendanceController::class, 'index']);
+    Route::get ('/attendance/daily-view',                      [AttendanceController::class, 'dailyView']);
     Route::get ('/attendance/my',                              [AttendanceController::class, 'my']);
     Route::get ('/attendance/today',                           [AttendanceController::class, 'today']);
     Route::get ('/attendance/employee/{employeeId}/summary',   [AttendanceController::class, 'employeeSummary']);
