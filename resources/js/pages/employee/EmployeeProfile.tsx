@@ -1673,25 +1673,32 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Personal Information</h6>
   </div>
   <div className="px-3 py-3">
-    {/* ---- Photo upload row (new) ---- */}
-    <div className="d-flex align-items-center gap-3 mb-4 pb-2 border-bottom">
+    <Row className="g-4 align-items-stretch">
+      <Col lg={3} md={4}>
+        <div
+          className="h-100 d-flex flex-column align-items-center justify-content-center text-center p-3"
+          style={{
+            border: '1px dashed rgba(99,102,241,0.35)',
+            borderRadius: 12,
+            background: 'rgba(99,102,241,0.04)',
+          }}
+        >
       {profilePhotoSrc ? (
         <img
           src={profilePhotoSrc}
           alt="profile"
-          className="rounded-circle"
-          style={{ width: 64, height: 64, objectFit: 'cover', border: '2px solid var(--vz-border-color)' }}
+          className="rounded-circle mb-3"
+          style={{ width: 112, height: 112, objectFit: 'cover', border: '3px solid var(--vz-card-bg)', boxShadow: '0 8px 24px rgba(15,23,42,0.16)' }}
         />
       ) : (
         <div
-          className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted"
-          style={{ width: 64, height: 64, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 24 }}
+          className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted mb-3"
+          style={{ width: 112, height: 112, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 38 }}
         >
           <i className="ri-user-line" />
         </div>
       )}
-      <div className="flex-grow-1 min-w-0">
-        <label className="ep-field-label mb-1">Profile Photo</label>
+        <label className="ep-field-label mb-2">Employee Photo</label>
         <input
           ref={profilePhotoInputRef}
           type="file"
@@ -1700,11 +1707,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           className="form-control form-control-sm"
           style={{ fontSize: 12 }}
         />
-        <small className="text-muted" style={{ fontSize: 11 }}>
+        <small className="text-muted mt-2" style={{ fontSize: 11, lineHeight: 1.35 }}>
           JPG, PNG, WebP — Max 4MB · you'll be able to crop & zoom after picking
         </small>
         {profilePhotoFile && (
-          <div className="mt-2 d-flex gap-2">
+          <div className="mt-3 d-flex gap-2 flex-wrap justify-content-center">
             <button
               type="button"
               className="btn btn-sm btn-success"
@@ -1712,7 +1719,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               disabled={savingPhoto}
             >
               {savingPhoto ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="ri-save-line me-1" />}
-              Save new photo
+              Save Photo
             </button>
             <button
               type="button"
@@ -1726,17 +1733,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </button>
           </div>
         )}
-      </div>
-    </div>
-    {/* ---- Existing fields ---- */}
-    <Row className="g-4">
-      <Col><div className="ep-field-label">First Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ')[0] || 'Aarav'}</div></Col>
-      <Col><div className="ep-field-label">Middle Name</div><div className="ep-field-value">Rajendra</div></Col>
-      <Col><div className="ep-field-label">Last Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ').slice(1).join(' ') || 'Kale'}</div></Col>
-      <Col><div className="ep-field-label">Display Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-      <Col><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
-      <Col><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
-      <Col><div className="ep-field-label">Nationality</div><div className="ep-field-value">Indian</div></Col>
+        </div>
+      </Col>
+      <Col lg={9} md={8}>
+        <Row className="g-4">
+          <Col md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ')[0] || 'Aarav'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">Rajendra</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ').slice(1).join(' ') || 'Kale'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">Indian</div></Col>
+        </Row>
+      </Col>
     </Row>
   </div>
 </div>
