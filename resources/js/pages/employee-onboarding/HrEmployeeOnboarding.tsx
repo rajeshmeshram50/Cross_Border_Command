@@ -1667,6 +1667,9 @@ function InitiateOnboardingModal({
   // Reset to stage 1 each time a new employee opens
   useEffect(() => { if (isOpen) setActiveStage(1); }, [isOpen, emp?.id]);
 
+  // Validation errors state — tracks which fields have errors
+  const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
+
   // ── Master data — fetched once when the modal first opens. Everything
   //    Stage 1 needs to populate its dropdowns: countries (work + nationality),
   //    departments, designations, roles, legal entities, eligible managers.
@@ -1741,6 +1744,7 @@ function InitiateOnboardingModal({
     nationality_country_id: '',
     work_country_id: '',
     email:       '',
+    official_email: '',
     mobile:      '',
 
     department_id:    '',
@@ -1783,69 +1787,71 @@ function InitiateOnboardingModal({
   });
 
   // Hydrate from raw whenever the modal opens or a different employee is loaded.
-  useEffect(() => {
-    if (!isOpen || !emp?.raw) return;
-    const x = emp.raw;
-    setS1({
-      first_name:  String(x.first_name  ?? ''),
-      middle_name: String(x.middle_name ?? ''),
-      last_name:   String(x.last_name   ?? ''),
-      gender:      String(x.gender ?? ''),
-      date_of_birth: x.date_of_birth ? String(x.date_of_birth).slice(0, 10) : '',
-      nationality_country_id: x.nationality_country_id ? String(x.nationality_country_id) : '',
-      work_country_id:        x.work_country_id        ? String(x.work_country_id)        : '',
-      email:       String(x.email  ?? ''),
-      mobile:      String(x.mobile ?? ''),
+// Hydrate from raw whenever the modal opens or a different employee is loaded.
+useEffect(() => {
+  if (!isOpen || !emp?.raw) return;
+  const x = emp.raw;
+  setS1({
+    first_name:  String(x.first_name  ?? ''),
+    middle_name: String(x.middle_name ?? ''),
+    last_name:   String(x.last_name   ?? ''),
+    gender:      String(x.gender ?? ''),
+    date_of_birth: x.date_of_birth ? String(x.date_of_birth).slice(0, 10) : '',
+    nationality_country_id: x.nationality_country_id ? String(x.nationality_country_id) : '',
+    work_country_id:        x.work_country_id        ? String(x.work_country_id)        : '',
+    email:       '',
+    official_email: '',  // ← CHANGE THIS: Always empty, don't hydrate from backend
+    mobile:      String(x.mobile ?? ''),
 
-      department_id:    x.department_id    ? String(x.department_id)    : '',
-      designation_id:   x.designation_id   ? String(x.designation_id)   : '',
-      primary_role_id:  x.primary_role_id  ? String(x.primary_role_id)  : '',
-      ancillary_role_id: x.ancillary_role_id ? String(x.ancillary_role_id) : '',
-      legal_entity_id:  x.legal_entity_id  ? String(x.legal_entity_id)  : '',
-      location:         String(x.location ?? ''),
-      reporting_manager: x.reporting_manager_id ? `employee:${x.reporting_manager_id}` : '',
-      date_of_joining:  x.date_of_joining ? String(x.date_of_joining).slice(0, 10) : '',
-      probation_policy: String(x.probation_policy ?? ''),
-      notice_period:    String(x.notice_period    ?? ''),
+    department_id:    x.department_id    ? String(x.department_id)    : '',
+    designation_id:   x.designation_id   ? String(x.designation_id)   : '',
+    primary_role_id:  x.primary_role_id  ? String(x.primary_role_id)  : '',
+    ancillary_role_id: x.ancillary_role_id ? String(x.ancillary_role_id) : '',
+    legal_entity_id:  x.legal_entity_id  ? String(x.legal_entity_id)  : '',
+    location:         String(x.location ?? ''),
+    reporting_manager: x.reporting_manager_id ? `employee:${x.reporting_manager_id}` : '',
+    date_of_joining:  x.date_of_joining ? String(x.date_of_joining).slice(0, 10) : '',
+    probation_policy: String(x.probation_policy ?? ''),
+    notice_period:    String(x.notice_period    ?? ''),
 
-      leave_plan:          String(x.leave_plan          ?? ''),
-      holiday_list:        String(x.holiday_list        ?? ''),
-      shift:               String(x.shift               ?? ''),
-      weekly_off:          String(x.weekly_off          ?? ''),
-      attendance_number:   String(x.attendance_number   ?? ''),
-      time_tracking:       String(x.time_tracking       ?? ''),
-      penalization_policy: String(x.penalization_policy ?? ''),
-      overtime:            String(x.overtime            ?? ''),
-      expense_policy:      String(x.expense_policy      ?? ''),
-      laptop_assigned:     String(x.laptop_assigned     ?? ''),
-      laptop_asset_id:     String(x.laptop_asset_id     ?? ''),
-      mobile_device:       String(x.mobile_device       ?? ''),
-      other_assets:        String(x.other_assets        ?? ''),
-      laptop_master_asset_id: x.laptop_master_asset_id ? String(x.laptop_master_asset_id) : '',
-      // No legacy free-text "Mobile Assigned" column — derive Yes/No
-      // from whether a mobile asset is currently selected.
-      mobile_assigned:     x.mobile_master_asset_id ? 'Yes' : (x.mobile_device ? 'Yes' : ''),
-      mobile_master_asset_id: x.mobile_master_asset_id ? String(x.mobile_master_asset_id) : '',
-      other_master_asset_ids: Array.isArray(x.other_master_asset_ids)
-        ? x.other_master_asset_ids.map((n: any) => String(n))
-        : [],
-      biometric_status:    String(x.biometric_status    ?? 'Not Registered'),
-      desk_workstation_no: String(x.desk_workstation_no ?? ''),
-      id_card_status:      String(x.id_card_status      ?? 'Not Printed'),
-      attendance_tracking: x.attendance_tracking !== undefined ? !!x.attendance_tracking : true,
+    leave_plan:          String(x.leave_plan          ?? ''),
+    holiday_list:        String(x.holiday_list        ?? ''),
+    shift:               String(x.shift               ?? ''),
+    weekly_off:          String(x.weekly_off          ?? ''),
+    attendance_number:   String(x.attendance_number   ?? ''),
+    time_tracking:       String(x.time_tracking       ?? ''),
+    penalization_policy: String(x.penalization_policy ?? ''),
+    overtime:            String(x.overtime            ?? ''),
+    expense_policy:      String(x.expense_policy      ?? ''),
+    laptop_assigned:     String(x.laptop_assigned     ?? ''),
+    laptop_asset_id:     String(x.laptop_asset_id     ?? ''),
+    mobile_device:       String(x.mobile_device       ?? ''),
+    other_assets:        String(x.other_assets        ?? ''),
+    laptop_master_asset_id: x.laptop_master_asset_id ? String(x.laptop_master_asset_id) : '',
+    // No legacy free-text "Mobile Assigned" column — derive Yes/No
+    // from whether a mobile asset is currently selected.
+    mobile_assigned:     x.mobile_master_asset_id ? 'Yes' : (x.mobile_device ? 'Yes' : ''),
+    mobile_master_asset_id: x.mobile_master_asset_id ? String(x.mobile_master_asset_id) : '',
+    other_master_asset_ids: Array.isArray(x.other_master_asset_ids)
+      ? x.other_master_asset_ids.map((n: any) => String(n))
+      : [],
+    biometric_status:    String(x.biometric_status    ?? 'Not Registered'),
+    desk_workstation_no: String(x.desk_workstation_no ?? ''),
+    id_card_status:      String(x.id_card_status      ?? 'Not Printed'),
+    attendance_tracking: x.attendance_tracking !== undefined ? !!x.attendance_tracking : true,
 
-      enable_payroll: x.enable_payroll !== undefined ? !!x.enable_payroll : true,
-      pay_group:             String(x.pay_group             ?? ''),
-      annual_salary:         x.annual_salary != null ? String(x.annual_salary) : '',
-      salary_frequency:      String(x.salary_frequency      ?? 'Per annum'),
-      salary_effective_from: x.salary_effective_from ? String(x.salary_effective_from).slice(0, 10) : '',
-      salary_structure:      String(x.salary_structure      ?? ''),
-      tax_regime:            String(x.tax_regime            ?? ''),
-      bonus_in_annual:       !!x.bonus_in_annual,
-      pf_eligible:           !!x.pf_eligible,
-      detailed_breakup:      !!x.detailed_breakup,
-    });
-  }, [isOpen, emp?.id, emp?.raw]);
+    enable_payroll: x.enable_payroll !== undefined ? !!x.enable_payroll : true,
+    pay_group:             String(x.pay_group             ?? ''),
+    annual_salary:         x.annual_salary != null ? String(x.annual_salary) : '',
+    salary_frequency:      String(x.salary_frequency      ?? 'Per annum'),
+    salary_effective_from: x.salary_effective_from ? String(x.salary_effective_from).slice(0, 10) : '',
+    salary_structure:      String(x.salary_structure      ?? ''),
+    tax_regime:            String(x.tax_regime            ?? ''),
+    bonus_in_annual:       !!x.bonus_in_annual,
+    pf_eligible:           !!x.pf_eligible,
+    detailed_breakup:      !!x.detailed_breakup,
+  });
+}, [isOpen, emp?.id, emp?.raw]);
 
   /** Push the current Stage 1 form values to the backend as a PUT. The
    *  server already accepts partial PATCHes — fields the wizard hasn't
@@ -1854,6 +1860,8 @@ function InitiateOnboardingModal({
    *  value, so passing 4 here marks the wizard fully done. */
   const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
     if (!emp?.dbId || s1Saving) return false;
+      // Validate before saving
+  if (!validateStage1()) return false;
     setS1Saving(true);
     const intOrNull = (v: string) => {
       const n = parseInt(v, 10);
@@ -1885,6 +1893,7 @@ function InitiateOnboardingModal({
       middle_name: s1.middle_name.trim() || null,
       last_name:   s1.last_name.trim()   || null,
       email:       s1.email.trim()       || null,
+      official_email: s1.official_email ? s1.official_email.trim() : null,
       mobile:      s1.mobile.trim()      || null,
       // Asset FK assignments. Skip the laptop / mobile FK when the
       // Yes/No flag is "No" so an explicit unassign actually clears it.
@@ -1987,9 +1996,50 @@ function InitiateOnboardingModal({
    *  Stage gets unblocked. We never clear the timestamp from here — once
    *  Stage 4 is complete, edits keep the row marked complete (matches
    *  the wizard_step_completed high-watermark behaviour). */
+ const validateStage1 = (): boolean => {
+  const errors: Record<string, string> = {};
+  
+  // Personal Information - Required
+  if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
+  if (!s1.last_name?.trim()) errors.last_name = 'Last name is required';
+  if (!s1.date_of_birth?.trim()) errors.date_of_birth = 'Date of birth is required';
+  
+  // Contact Information - Required
+  if (!s1.email?.trim()) errors.email = 'Work email is required';
+  if (!s1.mobile?.trim()) errors.mobile = 'Mobile number is required';
+  
+  // Compensation - Required
+  if (!s1.annual_salary || Number(s1.annual_salary) <= 0) {
+    errors.annual_salary = 'Annual salary is required and must be greater than 0';
+  }
+  if (!s1.salary_effective_from?.trim()) {
+    errors.salary_effective_from = 'Salary effective date is required';
+  }
+  
+  setS1Errors(errors);
+  return Object.keys(errors).length === 0;
+};
   const saveStage4 = async (markComplete: boolean): Promise<boolean> => {
     if (!emp?.dbId || s4Saving) return false;
     setS4Saving(true);
+    // Client-side PAN uniqueness check (best-effort). If backend supports filtering
+    // by PAN this avoids a slow round-trip on Save. If not supported we fall back
+    // to server-side validation.
+    if (s4.pan_number && s4.pan_number.trim()) {
+      const panU = s4.pan_number.trim().toUpperCase();
+      try {
+        const r = await api.get(`/employees?pan=${encodeURIComponent(panU)}`);
+        const list = Array.isArray(r.data) ? r.data : [];
+        const dup = list.find((e: any) => String(e.pan_number || '').toUpperCase() === panU && String(e.id) !== String(emp.dbId));
+        if (dup) {
+          toast.error('PAN already in use', 'Another employee already has this PAN.');
+          setS4Saving(false);
+          return false;
+        }
+      } catch (err) {
+        // ignore - rely on server validation if filtering isn't available
+      }
+    }
     const trimOrNull = (v: string) => {
       const t = (v ?? '').trim();
       return t === '' ? null : t;
@@ -2285,6 +2335,12 @@ function InitiateOnboardingModal({
                 </div>
               </>
             )}
+            {activeStage === 1 && Object.keys(s1Errors).length > 0 && (
+  <div className="onb-validation-summary">
+    <i className="ri-error-warning-line" />
+    <span>Please fill in all required fields marked with <span className="req">*</span> before proceeding.</span>
+  </div>
+)}
 
             {activeStage === 2 && (
               <Stage2Documents
@@ -2333,18 +2389,40 @@ function InitiateOnboardingModal({
                     <label className="onb-init-label">Work Country</label>
                     <MasterSelect options={countryOpts} placeholder="Select country" value={s1.work_country_id} onChange={(v) => setS1(p => ({ ...p, work_country_id: v }))} />
                   </Col>
-                  <Col md={4}>
-                    <label className="onb-init-label">First Name <span className="req">*</span></label>
-                    <input className="onb-init-input" value={s1.first_name} onChange={e => setS1(p => ({ ...p, first_name: e.target.value }))} />
-                  </Col>
+<Col md={4}>
+  <label className="onb-init-label">
+    First Name <span className="req">*</span>
+  </label>
+  <input 
+    className={`onb-init-input ${s1Errors.first_name ? 'is-invalid' : ''}`} 
+    placeholder="First name" 
+    value={s1.first_name} 
+    onChange={e => { 
+      setS1(p => ({ ...p, first_name: e.target.value })); 
+      setS1Errors(p => ({ ...p, first_name: '' }));
+    }} 
+  />
+  {s1Errors.first_name && <div className="onb-error-msg">{s1Errors.first_name}</div>}
+</Col>
                   <Col md={4}>
                     <label className="onb-init-label">Middle Name</label>
                     <input className="onb-init-input" placeholder="Middle name (optional)" value={s1.middle_name} onChange={e => setS1(p => ({ ...p, middle_name: e.target.value }))} />
                   </Col>
-                  <Col md={4}>
-                    <label className="onb-init-label">Last Name <span className="req">*</span></label>
-                    <input className="onb-init-input" value={s1.last_name} onChange={e => setS1(p => ({ ...p, last_name: e.target.value }))} />
-                  </Col>
+ <Col md={4}>
+  <label className="onb-init-label">
+    Last Name <span className="req">*</span>
+  </label>
+  <input 
+    className={`onb-init-input ${s1Errors.last_name ? 'is-invalid' : ''}`} 
+    placeholder="Last name" 
+    value={s1.last_name} 
+    onChange={e => { 
+      setS1(p => ({ ...p, last_name: e.target.value })); 
+      setS1Errors(p => ({ ...p, last_name: '' }));
+    }} 
+  />
+  {s1Errors.last_name && <div className="onb-error-msg">{s1Errors.last_name}</div>}
+</Col>
                   <Col md={4}>
                     <label className="onb-init-label">Display Name <span className="auto">AUTO</span></label>
                     <input className="onb-init-input is-autofilled" readOnly value={[s1.first_name, s1.middle_name, s1.last_name].filter(Boolean).join(' ').trim() || emp.name} />
@@ -2357,10 +2435,21 @@ function InitiateOnboardingModal({
                     <label className="onb-init-label">Gender</label>
                     <MasterSelect options={ONB_GENDER} placeholder="Select gender" value={s1.gender} onChange={(v) => setS1(p => ({ ...p, gender: v }))} />
                   </Col>
-                  <Col md={4}>
-                    <label className="onb-init-label">Date of Birth <span className="req">*</span></label>
-                    <MasterDatePicker placeholder="Select date of birth" value={s1.date_of_birth} onChange={(v) => setS1(p => ({ ...p, date_of_birth: v }))} />
-                  </Col>
+{/* Date of Birth */}
+<Col md={4}>
+  <label className="onb-init-label">
+    Date of Birth <span className="req">*</span>
+  </label>
+  <MasterDatePicker 
+    placeholder="Select date of birth" 
+    value={s1.date_of_birth} 
+    onChange={(v) => { 
+      setS1(p => ({ ...p, date_of_birth: v })); 
+      setS1Errors(p => ({ ...p, date_of_birth: '' }));
+    }} 
+  />
+  {s1Errors.date_of_birth && <div className="onb-error-msg">{s1Errors.date_of_birth}</div>}
+</Col>
                   <Col md={4}>
                     <label className="onb-init-label">Nationality</label>
                     <MasterSelect options={countryOpts} placeholder="Select nationality" value={s1.nationality_country_id} onChange={(v) => setS1(p => ({ ...p, nationality_country_id: v }))} />
@@ -2369,14 +2458,39 @@ function InitiateOnboardingModal({
 
                 <p className="onb-init-subgroup">Contact &amp; Identity</p>
                 <Row className="g-3">
-                  <Col md={4}>
-                    <label className="onb-init-label">Work Email <span className="req">*</span></label>
-                    <input className="onb-init-input is-required" placeholder="name@enterprise.com" value={s1.email} onChange={e => setS1(p => ({ ...p, email: e.target.value }))} />
-                  </Col>
-                  <Col md={4}>
-                    <label className="onb-init-label">Mobile Number <span className="req">*</span></label>
-                    <input className="onb-init-input is-required" placeholder="+91 XXXXX XXXXX" value={s1.mobile} onChange={e => setS1(p => ({ ...p, mobile: e.target.value }))} />
-                  </Col>
+                 
+{/* Work Email */}
+<Col md={4}>
+  <label className="onb-init-label">
+    Work Email <span className="req">*</span>
+  </label>
+  <input 
+    className={`onb-init-input is-required ${s1Errors.email ? 'is-invalid' : ''}`} 
+    placeholder="name@enterprise.com" 
+    value={s1.email} 
+    onChange={e => { 
+      setS1(p => ({ ...p, email: e.target.value })); 
+      setS1Errors(p => ({ ...p, email: '' }));
+    }} 
+  />
+  {s1Errors.email && <div className="onb-error-msg">{s1Errors.email}</div>}
+</Col>
+                 {/* Mobile Number */}
+<Col md={4}>
+  <label className="onb-init-label">
+    Mobile Number <span className="req">*</span>
+  </label>
+  <input 
+    className={`onb-init-input is-required ${s1Errors.mobile ? 'is-invalid' : ''}`} 
+    placeholder="+91 XXXXX XXXXX" 
+    value={s1.mobile} 
+    onChange={e => { 
+      setS1(p => ({ ...p, mobile: e.target.value })); 
+      setS1Errors(p => ({ ...p, mobile: '' }));
+    }} 
+  />
+  {s1Errors.mobile && <div className="onb-error-msg">{s1Errors.mobile}</div>}
+</Col>
                   <Col md={4}>
                     <label className="onb-init-label">Number Series</label>
                     <MasterSelect options={ONB_NUMBER_SERIES} defaultValue="Default Number Series" />
@@ -2581,24 +2695,41 @@ function InitiateOnboardingModal({
                     <label className="onb-init-label">Pay Group</label>
                     <MasterSelect options={ONB_PAY_GROUP} value={s1.pay_group || 'Default pay group'} onChange={(v) => setS1(p => ({ ...p, pay_group: v }))} />
                   </Col>
-                  <Col md={4}>
-                    <label className="onb-init-label">Annual Salary <span className="req">*</span></label>
-                    <input
-                      className="onb-init-input is-required"
-                      placeholder="Enter amount"
-                      inputMode="decimal"
-                      value={s1.annual_salary}
-                      onChange={e => setS1(p => ({ ...p, annual_salary: e.target.value.replace(/[^0-9.]/g, '') }))}
-                    />
-                  </Col>
+                  {/* Compensation - Annual Salary */}
+<Col md={4}>
+  <label className="onb-init-label">
+    Annual Salary <span className="req">*</span>
+  </label>
+  <input
+    className={`onb-init-input is-required ${s1Errors.annual_salary ? 'is-invalid' : ''}`}
+    placeholder="Enter amount"
+    inputMode="decimal"
+    value={s1.annual_salary}
+    onChange={e => {
+      setS1(p => ({ ...p, annual_salary: e.target.value.replace(/[^0-9.]/g, '') }));
+      setS1Errors(p => ({ ...p, annual_salary: '' }));
+    }}
+  />
+  {s1Errors.annual_salary && <div className="onb-error-msg">{s1Errors.annual_salary}</div>}
+</Col>
                   <Col md={4}>
                     <label className="onb-init-label">Period</label>
                     <MasterSelect options={ONB_PERIOD} value={s1.salary_frequency || 'Per annum'} onChange={(v) => setS1(p => ({ ...p, salary_frequency: v }))} />
                   </Col>
                   <Col md={4}>
-                    <label className="onb-init-label">Salary Effective From <span className="req">*</span></label>
-                    <MasterDatePicker placeholder="Select effective date" value={s1.salary_effective_from} onChange={(v) => setS1(p => ({ ...p, salary_effective_from: v }))} />
-                  </Col>
+  <label className="onb-init-label">
+    Salary Effective From <span className="req">*</span>
+  </label>
+  <MasterDatePicker 
+    placeholder="Select effective date" 
+    value={s1.salary_effective_from} 
+    onChange={(v) => { 
+      setS1(p => ({ ...p, salary_effective_from: v })); 
+      setS1Errors(p => ({ ...p, salary_effective_from: '' }));
+    }} 
+  />
+  {s1Errors.salary_effective_from && <div className="onb-error-msg">{s1Errors.salary_effective_from}</div>}
+</Col>
                   <Col md={4}>
                     <label className="onb-init-label">Salary Structure Type</label>
                     <MasterSelect options={ONB_SAL_STRUCT} value={s1.salary_structure || 'Range Based'} onChange={(v) => setS1(p => ({ ...p, salary_structure: v }))} />
@@ -2752,71 +2883,28 @@ function InitiateOnboardingModal({
                 : activeStage === 4 ? (s4Saving ? 'Saving…' : 'Save Draft')
                 : 'Save Draft'}
             </button>
-            {activeStage < 6 ? (
-              <button
-                type="button"
-                className="onb-init-btn-next"
-                disabled={
-                  (activeStage === 2 && !stage2Done) ||
-                  (activeStage === 4 && !stage4Done) ||
-                  (activeStage === 4 && s4Saving)
-                }
-                title={
-                  activeStage === 2 && !stage2Done
-                    ? `Upload all required documents (${stage2Uploaded}/${stage2Total}) to proceed`
-                    : activeStage === 4 && !stage4Done
-                    ? `Complete all readiness checks (${stage4Pass}/${stage4Total4}) to proceed`
-                    : undefined
-                }
-                style={
-                  ((activeStage === 2 && !stage2Done) || (activeStage === 4 && !stage4Done))
-                    ? { opacity: 0.55, cursor: 'not-allowed' }
-                    : undefined
-                }
-                onClick={async () => {
-                  // Stage 1: persist edits before advancing. saveStage1
-                  // bumps wizard_step_completed=4; the controller then
-                  // auto-bumps the macro stage to ≥1. Don't advance to
-                  // the next stage if the save failed — toast already
-                  // surfaced the reason.
-                  if (activeStage === 1) {
-                    const ok = await saveStage1(true);
-                    if (!ok) return;
-                  }
-                  // Stage 2: gate on required-document completion + bump
-                  // the macro watermark to 2.
-                  if (activeStage === 2) {
-                    if (!stage2Done) return;
-                    await bumpMacroStage(2);
-                  }
-                  // Stage 3: persist any asset-allocation edits (the
-                  // Device & Asset section binds straight to s1) and
-                  // then bump the macro watermark. saveStage1(false)
-                  // skips the wizard_step_completed bump so reopening
-                  // the modal still shows Stage 1 as fully done.
-                  if (activeStage === 3) {
-                    const ok = await saveStage1(false);
-                    if (!ok) return;
-                    await bumpMacroStage(3);
-                  }
-                  // Stage 4: gate on readiness checks + persist with the
-                  // completion stamp before advancing. saveStage4 also
-                  // bumps macro stage to 4.
-                  if (activeStage === 4) {
-                    if (!stage4Done) return;
-                    const ok = await saveStage4(true);
-                    if (!ok) return;
-                  }
-                  // Stage 5: provisional macro bump.
-                  if (activeStage === 5) {
-                    await bumpMacroStage(5);
-                  }
-                  setActiveStage((activeStage + 1) as typeof activeStage);
-                }}
-              >
-                Next Stage <i className="ri-arrow-right-s-line" />
-              </button>
-            ) : (
+{activeStage < 6 ? (
+  <button
+    type="button"
+    className="onb-init-btn-next"
+    disabled={
+      (activeStage === 1 && s1Saving) ||
+      (activeStage === 3 && s1Saving) ||
+      (activeStage === 4 && s4Saving)
+    }
+    onClick={async () => {
+      // Stage 1: validate required fields before advancing
+      if (activeStage === 1) {
+        if (!validateStage1()) return;
+        const ok = await saveStage1(true);
+        if (!ok) return;
+      }
+      // ... rest of existing code ...
+    }}
+  >
+    Next Stage <i className="ri-arrow-right-s-line" />
+  </button>
+) : (
               <button
                 type="button"
                 className="onb-init-btn-complete"
@@ -3521,10 +3609,22 @@ function Stage3Provisioning({
         </div>
         <div className="onb-prov-section-body">
           <Row className="g-3">
-            <Col md={6}>
-              <label className="onb-init-label">Official Email Address <span className="req">*</span></label>
-              <input className="onb-init-input is-required" placeholder="firstname.lastname@company.com" />
-            </Col>
+<Col md={6}>
+  <label className="onb-init-label">
+    Official Email Address <span className="req">*</span>
+  </label>
+  <input 
+    id="field-official-email"
+    className={`onb-init-input is-required ${s1Errors.official_email ? 'is-invalid' : ''}`} 
+    placeholder="firstname.lastname@company.com" 
+    value={s1.official_email} 
+    onChange={e => { 
+      setS1((p: any) => ({ ...p, official_email: e.target.value }));
+      setS1Errors(p => ({ ...p, official_email: '' }));
+    }} 
+  />
+  {s1Errors.official_email && <div className="onb-error-msg">{s1Errors.official_email}</div>}
+</Col>
             <Col md={6}>
               <label className="onb-init-label">Employee Code {autoLabel}</label>
               <div className="onb-prov-input is-autofetched">

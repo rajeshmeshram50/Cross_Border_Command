@@ -780,3 +780,46 @@
         [data-bs-theme="dark"] .onb-pol-section-pill         { background: rgba(124,92,252,0.22); color: #c4b5fd; }
         [data-bs-theme="dark"] .onb-doc-row-icon             { background: rgba(124,92,252,0.18); color: #c4b5fd; }
         [data-bs-theme="dark"] .onb-doc-tag                  { background: rgba(124,92,252,0.22); color: #c4b5fd; }
+
+
+        .onb-init-input.is-invalid {
+  border-color: #f06548 !important;
+  background-color: #fff8f7 !important;
+}
+
+.onb-error-msg {
+  color: #f06548;
+  font-size: 11px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.onb-error-msg::before {
+  content: "⚠";
+  font-size: 10px;
+}
+
+.req {
+  color: #f06548;
+  font-size: 12px;
+  margin-left: 2px;
+}
+
+.onb-validation-summary {
+  background: #fef2e8;
+  border-left: 3px solid #f06548;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #a12a0f;
+}
+
+.onb-validation-summary i {
+  font-size: 18px;
+}
