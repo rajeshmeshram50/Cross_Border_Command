@@ -9,15 +9,7 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Notify an Employee's reporting manager that one of their direct reports
- * has submitted a new Hiring Request, so the manager can review and approve.
- *
- * Triggered from HiringRequestController::store after the row is persisted.
- * Mail goes to the manager's email (preferred — Employee.email; falls back
- * to the linked User.email). Failure is non-fatal: the request still saves
- * even if the SMTP send fails.
- */
+
 class HiringRequestCreatedMail extends Mailable
 {
     use Queueable, SerializesModels;

@@ -11,11 +11,7 @@ use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-/**
- * Notify a recipient (branch contact OR employee) that a new announcement
- * has been published. Dispatched from AnnouncementMailer once per recipient
- * so each mail can carry the addressee's display name in the greeting.
- */
+
 class AnnouncementPublishedMail extends Mailable
 {
     use Queueable, SerializesModels;

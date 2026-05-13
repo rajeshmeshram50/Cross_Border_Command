@@ -8,19 +8,7 @@ use App\Models\EmployeeDocument;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
-/**
- * Stage 2 — Document Management endpoints.
- *
- *   GET    /api/employees/{employee}/documents          list all rows for the employee
- *   POST   /api/employees/{employee}/documents          upload (multipart)
- *   PATCH  /api/documents/{document}/verify             admin marks verified
- *   PATCH  /api/documents/{document}/reject             admin marks rejected with a reason
- *   DELETE /api/documents/{document}                    remove the upload
- *
- * Tenant scope mirrors EmployeeController — the employee's own
- * (client_id, branch_id) tuple gates everything. Files land on the
- * `public` disk under `employee-documents/{employee_id}/...`.
- */
+
 class EmployeeDocumentController extends Controller
 {
     /** Per-document upload size cap (MB). Catalogue can override later. */
