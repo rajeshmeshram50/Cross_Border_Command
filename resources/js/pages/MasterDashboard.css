@@ -1,0 +1,9 @@
+.stat-card{transition:transform .25s ease, box-shadow .25s ease; box-shadow:0 6px 18px rgba(23,47,77,0.06); border-radius:14px; background:var(--vz-card-bg);}
+.stat-card:hover{transform:translateY(-10px); box-shadow:0 24px 40px rgba(23,47,77,0.18), 0 6px 18px rgba(23,47,77,0.08);} 
+.stat-card:active{transform:translateY(-4px); box-shadow:0 12px 20px rgba(23,47,77,0.12);} 
+.stat-card .icon-box{transition:transform .25s ease, box-shadow .25s ease; box-shadow:0 6px 14px rgba(0,0,0,0.08);} 
+.stat-card .icon-box i{transition:transform .25s ease;} 
+.stat-card:hover .icon-box{transform:scale(1.08) rotate(6deg); box-shadow:0 12px 28px rgba(0,0,0,0.18);} 
+.stat-card:hover .icon-box i{transform:translateY(-1px);} 
+/* subtle glow for the inline top strip */
+.stat-card:hover > div[style*="position: absolute"][style*="height: 4"]{filter:drop-shadow(0 6px 12px rgba(102,145,231,0.12));}
