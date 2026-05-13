@@ -3207,7 +3207,7 @@ function Stage2Documents({ emp, onDocsChanged }: {
                 ? _serverStatusToUi(srv.status)
                 : (d.status === 'Optional' ? 'Optional' : 'Pending');
               const tone = DOC_STATUS_TONE[effective];
-              const accept = /photo|cheque/i.test(d.id) ? 'image/jpeg,image/png,application/pdf' : 'application/pdf,image/*';
+              const accept = /^photo$/i.test(d.id) ? 'image/jpeg,image/png' : /cheque/i.test(d.id) ? 'image/jpeg,image/png,application/pdf' : 'application/pdf,image/*';
               const isBusy = uploadingKey === d.id;
               return (
                 <div key={d.id} className="onb-doc-row">

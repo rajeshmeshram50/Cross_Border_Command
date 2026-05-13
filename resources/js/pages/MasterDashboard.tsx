@@ -161,57 +161,79 @@ export default function MasterDashboard() {
     setCounts({});
     setPending(new Set(allLeaves.map(l => l.id)));
 
-    // Bounded concurrency pool: firing 50 requests at once just queues them
-    // behind the browser's per-host limit (~6) and starves head-of-line
-    // responses. 6 workers gets the first counts on screen far sooner.
-    const POOL = 6;
-    const queue = [...allLeaves];
-
-    const worker = async () => {
-      while (queue.length > 0) {
-        if (cancelled) return;
-        const leaf = queue.shift();
-        if (!leaf) return;
-        try {
+    // Single batch round-trip — the backend (GET /api/master-counts) returns
+    // active/inactive/total for every master the user can view, all at once.
+    // Previously this page fired ~50 parallel requests and queued them behind
+    // the browser's per-host limit, leaving the last cards stuck on "Loading"
+    // long after the first ones painted. With the batch endpoint every card
+    // flips together in a single tick.
+    //
+    // If the batch endpoint is unavailable (older backend, transient 5xx),
+    // fall back to per-card fetches so the page degrades gracefully.
+    const runBatch = async () => {
+      try {
+        const res = await api.get('/master-counts');
+        if (cancelled) return true;
+        const map: Record<string, { active: number; inactive: number; total: number }> = res.data || {};
+        const next: Record<string, CountEntry> = {};
+        for (const leaf of allLeaves) {
           const slug = leaf.id.replace('master.', '');
-          // Some masters (e.g. organization_types) have their own dedicated
-          // controller and override `endpoint` in masterConfigs. Fall back to
-          // the generic /master/{slug} only when no override exists.
-          const cfg = getMasterConfig(slug);
-          const url = cfg ? masterEndpoint(cfg) : `/master/${slug}`;
-          const res = await api.get(url);
-          const records: any[] = Array.isArray(res.data)
-            ? res.data
-            : (res.data?.data || []);
-          let active = 0, inactive = 0;
-          for (const r of records) {
-            const s = String(r?.status ?? '').toLowerCase().trim();
-            const isActive =
-              s === 'active' || s === '1' || s === 'true' || s === 'yes' || s === 'enabled';
-            if (isActive) active++;
-            else inactive++;
-          }
-          if (cancelled) return;
-          setCounts(prev => ({ ...prev, [leaf.id]: { active, inactive, total: records.length } }));
-        } catch {
-          if (cancelled) return;
-          // On failure, record a zero entry so the card stops showing "loading".
-          setCounts(prev => ({ ...prev, [leaf.id]: { active: 0, inactive: 0, total: 0 } }));
-        } finally {
-          if (!cancelled) {
-            setPending(prev => {
-              if (!prev.has(leaf.id)) return prev;
-              const next = new Set(prev);
-              next.delete(leaf.id);
-              return next;
-            });
-          }
+          const c = map[slug] || { active: 0, inactive: 0, total: 0 };
+          next[leaf.id] = { active: c.active, inactive: c.inactive, total: c.total };
         }
+        setCounts(next);
+        setPending(new Set());
+        return true;
+      } catch {
+        return false;
       }
     };
 
-    const workers = Array.from({ length: Math.min(POOL, allLeaves.length) }, () => worker());
-    Promise.all(workers);
+    const runPerCardFallback = async () => {
+      const POOL = 10;
+      const queue = [...allLeaves];
+      const worker = async () => {
+        while (queue.length > 0) {
+          if (cancelled) return;
+          const leaf = queue.shift();
+          if (!leaf) return;
+          try {
+            const slug = leaf.id.replace('master.', '');
+            const cfg = getMasterConfig(slug);
+            const url = cfg ? masterEndpoint(cfg) : `/master/${slug}`;
+            const res = await api.get(url);
+            const records: any[] = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+            let active = 0, inactive = 0;
+            for (const r of records) {
+              const s = String(r?.status ?? '').toLowerCase().trim();
+              const isActive = s === 'active' || s === '1' || s === 'true' || s === 'yes' || s === 'enabled';
+              if (isActive) active++; else inactive++;
+            }
+            if (cancelled) return;
+            setCounts(prev => ({ ...prev, [leaf.id]: { active, inactive, total: records.length } }));
+          } catch {
+            if (cancelled) return;
+            setCounts(prev => ({ ...prev, [leaf.id]: { active: 0, inactive: 0, total: 0 } }));
+          } finally {
+            if (!cancelled) {
+              setPending(prev => {
+                if (!prev.has(leaf.id)) return prev;
+                const next = new Set(prev);
+                next.delete(leaf.id);
+                return next;
+              });
+            }
+          }
+        }
+      };
+      const workers = Array.from({ length: Math.min(POOL, allLeaves.length) }, () => worker());
+      await Promise.all(workers);
+    };
+
+    (async () => {
+      const ok = await runBatch();
+      if (!ok && !cancelled) await runPerCardFallback();
+    })();
 
     return () => { cancelled = true; };
   }, [groups]);

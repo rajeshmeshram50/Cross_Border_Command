@@ -142,6 +142,75 @@ class MasterController extends Controller
         'creator:id,name,user_type',
     ];
 
+    /**
+     * Batch count endpoint for the Master dashboard. Returns a `{ slug:
+     * { active, inactive, total } }` map covering every registered master
+     * the current user has `can_view` on. The dashboard previously made one
+     * /master/{slug} request per card (~50 round-trips); this collapses
+     * everything into a single query so the Active/Inactive pills paint
+     * within a single tick, regardless of which masters are in the menu.
+     *
+     * Perm-denied or empty tables fall back to {active:0, inactive:0, total:0}
+     * so the card never gets stuck in its "loading" state.
+     */
+    public function counts(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $branchFilter = $request->integer('branch_id') ?: null;
+
+        // For non-super-admins, pre-load the module slug → permission row so
+        // we only query the masters they're allowed to see. Super admins
+        // bypass the perm check entirely (they see every master).
+        $allowedSlugs = null;
+        if (!$user->isSuperAdmin()) {
+            $rows = \DB::table('permissions')
+                ->join('modules', 'permissions.module_id', '=', 'modules.id')
+                ->where('permissions.user_id', $user->id)
+                ->where('permissions.can_view', true)
+                ->where('modules.slug', 'like', 'master.%')
+                ->pluck('modules.slug')
+                ->all();
+            $allowedSlugs = [];
+            foreach ($rows as $moduleSlug) {
+                $allowedSlugs[substr($moduleSlug, strlen('master.'))] = true;
+            }
+        }
+
+        $out = [];
+        foreach (self::MODELS as $slug => $modelClass) {
+            if ($allowedSlugs !== null && !isset($allowedSlugs[$slug])) {
+                $out[$slug] = ['active' => 0, 'inactive' => 0, 'total' => 0];
+                continue;
+            }
+            try {
+                $q = $modelClass::query();
+                $this->applyScope($q, $user, $branchFilter);
+                // Status column is universal across master tables (enum
+                // 'Active'/'Inactive'). Masters that don't have one — none
+                // currently — would simply return total in `inactive`.
+                $rows = $q->get(['status']);
+                $active = 0; $inactive = 0;
+                foreach ($rows as $r) {
+                    $s = strtolower(trim((string)($r->status ?? '')));
+                    $isActive = in_array($s, ['active', '1', 'true', 'yes', 'enabled'], true);
+                    if ($isActive) $active++; else $inactive++;
+                }
+                $out[$slug] = [
+                    'active'   => $active,
+                    'inactive' => $inactive,
+                    'total'    => count($rows),
+                ];
+            } catch (\Throwable $e) {
+                // Don't fail the whole batch for one bad model — just record
+                // a zero entry so the dashboard's card unstucks gracefully.
+                $out[$slug] = ['active' => 0, 'inactive' => 0, 'total' => 0];
+            }
+        }
+
+        return response()->json($out);
+    }
+
     public function list(Request $request, string $slug)
     {
         $this->authorizeMaster($request, $slug, 'can_view');

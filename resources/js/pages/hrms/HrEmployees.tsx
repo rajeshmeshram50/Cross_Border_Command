@@ -1706,7 +1706,7 @@ export default function HrEmployees() {
   const handleDeleteEmployee = async (dbId: number, name: string) => {
     try {
       await api.delete(`/employees/${dbId}`);
-      toast.success('Employee removed', `${name} removed and login disabled.`);
+      toast.success('Employee removed', `${name} disabled.`);
       await reloadEmployees();
     } catch (err: any) {
       const apiMsg = err?.response?.data?.message || err?.message || 'Delete failed';

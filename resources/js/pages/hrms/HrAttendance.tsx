@@ -1,13 +1,14 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Popover, PopoverBody } from 'reactstrap';
 import { MasterFormStyles, MasterDatePicker } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { Turtle } from 'lucide-react';
+import api from '../../api';
 import '../../../css/recruitment.css';
 
-// "Today" anchor — replace with new Date() when the backend is wired. Kept
-// as a constant so dummy logs and the date picker stay in sync.
-const TODAY_ISO = '2026-04-21';
+// "Today" anchor — dynamic, locked at module load so a single render pass
+// stays consistent. Date picker / refetch uses this as the default `viewDate`.
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEK_LABELS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
@@ -156,7 +157,8 @@ interface CorrectionRequest {
 }
 
 interface AttendanceLog {
-  date: string;
+  iso?: string;              // YYYY-MM-DD — backend emits this for Calendar lookup
+  date: string;              // human-readable, e.g. "13 May 2026"
   weekday: string;
   status: DayStatus;
   shift: string;
@@ -450,21 +452,17 @@ const buildApprovalRequests = (employees: AttendanceEmployee[]): ApprovalRequest
 // HrAttendance — page component
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HrAttendance() {
-  const [employees, setEmployees] = useState<AttendanceEmployee[]>(buildEmployees);
+  // Real backend data — populated from /api/attendance/daily-view. The mock
+  // builders (buildEmployees / buildPunches / buildLogs / buildApprovalRequests)
+  // are kept as dev fallbacks ONLY and are no longer used as initial state.
+  const [employees, setEmployees] = useState<AttendanceEmployee[]>([]);
+  const [employeesLoading, setEmployeesLoading] = useState<boolean>(true);
+  const [employeesError, setEmployeesError] = useState<string | null>(null);
   const [filter, setFilter]       = useState<'all' | 'on_time' | 'late' | 'missing' | 'absent' | 'wfh' | 'leave'>('all');
   const [search, setSearch]       = useState('');
-  const [selectedId, setSelectedId] = useState<number>(1);
-  const [logTab, setLogTab]       = useState<'log' | 'requests' | 'calendar'>('log');
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [logTab, setLogTab]       = useState<'log' | 'calendar'>('log');
   const [regOpen, setRegOpen]     = useState(false);
-
-  // Page-level tab — Daily / Approvals / Calendar / Reports. The page is now
-  // role-aware: HR mostly lives on Daily + Approvals, dropping into per-employee
-  // calendar from the daily view.
-  const [pageTab, setPageTab]     = useState<'daily' | 'approvals' | 'reports'>('daily');
-
-  // Approval Queue requests — replaces the per-employee `correction` for the
-  // queue view. Each row carries its own workflow state (manager + HR).
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>(() => buildApprovalRequests(buildEmployees()));
 
   // viewDate is the date HR is inspecting. Defaults to TODAY but can be any
   // past day (read-only) — the right pane, KPIs, and Today's Record all
@@ -474,31 +472,52 @@ export default function HrAttendance() {
   const isToday = viewDate === TODAY_ISO;
   const isPast  = viewDate < TODAY_ISO;
 
-  // Active approval row when HR clicks into a queue item — drives the detail modal
-  const [drillRequest, setDrillRequest] = useState<ApprovalRequest | null>(null);
+  // Keep the Logs & Requests month (used by the calendar grid AND the month
+  // range pills) in sync with the inspected date — picking 13 Mar in the
+  // top-right date picker should snap the calendar/log table to March
+  // without the user having to also click the MAR pill.
+  useEffect(() => {
+    const wantedMonth = monthKey(viewDate);
+    setCalMonth((prev) => (prev === wantedMonth ? prev : wantedMonth));
+  }, [viewDate]);
 
-  // Live counts for the page-level tab badges
-  const pendingApprovals = useMemo(
-    () => approvals.filter(a => a.status === 'Pending').length,
-    [approvals]
-  );
-
-  // HR action on an approval request — `Approve` finalises, `Reject` overrides,
-  // `Override` lets HR force a decision regardless of manager state.
-  const onHrDecide = (reqId: string, decision: 'Approved' | 'Rejected', comment?: string) => {
-    setApprovals(prev => prev.map(a =>
-      a.id === reqId
-        ? {
-            ...a,
-            hrStatus: decision,
-            hrActionAt: new Date().toLocaleString(),
-            hrComment: comment,
-            status: decision,
-          }
-        : a
-    ));
-    setDrillRequest(null);
-  };
+  // ── Fetch real attendance for the selected date ──
+  // Re-runs every time the viewDate picker changes so the KPI cards, today's
+  // record, intraday timeline and 30-day logs all re-target to the chosen
+  // day. The colour accent (not returned by the API) is computed locally so
+  // each card keeps its consistent stripe colour across renders.
+  useEffect(() => {
+    let cancelled = false;
+    setEmployeesLoading(true);
+    setEmployeesError(null);
+    api.get('/attendance/daily-view', { params: { date: viewDate } })
+      .then((res) => {
+        if (cancelled) return;
+        const rows: AttendanceEmployee[] = Array.isArray(res.data) ? res.data : [];
+        const hydrated = rows.map((e, i) => ({
+          ...e,
+          accent: e.accent || accent(i),
+          // The backend uses default labels when display_name is empty; guard
+          // against undefined punches / logs so map() in the renderer is safe.
+          punches: Array.isArray(e.punches) ? e.punches : [],
+          logs:    Array.isArray(e.logs)    ? e.logs    : [],
+        }));
+        setEmployees(hydrated);
+        // Pick a default selection: keep the previous one if it's still in
+        // the list, otherwise fall back to the first row.
+        setSelectedId((prev) => {
+          if (prev != null && hydrated.some((e) => e.id === prev)) return prev;
+          return hydrated[0]?.id ?? null;
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setEmployeesError(err?.response?.data?.message || 'Failed to load attendance for this date.');
+        setEmployees([]);
+      })
+      .finally(() => { if (!cancelled) setEmployeesLoading(false); });
+    return () => { cancelled = true; };
+  }, [viewDate]);
 
   const counts = useMemo(() => ({
     all:     employees.length,
@@ -537,11 +556,51 @@ export default function HrAttendance() {
       status: 'Pending',
       raisedAt: new Date().toLocaleString(),
     };
-    setEmployees(prev => prev.map(e => e.id === selected.id ? { ...e, correction: newReq } : e));
+    if (selected) {
+      setEmployees(prev => prev.map(e => e.id === selected.id ? { ...e, correction: newReq } : e));
+    }
     setRegOpen(false);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
+  // Guard against an empty employee list (still loading / branch has no
+  // attendance-tracked employees yet). Without this, every `selected.foo`
+  // reference below would crash because `selected` would be undefined.
+  if (employeesLoading || !selected) {
+    return (
+      <>
+        <MasterFormStyles />
+        <Row>
+          <Col xs={12}>
+            <Card>
+              <CardBody>
+                <div style={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, color: 'var(--vz-secondary-color)' }}>
+                  {employeesLoading ? (
+                    <>
+                      <i className="ri-loader-4-line" style={{ fontSize: 28, animation: 'spin 1s linear infinite' }} />
+                      <span style={{ fontSize: 13 }}>Loading attendance for {fmtLong(viewDate)}…</span>
+                    </>
+                  ) : employeesError ? (
+                    <>
+                      <i className="ri-error-warning-line" style={{ fontSize: 28, color: '#f06548' }} />
+                      <span style={{ fontSize: 13 }}>{employeesError}</span>
+                    </>
+                  ) : (
+                    <>
+                      <i className="ri-team-line" style={{ fontSize: 28 }} />
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--vz-body-color)' }}>No employees tracked for attendance</div>
+                      <div style={{ fontSize: 12 }}>Add employees with Attendance Tracking enabled to see their punches here.</div>
+                    </>
+                  )}
+                </div>
+              </CardBody>
+            </Card>
+          </Col>
+        </Row>
+      </>
+    );
+  }
+
   return (
     <>
       <MasterFormStyles />
@@ -604,42 +663,12 @@ export default function HrAttendance() {
               </div>
             </div>
 
-            {/* ── Page-level tab strip — Daily / Approvals / Reports ── */}
-            <div className="att-pagetabs">
-              <button type="button" className={`att-pagetab ${pageTab === 'daily' ? 'is-active' : ''}`} onClick={() => setPageTab('daily')}>
-                <i className="ri-calendar-event-line" />Daily View
-              </button>
-              <button type="button" className={`att-pagetab ${pageTab === 'approvals' ? 'is-active' : ''}`} onClick={() => setPageTab('approvals')}>
-                <i className="ri-inbox-line" />Approval Queue
-                {pendingApprovals > 0 && <span className="att-pagetab-badge">{pendingApprovals}</span>}
-              </button>
-              <button type="button" className={`att-pagetab ${pageTab === 'reports' ? 'is-active' : ''}`} onClick={() => setPageTab('reports')}>
-                <i className="ri-bar-chart-2-line" />Reports
-              </button>
-            </div>
+            {/* Daily View is the only mode HR uses today — the Approval
+                Queue + Reports tabs were removed because they had no real
+                backend behind them. Re-introduce a tab strip if/when those
+                features get wired. */}
 
-            {pageTab === 'approvals' && (
-              <ApprovalQueueTab
-                approvals={approvals}
-                onOpen={(req) => setDrillRequest(req)}
-                onDecide={onHrDecide}
-              />
-            )}
-
-            {pageTab === 'reports' && (
-              <Card className="att-logs-card mb-0">
-                <CardBody>
-                  <div className="att-logs-empty">
-                    <i className="ri-bar-chart-2-line" />
-                    <div className="att-logs-empty-title">Reports</div>
-                    <div className="att-logs-empty-sub">Daily Attendance Register, Late comers, Missing punch, Compliance dashboard — coming next.</div>
-                  </div>
-                </CardBody>
-              </Card>
-            )}
-
-            {pageTab === 'daily' && (
-            /* ── Two-pane layout (Daily View) ── */
+            {/* ── Two-pane layout (Daily View) ── */}
             <Row className="g-2 align-items-stretch">
 
               {/* ===================== LEFT PANE ===================== */}
@@ -765,21 +794,18 @@ export default function HrAttendance() {
                 </Row>
               </Col>
             </Row>
-            )}
 
             {/* Logs & Requests — Full-width below the two-pane so the left
                 employee list doesn't stretch to match a tall right pane. */}
-            {pageTab === 'daily' && (
-              <div className="mt-2">
-                <LogsRequestsCard
-                  employee={selected}
-                  tab={logTab} setTab={setLogTab}
-                  calMonth={calMonth} setCalMonth={setCalMonth}
-                  onPickDate={(iso) => setViewDate(iso)}
-                  onRegularize={() => setRegOpen(true)}
-                />
-              </div>
-            )}
+            <div className="mt-2">
+              <LogsRequestsCard
+                employee={selected}
+                tab={logTab} setTab={setLogTab}
+                calMonth={calMonth} setCalMonth={setCalMonth}
+                onPickDate={(iso) => setViewDate(iso)}
+                onRegularize={() => setRegOpen(true)}
+              />
+            </div>
           </div>
         </Col>
       </Row>
@@ -796,164 +822,6 @@ export default function HrAttendance() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Approval Queue tab — HR sees every regularization request in the org with
-// manager + HR status side-by-side. Filter, search, click-row to drill-in.
-// ─────────────────────────────────────────────────────────────────────────────
-function ApprovalQueueTab({
-  approvals,
-  onOpen,
-  onDecide,
-}: {
-  approvals: ApprovalRequest[];
-  onOpen: (req: ApprovalRequest) => void;
-  onDecide: (id: string, decision: 'Approved' | 'Rejected', comment?: string) => void;
-}) {
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
-  const [search, setSearch]             = useState('');
-
-  const counts = {
-    all:      approvals.length,
-    pending:  approvals.filter(a => a.status === 'Pending').length,
-    approved: approvals.filter(a => a.status === 'Approved').length,
-    rejected: approvals.filter(a => a.status === 'Rejected').length,
-  };
-
-  const visible = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return approvals.filter(a => {
-      if (statusFilter !== 'all' && a.status.toLowerCase() !== statusFilter) return false;
-      if (!needle) return true;
-      return [a.employeeName, a.employeeCode, a.department, a.id, a.reason].some(v =>
-        (v || '').toLowerCase().includes(needle)
-      );
-    });
-  }, [approvals, statusFilter, search]);
-
-  const toneFor = (s: ApprovalState) => {
-    if (s === 'Approved') return { fg: '#15803d', bg: '#dcfce7', dot: '#22c55e' };
-    if (s === 'Rejected') return { fg: '#b91c1c', bg: '#fee2e2', dot: '#ef4444' };
-    if (s === 'Pending')  return { fg: '#92400e', bg: '#fef3c7', dot: '#f59e0b' };
-    return { fg: '#6b7280', bg: '#f3f4f6', dot: '#9ca3af' };
-  };
-
-  return (
-    <Card className="att-logs-card mb-0">
-      <CardBody>
-        {/* Header — title + filter pills + search */}
-        <div className="att-aq-head">
-          <div className="d-flex align-items-center gap-2 min-w-0">
-            <span className="att-logs-icon"><i className="ri-inbox-line" /></span>
-            <div>
-              <div className="att-logs-title">Approval Queue</div>
-              <div className="att-logs-sub">Every regularization request across the org · HR oversight + override</div>
-            </div>
-          </div>
-          <div className="d-flex align-items-center gap-2 flex-wrap">
-            <div className="att-aq-filters">
-              {([
-                { k: 'all'      as const, l: 'All',      c: counts.all },
-                { k: 'pending'  as const, l: 'Pending',  c: counts.pending },
-                { k: 'approved' as const, l: 'Approved', c: counts.approved },
-                { k: 'rejected' as const, l: 'Rejected', c: counts.rejected },
-              ]).map(t => (
-                <button key={t.k} type="button" className={`att-aq-filter ${statusFilter === t.k ? 'is-active' : ''}`} onClick={() => setStatusFilter(t.k)}>
-                  {t.l}<span className="att-aq-filter-count">{t.c}</span>
-                </button>
-              ))}
-            </div>
-            <div className="search-box att-aq-search">
-              <Input type="text" className="form-control form-control-sm" placeholder="Search employee, ID, reason…" value={search} onChange={e => setSearch(e.target.value)} />
-              <i className="ri-search-line search-icon" />
-            </div>
-          </div>
-        </div>
-
-        {/* Queue table */}
-        <div className="att-logs-table-wrap">
-          <table className="att-logs-table att-logs-table--clean">
-            <thead>
-              <tr>
-                <th>Req ID</th>
-                <th>Employee</th>
-                <th>Date</th>
-                <th>Mode</th>
-                <th>Reason</th>
-                <th>Manager</th>
-                <th>HR</th>
-                <th className="text-end">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map(a => {
-                const mTone = toneFor(a.managerStatus);
-                const hTone = toneFor(a.hrStatus);
-                return (
-                  <tr key={a.id}>
-                    <td className="fw-bold">{a.id}</td>
-                    <td>
-                      <div className="att-aq-emp">
-                        <div className="att-aq-emp-name">{a.employeeName}</div>
-                        <div className="att-aq-emp-meta">{a.employeeCode} · {a.department}</div>
-                      </div>
-                    </td>
-                    <td className="text-nowrap">{a.date}</td>
-                    <td>
-                      <span className={`att-aq-mode att-aq-mode--${a.mode}`}>
-                        {a.mode === 'adjust' ? 'Punch Edit' : 'Penalty Exempt'}
-                      </span>
-                      {a.raisedBy === 'hr' && <span className="att-aq-by-hr">HR-raised</span>}
-                    </td>
-                    <td className="att-aq-reason" title={a.reason}>{a.reason}</td>
-                    <td>
-                      <span className="att-status-pill" style={{ color: mTone.fg, background: mTone.bg }}>
-                        <span className="att-status-dot" style={{ background: mTone.dot }} />{a.managerStatus}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="att-status-pill" style={{ color: hTone.fg, background: hTone.bg }}>
-                        <span className="att-status-dot" style={{ background: hTone.dot }} />{a.hrStatus}
-                      </span>
-                    </td>
-                    <td className="text-end">
-                      <div className="d-inline-flex gap-1">
-                        <button type="button" className="att-aq-btn" onClick={() => onOpen(a)} title="Drill-in">
-                          <i className="ri-eye-line" />
-                        </button>
-                        {a.status === 'Pending' && (
-                          <>
-                            <button type="button" className="att-btn-approve" onClick={() => onDecide(a.id, 'Approved')}>
-                              <i className="ri-check-line" />Approve
-                            </button>
-                            <button type="button" className="att-btn-reject" onClick={() => onDecide(a.id, 'Rejected')}>
-                              <i className="ri-close-line" />Reject
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {visible.length === 0 && (
-                <tr>
-                  <td colSpan={8}>
-                    <div className="att-logs-empty">
-                      <i className="ri-inbox-line" />
-                      <div className="att-logs-empty-title">No requests match</div>
-                      <div className="att-logs-empty-sub">Try a different filter or clear the search.</div>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </CardBody>
-    </Card>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Today's Record card
 // ─────────────────────────────────────────────────────────────────────────────
 function TodayRecordCard({
@@ -963,12 +831,11 @@ function TodayRecordCard({
   viewDate: string;
   isPast: boolean;
 }) {
-  // For past dates we use the deterministic per-day status from statusForDate;
-  // for today we use the live `employee.status`. This keeps the card meaningful
-  // when HR steps through past days without a backend yet.
-  const effectiveStatus: DayStatus = isPast
-    ? (statusForDate(employee.id, viewDate) ?? 'Absent')
-    : employee.status;
+  // Backend returns each employee's status FOR THE SELECTED DATE — so
+  // `employee.status` is already correct whether viewDate is today or any
+  // past day. The dailyView fetcher refires on date change.
+  void isPast; // kept on the prop list for future use; no longer toggles status
+  const effectiveStatus: DayStatus = employee.status;
   const tone = STATUS_TONE[effectiveStatus];
 
   const dateLabel = `${WEEK_LABELS[parseISO(viewDate).getDay()].slice(0,3)}, ${parseISO(viewDate).getDate()}-${monthOf(viewDate)}-${yearOf(viewDate)}`;
@@ -1167,8 +1034,8 @@ function LogsRequestsCard({
   employee, tab, setTab, calMonth, setCalMonth, onPickDate, onRegularize,
 }: {
   employee: AttendanceEmployee;
-  tab: 'log' | 'requests' | 'calendar';
-  setTab: (t: 'log' | 'requests' | 'calendar') => void;
+  tab: 'log' | 'calendar';
+  setTab: (t: 'log' | 'calendar') => void;
   calMonth: string;            // "YYYY-MM" — month being navigated in the calendar
   setCalMonth: (m: string) => void;
   onPickDate: (iso: string) => void;
@@ -1178,11 +1045,26 @@ function LogsRequestsCard({
   // and the rest of the records flow to the next page.
   const [rowsPerPage, setRowsPerPage] = useState<5 | 10>(5);
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(employee.logs.length / rowsPerPage));
+
+  // Logs filtered by the active month range pill / calendar month — this is
+  // what makes "30 DAYS / APR / MAR / FEB / JAN / DEC / NOV" actually filter
+  // the table rows. Logs without an iso field (legacy / unparsable) drop
+  // out so we don't leak undated rows into the wrong month.
+  const filteredLogs = useMemo(() => {
+    if (!calMonth) return employee.logs;
+    return employee.logs.filter((l) => (l.iso || '').startsWith(calMonth));
+  }, [employee.logs, calMonth]);
+
+  // Reset to page 1 whenever the active month changes — otherwise picking a
+  // month with fewer rows than the previous page index leaves the table
+  // showing an empty page that you can't navigate away from cleanly.
+  useEffect(() => { setPage(1); }, [calMonth, employee.id]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / rowsPerPage));
   const safePage   = Math.min(page, totalPages);
   const pageStart  = (safePage - 1) * rowsPerPage;
-  const pageEnd    = Math.min(pageStart + rowsPerPage, employee.logs.length);
-  const visibleLogs = employee.logs.slice(pageStart, pageEnd);
+  const pageEnd    = Math.min(pageStart + rowsPerPage, filteredLogs.length);
+  const visibleLogs = filteredLogs.slice(pageStart, pageEnd);
 
   // View toggle (list/calendar) and 24-hour switch — drive future formatting
   const [viewMode, setViewMode] = useState<'list' | 'cal'>('list');
@@ -1253,13 +1135,11 @@ function LogsRequestsCard({
           </div>
         </div>
 
-        {/* Tab strip */}
+        {/* Tab strip — Attendance Log + Calendar only. Regularization
+            Requests was removed because it had no backend behind it. */}
         <div className="att-logs-tabs">
           <button type="button" className={`att-logs-tab ${tab === 'log' ? 'is-active' : ''}`} onClick={() => setTab('log')}>
             <i className="ri-checkbox-circle-line" />Attendance Log
-          </button>
-          <button type="button" className={`att-logs-tab ${tab === 'requests' ? 'is-active' : ''}`} onClick={() => setTab('requests')}>
-            <i className="ri-file-edit-line" />Regularization Requests
           </button>
           <button type="button" className={`att-logs-tab ${tab === 'calendar' ? 'is-active' : ''}`} onClick={() => setTab('calendar')}>
             <i className="ri-calendar-line" />Calendar
@@ -1370,7 +1250,15 @@ function LogsRequestsCard({
                               {l.shift !== '—' && (
                                 <div className="att-log-pop-body">
                                   <div className="att-log-pop-shift--v2">
-                                    {l.shift === 'WFH' ? 'WFH Shift' : `${l.shift} Shift`} ({dateDay} {dateMonth})
+                                    {(() => {
+                                      // Don't double the word "Shift" if the
+                                      // stored label already ends with it
+                                      // (e.g. "General Shift" → "General Shift",
+                                      // not "General Shift Shift").
+                                      const raw = l.shift;
+                                      if (raw === 'WFH') return 'WFH Shift';
+                                      return /shift\s*$/i.test(raw) ? raw : `${raw} Shift`;
+                                    })()} ({dateDay} {dateMonth})
                                   </div>
                                   <div className="att-log-pop-shift-time--v2">
                                     {fmtClock(employee.shiftStart)} - {fmtClock(employee.shiftEnd)}
@@ -1450,7 +1338,7 @@ function LogsRequestsCard({
                 </select>
               </div>
               <div className="att-logs-foot-center">
-                Showing <strong>{pageStart + 1}–{pageEnd}</strong> of <strong>{employee.logs.length}</strong>
+                Showing <strong>{filteredLogs.length === 0 ? 0 : pageStart + 1}–{pageEnd}</strong> of <strong>{filteredLogs.length}</strong>
               </div>
               <div className="att-logs-foot-pages">
                 <button type="button" className="att-page-btn att-page-btn--text" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>
@@ -1467,10 +1355,6 @@ function LogsRequestsCard({
               </div>
             </div>
           </>
-        )}
-
-        {tab === 'requests' && (
-          <RegularizationTable />
         )}
 
         {tab === 'calendar' && (
@@ -1514,6 +1398,31 @@ function CalendarMonthGrid({
   const startWeekday = first.getDay(); // 0 = Sun
   const daysInMonth  = last.getDate();
 
+  // Real-data lookup map: ISO date → status, derived from the employee's
+  // backend-provided 30-day logs array. Cells outside that window stay null
+  // (blank) which is the correct UX — we don't have data for those days.
+  // Weekly-off detection is preserved as a fallback for blank days inside
+  // the window, parsed from the employee's `weeklyOff` string (e.g. "Sun").
+  const logByIso = new Map<string, DayStatus>();
+  for (const lg of (employee.logs || [])) {
+    if (lg.iso) logByIso.set(lg.iso, lg.status);
+  }
+  const weeklyOffDays = new Set<number>();
+  for (const tok of (employee.weeklyOff || '').split(/[\s,]+/)) {
+    const key = tok.slice(0, 3).toLowerCase();
+    const map: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+    if (map[key] !== undefined) weeklyOffDays.add(map[key]);
+  }
+  const statusFor = (iso: string): DayStatus | null => {
+    if (iso > TODAY_ISO) return null;
+    const fromLog = logByIso.get(iso);
+    if (fromLog) return fromLog;
+    // Fallback — log map is empty for this day; mark weekend if matching.
+    const d = parseISO(iso);
+    if (weeklyOffDays.has(d.getDay())) return 'Weekly Off';
+    return null;
+  };
+
   // Build a 6×7 grid of cells. Leading/trailing slots (before day 1 / after
   // last day) render as faded "spillover" cells so the grid stays rectangular.
   type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; status: DayStatus | null };
@@ -1522,18 +1431,18 @@ function CalendarMonthGrid({
   for (let i = 0; i < startWeekday; i++) {
     const d = new Date(y, m - 2, prevMonthLast - startWeekday + i + 1);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusForDate(employee.id, iso) });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso) });
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(y, m - 1, day);
     const iso = toISO(d);
-    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, status: statusForDate(employee.id, iso) });
+    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, status: statusFor(iso) });
   }
   while (cells.length % 7 !== 0 || cells.length < 42) {
     const idx = cells.length - (startWeekday + daysInMonth) + 1;
     const d = new Date(y, m, idx);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusForDate(employee.id, iso) });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso) });
     if (cells.length >= 42) break;
   }
 
@@ -1597,139 +1506,6 @@ function CalendarMonthGrid({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Regularization Requests table — shown inside the Logs & Requests card when
-// the user picks the "Regularization Requests" tab. Mirrors the Keka layout:
-// DATE · REQUEST TYPE · REQUESTED ON · NOTE · REASON · STATUS · LAST ACTION BY
-// · NEXT APPROVER · ACTIONS, with a date-range subtitle and pagination footer.
-// ─────────────────────────────────────────────────────────────────────────────
-type RegRowStatus = 'Pending' | 'Approved' | 'Rejected';
-interface RegRow {
-  id: string;
-  date: string;          // "17 Apr 2026"
-  type: string;          // "Attendance Adjustment"
-  requestedAt: string;   // "22 Apr 2026 03:13 PM"
-  raisedBy: 'HR' | 'Employee';
-  note: string;
-  reason: string;        // "—" if blank
-  status: RegRowStatus;
-  lastActionBy: string;  // "Not Available" | name
-  nextApprover: string;  // "—" | name
-}
-
-const REG_ROWS: RegRow[] = [
-  { id: 'CR-1042', date: '17 Apr 2026', type: 'Attendance Adjustment', requestedAt: '22 Apr 2026 03:13 PM', raisedBy: 'HR',       note: 'Testing timelogs',          reason: '—',           status: 'Pending',  lastActionBy: 'Not Available', nextApprover: '—' },
-  { id: 'CR-1056', date: '14 Apr 2026', type: 'Attendance Adjustment', requestedAt: '15 Apr 2026 10:45 AM', raisedBy: 'Employee', note: 'Biometric device failed',   reason: 'Device error', status: 'Approved', lastActionBy: 'Vikram Nair',   nextApprover: '—' },
-  { id: 'CR-1073', date: '10 Apr 2026', type: 'Attendance Adjustment', requestedAt: '11 Apr 2026 09:30 AM', raisedBy: 'Employee', note: 'Late due to client meeting',reason: 'Client call',  status: 'Pending',  lastActionBy: 'Not Available', nextApprover: 'Vikram Nair' },
-  { id: 'CR-1099', date: '07 Apr 2026', type: 'Attendance Adjustment', requestedAt: '08 Apr 2026 02:15 PM', raisedBy: 'Employee', note: 'System outage',             reason: 'IT issue',     status: 'Rejected', lastActionBy: 'HR Admin',      nextApprover: '—' },
-];
-
-function RegularizationTable() {
-  const [page, setPage] = useState(1);
-  const PAGE_SIZE = 10;
-  const totalPages = Math.max(1, Math.ceil(REG_ROWS.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const start = (safePage - 1) * PAGE_SIZE;
-  const end = Math.min(start + PAGE_SIZE, REG_ROWS.length);
-  const visible = REG_ROWS.slice(start, end);
-
-  const tone = (s: RegRowStatus) => {
-    if (s === 'Approved') return { fg: '#15803d', bg: '#dcfce7', border: '#bbf7d0' };
-    if (s === 'Rejected') return { fg: '#b91c1c', bg: '#fee2e2', border: '#fecaca' };
-    return { fg: '#92400e', bg: '#fef3c7', border: '#fde68a' };
-  };
-
-  return (
-    <div className="att-reg-table-wrap">
-      <div className="att-reg-table-head">
-        <div className="att-reg-table-title">Regularization Requests</div>
-        <div className="att-reg-table-range">25 Mar 2026 – 08 May 2026</div>
-      </div>
-
-      <div className="table-responsive table-card border rounded">
-        <table className="table align-middle table-nowrap mb-0 att-logs-table att-logs-table--v2">
-          <thead className="table-light">
-            <tr>
-              <th scope="col">Date</th>
-              <th scope="col">Request Type</th>
-              <th scope="col">Requested On</th>
-              <th scope="col">Note</th>
-              <th scope="col">Reason</th>
-              <th scope="col">Status</th>
-              <th scope="col">Last Action By</th>
-              <th scope="col">Next Approver</th>
-              <th scope="col" className="text-center pe-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((r) => {
-              const t = tone(r.status);
-              const isPending = r.status === 'Pending';
-              const dParts = r.date.split(' ');
-              const formattedDate = `${(dParts[0] || '').padStart(2, '0')}-${dParts[1] || ''}-${dParts[2] || ''}`;
-              return (
-                <tr key={r.id}>
-                  <td>{formattedDate}</td>
-                  <td>{r.type}</td>
-                  <td>
-                    <div>{r.requestedAt}</div>
-                    <div className="att-reg-table-by">by {r.raisedBy}</div>
-                  </td>
-                  <td>{r.note}</td>
-                  <td className={r.reason === '—' ? 'text-muted' : ''}>{r.reason}</td>
-                  <td>
-                    <span
-                      className="att-status-pill"
-                      style={{ color: t.fg, background: t.bg, border: `1px solid ${t.border}` }}
-                    >
-                      {r.status}
-                    </span>
-                  </td>
-                  <td className={r.lastActionBy === 'Not Available' ? 'text-muted' : ''}>{r.lastActionBy}</td>
-                  <td className={r.nextApprover === '—' ? 'text-muted' : ''}>{r.nextApprover}</td>
-                  <td className="text-center">
-                    {isPending ? (
-                      <div className="att-reg-table-actions">
-                        <button type="button" className="att-reg-table-act att-reg-table-act--ok" title="Approve">
-                          <i className="ri-check-line" />
-                        </button>
-                        <button type="button" className="att-reg-table-act att-reg-table-act--no" title="Reject">
-                          <i className="ri-close-line" />
-                        </button>
-                        <button type="button" className="att-reg-table-act" title="Comment">
-                          <i className="ri-chat-3-line" />
-                        </button>
-                        <button type="button" className="att-reg-table-act" title="More">
-                          <i className="ri-more-2-fill" />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-muted">—</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Footer */}
-      <div className="att-reg-table-foot">
-        <div className="att-reg-table-foot-info">{start + 1} to {end} of {REG_ROWS.length}</div>
-        <div className="att-reg-table-foot-pages">
-          <button type="button" className="att-page-btn att-page-btn--text" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>
-            <i className="ri-arrow-left-s-line" />
-          </button>
-          <span className="att-reg-table-foot-pageinfo">Page {safePage} of {totalPages}</span>
-          <button type="button" className="att-page-btn att-page-btn--text" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>
-            <i className="ri-arrow-right-s-line" />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Regularization Modal — Keka-style multi-punch editor with two modes
