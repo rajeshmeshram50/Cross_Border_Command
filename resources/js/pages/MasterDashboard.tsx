@@ -6,6 +6,7 @@ import { MASTER_GROUPS, SUPER_ADMIN_MASTERS } from '../constants';
 import type { MenuChild, MenuGroup } from '../types';
 import api from '../api';
 import { getMasterConfig, masterEndpoint } from './master/masterConfigs';
+import './MasterDashboard.css';
 
 type CountEntry = { active: number; inactive: number; total: number };
 
@@ -297,41 +298,96 @@ export default function MasterDashboard() {
       </div>
 
       {/* ── KPI Stat Cards ── */}
-      <Row className="g-3 mb-4">
-        {STAT_CARDS.map((sc, i) => (
-          <Col key={sc.label} xl={3} md={6} xs={12}>
-            <div className="master-surface" style={{ borderRadius: 14, border: '1px solid var(--vz-border-color)', boxShadow: '0 2px 12px rgba(0,0,0,0.06)', overflow: 'hidden', position: 'relative', padding: '16px 18px 14px' }}>
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: sc.gradient }} />
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                <div>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {sc.label}
-                    {/* Total Masters (i===0) is known instantly; the others depend on async counts. */}
-                    {isLoadingCounts && i !== 0 && (
-                      <span
-                        aria-label="loading"
-                        style={{
-                          width: 10, height: 10, borderRadius: '50%',
-                          border: '1.5px solid var(--vz-secondary-color)',
-                          borderTopColor: 'transparent',
-                          animation: 'mc-spin 0.7s linear infinite',
-                          display: 'inline-block',
-                        }}
-                      />
-                    )}
-                  </p>
-                  <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>
-                    {statValues[i].toLocaleString()}
-                  </div>
-                </div>
-                <div style={{ width: 44, height: 44, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: sc.gradient, flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                  <i className={sc.icon} style={{ fontSize: 20, color: '#fff' }} />
-                </div>
-              </div>
+   <Row className="g-3 mb-4">
+  {STAT_CARDS.map((sc, i) => (
+    <Col key={sc.label} xl={3} md={6} xs={12}>
+      <div
+        className="master-surface stat-card"
+        style={{
+          borderRadius: 14,
+          border: '1px solid var(--vz-border-color)',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+          overflow: 'hidden',
+          position: 'relative',
+          padding: '16px 18px 14px',
+          transition: 'all 0.25s ease',
+          cursor: 'pointer'
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 4,
+            background: sc.gradient
+          }}
+        />
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+          <div>
+            <p style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'var(--vz-secondary-color)',
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              marginBottom: 8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}>
+              {sc.label}
+
+              {isLoadingCounts && i !== 0 && (
+                <span
+                  aria-label="loading"
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    border: '1.5px solid var(--vz-secondary-color)',
+                    borderTopColor: 'transparent',
+                    animation: 'mc-spin 0.7s linear infinite',
+                    display: 'inline-block',
+                  }}
+                />
+              )}
+            </p>
+
+            <div style={{
+              fontSize: 26,
+              fontWeight: 800,
+              color: 'var(--vz-heading-color, var(--vz-body-color))',
+              lineHeight: 1
+            }}>
+              {statValues[i].toLocaleString()}
             </div>
-          </Col>
-        ))}
-      </Row>
+          </div>
+
+          <div
+            className="icon-box"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: sc.gradient,
+              flexShrink: 0,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.10)',
+              transition: 'transform 0.25s ease'
+            }}
+          >
+            <i className={sc.icon} style={{ fontSize: 20, color: '#fff' }} />
+          </div>
+        </div>
+      </div>
+    </Col>
+  ))}
+</Row>
 
       {/* ── Search Bar ── */}
       <div className="master-surface" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '10px 14px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
