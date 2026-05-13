@@ -48,14 +48,7 @@ class PasswordChangedMail extends Mailable
         $this->appName     = config('mail.from.name', 'Cross Border Command');
     }
 
-    /**
-     * Build the SPA login URL from an HTTP request, preferring an explicit
-     * `app_origin` form field (sent by some flows), then the `Origin` header,
-     * then `Referer`, then config fallback. Keeps the email's "Sign In"
-     * button consistent with whichever frontend host triggered the change —
-     * so a dev hitting localhost:3000 gets a localhost:3000 link, and a
-     * customer on app.example.com gets app.example.com.
-     */
+   
     public static function resolveLoginUrl(Request $request): string
     {
         $candidates = array_filter([

@@ -27,11 +27,7 @@ class CandidateController extends Controller
         'recruitment:id,code,job_title',
     ];
 
-    /**
-     * Candidates live under the recruitment screen — there's no separate
-     * `hr.candidates` slug yet, so permission checks reuse the recruitment
-     * module's row.
-     */
+  
     private const MODULE_SLUG = 'hr.recruitment';
 
     /** Whitelisted enums — keep in sync with the front-end form options. */

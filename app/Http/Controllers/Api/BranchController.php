@@ -540,11 +540,7 @@ class BranchController extends Controller
         return response()->json(['message' => 'Branch deleted successfully']);
     }
 
-    /**
-     * Revoke every Sanctum personal access token for every user in this branch.
-     * Called when the branch is deactivated or deleted so existing sessions are
-     * killed alongside the new-login guard.
-     */
+   
     private function revokeAllUserTokensForBranch(int $branchId): int
     {
         $userIds = User::where('branch_id', $branchId)->pluck('id');
