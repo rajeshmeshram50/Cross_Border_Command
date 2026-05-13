@@ -48,6 +48,18 @@ class AttendanceController extends Controller
      */
     private const DISPLAY_TZ = 'Asia/Kolkata';
 
+    /**
+     * "Today" as a YYYY-MM-DD string in the display timezone — used as the
+     * business date for attendance_date columns and as the default value for
+     * /today, /daily-view, etc. Without this, a 1 AM IST punch (= 19:30 UTC
+     * previous day) lands on the wrong calendar day because Laravel's
+     * config('app.timezone') is UTC.
+     */
+    private static function todayLocal(): string
+    {
+        return now(self::DISPLAY_TZ)->toDateString();
+    }
+
     /** Whitelist of well-known activity labels. Anything not in this list is
      *  still allowed (saved verbatim) so HR can record one-off activities,
      *  but the SPA picks from this set so the colour mapping stays stable. */
@@ -70,10 +82,10 @@ class AttendanceController extends Controller
         $employee = $this->callerEmployee($request);
         $row = Attendance::with('punches')
             ->where('employee_id', $employee->id)
-            ->whereDate('attendance_date', now()->toDateString())
+            ->whereDate('attendance_date', self::todayLocal())
             ->first();
         return response()->json([
-            'date'     => now()->toDateString(),
+            'date'     => self::todayLocal(),
             'employee' => [
                 'id'              => $employee->id,
                 'emp_code'        => $employee->emp_code,
@@ -166,16 +178,19 @@ class AttendanceController extends Controller
             abort(403, 'You do not have access to this employee.');
         }
 
-        // Month window — defaults to current month. Accepts ?month=YYYY-MM.
-        $monthQ = (string) $request->query('month', now()->format('Y-m'));
-        if (!preg_match('/^\d{4}-\d{2}$/', $monthQ)) $monthQ = now()->format('Y-m');
+        // Month window — defaults to the LOCAL current month. Without this,
+        // the first 5.5 hours of every IST month would render the previous
+        // month (Laravel's now() is UTC) so an employee opening their
+        // profile at 4 AM IST on the 1st saw the previous month's data.
+        $monthQ = (string) $request->query('month', now(self::DISPLAY_TZ)->format('Y-m'));
+        if (!preg_match('/^\d{4}-\d{2}$/', $monthQ)) $monthQ = now(self::DISPLAY_TZ)->format('Y-m');
         $start = \Carbon\Carbon::createFromFormat('Y-m-d', $monthQ . '-01')->startOfMonth();
         $end   = (clone $start)->endOfMonth();
 
         // Today's row with punches — drives the Today card on the profile.
         $today = Attendance::with('punches')
             ->where('employee_id', $emp->id)
-            ->whereDate('attendance_date', now()->toDateString())
+            ->whereDate('attendance_date', self::todayLocal())
             ->first();
 
         // Month history — every day in window, ordered most-recent-first.
@@ -185,8 +200,13 @@ class AttendanceController extends Controller
             ->orderByDesc('attendance_date')
             ->get();
 
-        // Stats — derived from history. "Late" is a heuristic: any in-punch
-        // after 09:30 counts as late. Tunable later when shift policy lands.
+        // Stats — derived from history. The late heuristic compares the
+        // first-in punch (converted from UTC to the display TZ) against the
+        // employee's shift start, falling back to 09:30 when the shift
+        // string has no parseable time pair. Without the tz conversion the
+        // comparison ran against UTC time and never flagged anyone late.
+        [$shiftStart, ] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
+        $shiftStart = $shiftStart ?: '09:30';
         $present  = 0; $late = 0; $missingBio = 0; $leaveDays = 0;
         foreach ($history as $row) {
             $status = (string) ($row->status ?? '');
@@ -198,8 +218,9 @@ class AttendanceController extends Controller
             }
             // Heuristic late check on top of stored status.
             $firstIn = $row->check_in_at;
-            if ($firstIn && $firstIn->format('H:i') > '09:30' && strcasecmp($status, 'Present') === 0) {
-                $late++;
+            if ($firstIn && strcasecmp($status, 'Present') === 0) {
+                $localIn = $firstIn->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
+                if ($localIn > $shiftStart) $late++;
             }
         }
 
@@ -288,9 +309,9 @@ class AttendanceController extends Controller
         if (!$user) abort(401, 'Unauthenticated');
         if ($user->user_type === 'employee') abort(403, 'Use /api/attendance/my for your own records.');
 
-        $date = (string) $request->query('date', now()->toDateString());
+        $date = (string) $request->query('date', self::todayLocal());
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-            $date = now()->toDateString();
+            $date = self::todayLocal();
         }
         $dateC      = \Carbon\Carbon::parse($date);
         $monthStart = (clone $dateC)->startOfMonth()->toDateString();
@@ -315,13 +336,21 @@ class AttendanceController extends Controller
         if ($user->user_type !== 'super_admin') {
             $empQ->where('client_id', $user->client_id);
             $branchFilter = $request->integer('branch_id') ?: null;
-            if ($branchFilter !== null) {
+
+            // A non-main branch_user is always pinned to their own branch —
+            // doesn't matter what `branch_id` query param they send. A bad
+            // (cross-tenant) value used to fall through and surface every
+            // employee in the client, which leaked rows across branches.
+            // Main-branch users + client admins can switch branches freely
+            // within the same tenant.
+            $isSubBranchUser = $user->user_type === 'branch_user' && !optional($user->branch)->is_main;
+            if ($isSubBranchUser) {
+                $empQ->where('branch_id', $user->branch_id);
+            } elseif ($branchFilter !== null) {
                 $belongs = Branch::where('id', $branchFilter)
                     ->where('client_id', $user->client_id)
                     ->exists();
                 if ($belongs) $empQ->where('branch_id', $branchFilter);
-            } elseif ($user->user_type === 'branch_user' && !optional($user->branch)->is_main) {
-                $empQ->where('branch_id', $user->branch_id);
             }
         } elseif ($branchFilter = $request->integer('branch_id') ?: null) {
             $empQ->where('branch_id', $branchFilter);
@@ -354,8 +383,16 @@ class AttendanceController extends Controller
             ->groupBy('employee_id');
 
         // ── 3) Compose per-employee payload in the shape the SPA expects ──
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date) {
-            [$shiftStart, $shiftEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
+        // Default office window used when an employee's `shift` string has
+        // no parseable time pair (e.g. just "General Shift"). Late-by-minutes
+        // and the historic late heuristic both fall back to this so the KPIs
+        // stay meaningful even when shift data is incomplete.
+        $defaultShiftStart = '09:30';
+        $defaultShiftEnd   = '18:30';
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd) {
+            [$parsedStart, $parsedEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
+            $shiftStart = $parsedStart ?: $defaultShiftStart;
+            $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
             $expectedMinutes = $this->expectedMinutesFromWindow($shiftStart, $shiftEnd);
             $weeklyOffSet    = $this->parseWeeklyOff((string) ($emp->weekly_off ?? ''));
             $isWeeklyOff     = isset($weeklyOffSet[\Carbon\Carbon::parse($date)->dayOfWeek]);
@@ -396,11 +433,21 @@ class AttendanceController extends Controller
                 }
                 $tracked++;
             }
-            $compliancePct = $tracked === 0 ? 100 : (int) round(max(0, ($presentDays - $missingPunch) / max($tracked, 1) * 100));
+            // Compliance = share of MTD attendance days the employee was
+            // actually marked Present (or a present-equivalent status).
+            // Missing-punch days naturally drag this down because they're
+            // in `tracked` but NOT in `presentDays`. The old formula
+            // `(present - missing) / tracked` double-counted absences and
+            // reported e.g. 60 % when someone hit 4 of 5 days.
+            $compliancePct = $tracked === 0
+                ? 100
+                : (int) round(min(100, max(0, $presentDays / $tracked * 100)));
 
-            // 30-day log
+            // 90-day log — covers EVERY day in the window so the calendar
+            // and the month range pills paint a full picture, not just the
+            // days the employee happened to punch.
             $hRows = $historyRows->get($emp->id, collect());
-            $logs = $this->buildHistoryLogs($hRows, $emp, $shiftStart, $expectedMinutes, $weeklyOffSet);
+            $logs = $this->buildHistoryLogs($hRows, $emp, $shiftStart, $expectedMinutes, $weeklyOffSet, $histStart, $date);
 
             return [
                 'id'                => $emp->id,
@@ -413,9 +460,13 @@ class AttendanceController extends Controller
                 'managerName'       => $emp->reportingManager?->display_name
                     ?? trim((string) ($emp->reportingManager?->first_name ?? '') . ' ' . (string) ($emp->reportingManager?->last_name ?? ''))
                     ?: '—',
-                'shift'             => (string) ($emp->shift ?? 'General (09:00 – 18:00)'),
-                'shiftStart'        => $shiftStart ?: '09:00',
-                'shiftEnd'          => $shiftEnd   ?: '18:00',
+                // Default office hours fall back to 09:30 – 18:30 (9 h
+                // working window). Employees with a parseable shift string
+                // like "General (09:00 – 18:00)" override this — handled
+                // up-front via $shiftStart / $shiftEnd defaulting.
+                'shift'             => (string) ($emp->shift ?? 'General (09:30 – 18:30)'),
+                'shiftStart'        => $shiftStart,
+                'shiftEnd'          => $shiftEnd,
                 'weeklyOff'         => (string) ($emp->weekly_off ?? 'Sun'),
                 'attendanceNumber'  => (string) ($emp->attendance_number ?? ''),
                 'status'            => $statusToday,
@@ -473,7 +524,10 @@ class AttendanceController extends Controller
 
     /**
      * Decompose a weekly-off label like "Sun" or "Sat, Sun" into a set of
-     * Carbon dayOfWeek integers (Sun = 0 .. Sat = 6).
+     * Carbon dayOfWeek integers (Sun = 0 .. Sat = 6). When the label is
+     * unparseable (empty, "Week Off Policy", "—", etc.) we default to
+     * **Sunday only** — that's the most common Indian work-week and keeps
+     * the calendar from showing every weekend as Absent.
      */
     private function parseWeeklyOff(string $label): array
     {
@@ -483,17 +537,40 @@ class AttendanceController extends Controller
             $key = substr($tok, 0, 3);
             if (isset($map[$key])) $set[$map[$key]] = true;
         }
+        if (empty($set)) {
+            $set[0] = true; // Sunday fallback
+        }
         return $set;
     }
 
-    /** Resolve the day-level status string surfaced to the SPA. */
+    /**
+     * Resolve the day-level status string surfaced to the SPA.
+     *
+     * The face-clock flow always writes status='Present' on the first punch
+     * (it doesn't know the shift schedule), so we have to promote it to
+     * 'Late' here when the actual first-in is significantly after the
+     * employee's shift start. Without this every late arriver still showed
+     * a green Present pill — the late minutes were known but the label
+     * was lying.
+     */
     private function resolveDayStatus(?Attendance $row, bool $weeklyOff, ?string $shiftStart, string $date): string
     {
         if ($row && !empty($row->status)) {
-            return (string) $row->status;
+            $stored = (string) $row->status;
+            // Auto-promote Present → Late based on the local first-in. 10-min
+            // grace matches the heuristic used by the MTD late-marks loop.
+            if (strcasecmp($stored, 'Present') === 0 && $row->check_in_at && $shiftStart) {
+                $localIn = $row->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
+                $late = $this->minutesBetween($shiftStart, $localIn);
+                if ($late > 10) return 'Late';
+            }
+            return $stored;
         }
         if ($weeklyOff) return 'Weekly Off';
-        if ($date > now()->toDateString()) return 'Present'; // future placeholder
+        // Future dates with no attendance row default to Absent rather than
+        // pretending the day is already "Present". The SPA's date picker
+        // shouldn't be in the future in practice, but if the user navigates
+        // there we don't want to claim attendance that hasn't happened.
         return 'Absent';
     }
 
@@ -552,46 +629,102 @@ class AttendanceController extends Controller
         return $out;
     }
 
-    /** Build the 30-day Logs & Requests history rows. */
-    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, array $weeklyOffSet): array
+    /**
+     * Build the Logs & Requests history rows for the entire [from, to]
+     * window (inclusive), one row per day. Days with an Attendance row use
+     * its real status/punches; days WITHOUT a row are synthesised as
+     * "Weekly Off" (if the day matches the weekly_off set) or "Absent".
+     *
+     * Filling in every day is what makes the month range pills (APR / MAR
+     * / FEB / …) and the Calendar tab actually useful — without it the
+     * table only shows the handful of days the employee happened to
+     * punch, and absences look identical to "no data".
+     */
+    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, array $weeklyOffSet, string $from, string $to): array
     {
-        $out = [];
+        // Index real Attendance rows by ISO date for O(1) lookup as we
+        // walk through the window day-by-day.
+        $byIso = [];
         foreach ($rows as $r) {
-            $dateC = \Carbon\Carbon::parse($r->attendance_date);
-            $isWO  = isset($weeklyOffSet[$dateC->dayOfWeek]);
-            $status = $r->status ?: ($isWO ? 'Weekly Off' : 'Absent');
+            $iso = \Carbon\Carbon::parse($r->attendance_date)->toDateString();
+            $byIso[$iso] = $r;
+        }
 
-            $firstIn = $r->check_in_at  ? $r->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i')  : '—';
-            $lastOut = $r->check_out_at ? $r->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : '—';
-            $worked  = (int) floor(((int) $r->total_worked_seconds) / 60);
-            $deviation = $worked === 0 ? '—' : sprintf('%+dh %02dm', intdiv($worked - $expectedMinutes, 60), abs(($worked - $expectedMinutes) % 60));
+        $shift = (string) ($emp->shift ?: '—');
+        $todayLocal = self::todayLocal();
+        $out = [];
+        // Walk newest-first so the table opens on the most recent day —
+        // matches the user's expectation (and what the Logs table page-
+        // ordering relied on previously).
+        $cursor = \Carbon\Carbon::parse($to);
+        $start  = \Carbon\Carbon::parse($from);
+        while ($cursor->greaterThanOrEqualTo($start)) {
+            $iso = $cursor->toDateString();
+            $r   = $byIso[$iso] ?? null;
+            $isWO = isset($weeklyOffSet[$cursor->dayOfWeek]);
+            $isFuture = $iso > $todayLocal;
+
+            if ($r) {
+                $status  = $r->status ?: ($isWO ? 'Weekly Off' : 'Absent');
+                $firstIn = $r->check_in_at  ? $r->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i')  : '—';
+                $lastOut = $r->check_out_at ? $r->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : '—';
+                $worked  = (int) floor(((int) $r->total_worked_seconds) / 60);
+                // Promote Present → Late when first-in is significantly
+                // after shift start (mirrors resolveDayStatus()). The
+                // face-clock flow always writes 'Present' on first punch
+                // and doesn't know about shifts, so the heuristic has to
+                // run at read time.
+                if (strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $shiftStart
+                    && $this->minutesBetween($shiftStart, $firstIn) > 10) {
+                    $status = 'Late';
+                }
+
+                $segments = [];
+                $pairs = $r->punches?->sortBy('punched_at')->values() ?? collect();
+                $openIn = null;
+                foreach ($pairs as $p) {
+                    $tsUtc = $p->punched_at;
+                    if (!$tsUtc) continue;
+                    $ts = $tsUtc->copy()->setTimezone(self::DISPLAY_TZ);
+                    $hf = $ts->hour + $ts->minute / 60;
+                    if ($p->direction === 'in') {
+                        $openIn = $hf;
+                    } elseif ($p->direction === 'out' && $openIn !== null) {
+                        $segments[] = ['start' => round($openIn, 2), 'end' => round($hf, 2)];
+                        $openIn = null;
+                    }
+                }
+            } else {
+                // No Attendance row for this day — synthesise it.
+                $status  = $isFuture ? 'Absent' : ($isWO ? 'Weekly Off' : 'Absent');
+                $firstIn = '—';
+                $lastOut = '—';
+                $worked  = 0;
+                $segments = [];
+            }
+
+            // Signed deviation (sub-hour shortfalls were printing "+0h 30m"
+            // before — intdiv() truncates toward zero so a negative diff
+            // smaller than an hour lost its sign).
+            $deviation = '—';
+            if ($worked !== 0) {
+                $diff = $worked - $expectedMinutes;
+                $sign = $diff < 0 ? '-' : '+';
+                $mag  = abs($diff);
+                $deviation = sprintf('%s%dh %02dm', $sign, intdiv($mag, 60), $mag % 60);
+            }
+
             $lateMin = 0;
             if ($firstIn !== '—' && $shiftStart) {
                 $lateMin = max(0, $this->minutesBetween($shiftStart, $firstIn));
             }
 
-            $segments = [];
-            $pairs = $r->punches?->sortBy('punched_at')->values() ?? collect();
-            $openIn = null;
-            foreach ($pairs as $p) {
-                $tsUtc = $p->punched_at;
-                if (!$tsUtc) continue;
-                $ts = $tsUtc->copy()->setTimezone(self::DISPLAY_TZ);
-                $hf = $ts->hour + $ts->minute / 60;
-                if ($p->direction === 'in') {
-                    $openIn = $hf;
-                } elseif ($p->direction === 'out' && $openIn !== null) {
-                    $segments[] = ['start' => round($openIn, 2), 'end' => round($hf, 2)];
-                    $openIn = null;
-                }
-            }
-
             $out[] = [
-                'iso'              => $dateC->toDateString(),
-                'date'             => $dateC->format('d M Y'),
-                'weekday'          => $dateC->format('D'),
+                'iso'              => $iso,
+                'date'             => $cursor->format('d M Y'),
+                'weekday'          => $cursor->format('D'),
                 'status'           => $status,
-                'shift'            => (string) ($emp->shift ?: '—'),
+                'shift'            => $shift,
                 'firstIn'          => $firstIn,
                 'lastOut'          => $lastOut,
                 'worked'           => $worked === 0 ? '—' : sprintf('%dh %02dm', intdiv($worked, 60), $worked % 60),
@@ -603,6 +736,8 @@ class AttendanceController extends Controller
                 'expectedMinutes'  => $expectedMinutes,
                 'lateMinutes'      => $lateMin,
             ];
+
+            $cursor->subDay();
         }
         return $out;
     }
@@ -649,7 +784,7 @@ class AttendanceController extends Controller
         }
 
         return DB::transaction(function () use ($request, $employee, $distance, $data, $expected) {
-            $today = now()->toDateString();
+            $today = self::todayLocal();
 
             // Lock the day's row so a double-tap on the SPA can't race two
             // punches into the same direction.

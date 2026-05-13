@@ -71,8 +71,14 @@ class Attendance extends Model
 
     /**
      * Sum of (out_at − in_at) over every paired punch in the day. Open pairs
-     * (clocked-in but not yet out) count up to "now" so the UI can show a
-     * live-ticking total while the user is still on the clock.
+     * (clocked-in but not yet out) count up to "now" ONLY when the row is
+     * for today's local date so the UI can show a live-ticking total while
+     * the user is still on the clock.
+     *
+     * For PAST rows with an unclosed in (forgotten clock-out), the accessor
+     * caps the open pair at the end of that calendar day — otherwise every
+     * read accumulated another full day of phantom "worked" time and a
+     * 5-hour shift from a week ago reported 5d + 5h.
      *
      * Returned in SECONDS; the SPA formats to "9h 02m".
      */
@@ -94,7 +100,22 @@ class Attendance extends Model
             }
         }
         if ($openInTs !== null) {
-            $total += max(0, now()->getTimestamp() - $openInTs);
+            // "now" boundary for the open-in pair — for today's row this is
+            // the literal now(); for past rows the punch was abandoned, so
+            // cap at end-of-day in the display tz to keep the value sane.
+            $tz = 'Asia/Kolkata';
+            $todayLocal = now($tz)->toDateString();
+            $rowDate = $this->attendance_date instanceof \Carbon\Carbon
+                ? $this->attendance_date->toDateString()
+                : (string) $this->attendance_date;
+
+            if ($rowDate === $todayLocal) {
+                $boundaryTs = now()->getTimestamp();
+            } else {
+                // 23:59:59 in display-tz on the row's date.
+                $boundaryTs = \Carbon\Carbon::parse($rowDate . ' 23:59:59', $tz)->getTimestamp();
+            }
+            $total += max(0, $boundaryTs - $openInTs);
         }
         return (int) $total;
     }

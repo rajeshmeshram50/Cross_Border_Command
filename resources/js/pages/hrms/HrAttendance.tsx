@@ -1250,7 +1250,15 @@ function LogsRequestsCard({
                               {l.shift !== '—' && (
                                 <div className="att-log-pop-body">
                                   <div className="att-log-pop-shift--v2">
-                                    {l.shift === 'WFH' ? 'WFH Shift' : `${l.shift} Shift`} ({dateDay} {dateMonth})
+                                    {(() => {
+                                      // Don't double the word "Shift" if the
+                                      // stored label already ends with it
+                                      // (e.g. "General Shift" → "General Shift",
+                                      // not "General Shift Shift").
+                                      const raw = l.shift;
+                                      if (raw === 'WFH') return 'WFH Shift';
+                                      return /shift\s*$/i.test(raw) ? raw : `${raw} Shift`;
+                                    })()} ({dateDay} {dateMonth})
                                   </div>
                                   <div className="att-log-pop-shift-time--v2">
                                     {fmtClock(employee.shiftStart)} - {fmtClock(employee.shiftEnd)}
