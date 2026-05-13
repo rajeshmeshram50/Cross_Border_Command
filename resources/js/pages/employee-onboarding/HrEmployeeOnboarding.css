@@ -305,7 +305,17 @@
         .onb-init-input:focus, .onb-init-select:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
         .onb-init-input.is-required { border-color: #f4a8a0; background: #fff6f5; }
         .onb-init-input.is-autofilled { border-color: #b6e4be; background: #f5fcf6; }
+        .onb-init-input.is-invalid { border-color: #f06548; background: #fff5f3; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
+        .onb-field-error { display: block; font-size: 11px; font-weight: 500; color: #c43d20; margin-top: 4px; }
         [data-bs-theme="dark"] .onb-init-input, [data-bs-theme="dark"] .onb-init-select { background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
+        [data-bs-theme="dark"] .onb-init-input.is-invalid { border-color: #ef4444; background: rgba(240,101,72,0.12); }
+        [data-bs-theme="dark"] .onb-field-error { color: #fca5a5; }
+
+        /* Spinner animation for loader */
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
 
         .onb-init-toggle-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 10px; background: #ecfdf3; border: 1px solid #bbf7d0; margin: 10px 0; }
         [data-bs-theme="dark"] .onb-init-toggle-row { background: rgba(16,133,72,0.16); border-color: rgba(16,133,72,0.40); }

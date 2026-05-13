@@ -1847,6 +1847,26 @@ function InitiateOnboardingModal({
     });
   }, [isOpen, emp?.id, emp?.raw]);
 
+  // ── Form validation state ──────────────────────────────────────────
+  const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
+  const [nextLoading, setNextLoading] = useState(false);
+
+  /** Validate Stage 1 required fields before allowing navigation. */
+  const validateStage1 = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
+    if (!s1.last_name?.trim()) errors.last_name = 'Last name is required';
+    if (!s1.email?.trim()) errors.email = 'Work email is required';
+    if (!s1.mobile?.trim()) errors.mobile = 'Mobile number is required';
+    
+    setS1Errors(errors);
+    if (Object.keys(errors).length > 0) {
+      toast.error('Please fill all required fields', `${Object.keys(errors).length} field(s) need attention`);
+      return false;
+    }
+    return true;
+  };
+
   /** Push the current Stage 1 form values to the backend as a PUT. The
    *  server already accepts partial PATCHes — fields the wizard hasn't
    *  saved yet stay null on the row. wizard_step_completed gets bumped
@@ -2335,7 +2355,15 @@ function InitiateOnboardingModal({
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">First Name <span className="req">*</span></label>
-                    <input className="onb-init-input" value={s1.first_name} onChange={e => setS1(p => ({ ...p, first_name: e.target.value }))} />
+                    <input 
+                      className={`onb-init-input ${s1Errors.first_name ? 'is-invalid' : ''}`} 
+                      value={s1.first_name} 
+                      onChange={e => {
+                        setS1(p => ({ ...p, first_name: e.target.value }));
+                        if (s1Errors.first_name) setS1Errors(p => { const n = { ...p }; delete n.first_name; return n; });
+                      }} 
+                    />
+                    {s1Errors.first_name && <div className="onb-field-error">{s1Errors.first_name}</div>}
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Middle Name</label>
@@ -2343,7 +2371,15 @@ function InitiateOnboardingModal({
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Last Name <span className="req">*</span></label>
-                    <input className="onb-init-input" value={s1.last_name} onChange={e => setS1(p => ({ ...p, last_name: e.target.value }))} />
+                    <input 
+                      className={`onb-init-input ${s1Errors.last_name ? 'is-invalid' : ''}`} 
+                      value={s1.last_name} 
+                      onChange={e => {
+                        setS1(p => ({ ...p, last_name: e.target.value }));
+                        if (s1Errors.last_name) setS1Errors(p => { const n = { ...p }; delete n.last_name; return n; });
+                      }} 
+                    />
+                    {s1Errors.last_name && <div className="onb-field-error">{s1Errors.last_name}</div>}
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Display Name <span className="auto">AUTO</span></label>
@@ -2371,11 +2407,29 @@ function InitiateOnboardingModal({
                 <Row className="g-3">
                   <Col md={4}>
                     <label className="onb-init-label">Work Email <span className="req">*</span></label>
-                    <input className="onb-init-input is-required" placeholder="name@enterprise.com" value={s1.email} onChange={e => setS1(p => ({ ...p, email: e.target.value }))} />
+                    <input 
+                      className={`onb-init-input is-required ${s1Errors.email ? 'is-invalid' : ''}`} 
+                      placeholder="name@enterprise.com" 
+                      value={s1.email} 
+                      onChange={e => {
+                        setS1(p => ({ ...p, email: e.target.value }));
+                        if (s1Errors.email) setS1Errors(p => { const n = { ...p }; delete n.email; return n; });
+                      }} 
+                    />
+                    {s1Errors.email && <div className="onb-field-error">{s1Errors.email}</div>}
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Mobile Number <span className="req">*</span></label>
-                    <input className="onb-init-input is-required" placeholder="+91 XXXXX XXXXX" value={s1.mobile} onChange={e => setS1(p => ({ ...p, mobile: e.target.value }))} />
+                    <input 
+                      className={`onb-init-input is-required ${s1Errors.mobile ? 'is-invalid' : ''}`} 
+                      placeholder="+91 XXXXX XXXXX" 
+                      value={s1.mobile} 
+                      onChange={e => {
+                        setS1(p => ({ ...p, mobile: e.target.value }));
+                        if (s1Errors.mobile) setS1Errors(p => { const n = { ...p }; delete n.mobile; return n; });
+                      }} 
+                    />
+                    {s1Errors.mobile && <div className="onb-field-error">{s1Errors.mobile}</div>}
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Number Series</label>
@@ -2757,37 +2811,52 @@ function InitiateOnboardingModal({
                 type="button"
                 className="onb-init-btn-next"
                 disabled={
+                  (activeStage === 1 && (nextLoading || s1Saving || Object.keys(s1Errors).length > 0)) ||
                   (activeStage === 2 && !stage2Done) ||
                   (activeStage === 4 && !stage4Done) ||
-                  (activeStage === 4 && s4Saving)
+                  (activeStage === 4 && s4Saving) ||
+                  nextLoading
                 }
                 title={
-                  activeStage === 2 && !stage2Done
+                  activeStage === 1 && Object.keys(s1Errors).length > 0
+                    ? 'Please fill all required fields to proceed'
+                    : activeStage === 2 && !stage2Done
                     ? `Upload all required documents (${stage2Uploaded}/${stage2Total}) to proceed`
                     : activeStage === 4 && !stage4Done
                     ? `Complete all readiness checks (${stage4Pass}/${stage4Total4}) to proceed`
                     : undefined
                 }
                 style={
-                  ((activeStage === 2 && !stage2Done) || (activeStage === 4 && !stage4Done))
+                  ((activeStage === 1 && Object.keys(s1Errors).length > 0) || (activeStage === 2 && !stage2Done) || (activeStage === 4 && !stage4Done))
                     ? { opacity: 0.55, cursor: 'not-allowed' }
                     : undefined
                 }
                 onClick={async () => {
-                  // Stage 1: persist edits before advancing. saveStage1
+                  // Stage 1: validate required fields, persist edits before advancing. saveStage1
                   // bumps wizard_step_completed=4; the controller then
                   // auto-bumps the macro stage to ≥1. Don't advance to
                   // the next stage if the save failed — toast already
                   // surfaced the reason.
                   if (activeStage === 1) {
-                    const ok = await saveStage1(true);
-                    if (!ok) return;
+                    if (!validateStage1()) return;
+                    setNextLoading(true);
+                    try {
+                      const ok = await saveStage1(true);
+                      if (!ok) return;
+                    } finally {
+                      setNextLoading(false);
+                    }
                   }
                   // Stage 2: gate on required-document completion + bump
                   // the macro watermark to 2.
                   if (activeStage === 2) {
                     if (!stage2Done) return;
-                    await bumpMacroStage(2);
+                    setNextLoading(true);
+                    try {
+                      await bumpMacroStage(2);
+                    } finally {
+                      setNextLoading(false);
+                    }
                   }
                   // Stage 3: persist any asset-allocation edits (the
                   // Device & Asset section binds straight to s1) and
@@ -2795,26 +2864,50 @@ function InitiateOnboardingModal({
                   // skips the wizard_step_completed bump so reopening
                   // the modal still shows Stage 1 as fully done.
                   if (activeStage === 3) {
-                    const ok = await saveStage1(false);
-                    if (!ok) return;
-                    await bumpMacroStage(3);
+                    setNextLoading(true);
+                    try {
+                      const ok = await saveStage1(false);
+                      if (!ok) return;
+                      await bumpMacroStage(3);
+                    } finally {
+                      setNextLoading(false);
+                    }
                   }
                   // Stage 4: gate on readiness checks + persist with the
                   // completion stamp before advancing. saveStage4 also
                   // bumps macro stage to 4.
                   if (activeStage === 4) {
                     if (!stage4Done) return;
-                    const ok = await saveStage4(true);
-                    if (!ok) return;
+                    setNextLoading(true);
+                    try {
+                      const ok = await saveStage4(true);
+                      if (!ok) return;
+                    } finally {
+                      setNextLoading(false);
+                    }
                   }
                   // Stage 5: provisional macro bump.
                   if (activeStage === 5) {
-                    await bumpMacroStage(5);
+                    setNextLoading(true);
+                    try {
+                      await bumpMacroStage(5);
+                    } finally {
+                      setNextLoading(false);
+                    }
                   }
                   setActiveStage((activeStage + 1) as typeof activeStage);
                 }}
               >
-                Next Stage <i className="ri-arrow-right-s-line" />
+                {nextLoading ? (
+                  <>
+                    <i className="ri-loader-4-line" style={{ marginRight: 8, animation: 'spin 1s linear infinite' }} />
+                    Loading…
+                  </>
+                ) : (
+                  <>
+                    Next Stage <i className="ri-arrow-right-s-line" />
+                  </>
+                )}
               </button>
             ) : (
               <button
