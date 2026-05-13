@@ -1668,7 +1668,7 @@ function InitiateOnboardingModal({
   useEffect(() => { if (isOpen) setActiveStage(1); }, [isOpen, emp?.id]);
 
   // Validation errors state — tracks which fields have errors
-  const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
+  // const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
 
   // ── Master data — fetched once when the modal first opens. Everything
   //    Stage 1 needs to populate its dropdowns: countries (work + nationality),
@@ -1853,16 +1853,68 @@ useEffect(() => {
   });
 }, [isOpen, emp?.id, emp?.raw]);
 
+  // ── Form validation state ──────────────────────────────────────────
+// ── Form validation state ──────────────────────────────────────────
+const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
+const [nextLoading, setNextLoading] = useState(false);
+
+/** Validate Stage 1 required fields before allowing navigation. */
+const validateStage1 = (): boolean => {
+  const errors: Record<string, string> = {};
+  
+  // Personal Information - Required
+  if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
+  if (!s1.last_name?.trim()) errors.last_name = 'Last name is required';
+  if (!s1.date_of_birth?.trim()) errors.date_of_birth = 'Date of birth is required';
+  
+  // Contact Information - Required
+  if (!s1.email?.trim()) errors.email = 'Work email is required';
+  if (!s1.mobile?.trim()) errors.mobile = 'Mobile number is required';
+  
+  // Compensation - Required
+  if (!s1.annual_salary || Number(s1.annual_salary) <= 0) {
+    errors.annual_salary = 'Annual salary is required and must be greater than 0';
+  }
+  if (!s1.salary_effective_from?.trim()) {
+    errors.salary_effective_from = 'Salary effective date is required';
+  }
+  
+  setS1Errors(errors);
+  
+  if (Object.keys(errors).length > 0) {
+    toast.error('Please fill all required fields', `${Object.keys(errors).length} field(s) need attention`);
+    return false;
+  }
+  return true;
+};
+
+  /** Validate Stage 1 required fields before allowing navigation. */
+  // const validateStage1 = (): boolean => {
+  //   const errors: Record<string, string> = {};
+  //   if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
+  //   if (!s1.last_name?.trim()) errors.last_name = 'Last name is required';
+  //   if (!s1.email?.trim()) errors.email = 'Work email is required';
+  //   if (!s1.mobile?.trim()) errors.mobile = 'Mobile number is required';
+    
+  //   setS1Errors(errors);
+  //   if (Object.keys(errors).length > 0) {
+  //     toast.error('Please fill all required fields', `${Object.keys(errors).length} field(s) need attention`);
+  //     return false;
+  //   }
+  //   return true;
+  // };
+
   /** Push the current Stage 1 form values to the backend as a PUT. The
    *  server already accepts partial PATCHes — fields the wizard hasn't
    *  saved yet stay null on the row. wizard_step_completed gets bumped
    *  by the controller's high-watermark logic only if we send a higher
    *  value, so passing 4 here marks the wizard fully done. */
-  const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
-    if (!emp?.dbId || s1Saving) return false;
-      // Validate before saving
+const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
+  if (!emp?.dbId || s1Saving) return false;
+  // Validate before saving
   if (!validateStage1()) return false;
-    setS1Saving(true);
+  setS1Saving(true);
+  // ... rest of the function
     const intOrNull = (v: string) => {
       const n = parseInt(v, 10);
       return Number.isFinite(n) ? n : null;
@@ -1996,29 +2048,29 @@ useEffect(() => {
    *  Stage gets unblocked. We never clear the timestamp from here — once
    *  Stage 4 is complete, edits keep the row marked complete (matches
    *  the wizard_step_completed high-watermark behaviour). */
- const validateStage1 = (): boolean => {
-  const errors: Record<string, string> = {};
+//  const validateStage1 = (): boolean => {
+//   const errors: Record<string, string> = {};
   
-  // Personal Information - Required
-  if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
-  if (!s1.last_name?.trim()) errors.last_name = 'Last name is required';
-  if (!s1.date_of_birth?.trim()) errors.date_of_birth = 'Date of birth is required';
+//   // Personal Information - Required
+//   if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
+//   if (!s1.last_name?.trim()) errors.last_name = 'Last name is required';
+//   if (!s1.date_of_birth?.trim()) errors.date_of_birth = 'Date of birth is required';
   
-  // Contact Information - Required
-  if (!s1.email?.trim()) errors.email = 'Work email is required';
-  if (!s1.mobile?.trim()) errors.mobile = 'Mobile number is required';
+//   // Contact Information - Required
+//   if (!s1.email?.trim()) errors.email = 'Work email is required';
+//   if (!s1.mobile?.trim()) errors.mobile = 'Mobile number is required';
   
-  // Compensation - Required
-  if (!s1.annual_salary || Number(s1.annual_salary) <= 0) {
-    errors.annual_salary = 'Annual salary is required and must be greater than 0';
-  }
-  if (!s1.salary_effective_from?.trim()) {
-    errors.salary_effective_from = 'Salary effective date is required';
-  }
+//   // Compensation - Required
+//   if (!s1.annual_salary || Number(s1.annual_salary) <= 0) {
+//     errors.annual_salary = 'Annual salary is required and must be greater than 0';
+//   }
+//   if (!s1.salary_effective_from?.trim()) {
+//     errors.salary_effective_from = 'Salary effective date is required';
+//   }
   
-  setS1Errors(errors);
-  return Object.keys(errors).length === 0;
-};
+//   setS1Errors(errors);
+//   return Object.keys(errors).length === 0;
+// };
   const saveStage4 = async (markComplete: boolean): Promise<boolean> => {
     if (!emp?.dbId || s4Saving) return false;
     setS4Saving(true);
@@ -2853,71 +2905,85 @@ useEffect(() => {
               </span>
             )}
           </span>
-          <div className="d-flex align-items-center gap-2">
-            <button type="button" className="onb-init-btn-ghost" onClick={() => setActiveStage(Math.max(1, activeStage - 1))}>
-              <i className="ri-arrow-left-s-line" /> Previous
-            </button>
-            {/* Save Draft — Stage 1 saves the wizard payload + bumps
-                wizard_step_completed to 4. Stage 4 saves the finance
-                payload + stamps stage4_completed_at when all readiness
-                checks pass. Other stages have no bound state yet, so
-                the button is disabled there. */}
-            <button
-              type="button"
-              className="onb-init-btn-outline"
-              disabled={
-                (activeStage === 1 && s1Saving) ||
-                (activeStage === 3 && s1Saving) ||
-                (activeStage === 4 && s4Saving) ||
-                (activeStage !== 1 && activeStage !== 3 && activeStage !== 4)
-              }
-              onClick={() => {
-                if (activeStage === 1) return saveStage1(true);
-                // Stage 3 saves the asset edits too (no wizard bump).
-                if (activeStage === 3) return saveStage1(false);
-                if (activeStage === 4) return saveStage4(stage4Pass === stage4Total4);
-              }}
-            >
-              {activeStage === 1 ? (s1Saving ? 'Saving…' : 'Save Draft')
-                : activeStage === 3 ? (s1Saving ? 'Saving…' : 'Save Draft')
-                : activeStage === 4 ? (s4Saving ? 'Saving…' : 'Save Draft')
-                : 'Save Draft'}
-            </button>
-{activeStage < 6 ? (
+<div className="d-flex align-items-center gap-2">
+  <button 
+    type="button" 
+    className="onb-init-btn-ghost" 
+    onClick={() => setActiveStage(Math.max(1, activeStage - 1))}
+  >
+    <i className="ri-arrow-left-s-line" /> Previous
+  </button>
+  
+  {/* Save Draft — Stage 1 saves the wizard payload + bumps
+      wizard_step_completed to 4. Stage 4 saves the finance
+      payload + stamps stage4_completed_at when all readiness
+      checks pass. Other stages have no bound state yet, so
+      the button is disabled there. */}
   <button
     type="button"
-    className="onb-init-btn-next"
+    className="onb-init-btn-outline"
     disabled={
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
-      (activeStage === 4 && s4Saving)
+      (activeStage === 4 && s4Saving) ||
+      (activeStage !== 1 && activeStage !== 3 && activeStage !== 4)
     }
-    onClick={async () => {
-      // Stage 1: validate required fields before advancing
-      if (activeStage === 1) {
-        if (!validateStage1()) return;
-        const ok = await saveStage1(true);
-        if (!ok) return;
-      }
-      // ... rest of existing code ...
+    onClick={() => {
+      if (activeStage === 1) return saveStage1(true);
+      // Stage 3 saves the asset edits too (no wizard bump).
+      if (activeStage === 3) return saveStage1(false);
+      if (activeStage === 4) return saveStage4(stage4Pass === stage4Total4);
     }}
   >
-    Next Stage <i className="ri-arrow-right-s-line" />
+    {activeStage === 1 ? (s1Saving ? 'Saving…' : 'Save Draft')
+      : activeStage === 3 ? (s1Saving ? 'Saving…' : 'Save Draft')
+      : activeStage === 4 ? (s4Saving ? 'Saving…' : 'Save Draft')
+      : 'Save Draft'}
   </button>
-) : (
-              <button
-                type="button"
-                className="onb-init-btn-complete"
-                onClick={async () => {
-                  // Stamp the macro stage at 6 so profile% hits 100%.
-                  await bumpMacroStage(6);
-                  onClose();
-                }}
-              >
-                <i className="ri-checkbox-circle-line" /> Complete Onboarding
-              </button>
-            )}
-          </div>
+  
+  {activeStage < 6 ? (
+    <button
+      type="button"
+      className="onb-init-btn-next"
+      disabled={
+        (activeStage === 1 && s1Saving) ||
+        (activeStage === 3 && s1Saving) ||
+        (activeStage === 4 && s4Saving)
+      }
+      onClick={async () => {
+        // Stage 1: validate required fields and save before advancing
+        if (activeStage === 1) {
+          if (!validateStage1()) return;
+          const ok = await saveStage1(true);
+          if (!ok) return;
+        }
+        
+        // Stage 4: validate and save before advancing
+        if (activeStage === 4) {
+          const ok = await saveStage4(stage4Pass === stage4Total4);
+          if (!ok) return;
+        }
+        
+        // Move to next stage
+        setActiveStage(activeStage + 1);
+      }}
+    >
+      Next Stage <i className="ri-arrow-right-s-line" />
+    </button>
+  ) : (
+    <button
+      type="button"
+      className="onb-init-btn-complete"
+      onClick={async () => {
+        // Stamp the macro stage at 6 so profile% hits 100%.
+        await bumpMacroStage(6);
+        onClose();
+      }}
+    >
+      <i className="ri-checkbox-circle-line" /> Complete Onboarding
+    </button>
+  )}
+</div>
         </div>
       </ModalBody>
     </Modal>
@@ -3615,15 +3681,11 @@ function Stage3Provisioning({
   </label>
   <input 
     id="field-official-email"
-    className={`onb-init-input is-required ${s1Errors.official_email ? 'is-invalid' : ''}`} 
+    className="onb-init-input is-required" 
     placeholder="firstname.lastname@company.com" 
     value={s1.official_email} 
-    onChange={e => { 
-      setS1((p: any) => ({ ...p, official_email: e.target.value }));
-      setS1Errors(p => ({ ...p, official_email: '' }));
-    }} 
+    onChange={e => setS1((p: any) => ({ ...p, official_email: e.target.value }))}
   />
-  {s1Errors.official_email && <div className="onb-error-msg">{s1Errors.official_email}</div>}
 </Col>
             <Col md={6}>
               <label className="onb-init-label">Employee Code {autoLabel}</label>

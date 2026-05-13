@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
@@ -9,6 +9,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import ExpenseClaimsTable from '../../components/ExpenseClaimsTable';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import './EmployeeProfile.css';
+import ImageCropperModal from '../../components/ui/ImageCropperModal';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 
 // Custom portal-based modal — renders directly to document.body so it always
 // escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
@@ -340,7 +342,6 @@ function AttendanceTabPanel({ employeeId }: { employeeId: string }) {
   const G_WARNING = 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)';
   const G_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
   const G_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
-
   return (
     <>
       {/* KPI strip */}
@@ -1241,6 +1242,99 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // backend — it will resolve whichever it gets.
   const profileEmpCode = String(employeeId || '');
   const profileEmpIdNum = /^\d+$/.test(profileEmpCode) ? Number(profileEmpCode) : null;
+  // Profile photo upload & cropping mirrors Profile.tsx: validate the picked
+  // image, open the square cropper, then stage a cropped JPEG preview.
+  const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [savingPhoto, setSavingPhoto] = useState(false);
+  const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const photo = employee?.photoUrl || null;
+    const resolved = photo ? resolveFileUrl(photo) : null;
+    setProfilePhotoPreview(prev => (profilePhotoFile ? prev : resolved));
+  }, [employee?.photoUrl, profilePhotoFile]);
+
+  const restoreSavedProfilePhoto = () => {
+    const saved = employee?.photoUrl || null;
+    setProfilePhotoPreview(saved ? resolveFileUrl(saved) : null);
+  };
+
+  const validateProfilePhoto = (file: File): string | null => {
+    const MAX_BYTES = 4 * 1024 * 1024;
+    const OK_TYPES  = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!OK_TYPES.includes(file.type)) return 'Use a PNG, JPG or WebP file.';
+    if (file.size > MAX_BYTES)         return `Photo is larger than 4 MB (got ${(file.size / 1024 / 1024).toFixed(1)} MB).`;
+    return null;
+  };
+
+  const handleProfilePhotoChange = (file: File | null) => {
+    if (!file) {
+      setProfilePhotoFile(null);
+      restoreSavedProfilePhoto();
+      return;
+    }
+    const err = validateProfilePhoto(file);
+    if (err) {
+      toast.error('Invalid Photo', err);
+      if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = '';
+      return;
+    }
+    const r = new FileReader();
+    r.onload = ev => {
+      setCropSrc(ev.target?.result as string);
+      setCropOpen(true);
+    };
+    r.readAsDataURL(file);
+    if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = '';
+  };
+
+  const handleCropConfirm = (blob: Blob) => {
+    const file = new File([blob], `profile-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    setProfilePhotoFile(file);
+    const r = new FileReader();
+    r.onload = ev => setProfilePhotoPreview(ev.target?.result as string);
+    r.readAsDataURL(blob);
+    setCropOpen(false);
+    setCropSrc(null);
+  };
+
+  const resolveEmployeeUploadId = async (): Promise<number | string> => {
+    if (profileEmpIdNum !== null) return profileEmpIdNum;
+    if (authUser?.employee_id && authUser?.employee_code === profileEmpCode) return authUser.employee_id;
+
+    const res = await api.get('/employees', { params: { search: profileEmpCode } });
+    const rows = Array.isArray(res.data) ? res.data : [];
+    const match = rows.find((row: any) => String(row.emp_code || row.id) === profileEmpCode) || rows[0];
+    if (!match?.id) throw new Error('Could not resolve employee record for photo upload.');
+    return match.id;
+  };
+
+  const handleSaveProfilePhoto = async () => {
+    if (!profilePhotoFile) return;
+    setSavingPhoto(true);
+    try {
+      const uploadEmployeeId = await resolveEmployeeUploadId();
+      const fd = new FormData();
+      fd.append('document_key', 'photo');
+      fd.append('file', profilePhotoFile);
+      const res = await api.post(`/employees/${encodeURIComponent(String(uploadEmployeeId))}/documents`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const nextUrl = res?.data?.document?.url;
+      setProfilePhotoPreview(nextUrl ? resolveFileUrl(nextUrl) : profilePhotoPreview);
+      setProfilePhotoFile(null);
+      toast.success('Photo updated', 'Profile picture has been changed.');
+    } catch (err: any) {
+      toast.error('Upload failed', err?.response?.data?.message || err?.message || 'Could not update photo');
+    } finally {
+      setSavingPhoto(false);
+    }
+  };
+
+  const profilePhotoSrc = profilePhotoPreview || (employee?.photoUrl ? resolveFileUrl(employee.photoUrl) : null);
   // "Is this the current user's own profile?" — first try numeric id match,
   // fall back to the linked Employee.id. We don't have the current user's
   // emp_code in /me, so when the URL is a code we trust the backend's later
@@ -1339,6 +1433,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       toast.error('Submit failed', msg);
     }
   };
+  
 
   // Audit-log popover state — `auditOpenId` holds the claim id whose 3-dot
   // dropdown is currently open; null = nothing open.
@@ -1423,10 +1518,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <Row className="g-4 align-items-center" style={{ position: 'relative', zIndex: 2 }}>
           {/* Avatar */}
           <Col xs="auto">
-            {employee?.photoUrl ? (
+            {profilePhotoSrc ? (
               <img
-                src={employee.photoUrl}
-                alt={employee.name || 'employee'}
+                src={profilePhotoSrc}
+                alt={employee?.name || 'employee'}
                 className="ep-avatar-square"
                 style={{ objectFit: 'cover', background: '#fff' }}
               />
@@ -1565,30 +1660,95 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <>
           {/* Personal Information — full-width row of 7 identity fields */}
           <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #6366f1' }}>
-            <div
-              className="d-flex align-items-center gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(99,102,241,0.18)',
-                background: 'linear-gradient(135deg, rgba(99,102,241,0.10) 0%, rgba(99,102,241,0.03) 60%, rgba(99,102,241,0.01) 100%)',
+  <div
+    className="d-flex align-items-center gap-3 px-3 py-2"
+    style={{
+      borderBottom: '1px solid rgba(99,102,241,0.18)',
+      background: 'linear-gradient(135deg, rgba(99,102,241,0.10) 0%, rgba(99,102,241,0.03) 60%, rgba(99,102,241,0.01) 100%)',
+    }}
+  >
+    <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
+      <i className="ri-user-line" />
+    </span>
+    <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Personal Information</h6>
+  </div>
+  <div className="px-3 py-3">
+    <Row className="g-4 align-items-stretch">
+      <Col lg={3} md={4}>
+        <div
+          className="h-100 d-flex flex-column align-items-center justify-content-center text-center p-3"
+          style={{
+            border: '1px dashed rgba(99,102,241,0.35)',
+            borderRadius: 12,
+            background: 'rgba(99,102,241,0.04)',
+          }}
+        >
+      {profilePhotoSrc ? (
+        <img
+          src={profilePhotoSrc}
+          alt="profile"
+          className="rounded-circle mb-3"
+          style={{ width: 112, height: 112, objectFit: 'cover', border: '3px solid var(--vz-card-bg)', boxShadow: '0 8px 24px rgba(15,23,42,0.16)' }}
+        />
+      ) : (
+        <div
+          className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted mb-3"
+          style={{ width: 112, height: 112, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 38 }}
+        >
+          <i className="ri-user-line" />
+        </div>
+      )}
+        <label className="ep-field-label mb-2">Employee Photo</label>
+        <input
+          ref={profilePhotoInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
+          className="form-control form-control-sm"
+          style={{ fontSize: 12 }}
+        />
+        <small className="text-muted mt-2" style={{ fontSize: 11, lineHeight: 1.35 }}>
+          JPG, PNG, WebP — Max 4MB · you'll be able to crop & zoom after picking
+        </small>
+        {profilePhotoFile && (
+          <div className="mt-3 d-flex gap-2 flex-wrap justify-content-center">
+            <button
+              type="button"
+              className="btn btn-sm btn-success"
+              onClick={handleSaveProfilePhoto}
+              disabled={savingPhoto}
+            >
+              {savingPhoto ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="ri-save-line me-1" />}
+              Save Photo
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              onClick={() => {
+                setProfilePhotoFile(null);
+                restoreSavedProfilePhoto();
               }}
             >
-              <span className="ep-section-icon" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca' }}>
-                <i className="ri-user-line" />
-              </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Personal Information</h6>
-            </div>
-            <div className="px-3 py-3">
-              <Row className="g-4">
-                <Col><div className="ep-field-label">First Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ')[0] || 'Aarav'}</div></Col>
-                <Col><div className="ep-field-label">Middle Name</div><div className="ep-field-value">Rajendra</div></Col>
-                <Col><div className="ep-field-label">Last Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ').slice(1).join(' ') || 'Kale'}</div></Col>
-                <Col><div className="ep-field-label">Display Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-                <Col><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
-                <Col><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
-                <Col><div className="ep-field-label">Nationality</div><div className="ep-field-value">Indian</div></Col>
-              </Row>
-            </div>
+              Cancel
+            </button>
           </div>
+        )}
+        </div>
+      </Col>
+      <Col lg={9} md={8}>
+        <Row className="g-4">
+          <Col md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ')[0] || 'Aarav'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">Rajendra</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ').slice(1).join(' ') || 'Kale'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">Indian</div></Col>
+        </Row>
+      </Col>
+    </Row>
+  </div>
+</div>
 
           {/* Contact Information — 4 fields */}
           <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #299cdb' }}>
@@ -4866,6 +5026,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         </div>
       </EpModal>
 
+      {/* WhatsApp/Instagram-style square crop dialog for the profile photo. */}
+      <ImageCropperModal
+        open={cropOpen}
+        src={cropSrc}
+        aspect={1}
+        cropShape="round"
+        outputSize={512}
+        title="Adjust profile photo"
+        onCancel={() => { setCropOpen(false); setCropSrc(null); }}
+        onConfirm={handleCropConfirm}
+      />
+
       {/* Face-biometric enrolment — opens from the Security card and posts
           the 128-d descriptor (with consent) to /api/face/register. */}
       <FaceRegistrationModal open={faceRegOpen} onClose={() => setFaceRegOpen(false)} />
@@ -5515,4 +5687,3 @@ function stageSubtitleFor(stage: number): string {
     default: return '';
   }
 }
-
