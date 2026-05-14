@@ -23,6 +23,8 @@ use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeavePlanController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\MasterController;
+use App\Http\Controllers\Api\MyTeamController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OrganizationTypeController;
 use App\Http\Controllers\Api\PlanController;
@@ -198,6 +200,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // against an employee. Inbox surfaces signature tasks where the current
     // user is the next signer. Declare /inbox BEFORE apiResource so the
     // literal segment doesn't get captured as an id.
+    // My Team — profile-dropdown destination for anyone who manages people.
+    // Returns the visible employees + unified approval queue (currently doc
+    // signatures only; expense / leave plug in later).
+    Route::get ('/my-team/employees',                    [MyTeamController::class, 'employees']);
+    Route::get ('/my-team/approvals',                    [MyTeamController::class, 'approvals']);
+
     Route::get ('/hr-document-signatures/inbox',        [HrDocumentSignatureController::class, 'inbox']);
     Route::post('/hr-document-signatures/{id}/action',  [HrDocumentSignatureController::class, 'action']);
     Route::post('/hr-document-signatures/{id}/reject',  [HrDocumentSignatureController::class, 'reject']);
@@ -273,6 +281,14 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/leave-requests/{id}/approve',                [LeaveRequestController::class, 'approve']);
     Route::post  ('/leave-requests/{id}/reject',                 [LeaveRequestController::class, 'reject']);
     Route::post  ('/leave-requests/{id}/cancel',                 [LeaveRequestController::class, 'cancel']);
+
+    // In-app notifications — drives the bell-icon dropdown in the topbar.
+    // Backed by Laravel's notifications table; rows are written by every
+    // notification class that includes 'database' in its via() array.
+    Route::get   ('/notifications',                              [NotificationController::class, 'index']);
+    Route::get   ('/notifications/unread-count',                 [NotificationController::class, 'unreadCount']);
+    Route::post  ('/notifications/read-all',                     [NotificationController::class, 'markAllRead']);
+    Route::post  ('/notifications/{id}/read',                    [NotificationController::class, 'markRead']);
 
     // Per-employee balance summary — drives the Leave tab cards on the
     // Employee Profile page (donut + ledger per assigned leave type).

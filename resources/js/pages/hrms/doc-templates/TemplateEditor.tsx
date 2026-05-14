@@ -50,7 +50,14 @@ export const STATIC_PLACEHOLDER_GROUPS: PlaceholderGroup[] = [
   ]},
 ];
 
-export type SignerLite = { role_name?: string | null; designation_name?: string | null };
+export type SignerLite = {
+  role_name?: string | null;
+  designation_name?: string | null;
+  // Carries the wizard's action ("Sign" | "Approve" | "Review & Acknowledge").
+  // The placeholder builder uses this to decide whether to emit a
+  // {{SignerNSign}} token — signatures only make sense for Sign signers.
+  action?: string | null;
+};
 
 // Loaded from /hr-custom-fields/known-tokens — the user-defined variables
 // that complement the static employee tokens above. Rendered in the sidebar
@@ -79,13 +86,16 @@ const SIGNER_TOKEN_RE = /^Signer\d+(Name|Designation|Date)$/;
 export function buildSignerGroup(signers: SignerLite[]): PlaceholderGroup {
   const fields: PlaceholderField[] = [];
   signers.forEach((s, i) => {
+    // Only Sign signers leave a footprint in the template body — Approve and
+    // Review & Acknowledge signers just view the doc and click their action,
+    // so surfacing Name / Date / Signature for them would be misleading
+    // (those tokens would never get filled in).
+    const action = (s.action || 'Sign').toString().toLowerCase();
+    if (action !== 'sign') return;
     const n = i + 1;
     const roleLabel = s.role_name ? ` (${s.role_name})` : '';
     fields.push({ label: `Signer ${n} Name${roleLabel}`, token: `{{Signer${n}Name}}` });
     fields.push({ label: `Signer ${n} Date`,             token: `{{Signer${n}Date}}` });
-    // Drop this token where the signer should sign. At signing time, the
-    // controller replaces it with the signer's typed name in a script
-    // font, and fills the corresponding {{SignerNDate}} automatically.
     fields.push({ label: `Signer ${n} Signature`,        token: `{{Signer${n}Sign}}` });
   });
   return { id: 'signers', label: 'Workflow Signers', fields };

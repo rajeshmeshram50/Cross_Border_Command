@@ -44,8 +44,17 @@ const ProfileDropdown = () => {
   // branch_user / employee / client_user are downstream of the plan.
   const canSeeMyPlan = user.user_type === 'client_admin';
 
+  // My Team — every user that manages people. The flag is computed
+  // server-side (/me) and folds in two paths: anyone who's been set as a
+  // reporting_manager on at least one employee, OR a branch_user /
+  // client_user / client_admin who always needs the team view.
+  const canSeeMyTeam = !!user.is_reporting_manager;
+
   const menuItems: { to: string; icon: string; label: string; grad: string }[] = [
     { to: '/profile',  icon: 'ri-user-3-line',     label: 'Profile',  grad: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' },
+    ...(canSeeMyTeam
+      ? [{ to: '/my-team',  icon: 'ri-team-line',      label: 'My Team',  grad: 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)' }]
+      : []),
     ...(canSeeMyPlan
       ? [{ to: '/my-plan',  icon: 'ri-bank-card-line',  label: 'My Plan',  grad: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)' }]
       : []),

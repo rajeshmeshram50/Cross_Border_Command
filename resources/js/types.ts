@@ -44,6 +44,10 @@ export interface AuthUser {
   primary_color?: string | null;
   secondary_color?: string | null;
   is_main_branch?: boolean;
+  // Computed server-side: true for any login that should see the My Team
+  // dropdown (anyone with direct reports + every branch / client user).
+  is_reporting_manager?: boolean;
+  has_direct_reports?: boolean;
   status: string;
   designation?: string;
   phone?: string;

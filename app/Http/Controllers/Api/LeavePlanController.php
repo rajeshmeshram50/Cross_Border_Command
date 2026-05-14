@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Employee;
+use App\Models\LeaveRequest;
 use App\Models\Masters\LeavePlanLeaveType;
 use App\Models\Masters\LeavePlans;
 use App\Models\Masters\LeaveTypes;
@@ -324,14 +325,26 @@ class LeavePlanController extends Controller
         ]);
         $ids = array_values(array_unique(array_map('intval', $data['employee_ids'])));
 
-        // Verify all employees belong to the same client+branch as the plan.
+        // Verify all employees belong to the plan's tenant. Client_id is
+        // required to match; branch_id is permissive — an employee whose
+        // own branch_id is NULL (common when HR didn't set it on intake)
+        // can still be assigned to a branch-scoped plan in the same
+        // client. This matches the relaxed scoping the master pages use
+        // and avoids "silent assign failed" UX when the form doesn't
+        // expose branch_id during onboarding.
         $allowed = Employee::whereIn('id', $ids)
             ->where('client_id', $plan->client_id)
-            ->when($plan->branch_id !== null, fn($q) => $q->where('branch_id', $plan->branch_id))
+            ->when($plan->branch_id !== null, function ($q) use ($plan) {
+                $q->where(function ($w) use ($plan) {
+                    $w->where('branch_id', $plan->branch_id)
+                      ->orWhereNull('branch_id');
+                });
+            })
             ->pluck('id')->map(fn($v) => (int)$v)->all();
 
         if (count($allowed) !== count($ids)) {
-            abort(422, 'Some employees do not belong to this plan\'s tenant scope.');
+            $missing = array_diff($ids, $allowed);
+            abort(422, 'Some employees do not belong to this plan\'s tenant scope: ' . implode(',', $missing));
         }
 
         DB::transaction(function () use ($plan, $allowed, $user) {
