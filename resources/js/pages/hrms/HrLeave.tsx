@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
+import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 // Reuses the purple hero-card & hero-pill that HrEmployeeOnboarding ships
@@ -161,186 +162,6 @@ const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dummy data — replace with `GET /api/leaves?fy=2025-26` when wired.
-// Each row exercises a distinct branch of the approval workflow.
-// ─────────────────────────────────────────────────────────────────────────────
-const buildRequests = (): LeaveRequest[] => [
-  {
-    id: 'LV-1042', empCode: 'LV-001',
-    empInitials: 'GJ', empName: 'Gaurav Jagtap', empRole: 'Software Development', accent: accent(0),
-    department: 'Engineering', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Annual', durationDays: 3, durationLabel: '3 days',
-    fromDate: '2026-04-14', toDate: '2026-04-16', appliedOn: '2026-04-12',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'PL', name: 'Pranav Lokhande', designation: 'Project Manager' },
-    managerStatus: 'Approved', managerActionAt: '2026-04-13', managerComment: 'Approved — please share handover notes before EOD.',
-    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Approved',
-    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Parth',
-    proofType: 'Function Card', proofFileName: 'wedding-card.pdf', proofMimeType: 'application/pdf',
-    proofSizeKb: 412, proofUploadedAt: '2026-04-12',
-    reason: 'Family function',
-  },
-  {
-    id: 'LV-1043', empCode: 'LV-002',
-    empInitials: 'RC', empName: 'Ritika Chauhan', empRole: 'UI/UX Designing', accent: accent(1),
-    department: 'Design', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Sick', durationDays: 2, durationLabel: '2 days',
-    fromDate: '2026-04-09', toDate: '2026-04-10', appliedOn: '2026-04-07',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'PL', name: 'Pranav Lokhande', designation: 'Team Lead — Design' },
-    managerStatus: 'Approved', managerActionAt: '2026-04-08', managerComment: 'Get well soon.',
-    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Approved',
-    payroll: 'Paid Leave', proof: 'Missing', proofVia: 'Parth',
-    proofType: 'Medical Certificate',
-    reason: 'Fever — medical leave',
-  },
-  {
-    id: 'LV-1044', empCode: 'LV-003',
-    empInitials: 'HT', empName: 'Harsh Thakur', empRole: 'Business Analyst', accent: accent(2),
-    department: 'Operations', location: 'Pune', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Casual', durationDays: 1, durationLabel: '1 day',
-    fromDate: '2026-04-11', toDate: '2026-04-11', appliedOn: '2026-04-08',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'AG', name: 'Arun Gupta', designation: 'Reporting Manager' },
-    managerStatus: 'Pending',
-    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Pending (Manager)', stageNote: '3d pending',
-    payroll: 'Paid Leave', proof: 'N/A', reason: 'Personal work',
-  },
-  {
-    id: 'LV-1045', empCode: 'LV-004',
-    empInitials: 'SJ', empName: 'Swati Joshi', empRole: 'Software Testing', accent: accent(3),
-    department: 'Engineering', location: 'Bengaluru', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Sick', durationDays: 1, durationLabel: '1 day',
-    fromDate: '2026-04-08', toDate: '2026-04-08', appliedOn: '2026-04-06',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'AP', name: 'Atharv Patil', designation: 'QA Lead' },
-    managerStatus: 'Approved', managerActionAt: '2026-04-07',
-    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Approved',
-    payroll: 'Paid Leave', proof: 'Missing', proofVia: 'Atharv',
-    proofType: 'Medical Prescription',
-    reason: 'Medical appointment',
-  },
-  {
-    id: 'LV-1046', empCode: 'LV-005',
-    empInitials: 'NK', empName: 'Neha Kulkarni', empRole: 'Product Design', accent: accent(4),
-    department: 'Design', location: 'Bengaluru', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Earned', durationDays: 5, durationLabel: '5 days',
-    fromDate: '2026-04-21', toDate: '2026-04-25', appliedOn: '2026-04-14',
-    raisedBy: 'hr',
-    reportingManager: { initials: 'VR', name: 'Vishal Rao', designation: 'Design Head' },
-    hrApprover: { initials: 'RV', name: 'Rajesh Verma', designation: 'HR Manager' },
-    managerStatus: 'NA',
-    hrStatus: 'Pending',
-    escalatedToHr: true, escalationReason: 'hr_raised',
-    stage: 'Pending (HR)', stageNote: '1d pending · HR-raised',
-    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Vishal',
-    proofType: 'Travel Itinerary', proofFileName: 'goa-itinerary.pdf', proofMimeType: 'application/pdf',
-    proofSizeKb: 287, proofUploadedAt: '2026-04-14',
-    reason: 'Carry-forward leave — vacation',
-  },
-  {
-    id: 'LV-1047', empCode: 'LV-006',
-    empInitials: 'RG', empName: 'Rahul Gupta', empRole: 'Account Executive', accent: accent(5),
-    department: 'Sales', location: 'Delhi', legalEntity: 'IGC India Pvt Ltd',
-    type: 'LOP', durationDays: 2, durationLabel: '2 days',
-    fromDate: '2026-04-02', toDate: '2026-04-03', appliedOn: '2026-04-01',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'PI', name: 'Priya Iyer', designation: 'Sales Lead' },
-    hrApprover: { initials: 'RV', name: 'Rajesh Verma', designation: 'HR Manager' },
-    managerStatus: 'Rejected', managerActionAt: '2026-04-02', managerComment: 'Quarter close week — cannot release.',
-    hrStatus: 'Approved', hrActionAt: '2026-04-02', hrComment: 'Approved as exception — verified personal emergency.',
-    escalatedToHr: true, escalationReason: 'manager_rejected',
-    stage: 'Approved', stageNote: 'HR override',
-    payroll: 'Unpaid', proof: 'N/A', reason: 'Personal emergency',
-  },
-  {
-    id: 'LV-1048', empCode: 'LV-007',
-    empInitials: 'KS', empName: 'Karan Singh', empRole: 'Software Engineer', accent: accent(6),
-    department: 'Engineering', location: 'Pune', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Casual', durationDays: 4, durationLabel: '4 days',
-    fromDate: '2026-04-17', toDate: '2026-04-20', appliedOn: '2026-04-12',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'AG', name: 'Arun Gupta', designation: 'Engineering Manager' },
-    hrApprover: { initials: 'RV', name: 'Rajesh Verma', designation: 'HR Manager' },
-    managerStatus: 'Rejected', managerActionAt: '2026-04-13', managerComment: 'Sprint close conflicts with these dates.',
-    hrStatus: 'Rejected', hrActionAt: '2026-04-14', hrComment: 'Concur with manager — re-apply for next sprint.',
-    escalatedToHr: true, escalationReason: 'manager_rejected',
-    stage: 'Rejected',
-    payroll: 'Paid Leave', proof: 'N/A', reason: 'Wedding in family',
-  },
-  {
-    id: 'LV-1049', empCode: 'LV-008',
-    empInitials: 'DN', empName: 'Deepa Nair', empRole: 'Finance Analyst', accent: accent(7),
-    department: 'Finance', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Earned', durationDays: 3, durationLabel: '3 days',
-    fromDate: '2026-04-28', toDate: '2026-04-30', appliedOn: '2026-04-04',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'NM', name: 'Nikhil Mehra', designation: 'Finance Lead' },
-    hrApprover: { initials: 'RV', name: 'Rajesh Verma', designation: 'HR Manager' },
-    managerStatus: 'Pending',
-    hrStatus: 'Pending',
-    escalatedToHr: true, escalationReason: 'aged_out',
-    stage: 'Pending (HR)', stageNote: '8d pending · auto-escalated',
-    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Self',
-    proofType: 'Booking Confirmation', proofFileName: 'flight-tickets.pdf', proofMimeType: 'application/pdf',
-    proofSizeKb: 198, proofUploadedAt: '2026-04-04',
-    reason: 'Annual vacation — pre-booked tickets',
-  },
-  // ── Approved leaves spanning today (TODAY_DEMO = 2026-04-22) so the
-  //    "On Leave Today" panel always has someone to surface in the demo. ──
-  {
-    id: 'LV-1050', empCode: 'LV-009',
-    empInitials: 'AM', empName: 'Aarav Mehta', empRole: 'Software Development', accent: accent(0),
-    department: 'Engineering', location: 'Bengaluru', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Annual', durationDays: 6, durationLabel: '6 days',
-    fromDate: '2026-04-20', toDate: '2026-04-25', appliedOn: '2026-04-08',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'GJ', name: 'Gaurav Jagtap', designation: 'Engineering Manager' },
-    managerStatus: 'Approved', managerActionAt: '2026-04-09', managerComment: 'Enjoy your break.',
-    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Approved',
-    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Self',
-    proofType: 'Travel Itinerary', proofFileName: 'goa-trip.pdf', proofMimeType: 'application/pdf',
-    proofSizeKb: 234, proofUploadedAt: '2026-04-08',
-    reason: 'Pre-planned vacation',
-  },
-  {
-    id: 'LV-1051', empCode: 'LV-010',
-    empInitials: 'PS', empName: 'Priya Sharma', empRole: 'Human Resources', accent: accent(2),
-    department: 'HR', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Casual', durationDays: 1, durationLabel: '1 day',
-    fromDate: '2026-04-22', toDate: '2026-04-22', appliedOn: '2026-04-19',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'SG', name: 'Sunita Ghosh', designation: 'HR Head' },
-    managerStatus: 'Approved', managerActionAt: '2026-04-20',
-    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Approved',
-    payroll: 'Paid Leave', proof: 'N/A',
-    reason: 'Personal work',
-  },
-  {
-    id: 'LV-1052', empCode: 'LV-011',
-    empInitials: 'VN', empName: 'Vikram Nair', empRole: 'Product Management', accent: accent(4),
-    department: 'Product', location: 'Mumbai', legalEntity: 'IGC India Pvt Ltd',
-    type: 'Sick', durationDays: 3, durationLabel: '3 days',
-    fromDate: '2026-04-21', toDate: '2026-04-23', appliedOn: '2026-04-21',
-    raisedBy: 'employee',
-    reportingManager: { initials: 'AG', name: 'Arun Gupta', designation: 'CTO' },
-    managerStatus: 'Approved', managerActionAt: '2026-04-21', managerComment: 'Get well soon.',
-    hrStatus: 'NA', escalatedToHr: false, escalationReason: 'none',
-    stage: 'Approved',
-    payroll: 'Paid Leave', proof: 'Uploaded', proofVia: 'Self',
-    proofType: 'Medical Certificate', proofFileName: 'med-cert.pdf', proofMimeType: 'application/pdf',
-    proofSizeKb: 158, proofUploadedAt: '2026-04-21',
-    reason: 'Viral fever',
-  },
-];
-
-// ─────────────────────────────────────────────────────────────────────────────
 // AnimatedNumber — same count-up the recruitment KPIs use.
 // ─────────────────────────────────────────────────────────────────────────────
 function AnimatedNumber({ value }: { value: number }) {
@@ -448,6 +269,95 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
 // four cards. Anchoring against a fixed demo date so the panel is always
 // populated until the backend feeds real `LEAVE_REQUESTS.startDate <= today
 // <= endDate` data.
+// ─────────────────────────────────────────────────────────────────────────────
+// API → LeaveRequest adapter. The interface above carries a bunch of fields
+// that the backend doesn't yet expose per-row (location, legalEntity, full
+// proof metadata, escalation reason). For each unknown field the adapter
+// emits a sensible default so the existing table cells keep rendering
+// without a wider type rewrite. As the backend grows these fields, the
+// adapter is the only place that needs to learn about them.
+// ─────────────────────────────────────────────────────────────────────────────
+function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
+  const emp = api.employee;
+  const empName = emp
+    ? (emp.display_name?.trim() || `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim())
+    : '—';
+  const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+  const empRole = emp?.designation?.name
+    || emp?.department?.name
+    || '—';
+
+  // Map status + current_approval_level chain to the legacy stage shape.
+  const chain = (api as any).approval_chain as Array<{ status?: string }> | null;
+  const status = api.status;
+  let stage: LeaveStage = 'Pending (Manager)';
+  let managerStatus: ApprovalState = 'Pending';
+  let hrStatus: ApprovalState = 'Pending';
+  if (status === 'Approved') {
+    stage = 'Approved';
+    managerStatus = 'Approved';
+    hrStatus = chain && chain.length > 1 ? 'Approved' : 'Pending';
+  } else if (status === 'Rejected') {
+    stage = 'Rejected';
+    managerStatus = 'Rejected';
+    hrStatus = 'Pending';
+  } else if (status === 'Cancelled') {
+    stage = 'Rejected';   // closest existing stage tone
+    managerStatus = 'Rejected';
+    hrStatus = 'Pending';
+  } else {
+    // Pending — distinguish manager vs HR by which level we're currently on
+    const level = (api as any).current_approval_level ?? 1;
+    stage = level > 1 ? 'Pending (HR)' : 'Pending (Manager)';
+  }
+
+  // Map the leave_type category to the existing LeaveType union. Falls
+  // through to "Casual" for anything we don't recognise — the table cell
+  // will still render with whatever palette is configured.
+  const typeMap: Record<string, LeaveType> = {
+    'Sick Leave': 'Sick', 'Casual Leave': 'Casual', 'Annual Leave': 'Annual',
+    'Earned Leave': 'Earned', 'Comp Off': 'Comp Off',
+  };
+  const type: LeaveType = typeMap[api.leave_type?.name ?? ''] ?? (
+    (api.leave_type?.type === 'Unpaid Leave') ? 'LOP' : 'Casual'
+  );
+
+  const days = Number(api.days);
+  return {
+    id: String(api.id),
+    empCode: emp?.emp_code || `EMP-${emp?.id ?? idx}`,
+    empInitials: initials,
+    empName,
+    empRole,
+    department: emp?.department?.name || '—',
+    location: '—',
+    legalEntity: '—',
+    accent: accent(idx),
+    type,
+    durationDays: days,
+    durationLabel: days === 1 ? '1 day' : `${days} days`,
+    fromDate: typeof api.from_date === 'string' ? api.from_date.slice(0, 10) : '',
+    toDate: typeof api.to_date === 'string' ? api.to_date.slice(0, 10) : '',
+    appliedOn: typeof api.created_at === 'string' ? api.created_at.slice(0, 10) : '',
+    raisedBy: 'employee',
+    reportingManager: { initials: '—', name: '—', designation: 'Reporting Manager' },
+    hrApprover: api.approver ? { initials: (api.approver.name || '?').split(/\s+/).map(s => s[0]).join('').slice(0,2).toUpperCase(), name: api.approver.name, designation: 'Approver' } : undefined,
+    managerStatus,
+    managerActionAt: api.approved_at ? api.approved_at.slice(0, 10) : undefined,
+    managerComment: api.approver_comment ?? undefined,
+    hrStatus,
+    hrActionAt: undefined,
+    hrComment: undefined,
+    escalatedToHr: false,
+    escalationReason: 'none',
+    stage,
+    stageNote: undefined,
+    payroll: (api.leave_type?.type === 'Unpaid Leave' ? 'Unpaid' : 'Paid Leave') as PayrollMode,
+    proof: 'N/A',
+    reason: api.reason ?? '',
+  };
+}
+
 const TODAY_DEMO = '2026-04-22';
 const KPI_CARDS = [
   { key: 'total',    label: 'Total Requests',   icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#0c63b0,#0ea5e9)' },
@@ -458,7 +368,24 @@ const KPI_CARDS = [
 
 export default function HrLeave() {
   const navigate = useNavigate();
-  const [requests, setRequests] = useState<LeaveRequest[]>(buildRequests);
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
+
+  // Pull every leave request the current user is allowed to see.
+  // /api/leave-requests/approvals scopes server-side: branch_user /
+  // client_admin / super_admin see the whole tenant; regular users see
+  // their direct reports + anything they've already acted on. The
+  // status filter is undefined here so we get All — the page's own
+  // tabs filter further client-side.
+  const loadRequests = useCallback(async () => {
+    try {
+      const list = await leaveRequestsApi.approvals({ status: undefined });
+      setRequests(list.map(apiToLeaveRequest));
+    } catch (err) {
+      console.warn('[HrLeave] failed to load leave requests', err);
+      setRequests([]);
+    }
+  }, []);
+  useEffect(() => { loadRequests(); }, [loadRequests]);
 
   // Confirmation popup for the Approve / Reject row actions. Open state
   // carries which row is being actioned and the intent so the modal copy +
@@ -467,32 +394,31 @@ export default function HrLeave() {
     { row: LeaveRequest; action: 'approve' | 'reject' } | null
   >(null);
 
-  const applyAction = (comment: string) => {
+  const applyAction = async (comment: string) => {
     if (!confirmAction) return;
     const { row, action } = confirmAction;
-    const today = new Date().toISOString().slice(0, 10);
-    setRequests(prev => prev.map(r => {
-      if (r.id !== row.id) return r;
+    const id = Number(row.id);
+    if (!Number.isFinite(id)) {
+      setConfirmAction(null);
+      return;
+    }
+    try {
       if (action === 'approve') {
-        return {
-          ...r,
-          managerStatus: 'Approved',
-          managerActionAt: today,
-          managerComment: comment.trim() || r.managerComment,
-          stage: 'Approved',
-          stageNote: undefined,
-        };
+        await leaveRequestsApi.approve(id, comment.trim() || undefined);
+      } else {
+        await leaveRequestsApi.reject(id, comment.trim() || undefined);
       }
-      return {
-        ...r,
-        managerStatus: 'Rejected',
-        managerActionAt: today,
-        managerComment: comment.trim() || r.managerComment,
-        stage: 'Rejected',
-        stageNote: undefined,
-      };
-    }));
-    setConfirmAction(null);
+      // Refetch so the chain / stage / approver columns reflect the
+      // server's decision (multi-level chains may advance instead of
+      // terminating, which the local optimistic update wouldn't get
+      // right).
+      await loadRequests();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Action failed';
+      alert(msg);
+    } finally {
+      setConfirmAction(null);
+    }
   };
 
   // Filter state. Tabs drive the Status filter (no separate dropdown for it
