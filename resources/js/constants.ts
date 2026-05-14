@@ -192,6 +192,10 @@ export const HR_GROUPS: MenuGroup[] = [
     icon: 'FileText',
     children: [
       { id: 'hr.broadcast', icon: 'Megaphone', label: 'Broadcast Centre' },
+      // Trigger Point Master — branch-only master defining lifecycle trigger
+      // modules (Onboarding, Offboarding, Event-Based) used by Doc Generation
+      // Rules. Routes through /master/trigger_point (master.* convention).
+      { id: 'master.trigger_point', icon: 'Zap', label: 'Trigger Point Master' },
     ],
   },
   // Attendance Master Management — branch-only configuration of leave

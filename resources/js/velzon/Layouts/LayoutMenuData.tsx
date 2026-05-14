@@ -76,6 +76,9 @@ const hrLeafLink = (leafId: string): string => {
     // they're standard MasterController-backed CRUD masters.
     case "master.leave_type": return "/master/leave_type";
     case "master.leave_plan": return "/master/leave_plan";
+    // Trigger Point Master — lives under HR > Document & Evidence but reuses
+    // the generic /master/:slug page shell. See masterConfigs.ts.
+    case "master.trigger_point": return "/master/trigger_point";
     default:               return "/hr";
   }
 };

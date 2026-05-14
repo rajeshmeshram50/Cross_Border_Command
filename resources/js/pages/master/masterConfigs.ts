@@ -1813,6 +1813,37 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
+  // ---------- HR · DOCUMENT & EVIDENCE ----------
+  // Trigger Point Master — defines lifecycle trigger modules (Onboarding,
+  // Offboarding, Event-Based, etc.) that the Doc Generation Rules engine
+  // hangs auto-generation rules off of. Visible inside HR > Document &
+  // Evidence; reuses the generic /master/:slug page shell.
+  trigger_point: {
+    key: 'trigger_point', slug: 'trigger_point', title: 'Trigger Point Master', titleSingular: 'Trigger',
+    icon: 'ri-flashlight-line', iconColor: 'warning', iconBg: 'warning',
+    desc: 'Define lifecycle trigger modules for document generation',
+    cat: 'Document & Evidence',
+    fields: [
+      { n: 'module_name', l: 'Module Name', t: 'text', r: true, p: 'e.g. Onboarding, Offboarding, Event Based', full: true },
+      { n: 'description', l: 'Description', t: 'textarea', p: 'Describe when this trigger activates and what documents it generates...', full: true },
+      { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
+    ],
+    cols: ['module_name', 'description', 'status'],
+    colL: ['Module Name', 'Description', 'Status'],
+    uFields: ['module_name'],
+    data: [],
+    kpis: [
+      { label: 'Total Triggers', icon: 'ri-flashlight-line',       gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', compute: r => r.length },
+      { label: 'Active',         icon: 'ri-checkbox-circle-line',  gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
+      { label: 'Inactive',       icon: 'ri-close-circle-line',     gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
+    ],
+    wtd: [
+      { icon: 'ri-flashlight-line',      title: 'Name the Trigger',  desc: 'e.g. Onboarding, Offboarding, Event Based' },
+      { icon: 'ri-edit-line',            title: 'Add a Description', desc: 'When does it activate, which docs are generated?' },
+      { icon: 'ri-checkbox-circle-line', title: 'Activate',          desc: 'Active triggers can be wired into doc generation rules' },
+    ],
+  },
+
   freezers: {
     key: 'freezers', slug: 'freezers', title: 'Freezer Management', titleSingular: 'Freezer',
     icon: 'ri-snowy-line', iconColor: 'info', iconBg: 'info',

@@ -70,6 +70,7 @@ class MasterController extends Controller
         'freezers' => \App\Models\Masters\Freezers::class,
         'leave_type' => \App\Models\Masters\LeaveTypes::class,
         'leave_plan' => \App\Models\Masters\LeavePlans::class,
+        'trigger_point' => \App\Models\Masters\TriggerPoints::class,
     ];
 
     /**
@@ -130,6 +131,7 @@ class MasterController extends Controller
         'freezers' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'warehouse', 't' => 'select', 'r' => true, 'ref' => 'warehouse_master'], ['n' => 'capacity', 't' => 'number', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name', 'warehouse']],
         'leave_type' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'type', 't' => 'select', 'r' => true, 'opts' => ['Regular', 'Incident Based Leave', 'Unpaid Leave']], ['n' => 'short_code', 't' => 'text', 'r' => true, 'normalize' => 'upper'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['short_code'], 'tenantScoped' => true],
         'leave_plan' => ['fields' => [['n' => 'plan_name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'from_month_type', 't' => 'select', 'r' => true, 'opts' => ['Calendar', 'If Joining']], ['n' => 'from_month', 't' => 'select', 'opts' => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']], ['n' => 'calendar_year', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['plan_name'], 'tenantScoped' => true],
+        'trigger_point' => ['fields' => [['n' => 'module_name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['module_name'], 'tenantScoped' => true],
     ];
 
     /**
