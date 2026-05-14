@@ -128,12 +128,13 @@ export default function Inbox() {
   return (
     <Row>
       <Col xs={12}>
-        <div className="rec-page">
+        <div className="rec-page inbox-page">
+          <InboxDarkStyles />
           {/* Header */}
           <Card className="mb-3" style={{ borderRadius: 14 }}>
             <CardBody className="d-flex align-items-center justify-content-between flex-wrap gap-3">
               <div className="d-flex align-items-center gap-3">
-                <span style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span className="inbox-header-icon" style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                   <i className="ri-inbox-line" style={{ fontSize: 22, color: '#a16207' }} />
                 </span>
                 <div>
@@ -154,8 +155,8 @@ export default function Inbox() {
           <Card style={{ borderRadius: 12 }}>
             <CardBody style={{ padding: 0 }}>
               <div className="table-responsive">
-                <table className="table align-middle mb-0" style={{ fontSize: 13 }}>
-                  <thead style={{ background: '#fffbeb' }}>
+                <table className="table align-middle mb-0 inbox-table" style={{ fontSize: 13 }}>
+                  <thead className="inbox-thead" style={{ background: '#fffbeb' }}>
                     <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
                       <th style={{ padding: '10px 12px', width: 40 }}>#</th>
                       <th>Document</th>
@@ -170,7 +171,7 @@ export default function Inbox() {
                     {loading ? (
                       <ShimmerTableRows rows={5} cols={7} />
                     ) : rows.length === 0 ? (
-                      <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
+                      <tr><td colSpan={7} className="inbox-empty" style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
                         <i className="ri-checkbox-circle-line" style={{ fontSize: 36, display: 'block', marginBottom: 8 }} />
                         <div style={{ fontSize: 14, fontWeight: 600 }}>No pending documents</div>
                         <div style={{ fontSize: 12 }}>You're all caught up. Anything sent to you will land here.</div>
@@ -189,29 +190,30 @@ export default function Inbox() {
                           <tr key={r.id}>
                             <td>{i + 1}</td>
                             <td>
-                              <div style={{ fontWeight: 700 }}>{r.template?.name || '(template removed)'}</div>
-                              {r.code && <code style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}
+                              <div className="inbox-doc-name" style={{ fontWeight: 700 }}>{r.template?.name || '(template removed)'}</div>
+                              {r.code && <code className="inbox-code-pill" style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}
                             </td>
                             <td>
                               <div>{empName}</div>
-                              <div style={{ fontSize: 11.5, color: '#6b7280' }}>
+                              <div className="inbox-muted" style={{ fontSize: 11.5, color: '#6b7280' }}>
                                 {r.employee?.emp_code || '—'}
                                 {r.employee?.department?.name ? ` · ${r.employee.department.name}` : ''}
                               </div>
                             </td>
                             <td>
-                              <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, background: actionTone.bg, color: actionTone.fg }}>
+                              <span className={`inbox-action-pill inbox-action-${current?.action || 'Other'}`} style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, background: actionTone.bg, color: actionTone.fg }}>
                                 {current?.action || '—'}
                               </span>
                             </td>
                             <td style={{ fontSize: 12 }}>
                               Step <strong>{r.current_index + 1}</strong> of {r.signers.length}
                             </td>
-                            <td style={{ fontSize: 12, color: '#6b7280' }}>{new Date(r.created_at).toLocaleString()}</td>
+                            <td className="inbox-muted" style={{ fontSize: 12, color: '#6b7280' }}>{new Date(r.created_at).toLocaleString()}</td>
                             <td>
                               <div className="d-flex gap-1 flex-wrap">
                                 <button type="button" onClick={() => setViewRun(r)}
                                   title="Preview the document before deciding"
+                                  className="inbox-view-btn"
                                   style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                                   <i className="ri-eye-line me-1" />View
                                 </button>
@@ -238,7 +240,7 @@ export default function Inbox() {
         <ModalShell onClose={() => setViewRun(null)} title="Document Preview"
           subtitle={`${viewRun.template?.name || ''} · ${viewRun.code || ''}`}
           gradient="linear-gradient(135deg,#6366f1 0%,#8b5cf6 60%,#a855f7 100%)">
-          <div style={{ padding: 16, background: '#f9fafb', overflowY: 'auto', flex: 1 }}>
+          <div className="inbox-modal-body" style={{ padding: 16, background: '#f9fafb', overflowY: 'auto', flex: 1 }}>
             <HeaderFooterPanel
               header={{ ...DEFAULT_HEADER, ...(viewRun.header_config || {}) } as HeaderConfig}
               setHeader={() => {}}
@@ -252,8 +254,9 @@ export default function Inbox() {
               />
             </HeaderFooterPanel>
           </div>
-          <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <div className="inbox-modal-footer" style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" onClick={() => setViewRun(null)}
+              className="inbox-btn-ghost"
               style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
               Close
             </button>
@@ -274,7 +277,7 @@ export default function Inbox() {
             subtitle={`Action requested: ${current?.action} · ${actionRun.code || ''}`}
             hint={`Add a remark below, then choose ${current?.action} or Reject.`}
             gradient="linear-gradient(135deg,#6366f1,#8b5cf6)">
-            <div style={{ padding: 16, background: '#f9fafb', overflowY: 'auto', flex: 1 }}>
+            <div className="inbox-modal-body" style={{ padding: 16, background: '#f9fafb', overflowY: 'auto', flex: 1 }}>
               <HeaderFooterPanel
                 header={{ ...DEFAULT_HEADER, ...(actionRun.header_config || {}) } as HeaderConfig}
                 setHeader={() => {}}
@@ -288,30 +291,31 @@ export default function Inbox() {
                 />
               </HeaderFooterPanel>
 
-              <div style={{ marginTop: 14, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+              <div className="inbox-form-card" style={{ marginTop: 14, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>
                 {isSign && (
                   <>
-                    <label style={inputLabelStyle}>Type your name to sign <span style={{ color: '#ef4444' }}>*</span></label>
+                    <label className="inbox-input-label" style={inputLabelStyle}>Type your name to sign <span style={{ color: '#ef4444' }}>*</span></label>
                     <input type="text" value={actionName} onChange={e => setActionName(e.target.value)}
                       placeholder="Your full name"
+                      className="inbox-input"
                       style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14 }} />
                     {actionName && (
-                      <div style={{ marginTop: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 11.5, color: '#6b7280' }}>
+                      <div className="inbox-sig-preview" style={{ marginTop: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 11.5, color: '#6b7280' }}>
                         Preview: <span style={{ fontFamily: '"Brush Script MT", cursive', fontSize: 22, color: '#1d4ed8', marginLeft: 6 }}>{actionName}</span>
                       </div>
                     )}
                   </>
                 )}
-                <label style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Remark</label>
+                <label className="inbox-input-label" style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Remark</label>
                 <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
                   placeholder="Add a remark — optional when approving, REQUIRED when rejecting (describe what should change)."
-                  rows={3} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
-                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                  rows={3} className="inbox-input" style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
+                <div className="inbox-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
                   Remarks land in the audit trail. Rejection halts the workflow and returns the document to the sender.
                 </div>
               </div>
             </div>
-            <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div className="inbox-modal-footer" style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => submitDecision('reject')}
                 disabled={submitting || !actionNote.trim()}
                 title={actionNote.trim() ? 'Reject with this remark' : 'Add a remark first'}
@@ -320,6 +324,7 @@ export default function Inbox() {
               </button>
               <div className="d-flex gap-2">
                 <button type="button" onClick={() => setActionRun(null)} disabled={submitting}
+                  className="inbox-btn-ghost"
                   style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
                   Cancel
                 </button>
@@ -356,11 +361,11 @@ function ModalShell({
   gradient: string; children: React.ReactNode;
 }) {
   return (
-    <div style={{
+    <div className="inbox-modal-backdrop" style={{
       position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 1500,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
     }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 880, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+      <div className="inbox-modal-card" style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 880, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
         onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: gradient, color: '#fff' }}>
           <div className="d-flex align-items-center justify-content-between">
@@ -384,3 +389,74 @@ function ModalShell({
 const inputLabelStyle: React.CSSProperties = {
   fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4,
 };
+
+/* Dark-theme overrides. Page-scoped rules use .inbox-page; modal rules use
+   class names that don't require the wrapper since the modal is rendered as
+   a sibling of the page container. */
+function InboxDarkStyles() {
+  return (
+    <style>{`
+      [data-bs-theme="dark"] .inbox-page .inbox-header-icon {
+        background: linear-gradient(135deg, rgba(251,191,36,0.25), rgba(245,158,11,0.25)) !important;
+      }
+      [data-bs-theme="dark"] .inbox-page .inbox-thead {
+        background: rgba(251,191,36,0.10) !important;
+      }
+      [data-bs-theme="dark"] .inbox-page .inbox-thead tr,
+      [data-bs-theme="dark"] .inbox-page .inbox-thead th {
+        color: rgba(255,255,255,0.65) !important;
+      }
+      [data-bs-theme="dark"] .inbox-page .inbox-table tbody td {
+        border-bottom-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color);
+      }
+      [data-bs-theme="dark"] .inbox-page .inbox-doc-name { color: rgba(255,255,255,0.95) !important; }
+      [data-bs-theme="dark"] .inbox-page .inbox-muted { color: rgba(255,255,255,0.55) !important; }
+      [data-bs-theme="dark"] .inbox-page .inbox-empty { color: rgba(255,255,255,0.5) !important; }
+      [data-bs-theme="dark"] .inbox-page .inbox-code-pill {
+        background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
+      }
+      [data-bs-theme="dark"] .inbox-page .inbox-action-Sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
+      [data-bs-theme="dark"] .inbox-page .inbox-action-Approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
+      [data-bs-theme="dark"] .inbox-page .inbox-action-Other   { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
+      [data-bs-theme="dark"] .inbox-page .inbox-view-btn {
+        background: rgba(99,102,241,0.18) !important; color: #c4b5fd !important;
+        border-color: rgba(124,92,252,0.35) !important;
+      }
+
+      /* Modals — rendered as siblings of the page card, scoped only by the
+         class names on the modal itself. */
+      [data-bs-theme="dark"] .inbox-modal-card {
+        background: var(--vz-card-bg) !important;
+        color: var(--vz-body-color);
+      }
+      [data-bs-theme="dark"] .inbox-modal-body {
+        background: var(--vz-secondary-bg) !important;
+      }
+      [data-bs-theme="dark"] .inbox-modal-footer {
+        border-top-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .inbox-form-card {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .inbox-input {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .inbox-input::placeholder { color: rgba(255,255,255,0.45) !important; }
+      [data-bs-theme="dark"] .inbox-input-label { color: rgba(255,255,255,0.55) !important; }
+      [data-bs-theme="dark"] .inbox-sig-preview {
+        background: var(--vz-secondary-bg) !important;
+        color: rgba(255,255,255,0.65) !important;
+      }
+      [data-bs-theme="dark"] .inbox-hint { color: rgba(255,255,255,0.45) !important; }
+      [data-bs-theme="dark"] .inbox-btn-ghost {
+        background: var(--vz-secondary-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+    `}</style>
+  );
+}
