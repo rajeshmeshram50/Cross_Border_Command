@@ -1447,6 +1447,30 @@ function VaultModal({
     }
   };
 
+  // Same reject path as the MyTeam page — Note field doubles as the
+  // required reason, the controller halts the workflow on the row, and
+  // the sender sees the suggestion in the audit trail.
+  const submitReject = async () => {
+    if (!actionRun) return;
+    const reason = actionNote.trim();
+    if (!reason) {
+      toast.error('Reason required', 'Add a suggestion in the Note field explaining what should change.');
+      return;
+    }
+    if (!confirm(`Reject ${actionRun.code || 'this document'}? The workflow will halt and the sender will see your reason.`)) return;
+    setActionSubmitting(true);
+    try {
+      await api.post(`/hr-document-signatures/${actionRun.id}/reject`, { reason });
+      toast.success('Rejected', `${actionRun.code || `Run #${actionRun.id}`} returned to the sender with your reason.`);
+      setActionRun(null);
+      fetchRuns();
+    } catch (err: any) {
+      toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
   // Click "Generate" → backend resolves {{Tokens}} with this employee's
   // data and streams the filled DOCX back.
   const handleGenerate = async (tpl: MatchedTemplate) => {
@@ -2064,23 +2088,36 @@ function VaultModal({
                       </>
                     )}
                     <label style={{ fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4, marginTop: isSign ? 12 : 0 }}>
-                      Note (optional)
+                      Note / Reason for rejection
                     </label>
                     <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
-                      placeholder="Add a comment for the audit trail"
-                      rows={2} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
+                      placeholder="Optional for approval — REQUIRED if you reject. Describe what should change."
+                      rows={3} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
+                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                      Rejection halts the workflow and returns the document to the sender with your suggestion.
+                    </div>
                   </div>
                 </div>
-                <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8, background: '#fff' }}>
-                  <button type="button" onClick={() => setActionRun(null)} disabled={actionSubmitting}
-                    style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
-                    Cancel
+                <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, background: '#fff', flexWrap: 'wrap' }}>
+                  {/* Reject — sits on the left, separated from the positive
+                      action. Enabled only once a reason has been entered. */}
+                  <button type="button" onClick={submitReject}
+                    disabled={actionSubmitting || !actionNote.trim()}
+                    title={actionNote.trim() ? 'Reject with this reason' : 'Add a reason in the Note field first'}
+                    style={{ padding: '7px 14px', background: actionNote.trim() ? 'linear-gradient(135deg,#dc2626,#ef4444)' : '#fee2e2', color: actionNote.trim() ? '#fff' : '#b91c1c', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: actionNote.trim() ? 'pointer' : 'not-allowed', opacity: actionNote.trim() ? 1 : 0.7 }}>
+                    <i className="ri-close-circle-line me-1" />Reject &amp; Send Back
                   </button>
-                  <button type="button" onClick={submitAction} disabled={actionSubmitting || (isSign && !actionName.trim())}
-                    style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
-                    <i className={isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} style={{ marginRight: 6 }} />
-                    {actionSubmitting ? 'Submitting…' : `Confirm ${current?.action}`}
-                  </button>
+                  <div className="d-flex gap-2">
+                    <button type="button" onClick={() => setActionRun(null)} disabled={actionSubmitting}
+                      style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                      Cancel
+                    </button>
+                    <button type="button" onClick={submitAction} disabled={actionSubmitting || (isSign && !actionName.trim())}
+                      style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+                      <i className={isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} style={{ marginRight: 6 }} />
+                      {actionSubmitting ? 'Submitting…' : `Confirm ${current?.action}`}
+                    </button>
+                  </div>
                 </div>
               </>
             );

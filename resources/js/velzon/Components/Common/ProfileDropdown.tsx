@@ -50,8 +50,14 @@ const ProfileDropdown = () => {
   // client_user / client_admin who always needs the team view.
   const canSeeMyTeam = !!user.is_reporting_manager;
 
-  const menuItems: { to: string; icon: string; label: string; grad: string }[] = [
+  // Inbox — visible to every signed-in user. Anyone can be the next signer
+  // on a workflow regardless of role; the page filters server-side.
+  // /me also returns inbox_count so we can show a numeric badge.
+  const inboxCount = typeof user.inbox_count === 'number' ? user.inbox_count : 0;
+
+  const menuItems: { to: string; icon: string; label: string; grad: string; badge?: number }[] = [
     { to: '/profile',  icon: 'ri-user-3-line',     label: 'Profile',  grad: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' },
+    { to: '/inbox',    icon: 'ri-inbox-line',      label: 'Inbox',    grad: 'linear-gradient(135deg, #f59e0b 0%, #f7b84b 100%)', badge: inboxCount },
     ...(canSeeMyTeam
       ? [{ to: '/my-team',  icon: 'ri-team-line',      label: 'My Team',  grad: 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)' }]
       : []),
@@ -296,6 +302,14 @@ const ProfileDropdown = () => {
                     <i className={item.icon} style={{ color: '#fff', fontSize: 14 }}></i>
                   </span>
                   <span className="fw-semibold flex-grow-1" style={{ fontSize: 12.5 }}>{item.label}</span>
+                  {typeof item.badge === 'number' && item.badge > 0 && (
+                    <span style={{
+                      minWidth: 22, padding: '0 6px', height: 18,
+                      borderRadius: 999, background: '#ef4444', color: '#fff',
+                      fontSize: 10.5, fontWeight: 800,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    }}>{item.badge > 99 ? '99+' : item.badge}</span>
+                  )}
                   <i className="ri-arrow-right-s-line cbc-profile-chev" />
                 </Link>
               </DropdownItem>

@@ -146,6 +146,30 @@ export default function MyTeam() {
     }
   };
 
+  // Rejection — reuses the Note field as the required rejection reason.
+  // Hits the controller's /reject endpoint which halts the workflow and
+  // stamps an audit-log entry with the reason for the next reviewer.
+  const submitReject = async () => {
+    if (!actionItem) return;
+    const reason = actionNote.trim();
+    if (!reason) {
+      toast.error('Reason required', 'Add a suggestion in the Note field explaining what should change.');
+      return;
+    }
+    if (!confirm(`Reject ${actionItem.code || 'this document'}? The workflow will halt and the sender will see your reason.`)) return;
+    setActionSubmitting(true);
+    try {
+      await api.post(`/hr-document-signatures/${actionItem.id}/reject`, { reason });
+      toast.success('Rejected', `${actionItem.code || `Run #${actionItem.id}`} returned to the sender with your reason.`);
+      setActionItem(null);
+      loadApprovals();
+    } catch (err: any) {
+      toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
   // ── Derived ────────────────────────────────────────────────────────────────
   const filteredEmployees = useMemo(() => {
     const needle = empSearch.trim().toLowerCase();
@@ -225,6 +249,7 @@ export default function MyTeam() {
           actionNote={actionNote} setActionNote={setActionNote}
           submitting={actionSubmitting}
           onSubmit={submitAction}
+          onReject={submitReject}
         />
       )}
 
@@ -420,10 +445,14 @@ function ApprovalsPanel({
                               <i className="ri-eye-line me-1" />View
                             </button>
                           )}
+                          {/* Neutral "Review" trigger — opens the decision
+                              dialog where the user can add a remark and
+                              choose Approve or Reject. Action verb sits in
+                              the ACTION column so it's still discoverable. */}
                           <button type="button" onClick={() => onAct(r)}
-                            style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                            <i className={r.action === 'Sign' ? 'ri-quill-pen-line me-1' : r.action === 'Approve' ? 'ri-check-double-line me-1' : 'ri-thumb-up-line me-1'} />
-                            {r.action}
+                            style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                            <i className="ri-checkbox-circle-line me-1" />
+                            Review &amp; Decide
                           </button>
                         </div>
                       </td>
@@ -444,12 +473,12 @@ function ActionModal({
   item, onClose,
   actionName, setActionName,
   actionNote, setActionNote,
-  submitting, onSubmit,
+  submitting, onSubmit, onReject,
 }: {
   item: ApprovalItem; onClose: () => void;
   actionName: string; setActionName: (v: string) => void;
   actionNote: string; setActionNote: (v: string) => void;
-  submitting: boolean; onSubmit: () => void;
+  submitting: boolean; onSubmit: () => void; onReject: () => void;
 }) {
   const isSign = item.action === 'Sign';
   const header = { ...DEFAULT_HEADER, ...(item.raw?.header_config || {}) } as HeaderConfig;
@@ -462,11 +491,16 @@ function ActionModal({
     }} onClick={onClose}>
       <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 880, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
         onClick={(e) => e.stopPropagation()}>
-        <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff' }}>
+        <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff' }}>
           <div className="d-flex align-items-center justify-content-between">
             <div>
-              <strong style={{ fontSize: 15 }}><i className="ri-quill-pen-line me-2" />{item.action}</strong>
-              <div style={{ fontSize: 11.5, opacity: 0.85 }}>{item.title} · {item.code}</div>
+              <strong style={{ fontSize: 15 }}><i className="ri-checkbox-circle-line me-2" />Review &amp; Decide</strong>
+              <div style={{ fontSize: 11.5, opacity: 0.9, marginTop: 2 }}>
+                Action requested: <strong>{item.action}</strong>{item.code ? ` · ${item.code}` : ''}
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
+                Add a remark below, then choose <strong>{item.action}</strong> or <strong>Reject</strong>.
+              </div>
             </div>
             <button type="button" onClick={onClose} aria-label="Close"
               style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
@@ -496,22 +530,45 @@ function ActionModal({
                 )}
               </>
             )}
-            <label style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Note (optional)</label>
+            <label style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Remark</label>
             <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
-              placeholder="Add a comment for the audit trail"
-              rows={2} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
+              placeholder="Add a remark — optional when approving, REQUIRED when rejecting (describe what should change)."
+              rows={3} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+              Remarks land in the audit trail. Rejection also halts the workflow and returns the document to the sender.
+            </div>
           </div>
         </div>
-        <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" onClick={onClose} disabled={submitting}
-            style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
-            Cancel
+        <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* Reject lives on the left so it's visually separated from the
+              positive action; both are still primary buttons. */}
+          <button type="button" onClick={onReject} disabled={submitting || !actionNote.trim()}
+            title={actionNote.trim() ? 'Reject with this reason' : 'Add a reason in the Note field first'}
+            style={{ padding: '7px 14px', background: actionNote.trim() ? 'linear-gradient(135deg,#dc2626,#ef4444)' : '#fee2e2', color: actionNote.trim() ? '#fff' : '#b91c1c', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: actionNote.trim() ? 'pointer' : 'not-allowed', opacity: actionNote.trim() ? 1 : 0.7 }}>
+            <i className="ri-close-circle-line me-1" />Reject &amp; Send Back
           </button>
-          <button type="button" onClick={onSubmit} disabled={submitting || (isSign && !actionName.trim())}
-            style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
-            <i className={isSign ? 'ri-quill-pen-line' : item.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} style={{ marginRight: 6 }} />
-            {submitting ? 'Submitting…' : `Confirm ${item.action}`}
-          </button>
+          <div className="d-flex gap-2">
+            <button type="button" onClick={onClose} disabled={submitting}
+              style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+              Cancel
+            </button>
+            {/* Primary action — green for Approve, blue for Sign, indigo
+                for Review & Acknowledge. Colour cues match the meaning of
+                the button so the decision is unambiguous. */}
+            <button type="button" onClick={onSubmit} disabled={submitting || (isSign && !actionName.trim())}
+              style={{
+                padding: '7px 16px',
+                background: item.action === 'Approve'
+                  ? 'linear-gradient(135deg,#16a34a,#22c55e)'
+                  : isSign
+                    ? 'linear-gradient(135deg,#0ea5e9,#3b82f6)'
+                    : 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+                border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer',
+              }}>
+              <i className={isSign ? 'ri-quill-pen-line' : item.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} style={{ marginRight: 6 }} />
+              {submitting ? 'Submitting…' : item.action}
+            </button>
+          </div>
         </div>
       </div>
     </div>

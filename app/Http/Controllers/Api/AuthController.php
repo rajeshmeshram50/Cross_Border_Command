@@ -477,6 +477,42 @@ class AuthController extends Controller
         $isReportingManager = $hasReports
             || in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true);
 
+        // Inbox count — number of in-flight document signatures where this
+        // user is the next signer. Surfaced on /me so the profile dropdown
+        // can render a badge without a second round-trip on every page load.
+        // Cheap lookup: the JSON `signers` column is small and the row is
+        // already filtered to Pending / In Progress.
+        $inboxCount = 0;
+        try {
+            $candidates = \App\Models\HrDocumentSignature::query()
+                ->whereIn('status', ['Pending', 'In Progress'])
+                ->when($user->user_type !== 'super_admin', function ($q) use ($user) {
+                    if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
+                        $q->where(function ($w) use ($user) {
+                            $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
+                        });
+                    } elseif (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+                        $q->where(function ($w) use ($user) {
+                            $w->where('client_id', $user->client_id)
+                              ->orWhere('employee_id', $linkedEmployeeId);
+                        });
+                    }
+                })
+                ->get(['id', 'signers', 'current_index']);
+            foreach ($candidates as $row) {
+                $signers = is_array($row->signers) ? $row->signers : [];
+                $current = $signers[(int) $row->current_index] ?? null;
+                if (!$current) continue;
+                if ((int) ($current['user_id'] ?? 0) !== (int) $user->id) continue;
+                if (($current['status'] ?? '') === 'Done') continue;
+                $inboxCount++;
+            }
+        } catch (\Throwable $e) {
+            // /me must never fail because of an inbox lookup; swallow and
+            // let the SPA fall back to fetching the inbox endpoint directly.
+            $inboxCount = 0;
+        }
+
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -510,6 +546,7 @@ class AuthController extends Controller
             'is_main_branch' => (bool) ($user->branch?->is_main),
             'is_reporting_manager' => $isReportingManager,
             'has_direct_reports'   => $hasReports,
+            'inbox_count'          => $inboxCount,
             'status' => $user->status,
             'designation' => $user->designation,
             'phone' => $user->phone,
