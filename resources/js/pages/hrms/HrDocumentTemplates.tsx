@@ -155,24 +155,40 @@ export default function HrDocumentTemplates() {
             </CardBody>
           </Card>
 
-          {/* Category top tabs */}
-          <div className="d-flex flex-wrap gap-2 mb-3">
+          {/* KPI strip — surfaces the count totals first so users see scale
+              before drilling into a category. */}
+          <div className="row g-2 mb-3">
+            {KPI.map(k => (
+              <div key={k.label} className="col-md-3 col-sm-6">
+                <div className="dtm-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
+                  <div style={{ height: 4, background: k.gradient }} />
+                  <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
+                    <div>
+                      <div className="dtm-kpi-num" style={{ fontSize: 22, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
+                      <div className="dtm-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
+                    </div>
+                    <span style={{ width: 38, height: 38, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Category top tabs — active/disable styling mirrors the
+              EmployeeProfile tabbar: inactive tabs render muted on a soft
+              tab-strip backdrop, active tab gets a bold colored fill. */}
+          <div className="dtm-cat-tabbar mb-3">
             {CATEGORIES.map(c => {
               const active = category === c.key;
               const cnt = stats.by_category?.[c.key] || 0;
               return (
                 <button key={c.key} type="button" onClick={() => setCategory(c.key)}
-                  className={`dtm-cat-tab${active ? ' is-active' : ''}`}
-                  style={{ flex: '1 1 250px', minWidth: 200, padding: '12px 16px', borderRadius: 12,
-                    border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
-                    background: active ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#fff',
-                    color: active ? '#fff' : '#374151', textAlign: 'left', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <span className="d-flex align-items-center gap-2">
-                    <span style={{ fontSize: 22 }}>{c.icon}</span>
-                    <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.label}</span>
-                  </span>
-                  <span style={{ fontSize: 11.5, background: active ? 'rgba(255,255,255,0.25)' : '#f3f4f6', color: active ? '#fff' : '#6b7280', padding: '2px 10px', borderRadius: 999, fontWeight: 700 }}>{cnt}</span>
+                  className={`dtm-cat-tab-btn${active ? ' is-active' : ''}`}>
+                  <span className="dtm-cat-tab-icon">{c.icon}</span>
+                  <span className="dtm-cat-tab-label">{c.label}</span>
+                  <span className="dtm-cat-tab-count">{cnt}</span>
                 </button>
               );
             })}
@@ -196,26 +212,6 @@ export default function HrDocumentTemplates() {
                 </button>
               );
             })}
-          </div>
-
-          {/* KPI strip */}
-          <div className="row g-2 mb-3">
-            {KPI.map(k => (
-              <div key={k.label} className="col-md-3 col-sm-6">
-                <div className="dtm-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
-                  <div style={{ height: 4, background: k.gradient }} />
-                  <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
-                    <div>
-                      <div className="dtm-kpi-num" style={{ fontSize: 22, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
-                      <div className="dtm-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
-                    </div>
-                    <span style={{ width: 38, height: 38, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
 
           {/* Filters + count badge */}
@@ -363,6 +359,58 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primar
 function DtmDarkStyles() {
   return (
     <style>{`
+      /* Category tabbar — mirrors EmployeeProfile's ep-tabbar pattern:
+         inactive buttons read as "disabled" (muted text, transparent fill)
+         and the active button gets a bold colored fill. Works on both
+         light and dark themes via Bootstrap CSS variables. */
+      .dtm-page .dtm-cat-tabbar {
+        display: flex; flex-wrap: wrap; gap: 6px;
+        padding: 6px;
+        background: var(--vz-secondary-bg);
+        border: 1px solid var(--vz-border-color);
+        border-radius: 12px;
+      }
+      .dtm-page .dtm-cat-tab-btn {
+        flex: 1 1 220px; min-width: 200px;
+        display: inline-flex; align-items: center; gap: 10px;
+        padding: 10px 14px;
+        background: transparent; border: 0;
+        color: var(--vz-secondary-color);
+        font-weight: 600; font-size: 13px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+        text-align: left;
+      }
+      .dtm-page .dtm-cat-tab-btn:hover {
+        background: var(--vz-card-bg);
+        color: var(--vz-heading-color, var(--vz-body-color));
+      }
+      .dtm-page .dtm-cat-tab-btn.is-active {
+        background: linear-gradient(135deg,#6366f1,#8b5cf6);
+        color: #fff;
+        font-weight: 700;
+        box-shadow: 0 4px 12px rgba(99,102,241,0.30);
+      }
+      .dtm-page .dtm-cat-tab-icon { font-size: 20px; line-height: 1; flex-shrink: 0; }
+      .dtm-page .dtm-cat-tab-label { flex: 1; }
+      .dtm-page .dtm-cat-tab-count {
+        font-size: 11px; font-weight: 700;
+        padding: 2px 9px; border-radius: 999px;
+        background: rgba(15,23,42,0.06); color: var(--vz-secondary-color);
+      }
+      .dtm-page .dtm-cat-tab-btn.is-active .dtm-cat-tab-count {
+        background: rgba(255,255,255,0.25); color: #fff;
+      }
+
+      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab-btn { color: rgba(255,255,255,0.50); }
+      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab-btn:hover {
+        background: rgba(255,255,255,0.06); color: #fff;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab-count {
+        background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.55);
+      }
+
       [data-bs-theme="dark"] .dtm-page .dtm-header-icon {
         background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.25)) !important;
       }

@@ -555,6 +555,18 @@ class HrDocumentTemplateController extends Controller
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
         $writer->save($tmp);
+        return $tmp;
+    }
+
+    /**
+     * Stage 2 — wraps {@see buildDocxFile()} and streams the generated DOCX
+     * back to the browser. Used by the "Download DOCX" button and the
+     * per-employee generate flow. The tmp file is removed once the response
+     * is flushed via `deleteFileAfterSend`.
+     */
+    public function renderDocx($row, string $filename)
+    {
+        $tmp = $this->buildDocxFile($row);
         return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 
