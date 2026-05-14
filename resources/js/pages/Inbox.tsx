@@ -8,6 +8,7 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from './hrms/doc-templates/HeaderFooterPanel';
+import { leaveRequestsApi, ApiLeaveRequest } from './hrms/leavePlansApi';
 import '../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -45,6 +46,15 @@ export default function Inbox() {
   const [rows, setRows] = useState<SignatureRun[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Leave approvals — pending leave requests where the current user is
+  // an approver. Reporting managers see their direct reports;
+  // branch_user / client_admin / super_admin see every pending request
+  // in their tenant (parallel approval — the first one to act wins).
+  const [leaveRows, setLeaveRows] = useState<ApiLeaveRequest[]>([]);
+  const [leaveLoading, setLeaveLoading] = useState(true);
+  const [leaveActing, setLeaveActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
+  const [leaveComment, setLeaveComment] = useState<Record<number, string>>({});
+
   // View modal (read-only preview)
   const [viewRun, setViewRun] = useState<SignatureRun | null>(null);
 
@@ -68,6 +78,50 @@ export default function Inbox() {
     }
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Pull pending leave approvals scoped to this user. Same endpoint
+  // HrLeaveApprovals uses, just rendered inline in the inbox so the
+  // user has one place to clear all pending decisions from.
+  const loadLeaves = async () => {
+    setLeaveLoading(true);
+    try {
+      const list = await leaveRequestsApi.approvals({ status: 'Pending' });
+      setLeaveRows(list);
+    } catch (err: any) {
+      console.warn('[Inbox] leave approvals load failed', err);
+      setLeaveRows([]);
+    } finally {
+      setLeaveLoading(false);
+    }
+  };
+  useEffect(() => { loadLeaves(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const actOnLeave = async (id: number, verdict: 'approve' | 'reject') => {
+    const comment = (leaveComment[id] || '').trim();
+    if (verdict === 'reject' && !comment) {
+      toast.error('Reason required', 'Please add a short comment explaining the rejection.');
+      return;
+    }
+    setLeaveActing({ id, verdict });
+    try {
+      if (verdict === 'approve') {
+        await leaveRequestsApi.approve(id, comment || undefined);
+        toast.success('Leave approved', 'The employee will be notified.');
+      } else {
+        await leaveRequestsApi.reject(id, comment);
+        toast.success('Leave rejected', 'The employee will see your remark.');
+      }
+      // Clear the comment for this row and refetch so the row drops out
+      // of the pending list.
+      setLeaveComment(prev => { const next = { ...prev }; delete next[id]; return next; });
+      await loadLeaves();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Action failed';
+      toast.error('Could not act on this request', msg);
+    } finally {
+      setLeaveActing(null);
+    }
+  };
 
   const openAction = (run: SignatureRun) => {
     const current = run.signers[run.current_index];
@@ -146,12 +200,138 @@ export default function Inbox() {
               </div>
               <span style={{ padding: '6px 14px', borderRadius: 999, background: 'linear-gradient(135deg,#f7b84b,#fbc763)', color: '#fff', fontWeight: 700, fontSize: 13 }}>
                 <i className="ri-mail-unread-line me-1" />
-                {loading ? '…' : `${rows.length} pending`}
+                {loading || leaveLoading ? '…' : `${rows.length + leaveRows.length} pending`}
               </span>
             </CardBody>
           </Card>
 
-          {/* List */}
+          {/* Leave approval requests ─ shown above the documents section so
+              time-sensitive items (people waiting on a yes/no) bubble to the
+              top of the inbox. Same endpoint HrLeaveApprovals uses; either
+              the reporting manager OR a branch admin can act (first one to
+              click wins). */}
+          <Card className="mb-3" style={{ borderRadius: 12 }}>
+            <CardBody style={{ padding: 0 }}>
+              <div className="d-flex align-items-center justify-content-between"
+                   style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                <div className="d-flex align-items-center gap-2">
+                  <span style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#ede9fe,#c4b5fd)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <i className="ri-calendar-2-line" style={{ fontSize: 16, color: '#5a3fd1' }} />
+                  </span>
+                  <div>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Leave Requests</h6>
+                    <div className="text-muted" style={{ fontSize: 11.5 }}>
+                      Approvals waiting on you. Either the reporting manager or a branch admin can decide.
+                    </div>
+                  </div>
+                </div>
+                <span style={{ padding: '4px 10px', borderRadius: 999, background: '#ede9fe', color: '#5a3fd1', fontWeight: 700, fontSize: 11.5 }}>
+                  {leaveLoading ? '…' : `${leaveRows.length}`}
+                </span>
+              </div>
+
+              {leaveLoading ? (
+                <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>
+                  <i className="ri-loader-4-line ri-spin" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
+                  Loading…
+                </div>
+              ) : leaveRows.length === 0 ? (
+                <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
+                  <i className="ri-flight-takeoff-line" style={{ fontSize: 30, display: 'block', marginBottom: 6 }} />
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>No pending leave requests</div>
+                  <div style={{ fontSize: 11.5 }}>You're all caught up on approvals.</div>
+                </div>
+              ) : (
+                <div>
+                  {leaveRows.map((r) => {
+                    const emp = r.employee;
+                    const empName = emp
+                      ? (emp.display_name?.trim() || `${emp.first_name} ${emp.last_name ?? ''}`.trim())
+                      : '—';
+                    const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0,2).toUpperCase() || '?';
+                    const acting = leaveActing?.id === r.id;
+                    const isApproving = acting && leaveActing?.verdict === 'approve';
+                    const isRejecting = acting && leaveActing?.verdict === 'reject';
+                    const fmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                    return (
+                      <div key={r.id} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                        <div className="d-flex align-items-start gap-3 flex-wrap">
+                          {/* Avatar */}
+                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                            style={{ width: 38, height: 38, fontSize: 12, background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' }}>
+                            {initials}
+                          </span>
+                          {/* Body */}
+                          <div style={{ flex: '1 1 320px', minWidth: 240 }}>
+                            <div className="d-flex align-items-center gap-2 flex-wrap">
+                              <strong style={{ fontSize: 13.5 }}>{empName}</strong>
+                              <span style={{ fontSize: 11, color: '#6b7280' }}>
+                                {emp?.emp_code || '—'}
+                                {emp?.department?.name ? ` · ${emp.department.name}` : ''}
+                              </span>
+                            </div>
+                            <div className="mt-1" style={{ fontSize: 12.5 }}>
+                              <span style={{ padding: '2px 8px', borderRadius: 6, background: '#ede9fe', color: '#5a3fd1', fontWeight: 700, fontSize: 11 }}>
+                                {r.leave_type?.name || 'Leave'}
+                              </span>
+                              <span className="ms-2 text-muted">{fmt(r.from_date)} – {fmt(r.to_date)}</span>
+                              <span className="ms-2 fw-semibold">{Number(r.days)} {Number(r.days) === 1 ? 'day' : 'days'}</span>
+                            </div>
+                            {r.reason && (
+                              <div className="mt-1 text-muted" style={{ fontSize: 12 }}>
+                                <i className="ri-double-quotes-l me-1" />{r.reason}
+                              </div>
+                            )}
+                            {/* Comment input — required when rejecting, optional when approving */}
+                            <input
+                              type="text"
+                              className="form-control mt-2"
+                              placeholder="Add a remark (required for reject, optional for approve)"
+                              value={leaveComment[r.id] || ''}
+                              onChange={e => setLeaveComment(prev => ({ ...prev, [r.id]: e.target.value }))}
+                              style={{ fontSize: 12.5 }}
+                            />
+                          </div>
+                          {/* Actions */}
+                          <div className="d-flex flex-column gap-2" style={{ minWidth: 140 }}>
+                            <button
+                              type="button"
+                              onClick={() => actOnLeave(r.id, 'approve')}
+                              disabled={acting}
+                              style={{
+                                padding: '8px 12px', borderRadius: 8, border: 0,
+                                background: 'linear-gradient(135deg,#10b981,#059669)',
+                                color: '#fff', fontSize: 12, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
+                                opacity: acting ? 0.6 : 1,
+                              }}
+                            >
+                              {isApproving ? <><i className="ri-loader-4-line ri-spin me-1" />Approving…</> : <><i className="ri-check-line me-1" />Accept</>}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => actOnLeave(r.id, 'reject')}
+                              disabled={acting}
+                              style={{
+                                padding: '8px 12px', borderRadius: 8,
+                                border: '1px solid #fecaca',
+                                background: '#fff', color: '#b91c1c',
+                                fontSize: 12, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
+                                opacity: acting ? 0.6 : 1,
+                              }}
+                            >
+                              {isRejecting ? <><i className="ri-loader-4-line ri-spin me-1" />Rejecting…</> : <><i className="ri-close-line me-1" />Reject</>}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* Document signatures (existing) */}
           <Card style={{ borderRadius: 12 }}>
             <CardBody style={{ padding: 0 }}>
               <div className="table-responsive">
