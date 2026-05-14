@@ -111,9 +111,11 @@ class LeaveRequestController extends Controller
 
         // Snapshot the approval chain from the plan-type config_json so
         // changing the plan rules later doesn't reroute in-flight requests.
-        // Fall back to a single Reporting Manager level when no chain
-        // configured (matches the v1 behaviour).
-        $chain = $this->snapshotApprovalChain($employee, $planId, $data['leave_type_id']);
+        // Pass the computed day count so any skip_if rules (e.g. days_lt: 2)
+        // mark the matching levels Skipped right at snapshot time.
+        $chain = $this->snapshotApprovalChain($employee, $planId, $data['leave_type_id'], $days);
+        $startLevel = $this->firstActionableLevel($chain, 1);
+        $autoApproved = $startLevel > count($chain) && count($chain) > 0;
 
         $row = LeaveRequest::create([
             'client_id' => $employee->client_id,
@@ -135,9 +137,11 @@ class LeaveRequestController extends Controller
             'avail_on_call' => !empty($data['avail_on_call']),
             'emergency_number' => $data['emergency_number'] ?? null,
             'avail_note' => $data['avail_note'] ?? null,
-            'status' => 'Pending',
+            'status' => $autoApproved ? 'Approved' : 'Pending',
             'approval_chain' => $chain,
-            'current_approval_level' => 1,
+            'current_approval_level' => $startLevel,
+            'approved_at' => $autoApproved ? now() : null,
+            'approver_comment' => $autoApproved ? 'Auto-approved — every chain level was skipped by rule' : null,
             'created_by' => $user->id,
         ]);
 
@@ -312,14 +316,18 @@ class LeaveRequestController extends Controller
             $row->approved_at = now();
             $row->approver_comment = $data['comment'] ?? null;
         } else {
-            // Approved — advance to next level or finalize.
-            if ($level >= count($chain)) {
+            // Approved — advance to next actionable level or finalize.
+            // firstActionableLevel walks past any consecutive Skipped
+            // entries so a 3-level chain with the middle level skipped
+            // collapses correctly from level 1 → 3.
+            $nextLevel = $this->firstActionableLevel($chain, $level + 1);
+            if ($nextLevel > count($chain)) {
                 $row->status = 'Approved';
                 $row->approved_by = $user->id;
                 $row->approved_at = now();
                 $row->approver_comment = $data['comment'] ?? null;
             } else {
-                $row->current_approval_level = $level + 1;
+                $row->current_approval_level = $nextLevel;
                 // Stays Pending — the next level needs to act.
             }
         }
@@ -406,8 +414,16 @@ class LeaveRequestController extends Controller
      * Reads the plan-type Setup config_json.approval.chain when present;
      * otherwise falls back to a single "Reporting Manager" level so v1
      * behaviour is preserved.
+     *
+     * Conditional skip rules: each chain entry may carry `skip_if` with
+     * one or more numeric thresholds (e.g. {"days_lt": 2}). When a rule
+     * matches at submission time the level is created with status =
+     * Skipped, so it never blocks the request. snapshotApprovalChain
+     * evaluates against the leave's day count and returns the chain
+     * already-marked; setStatus / firstActionableLevel then walk past
+     * skipped levels automatically.
      */
-    private function snapshotApprovalChain(Employee $employee, ?int $planId, int $leaveTypeId): array
+    private function snapshotApprovalChain(Employee $employee, ?int $planId, int $leaveTypeId, float $days = 0): array
     {
         $rawChain = null;
         if ($planId) {
@@ -449,6 +465,9 @@ class LeaveRequestController extends Controller
                 $resolvedEmpId = $employee->reporting_manager_id;
             }
 
+            $skipIf = $r['skip_if'] ?? null;
+            $shouldSkip = $this->evaluateSkipRule($skipIf, ['days' => $days]);
+
             $chain[] = [
                 'level' => $i + 1,
                 'approver_kind' => $kind,
@@ -456,13 +475,48 @@ class LeaveRequestController extends Controller
                 'approver_user_id' => $userId,
                 'approver_employee_id' => $resolvedEmpId,
                 'approver_label' => $r['label'] ?? null,
-                'status' => 'Pending',
+                'skip_if' => $skipIf,
+                'status' => $shouldSkip ? 'Skipped' : 'Pending',
                 'acted_by' => null,
                 'acted_at' => null,
-                'comment' => null,
+                'comment' => $shouldSkip ? 'Auto-skipped by rule' : null,
             ];
         }
         return $chain;
+    }
+
+    /**
+     * Decide if a chain entry should be auto-skipped at submission time
+     * based on the request's runtime values. Supported keys (extend as
+     * needed):
+     *   days_lt / days_lte / days_gt / days_gte — compare to ctx.days
+     */
+    private function evaluateSkipRule(mixed $rule, array $ctx): bool
+    {
+        if (!is_array($rule) || empty($rule)) return false;
+        $days = (float) ($ctx['days'] ?? 0);
+        if (array_key_exists('days_lt', $rule)  && $days < (float) $rule['days_lt'])  return true;
+        if (array_key_exists('days_lte', $rule) && $days <= (float) $rule['days_lte']) return true;
+        if (array_key_exists('days_gt', $rule)  && $days > (float) $rule['days_gt'])  return true;
+        if (array_key_exists('days_gte', $rule) && $days >= (float) $rule['days_gte']) return true;
+        return false;
+    }
+
+    /**
+     * Walk forward from `start` (1-based) past every Skipped level until
+     * we hit a Pending one (or run past the end of the chain). Used at
+     * snapshot time to set current_approval_level, and after each
+     * approval to fast-forward through consecutive skips.
+     */
+    private function firstActionableLevel(array $chain, int $start): int
+    {
+        $i = max(1, $start);
+        while ($i <= count($chain)) {
+            $status = $chain[$i - 1]['status'] ?? 'Pending';
+            if ($status === 'Pending') return $i;
+            $i++;
+        }
+        return count($chain) + 1; // past the end → fully approved
     }
 
     /**
@@ -521,9 +575,11 @@ class LeaveRequestController extends Controller
 
     private function notifyForSubmission(LeaveRequest $row, Employee $employee): void
     {
-        // 1) Current-level approver
-        $approverNotifiable = $this->resolveApproverNotifiable($row, 1, $employee);
-        $this->safeSend($approverNotifiable, new LeaveRequestNotification($row, 'submitted_to_approver'));
+        // 1) Every approver at level 1 (role-based levels can fan out
+        //    to multiple users, e.g. all HRs in the tenant).
+        foreach ($this->resolveApproverNotifiables($row, 1, $employee) as $r) {
+            $this->safeSend($r, new LeaveRequestNotification($row, 'submitted_to_approver'));
+        }
 
         // 2) CC'd colleagues from notify.employee_ids
         $ccIds = $this->extractNotifyEmployeeIds($row);
@@ -556,58 +612,122 @@ class LeaveRequestController extends Controller
             return;
         }
 
-        // Still Pending → advanced to a new level. Notify the next approver.
-        $next = $this->resolveApproverNotifiable($row, (int)$row->current_approval_level, $employee);
-        $this->safeSend($next, new LeaveRequestNotification($row, 'submitted_to_approver'));
+        // Still Pending → advanced to a new level. Notify every approver
+        // at the new level (role-based fans out to all users).
+        foreach ($this->resolveApproverNotifiables($row, (int)$row->current_approval_level, $employee) as $r) {
+            $this->safeSend($r, new LeaveRequestNotification($row, 'submitted_to_approver'));
+        }
     }
 
     private function notifyForCancellation(LeaveRequest $row): void
     {
         $employee = Employee::find($row->employee_id);
         if (!$employee) return;
-        $approverNotifiable = $this->resolveApproverNotifiable($row, (int)$row->current_approval_level, $employee);
-        $this->safeSend($approverNotifiable, new LeaveRequestNotification($row, 'cancelled'));
+        foreach ($this->resolveApproverNotifiables($row, (int)$row->current_approval_level, $employee) as $r) {
+            $this->safeSend($r, new LeaveRequestNotification($row, 'cancelled'));
+        }
     }
 
     /**
-     * Resolve the notifiable for the given level (1-based) on a request.
-     * Returns null when the chain entry is role-based (no concrete
-     * recipient resolvable without a roles table) or the level is out
-     * of range / has no linked user account.
+     * Resolve recipients for the given chain level (1-based) on a request.
+     * Returns an ARRAY of notifiables — most levels have one (RM, specific
+     * user/employee) but role-based levels can have many (every HR user
+     * in the tenant). Empty array means "couldn't resolve to anyone".
+     *
+     * Also handles the pre-migration fallback when a request has no
+     * approval_chain — defaults to the single Reporting Manager line.
      */
-    private function resolveApproverNotifiable(LeaveRequest $row, int $level, Employee $employee): mixed
+    private function resolveApproverNotifiables(LeaveRequest $row, int $level, Employee $employee): array
     {
         $chain = $row->approval_chain ?? [];
         $entry = $chain[$level - 1] ?? null;
         if (!$entry) {
-            // Pre-migration fallback — single Reporting Manager line.
             if ($employee->reporting_manager_id) {
                 $rm = Employee::find($employee->reporting_manager_id);
-                return $rm ? $this->employeeAsRecipient($rm) : null;
+                $r = $rm ? $this->employeeAsRecipient($rm) : null;
+                return $r ? [$r] : [];
             }
-            return null;
+            return [];
         }
 
         $kind = $entry['approver_kind'] ?? 'reporting_manager';
 
         if (!empty($entry['approver_user_id'])) {
             $u = User::find((int)$entry['approver_user_id']);
-            return $u && $u->email ? $u : null;
+            return $u && $u->email ? [$u] : [];
         }
 
         if (!empty($entry['approver_employee_id'])) {
             $emp = Employee::find((int)$entry['approver_employee_id']);
-            return $emp ? $this->employeeAsRecipient($emp) : null;
+            $r = $emp ? $this->employeeAsRecipient($emp) : null;
+            return $r ? [$r] : [];
         }
 
         if ($kind === 'reporting_manager' && $employee->reporting_manager_id) {
             $rm = Employee::find($employee->reporting_manager_id);
-            return $rm ? $this->employeeAsRecipient($rm) : null;
+            $r = $rm ? $this->employeeAsRecipient($rm) : null;
+            return $r ? [$r] : [];
         }
 
-        // Role-based approvers — no email push for v1. The recipient will
-        // see the request in their /hr/leave-approvals queue on next visit.
-        return null;
+        if ($kind === 'role' && !empty($entry['approver_role'])) {
+            return $this->resolveRoleRecipients((string)$entry['approver_role'], $employee);
+        }
+
+        return [];
+    }
+
+    /**
+     * Map a chain role-name to the set of users that fill that role for
+     * the requestor's tenant.
+     *
+     *   hr / branch_admin → all branch_user + client_admin in the same
+     *                        client (and same branch when set)
+     *   reporting_manager → the requestor's RM (treated like the kind)
+     *
+     * We don't have a roles table per se yet — branch_user / client_admin
+     * are the de-facto HR roles in this codebase. Extend with proper
+     * master_roles lookups later if/when org structure formalizes more
+     * named approval roles.
+     */
+    private function resolveRoleRecipients(string $role, Employee $employee): array
+    {
+        $role = strtolower($role);
+
+        if ($role === 'reporting_manager') {
+            if (!$employee->reporting_manager_id) return [];
+            $rm = Employee::find($employee->reporting_manager_id);
+            $r = $rm ? $this->employeeAsRecipient($rm) : null;
+            return $r ? [$r] : [];
+        }
+
+        if (!in_array($role, ['hr', 'branch_admin'], true)) {
+            return [];
+        }
+
+        $userTypes = $role === 'branch_admin'
+            ? ['branch_user']
+            : ['branch_user', 'client_admin'];
+
+        $q = User::query()
+            ->whereIn('user_type', $userTypes)
+            ->whereNotNull('email');
+        if ($employee->client_id) $q->where('client_id', $employee->client_id);
+        if ($role === 'branch_admin' && $employee->branch_id) {
+            $q->where('branch_id', $employee->branch_id);
+        }
+
+        return $q->get()->all();
+    }
+
+    /**
+     * Backward-compatible wrapper used by older callers — returns the
+     * FIRST recipient or null. New code should call the array version
+     * directly so role-based levels notify everyone.
+     */
+    private function resolveApproverNotifiable(LeaveRequest $row, int $level, Employee $employee): mixed
+    {
+        $list = $this->resolveApproverNotifiables($row, $level, $employee);
+        return $list[0] ?? null;
     }
 
     private function employeeAsRecipient(Employee $emp): mixed

@@ -1,5 +1,6 @@
 import { Menu, Moon, Sun, Bell, Maximize2, Minimize2, Settings, User as UserIcon, LogOut, ChevronDown, Check, Inbox } from 'lucide-react';
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -7,6 +8,32 @@ import GlobalSearch from '../components/GlobalSearch';
 import Avatar from '../components/ui/Avatar';
 import BranchSwitcher from '../components/BranchSwitcher';
 import ThemeCustomizer from '../components/ThemeCustomizer';
+import api from '../api';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// In-app notification record — mirrors what /api/notifications returns.
+// `data` is the toArray() payload from each notification class; the Leave
+// notifications populate kind/employee_name/leave_type/from_date/etc.
+// ─────────────────────────────────────────────────────────────────────────────
+interface InAppNotification {
+  id: string;
+  type: string;
+  data: {
+    kind?: string;
+    employee_name?: string;
+    leave_type?: string;
+    from_date?: string;
+    to_date?: string;
+    days?: number;
+    status?: string;
+    comment?: string | null;
+    action_url?: string;
+    subject?: string;
+    [key: string]: any;
+  };
+  read_at: string | null;
+  created_at: string;
+}
 
 interface Props {
   page: string;
@@ -105,8 +132,41 @@ export default function Topbar({ page, onToggleSidebar, onNavigate }: Props) {
    ─────────────────────────────────────────── */
 function NotificationsDropdown({ open, setOpen }: { open: boolean; setOpen: (v: boolean) => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   const [tab, setTab] = useState<'all' | 'unread'>('all');
+  const [items, setItems] = useState<InAppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(false);
 
+  // Poll the unread count every 60s so the badge stays fresh without
+  // the user having to open the dropdown. Cheap query — counts only.
+  // Skipped while the tab is in the background to be polite.
+  useEffect(() => {
+    let alive = true;
+    const fetchCount = () => {
+      if (document.hidden) return;
+      api.get('/notifications/unread-count')
+        .then(r => { if (alive) setUnreadCount(r.data?.data?.count ?? 0); })
+        .catch(() => { /* silent */ });
+    };
+    fetchCount();
+    const t = window.setInterval(fetchCount, 60_000);
+    const onVis = () => { if (!document.hidden) fetchCount(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { alive = false; clearInterval(t); document.removeEventListener('visibilitychange', onVis); };
+  }, []);
+
+  // Hydrate the list whenever the dropdown opens (cheap and always fresh).
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    api.get('/notifications', { params: { limit: 20 } })
+      .then(r => setItems(r.data?.data ?? []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  // Outside-click closes the dropdown.
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -116,6 +176,34 @@ function NotificationsDropdown({ open, setOpen }: { open: boolean; setOpen: (v: 
     return () => document.removeEventListener('mousedown', handler);
   }, [open, setOpen]);
 
+  const visibleItems = tab === 'unread' ? items.filter(i => !i.read_at) : items;
+
+  const onItemClick = async (n: InAppNotification) => {
+    setOpen(false);
+    if (!n.read_at) {
+      try {
+        await api.post(`/notifications/${n.id}/read`);
+        setItems(prev => prev.map(it => it.id === n.id ? { ...it, read_at: new Date().toISOString() } : it));
+        setUnreadCount(c => Math.max(0, c - 1));
+      } catch { /* keep going — navigation is more important */ }
+    }
+    const url = n.data?.action_url;
+    if (url) {
+      // Strip any leading scheme + host so the SPA router handles the path.
+      const path = url.replace(/^https?:\/\/[^/]+/, '') || '/';
+      navigate(path);
+    }
+  };
+
+  const onMarkAllRead = async () => {
+    try {
+      await api.post('/notifications/read-all');
+      const now = new Date().toISOString();
+      setItems(prev => prev.map(it => ({ ...it, read_at: it.read_at ?? now })));
+      setUnreadCount(0);
+    } catch { /* silent */ }
+  };
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -124,46 +212,144 @@ function NotificationsDropdown({ open, setOpen }: { open: boolean; setOpen: (v: 
         className={`relative w-8 h-8 rounded-md border flex items-center justify-center transition-all cursor-pointer ${open ? 'border-primary/40 bg-primary/5 text-primary' : 'border-border text-secondary hover:text-primary hover:border-primary/40 hover:bg-primary/5'}`}
       >
         <Bell size={14} />
-        <span className="absolute top-[7px] right-[7px] w-1.5 h-1.5 rounded-full bg-red-500 border-[1.5px] border-surface" />
+        {unreadCount > 0 && (
+          <span
+            className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center border-[1.5px] border-surface"
+            title={`${unreadCount} unread`}
+          >
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-[340px] rounded-xl bg-surface border border-border shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-50">
-          {/* Header */}
+        <div className="absolute right-0 mt-2 w-[360px] rounded-xl bg-surface border border-border shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 z-50">
           <div className="bg-primary text-white px-4 py-3 flex items-center justify-between">
             <div>
               <h5 className="text-[13px] font-bold leading-tight">Notifications</h5>
-              <p className="text-[10.5px] opacity-80 mt-0.5">You have 0 unread messages</p>
+              <p className="text-[10.5px] opacity-80 mt-0.5">
+                You have {unreadCount} unread message{unreadCount === 1 ? '' : 's'}
+              </p>
             </div>
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={onMarkAllRead}
+                className="text-[10.5px] underline opacity-90 hover:opacity-100 cursor-pointer"
+              >
+                Mark all read
+              </button>
+            )}
           </div>
 
-          {/* Tabs */}
           <div className="flex border-b border-border bg-surface-2">
             <button
               onClick={() => setTab('all')}
               className={`flex-1 py-2.5 text-[11.5px] font-semibold uppercase tracking-wide transition-colors cursor-pointer ${tab === 'all' ? 'text-primary border-b-2 border-primary' : 'text-muted hover:text-text'}`}
             >
-              All
+              All ({items.length})
             </button>
             <button
               onClick={() => setTab('unread')}
               className={`flex-1 py-2.5 text-[11.5px] font-semibold uppercase tracking-wide transition-colors cursor-pointer ${tab === 'unread' ? 'text-primary border-b-2 border-primary' : 'text-muted hover:text-text'}`}
             >
-              Unread
+              Unread ({unreadCount})
             </button>
           </div>
 
-          {/* Empty state */}
-          <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
-            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-3">
-              <Inbox size={22} className="text-primary" />
-            </div>
-            <h6 className="text-[13px] font-semibold text-text">No new notifications</h6>
-            <p className="text-[11px] text-muted mt-1">You're all caught up.</p>
+          <div className="max-h-[400px] overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-10 text-muted text-[12px]">
+                Loading…
+              </div>
+            ) : visibleItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-3">
+                  <Inbox size={22} className="text-primary" />
+                </div>
+                <h6 className="text-[13px] font-semibold text-text">No new notifications</h6>
+                <p className="text-[11px] text-muted mt-1">You're all caught up.</p>
+              </div>
+            ) : visibleItems.map(n => (
+              <NotificationRow key={n.id} item={n} onClick={() => onItemClick(n)} />
+            ))}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NotificationRow — single dropdown entry. Picks an icon + accent based on
+// the notification kind so the user can scan the list at a glance.
+// ─────────────────────────────────────────────────────────────────────────────
+function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: () => void }) {
+  const k = item.data?.kind ?? '';
+  const isUnread = !item.read_at;
+  const meta = (() => {
+    switch (k) {
+      case 'submitted_to_approver': return { icon: 'ri-time-line',          bg: '#ede9fe', fg: '#5a3fd1', label: 'Approval needed' };
+      case 'cc_submitted':          return { icon: 'ri-mail-line',           bg: '#dbeafe', fg: '#0c63b0', label: 'FYI' };
+      case 'approved':              return { icon: 'ri-checkbox-circle-line', bg: '#d1fae5', fg: '#065f46', label: 'Approved' };
+      case 'rejected':              return { icon: 'ri-close-circle-line',   bg: '#fee2e2', fg: '#b91c1c', label: 'Rejected' };
+      case 'cancelled':             return { icon: 'ri-prohibited-line',     bg: '#f3f4f6', fg: '#374151', label: 'Cancelled' };
+      default:                      return { icon: 'ri-notification-3-line', bg: '#eef2f6', fg: '#374151', label: 'Update' };
+    }
+  })();
+  const summary = item.data?.subject ?? 'New notification';
+  const subline = (() => {
+    const days = item.data?.days;
+    const from = item.data?.from_date;
+    const to = item.data?.to_date;
+    if (from && to) {
+      const f = new Date(from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+      const t = new Date(to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+      return `${item.data?.leave_type ?? 'Leave'} · ${f}${f !== t ? ` – ${t}` : ''} · ${days ?? 0} day${days === 1 ? '' : 's'}`;
+    }
+    return item.data?.leave_type ?? '';
+  })();
+  const when = (() => {
+    const d = new Date(item.created_at);
+    if (isNaN(d.getTime())) return '';
+    const diffMs = Date.now() - d.getTime();
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  })();
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-start gap-3 px-3 py-3 border-b border-border text-left hover:bg-surface-2 transition-colors cursor-pointer ${isUnread ? 'bg-primary/5' : ''}`}
+    >
+      <span
+        className="rounded-full flex-shrink-0 flex items-center justify-center"
+        style={{ width: 36, height: 36, background: meta.bg, color: meta.fg }}
+      >
+        <i className={meta.icon} style={{ fontSize: 16 }} />
+      </span>
+      <div className="min-w-0 flex-grow">
+        <div className="flex items-center gap-2">
+          <span
+            className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+            style={{ background: meta.bg, color: meta.fg }}
+          >
+            {meta.label}
+          </span>
+          {isUnread && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+        </div>
+        <div className="text-[13px] font-semibold text-text mt-1 truncate">{summary}</div>
+        {subline && <div className="text-[11px] text-muted truncate mt-0.5">{subline}</div>}
+        <div className="text-[10px] text-muted mt-1">{when}</div>
+      </div>
+    </button>
   );
 }
 

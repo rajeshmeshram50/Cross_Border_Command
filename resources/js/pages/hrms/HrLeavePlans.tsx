@@ -91,6 +91,16 @@ interface ApprovalLevel {
   approver_user_id?: number | null;
   approver_employee_id?: number | null;
   label?: string | null;
+  // Optional auto-skip rule evaluated at submission time. When the
+  // request's day count matches the rule, this level is marked
+  // Skipped without anyone having to act. Supported keys:
+  //   days_lt / days_lte / days_gt / days_gte
+  skip_if?: {
+    days_lt?: number;
+    days_lte?: number;
+    days_gt?: number;
+    days_gte?: number;
+  } | null;
 }
 
 interface ApprovalConfig {
@@ -3032,6 +3042,15 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
                         : 'Search and pick the employee whose user account should approve.')}
                     </span>
                   </div>
+
+                  {/* Skip-rule editor — auto-skip this level when the
+                      request's day count matches the rule. The backend
+                      evaluates skip_if at snapshot time so this level
+                      gets status='Skipped' and never blocks the chain. */}
+                  <SkipRuleEditor
+                    rule={level.skip_if ?? null}
+                    onChange={(next) => updateLevel(idx, { skip_if: next })}
+                  />
                 </div>
               );
             })}
@@ -3062,6 +3081,97 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
         Changed your leave plan after YEP and then rolled it back? <a href="#yep-rollback">Know the repercussions here.</a>
       </div>
     </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SkipRuleEditor — per-level "Skip this level when…" condition. Wires
+// into the chain entry's skip_if blob; backend evaluates at submission
+// time and marks the level Skipped right away.
+// ─────────────────────────────────────────────────────────────────────────────
+type SkipOp = '' | 'days_lt' | 'days_lte' | 'days_gt' | 'days_gte';
+const SKIP_OP_LABELS: Record<SkipOp, string> = {
+  '':         'No auto-skip',
+  'days_lt':  'less than',
+  'days_lte': 'at most',
+  'days_gt':  'more than',
+  'days_gte': 'at least',
+};
+
+function SkipRuleEditor({
+  rule, onChange,
+}: {
+  rule: ApprovalLevel['skip_if'] | null;
+  onChange: (next: ApprovalLevel['skip_if'] | null) => void;
+}) {
+  // Surface only the first defined op for the simple editor — multi-op
+  // composites can be hand-edited via tinker for advanced cases.
+  const activeOp: SkipOp = (() => {
+    if (!rule) return '';
+    if (rule.days_lt  != null) return 'days_lt';
+    if (rule.days_lte != null) return 'days_lte';
+    if (rule.days_gt  != null) return 'days_gt';
+    if (rule.days_gte != null) return 'days_gte';
+    return '';
+  })();
+  const activeValue: number | '' = activeOp ? (rule?.[activeOp] ?? '') : '';
+
+  const setOp = (op: SkipOp) => {
+    if (op === '') { onChange(null); return; }
+    // Preserve the current value when toggling operators so user doesn't
+    // re-type the threshold.
+    const v = typeof activeValue === 'number' ? activeValue : 1;
+    onChange({ [op]: v });
+  };
+  const setValue = (v: number) => {
+    if (!activeOp) return;
+    onChange({ [activeOp]: v });
+  };
+
+  return (
+    <div className="lts-skip-rule" style={{
+      marginTop: 8, padding: '8px 10px', background: '#fafafa',
+      border: '1px dashed #d1d5db', borderRadius: 8,
+    }}>
+      <div className="d-flex align-items-center gap-2 flex-wrap">
+        <span className="text-muted" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.3 }}>
+          AUTO-SKIP RULE
+        </span>
+        <select
+          className="lts-input"
+          style={{ minWidth: 150, padding: '4px 8px', fontSize: 12 }}
+          value={activeOp}
+          onChange={e => setOp(e.target.value as SkipOp)}
+        >
+          {(Object.keys(SKIP_OP_LABELS) as SkipOp[]).map(op => (
+            <option key={op} value={op}>
+              {op === '' ? SKIP_OP_LABELS[op] : `Days are ${SKIP_OP_LABELS[op]}…`}
+            </option>
+          ))}
+        </select>
+        {activeOp !== '' && (
+          <>
+            <input
+              type="number"
+              className="lts-input"
+              style={{ width: 80, padding: '4px 8px', fontSize: 12 }}
+              min={0}
+              step={0.5}
+              value={activeValue === '' ? '' : activeValue}
+              onChange={e => setValue(Number(e.target.value))}
+            />
+            <span className="text-muted" style={{ fontSize: 11 }}>days</span>
+          </>
+        )}
+      </div>
+      {activeOp !== '' && (
+        <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+          <i className="ri-information-line me-1" />
+          When a request matches this rule, this level is auto-Skipped
+          and the chain advances to the next level.
+        </div>
+      )}
+    </div>
   );
 }
 

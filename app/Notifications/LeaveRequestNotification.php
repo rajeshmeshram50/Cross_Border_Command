@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -27,7 +28,7 @@ use Illuminate\Notifications\Notification;
  *   - cancelled             — sent to the current-level approver (so they
  *     can drop the item from their queue)
  */
-class LeaveRequestNotification extends Notification
+class LeaveRequestNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
@@ -35,11 +36,50 @@ class LeaveRequestNotification extends Notification
         public LeaveRequest $request,
         public string $kind,
         public ?string $extraComment = null,
-    ) {}
+    ) {
+        // Defer queued sends until after the surrounding DB transaction
+        // commits — otherwise a queue worker can race ahead and try to
+        // load a leave_request that hasn't been written yet.
+        $this->afterCommit();
+    }
 
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        // 'database' powers the in-app bell-icon inbox; 'mail' goes
+        // through SMTP. AnonymousNotifiable (employees with no User row)
+        // only supports mail — Laravel skips the database channel for
+        // those automatically.
+        return ['mail', 'database'];
+    }
+
+    /**
+     * Payload stored in the notifications table — drives the bell-icon
+     * dropdown UI. Kept compact (no full leave_request) so the json
+     * column doesn't bloat for tenants with thousands of notifications.
+     */
+    public function toArray(object $notifiable): array
+    {
+        $r = $this->request;
+        $emp = $r->employee()->first();
+        $type = $r->leaveType()->first();
+        $employeeName = $emp
+            ? trim($emp->display_name ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? '')))
+            : null;
+        return [
+            'kind'           => $this->kind,
+            'request_id'     => $r->id,
+            'employee_id'    => $r->employee_id,
+            'employee_name'  => $employeeName,
+            'leave_type'     => $type?->name,
+            'leave_type_id'  => $r->leave_type_id,
+            'from_date'      => optional($r->from_date)->toDateString(),
+            'to_date'        => optional($r->to_date)->toDateString(),
+            'days'           => (float) $r->days,
+            'status'         => $r->status,
+            'comment'        => $this->extraComment,
+            'action_url'     => $this->actionUrl(),
+            'subject'        => $this->subjectFor($employeeName ?? 'An employee', $type?->name ?? 'Leave'),
+        ];
     }
 
     public function toMail(object $notifiable): MailMessage
