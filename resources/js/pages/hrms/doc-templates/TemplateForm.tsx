@@ -662,19 +662,34 @@ function Step2(props: {
   errors: Record<string, string>;
 }) {
   const triggerOptions = props.triggerPoints.map(tp => ({ value: String(tp.id), label: tp.module_name }));
+
   // Fixed signer-role catalogue — three canonical roles used across every
   // template, independent of the (much larger) master_roles table. Storing
   // them as `role_name` strings keeps the signers JSON portable across
   // tenants that don't share the same master_roles ids.
+  //
+  // Self-healing: a template saved under an earlier UI may carry role names
+  // outside this trio (e.g. a name pulled from master_roles, or a legacy
+  // action label). Pull those values off the live signers list and add them
+  // as extra options so the dropdown shows the saved value instead of going
+  // blank. Marking them "(legacy)" nudges the admin to migrate.
+  const CANONICAL_ROLES   = ['Reporting Manager', 'Client (CEO)', 'Employee'];
+  const CANONICAL_ACTIONS = ['Sign', 'Review & Acknowledge', 'Approve'];
+
+  const extraRoles = Array.from(new Set(
+    props.signers.map(s => (s.role_name || '').trim()).filter(v => v && !CANONICAL_ROLES.includes(v))
+  ));
+  const extraActions = Array.from(new Set(
+    props.signers.map(s => (s.action || '').trim()).filter(v => v && !CANONICAL_ACTIONS.includes(v))
+  ));
+
   const roleOptions = [
-    { value: 'Reporting Manager', label: 'Reporting Manager' },
-    { value: 'Client (CEO)',      label: 'Client (CEO)' },
-    { value: 'Employee',          label: 'Employee' },
+    ...CANONICAL_ROLES.map(v => ({ value: v, label: v })),
+    ...extraRoles.map(v => ({ value: v, label: `${v} (legacy)` })),
   ];
   const actionOptions = [
-    { value: 'Sign',                 label: 'Sign' },
-    { value: 'Review & Acknowledge', label: 'Review & Acknowledge' },
-    { value: 'Approve',              label: 'Approve' },
+    ...CANONICAL_ACTIONS.map(v => ({ value: v, label: v })),
+    ...extraActions.map(v => ({ value: v, label: `${v} (legacy)` })),
   ];
 
   return (
