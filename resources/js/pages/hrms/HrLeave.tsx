@@ -358,7 +358,6 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
   };
 }
 
-const TODAY_DEMO = '2026-04-22';
 const KPI_CARDS = [
   { key: 'total',    label: 'Total Requests',   icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#0c63b0,#0ea5e9)' },
   { key: 'pending',  label: 'Pending Approval', icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
@@ -437,6 +436,11 @@ export default function HrLeave() {
   const [detail, setDetail] = useState<LeaveRequest | null>(null);
   // Collapsible state for the "On Leave Today" panel.
   const [todayOpen, setTodayOpen] = useState(true);
+  // The date the "On Leave Today" panel is filtering to. Defaults to
+  // the actual current date; HR can rewind / fast-forward via the
+  // date picker right next to the title so they can answer "who was
+  // on leave on the 5th?" without leaving the page.
+  const [onLeaveDate, setOnLeaveDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
   // Bulk-selection state — only Pending rows are selectable since terminal
   // states can't be re-actioned. The header checkbox cycles select-all /
@@ -471,15 +475,14 @@ export default function HrLeave() {
     };
   }, [requests]);
 
-  // Employees whose approved leave overlaps "today". Used by the avatar
-  // panel right under the KPI strip. Backend will replace TODAY_DEMO with
-  // the server-side current date once /api/leaves is wired.
+  // Employees whose approved leave overlaps the panel's date. Defaults
+  // to "today" but HR can shift via the inline date picker — useful for
+  // "who was on leave on the 5th?" lookups without leaving the page.
   const onLeaveToday = useMemo(() => {
-    const today = TODAY_DEMO;
     return requests.filter(r =>
-      r.stage === 'Approved' && r.fromDate <= today && r.toDate >= today
+      r.stage === 'Approved' && r.fromDate <= onLeaveDate && r.toDate >= onLeaveDate
     );
-  }, [requests]);
+  }, [requests, onLeaveDate]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -490,11 +493,10 @@ export default function HrLeave() {
 
       if (stage !== 'All') {
         const matchesStage =
-          stage === 'Submitted'      ? false
-          : stage === 'Manager Review' ? r.stage === 'Pending (Manager)'
-          : stage === 'HR Review'    ? r.stage === 'Pending (HR)'
-          : stage === 'Approved'     ? r.stage === 'Approved'
-          : stage === 'Rejected'     ? r.stage === 'Rejected'
+            stage === 'Manager Review' ? r.stage === 'Pending (Manager)'
+          : stage === 'HR Review'      ? r.stage === 'Pending (HR)'
+          : stage === 'Approved'       ? r.stage === 'Approved'
+          : stage === 'Rejected'       ? r.stage === 'Rejected'
           : true;
         if (!matchesStage) return false;
       }
@@ -521,9 +523,11 @@ export default function HrLeave() {
     ...Array.from(new Set(requests.map(r => r.department))).filter(Boolean).sort()
       .map(v => ({ value: v, label: v })),
   ];
+  // Stage filter values mirror the four real backend states. "Submitted"
+  // is intentionally absent — the backend skips that pseudo-state and
+  // sends new requests straight into Pending (Manager) or Pending (HR).
   const STAGE_OPTIONS = [
     { value: 'All',             label: 'All Stages' },
-    { value: 'Submitted',       label: 'Submitted' },
     { value: 'Manager Review',  label: 'Manager Review' },
     { value: 'HR Review',       label: 'HR Review' },
     { value: 'Approved',        label: 'Approved' },
@@ -628,40 +632,81 @@ export default function HrLeave() {
                   mini-summary ("3 Sick · 2 Annual") makes the strip readable
                   at a glance even before the chips render. */}
             <div className={`lv-today-card mb-3 ${todayOpen ? 'is-open' : 'is-closed'}`}>
-              <button
-                type="button"
-                className="lv-today-head lv-today-head-btn"
-                onClick={() => setTodayOpen(o => !o)}
-                aria-expanded={todayOpen}
-              >
-                <span className="lv-today-banner">
-                  <span className="lv-today-banner-icon">
-                    <i className="ri-user-follow-line" />
-                  </span>
-                  <span className="lv-today-banner-text">
-                    <span className="lv-today-banner-title">On Leave Today</span>
-                    <span className="lv-today-banner-sub">
-                      <i className="ri-calendar-event-line" />
-                      {formatDate(TODAY_DEMO)}
-                      {onLeaveToday.length > 0 && (
-                        <>
-                          <span className="lv-today-banner-dot" />
-                          {Array.from(new Set(onLeaveToday.map(r => r.type)))
-                            .map(t => `${onLeaveToday.filter(r => r.type === t).length} ${t}`)
-                            .join(' · ')}
-                        </>
-                      )}
+              <div className="lv-today-head" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                {/* Banner — clicking it toggles the collapse. Kept as a
+                    button only on the banner so the date input stays
+                    independently clickable. */}
+                <button
+                  type="button"
+                  className="lv-today-head-btn"
+                  onClick={() => setTodayOpen(o => !o)}
+                  aria-expanded={todayOpen}
+                  style={{ flex: '1 1 320px', minWidth: 0 }}
+                >
+                  <span className="lv-today-banner">
+                    <span className="lv-today-banner-icon">
+                      <i className="ri-user-follow-line" />
+                    </span>
+                    <span className="lv-today-banner-text">
+                      <span className="lv-today-banner-title">
+                        {onLeaveDate === new Date().toISOString().slice(0, 10) ? 'On Leave Today' : 'On Leave'}
+                      </span>
+                      <span className="lv-today-banner-sub">
+                        <i className="ri-calendar-event-line" />
+                        {formatDate(onLeaveDate)}
+                        {onLeaveToday.length > 0 && (
+                          <>
+                            <span className="lv-today-banner-dot" />
+                            {Array.from(new Set(onLeaveToday.map(r => r.type)))
+                              .map(t => `${onLeaveToday.filter(r => r.type === t).length} ${t}`)
+                              .join(' · ')}
+                          </>
+                        )}
+                      </span>
                     </span>
                   </span>
-                </span>
-                <span className="lv-today-banner-end">
+                </button>
+
+                {/* Date filter — pick any day to see who's on leave on it.
+                    Keeping this as a native input means we don't need a
+                    full date-picker portal inside an already-busy header. */}
+                <div className="d-flex align-items-center gap-2" style={{ marginLeft: 'auto' }}>
+                  <label className="text-muted" style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control form-control-sm"
+                    style={{ width: 150, fontSize: 12.5 }}
+                    value={onLeaveDate}
+                    onChange={e => setOnLeaveDate(e.target.value || new Date().toISOString().slice(0, 10))}
+                  />
+                  {onLeaveDate !== new Date().toISOString().slice(0, 10) && (
+                    <button
+                      type="button"
+                      onClick={() => setOnLeaveDate(new Date().toISOString().slice(0, 10))}
+                      className="rec-btn-ghost"
+                      title="Reset to today"
+                      style={{ fontSize: 11.5, padding: '4px 10px' }}
+                    >
+                      <i className="ri-refresh-line me-1" />Today
+                    </button>
+                  )}
                   <span className={`lv-today-count ${onLeaveToday.length === 0 ? 'is-empty' : ''}`}>
                     <i className={onLeaveToday.length === 0 ? 'ri-emotion-happy-line' : 'ri-team-line'} />
                     {onLeaveToday.length} {onLeaveToday.length === 1 ? 'person' : 'people'}
                   </span>
-                  <i className={`lv-today-caret ri-arrow-${todayOpen ? 'up' : 'down'}-s-line`} />
-                </span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setTodayOpen(o => !o)}
+                    aria-label={todayOpen ? 'Collapse' : 'Expand'}
+                    className="rec-btn-ghost"
+                    style={{ fontSize: 12, padding: '4px 8px' }}
+                  >
+                    <i className={`ri-arrow-${todayOpen ? 'up' : 'down'}-s-line`} />
+                  </button>
+                </div>
+              </div>
 
               {todayOpen && (
                 onLeaveToday.length === 0 ? (
@@ -671,7 +716,7 @@ export default function HrLeave() {
                     </span>
                     <div className="fw-bold mt-2" style={{ fontSize: 13 }}>Everyone is in today</div>
                     <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
-                      No approved leaves overlap {formatDate(TODAY_DEMO)}.
+                      No approved leaves overlap {formatDate(onLeaveDate)}.
                     </div>
                   </div>
                 ) : (
