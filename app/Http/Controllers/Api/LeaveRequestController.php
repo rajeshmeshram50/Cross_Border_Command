@@ -465,8 +465,61 @@ class LeaveRequestController extends Controller
                 $resolvedEmpId = $employee->reporting_manager_id;
             }
 
+            // If the resolved approver is soft-deleted (active employee
+            // record gone but reporting_manager_id still points at the
+            // legacy id), treat as missing so the chain auto-skips this
+            // level instead of stalling forever.
+            $resolvedExists = $resolvedEmpId
+                ? Employee::where('id', $resolvedEmpId)->exists()
+                : true;
+
             $skipIf = $r['skip_if'] ?? null;
             $shouldSkip = $this->evaluateSkipRule($skipIf, ['days' => $days]);
+            $skipReason = $shouldSkip ? 'Auto-skipped by rule' : null;
+
+            // Defensive: a level that ultimately points back at the
+            // requester themselves (self-loop, common when HR forgot to
+            // set the RM during onboarding so it defaults to their own
+            // id) would otherwise stall forever or — worse — let the
+            // requester self-approve. Catches both:
+            //   - kind === 'reporting_manager' resolving to self
+            //   - kind === 'role' with role === 'reporting_manager'
+            //     where employee.reporting_manager_id is the requester
+            //   - explicit approver_employee_id / approver_user_id that
+            //     happens to point at the requester
+            $loopsToSelf = false;
+            if (!$shouldSkip) {
+                if ($kind === 'reporting_manager'
+                    && $resolvedEmpId
+                    && (int) $resolvedEmpId === (int) $employee->id
+                ) {
+                    $loopsToSelf = true;
+                } elseif ($kind === 'role'
+                    && strtolower((string) $role) === 'reporting_manager'
+                    && $employee->reporting_manager_id
+                    && (int) $employee->reporting_manager_id === (int) $employee->id
+                ) {
+                    $loopsToSelf = true;
+                } elseif ($empIdOverride
+                    && (int) $empIdOverride === (int) $employee->id
+                ) {
+                    $loopsToSelf = true;
+                } elseif ($userId
+                    && (int) $userId === (int) ($employee->user_id ?? 0)
+                ) {
+                    $loopsToSelf = true;
+                }
+            }
+            if ($loopsToSelf) {
+                $shouldSkip = true;
+                $skipReason = 'Auto-skipped — approver resolves to the requester (self-loop)';
+            } elseif (!$shouldSkip
+                && $resolvedEmpId
+                && !$resolvedExists
+            ) {
+                $shouldSkip = true;
+                $skipReason = "Auto-skipped — approver employee #{$resolvedEmpId} no longer exists";
+            }
 
             $chain[] = [
                 'level' => $i + 1,
@@ -479,7 +532,7 @@ class LeaveRequestController extends Controller
                 'status' => $shouldSkip ? 'Skipped' : 'Pending',
                 'acted_by' => null,
                 'acted_at' => null,
-                'comment' => $shouldSkip ? 'Auto-skipped by rule' : null,
+                'comment' => $skipReason,
             ];
         }
         return $chain;
@@ -695,6 +748,10 @@ class LeaveRequestController extends Controller
 
         if ($role === 'reporting_manager') {
             if (!$employee->reporting_manager_id) return [];
+            // Self-loop guard — never notify the requester as their own
+            // approver (handled at snapshot time too, but the runtime
+            // resolver might be called with a stale chain).
+            if ((int) $employee->reporting_manager_id === (int) $employee->id) return [];
             $rm = Employee::find($employee->reporting_manager_id);
             $r = $rm ? $this->employeeAsRecipient($rm) : null;
             return $r ? [$r] : [];
