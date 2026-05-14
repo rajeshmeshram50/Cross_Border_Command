@@ -288,6 +288,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // /approvals MUST be declared BEFORE /{id} so the literal segment
     // doesn't get captured as an id parameter.
     Route::get   ('/leave-requests/approvals',                   [LeaveRequestController::class, 'approvals']);
+    // Same ordering reason — lightweight colleague search for the Notify
+    // field of the Request Leave drawer (no HR permission required).
+    Route::get   ('/leave-requests/colleagues',                  [LeaveRequestController::class, 'colleagues']);
     Route::get   ('/leave-requests/{id}',                        [LeaveRequestController::class, 'show']);
     Route::get   ('/leave-requests/{id}/approvers',              [LeaveRequestController::class, 'approvers']);
     Route::post  ('/leave-requests/{id}/approve',                [LeaveRequestController::class, 'approve']);

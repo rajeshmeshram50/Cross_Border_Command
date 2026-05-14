@@ -92,27 +92,37 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     return () => clearTimeout(t);
   }, [notifySearch]);
 
-  // The Notify list is "open" whenever the user has typed something —
-  // initial empty state shows the selected chips only. Once they type,
-  // we fetch matching employees and show checkbox rows so they can pick
-  // multiple in one go (closer to the Keka pattern).
+  // Search is "open" whenever the user has typed something. Hits the
+  // dedicated /api/leave-requests/colleagues endpoint — open to every
+  // authed user (the main /api/employees needs HR permission so a
+  // regular employee filing leave gets a silent 403 there).
+  const [searchError, setSearchError] = useState<string | null>(null);
   useEffect(() => {
-    if (!debouncedSearch) { setNotifyOptions([]); return; }
+    if (!debouncedSearch) { setNotifyOptions([]); setSearchError(null); return; }
     let alive = true;
-    api.get('/employees', { params: { search: debouncedSearch, per_page: 12 } })
+    setSearchError(null);
+    api.get('/leave-requests/colleagues', { params: { search: debouncedSearch, limit: 12 } })
       .then(r => {
         if (!alive) return;
-        const raw = r.data?.data ?? r.data ?? [];
-        const list: NotifyEmployee[] = (Array.isArray(raw) ? raw : []).slice(0, 12).map((e: any) => ({
+        const raw = r.data?.data ?? [];
+        const list: NotifyEmployee[] = (Array.isArray(raw) ? raw : []).map((e: any) => ({
           id: e.id,
-          name: (e.display_name?.trim() || `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim()) || `Employee #${e.id}`,
+          name: e.name || `Employee #${e.id}`,
           emp_code: e.emp_code || `EMP-${e.id}`,
-          designation: e.designation?.name || e.designation_name || null,
-          photo_url: e.profile_photo_url || e.photo_url || null,
+          designation: e.designation || null,
+          photo_url: e.photo_url || null,
         }));
         setNotifyOptions(list);
       })
-      .catch(() => { /* silent — list stays empty */ });
+      .catch(err => {
+        if (!alive) return;
+        // Surface the failure inline so future API changes don't go
+        // unnoticed (the previous swallow-and-show-blank UX was the
+        // exact reason the empty-list bug hid for so long).
+        const msg = err?.response?.data?.message || err?.message || 'Search failed';
+        setSearchError(msg);
+        setNotifyOptions([]);
+      });
     return () => { alive = false; };
   }, [debouncedSearch]);
 
@@ -368,10 +378,16 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
               </div>
             )}
 
-            {!notifyOptions.length && debouncedSearch && (
+            {!notifyOptions.length && debouncedSearch && !searchError && (
               <div className="lvr-empty-search">
                 <i className="ri-search-eye-line" />
                 <span>No employees matched "{debouncedSearch}".</span>
+              </div>
+            )}
+            {searchError && (
+              <div className="lvr-warning" style={{ marginTop: 8 }}>
+                <i className="ri-error-warning-line" />
+                <span>Search failed: {searchError}</span>
               </div>
             )}
           </div>
