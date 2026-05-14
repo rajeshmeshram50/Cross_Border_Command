@@ -332,6 +332,25 @@ body {
   );
 }
 
+/* Shimmer card/surface tokens.
+ * Velzon exposes `--vz-card-bg` as a Sass variable (not a CSS custom
+ * property), so `var(--vz-card-bg, #fff)` always fell back to white and
+ * the skeleton cards stayed white in dark mode. These dedicated tokens
+ * give the shimmer placeholders a surface that actually flips with the
+ * theme. Keep them scoped to the `--shim-*` namespace so we don't
+ * conflict with Bootstrap/Velzon's own token names. */
+:root {
+  --shim-card-bg:      #ffffff;
+  --shim-border:       #e5e7eb;
+  --shim-secondary-bg: #f3f4f6;
+}
+[data-bs-theme="dark"],
+[data-layout-mode="dark"] {
+  --shim-card-bg:      #23272e;
+  --shim-border:       rgba(255, 255, 255, 0.08);
+  --shim-secondary-bg: #1c1f25;
+}
+
 .animate-pulse-ring {
   animation: pulse-ring 2s ease-in-out infinite;
 }
