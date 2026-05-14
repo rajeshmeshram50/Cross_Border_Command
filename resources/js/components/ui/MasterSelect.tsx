@@ -36,14 +36,25 @@ export function MasterSelect({
   // action buttons below the field.
   const wrapRef = useRef<HTMLDivElement>(null);
   const [dropDir, setDropDir] = useState<'up' | 'down'>('down');
+  // Width that the (portalled) menu should adopt — read straight off the
+  // trigger so the dropdown opens at the trigger's width rather than
+  // stretching to the full body width when container="body" is set.
+  const [menuWidth, setMenuWidth] = useState<number | undefined>(undefined);
   useEffect(() => {
     if (!open || !wrapRef.current) return;
-    const rect = wrapRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    // Estimated menu height: search row (~40) + 4 visible items (~32 each) + chrome.
-    const ESTIMATED_HEIGHT = 220;
-    setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
+    const update = () => {
+      if (!wrapRef.current) return;
+      const rect = wrapRef.current.getBoundingClientRect();
+      setMenuWidth(rect.width);
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      // Estimated menu height: search row (~40) + 4 visible items (~32 each) + chrome.
+      const ESTIMATED_HEIGHT = 220;
+      setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, [open]);
   const selected = options.find(o => o.value === currentValue);
   const showSearch = options.length > 4;
@@ -73,7 +84,21 @@ export function MasterSelect({
           </span>
           <i className="ri-arrow-down-s-line master-select-chev" />
         </DropdownToggle>
-        <DropdownMenu className="master-select-menu">
+        {/* container="body" + strategy="fixed" portals the menu to <body>
+            with Popper using fixed positioning. This is what stops the
+            dropdown from being clipped by ancestor overflow:hidden /
+            scroll containers (e.g. the onboarding modal's scrollable
+            main area). Without these props the menu sits inside the
+            wrap and dies at the first clipping ancestor.
+            The inline width binds the portalled menu to the trigger's
+            measured width — without this the menu inherits the body's
+            width and renders as a full-screen strip. */}
+        <DropdownMenu
+          className="master-select-menu"
+          container="body"
+          strategy="fixed"
+          style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
+        >
           {showSearch && (
             <div
               className="master-select-search"

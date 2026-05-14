@@ -71,8 +71,11 @@
   }
   .master-modal .master-select-menu.dropdown-menu,
   div.master-select-menu.dropdown-menu {
-    width: 100%;
-    min-width: 100% !important;
+    /* Width is set inline by JS at runtime to match the trigger's
+       offsetWidth. Before, `width: 100% / min-width: 100% !important` made
+       the menu fill the body when portalled there — producing a
+       full-screen-width strip at the bottom of the page. Inline width
+       wins because nothing here uses !important on width now. */
     border-radius: 10px !important;
     padding: 6px !important;
     box-shadow: 0 14px 30px rgba(18,38,63,0.14), 0 2px 8px rgba(18,38,63,0.06) !important;

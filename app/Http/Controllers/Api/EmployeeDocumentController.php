@@ -49,7 +49,14 @@ class EmployeeDocumentController extends Controller
         }
 
         $key = trim($data['document_key']);
-        $existing = EmployeeDocument::where('employee_id', $employee->id)
+        // withTrashed() — the unique constraint (employee_id, document_key)
+        // is NOT scoped to deleted_at IS NULL, so a row that was soft-
+        // deleted earlier will still trip the constraint on INSERT. We
+        // pull the trashed row too, restore it if needed, and overwrite
+        // its file/metadata below. Without this, a delete-and-reupload
+        // cycle crashed with 23505 ("duplicate key value").
+        $existing = EmployeeDocument::withTrashed()
+            ->where('employee_id', $employee->id)
             ->where('document_key', $key)
             ->first();
 
@@ -58,6 +65,11 @@ class EmployeeDocumentController extends Controller
         // the file — we manage it explicitly.
         if ($existing && $existing->file_path) {
             try { Storage::disk('public')->delete($existing->file_path); } catch (\Throwable $e) { /* best-effort */ }
+        }
+        // If we found a soft-deleted row, bring it back so the existing
+        // primary key can be re-used by the fill() below.
+        if ($existing && method_exists($existing, 'trashed') && $existing->trashed()) {
+            $existing->restore();
         }
 
         $stored = $file->storeAs(

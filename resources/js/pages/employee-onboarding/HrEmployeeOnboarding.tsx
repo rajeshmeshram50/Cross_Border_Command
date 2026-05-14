@@ -8,6 +8,7 @@ import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
@@ -36,6 +37,7 @@ const ONB_SAL_STRUCT   = OPT('Range Based', 'Fixed');
 const ONB_TAX_REGIME   = OPT('New Regime (115BAC)', 'Old Regime');
 const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
 const ONB_PF_DEDUCT    = OPT('Employee + Employer', 'Employee only');
+const ONB_BLOOD_GROUP  = OPT('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-');
 
 // ── Evidence Vault — mock document catalogue (mirrors HrEmployees) ──────────
 type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
@@ -165,6 +167,36 @@ const _formatDate = (iso: string | null | undefined): string => {
   if (isNaN(d.getTime())) return String(iso).slice(0, 10);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
+
+/** YYYY-MM-DD for today — used as max bound on date pickers that must
+ *  refer to past events (previous-employment start/end, etc.). Recomputed
+ *  per call rather than memoized so a long-lived modal still resolves to
+ *  "right now" when the user opens the picker. */
+const _todayIso = (): string => {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+/** Server-enforced cap for ANY uploaded document. Drives both the
+ *  per-doc "max X MB" hint shown in the catalogue and the client-side
+ *  guard in triggerUpload() — keeping them sourced from one constant
+ *  means a future bump only needs to change this one line. Mirrors
+ *  EmployeeDocumentController::MAX_MB on the backend. */
+const DOC_MAX_MB = 8;
+
+/** Single source of truth for accepted file types. Mirrors
+ *  EmployeeDocumentController::MIME_ALLOWED on the backend.
+ *  - DOC_ACCEPT_ATTR drives the native file picker's `accept`, so the
+ *    OS dialog itself filters out non-allowed types (no more "Only PDF
+ *    / JPG / PNG / WEBP files are allowed" coming back from the server
+ *    after the round trip).
+ *  - DOC_ACCEPTED_EXTS / DOC_ACCEPTED_MIMES drive the client-side
+ *    validator that runs before the upload POST in case the user
+ *    bypasses the picker via drag-drop or a renamed file. */
+const DOC_ACCEPTED_MIMES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'] as const;
+const DOC_ACCEPTED_EXTS  = ['pdf', 'jpg', 'jpeg', 'png', 'webp'] as const;
+const DOC_ACCEPT_ATTR    = DOC_ACCEPTED_MIMES.join(',');
 
 /**
  * Map the wizard's progress + employee status to one of the existing
@@ -371,9 +403,9 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
     title: 'Document Management',
     subtitle: 'Identity, education, address & employment documents',
     checkpoints: [
-      { title: 'Aadhaar Card uploaded',                          desc: 'Front & back, PDF or image, max 5 MB',                                            badges: ['REQUIRED', 'ALL'] },
-      { title: 'PAN Card uploaded',                              desc: 'PDF or image, max 5 MB',                                                          badges: ['REQUIRED', 'ALL'] },
-      { title: 'Passport-size Photograph uploaded',              desc: 'JPG/PNG, max 2 MB, white background preferred',                                   badges: ['REQUIRED', 'ALL'] },
+      { title: 'Aadhaar Card uploaded',                          desc: `Front & back, PDF or image, max ${DOC_MAX_MB} MB`,                                  badges: ['REQUIRED', 'ALL'] },
+      { title: 'PAN Card uploaded',                              desc: `PDF or image, max ${DOC_MAX_MB} MB`,                                                badges: ['REQUIRED', 'ALL'] },
+      { title: 'Passport-size Photograph uploaded',              desc: `JPG/PNG, max ${DOC_MAX_MB} MB, white background preferred`,                         badges: ['REQUIRED', 'ALL'] },
       { title: 'Current & permanent address proof submitted',    desc: 'Utility bill or rent agreement (max 6 months old)',                               badges: ['REQUIRED', 'ALL'] },
       { title: '10th & 12th marksheets uploaded',                desc: 'SSC/HSC board certificates with marksheets',                                      badges: ['REQUIRED', 'ALL'] },
       { title: 'Graduation / Degree certificate uploaded',       desc: 'Official degree or provisional certificate',                                      badges: ['REQUIRED', 'ALL'] },
@@ -899,7 +931,11 @@ export default function HrEmployeeOnboarding() {
                               })()}
                             </td>
                             <td>
-                              <span className="onb-pill" style={{ background: tone.bg, color: tone.fg }}>
+                              <span
+                                className="onb-pill"
+                                data-status={r.status}
+                                style={{ background: tone.bg, color: tone.fg }}
+                              >
                                 <span className="d" style={{ background: tone.dot }} />
                                 {r.status}
                               </span>
@@ -1580,39 +1616,55 @@ const ONB_STAGES: { num: number; key: string; label: string; stage: string; sub:
 ];
 
 // ── Stage 2 — Document catalogue (matches the screenshots) ──────────────────
+// Per-doc size standards (in MB) — capped at DOC_MAX_MB (the absolute
+// ceiling the backend will accept). Lower numbers mirror what govt /
+// HR portals typically allow, which is also what employees expect:
+//   - Photos:           2 MB
+//   - ID / address:     5 MB
+//   - Certificates:     5 MB
+//   - General PDFs:     DOC_MAX_MB (8 MB)
+// The label rendered next to each row is derived from `maxMb`, so the
+// hint and the validator can never drift.
 type DocStatus = 'Pending' | 'Uploaded' | 'Verified' | 'Rejected' | 'Optional';
-interface ChecklistDoc { id: string; name: string; sub: string; status: DocStatus }
+interface ChecklistDoc {
+  id: string;
+  name: string;
+  sub: string;
+  status: DocStatus;
+  /** Per-doc size cap. Defaults to DOC_MAX_MB if omitted. */
+  maxMb?: number;
+}
 interface DocCategory { id: string; title: string; icon: string; tint: string; fg: string; docs: ChecklistDoc[] }
 
 const STAGE2_CATEGORIES: DocCategory[] = [
   {
     id: 'identity', title: 'Identity Documents', icon: 'ri-id-card-line', tint: '#ece6ff', fg: '#5a3fd1',
     docs: [
-      { id: 'aadhaar',    name: 'Aadhaar Card (Front & Back)', sub: 'PDF or Image, max 5 MB', status: 'Pending' },
-      { id: 'pan',        name: 'PAN Card',                    sub: 'PDF or Image, max 5 MB', status: 'Pending' },
-      { id: 'photo',      name: 'Passport-size Photograph',    sub: 'JPG/PNG, max 2 MB',      status: 'Pending' },
+      { id: 'aadhaar',    name: 'Aadhaar Card (Front & Back)', sub: 'PDF or Image · max 5 MB', maxMb: 5, status: 'Pending' },
+      { id: 'pan',        name: 'PAN Card',                    sub: 'PDF or Image · max 5 MB', maxMb: 5, status: 'Pending' },
+      { id: 'photo',      name: 'Passport-size Photograph',    sub: 'JPG / PNG · max 2 MB',    maxMb: 2, status: 'Pending' },
     ],
   },
   {
     id: 'address', title: 'Address Proof', icon: 'ri-map-pin-line', tint: '#dceefe', fg: '#0c63b0',
     docs: [
-      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement — max 6 months old', status: 'Pending' },
-      { id: 'perm_addr', name: 'Permanent Address Proof', sub: 'Govt-issued address proof',                        status: 'Pending' },
+      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement — max 6 months old · 5 MB', maxMb: 5, status: 'Pending' },
+      { id: 'perm_addr', name: 'Permanent Address Proof', sub: 'Govt-issued address proof · max 5 MB',                    maxMb: 5, status: 'Pending' },
     ],
   },
   {
     id: 'education', title: 'Education Documents', icon: 'ri-graduation-cap-line', tint: '#d3f0ee', fg: '#0a716a',
     docs: [
-      { id: 'ssc',  name: '10th Marksheet (SSC / Matriculation)', sub: 'Board certificate + mark sheet',           status: 'Pending'  },
-      { id: 'hsc',  name: '12th Marksheet (HSC / Intermediate)',  sub: 'Board certificate + mark sheet',           status: 'Pending'  },
-      { id: 'grad', name: 'Graduation Certificate / Degree',      sub: 'Official degree or provisional certificate', status: 'Pending'  },
-      { id: 'pg',   name: 'Post-graduation Certificate',          sub: 'If applicable',                              status: 'Optional' },
+      { id: 'ssc',  name: '10th Marksheet (SSC / Matriculation)', sub: 'Board certificate + mark sheet · max 5 MB',         maxMb: 5, status: 'Pending'  },
+      { id: 'hsc',  name: '12th Marksheet (HSC / Intermediate)',  sub: 'Board certificate + mark sheet · max 5 MB',         maxMb: 5, status: 'Pending'  },
+      { id: 'grad', name: 'Graduation Certificate / Degree',      sub: 'Official degree or provisional certificate · 5 MB', maxMb: 5, status: 'Pending'  },
+      { id: 'pg',   name: 'Post-graduation Certificate',          sub: 'If applicable · max 5 MB',                          maxMb: 5, status: 'Optional' },
     ],
   },
   {
     id: 'bank', title: 'Bank Details', icon: 'ri-money-dollar-circle-line', tint: '#d6f4e3', fg: '#108548',
     docs: [
-      { id: 'cheque', name: 'Cancelled Cheque', sub: 'Cancelled cheque leaf with account number & IFSC clearly visible, PDF or Image, max 5 MB', status: 'Pending' },
+      { id: 'cheque', name: 'Cancelled Cheque', sub: 'Cancelled cheque leaf with account number & IFSC clearly visible · max 5 MB', maxMb: 5, status: 'Pending' },
     ],
   },
 ];
@@ -1639,11 +1691,11 @@ const makePrevCompany = (): PrevCompany => ({
   contactNumber: '',
 });
 
-const STAGE2_COMPANY_DOCS: { id: string; name: string; status: DocStatus }[] = [
-  { id: 'exp_letter',   name: 'Experience Letter',     status: 'Pending'  },
-  { id: 'rel_letter',   name: 'Relieving Letter',      status: 'Pending'  },
-  { id: 'salary_slips', name: 'Last 3 Months Salary Slips', status: 'Pending'  },
-  { id: 'offer_letter', name: 'Previous Offer Letter', status: 'Optional' },
+const STAGE2_COMPANY_DOCS: { id: string; name: string; status: DocStatus; maxMb?: number }[] = [
+  { id: 'exp_letter',   name: 'Experience Letter',          status: 'Pending',  maxMb: 5 },
+  { id: 'rel_letter',   name: 'Relieving Letter',           status: 'Pending',  maxMb: 5 },
+  { id: 'salary_slips', name: 'Last 3 Months Salary Slips', status: 'Pending',  maxMb: 8 },
+  { id: 'offer_letter', name: 'Previous Offer Letter',      status: 'Optional', maxMb: 5 },
 ];
 
 const DOC_STATUS_TONE: Record<DocStatus, { bg: string; fg: string; dot: string }> = {
@@ -1741,6 +1793,7 @@ function InitiateOnboardingModal({
     last_name:   '',
     gender:      '',
     date_of_birth: '',
+    blood_group:  '',
     nationality_country_id: '',
     work_country_id: '',
     email:       '',
@@ -1797,10 +1850,20 @@ useEffect(() => {
     last_name:   String(x.last_name   ?? ''),
     gender:      String(x.gender ?? ''),
     date_of_birth: x.date_of_birth ? String(x.date_of_birth).slice(0, 10) : '',
+    // Blood group is captured on the wizard but not yet on the employees
+    // table — UI-only for now. If/when a column is added the same key
+    // will flow through the existing saveStage1 payload.
+    blood_group: String(x.blood_group ?? ''),
     nationality_country_id: x.nationality_country_id ? String(x.nationality_country_id) : '',
     work_country_id:        x.work_country_id        ? String(x.work_country_id)        : '',
-    email:       '',
-    official_email: '',  // ← CHANGE THIS: Always empty, don't hydrate from backend
+    // Work email — MUST hydrate from the server value. After Save Draft /
+    // Next Stage the parent reloads /employees, which gives us a fresh
+    // emp.raw reference and re-fires this effect. If we leave email blank
+    // here the user's typed value disappears the moment they navigate
+    // away and back. official_email stays blank intentionally — it's a
+    // system-generated field set elsewhere, not user input on this form.
+    email:       String(x.email ?? ''),
+    official_email: '',
     mobile:      String(x.mobile ?? ''),
 
     department_id:    x.department_id    ? String(x.department_id)    : '',
@@ -1854,35 +1917,142 @@ useEffect(() => {
 }, [isOpen, emp?.id, emp?.raw]);
 
   // ── Form validation state ──────────────────────────────────────────
-// ── Form validation state ──────────────────────────────────────────
 const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
 const [nextLoading, setNextLoading] = useState(false);
+
+// Wipe any stale errors whenever the modal opens for a new employee so
+// the user doesn't see red borders from a previous attempt.
+useEffect(() => { if (isOpen) setS1Errors({}); }, [isOpen, emp?.id]);
+
+// ── Date-field bounds ─────────────────────────────────────────────
+// Computed once per render. Each MasterDatePicker hides days outside
+// its [minDate, maxDate] window so the user can't even click on, say,
+// 2012 for a salary-effective-from. validateStage1 also re-checks the
+// bounds in case anything slips through (e.g. hydrated bad data from
+// the server). Format is YYYY-MM-DD because that's what MasterDatePicker
+// returns from its onChange.
+const _toIso = (d: Date) => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+const _shiftYears = (years: number) => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + years);
+  return _toIso(d);
+};
+const todayIso = _toIso(new Date());
+// DOB: employee must be at least 18 today, and not older than 100.
+const dobMin = _shiftYears(-100);
+const dobMax = _shiftYears(-18);
+// Joining: up to 5 years back (retro-joins) and 1 year ahead (planned starts).
+const joinMin = _shiftYears(-5);
+const joinMax = _shiftYears(1);
+// Salary effective from: anchored to joining date when set, otherwise
+// allow up to 1 year before today. Hard cap at 1 year ahead so an
+// admin can schedule a near-future increment but not type "2012" or
+// "2050" by mistake.
+const salaryMin = s1.date_of_joining || _shiftYears(-1);
+const salaryMax = _shiftYears(1);
+
+// Ordered list of required field keys — drives both validation and
+// scroll-to-first-error so the user lands on the topmost missing field
+// in form order rather than alphabetical map order.
+const STAGE1_FIELD_ORDER = [
+  'first_name',
+  'last_name',
+  'date_of_birth',
+  'email',
+  'mobile',
+  'date_of_joining',
+  'annual_salary',
+  'salary_effective_from',
+] as const;
+
+/** Bring the first errored field into view + focus it so the user sees
+ *  exactly where attention is needed. Falls back gracefully if the node
+ *  isn't mounted (e.g. user is on a different stage when validation
+ *  fires from a Save Draft). */
+const scrollToFirstError = (errors: Record<string, string>) => {
+  const first = STAGE1_FIELD_ORDER.find(k => errors[k]);
+  if (!first) return;
+  // Defer so the error nodes are in the DOM before we measure.
+  setTimeout(() => {
+    const wrap = document.querySelector<HTMLElement>(`[data-field="${first}"]`);
+    if (!wrap) return;
+    wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const focusable = wrap.querySelector<HTMLElement>('input, button, textarea, select');
+    focusable?.focus({ preventScroll: true });
+  }, 50);
+};
 
 /** Validate Stage 1 required fields before allowing navigation. */
 const validateStage1 = (): boolean => {
   const errors: Record<string, string> = {};
-  
+
   // Personal Information - Required
   if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
   if (!s1.last_name?.trim()) errors.last_name = 'Last name is required';
-  if (!s1.date_of_birth?.trim()) errors.date_of_birth = 'Date of birth is required';
-  
-  // Contact Information - Required
-  if (!s1.email?.trim()) errors.email = 'Work email is required';
-  if (!s1.mobile?.trim()) errors.mobile = 'Mobile number is required';
-  
-  // Compensation - Required
-  if (!s1.annual_salary || Number(s1.annual_salary) <= 0) {
+  // Date of Birth — required + age 18 sanity check. The picker already
+  // hides invalid days, but a user could paste an ISO string into the
+  // bound state from hydration, so we re-check here.
+  const dob = s1.date_of_birth?.trim() ?? '';
+  if (!dob) {
+    errors.date_of_birth = 'Date of birth is required';
+  } else if (dob > dobMax) {
+    errors.date_of_birth = 'Employee must be at least 18 years old';
+  } else if (dob < dobMin) {
+    errors.date_of_birth = 'Date of birth looks unrealistic';
+  }
+
+  // Contact Information - Required + format
+  const email = s1.email?.trim() ?? '';
+  if (!email) {
+    errors.email = 'Work email is required';
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.email = 'Enter a valid email address';
+  }
+
+  const mobile = s1.mobile?.trim() ?? '';
+  const mobileDigits = mobile.replace(/\D/g, '');
+  if (!mobile) {
+    errors.mobile = 'Mobile number is required';
+  } else if (mobileDigits.length < 10 || mobileDigits.length > 15) {
+    errors.mobile = 'Enter a valid mobile number (10–15 digits)';
+  }
+
+  // Joining date — optional but bounded (no 1990 entries, no 2050 entries).
+  const doj = s1.date_of_joining?.trim() ?? '';
+  if (doj) {
+    if (doj < joinMin) errors.date_of_joining = 'Joining date is too far in the past';
+    else if (doj > joinMax) errors.date_of_joining = 'Joining date cannot be more than a year in the future';
+  }
+
+  // Compensation - Required + range
+  // Postgres numeric(14, 2) max is 999,999,999,999.99. Anything larger
+  // overflows the column and surfaces as a 500 from the server. Guard
+  // here so the user gets a friendly inline error instead.
+  const annualNum = Number(s1.annual_salary);
+  if (!s1.annual_salary || !Number.isFinite(annualNum) || annualNum <= 0) {
     errors.annual_salary = 'Annual salary is required and must be greater than 0';
+  } else if (annualNum > 999_999_999_999.99) {
+    errors.annual_salary = 'Annual salary is too large (max 999,999,999,999.99)';
   }
-  if (!s1.salary_effective_from?.trim()) {
+  const sef = s1.salary_effective_from?.trim() ?? '';
+  if (!sef) {
     errors.salary_effective_from = 'Salary effective date is required';
+  } else if (sef < salaryMin) {
+    errors.salary_effective_from = doj
+      ? 'Salary effective date cannot be before the joining date'
+      : 'Salary effective date is too far in the past';
+  } else if (sef > salaryMax) {
+    errors.salary_effective_from = 'Salary effective date cannot be more than a year in the future';
   }
-  
+
   setS1Errors(errors);
-  
+
   if (Object.keys(errors).length > 0) {
     toast.error('Please fill all required fields', `${Object.keys(errors).length} field(s) need attention`);
+    scrollToFirstError(errors);
     return false;
   }
   return true;
@@ -2167,8 +2337,30 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
   // to review. Stages 2-6 keep the old "based on user navigation" logic
   // because they don't have backend persistence yet.
   const wizardStep = Math.max(0, Math.min(4, Number(emp.wizardStep ?? 0)));
-  const stage1Pct = wizardStep * 25;
+  // Live Stage 1 progress — derived from how many of the 7 required Stage 1
+  // fields the user has filled in s1 right now. This makes the sidebar bar
+  // move every time the user types/selects, instead of jumping in 25%
+  // chunks only after Save Draft. Once the wizard is fully saved on the
+  // server, lock at 100% (server is authoritative — covers cases where
+  // the form is empty on reopen for a Completed employee).
+  const stage1RequiredFields = [
+    s1.first_name,
+    s1.last_name,
+    s1.date_of_birth,
+    s1.email,
+    s1.mobile,
+    s1.annual_salary,
+    s1.salary_effective_from,
+  ];
+  const stage1Filled = stage1RequiredFields.filter(v => String(v ?? '').trim()).length;
+  const stage1LivePct = Math.round((stage1Filled / stage1RequiredFields.length) * 100);
   const stage1Done = wizardStep >= 4;
+  const stage1Pct = stage1Done
+    ? 100
+    // Take the larger of the live form % and the server's high-watermark
+    // so navigating back to Stage 1 on a partially-saved employee shows
+    // at least the persisted progress.
+    : Math.max(stage1LivePct, wizardStep * 25);
 
   // Stage 2 progress is anchored to the document upload count. Counts
   // BOTH catalogue docs (Aadhaar, PAN, …) AND per-company docs (one set
@@ -2200,6 +2392,28 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
   const stage2Pct = stage2Total ? Math.round((stage2Uploaded / stage2Total) * 100) : 0;
   const stage2Done = stage2Total > 0 && stage2Uploaded >= stage2Total;
 
+  // Stage 3 progress — mirrored from the same `tasksDone / 4` calculation
+  // inside Stage3Provisioning, but computed here so the sidebar reflects
+  // it without the user having to navigate to Stage 3. Each "task" maps
+  // to one of the four provisioning areas (laptop, mobile, other-assets,
+  // physical security like biometric/desk/ID card).
+  const stage3TasksTotal = 4;
+  const stage3TasksDone =
+    (s1.laptop_assigned === 'Yes' && s1.laptop_master_asset_id ? 1 : 0)
+    + (s1.mobile_assigned === 'Yes' && s1.mobile_master_asset_id ? 1 : 0)
+    + ((s1.other_master_asset_ids?.length ?? 0) > 0 ? 1 : 0)
+    + (
+      (s1.biometric_status && s1.biometric_status !== 'Not Registered') ||
+      !!s1.desk_workstation_no?.trim() ||
+      (s1.id_card_status && s1.id_card_status !== 'Not Printed')
+        ? 1 : 0
+    );
+  const stage3Pct = Math.round((stage3TasksDone / stage3TasksTotal) * 100);
+  // Stage 3 is "Done" once the server has stamped it (macro stage ≥ 3) OR
+  // every task is filled in the current session.
+  const stage3MacroDone = Number(emp?.raw?.onboarding_stage_completed ?? 0) >= 3;
+  const stage3Done = stage3MacroDone || stage3TasksDone === stage3TasksTotal;
+
   // Stage 4 readiness — same shape as the four checks rendered inside
   // `Stage4Payroll`, derived from the live s4 form state. Bank check
   // auto-passes for cheque/cash since no account is needed.
@@ -2209,7 +2423,10 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
   const stage4BankOk =
     s4.salary_payment_mode !== 'bank' || (
       !!s4.bank_name.trim() &&
-      !!s4.bank_account_number.trim() &&
+      // Account number must be 9–18 digits (matches the inline hint on
+      // the input). Without this, a single-digit or 30-character entry
+      // would still flip the readiness check green.
+      /^\d{9,18}$/.test(s4.bank_account_number.trim()) &&
       IFSC_RE.test(s4.ifsc_code.trim()) &&
       !!s4.account_holder_name.trim() &&
       !!s4.bank_branch.trim()
@@ -2233,20 +2450,44 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
   const stage4Done    = stage4Stamped || (stage4Pass === stage4Total4 && stage4UanOk);
   const stage4Pct     = stage4Stamped ? 100 : Math.round((stage4Pass / stage4Total4) * 100);
 
+  // Server-side macro stage watermark — used as the floor for every
+  // stage's % so finished stages don't visually regress when the user
+  // navigates back. e.g. macro=4 → Stages 1-4 always show ≥ 100%.
+  const macroCompleted = Number(emp?.raw?.onboarding_stage_completed ?? 0);
+  // Stage 6 ties to whether the employee has been activated. Activation
+  // bumps both status and macro stage to 6, so any of those signals is
+  // enough to flip the sidebar to Completed.
+  const stage6Done = macroCompleted >= 6 || String(emp?.raw?.status ?? '').toLowerCase() === 'active';
+
   const stagesView = ONB_STAGES.map(s => {
     let status: StageStatus, progress: number;
     if (s.num === 1) {
       // Anchored to real wizard state — completion can't roll back.
       progress = stage1Pct;
-      status   = stage1Done ? 'Completed' : (wizardStep > 0 ? 'In Progress' : 'Pending');
+      status   = stage1Done ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 2) {
       // Anchored to real document upload state.
       progress = stage2Pct;
       status   = stage2Done ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
+    } else if (s.num === 3) {
+      // Live from the four provisioning tasks — moves as soon as the
+      // user assigns a laptop / mobile / asset / biometric.
+      progress = stage3Done ? 100 : stage3Pct;
+      status   = stage3Done ? 'Completed' : (stage3TasksDone > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 4) {
       // Anchored to live Stage 4 readiness checks + persisted stamp.
       progress = stage4Pct;
       status   = stage4Done ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
+    } else if (s.num === 5) {
+      // No real signing state yet — use server macro watermark as the
+      // only completion signal. Otherwise mark In Progress only while
+      // the user is actively on this stage.
+      const done = macroCompleted >= 5;
+      progress = done ? 100 : (activeStage === 5 ? 35 : 0);
+      status   = done ? 'Completed' : (activeStage === 5 ? 'In Progress' : 'Pending');
+    } else if (s.num === 6) {
+      progress = stage6Done ? 100 : (activeStage === 6 ? 35 : 0);
+      status   = stage6Done ? 'Completed' : (activeStage === 6 ? 'In Progress' : 'Pending');
     } else if (s.num < activeStage)      { status = 'Completed';   progress = 100; }
     else if (s.num === activeStage) { status = 'In Progress'; progress = s.progress || 35; }
     else                           { status = 'Pending';     progress = 0;   }
@@ -2374,19 +2615,9 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
               </span>
             </div>
 
-            {activeStage === 1 && (
-              <>
-                {/* Profile completion banner */}
-                <div className="onb-init-profile-bar">
-                  <div className="onb-init-profile-head">
-                    <p className="onb-init-profile-label"><i className="ri-time-line" /> Profile Completion</p>
-                    <span className="onb-init-profile-pct">{emp.profile}%</span>
-                  </div>
-                  <div className="onb-init-profile-track"><div className="onb-init-profile-fill" style={{ width: `${emp.profile}%` }} /></div>
-                  <div className="onb-init-profile-help">{emp.profile}% complete · Required fields (marked red) must be filled before proceeding to Stage 2</div>
-                </div>
-              </>
-            )}
+            {/* Per-stage progress banner removed — the sidebar already
+                shows overall + per-stage progress, so this was redundant
+                and visually noisy on top of every stage. */}
             {activeStage === 1 && Object.keys(s1Errors).length > 0 && (
   <div className="onb-validation-summary">
     <i className="ri-error-warning-line" />
@@ -2420,7 +2651,7 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
               />
             )}
             {activeStage === 5 && <Stage5Policies />}
-            {activeStage === 6 && <Stage6Verify emp={emp} />}
+            {activeStage === 6 && <Stage6Verify emp={emp} onActivated={onSaved} />}
 
             {activeStage === 1 && (
             <>
@@ -2441,18 +2672,18 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
                     <label className="onb-init-label">Work Country</label>
                     <MasterSelect options={countryOpts} placeholder="Select country" value={s1.work_country_id} onChange={(v) => setS1(p => ({ ...p, work_country_id: v }))} />
                   </Col>
-<Col md={4}>
+<Col md={4} data-field="first_name">
   <label className="onb-init-label">
     First Name <span className="req">*</span>
   </label>
-  <input 
-    className={`onb-init-input ${s1Errors.first_name ? 'is-invalid' : ''}`} 
-    placeholder="First name" 
-    value={s1.first_name} 
-    onChange={e => { 
-      setS1(p => ({ ...p, first_name: e.target.value })); 
+  <input
+    className={`onb-init-input ${s1Errors.first_name ? 'is-invalid' : ''}`}
+    placeholder="First name"
+    value={s1.first_name}
+    onChange={e => {
+      setS1(p => ({ ...p, first_name: e.target.value }));
       setS1Errors(p => ({ ...p, first_name: '' }));
-    }} 
+    }}
   />
   {s1Errors.first_name && <div className="onb-error-msg">{s1Errors.first_name}</div>}
 </Col>
@@ -2460,18 +2691,18 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
                     <label className="onb-init-label">Middle Name</label>
                     <input className="onb-init-input" placeholder="Middle name (optional)" value={s1.middle_name} onChange={e => setS1(p => ({ ...p, middle_name: e.target.value }))} />
                   </Col>
- <Col md={4}>
+ <Col md={4} data-field="last_name">
   <label className="onb-init-label">
     Last Name <span className="req">*</span>
   </label>
-  <input 
-    className={`onb-init-input ${s1Errors.last_name ? 'is-invalid' : ''}`} 
-    placeholder="Last name" 
-    value={s1.last_name} 
-    onChange={e => { 
-      setS1(p => ({ ...p, last_name: e.target.value })); 
+  <input
+    className={`onb-init-input ${s1Errors.last_name ? 'is-invalid' : ''}`}
+    placeholder="Last name"
+    value={s1.last_name}
+    onChange={e => {
+      setS1(p => ({ ...p, last_name: e.target.value }));
       setS1Errors(p => ({ ...p, last_name: '' }));
-    }} 
+    }}
   />
   {s1Errors.last_name && <div className="onb-error-msg">{s1Errors.last_name}</div>}
 </Col>
@@ -2488,17 +2719,20 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
                     <MasterSelect options={ONB_GENDER} placeholder="Select gender" value={s1.gender} onChange={(v) => setS1(p => ({ ...p, gender: v }))} />
                   </Col>
 {/* Date of Birth */}
-<Col md={4}>
+<Col md={4} data-field="date_of_birth">
   <label className="onb-init-label">
     Date of Birth <span className="req">*</span>
   </label>
-  <MasterDatePicker 
-    placeholder="Select date of birth" 
-    value={s1.date_of_birth} 
-    onChange={(v) => { 
-      setS1(p => ({ ...p, date_of_birth: v })); 
+  <MasterDatePicker
+    placeholder="Select date of birth"
+    value={s1.date_of_birth}
+    invalid={!!s1Errors.date_of_birth}
+    minDate={dobMin}
+    maxDate={dobMax}
+    onChange={(v) => {
+      setS1(p => ({ ...p, date_of_birth: v }));
       setS1Errors(p => ({ ...p, date_of_birth: '' }));
-    }} 
+    }}
   />
   {s1Errors.date_of_birth && <div className="onb-error-msg">{s1Errors.date_of_birth}</div>}
 </Col>
@@ -2512,34 +2746,37 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
                 <Row className="g-3">
                  
 {/* Work Email */}
-<Col md={4}>
+<Col md={4} data-field="email">
   <label className="onb-init-label">
     Work Email <span className="req">*</span>
   </label>
-  <input 
-    className={`onb-init-input is-required ${s1Errors.email ? 'is-invalid' : ''}`} 
-    placeholder="name@enterprise.com" 
-    value={s1.email} 
-    onChange={e => { 
-      setS1(p => ({ ...p, email: e.target.value })); 
+  <input
+    type="email"
+    className={`onb-init-input ${s1Errors.email ? 'is-invalid' : ''}`}
+    placeholder="name@enterprise.com"
+    value={s1.email}
+    onChange={e => {
+      setS1(p => ({ ...p, email: e.target.value }));
       setS1Errors(p => ({ ...p, email: '' }));
-    }} 
+    }}
   />
   {s1Errors.email && <div className="onb-error-msg">{s1Errors.email}</div>}
 </Col>
                  {/* Mobile Number */}
-<Col md={4}>
+<Col md={4} data-field="mobile">
   <label className="onb-init-label">
     Mobile Number <span className="req">*</span>
   </label>
-  <input 
-    className={`onb-init-input is-required ${s1Errors.mobile ? 'is-invalid' : ''}`} 
-    placeholder="+91 XXXXX XXXXX" 
-    value={s1.mobile} 
-    onChange={e => { 
-      setS1(p => ({ ...p, mobile: e.target.value })); 
+  <input
+    type="tel"
+    className={`onb-init-input ${s1Errors.mobile ? 'is-invalid' : ''}`}
+    placeholder="+91 XXXXX XXXXX"
+    value={s1.mobile}
+    onChange={e => {
+      // Allow digits, spaces, +, -, ( and ) so users can paste formatted numbers
+      setS1(p => ({ ...p, mobile: e.target.value.replace(/[^0-9+\-\s()]/g, '') }));
       setS1Errors(p => ({ ...p, mobile: '' }));
-    }} 
+    }}
   />
   {s1Errors.mobile && <div className="onb-error-msg">{s1Errors.mobile}</div>}
 </Col>
@@ -2557,7 +2794,15 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Blood Group</label>
-                    <input className="onb-init-input" placeholder="e.g. O+" />
+                    {/* Static eight-option list (not a master-API call) —
+                        blood groups are universal, no need for a server
+                        round-trip. Pattern matches ONB_GENDER / ONB_NATIONALITY. */}
+                    <MasterSelect
+                      options={ONB_BLOOD_GROUP}
+                      placeholder="Select blood group"
+                      value={s1.blood_group}
+                      onChange={(v) => setS1(p => ({ ...p, blood_group: v }))}
+                    />
                   </Col>
                 </Row>
               </div>
@@ -2576,7 +2821,21 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Employment Details</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Joining Date</label><MasterDatePicker placeholder="dd-mm-yyyy" value={s1.date_of_joining} onChange={(v) => setS1(p => ({ ...p, date_of_joining: v }))} /></Col>
+                  <Col md={4} data-field="date_of_joining">
+                    <label className="onb-init-label">Joining Date</label>
+                    <MasterDatePicker
+                      placeholder="dd-mm-yyyy"
+                      value={s1.date_of_joining}
+                      invalid={!!s1Errors.date_of_joining}
+                      minDate={joinMin}
+                      maxDate={joinMax}
+                      onChange={(v) => {
+                        setS1(p => ({ ...p, date_of_joining: v }));
+                        setS1Errors(p => ({ ...p, date_of_joining: '' }));
+                      }}
+                    />
+                    {s1Errors.date_of_joining && <div className="onb-error-msg">{s1Errors.date_of_joining}</div>}
+                  </Col>
                   <Col md={4}><label className="onb-init-label">Department</label><MasterSelect options={departmentOpts} placeholder="Select department" value={s1.department_id} onChange={(v) => setS1(p => ({ ...p, department_id: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Designation</label><MasterSelect options={designationOpts} placeholder="Select designation" value={s1.designation_id} onChange={(v) => setS1(p => ({ ...p, designation_id: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Primary Role</label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.primary_role_id} onChange={(v) => setS1(p => ({ ...p, primary_role_id: v }))} /></Col>
@@ -2586,11 +2845,34 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
 
                 <p className="onb-init-subgroup">Organisational Details</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Legal Entity</label><MasterSelect options={legalEntityOpts} placeholder="Select entity" value={s1.legal_entity_id} onChange={(v) => {
-                    const ent = mLegalEntities.find(le => String(le.id) === String(v));
-                    setS1(p => ({ ...p, legal_entity_id: v, location: p.location || (ent?.city || '') }));
-                  }} /></Col>
-                  <Col md={4}><label className="onb-init-label">Location</label><input className="onb-init-input" value={s1.location} onChange={e => setS1(p => ({ ...p, location: e.target.value }))} placeholder="Office / city" /></Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Legal Entity</label>
+                    <MasterSelect
+                      options={legalEntityOpts}
+                      placeholder="Select entity"
+                      value={s1.legal_entity_id}
+                      onChange={(v) => {
+                        // Always overwrite Location with the entity's city —
+                        // Location is now a derived, read-only field. Users
+                        // change the Legal Entity to change the office.
+                        const ent = mLegalEntities.find(le => String(le.id) === String(v));
+                        setS1(p => ({ ...p, legal_entity_id: v, location: ent?.city || '' }));
+                      }}
+                    />
+                  </Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Location <span className="auto">AUTO</span></label>
+                    {/* Auto-filled from the selected Legal Entity's city
+                        and locked. Editing it created a free-text drift
+                        between the entity record and the employee row,
+                        which then failed PG validation on save. */}
+                    <input
+                      className="onb-init-input is-autofilled"
+                      readOnly
+                      value={s1.location}
+                      placeholder={s1.legal_entity_id ? '—' : 'Select a Legal Entity first'}
+                    />
+                  </Col>
                   <Col md={4}><label className="onb-init-label">Reporting Manager</label><MasterSelect options={managerOpts} placeholder="Select manager" value={s1.reporting_manager} onChange={(v) => setS1(p => ({ ...p, reporting_manager: v }))} /></Col>
                 </Row>
 
@@ -2747,18 +3029,37 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
                     <label className="onb-init-label">Pay Group</label>
                     <MasterSelect options={ONB_PAY_GROUP} value={s1.pay_group || 'Default pay group'} onChange={(v) => setS1(p => ({ ...p, pay_group: v }))} />
                   </Col>
-                  {/* Compensation - Annual Salary */}
-<Col md={4}>
+                  {/* Compensation - Annual Salary.
+                      Backed by Postgres numeric(14, 2) — max value
+                      999,999,999,999.99 (12 whole digits + 2 decimal).
+                      We cap on input so the user can't type a 30-digit
+                      number that JS would silently convert to scientific
+                      notation, which then crashed PG with "numeric field
+                      overflow". The validator gives the friendly error. */}
+<Col md={4} data-field="annual_salary">
   <label className="onb-init-label">
     Annual Salary <span className="req">*</span>
   </label>
   <input
-    className={`onb-init-input is-required ${s1Errors.annual_salary ? 'is-invalid' : ''}`}
+    className={`onb-init-input ${s1Errors.annual_salary ? 'is-invalid' : ''}`}
     placeholder="Enter amount"
     inputMode="decimal"
     value={s1.annual_salary}
     onChange={e => {
-      setS1(p => ({ ...p, annual_salary: e.target.value.replace(/[^0-9.]/g, '') }));
+      // Strip everything that isn't a digit or a dot. Collapse multiple
+      // dots to the first one. Cap whole part at 12 digits, fractional
+      // part at 2 digits. Result is always a valid representation of a
+      // value ≤ 999,999,999,999.99 — no further client-side coercion
+      // needed before sending.
+      let raw = e.target.value.replace(/[^0-9.]/g, '');
+      const firstDot = raw.indexOf('.');
+      if (firstDot !== -1) {
+        raw = raw.slice(0, firstDot + 1) + raw.slice(firstDot + 1).replace(/\./g, '');
+      }
+      const [whole, frac] = raw.split('.');
+      let capped = (whole || '').slice(0, 12);
+      if (frac !== undefined) capped += '.' + frac.slice(0, 2);
+      setS1(p => ({ ...p, annual_salary: capped }));
       setS1Errors(p => ({ ...p, annual_salary: '' }));
     }}
   />
@@ -2768,17 +3069,20 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
                     <label className="onb-init-label">Period</label>
                     <MasterSelect options={ONB_PERIOD} value={s1.salary_frequency || 'Per annum'} onChange={(v) => setS1(p => ({ ...p, salary_frequency: v }))} />
                   </Col>
-                  <Col md={4}>
+                  <Col md={4} data-field="salary_effective_from">
   <label className="onb-init-label">
     Salary Effective From <span className="req">*</span>
   </label>
-  <MasterDatePicker 
-    placeholder="Select effective date" 
-    value={s1.salary_effective_from} 
-    onChange={(v) => { 
-      setS1(p => ({ ...p, salary_effective_from: v })); 
+  <MasterDatePicker
+    placeholder="Select effective date"
+    value={s1.salary_effective_from}
+    invalid={!!s1Errors.salary_effective_from}
+    minDate={salaryMin}
+    maxDate={salaryMax}
+    onChange={(v) => {
+      setS1(p => ({ ...p, salary_effective_from: v }));
       setS1Errors(p => ({ ...p, salary_effective_from: '' }));
-    }} 
+    }}
   />
   {s1Errors.salary_effective_from && <div className="onb-error-msg">{s1Errors.salary_effective_from}</div>}
 </Col>
@@ -2995,12 +3299,24 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
   <button
     type="button"
     className="onb-init-btn-complete"
+    disabled={nextLoading}
+    style={nextLoading ? { opacity: 0.85, cursor: 'progress' } : undefined}
     onClick={async () => {
+      if (nextLoading) return;
       setNextLoading(true);
-      // Stamp the macro stage at 6 so profile% hits 100%.
-      await bumpMacroStage(6);
-      setNextLoading(false);
-      onClose();
+      // Stamp the macro stage at 6 so profile% hits 100%. Race against
+      // a 350ms floor so the spinner is always visible to the user even
+      // when bumpMacroStage short-circuits (e.g. row already at 6).
+      try {
+        await Promise.all([
+          bumpMacroStage(6),
+          new Promise(r => setTimeout(r, 350)),
+        ]);
+        toast.success('Onboarding completed', 'All stages signed off. You can now activate the employee.');
+        onClose();
+      } finally {
+        setNextLoading(false);
+      }
     }}
   >
     {nextLoading ? (
@@ -3049,13 +3365,9 @@ const _serverStatusToUi = (s: string): DocStatus => {
   }
 };
 
-/** Server caps + accepted MIME list. Mirrors EmployeeDocumentController so
- *  the user gets a friendly error before the round-trip. Bump together. */
-const DOC_MAX_MB = 8;
-const DOC_ACCEPTED_MIME = new Set([
-  'application/pdf',
-  'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
-]);
+/** Lookup set for the validator. Same data as DOC_ACCEPTED_MIMES,
+ *  Set form for O(1) membership checks. */
+const DOC_ACCEPTED_MIME = new Set<string>(DOC_ACCEPTED_MIMES);
 
 function Stage2Documents({ emp, onDocsChanged }: {
   emp: OnboardRow;
@@ -3089,7 +3401,10 @@ function Stage2Documents({ emp, onDocsChanged }: {
     hr_email_1: '', hr_email_2: '', contact_number: '',
     _localKey: `pc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
   });
-  const [prevCompanies, setPrevCompanies] = useState<PrevCompanyRow[]>([newDraft()]);
+  // Default to an empty list so freshers don't see a phantom "Previous
+  // Company 1" row they can't get rid of. The user clicks "Add Previous
+  // Company" if they actually had prior employers.
+  const [prevCompanies, setPrevCompanies] = useState<PrevCompanyRow[]>([]);
 
   // Hydrate from server when the modal opens for this employee.
   useEffect(() => {
@@ -3099,9 +3414,10 @@ function Stage2Documents({ emp, onDocsChanged }: {
       if (cancelled) return;
       const list: any[] = Array.isArray(r.data) ? r.data : [];
       if (list.length === 0) {
-        // Always render at least one empty row so the user has somewhere
-        // to type. The form persists as soon as company_name is filled.
-        setPrevCompanies([newDraft()]);
+        // Fresher / no prior employer — keep the list empty so the UI
+        // shows the "Skip if fresher" hint instead of an unfillable
+        // placeholder row.
+        setPrevCompanies([]);
         return;
       }
       setPrevCompanies(list.map(p => ({
@@ -3128,25 +3444,26 @@ function Stage2Documents({ emp, onDocsChanged }: {
   /** PATCH/POST a single company row to the server. Called onBlur from
    *  every input so the user never has to click "Save" — typing alone
    *  persists once company_name is non-empty. Returns the canonical
-   *  server id, attaches it back to local state. */
-  const persistCompany = async (key: string) => {
-    if (!emp?.dbId) return;
+   *  server id (existing or freshly assigned) so callers like the upload
+   *  flow can chain on it without waiting for the next React render. */
+  const persistCompany = async (key: string): Promise<number | null> => {
+    if (!emp?.dbId) return null;
     const row = prevCompanies.find(c => c._localKey === key);
-    if (!row || row._busy) return;
-    if (!row.company_name.trim()) return; // need a name before we can save
+    if (!row || row._busy) return row?.id ?? null;
+    if (!row.company_name.trim()) return null; // need a name before we can save
     // Quick email + date sanity checks before round-tripping.
     const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (row.hr_email_1 && !emailRe.test(row.hr_email_1)) {
       toast.error('Invalid HR Email 1', `Please enter a valid email address.`);
-      return;
+      return row.id ?? null;
     }
     if (row.hr_email_2 && !emailRe.test(row.hr_email_2)) {
       toast.error('Invalid HR Email 2', `Please enter a valid email address.`);
-      return;
+      return row.id ?? null;
     }
     if (row.start_date && row.end_date && row.end_date < row.start_date) {
       toast.error('Invalid date range', 'End date cannot be before start date.');
-      return;
+      return row.id ?? null;
     }
     const payload = {
       company_name:   row.company_name.trim(),
@@ -3161,49 +3478,106 @@ function Stage2Documents({ emp, onDocsChanged }: {
     try {
       if (row.id) {
         await api.patch(`/previous-employments/${row.id}`, payload);
-      } else {
-        const r = await api.post(`/employees/${emp.dbId}/previous-employments`, payload);
-        const newId = r?.data?.previous_employment?.id ?? null;
-        updateCompany(key, { id: newId });
+        return row.id;
       }
+      const r = await api.post(`/employees/${emp.dbId}/previous-employments`, payload);
+      const newId = r?.data?.previous_employment?.id ?? null;
+      updateCompany(key, { id: newId });
+      return newId;
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors;
       const firstMsg = apiErrors ? Object.values(apiErrors).flat()[0] : null;
       toast.error('Could not save company', String(firstMsg || err?.response?.data?.message || err?.message || 'Save failed'));
+      return row.id ?? null;
     } finally {
       updateCompany(key, { _busy: false });
     }
   };
 
-  const removeCompany = async (key: string) => {
-    const row = prevCompanies.find(c => c._localKey === key);
+  /** Upload a document for a previous-employment row. Auto-persists the
+   *  company first if it's an unsaved draft — otherwise users who type a
+   *  company name and immediately click Upload (without blurring out of
+   *  the name field first) would never see an API call because c.id is
+   *  still null and the upload key would be malformed. */
+  const uploadForCompany = async (
+    companyKey: string,
+    docId: string,
+    docName: string,
+    maxMb?: number,
+  ) => {
+    const row = prevCompanies.find(c => c._localKey === companyKey);
     if (!row) return;
-    // Prevent accidental loss of data on rows that look filled.
-    if (row.id || row.company_name.trim()) {
-      const result = await Swal.fire({
-        title: `Remove ${row.company_name || 'this company'}?`,
-        text: 'This will also delete the documents you uploaded against it.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Remove',
-        confirmButtonColor: '#f06548',
-        cancelButtonColor: '#878a99',
-        reverseButtons: true,
-      });
-      if (!result.isConfirmed) return;
-    }
-    if (row.id) {
-      try {
-        await api.delete(`/previous-employments/${row.id}`);
-      } catch (err: any) {
-        toast.error('Could not remove', String(err?.response?.data?.message || err?.message || 'Delete failed'));
+    let pid = row.id;
+    if (!pid) {
+      if (!row.company_name.trim()) {
+        toast.error('Company name required', 'Enter the company name before uploading documents for it.');
+        return;
+      }
+      pid = await persistCompany(companyKey);
+      if (!pid) {
+        // persistCompany already surfaced its own toast on failure.
         return;
       }
     }
-    setPrevCompanies(prev => {
-      const next = prev.filter(c => c._localKey !== key);
-      return next.length === 0 ? [newDraft()] : next;
-    });
+    triggerUpload(`prev_${pid}_${docId}`, docName, DOC_ACCEPT_ATTR, maxMb);
+  };
+
+  // ── Delete-confirmation modal target ─────────────────────────────────
+  // A single shared DeleteModal handles both flows (doc remove + company
+  // remove). The `kind` discriminates so the confirm handler knows which
+  // backend call to make.
+  type DeleteTarget =
+    | { kind: 'doc';     id: number; name: string }
+    | { kind: 'company'; key: string; name: string };
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const removeCompany = (key: string) => {
+    const row = prevCompanies.find(c => c._localKey === key);
+    if (!row) return;
+    // Empty draft — drop straight away; nothing to confirm. Allow the
+    // list to actually become empty so freshers can clear the section.
+    if (!row.id && !row.company_name.trim()) {
+      setPrevCompanies(prev => prev.filter(c => c._localKey !== key));
+      return;
+    }
+    setDeleteTarget({ kind: 'company', key, name: row.company_name || 'this company' });
+  };
+
+  /** Runs the actual delete once the user clicks "Yes, Delete It!" in the
+   *  shared velzon DeleteModal. Errors are surfaced via toast; the modal
+   *  closes regardless so the user isn't stuck in a confirm loop. */
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      if (deleteTarget.kind === 'doc') {
+        try {
+          await api.delete(`/documents/${deleteTarget.id}`);
+          await reloadDocs();
+          toast.success(`${deleteTarget.name} removed`, 'You can upload a fresh copy whenever you’re ready.');
+        } catch (err: any) {
+          const msg = err?.response?.data?.message || err?.message || 'Delete failed';
+          toast.error(`${deleteTarget.name} could not be removed`, String(msg));
+        }
+      } else {
+        const row = prevCompanies.find(c => c._localKey === deleteTarget.key);
+        if (row?.id) {
+          try {
+            await api.delete(`/previous-employments/${row.id}`);
+          } catch (err: any) {
+            toast.error('Could not remove', String(err?.response?.data?.message || err?.message || 'Delete failed'));
+            return;
+          }
+        }
+        // Same here — let the list become empty so the user can sit in a
+        // valid "fresher / no previous employer" state after deleting.
+        setPrevCompanies(prev => prev.filter(c => c._localKey !== deleteTarget.key));
+      }
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
+    }
   };
 
   // ── Server-backed document state ─────────────────────────────────────
@@ -3229,12 +3603,17 @@ function Stage2Documents({ emp, onDocsChanged }: {
 
   /** Open a hidden file picker, validate locally, then POST as multipart.
    *  Validates BEFORE upload so the user gets immediate feedback on
-   *  oversized/unsupported files instead of a server round-trip. */
-  const triggerUpload = (docKey: string, docName: string, accept: string) => {
+   *  oversized/unsupported files instead of a server round-trip.
+   *  `maxMb` overrides DOC_MAX_MB for docs with stricter caps (photos,
+   *  ID cards). The backend's ceiling still applies (currently 8 MB). */
+  const triggerUpload = (docKey: string, docName: string, accept: string, maxMb?: number) => {
     if (!emp?.dbId) {
       toast.error('Cannot upload', 'Save the employee first — no record id yet.');
       return;
     }
+    // Per-doc cap, clamped to the backend ceiling — never let a doc
+    // demand more than the server can actually accept.
+    const cap = Math.min(maxMb ?? DOC_MAX_MB, DOC_MAX_MB);
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
@@ -3245,25 +3624,28 @@ function Stage2Documents({ emp, onDocsChanged }: {
       if (!file) return;
 
       // ── Client-side validation (mirrors backend) ──────────────────
-      const maxBytes = DOC_MAX_MB * 1024 * 1024;
+      const maxBytes = cap * 1024 * 1024;
       if (file.size > maxBytes) {
         toast.error(
           `${docName} is too large`,
-          `Max allowed is ${DOC_MAX_MB} MB. Selected file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`,
+          `Max allowed is ${cap} MB. Selected file is ${(file.size / 1024 / 1024).toFixed(1)} MB.`,
         );
         return;
       }
       // The browser-supplied MIME isn't 100% reliable; fall back to
-      // extension when blank.
+      // extension when blank. Both the picker `accept` and this
+      // validator pull from the same DOC_ACCEPTED_* constants so they
+      // can't drift apart. Either signal matching is enough — file
+      // pickers on some platforms strip the MIME, so requiring both
+      // would reject legit files.
       const mime = (file.type || '').toLowerCase();
       const ext  = (file.name.split('.').pop() || '').toLowerCase();
-      const allowedExts = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
       const mimeOk = mime ? DOC_ACCEPTED_MIME.has(mime) : false;
-      const extOk  = allowedExts.includes(ext);
+      const extOk  = (DOC_ACCEPTED_EXTS as readonly string[]).includes(ext);
       if (!mimeOk && !extOk) {
         toast.error(
-          `Unsupported file type`,
-          `Only PDF, JPG, PNG and WEBP files are allowed. (got "${mime || ext || 'unknown'}")`,
+          'Unsupported file type',
+          `Only PDF, JPG, PNG and WEBP files are allowed. You selected a "${ext || mime || 'unknown'}" file.`,
         );
         return;
       }
@@ -3292,27 +3674,10 @@ function Stage2Documents({ emp, onDocsChanged }: {
     input.click();
   };
 
-  /** Remove an uploaded document. Confirms first to prevent rage-clicks. */
-  const triggerDelete = async (docId: number, docName: string) => {
-    const result = await Swal.fire({
-      title: `Remove ${docName}?`,
-      text: 'You can re-upload anytime.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Remove',
-      confirmButtonColor: '#f06548',
-      cancelButtonColor: '#878a99',
-      reverseButtons: true,
-    });
-    if (!result.isConfirmed) return;
-    try {
-      await api.delete(`/documents/${docId}`);
-      await reloadDocs();
-      toast.success(`${docName} removed`, 'You can upload a fresh copy whenever you’re ready.');
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Delete failed';
-      toast.error(`${docName} could not be removed`, String(msg));
-    }
+  /** Open the shared velzon DeleteModal. Actual removal happens in
+   *  confirmDelete() once the user clicks "Yes, Delete It!". */
+  const triggerDelete = (docId: number, docName: string) => {
+    setDeleteTarget({ kind: 'doc', id: docId, name: docName });
   };
 
   /** All catalogue keys (across categories + prev-company docs) — drives totals. */
@@ -3337,18 +3702,7 @@ function Stage2Documents({ emp, onDocsChanged }: {
 
   return (
     <>
-      {/* Upload progress banner */}
-      <div className="onb-doc-progress">
-        <span className="onb-doc-progress-icon"><i className="ri-file-list-3-line" style={{ fontSize: 16 }} /></span>
-        <div className="flex-grow-1 min-w-0">
-          <div className="onb-doc-progress-row">
-            <h6 className="onb-doc-progress-title">Document Upload Progress</h6>
-            <span className="onb-doc-progress-count">{uploadedDocs} / {totalDocs} Documents</span>
-          </div>
-          <div className="onb-doc-progress-bar"><div className="onb-doc-progress-fill" style={{ width: `${pct}%` }} /></div>
-          <p className="onb-doc-progress-help">Upload all required documents before proceeding to Stage 3. Optional documents can be submitted later.</p>
-        </div>
-      </div>
+      {/* Per-stage progress banner removed — sidebar already shows this. */}
 
       {/* Status legend */}
       <div className="onb-doc-legend">
@@ -3393,7 +3747,18 @@ function Stage2Documents({ emp, onDocsChanged }: {
                 ? _serverStatusToUi(srv.status)
                 : (d.status === 'Optional' ? 'Optional' : 'Pending');
               const tone = DOC_STATUS_TONE[effective];
-              const accept = /^photo$/i.test(d.id) ? 'image/jpeg,image/png' : /cheque/i.test(d.id) ? 'image/jpeg,image/png,application/pdf' : 'application/pdf,image/*';
+              // Per-doc picker filter. Passport photo: images only.
+              // Cheque: images + PDF. Everything else: every accepted
+              // type (PDF / JPG / PNG / WEBP). Previously this used
+              // "image/*" which let the OS dialog show BMP / GIF /
+              // HEIC / SVG — the user could pick one, and the backend
+              // would reject with "Only PDF / JPG / PNG / WEBP files
+              // are allowed" because no client guard had caught it yet.
+              const accept = /^photo$/i.test(d.id)
+                ? 'image/jpeg,image/png'
+                : /cheque/i.test(d.id)
+                  ? 'image/jpeg,image/png,application/pdf'
+                  : DOC_ACCEPT_ATTR;
               const isBusy = uploadingKey === d.id;
               return (
                 <div key={d.id} className="onb-doc-row">
@@ -3414,36 +3779,41 @@ function Stage2Documents({ emp, onDocsChanged }: {
                     {effective}
                   </span>
                   {srv?.url && (
-                    <a
-                      href={srv.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="onb-doc-upload-btn"
-                      style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
-                    >
-                      <i className="ri-eye-line" /> View
-                    </a>
+                    <Tooltip label={`Preview ${d.name}`}>
+                      <a
+                        href={srv.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="onb-doc-upload-btn"
+                        style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
+                      >
+                        <i className="ri-eye-line" /> View
+                      </a>
+                    </Tooltip>
                   )}
-                  <button
-                    type="button"
-                    className="onb-doc-upload-btn"
-                    onClick={() => triggerUpload(d.id, d.name, accept)}
-                    disabled={isBusy}
-                    style={isBusy ? { opacity: 0.6, cursor: 'progress' } : undefined}
-                  >
-                    <i className={isBusy ? 'ri-loader-4-line' : 'ri-upload-cloud-2-line'} />
-                    {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
-                  </button>
-                  {srv && (
+                  <Tooltip label={isBusy ? 'Uploading…' : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)}>
                     <button
                       type="button"
                       className="onb-doc-upload-btn"
-                      onClick={() => triggerDelete(srv.id, d.name)}
-                      title="Remove this document"
-                      style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
+                      onClick={() => triggerUpload(d.id, d.name, accept, d.maxMb)}
+                      disabled={isBusy}
+                      style={isBusy ? { opacity: 0.6, cursor: 'progress' } : undefined}
                     >
-                      <i className="ri-delete-bin-line" />
+                      <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : 'ri-upload-cloud-2-line'}`} />
+                      {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                     </button>
+                  </Tooltip>
+                  {srv && (
+                    <Tooltip label="Remove this document">
+                      <button
+                        type="button"
+                        className="onb-doc-upload-btn"
+                        onClick={() => triggerDelete(srv.id, d.name)}
+                        style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
+                      >
+                        <i className="ri-delete-bin-line" />
+                      </button>
+                    </Tooltip>
                   )}
                 </div>
               );
@@ -3452,15 +3822,37 @@ function Stage2Documents({ emp, onDocsChanged }: {
         );
       })}
 
-      {/* Previous Employment Documents */}
+      {/* Previous Employment Documents — optional. A fresher with no
+          prior employer simply leaves this section empty. */}
       <div className="onb-doc-prev">
         <div className="onb-doc-prev-head">
           <span className="onb-doc-prev-icon"><i className="ri-briefcase-line" style={{ fontSize: 14 }} /></span>
           <div className="min-w-0 flex-grow-1">
             <h6 className="onb-doc-prev-title">Previous Employment Documents</h6>
+            <p className="onb-doc-prev-sub">Optional · Skip if this is the employee's first job</p>
           </div>
-          <span className="onb-doc-prev-pill">{prevCompanies.length} {prevCompanies.length === 1 ? 'Company' : 'Companies'}</span>
+          <span className="onb-doc-prev-pill">
+            {prevCompanies.length === 0
+              ? 'Fresher'
+              : `${prevCompanies.length} ${prevCompanies.length === 1 ? 'Company' : 'Companies'}`}
+          </span>
         </div>
+
+        {/* Empty-state hint — surfaces when the list is empty so the user
+            knows the section is intentionally blank, not broken. */}
+        {prevCompanies.length === 0 && (
+          <div
+            className="onb-doc-bgv-banner"
+            style={{ margin: '12px 14px', alignItems: 'flex-start' }}
+          >
+            <i className="ri-information-line" style={{ fontSize: 14, marginTop: 1 }} />
+            <span>
+              No previous employer to record? You can skip this section — it's only
+              required when the employee has worked somewhere before. Click
+              <strong> &quot;+ Add Previous Company&quot; </strong> below if you do need to add one.
+            </span>
+          </div>
+        )}
 
         {prevCompanies.map((c, idx) => {
           // Per-company doc upload key — namespaced so each row has its
@@ -3480,7 +3872,11 @@ function Stage2Documents({ emp, onDocsChanged }: {
               <span className="onb-doc-comp-num">{idx + 1}</span>
               <h6 className="onb-doc-comp-name">{c.company_name || `Previous Company ${idx + 1}`}</h6>
               <span className="onb-doc-comp-count">{compDocsUploaded}/{compDocsTotal} Docs</span>
-              {prevCompanies.length > 1 && (
+              {/* Always-visible remove button — the user is allowed to
+                  clear every previous-employer row (e.g. fresher who
+                  added a company by mistake). The list is now allowed
+                  to be empty. */}
+              <Tooltip label={`Remove ${c.company_name || 'this company'}`}>
                 <button
                   type="button"
                   className="onb-doc-comp-close"
@@ -3489,7 +3885,7 @@ function Stage2Documents({ emp, onDocsChanged }: {
                 >
                   <i className="ri-close-line" style={{ fontSize: 12 }} />
                 </button>
-              )}
+              </Tooltip>
             </div>
             <div className="onb-doc-comp-body">
               <p className="onb-doc-comp-section"><i className="ri-building-line" /> Company Information</p>
@@ -3521,6 +3917,8 @@ function Stage2Documents({ emp, onDocsChanged }: {
                   <MasterDatePicker
                     placeholder="Select start date"
                     value={c.start_date}
+                    // Previous employment must have already started — cap at today.
+                    maxDate={c.end_date || _todayIso()}
                     onChange={(v) => { updateCompany(c._localKey, { start_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
                   />
                 </Col>
@@ -3529,6 +3927,11 @@ function Stage2Documents({ emp, onDocsChanged }: {
                   <MasterDatePicker
                     placeholder="Select end date"
                     value={c.end_date}
+                    // End must be on/after start, and not in the future
+                    // (a previous employer relationship has, by definition,
+                    // already happened).
+                    minDate={c.start_date || undefined}
+                    maxDate={_todayIso()}
                     onChange={(v) => { updateCompany(c._localKey, { end_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
                   />
                 </Col>
@@ -3561,36 +3964,47 @@ function Stage2Documents({ emp, onDocsChanged }: {
                       {effective}
                     </span>
                     {srv?.url && (
-                      <a
-                        href={srv.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="onb-doc-upload-btn"
-                        style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
-                      >
-                        <i className="ri-eye-line" /> View
-                      </a>
+                      <Tooltip label={`Preview ${d.name}`}>
+                        <a
+                          href={srv.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="onb-doc-upload-btn"
+                          style={{ background: '#fff', color: '#5a3fd1', border: '1px solid #d6c9ff', textDecoration: 'none' }}
+                        >
+                          <i className="ri-eye-line" /> View
+                        </a>
+                      </Tooltip>
                     )}
-                    <button
-                      type="button"
-                      className="onb-doc-upload-btn"
-                      disabled={!c.id || isBusy}
-                      onClick={() => triggerUpload(fullKey, d.name, 'application/pdf,image/*')}
-                      style={(!c.id || isBusy) ? { opacity: 0.6, cursor: c.id ? 'progress' : 'not-allowed' } : undefined}
+                    <Tooltip
+                      label={
+                        isBusy
+                          ? 'Uploading…'
+                          : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)
+                      }
                     >
-                      <i className={isBusy ? 'ri-loader-4-line' : 'ri-upload-cloud-2-line'} />
-                      {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
-                    </button>
-                    {srv && (
                       <button
                         type="button"
                         className="onb-doc-upload-btn"
-                        onClick={() => triggerDelete(srv.id, d.name)}
-                        title="Remove this document"
-                        style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
+                        disabled={isBusy || c._busy}
+                        onClick={() => uploadForCompany(c._localKey, d.id, d.name, d.maxMb)}
+                        style={(isBusy || c._busy) ? { opacity: 0.6, cursor: 'progress' } : undefined}
                       >
-                        <i className="ri-delete-bin-line" />
+                        <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : 'ri-upload-cloud-2-line'}`} />
+                        {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                       </button>
+                    </Tooltip>
+                    {srv && (
+                      <Tooltip label="Remove this document">
+                        <button
+                          type="button"
+                          className="onb-doc-upload-btn"
+                          onClick={() => triggerDelete(srv.id, d.name)}
+                          style={{ background: '#fff', color: '#b1401d', border: '1px solid #f3c0b3' }}
+                        >
+                          <i className="ri-delete-bin-line" />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 );
@@ -3644,6 +4058,24 @@ function Stage2Documents({ emp, onDocsChanged }: {
           <i className="ri-add-line" /> Add Previous Company
         </button>
       </div>
+
+      {/* Shared delete-confirmation modal (same component used on the
+          Clients page). Handles both uploaded-document and previous-
+          company removal flows; title + sub-message vary by kind so the
+          warning matches the consequence the user is about to confirm. */}
+      <DeleteConfirmModal
+        open={!!deleteTarget}
+        loading={deleting}
+        itemName={deleteTarget?.name}
+        title={deleteTarget?.kind === 'doc' ? 'Remove Document' : 'Remove Company'}
+        subMessage={
+          deleteTarget?.kind === 'doc'
+            ? 'You can re-upload this document anytime.'
+            : 'This will also delete every document uploaded against this company. This action cannot be undone.'
+        }
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }
@@ -3686,18 +4118,7 @@ function Stage3Provisioning({
 
   return (
     <>
-      {/* Provisioning progress banner */}
-      <div className="onb-prov-progress">
-        <span className="onb-prov-progress-icon"><i className="ri-computer-line" style={{ fontSize: 16 }} /></span>
-        <div className="flex-grow-1 min-w-0">
-          <div className="onb-prov-progress-row">
-            <h6 className="onb-prov-progress-title">Provisioning Progress</h6>
-            <span className="onb-prov-progress-count">{tasksDone} / {tasksTotal} Tasks</span>
-          </div>
-          <div className="onb-prov-progress-bar"><div className="onb-prov-progress-fill" style={{ width: `${pct}%` }} /></div>
-          <p className="onb-prov-progress-help">Complete all provisioning tasks before activating system access for this employee.</p>
-        </div>
-      </div>
+      {/* Per-stage progress banner removed — sidebar already shows this. */}
 
       {/* System & Email Access */}
       <div className="onb-prov-section">
@@ -3900,22 +4321,7 @@ function Stage4Payroll({
 
   return (
     <>
-      {/* Progress banner — flips green once every readiness check passes. */}
-      <div className="onb-pay-progress" style={allDone ? { background: '#e6f7f1', borderColor: '#c4eedc' } : undefined}>
-        <span className="onb-pay-progress-icon" style={allDone ? { background: '#10b981' } : undefined}><i className="ri-money-dollar-circle-line" style={{ fontSize: 16 }} /></span>
-        <div className="flex-grow-1 min-w-0">
-          <div className="onb-pay-progress-row">
-            <h6 className="onb-pay-progress-title">Payroll &amp; Finance Setup</h6>
-            <span className="onb-pay-progress-count">{pass} / {total} Checks</span>
-          </div>
-          <div className="onb-pay-progress-bar"><div className="onb-pay-progress-fill" style={{ width: `${pct}%`, background: allDone ? '#10b981' : undefined }} /></div>
-          <p className="onb-pay-progress-help">
-            {allDone
-              ? 'All readiness checks passed. Click Save Draft to lock Stage 4 and continue to Stage 5.'
-              : 'Fill all required fields and complete readiness checks before proceeding to Stage 5.'}
-          </p>
-        </div>
-      </div>
+      {/* Per-stage progress banner removed — sidebar already shows this. */}
 
       {/* Salary Payment Mode */}
       <div className="onb-pay-section">
@@ -3961,16 +4367,51 @@ function Stage4Payroll({
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Account Number <span className="req">*</span></label>
-              <input className="onb-init-input is-required" placeholder="Account number" value={s4.bank_account_number} onChange={e => setS4(p => ({ ...p, bank_account_number: e.target.value.replace(/\s+/g, '') }))} />
+              <input
+                className="onb-init-input is-required"
+                placeholder="Account number"
+                inputMode="numeric"
+                maxLength={18}
+                value={s4.bank_account_number}
+                onChange={e =>
+                  setS4(p => ({
+                    // Digits only, capped at 18 chars (Indian banking standard
+                    // is 9–18 digits; we accept anything in that band here and
+                    // surface the inline hint when it's out of range).
+                    ...p,
+                    bank_account_number: e.target.value.replace(/\D/g, '').slice(0, 18),
+                  }))
+                }
+              />
+              {s4.bank_account_number && (s4.bank_account_number.length < 9 || s4.bank_account_number.length > 18) && (
+                <small style={{ color: '#dc2626', fontSize: 11.5 }}>
+                  Account number must be 9–18 digits
+                </small>
+              )}
             </Col>
             <Col md={4}>
               <label className="onb-init-label">IFSC Code <span className="req">*</span></label>
               <input
                 className="onb-init-input is-required"
                 placeholder="e.g. HDFC0001234"
+                inputMode="text"
+                autoComplete="off"
+                autoCapitalize="characters"
                 maxLength={11}
                 value={s4.ifsc_code}
-                onChange={e => setS4(p => ({ ...p, ifsc_code: e.target.value.toUpperCase() }))}
+                onChange={e =>
+                  setS4(p => ({
+                    // Strip anything that isn't A–Z / 0–9 on the way in so
+                    // stray whitespace or symbols (common when typing fast
+                    // or after autofill) never reach the regex. Cap at 11
+                    // chars in case the browser bypasses maxLength on paste.
+                    ...p,
+                    ifsc_code: e.target.value
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9]/g, '')
+                      .slice(0, 11),
+                  }))
+                }
               />
               {s4.ifsc_code && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(s4.ifsc_code) && (
                 <small style={{ color: '#dc2626', fontSize: 11.5 }}>11 chars: 4 letters + 0 + 6 alphanum</small>
@@ -4112,18 +4553,7 @@ function Stage5Policies() {
       title="Policies & Agreements"
       subtitle="Digital signing, doc generation, and audit trail"
     >
-      {/* Signing progress */}
-      <div className="onb-pol-progress">
-        <span className="onb-pol-progress-icon"><i className="ri-shield-check-line" style={{ fontSize: 16 }} /></span>
-        <div className="flex-grow-1 min-w-0">
-          <div className="onb-pol-progress-row">
-            <h6 className="onb-pol-progress-title">Policies &amp; Agreements Signing Progress</h6>
-            <span className="onb-pol-progress-count">0 / {docs.length} Signed</span>
-          </div>
-          <div className="onb-pol-progress-bar"><div className="onb-pol-progress-fill" style={{ width: '0%' }} /></div>
-          <p className="onb-pol-progress-help">All mandatory documents must be digitally signed before proceeding to Final Verification.</p>
-        </div>
-      </div>
+      {/* Per-stage progress banner removed — sidebar already shows this. */}
 
       {/* Status legend */}
       <div className="onb-pol-legend">
@@ -4265,20 +4695,71 @@ function FlagIssueModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
   );
 }
 
-function ActivateEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose: () => void; emp: OnboardRow }) {
+function ActivateEmployeeModal({
+  isOpen, onClose, emp, onActivated,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  emp: OnboardRow;
+  /** Fires after a successful activate so the parent can refresh the
+   *  onboarding list (status pill rolls over to Completed). */
+  onActivated?: () => void;
+}) {
+  const toast = useToast();
+  const [activating, setActivating] = useState(false);
+
+  // Reset busy state whenever the modal closes / reopens for a new emp.
+  useEffect(() => { if (!isOpen) setActivating(false); }, [isOpen]);
+
+  const handleConfirm = async () => {
+    if (activating || !emp?.dbId) return;
+    setActivating(true);
+    try {
+      await api.put(`/employees/${emp.dbId}`, {
+        // Backend whitelist (EmployeeController validation) is Title-Cased:
+        // 'Active' / 'Inactive' / 'On Leave' / 'Probation' / 'Notice Period'
+        // / 'Resigned' / 'Terminated'. Lowercase 'active' is for the related
+        // users table, not the employees row — sending it here returns
+        // "The selected status is invalid."
+        status: 'Active',
+        // Stamp macro stage 6 too so a row activated directly from
+        // Stage 6 reaches 100% even if the user skipped clicking
+        // "Complete Onboarding" first.
+        onboarding_stage_completed: 6,
+      });
+      toast.success(
+        'Employee activated',
+        `${emp.name} now has full system access. Reporting manager has been notified.`,
+      );
+      onActivated?.();
+      onClose();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Activation failed';
+      toast.error('Could not activate employee', String(msg));
+    } finally {
+      setActivating(false);
+    }
+  };
+
   return (
     <Modal
       isOpen={isOpen}
-      toggle={onClose}
+      toggle={() => { if (!activating) onClose(); }}
       centered
       contentClassName="onb-act-content"
       modalClassName="onb-act-modal"
       backdrop="static"
-      keyboard
+      keyboard={!activating}
     >
       <ModalBody className="p-0">
         <div className="onb-act-header">
-          <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="close-btn"
+            onClick={onClose}
+            disabled={activating}
+            aria-label="Close"
+          >
             <i className="ri-close-line" style={{ fontSize: 14 }} />
           </button>
           <span className="onb-act-icon">
@@ -4309,9 +4790,36 @@ function ActivateEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onCl
         </div>
 
         <div className="onb-act-footer">
-          <button type="button" className="onb-act-cancel" onClick={onClose}>Cancel</button>
-          <button type="button" className="onb-act-confirm" onClick={onClose}>
-            <i className="ri-check-line" style={{ fontSize: 16 }} /> Confirm Activate
+          <button
+            type="button"
+            className="onb-act-cancel"
+            onClick={onClose}
+            disabled={activating}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="onb-act-confirm"
+            onClick={handleConfirm}
+            disabled={activating}
+            style={activating ? { opacity: 0.8, cursor: 'progress' } : undefined}
+          >
+            {activating ? (
+              <>
+                <span
+                  className="spinner-border spinner-border-sm"
+                  role="status"
+                  aria-hidden="true"
+                  style={{ width: '0.85rem', height: '0.85rem' }}
+                />
+                Activating…
+              </>
+            ) : (
+              <>
+                <i className="ri-check-line" style={{ fontSize: 16 }} /> Confirm Activate
+              </>
+            )}
           </button>
         </div>
       </ModalBody>
@@ -4319,9 +4827,25 @@ function ActivateEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onCl
   );
 }
 
-function Stage6Verify({ emp }: { emp: OnboardRow }) {
+function Stage6Verify({ emp, onActivated }: { emp: OnboardRow; onActivated?: () => void }) {
   const [flagOpen, setFlagOpen] = useState(false);
   const [activateOpen, setActivateOpen] = useState(false);
+  // Local flag flipped the instant the activate API succeeds — gives us
+  // an immediate "Activated" UI without waiting for the parent's
+  // /employees refresh round-trip (~100–500ms). Without this, the user
+  // saw the success toast + the still-active Activate button for a
+  // moment because emp.raw was stale.
+  const [justActivated, setJustActivated] = useState(false);
+  // Already-activated guard. Stage 6's Activate button is the entry
+  // point to a one-way transition (status → Active, macro stage → 6).
+  // Once that's true, re-clicking the button would just open the modal
+  // again and re-fire the same PUT — annoying at best, error-prone at
+  // worst. We swap the action area for a "completed" card so the user
+  // can see the result and move on.
+  const isActivated =
+    justActivated
+    || String(emp?.raw?.status ?? '').toLowerCase() === 'active'
+    || Number(emp?.raw?.onboarding_stage_completed ?? 0) >= 6;
   const stageRows: { num: number; name: string; sub: string; icon: string; cls: string; verified: boolean }[] = [
     { num: 1, name: 'Employee Onboarding Setup',     sub: 'Basic details, job info & compensation · Stage 1', icon: 'ri-user-line',          cls: 's1', verified: true  },
     { num: 2, name: 'Document Management',           sub: 'Identity, education & employment docs · Stage 2',  icon: 'ri-file-list-3-line',  cls: 's2', verified: true  },
@@ -4335,18 +4859,7 @@ function Stage6Verify({ emp }: { emp: OnboardRow }) {
 
   return (
     <>
-      {/* Onboarding Completion Progress (green) */}
-      <div className="onb-ver-progress">
-        <span className="onb-ver-progress-icon"><i className="ri-checkbox-circle-line" style={{ fontSize: 16 }} /></span>
-        <div className="flex-grow-1 min-w-0">
-          <div className="onb-ver-progress-row">
-            <h6 className="onb-ver-progress-title">Onboarding Completion Progress</h6>
-            <span className="onb-ver-progress-count">{readyPct}% Ready</span>
-          </div>
-          <div className="onb-ver-progress-bar"><div className="onb-ver-progress-fill" style={{ width: `${readyPct}%` }} /></div>
-          <p className="onb-ver-progress-help">All 5 stages must be verified before employee can be activated.</p>
-        </div>
-      </div>
+      {/* Per-stage progress banner removed — sidebar already shows this. */}
 
       {/* Top info row — employee, role, profile completion */}
       <div className="onb-ver-info-row">
@@ -4408,25 +4921,66 @@ function Stage6Verify({ emp }: { emp: OnboardRow }) {
           <h6 className="onb-ver-section-title">HR Final Action</h6>
         </div>
         <div style={{ padding: '14px 16px' }}>
-          <div className="onb-ver-action-banner">
-            <i className="ri-information-line" style={{ marginTop: 1 }} />
-            <span>
-              Clicking <b style={{ color: '#108548' }}>Activate Employee</b> will mark onboarding as <b>Completed</b>, notify the Reporting Manager, and grant full system access. Use <b style={{ color: '#b1401d' }}>Flag Issue</b> to raise a concern and block activation.
-            </span>
-          </div>
-          <div className="onb-ver-action-buttons">
-            <button type="button" className="onb-ver-flag-btn" onClick={() => setFlagOpen(true)}>
-              <i className="ri-error-warning-line" style={{ fontSize: 16 }} /> Flag Issue
-            </button>
-            <button type="button" className="onb-ver-activate-btn" onClick={() => setActivateOpen(true)}>
-              <i className="ri-checkbox-circle-line" style={{ fontSize: 16 }} /> Activate Employee
-            </button>
-          </div>
+          {isActivated ? (
+            // ── Post-activation state. Buttons replaced with a clear
+            // success card so the HR can see the action is done and
+            // can't accidentally re-fire the activate PUT.
+            <div
+              className="onb-ver-action-banner"
+              style={{
+                background: '#ecfdf3',
+                borderColor: '#bbf7d0',
+                color: '#108548',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <i className="ri-checkbox-circle-fill" style={{ fontSize: 22, color: '#10b981' }} />
+              <span>
+                <b>Employee activated.</b> {emp.name} now has full system access and the reporting manager has been notified. Onboarding is complete — you can close this wizard.
+              </span>
+            </div>
+          ) : (
+            <>
+              <div className="onb-ver-action-banner">
+                <i className="ri-information-line" style={{ marginTop: 1 }} />
+                <span>
+                  Clicking <b style={{ color: '#108548' }}>Activate Employee</b> will mark onboarding as <b>Completed</b>, notify the Reporting Manager, and grant full system access. Use <b style={{ color: '#b1401d' }}>Flag Issue</b> to raise a concern and block activation.
+                </span>
+              </div>
+              <div className="onb-ver-action-buttons">
+                <button type="button" className="onb-ver-flag-btn" onClick={() => setFlagOpen(true)}>
+                  <i className="ri-error-warning-line" style={{ fontSize: 16 }} /> Flag Issue
+                </button>
+                <button type="button" className="onb-ver-activate-btn" onClick={() => setActivateOpen(true)}>
+                  <i className="ri-checkbox-circle-line" style={{ fontSize: 16 }} /> Activate Employee
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       <FlagIssueModal isOpen={flagOpen} onClose={() => setFlagOpen(false)} />
-      <ActivateEmployeeModal isOpen={activateOpen} onClose={() => setActivateOpen(false)} emp={emp} />
+      {/* Confirmation popup intact — clicking Activate Employee still
+          opens this modal first ("Activate Employee · This action is
+          final — please confirm all stages are complete" with Cancel
+          and Confirm Activate buttons). Only after the user clicks
+          Confirm Activate does the PUT actually fire. */}
+      <ActivateEmployeeModal
+        isOpen={activateOpen}
+        onClose={() => setActivateOpen(false)}
+        emp={emp}
+        onActivated={() => {
+          // Flip the local guard immediately so the action area
+          // switches to the success card without waiting for the
+          // parent's /employees refetch, then forward to the parent
+          // so the listing page picks up the new status too.
+          setJustActivated(true);
+          onActivated?.();
+        }}
+      />
     </>
   );
 }

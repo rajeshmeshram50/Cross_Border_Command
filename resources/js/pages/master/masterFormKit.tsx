@@ -42,13 +42,23 @@ export function MasterMultiSelect({
   useEffect(() => { if (!open) setSearch(''); }, [open]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [dropDir, setDropDir] = useState<'up' | 'down'>('down');
+  // Mirror MasterSelect: track the trigger's width so the portalled menu
+  // can be sized to match it (otherwise it stretches to the body width).
+  const [menuWidth, setMenuWidth] = useState<number | undefined>(undefined);
   useEffect(() => {
     if (!open || !wrapRef.current) return;
-    const rect = wrapRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    const ESTIMATED_HEIGHT = 240;
-    setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
+    const update = () => {
+      if (!wrapRef.current) return;
+      const rect = wrapRef.current.getBoundingClientRect();
+      setMenuWidth(rect.width);
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const ESTIMATED_HEIGHT = 240;
+      setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, [open]);
 
   const selectedSet = new Set(value);
@@ -122,7 +132,12 @@ export function MasterMultiSelect({
           )}
           <i className="ri-arrow-down-s-line master-select-chev" />
         </DropdownToggle>
-        <DropdownMenu className="master-select-menu">
+        <DropdownMenu
+          className="master-select-menu"
+          container="body"
+          strategy="fixed"
+          style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
+        >
           {showSearch && (
             <div
               className="master-select-search"
