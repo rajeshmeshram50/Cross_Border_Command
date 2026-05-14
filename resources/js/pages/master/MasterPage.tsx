@@ -729,21 +729,22 @@ function MasterPageInner({
       const active = String(raw).toLowerCase() === 'active';
       const titleCase = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
       const tone = active
-        ? { bg: '#dcfce7', fg: '#15803d', border: '#22c55e', text: 'Active' }
-        : { bg: '#fee2e2', fg: '#b91c1c', border: '#ef4444', text: raw ? titleCase(String(raw)) : 'Inactive' };
+        ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e', text: 'Active' }
+        : { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444', text: raw ? titleCase(String(raw)) : 'Inactive' };
+      void tone.dot;  // dot indicator dropped per UX request — keep tone struct for parity
       return (
         <span
-          className="d-inline-block rounded-pill"
+          className={`mp-status-pill mp-status-${active ? 'active' : 'inactive'}`}
           style={{
-            background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
+            display: 'inline-block',
+            padding: '3px 12px',
+            borderRadius: 999,
+            background: tone.bg,
             color: tone.fg,
-            border: `1px solid ${tone.border}66`,
-            padding: '2px 10px',
-            fontSize: '10.5px',
-            fontWeight: 600,
+            fontSize: 11.5,
+            fontWeight: 700,
             lineHeight: 1.3,
             whiteSpace: 'nowrap',
-            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.75), inset 0 -1px 0 ${tone.border}24, 0 1px 3px ${tone.border}26`,
           }}
         >
           {tone.text}
@@ -1204,29 +1205,29 @@ function MasterPageInner({
       // branch users each show a distinct pill color.
       const userType = String(row.creator_user_type ?? '').toLowerCase();
       const tone =
-        userType === 'super_admin' ? { bg: '#ede9fe', fg: '#6d28d9', border: '#8b5cf6' } :
-        userType === 'client_admin' || userType === 'client_user' ? { bg: '#dbeafe', fg: '#1d4ed8', border: '#3b82f6' } :
-        userType === 'branch_user' ? { bg: '#ccfbf1', fg: '#0d9488', border: '#14b8a6' } :
-        { bg: '#f1f5f9', fg: '#475569', border: '#94a3b8' };
+        userType === 'super_admin' ? { bg: '#ede9fe', fg: '#6d28d9', kind: 'super' as const } :
+        userType === 'client_admin' || userType === 'client_user' ? { bg: '#dbeafe', fg: '#1d4ed8', kind: 'client' as const } :
+        userType === 'branch_user' ? { bg: '#ccfbf1', fg: '#0d9488', kind: 'branch' as const } :
+        { bg: '#f1f5f9', fg: '#475569', kind: 'other' as const };
       return (
         <div className="d-flex flex-column align-items-start" style={{ gap: 3 }}>
           <span
-            className="rounded-pill d-inline-block"
+            className={`mp-creator-pill mp-creator-${tone.kind}`}
             style={{
-              background: `linear-gradient(180deg, color-mix(in srgb, ${tone.bg} 55%, #ffffff) 0%, ${tone.bg} 100%)`,
+              display: 'inline-block',
+              padding: '3px 10px',
+              borderRadius: 999,
+              background: tone.bg,
               color: tone.fg,
-              border: `1px solid ${tone.border}66`,
-              padding: '2px 10px',
-              fontSize: '10.5px',
-              fontWeight: 600,
+              fontSize: 11.5,
+              fontWeight: 700,
               lineHeight: 1.3,
               whiteSpace: 'nowrap',
-              boxShadow: `inset 0 1px 0 rgba(255,255,255,0.7), inset 0 -1px 0 ${tone.border}24, 0 1px 3px ${tone.border}24`,
             }}
           >
             {name}
           </span>
-          {scope && <span className="text-muted" style={{ fontSize: 10.5 }}>{scope}</span>}
+          {scope && <span className="text-muted mp-creator-sub" style={{ fontSize: 10.5 }}>{scope}</span>}
         </div>
       );
     }
@@ -1267,6 +1268,124 @@ function MasterPageInner({
 
   return (
     <>
+      {/* ───── Shared visual polish for every master ──────────────────────────
+          KPI hover, table row hover, badge refinements, action-button focus
+          ring, and dark-mode-aware overrides. Scoped via the .mp-kpi-tile /
+          .master-scroll-wrap class names so it only affects this surface. */}
+      <style>{`
+        /* KPI tile lift + indigo glow on hover */
+        .mp-kpi-tile { transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease; cursor: default; }
+        .mp-kpi-tile:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 14px 28px rgba(99,102,241,0.14), 0 4px 10px rgba(15,23,42,0.05) !important;
+          border-color: rgba(99,102,241,0.40) !important;
+        }
+        [data-bs-theme="dark"] .mp-kpi-tile:hover,
+        [data-layout-mode="dark"] .mp-kpi-tile:hover {
+          box-shadow: 0 14px 32px rgba(99,102,241,0.35), 0 4px 10px rgba(0,0,0,0.35) !important;
+          border-color: rgba(139,92,246,0.55) !important;
+        }
+
+        /* Table — smoother row hover + cleaner header */
+        .master-scroll-wrap table thead.table-light th {
+          background: rgba(99,102,241,0.06);
+          color: var(--vz-secondary-color);
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.4px;
+          text-transform: uppercase;
+          padding-top: 12px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--vz-border-color);
+        }
+        .master-scroll-wrap table tbody tr { transition: background 120ms ease; }
+        .master-scroll-wrap table tbody tr:hover {
+          background: rgba(99,102,241,0.06) !important;
+        }
+        [data-bs-theme="dark"] .master-scroll-wrap table thead.table-light th,
+        [data-layout-mode="dark"] .master-scroll-wrap table thead.table-light th {
+          background: rgba(99,102,241,0.14);
+          color: rgba(255,255,255,0.70);
+        }
+        [data-bs-theme="dark"] .master-scroll-wrap table tbody tr:hover,
+        [data-layout-mode="dark"] .master-scroll-wrap table tbody tr:hover {
+          background: rgba(99,102,241,0.14) !important;
+        }
+
+        /* Status / created-by badges — softer Velzon "subtle" treatment.
+           Targets the Badge component when the page renders it as
+           bg-success-subtle / bg-danger-subtle / etc. Boosts contrast in
+           dark mode without changing the markup. */
+        .mp-kpi-tile + * .badge,
+        .master-scroll-wrap .badge {
+          font-weight: 700;
+          letter-spacing: 0.2px;
+          padding: 5px 10px;
+          border-radius: 999px;
+          font-size: 11px;
+        }
+
+        /* Add-button hover lift — the rounded-pill "Add X" button on every master */
+        .mp-shell-add .btn,
+        .master-scroll-wrap ~ .row .btn-label,
+        .row .btn-label.rounded-pill {
+          transition: transform 140ms ease, box-shadow 200ms ease;
+        }
+        .row .btn-label.rounded-pill:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 18px rgba(99,102,241,0.30);
+        }
+
+        /* Search box — focus ring matches the rest of the system */
+        .search-box .form-control:focus {
+          border-color: rgba(99,102,241,0.45);
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.18);
+        }
+
+        /* Small-form modal — bump the default width so 3-4 field forms
+           (Trigger Point, Leave Type, etc.) don't feel cramped. Larger
+           lg/xl sizes still take their own reactstrap widths. */
+        .master-modal .modal-dialog:not(.modal-lg):not(.modal-xl) {
+          max-width: 620px;
+        }
+
+        /* Status + Created-By pills — flat translucent fills in dark mode so
+           they read as native dark-mode chips rather than light pastels
+           floating on a dark surface. */
+        [data-bs-theme="dark"] .mp-status-active,
+        [data-layout-mode="dark"] .mp-status-active {
+          background: rgba(34, 197, 94, 0.18) !important;
+          color: #86efac !important;
+        }
+        [data-bs-theme="dark"] .mp-status-inactive,
+        [data-layout-mode="dark"] .mp-status-inactive {
+          background: rgba(239, 68, 68, 0.18) !important;
+          color: #fca5a5 !important;
+        }
+        [data-bs-theme="dark"] .mp-creator-super,
+        [data-layout-mode="dark"] .mp-creator-super {
+          background: rgba(139, 92, 246, 0.18) !important;
+          color: #c4b5fd !important;
+        }
+        [data-bs-theme="dark"] .mp-creator-client,
+        [data-layout-mode="dark"] .mp-creator-client {
+          background: rgba(59, 130, 246, 0.18) !important;
+          color: #93c5fd !important;
+        }
+        [data-bs-theme="dark"] .mp-creator-branch,
+        [data-layout-mode="dark"] .mp-creator-branch {
+          background: rgba(20, 184, 166, 0.18) !important;
+          color: #5eead4 !important;
+        }
+        [data-bs-theme="dark"] .mp-creator-other,
+        [data-layout-mode="dark"] .mp-creator-other {
+          background: rgba(148, 163, 184, 0.18) !important;
+          color: #cbd5e1 !important;
+        }
+        [data-bs-theme="dark"] .mp-creator-sub,
+        [data-layout-mode="dark"] .mp-creator-sub { color: rgba(255,255,255,0.55) !important; }
+      `}</style>
+
       {/* Page title — designations gets the rich [icon|title+subtitle][Add] strip;
           departments is rendered headerless (goes straight into KPI/table);
           all other masters keep the original [back][title][breadcrumb] layout. */}
@@ -1400,9 +1519,15 @@ function MasterPageInner({
         <Row className="g-2 mb-3 align-items-stretch">
           {cfg.kpis.map(k => {
             const value = k.compute(records);
+            // Pick xl span so the KPI strip fills the row regardless of how
+            // many tiles the master declared: 3 KPIs → xl=4, 4 → xl=3,
+            // 6 → xl=2. Clamped to [2, 4] so tiny / huge KPI counts still
+            // look reasonable.
+            const xl = Math.min(4, Math.max(2, Math.floor(12 / cfg.kpis!.length)));
             return (
-              <Col key={k.label} xl={2} md={4} sm={6} xs={12}>
+              <Col key={k.label} xl={xl} md={4} sm={6} xs={12}>
                 <div
+                  className="mp-kpi-tile"
                   style={{
                     borderRadius: 12,
                     border: '1px solid var(--vz-border-color)',
@@ -2299,10 +2424,10 @@ function AuditHistoryModal({
               <i className="ri-history-line" />
             </span>
             <div className="min-w-0">
-              <h5 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', letterSpacing: '0.01em' }}>
+              <h5 className="mb-0 fw-bold audit-modal-title">
                 Audit History — {masterTitle}
               </h5>
-              <small className="text-muted" style={{ fontSize: 12 }}>
+              <small className="audit-modal-sub">
                 {record ? `Record #${record.id}${primaryLabel ? ` · ${primaryLabel}` : ''}` : ''}
               </small>
             </div>
@@ -2317,7 +2442,7 @@ function AuditHistoryModal({
           </button>
         </div>
       </div>
-      <ModalBody style={{ padding: '14px 22px 22px' }}>
+      <ModalBody className="audit-modal-body" style={{ padding: '20px 22px 22px' }}>
         {events.length === 0 ? (
           <div className="text-muted text-center py-4" style={{ fontSize: 13 }}>
             No history available for this record.
@@ -2359,67 +2484,86 @@ function AuditHistoryModal({
           border-radius: 16px !important;
           overflow: hidden;
           border: 0;
-          box-shadow: 0 24px 60px rgba(0,0,0,0.18);
+          box-shadow: 0 25px 60px rgba(15,23,42,0.25);
         }
+        /* Gradient header — matches the Edit Trigger modal + every other
+           in-app gradient (indigo → violet → purple). */
         .audit-modal-header {
-          padding: 18px 22px 14px;
-          background: linear-gradient(180deg,
-            color-mix(in srgb, var(--vz-body-color) 3%, var(--vz-card-bg)) 0%,
-            var(--vz-card-bg) 100%);
-          border-bottom: 1px solid var(--vz-border-color);
+          padding: 18px 22px;
+          background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
+          border-bottom: 0;
+        }
+        .audit-modal-title {
+          color: #ffffff !important;
+          letter-spacing: 0.01em;
+          font-size: 16px;
+        }
+        .audit-modal-sub {
+          color: rgba(255,255,255,0.85) !important;
+          font-size: 12px;
         }
         .audit-modal-icon {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          width: 38px; height: 38px;
+          width: 40px; height: 40px;
           border-radius: 10px;
           flex-shrink: 0;
-          background: linear-gradient(135deg, #405189 0%, #6691e7 100%);
+          background: rgba(255,255,255,0.20);
           color: #ffffff;
-          box-shadow: 0 4px 10px rgba(64,81,137,0.28), inset 0 1px 0 rgba(255,255,255,0.18);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
         }
-        .audit-modal-icon i { font-size: 17px; line-height: 1; }
+        .audit-modal-icon i { font-size: 18px; line-height: 1; }
         .audit-modal-close {
           width: 30px; height: 30px;
           border-radius: 8px;
-          border: 1px solid var(--vz-border-color);
-          background: var(--vz-card-bg);
-          color: var(--vz-secondary-color);
+          border: 0;
+          background: rgba(255,255,255,0.18);
+          color: #ffffff;
           cursor: pointer;
           flex-shrink: 0;
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          transition: background 0.15s ease, color 0.15s ease;
+          transition: background 0.15s ease;
         }
         .audit-modal-close:hover {
-          background: color-mix(in srgb, var(--vz-body-color) 8%, transparent);
-          color: var(--vz-body-color);
+          background: rgba(255,255,255,0.30);
         }
-        .audit-modal-close i { font-size: 15px; line-height: 1; }
+        .audit-modal-close i { font-size: 16px; line-height: 1; }
+        /* Body picks up the card-bg variable so dark mode inverts cleanly. */
+        .audit-modal-body { background: var(--vz-card-bg); }
         /* Timeline — vertical rail behind the icon dots */
         .audit-timeline {
           position: relative;
           display: flex;
           flex-direction: column;
-          gap: 16px;
+          gap: 10px;
         }
         .audit-timeline::before {
           content: '';
           position: absolute;
-          top: 18px; bottom: 18px;
-          left: 17px;
+          top: 22px; bottom: 22px;
+          left: 19px;
           width: 2px;
           background: linear-gradient(180deg,
-            color-mix(in srgb, var(--vz-body-color) 14%, transparent) 0%,
-            transparent 100%);
+            rgba(99,102,241,0.30) 0%,
+            rgba(99,102,241,0.06) 100%);
         }
         .audit-event {
           display: flex;
           align-items: flex-start;
           gap: 12px;
           position: relative;
+          padding: 10px 12px 10px 10px;
+          border-radius: 10px;
+          background: rgba(99,102,241,0.04);
+          border: 1px solid rgba(99,102,241,0.10);
+          transition: background 140ms ease, border-color 140ms ease;
+        }
+        .audit-event:hover {
+          background: rgba(99,102,241,0.08);
+          border-color: rgba(99,102,241,0.20);
         }
         .audit-event-dot {
           display: inline-flex;
@@ -2429,10 +2573,11 @@ function AuditHistoryModal({
           border-radius: 50%;
           flex-shrink: 0;
           z-index: 1;
+          box-shadow: 0 0 0 3px var(--vz-card-bg);
         }
         .audit-event-dot i { font-size: 16px; line-height: 1; }
         .audit-event-title {
-          font-size: 14px;
+          font-size: 13.5px;
           font-weight: 700;
           letter-spacing: 0.01em;
           display: block;
@@ -2455,7 +2600,7 @@ function AuditHistoryModal({
           align-items: center;
           gap: 4px;
           color: var(--vz-body-color);
-          font-weight: 500;
+          font-weight: 600;
         }
         .audit-event-meta-user i { font-size: 12.5px; opacity: 0.75; }
         .audit-event-meta-sep { opacity: 0.45; }
@@ -2466,6 +2611,24 @@ function AuditHistoryModal({
           font-variant-numeric: tabular-nums;
         }
         .audit-event-meta-time i { font-size: 12px; opacity: 0.7; }
+
+        /* Dark-mode parity */
+        [data-bs-theme="dark"] .audit-event,
+        [data-layout-mode="dark"] .audit-event {
+          background: rgba(99,102,241,0.10);
+          border-color: rgba(99,102,241,0.22);
+        }
+        [data-bs-theme="dark"] .audit-event:hover,
+        [data-layout-mode="dark"] .audit-event:hover {
+          background: rgba(99,102,241,0.18);
+          border-color: rgba(99,102,241,0.40);
+        }
+        [data-bs-theme="dark"] .audit-timeline::before,
+        [data-layout-mode="dark"] .audit-timeline::before {
+          background: linear-gradient(180deg,
+            rgba(139,92,246,0.50) 0%,
+            rgba(139,92,246,0.10) 100%);
+        }
       `}</style>
     </Modal>
   );
