@@ -749,6 +749,8 @@ class EmployeeController extends Controller
             $isMain   = $user->branch?->is_main ?? false;
 
             if ($isMain) {
+                // Main branch user sees their own branch + every sub-branch
+                // under the same client (the whole tenant's employees).
                 $q->where(function ($w) use ($clientId) {
                     $w->whereNull('client_id')->orWhere('client_id', $clientId);
                 });
@@ -756,14 +758,17 @@ class EmployeeController extends Controller
                 return;
             }
 
-            $mainBranchId = Branch::where('client_id', $clientId)->where('is_main', true)->value('id');
-            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId) {
+            // Sub-branch user — strict branch isolation. They see ONLY rows
+            // belonging to their own branch within this tenant. Master-data
+            // scoping (which lets sub-branches see client/main-branch master
+            // rows) does NOT apply to operational employee records: an
+            // employee booked under the main branch must not appear in a
+            // sub-branch user's list. Globally-owned rows (client_id IS NULL)
+            // stay visible — they're system rows, not tenant data.
+            $q->where(function ($w) use ($clientId, $branchId) {
                 $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId) {
-                      $ww->where('client_id', $clientId)->where(function ($wb) use ($branchId, $mainBranchId) {
-                          $wb->whereNull('branch_id')->orWhere('branch_id', $branchId);
-                          if ($mainBranchId) $wb->orWhere('branch_id', $mainBranchId);
-                      });
+                  ->orWhere(function ($ww) use ($clientId, $branchId) {
+                      $ww->where('client_id', $clientId)->where('branch_id', $branchId);
                   });
             });
             // Sub-branch users can't switch — ignore any incoming branch_id.
