@@ -8,6 +8,8 @@ import {
   ApiLeaveRequest,
   ApiLeaveApprover,
 } from '../hrms/leavePlansApi';
+import RequestLeaveModal from './RequestLeaveModal';
+import LeaveRequestDetailsModal from './LeaveRequestDetailsModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LeaveSummaryPanel — renders the "Me → Leave" overview shown above the
@@ -64,6 +66,9 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
   const [approversFor, setApproversFor] = useState<number | null>(null);
   const [approversList, setApproversList] = useState<ApiLeaveApprover[]>([]);
   const [detailsType, setDetailsType] = useState<ApiEmployeeBalanceType | null>(null);
+  // New Request Leave / Details modals replacing the old 7-stage wizard.
+  const [showRequest, setShowRequest] = useState(false);
+  const [detailsRequestId, setDetailsRequestId] = useState<number | null>(null);
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -113,6 +118,18 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
 
   return (
     <div className="leave-summary-panel mb-4">
+      {/* ── Top action bar: Request Leave ── */}
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <h5 className="fw-bold mb-0" style={{ fontSize: 16 }}>Leave</h5>
+        <button
+          type="button"
+          className="rec-btn-primary"
+          onClick={() => setShowRequest(true)}
+        >
+          <i className="ri-add-line" />Request Leave
+        </button>
+      </div>
+
       {/* ── Pending Leave Requests ── */}
       <div className="mb-3">
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Pending leave requests</h6>
@@ -125,7 +142,12 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
             <i className="ri-flight-takeoff-line me-1" /> No pending requests
           </div>
         ) : pending.map(r => (
-          <div key={r.id} className="lsp-request-card d-flex align-items-center gap-3 p-3 mb-2" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12 }}>
+          <div
+            key={r.id}
+            className="lsp-request-card d-flex align-items-center gap-3 p-3 mb-2"
+            style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, cursor: 'pointer' }}
+            onClick={() => setDetailsRequestId(r.id)}
+          >
             <span className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style={{ width: 44, height: 44, background: '#ece6ff' }}>
               <i className="ri-flight-takeoff-line" style={{ color: '#5a3fd1', fontSize: 20 }} />
             </span>
@@ -152,7 +174,7 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
                   type="button"
                   className="btn btn-link p-0"
                   style={{ fontSize: 12, color: '#5a3fd1', textDecoration: 'underline' }}
-                  onClick={() => openApprovers(r.id)}
+                  onClick={(e) => { e.stopPropagation(); openApprovers(r.id); }}
                 >
                   View Approvers
                 </button>
@@ -162,7 +184,7 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
               type="button"
               className="btn btn-link p-0"
               style={{ fontSize: 12, color: '#dc2626' }}
-              onClick={() => cancel(r.id)}
+              onClick={(e) => { e.stopPropagation(); cancel(r.id); }}
               title="Cancel request"
             >
               <i className="ri-close-circle-line" style={{ fontSize: 20 }} />
@@ -261,7 +283,11 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
               </thead>
               <tbody>
                 {history.map(r => (
-                  <tr key={r.id}>
+                  <tr
+                    key={r.id}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setDetailsRequestId(r.id)}
+                  >
                     <td style={{ padding: '10px 14px' }}>{shortDate(r.from_date)} – {shortDate(r.to_date)}</td>
                     <td style={{ padding: '10px 14px' }}>{r.leave_type?.name ?? '—'}</td>
                     <td style={{ padding: '10px 14px' }}>{Number(r.days)}</td>
@@ -326,6 +352,21 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
           )}
         </ModalBody>
       </Modal>
+
+      {/* ── New Request Leave modal (replaces the 7-stage wizard) ── */}
+      <RequestLeaveModal
+        isOpen={showRequest}
+        employeeId={employeeId}
+        onClose={() => setShowRequest(false)}
+        onSubmitted={refetch}
+      />
+
+      {/* ── Leave Request Details modal (opens from clicking a row) ── */}
+      <LeaveRequestDetailsModal
+        isOpen={detailsRequestId !== null}
+        requestId={detailsRequestId}
+        onClose={() => setDetailsRequestId(null)}
+      />
 
       {/* ── Balance History modal ── */}
       <Modal isOpen={detailsType !== null} toggle={() => setDetailsType(null)} centered size="lg">
