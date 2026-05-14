@@ -1051,6 +1051,44 @@ export default function HrEmployees() {
   const editingDbIdRef = useRef<number | null>(null);
   useEffect(() => { editingDbIdRef.current = editingDbId; }, [editingDbId]);
 
+  // Token used to ignore stale uniqueness-check responses if the user
+  // edits the mobile field again before the previous request returns.
+  const mobileCheckTokenRef = useRef(0);
+
+  /**
+   * Probe the backend for mobile-number uniqueness in this tenant.
+   * Returns true when the value is available (no conflict). On a
+   * confirmed duplicate, sets `eErrors.mobile` to the server-supplied
+   * message so the inline field error renders immediately — without
+   * waiting for the user to click Next and round-trip a full save.
+   * Skips when the number isn't a valid shape yet (let the format
+   * validator own that error first).
+   */
+  const checkMobileUnique = useCallback(async (value: string): Promise<boolean> => {
+    const v = (value || '').trim();
+    const digits = v.replace(/\D/g, '');
+    if (!v || digits.length < 6 || digits.length > 15) return true;
+
+    const token = ++mobileCheckTokenRef.current;
+    try {
+      const params = new URLSearchParams({ mobile: v });
+      const excludeId = editingDbIdRef.current;
+      if (excludeId) params.set('exclude_employee_id', String(excludeId));
+      const r = await api.get(`/employees/check-mobile?${params.toString()}`);
+      if (token !== mobileCheckTokenRef.current) return true; // stale
+      if (r?.data?.available === false) {
+        const msg = r.data.message || 'This mobile number is already in use.';
+        setEErrors(prev => ({ ...prev, mobile: msg }));
+        return false;
+      }
+      return true;
+    } catch {
+      // Network / auth blip — don't block the user; the backend's
+      // guardDuplicate on save will still catch a real duplicate.
+      return true;
+    }
+  }, []);
+
   // ── Step 3 asset pools — laptop / mobile / other. Refetched whenever
   //    the wizard opens (add or edit). The backend filter excludes
   //    devices booked by other employees, so each select only shows
@@ -1619,6 +1657,17 @@ export default function HrEmployees() {
         `${count} field${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} attention before continuing.`,
       );
       return;
+    }
+    // Belt-and-suspenders mobile uniqueness check on step 1 — covers the
+    // edge case where the user types/pastes a duplicate and hits Next
+    // without ever blurring the field. Without this, the duplicate only
+    // surfaces after a full save round-trip.
+    if (empStep === 1) {
+      const mobileOk = await checkMobileUnique(eMobile);
+      if (!mobileOk) {
+        toast.error('Duplicate mobile number', 'This mobile is already in use by another employee.');
+        return;
+      }
     }
     // Persist this step BEFORE advancing so the row exists in the
     // disabled list even if the user closes the tab on step 2/3.
@@ -3573,6 +3622,7 @@ export default function HrEmployees() {
                           setEMobile(cleaned);
                           clearEErr('mobile');
                         }}
+                        onBlur={() => { void checkMobileUnique(eMobile); }}
                       />
                       {eErrors.mobile && <small className="emp-err">{eErrors.mobile}</small>}
                     </Col>

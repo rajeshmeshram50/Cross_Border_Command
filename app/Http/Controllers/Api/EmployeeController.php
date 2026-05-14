@@ -184,6 +184,65 @@ class EmployeeController extends Controller
     }
 
     /**
+     * Proactive uniqueness probe for the Mobile field.
+     *
+     *   GET /api/employees/check-mobile?mobile=...&exclude_employee_id=NN
+     *
+     * Mirrors the tenant scoping used by guardDuplicate() on store/update
+     * so the frontend can show a duplicate error on blur — without this
+     * the conflict only surfaces after the user clicks "Next" and the
+     * server returns 422. Soft-deleted rows are intentionally ignored
+     * (they don't block fresh hires there either).
+     */
+    public function checkMobile(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+
+        $mobile = trim((string) $request->query('mobile', ''));
+        if ($mobile === '') {
+            return response()->json(['available' => true, 'conflict' => null]);
+        }
+
+        $excludeId = $request->integer('exclude_employee_id') ?: null;
+
+        // For an edit, scope to the row's own client_id (mirrors update's
+        // guardDuplicate call). For a new row, fall back to the resolved
+        // ownership tenant (mirrors store's path).
+        if ($excludeId !== null) {
+            $clientId = Employee::withTrashed()->where('id', $excludeId)->value('client_id');
+        } else {
+            [$clientId] = $this->resolveOwnership($request);
+        }
+
+        $q = Employee::query()->where('mobile', $mobile);
+        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+        if ($excludeId !== null) $q->where('id', '!=', $excludeId);
+
+        $existing = $q->first(['id', 'emp_code', 'display_name', 'first_name', 'last_name']);
+        if (!$existing) {
+            return response()->json(['available' => true, 'conflict' => null]);
+        }
+
+        $name = $existing->display_name
+            ?: trim($existing->first_name . ' ' . $existing->last_name);
+        $message = sprintf(
+            'This mobile number is already in use by %s (%s).',
+            $name ?: 'another employee',
+            $existing->emp_code ?: ('#' . $existing->id),
+        );
+
+        return response()->json([
+            'available' => false,
+            'conflict'  => [
+                'id'       => $existing->id,
+                'emp_code' => $existing->emp_code,
+                'name'     => $name ?: 'another employee',
+            ],
+            'message'   => $message,
+        ]);
+    }
+
+    /**
      * Available assets for the Stage 1 — Assets & Security dropdowns.
      *
      *   GET /api/employees/available-assets?category=laptop|mobile|other
