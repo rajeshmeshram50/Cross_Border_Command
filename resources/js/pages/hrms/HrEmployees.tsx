@@ -1454,8 +1454,17 @@ export default function HrEmployees() {
     if (!ePanFile && !eExistingDocs['pan']) {
       e.doc_pan = 'PAN Card upload is required';
     }
+    // Pairing rule: if the user opted into a laptop/mobile assignment they
+    // must also pick which device — otherwise the assignment toggle saves
+    // a true intent with no actual booked asset, defeating the toggle.
+    if (eLaptopAssigned === 'Yes' && !eLaptopMasterAssetId) {
+      e.laptop_master_asset_id = 'Laptop Device is required';
+    }
+    if (eMobileAssigned === 'Yes' && !eMobileMasterAssetId) {
+      e.mobile_master_asset_id = 'Mobile Device is required';
+    }
     return e;
-  }, [eAadharFile, ePanFile, eExistingDocs]);
+  }, [eAadharFile, ePanFile, eExistingDocs, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId]);
 
   // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
   // for the employee (the default). The "Enable payroll" toggle is the
@@ -1487,7 +1496,7 @@ export default function HrEmployees() {
     const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
       { step: 1, keys: new Set(['work_country_id','first_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
-      { step: 3, keys: new Set(['doc_aadhaar','doc_pan']) },
+      { step: 3, keys: new Set(['doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
       { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from']) },
     ];
     for (const s of STEP_KEYS) {
@@ -4008,21 +4017,26 @@ export default function HrEmployees() {
                         value={eLaptopAssigned}
                         onChange={(v) => {
                           setELaptopAssigned(v);
-                          if (v !== 'Yes') setELaptopMasterAssetId('');
+                          if (v !== 'Yes') {
+                            setELaptopMasterAssetId('');
+                            clearEErr('laptop_master_asset_id');
+                          }
                         }}
                         options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                       />
                     </Col>
                     {eLaptopAssigned === 'Yes' && (
                       <Col md={4}>
-                        <label className="emp-label">Laptop Device</label>
+                        <label className="emp-label">Laptop Device<span className="req">*</span></label>
                         <MasterSelect
                           value={eLaptopMasterAssetId}
-                          onChange={setELaptopMasterAssetId}
+                          onChange={(v) => { setELaptopMasterAssetId(v); clearEErr('laptop_master_asset_id'); }}
                           options={laptopAssetOpts}
                           placeholder={laptopAssetOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                           disabled={laptopAssetOpts.length === 0}
+                          invalid={!!eErrors.laptop_master_asset_id}
                         />
+                        {eErrors.laptop_master_asset_id && <small className="emp-err">{eErrors.laptop_master_asset_id}</small>}
                       </Col>
                     )}
 
@@ -4032,21 +4046,26 @@ export default function HrEmployees() {
                         value={eMobileAssigned}
                         onChange={(v) => {
                           setEMobileAssigned(v);
-                          if (v !== 'Yes') setEMobileMasterAssetId('');
+                          if (v !== 'Yes') {
+                            setEMobileMasterAssetId('');
+                            clearEErr('mobile_master_asset_id');
+                          }
                         }}
                         options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                       />
                     </Col>
                     {eMobileAssigned === 'Yes' && (
                       <Col md={4}>
-                        <label className="emp-label">Mobile Device</label>
+                        <label className="emp-label">Mobile Device<span className="req">*</span></label>
                         <MasterSelect
                           value={eMobileMasterAssetId}
-                          onChange={setEMobileMasterAssetId}
+                          onChange={(v) => { setEMobileMasterAssetId(v); clearEErr('mobile_master_asset_id'); }}
                           options={mobileAssetOpts}
                           placeholder={mobileAssetOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                           disabled={mobileAssetOpts.length === 0}
+                          invalid={!!eErrors.mobile_master_asset_id}
                         />
+                        {eErrors.mobile_master_asset_id && <small className="emp-err">{eErrors.mobile_master_asset_id}</small>}
                       </Col>
                     )}
 
