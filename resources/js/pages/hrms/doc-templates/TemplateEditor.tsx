@@ -217,13 +217,14 @@ export default function TemplateEditor({
   });
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 16, minHeight: 480 }}>
+    <div className="tpl-editor-root" style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 16, minHeight: 480 }}>
       {/* Left sidebar — placeholder fields */}
-      <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 10, background: '#fff', maxHeight: 560, overflowY: 'auto' }}>
+      <div className="tpl-sidebar" style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 10, background: '#fff', maxHeight: 560, overflowY: 'auto' }}>
         <div style={{ position: 'relative', marginBottom: 10 }}>
-          <i className="ri-search-line" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 13 }} />
+          <i className="ri-search-line tpl-search-icon" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 13 }} />
           <input
             type="text"
+            className="tpl-search"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search placeholders…"
@@ -236,6 +237,7 @@ export default function TemplateEditor({
             <div key={g.id} style={{ marginBottom: 6 }}>
               <button
                 type="button"
+                className="tpl-group-header"
                 onClick={() => setOpenGroups(s => ({ ...s, [g.id]: !open }))}
                 style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 6px', background: '#f9fafb', border: 0, borderRadius: 6, fontSize: 11, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', cursor: 'pointer' }}
               >
@@ -245,7 +247,7 @@ export default function TemplateEditor({
               {open && (
                 <div style={{ paddingLeft: 4, marginTop: 4 }}>
                   {g.fields.length === 0 && g.id === 'custom' && (
-                    <div style={{ fontSize: 11.5, color: '#9ca3af', padding: '4px 6px', fontStyle: 'italic' }}>
+                    <div className="tpl-empty" style={{ fontSize: 11.5, color: '#9ca3af', padding: '4px 6px', fontStyle: 'italic' }}>
                       No custom fields yet — add one below.
                     </div>
                   )}
@@ -253,19 +255,19 @@ export default function TemplateEditor({
                     <button
                       key={f.token}
                       type="button"
+                      className="tpl-token-btn"
                       onClick={() => insertToken(f.token)}
                       title={`Insert ${f.token}`}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '5px 6px', background: 'transparent', border: 0, borderRadius: 6, cursor: 'pointer', fontSize: 12 }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#f3f4f6'; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                     >
-                      <span style={{ color: '#374151', textAlign: 'left' }}>{f.label}</span>
-                      <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#6366f1', background: '#eef2ff', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>{f.token}</span>
+                      <span className="tpl-token-label" style={{ color: '#374151', textAlign: 'left' }}>{f.label}</span>
+                      <span className="tpl-token-pill" style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#6366f1', background: '#eef2ff', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>{f.token}</span>
                     </button>
                   ))}
                   {g.id === 'custom' && (
                     <button
                       type="button"
+                      className="tpl-add-cf"
                       onClick={() => { setInlinePrefill(''); setInlineModalOpen(true); }}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6, padding: '6px 6px', background: '#fafaff', border: '1px dashed #c7d2fe', borderRadius: 6, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: '#4338ca' }}
                     >
@@ -282,10 +284,10 @@ export default function TemplateEditor({
       {/* Right — editor + toolbar */}
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {unknownTokens.length > 0 && (
-          <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-            <i className="ri-error-warning-line" style={{ fontSize: 16, color: '#b45309', marginTop: 2 }} />
+          <div className="tpl-unknown-banner" style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+            <i className="ri-error-warning-line tpl-unknown-icon" style={{ fontSize: 16, color: '#b45309', marginTop: 2 }} />
             <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>
+              <div className="tpl-unknown-title" style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 4 }}>
                 {unknownTokens.length} unknown placeholder{unknownTokens.length === 1 ? '' : 's'} in this template
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -293,6 +295,7 @@ export default function TemplateEditor({
                   <button
                     key={tok}
                     type="button"
+                    className="tpl-unknown-chip"
                     title={`Register {{${tok}}} as a custom field`}
                     onClick={() => { setInlinePrefill(tok); setInlineModalOpen(true); }}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, border: '1px solid #fcd34d', background: '#fef3c7', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: '#92400e', fontFamily: 'monospace' }}
@@ -302,15 +305,16 @@ export default function TemplateEditor({
                   </button>
                 ))}
               </div>
-              <div style={{ fontSize: 11, color: '#92400e', opacity: 0.85, marginTop: 4 }}>
+              <div className="tpl-unknown-hint" style={{ fontSize: 11, color: '#92400e', opacity: 0.85, marginTop: 4 }}>
                 Click any token to register it as a Custom Field — it'll then prompt the user at generation time.
               </div>
             </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: '10px 10px 0 0', background: '#fafafa' }}>
+        <div className="tpl-toolbar" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: '10px 10px 0 0', background: '#fafafa' }}>
           <select
+            className="tpl-toolbar-select"
             value={editor.isActive('heading', { level: 1 }) ? 'h1'
                   : editor.isActive('heading', { level: 2 }) ? 'h2'
                   : editor.isActive('heading', { level: 3 }) ? 'h3'
@@ -334,18 +338,18 @@ export default function TemplateEditor({
           <button type="button" style={btn(editor.isActive('italic'))}    onClick={() => editor.chain().focus().toggleItalic().run()}    title="Italic"><i>I</i></button>
           <button type="button" style={btn(editor.isActive('underline'))} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline"><u>U</u></button>
 
-          <span style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
+          <span className="tpl-toolbar-divider" style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
 
           <button type="button" style={btn(editor.isActive({ textAlign: 'left' }))}   onClick={() => editor.chain().focus().setTextAlign('left').run()}><i className="ri-align-left" /></button>
           <button type="button" style={btn(editor.isActive({ textAlign: 'center' }))} onClick={() => editor.chain().focus().setTextAlign('center').run()}><i className="ri-align-center" /></button>
           <button type="button" style={btn(editor.isActive({ textAlign: 'right' }))}  onClick={() => editor.chain().focus().setTextAlign('right').run()}><i className="ri-align-right" /></button>
 
-          <span style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
+          <span className="tpl-toolbar-divider" style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
 
           <button type="button" style={btn(editor.isActive('bulletList'))} onClick={() => editor.chain().focus().toggleBulletList().run()}><i className="ri-list-unordered" /></button>
           <button type="button" style={btn(editor.isActive('orderedList'))} onClick={() => editor.chain().focus().toggleOrderedList().run()}><i className="ri-list-ordered" /></button>
 
-          <span style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
+          <span className="tpl-toolbar-divider" style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
 
           <button type="button" style={btn(false)} onClick={() => editor.chain().focus().undo().run()}><i className="ri-arrow-go-back-line" /></button>
           <button type="button" style={btn(false)} onClick={() => editor.chain().focus().redo().run()}><i className="ri-arrow-go-forward-line" /></button>
@@ -359,11 +363,134 @@ export default function TemplateEditor({
         </div>
 
         <style>{`
+          /* ── Light-mode base ────────────────────────────────────────────── */
           .tpl-editor-surface .ProseMirror { outline: none; min-height: 320px; font-size: 14px; line-height: 1.6; }
           .tpl-editor-surface .ProseMirror p { margin: 0 0 8px 0; }
           .tpl-editor-surface .ProseMirror p.is-editor-empty:first-child::before {
             content: 'Start typing your template here…';
             color: #9ca3af; pointer-events: none; height: 0; float: left;
+          }
+
+          /* Sidebar interaction polish (light) */
+          .tpl-editor-root .tpl-token-btn { transition: background 120ms ease; }
+          .tpl-editor-root .tpl-token-btn:hover { background: #f3f4f6 !important; }
+          .tpl-editor-root .tpl-add-cf:hover { background: #f5f3ff !important; border-color: #a5b4fc !important; }
+
+          /* ── Dark-mode parity ───────────────────────────────────────────── */
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-sidebar,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-sidebar {
+            background: #1f2937 !important;
+            border-color: rgba(255, 255, 255, 0.08) !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-search,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-search {
+            background: #0f172a !important;
+            border-color: rgba(255, 255, 255, 0.10) !important;
+            color: #f1f5f9 !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-search::placeholder,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-search::placeholder { color: rgba(255, 255, 255, 0.40) !important; }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-search-icon,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-search-icon { color: rgba(255, 255, 255, 0.55) !important; }
+
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-group-header,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-group-header {
+            background: rgba(99, 102, 241, 0.10) !important;
+            color: rgba(255, 255, 255, 0.65) !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-token-btn:hover,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-token-btn:hover {
+            background: rgba(99, 102, 241, 0.12) !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-token-label,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-token-label { color: #e5e7eb !important; }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-token-pill,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-token-pill {
+            background: rgba(99, 102, 241, 0.20) !important;
+            color: #c7d2fe !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-empty,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-empty { color: rgba(255, 255, 255, 0.45) !important; }
+
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-add-cf,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-add-cf {
+            background: rgba(99, 102, 241, 0.10) !important;
+            border-color: rgba(99, 102, 241, 0.45) !important;
+            color: #c7d2fe !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-add-cf:hover,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-add-cf:hover {
+            background: rgba(99, 102, 241, 0.20) !important;
+          }
+
+          /* Unknown-tokens banner — violet-tinted dark variant */
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-unknown-banner,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-unknown-banner {
+            background: rgba(251, 191, 36, 0.10) !important;
+            border-color: rgba(251, 191, 36, 0.35) !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-unknown-icon,
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-unknown-title,
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-unknown-hint,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-unknown-icon,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-unknown-title,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-unknown-hint { color: #fcd34d !important; }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-unknown-chip,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-unknown-chip {
+            background: rgba(251, 191, 36, 0.18) !important;
+            border-color: rgba(251, 191, 36, 0.45) !important;
+            color: #fde68a !important;
+          }
+
+          /* Toolbar shell + select */
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-toolbar,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-toolbar {
+            background: #111827 !important;
+            border-color: rgba(255, 255, 255, 0.08) !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-toolbar-divider,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-toolbar-divider {
+            background: rgba(255, 255, 255, 0.10) !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-toolbar-select,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-toolbar-select {
+            background: #1f2937 !important;
+            border-color: rgba(255, 255, 255, 0.10) !important;
+            color: #e5e7eb !important;
+          }
+          /* All toolbar buttons — both active and inactive variants */
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-toolbar button,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-toolbar button {
+            background: #1f2937 !important;
+            border-color: rgba(255, 255, 255, 0.10) !important;
+            color: #e5e7eb !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-toolbar button:hover,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-toolbar button:hover {
+            background: rgba(99, 102, 241, 0.18) !important;
+            border-color: rgba(99, 102, 241, 0.45) !important;
+          }
+          /* Active variant — keep the indigo signal, just darker */
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-toolbar button[style*="rgb(238, 242, 255)"],
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-toolbar button[style*="#eef2ff"],
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-toolbar button[style*="rgb(238, 242, 255)"],
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-toolbar button[style*="#eef2ff"] {
+            background: rgba(99, 102, 241, 0.25) !important;
+            border-color: #818cf8 !important;
+            color: #c7d2fe !important;
+          }
+
+          /* Editor surface itself */
+          [data-bs-theme="dark"] .tpl-editor-surface,
+          [data-layout-mode="dark"] .tpl-editor-surface {
+            background: #0f172a !important;
+            border-color: rgba(255, 255, 255, 0.08) !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-surface .ProseMirror,
+          [data-layout-mode="dark"] .tpl-editor-surface .ProseMirror { color: #e5e7eb; }
+          [data-bs-theme="dark"] .tpl-editor-surface .ProseMirror p.is-editor-empty:first-child::before,
+          [data-layout-mode="dark"] .tpl-editor-surface .ProseMirror p.is-editor-empty:first-child::before {
+            color: rgba(255, 255, 255, 0.35);
           }
         `}</style>
       </div>

@@ -62,6 +62,7 @@ import HrBroadcastCentre from '../pages/hrms/HrBroadcastCentre';
 import HrDocumentTemplates from '../pages/hrms/HrDocumentTemplates';
 import HrCustomFields from '../pages/hrms/HrCustomFields';
 import TemplateFormPage from '../pages/hrms/doc-templates/TemplateForm';
+import GenerateDocument from '../pages/hrms/doc-templates/GenerateDocument';
 import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
 import EmployeePermissions from '../pages/employee/EmployeePermissions';
 import EmployeeProfile from '../pages/employee/EmployeeProfile';
@@ -462,6 +463,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr/doc-templates" element={<HrDocumentTemplates />} />
               <Route path="/hr/doc-templates/new" element={<TemplateFormPage />} />
               <Route path="/hr/doc-templates/:id/edit" element={<TemplateFormPage />} />
+              <Route path="/hr/doc-templates/:id/generate" element={<GenerateDocument />} />
               <Route path="/hr/custom-fields" element={<HrCustomFields />} />
               <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
