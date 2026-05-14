@@ -247,10 +247,19 @@ export interface ApiLeaveRequestPayload {
 }
 
 export interface ApiLeaveApprover {
+  // Multi-level approval response. `level` is 1-based; `is_current` marks
+  // the level the request is currently waiting on. Older single-level
+  // responses populate the same fields with level=1 / is_current=true.
+  level: number;
   role: string;
-  employee_id: number;
+  kind: string;
+  employee_id: number | null;
   name: string;
   email: string | null;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Skipped';
+  acted_at: string | null;
+  comment: string | null;
+  is_current: boolean;
 }
 
 export const leaveRequestsApi = {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
-import { leaveRequestsApi, ApiLeaveRequest } from './leavePlansApi';
+import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover } from './leavePlansApi';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 
@@ -48,6 +48,7 @@ export default function HrLeaveApprovals() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [openId, setOpenId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ApiLeaveRequest | null>(null);
+  const [chain, setChain] = useState<ApiLeaveApprover[]>([]);
   const [comment, setComment] = useState('');
   const [acting, setActing] = useState<'approve' | 'reject' | null>(null);
 
@@ -77,18 +78,27 @@ export default function HrLeaveApprovals() {
   const openDetail = async (id: number) => {
     setOpenId(id);
     setComment('');
+    setChain([]);
     try {
-      const d = await leaveRequestsApi.show(id);
+      // Fire both in parallel — the chain endpoint is cheap and the
+      // approver list is small, so we save a roundtrip vs. sequential.
+      const [d, c] = await Promise.all([
+        leaveRequestsApi.show(id),
+        leaveRequestsApi.approvers(id),
+      ]);
       setDetail(d);
+      setChain(c);
     } catch (err) {
       console.warn('[HrLeaveApprovals] show failed', err);
       setDetail(null);
+      setChain([]);
     }
   };
 
   const closeDetail = () => {
     setOpenId(null);
     setDetail(null);
+    setChain([]);
     setComment('');
   };
 
@@ -336,6 +346,51 @@ export default function HrLeaveApprovals() {
                     </Col>
                   </Row>
                 </div>
+
+                {/* Approval chain progress */}
+                {chain.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-muted mb-2" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>APPROVAL CHAIN</div>
+                    <div className="d-flex align-items-stretch gap-2">
+                      {chain.map((c, i) => {
+                        const tone = c.status === 'Approved' ? { bg: '#d1fae5', fg: '#065f46', ring: '#10b981' }
+                          : c.status === 'Rejected' ? { bg: '#fee2e2', fg: '#b91c1c', ring: '#ef4444' }
+                          : c.is_current ? { bg: '#ede9fe', fg: '#5a3fd1', ring: '#7c5cfc' }
+                          : { bg: '#f3f4f6', fg: '#6b7280', ring: '#d1d5db' };
+                        return (
+                          <div key={i} className="flex-grow-1 d-flex align-items-center gap-2" style={{
+                            background: tone.bg, color: tone.fg, padding: '10px 12px', borderRadius: 10,
+                            border: c.is_current ? `2px solid ${tone.ring}` : '1px solid transparent',
+                            minWidth: 0,
+                          }}>
+                            <span className="rounded-circle d-inline-flex align-items-center justify-content-center fw-bold flex-shrink-0" style={{
+                              width: 24, height: 24, fontSize: 11, background: tone.ring, color: '#fff',
+                            }}>
+                              {c.status === 'Approved' ? <i className="ri-check-line" />
+                               : c.status === 'Rejected' ? <i className="ri-close-line" />
+                               : c.level}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="fw-semibold text-truncate" style={{ fontSize: 12 }}>{c.role}</div>
+                              <div className="text-truncate" style={{ fontSize: 11, opacity: 0.8 }}>{c.name}</div>
+                              {c.acted_at && c.status !== 'Pending' && (
+                                <div style={{ fontSize: 10, opacity: 0.7 }}>
+                                  {c.status} · {fmtDate(c.acted_at)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {chain.find(c => c.is_current) && (
+                      <div className="text-muted mt-2" style={{ fontSize: 11 }}>
+                        Currently waiting on <strong>level {chain.find(c => c.is_current)?.level}</strong>
+                        {' '}({chain.find(c => c.is_current)?.role}).
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Reason */}
                 {detail.reason && (

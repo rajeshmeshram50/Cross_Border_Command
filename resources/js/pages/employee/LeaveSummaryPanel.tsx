@@ -298,13 +298,30 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
             <div className="text-muted" style={{ fontSize: 12 }}>No approvers configured for this request.</div>
           ) : (
             <ol className="ps-3 mb-0">
-              {approversList.map((a, i) => (
-                <li key={i} style={{ fontSize: 12.5 }}>
-                  <strong>{a.role.toUpperCase()}</strong>
-                  <div>{a.name}</div>
-                  {a.email && <div className="text-muted" style={{ fontSize: 11 }}>{a.email}</div>}
-                </li>
-              ))}
+              {approversList.map((a, i) => {
+                const statusColor = a.status === 'Approved' ? '#065f46'
+                  : a.status === 'Rejected' ? '#b91c1c'
+                  : a.is_current ? '#5a3fd1' : '#6b7280';
+                return (
+                  <li key={i} style={{ fontSize: 12.5, marginBottom: 8 }}>
+                    <div className="d-flex align-items-center gap-2">
+                      <strong>{a.role.toUpperCase()}</strong>
+                      <span className="rec-pill" style={{
+                        background: a.status === 'Approved' ? '#d1fae5'
+                          : a.status === 'Rejected' ? '#fee2e2'
+                          : a.is_current ? '#ede9fe' : '#f3f4f6',
+                        color: statusColor,
+                        fontSize: 10,
+                      }}>
+                        {a.is_current && a.status === 'Pending' ? 'WAITING' : a.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <div>{a.name}</div>
+                    {a.email && <div className="text-muted" style={{ fontSize: 11 }}>{a.email}</div>}
+                    {a.comment && <div className="text-muted" style={{ fontSize: 11, fontStyle: 'italic' }}>"{a.comment}"</div>}
+                  </li>
+                );
+              })}
             </ol>
           )}
         </ModalBody>

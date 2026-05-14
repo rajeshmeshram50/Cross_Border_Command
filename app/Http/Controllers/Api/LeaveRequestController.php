@@ -104,6 +104,12 @@ class LeaveRequestController extends Controller
             ->where('employee_id', $employee->id)
             ->value('leave_plan_id');
 
+        // Snapshot the approval chain from the plan-type config_json so
+        // changing the plan rules later doesn't reroute in-flight requests.
+        // Fall back to a single Reporting Manager level when no chain
+        // configured (matches the v1 behaviour).
+        $chain = $this->snapshotApprovalChain($employee, $planId, $data['leave_type_id']);
+
         $row = LeaveRequest::create([
             'client_id' => $employee->client_id,
             'branch_id' => $employee->branch_id,
@@ -125,6 +131,8 @@ class LeaveRequestController extends Controller
             'emergency_number' => $data['emergency_number'] ?? null,
             'avail_note' => $data['avail_note'] ?? null,
             'status' => 'Pending',
+            'approval_chain' => $chain,
+            'current_approval_level' => 1,
             'created_by' => $user->id,
         ]);
 
@@ -189,8 +197,17 @@ class LeaveRequestController extends Controller
             if (!$myEmployeeId) {
                 return response()->json(['data' => []]);
             }
-            $q->whereIn('employee_id', function ($sub) use ($myEmployeeId) {
-                $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+            // Non-admin path — show pending requests where the current level
+            // has me as approver: either as reporting manager of the
+            // requestor, or as the explicitly-named employee/user on that
+            // level. We do the simple SQL filter for direct reports, then
+            // post-filter in PHP for the per-level chain matching since
+            // approval_chain is a JSON column. Already-decided (Approved /
+            // Rejected) requests fall back to "I was somewhere on the chain".
+            $q->where(function ($w) use ($myEmployeeId, $user) {
+                $w->whereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                    $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+                })->orWhere('approved_by', $user->id);
             });
         } elseif ($user->user_type !== 'super_admin' && $user->client_id) {
             $q->where('client_id', $user->client_id);
@@ -257,16 +274,49 @@ class LeaveRequestController extends Controller
         $data = $request->validate([
             'comment' => ['nullable', 'string'],
         ]);
-        $row->status = $next;
-        $row->approved_by = $user->id;
-        $row->approved_at = now();
-        $row->approver_comment = $data['comment'] ?? null;
+
+        $chain = $row->approval_chain ?? [];
+        $level = max(1, (int) ($row->current_approval_level ?? 1));
+        $isAdminOverride = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        $isApproverForLevel = $this->canActOnLevel($user, $chain, $level - 1, $row);
+        if (!$isApproverForLevel && !$isAdminOverride) {
+            abort(403, 'You are not the approver for the current level of this request.');
+        }
+
+        // Record the decision on this chain entry.
+        if (isset($chain[$level - 1])) {
+            $chain[$level - 1]['status'] = $next;
+            $chain[$level - 1]['acted_by'] = $user->id;
+            $chain[$level - 1]['acted_at'] = now()->toISOString();
+            $chain[$level - 1]['comment'] = $data['comment'] ?? null;
+        }
+        $row->approval_chain = $chain;
+
+        if ($next === 'Rejected') {
+            // Reject at any level terminates immediately.
+            $row->status = 'Rejected';
+            $row->approved_by = $user->id;
+            $row->approved_at = now();
+            $row->approver_comment = $data['comment'] ?? null;
+        } else {
+            // Approved — advance to next level or finalize.
+            if ($level >= count($chain)) {
+                $row->status = 'Approved';
+                $row->approved_by = $user->id;
+                $row->approved_at = now();
+                $row->approver_comment = $data['comment'] ?? null;
+            } else {
+                $row->current_approval_level = $level + 1;
+                // Stays Pending — the next level needs to act.
+            }
+        }
         $row->save();
         return response()->json(['data' => $row->fresh(['leaveType:id,name,short_code'])]);
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Approvers list — surfaces the "View Approvers" popover on a request
+    // Approvers list — surfaces the "View Approvers" popover on a request.
+    // Now returns the full snapshotted chain with per-level status + actor.
     // ─────────────────────────────────────────────────────────────────────
     public function approvers(Request $request, int $id)
     {
@@ -274,22 +324,175 @@ class LeaveRequestController extends Controller
         if (!$user) abort(401);
 
         $row = LeaveRequest::findOrFail($id);
-        $employee = Employee::find($row->employee_id);
-        $approvers = [];
+        $chain = $row->approval_chain ?? [];
 
-        if ($employee && $employee->reporting_manager_id) {
-            $rm = Employee::with('user:id,name,email')->find($employee->reporting_manager_id);
-            if ($rm) {
-                $name = trim($rm->display_name ?: trim(($rm->first_name ?? '') . ' ' . ($rm->last_name ?? '')));
-                $approvers[] = [
-                    'role' => 'Reporting Manager',
-                    'employee_id' => $rm->id,
-                    'name' => $name,
-                    'email' => $rm->email,
-                ];
+        // Hydrate each level with the resolved approver's name / email.
+        $employeeIds = collect($chain)->pluck('approver_employee_id')->filter()->unique()->all();
+        $employees = Employee::with('user:id,name,email')
+            ->whereIn('id', $employeeIds)
+            ->get()->keyBy('id');
+
+        $out = [];
+        foreach ($chain as $i => $entry) {
+            $empId = $entry['approver_employee_id'] ?? null;
+            $emp = $empId ? ($employees[$empId] ?? null) : null;
+            $name = $emp
+                ? trim($emp->display_name ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? '')))
+                : ($entry['approver_label'] ?? 'Unassigned');
+            $out[] = [
+                'level' => $entry['level'] ?? ($i + 1),
+                'role' => $entry['approver_role'] ?? ucfirst(str_replace('_', ' ', $entry['approver_kind'] ?? 'Approver')),
+                'kind' => $entry['approver_kind'] ?? 'reporting_manager',
+                'employee_id' => $empId,
+                'name' => $name,
+                'email' => $emp?->email,
+                'status' => $entry['status'] ?? 'Pending',
+                'acted_at' => $entry['acted_at'] ?? null,
+                'comment' => $entry['comment'] ?? null,
+                'is_current' => ($i + 1) === (int) ($row->current_approval_level ?? 1)
+                                && $row->status === 'Pending',
+            ];
+        }
+
+        // Backward compat: if a request has no chain (pre-migration data),
+        // return the v1 single-line response so existing UI keeps working.
+        if (empty($out)) {
+            $employee = Employee::find($row->employee_id);
+            if ($employee && $employee->reporting_manager_id) {
+                $rm = Employee::find($employee->reporting_manager_id);
+                if ($rm) {
+                    $out[] = [
+                        'level' => 1,
+                        'role' => 'Reporting Manager',
+                        'kind' => 'reporting_manager',
+                        'employee_id' => $rm->id,
+                        'name' => trim($rm->display_name ?: trim(($rm->first_name ?? '') . ' ' . ($rm->last_name ?? ''))),
+                        'email' => $rm->email,
+                        'status' => 'Pending',
+                        'acted_at' => null,
+                        'comment' => null,
+                        'is_current' => true,
+                    ];
+                }
             }
         }
 
-        return response()->json(['data' => $approvers]);
+        return response()->json(['data' => $out]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Helpers — chain snapshotting + per-level approver checks
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Build the approval chain that gets frozen onto a new leave_request.
+     * Reads the plan-type Setup config_json.approval.chain when present;
+     * otherwise falls back to a single "Reporting Manager" level so v1
+     * behaviour is preserved.
+     */
+    private function snapshotApprovalChain(Employee $employee, ?int $planId, int $leaveTypeId): array
+    {
+        $rawChain = null;
+        if ($planId) {
+            $pivot = DB::table('leave_plan_leave_types')
+                ->where('leave_plan_id', $planId)
+                ->where('leave_type_id', $leaveTypeId)
+                ->value('config_json');
+            if ($pivot) {
+                $cfg = is_string($pivot) ? json_decode($pivot, true) : $pivot;
+                $approval = $cfg['approval'] ?? null;
+                // Two shapes supported:
+                //   - new: approval.chain = [{kind, role, user_id, ...}, ...]
+                //   - legacy: approval.required + approval.approverRole — wrap as a single level
+                if (is_array($approval['chain'] ?? null) && count($approval['chain']) > 0) {
+                    $rawChain = $approval['chain'];
+                } elseif (!empty($approval['required']) && !empty($approval['approverRole'])) {
+                    $rawChain = [['approver_kind' => 'role', 'approver_role' => $approval['approverRole']]];
+                }
+            }
+        }
+        if ($rawChain === null) {
+            // No config — default to reporting manager.
+            $rawChain = [['approver_kind' => 'reporting_manager']];
+        }
+
+        $chain = [];
+        foreach ($rawChain as $i => $r) {
+            $kind = $r['approver_kind'] ?? ($r['kind'] ?? 'reporting_manager');
+            $role = $r['approver_role'] ?? ($r['role'] ?? null);
+            $userId = $r['approver_user_id'] ?? ($r['user_id'] ?? null);
+            $empIdOverride = $r['approver_employee_id'] ?? ($r['employee_id'] ?? null);
+
+            // Resolve to a concrete employee_id when possible. Reporting
+            // Manager is read off the requesting employee. Role-based and
+            // user-based references stay symbolic — resolution happens at
+            // approval time in canActOnLevel().
+            $resolvedEmpId = $empIdOverride;
+            if (!$resolvedEmpId && $kind === 'reporting_manager') {
+                $resolvedEmpId = $employee->reporting_manager_id;
+            }
+
+            $chain[] = [
+                'level' => $i + 1,
+                'approver_kind' => $kind,
+                'approver_role' => $role,
+                'approver_user_id' => $userId,
+                'approver_employee_id' => $resolvedEmpId,
+                'approver_label' => $r['label'] ?? null,
+                'status' => 'Pending',
+                'acted_by' => null,
+                'acted_at' => null,
+                'comment' => null,
+            ];
+        }
+        return $chain;
+    }
+
+    /**
+     * Can the given user act on the given chain entry? True when their
+     * linked employee matches approver_employee_id, OR their user_id
+     * matches approver_user_id, OR (for role-based levels) they hold the
+     * named role. Admin / HR scopes bypass via the caller.
+     */
+    private function canActOnLevel($user, array $chain, int $idx, ?LeaveRequest $request = null): bool
+    {
+        if (!isset($chain[$idx])) return false;
+        $entry = $chain[$idx];
+        if (!empty($entry['approver_user_id']) && (int)$entry['approver_user_id'] === (int)$user->id) {
+            return true;
+        }
+        if (!empty($entry['approver_employee_id'])) {
+            $myEmpId = Employee::where('user_id', $user->id)->value('id');
+            if ($myEmpId && (int)$entry['approver_employee_id'] === (int)$myEmpId) {
+                return true;
+            }
+        }
+        if (!empty($entry['approver_role'])) {
+            // Role gating — `branch_user` and `client_admin` are treated as
+            // HR-equivalent here. Extend with proper role-table lookups if
+            // org structure formalizes more roles later.
+            $role = strtolower($entry['approver_role']);
+            if ($role === 'hr' && in_array($user->user_type, ['branch_user', 'client_admin'], true)) {
+                return true;
+            }
+            if ($role === 'branch_admin' && $user->user_type === 'branch_user') {
+                return true;
+            }
+            if ($role === 'reporting_manager' && $request) {
+                $emp = Employee::find($request->employee_id);
+                if ($emp && $emp->reporting_manager_id) {
+                    $myEmpId = Employee::where('user_id', $user->id)->value('id');
+                    if ($myEmpId && (int)$emp->reporting_manager_id === (int)$myEmpId) return true;
+                }
+            }
+        }
+        if (($entry['approver_kind'] ?? '') === 'reporting_manager' && $request) {
+            $emp = Employee::find($request->employee_id);
+            if ($emp && $emp->reporting_manager_id) {
+                $myEmpId = Employee::where('user_id', $user->id)->value('id');
+                if ($myEmpId && (int)$emp->reporting_manager_id === (int)$myEmpId) return true;
+            }
+        }
+        return false;
     }
 }
