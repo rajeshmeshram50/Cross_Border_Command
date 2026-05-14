@@ -704,6 +704,10 @@ export default function HrEmployees() {
   const [empMode, setEmpMode] = useState<'add' | 'edit'>('add');
   const [empEditingName, setEmpEditingName] = useState<string>('');
   const [empStep, setEmpStep] = useState<1 | 2 | 3 | 4>(1);
+  // Highest step the user has reached via "Next". The stepper allows
+  // jumping back to any step <= empMaxStep, but blocks forward jumps so
+  // users can't skip the per-step validation gate.
+  const [empMaxStep, setEmpMaxStep] = useState<1 | 2 | 3 | 4>(1);
   // Step 1 — Employee Details
   // Country/state state holds the master-row ID (as a string) so the API
   // payload can ship `work_country_id` / `country_id` / `state_id` directly.
@@ -987,6 +991,7 @@ export default function HrEmployees() {
 
   const resetEmpForm = () => {
     setEmpStep(1);
+    setEmpMaxStep(1);
     setEWorkCountry('');
     setEFirstName(''); setEMiddleName(''); setELastName('');
     setEDisplayName(''); setEDisplayNameTouched(false); setEActualName('');
@@ -1045,6 +1050,44 @@ export default function HrEmployees() {
   // user saw in the list.
   const editingDbIdRef = useRef<number | null>(null);
   useEffect(() => { editingDbIdRef.current = editingDbId; }, [editingDbId]);
+
+  // Token used to ignore stale uniqueness-check responses if the user
+  // edits the mobile field again before the previous request returns.
+  const mobileCheckTokenRef = useRef(0);
+
+  /**
+   * Probe the backend for mobile-number uniqueness in this tenant.
+   * Returns true when the value is available (no conflict). On a
+   * confirmed duplicate, sets `eErrors.mobile` to the server-supplied
+   * message so the inline field error renders immediately — without
+   * waiting for the user to click Next and round-trip a full save.
+   * Skips when the number isn't a valid shape yet (let the format
+   * validator own that error first).
+   */
+  const checkMobileUnique = useCallback(async (value: string): Promise<boolean> => {
+    const v = (value || '').trim();
+    const digits = v.replace(/\D/g, '');
+    if (!v || digits.length < 6 || digits.length > 15) return true;
+
+    const token = ++mobileCheckTokenRef.current;
+    try {
+      const params = new URLSearchParams({ mobile: v });
+      const excludeId = editingDbIdRef.current;
+      if (excludeId) params.set('exclude_employee_id', String(excludeId));
+      const r = await api.get(`/employees/check-mobile?${params.toString()}`);
+      if (token !== mobileCheckTokenRef.current) return true; // stale
+      if (r?.data?.available === false) {
+        const msg = r.data.message || 'This mobile number is already in use.';
+        setEErrors(prev => ({ ...prev, mobile: msg }));
+        return false;
+      }
+      return true;
+    } catch {
+      // Network / auth blip — don't block the user; the backend's
+      // guardDuplicate on save will still catch a real duplicate.
+      return true;
+    }
+  }, []);
 
   // ── Step 3 asset pools — laptop / mobile / other. Refetched whenever
   //    the wizard opens (add or edit). The backend filter excludes
@@ -1298,6 +1341,12 @@ export default function HrEmployees() {
     const resumeAt: 1 | 2 | 3 | 4 =
       lastStep === 0 || lastStep === 4 ? 1 : (((lastStep + 1) as 1 | 2 | 3 | 4));
     setEmpStep(resumeAt);
+    // A fully-filled row (lastStep === 4) means every step is editable;
+    // a partially-filled row unlocks up to the resume step (one past the
+    // last completed step); a brand-new wizard locks everything past 1.
+    const maxStep: 1 | 2 | 3 | 4 =
+      lastStep === 4 ? 4 : lastStep === 0 ? 1 : (((lastStep + 1) as 1 | 2 | 3 | 4));
+    setEmpMaxStep(maxStep);
 
     setEmpOpen(true);
   };
@@ -1405,8 +1454,17 @@ export default function HrEmployees() {
     if (!ePanFile && !eExistingDocs['pan']) {
       e.doc_pan = 'PAN Card upload is required';
     }
+    // Pairing rule: if the user opted into a laptop/mobile assignment they
+    // must also pick which device — otherwise the assignment toggle saves
+    // a true intent with no actual booked asset, defeating the toggle.
+    if (eLaptopAssigned === 'Yes' && !eLaptopMasterAssetId) {
+      e.laptop_master_asset_id = 'Laptop Device is required';
+    }
+    if (eMobileAssigned === 'Yes' && !eMobileMasterAssetId) {
+      e.mobile_master_asset_id = 'Mobile Device is required';
+    }
     return e;
-  }, [eAadharFile, ePanFile, eExistingDocs]);
+  }, [eAadharFile, ePanFile, eExistingDocs, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId]);
 
   // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
   // for the employee (the default). The "Enable payroll" toggle is the
@@ -1438,7 +1496,7 @@ export default function HrEmployees() {
     const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
       { step: 1, keys: new Set(['work_country_id','first_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
-      { step: 3, keys: new Set(['doc_aadhaar','doc_pan']) },
+      { step: 3, keys: new Set(['doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
       { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from']) },
     ];
     for (const s of STEP_KEYS) {
@@ -1609,13 +1667,28 @@ export default function HrEmployees() {
       );
       return;
     }
+    // Belt-and-suspenders mobile uniqueness check on step 1 — covers the
+    // edge case where the user types/pastes a duplicate and hits Next
+    // without ever blurring the field. Without this, the duplicate only
+    // surfaces after a full save round-trip.
+    if (empStep === 1) {
+      const mobileOk = await checkMobileUnique(eMobile);
+      if (!mobileOk) {
+        toast.error('Duplicate mobile number', 'This mobile is already in use by another employee.');
+        return;
+      }
+    }
     // Persist this step BEFORE advancing so the row exists in the
     // disabled list even if the user closes the tab on step 2/3.
     const ok = await persistCurrentStep(empStep);
     if (!ok) return;
     setEErrors({});
     toast.success(`Step ${empStep} saved`, `Progress saved — you can resume later.`);
-    setEmpStep((s) => ((s + 1) as 1 | 2 | 3 | 4));
+    setEmpStep((s) => {
+      const next = (s + 1) as 1 | 2 | 3 | 4;
+      setEmpMaxStep((m) => (next > m ? next : m));
+      return next;
+    });
   };
 
   const handleSaveEmployee = async () => {
@@ -3261,6 +3334,18 @@ export default function HrEmployees() {
             color: #7c5cfc;
           }
           .emp-stepper-btn:hover { transform: translateY(-1px); }
+          /* Locked steps — user hasn't unlocked them yet by completing
+             the prior step via "Next". Disabled state, no hover lift. */
+          .emp-stepper-btn.is-locked { cursor: not-allowed; }
+          .emp-stepper-btn.is-locked:hover { transform: none; }
+          .emp-stepper-btn.is-locked .emp-stepper-circle:not(.is-active):not(.is-done) { opacity: 0.55; }
+          .emp-stepper-btn.is-locked .emp-stepper-label:not(.is-active):not(.is-done) { opacity: 0.55; }
+          .emp-stepper-btn.is-locked:hover .emp-stepper-circle:not(.is-active):not(.is-done) {
+            background: rgba(124,92,252,0.04); border-color: #e5e7eb; color: #9ca3af;
+          }
+          .emp-stepper-btn.is-locked:hover .emp-stepper-label:not(.is-active):not(.is-done) {
+            color: #9ca3af;
+          }
 
           /* Dark-mode adapters for the wizard chrome — stepper, footer and
              accent surfaces. The light theme keeps its hardcoded #fff /
@@ -3378,14 +3463,21 @@ export default function HrEmployees() {
               ].map((s, idx, arr) => {
                 const active = empStep === s.n;
                 const done = empStep > s.n;
+                // Forward jumps are blocked: a step is only reachable
+                // via the stepper once the user has actually advanced
+                // past it via "Next". Steps already reached stay
+                // freely clickable so users can go back to edit.
+                const locked = s.n > empMaxStep;
                 return (
                   <div key={s.n} className="d-flex align-items-start" style={{ flex: idx === arr.length - 1 ? '0 0 auto' : '1 1 0' }}>
                     <button
                       type="button"
-                      className="emp-stepper-btn"
-                      onClick={() => setEmpStep(s.n as 1 | 2 | 3 | 4)}
+                      className={`emp-stepper-btn${locked ? ' is-locked' : ''}`}
+                      onClick={() => { if (!locked) setEmpStep(s.n as 1 | 2 | 3 | 4); }}
+                      disabled={locked}
                       aria-label={`Go to step ${s.n}: ${s.label}`}
                       aria-current={active ? 'step' : undefined}
+                      title={locked ? 'Complete the current step first' : undefined}
                     >
                       <div className={`emp-stepper-circle${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}>
                         {done ? <i className="ri-check-line" style={{ fontSize: 16 }} /> : s.n}
@@ -3539,6 +3631,7 @@ export default function HrEmployees() {
                           setEMobile(cleaned);
                           clearEErr('mobile');
                         }}
+                        onBlur={() => { void checkMobileUnique(eMobile); }}
                       />
                       {eErrors.mobile && <small className="emp-err">{eErrors.mobile}</small>}
                     </Col>
@@ -3924,21 +4017,26 @@ export default function HrEmployees() {
                         value={eLaptopAssigned}
                         onChange={(v) => {
                           setELaptopAssigned(v);
-                          if (v !== 'Yes') setELaptopMasterAssetId('');
+                          if (v !== 'Yes') {
+                            setELaptopMasterAssetId('');
+                            clearEErr('laptop_master_asset_id');
+                          }
                         }}
                         options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                       />
                     </Col>
                     {eLaptopAssigned === 'Yes' && (
                       <Col md={4}>
-                        <label className="emp-label">Laptop Device</label>
+                        <label className="emp-label">Laptop Device<span className="req">*</span></label>
                         <MasterSelect
                           value={eLaptopMasterAssetId}
-                          onChange={setELaptopMasterAssetId}
+                          onChange={(v) => { setELaptopMasterAssetId(v); clearEErr('laptop_master_asset_id'); }}
                           options={laptopAssetOpts}
                           placeholder={laptopAssetOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                           disabled={laptopAssetOpts.length === 0}
+                          invalid={!!eErrors.laptop_master_asset_id}
                         />
+                        {eErrors.laptop_master_asset_id && <small className="emp-err">{eErrors.laptop_master_asset_id}</small>}
                       </Col>
                     )}
 
@@ -3948,21 +4046,26 @@ export default function HrEmployees() {
                         value={eMobileAssigned}
                         onChange={(v) => {
                           setEMobileAssigned(v);
-                          if (v !== 'Yes') setEMobileMasterAssetId('');
+                          if (v !== 'Yes') {
+                            setEMobileMasterAssetId('');
+                            clearEErr('mobile_master_asset_id');
+                          }
                         }}
                         options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                       />
                     </Col>
                     {eMobileAssigned === 'Yes' && (
                       <Col md={4}>
-                        <label className="emp-label">Mobile Device</label>
+                        <label className="emp-label">Mobile Device<span className="req">*</span></label>
                         <MasterSelect
                           value={eMobileMasterAssetId}
-                          onChange={setEMobileMasterAssetId}
+                          onChange={(v) => { setEMobileMasterAssetId(v); clearEErr('mobile_master_asset_id'); }}
                           options={mobileAssetOpts}
                           placeholder={mobileAssetOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                           disabled={mobileAssetOpts.length === 0}
+                          invalid={!!eErrors.mobile_master_asset_id}
                         />
+                        {eErrors.mobile_master_asset_id && <small className="emp-err">{eErrors.mobile_master_asset_id}</small>}
                       </Col>
                     )}
 

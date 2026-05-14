@@ -8,8 +8,8 @@
 import React from 'react';
 
 const card: React.CSSProperties = {
-  background: 'var(--vz-card-bg, #fff)',
-  border: '1px solid var(--vz-border-color, #e5e7eb)',
+  background: 'var(--shim-card-bg, #fff)',
+  border: '1px solid var(--shim-border, #e5e7eb)',
   borderRadius: 16,
   overflow: 'hidden',
 };
@@ -148,8 +148,8 @@ export function ShimmerTable({ rows = 5, cols = 6 }: { rows?: number; cols?: num
       <div
         style={{
           padding: '12px 16px',
-          background: 'var(--vz-secondary-bg, #f3f4f6)',
-          borderBottom: '1px solid var(--vz-border-color, #e5e7eb)',
+          background: 'var(--shim-secondary-bg, #f3f4f6)',
+          borderBottom: '1px solid var(--shim-border, #e5e7eb)',
           display: 'flex', gap: 16,
         }}
       >
@@ -162,7 +162,7 @@ export function ShimmerTable({ rows = 5, cols = 6 }: { rows?: number; cols?: num
           key={r}
           style={{
             padding: '14px 16px',
-            borderBottom: '1px solid var(--vz-border-color, #e5e7eb)',
+            borderBottom: '1px solid var(--shim-border, #e5e7eb)',
             display: 'flex', alignItems: 'center', gap: 16,
           }}
         >
@@ -179,7 +179,7 @@ export function ShimmerTable({ rows = 5, cols = 6 }: { rows?: number; cols?: num
 export function ShimmerList({ count = 5 }: { count?: number }) {
   return (
     <div style={card}>
-      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--vz-border-color, #e5e7eb)', ...row }}>
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--shim-border, #e5e7eb)', ...row }}>
         <Shimmer width={32} height={32} radius={8} />
         <Shimmer width={140} height={14} />
       </div>
@@ -188,7 +188,7 @@ export function ShimmerList({ count = 5 }: { count?: number }) {
           key={i}
           style={{
             padding: '12px 18px',
-            borderBottom: '1px solid var(--vz-border-color, #e5e7eb)',
+            borderBottom: '1px solid var(--shim-border, #e5e7eb)',
             ...row, gap: 14,
           }}
         >
@@ -236,7 +236,7 @@ export function ShimmerChart() {
       <div
         style={{
           padding: '14px 20px',
-          borderBottom: '1px solid var(--vz-border-color, #e5e7eb)',
+          borderBottom: '1px solid var(--shim-border, #e5e7eb)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}
       >
@@ -268,7 +268,7 @@ export function ShimmerHero() {
     <div
       style={{
         ...card,
-        background: 'var(--vz-secondary-bg, #f3f4f6)',
+        background: 'var(--shim-secondary-bg, #f3f4f6)',
         padding: 28,
         ...row, gap: 22,
       }}
@@ -338,7 +338,7 @@ export function ShimmerProfile() {
     <div
       style={{
         ...card,
-        background: 'linear-gradient(135deg, var(--vz-secondary-bg, #f3f4f6), var(--vz-card-bg, #fff))',
+        background: 'linear-gradient(135deg, var(--shim-secondary-bg, #f3f4f6), var(--shim-card-bg, #fff))',
         padding: '28px 32px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24,
         flexWrap: 'wrap',
@@ -376,7 +376,7 @@ export function ShimmerProfile() {
         </div>
         <Shimmer width={64} height={22} radius={999} />
       </div>
-      <div style={{ ...stack(12), alignItems: 'center', padding: 16, borderRadius: 12, background: 'var(--vz-secondary-bg, #f3f4f6)' }}>
+      <div style={{ ...stack(12), alignItems: 'center', padding: 16, borderRadius: 12, background: 'var(--shim-secondary-bg, #f3f4f6)' }}>
         <Shimmer width={56} height={56} radius={999} />
         <Shimmer width={100} height={10} />
         <Shimmer width={80} height={18} />
@@ -475,7 +475,7 @@ export function ShimmerSettings() {
           ))}
         </div>
         <div style={{ ...card, padding: 24, ...stack(18) }}>
-          <div style={{ ...row, paddingBottom: 16, borderBottom: '1px solid var(--vz-border-color, #e5e7eb)' }}>
+          <div style={{ ...row, paddingBottom: 16, borderBottom: '1px solid var(--shim-border, #e5e7eb)' }}>
             <Shimmer width={40} height={40} radius={12} />
             <div style={stack(8)}>
               <Shimmer width={112} height={14} />

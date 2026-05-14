@@ -88,6 +88,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/employees/next-code',         [EmployeeController::class, 'nextCode']);
     Route::get   ('/employees/managers',          [EmployeeController::class, 'managers']);
     Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
+    // Lightweight uniqueness probe — frontend fires this on blur of the
+    // Mobile field so the user sees a duplicate error before clicking Next.
+    Route::get   ('/employees/check-mobile',      [EmployeeController::class, 'checkMobile']);
     // Admin issues a self-service onboarding invite + emails the link.
     Route::post  ('/employees/onboarding-invite', [OnboardingController::class, 'createInvite']);
     // Re-enable a soft-deleted employee (inverse of DELETE /employees/{id}).
