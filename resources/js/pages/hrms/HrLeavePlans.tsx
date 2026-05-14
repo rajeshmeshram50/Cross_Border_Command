@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem, Progress } from 'reactstrap';
+import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { MasterFormStyles } from '../master/masterFormKit';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
+import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse } from './leavePlansApi';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -181,8 +182,9 @@ interface PlanEmployee {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Demo data — replace with GET /api/leave-plans + GET /api/leave-plans/:id
-// when the backend is ready.
+// Visual constants — accent palette + job-title tone presets used by the
+// API adapters when rendering employee avatars and pills. Demo-data builders
+// from the page's pre-API era were removed; only these helpers remain.
 // ─────────────────────────────────────────────────────────────────────────────
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
@@ -196,97 +198,151 @@ const JOB_TITLE_TONES = [
   { bg: '#fee2e2', fg: '#b91c1c' },
 ];
 
-const buildSampleLeaveTypes = (full = false): LeaveTypeRow[] => {
-  const all: LeaveTypeRow[] = [
-    { id: 'casual',   name: 'Casual Leave',     color: '#7c5cfc', quotaLabel: 'Not Setup', endOfYearLabel: 'Not Setup', configured: false },
-    { id: 'sick',     name: 'Sick Leave',       color: '#dc2626', quotaLabel: 'Not Setup', endOfYearLabel: 'Not Setup', configured: false },
-    { id: 'paid_h',   name: 'Paid Leave (Half Day)', color: '#f59e0b', quotaLabel: 'Not Setup', endOfYearLabel: 'Not Setup', configured: false },
-    { id: 'annual',   name: 'Annual Leave',     color: '#22c55e', quotaLabel: 'Not Setup', endOfYearLabel: 'Not Setup', configured: false },
-    { id: 'paid_h2',  name: 'Paid Leave (Half Day)', color: '#fb923c', quotaLabel: 'Not Setup', endOfYearLabel: 'Not Setup', configured: false },
-    { id: 'special',  name: 'Special Leave',    color: '#a78bfa', quotaLabel: 'Not Setup', endOfYearLabel: 'Not Setup', configured: false },
-    { id: 'unpaid',   name: 'Unpaid Leave',     color: '#ef4444', quotaLabel: 'Not Setup', endOfYearLabel: 'Not Setup', configured: false },
-  ];
-  return full ? all : all.slice(1, 3);
-};
-
-const buildEmployees = (): PlanEmployee[] => [
-  { id: 'EMP-001', name: 'Gaurav Jagtap',  empNo: 'EMP-001', department: 'Software Development', jobTitle: 'Engineering Manager', jobTitleTone: JOB_TITLE_TONES[0], reportingTo: { initials: 'VN', name: 'Vikram Nair', accent: accent(4) }, location: 'Pune',  initials: 'GJ', accent: accent(0) },
-  { id: 'EMP-002', name: 'Ritika Chauhan', empNo: 'EMP-002', department: 'UI/UX Designing',     jobTitle: 'Senior Designer',    jobTitleTone: JOB_TITLE_TONES[3], reportingTo: { initials: 'GJ', name: 'Gaurav Jagtap', accent: accent(0) }, location: 'Pune', initials: 'RC', accent: accent(5) },
-  { id: 'EMP-003', name: 'Swati Joshi',    empNo: 'EMP-003', department: 'Software Testing',    jobTitle: 'QA Lead',            jobTitleTone: JOB_TITLE_TONES[2], reportingTo: { initials: 'GJ', name: 'Gaurav Jagtap', accent: accent(0) }, location: 'Pune', initials: 'SJ', accent: accent(1) },
-  { id: 'EMP-004', name: 'Yash Bhosale',   empNo: 'EMP-004', department: 'Mobile App Dev',      jobTitle: 'Mobile Developer',   jobTitleTone: JOB_TITLE_TONES[2], reportingTo: { initials: 'GJ', name: 'Gaurav Jagtap', accent: accent(0) }, location: 'Pune', initials: 'YB', accent: accent(1) },
-  { id: 'EMP-005', name: 'Tanya More',     empNo: 'EMP-005', department: 'Data Science',        jobTitle: 'Data Analyst',       jobTitleTone: JOB_TITLE_TONES[5], reportingTo: { initials: 'RP', name: 'Rajesh Pande',  accent: accent(3) }, location: 'Pune', initials: 'TM', accent: accent(3) },
-  { id: 'EMP-006', name: 'Harsh Thakur',   empNo: 'EMP-006', department: 'Business Analysis',   jobTitle: 'Business Analyst',   jobTitleTone: JOB_TITLE_TONES[1], reportingTo: { initials: 'NK', name: 'Nisha Kapoor',   accent: accent(2) }, location: 'Pune', initials: 'HT', accent: accent(2) },
+// ─────────────────────────────────────────────────────────────────────────────
+// API → frontend adapters. The page was originally built against in-memory
+// demo data with hand-crafted shapes; the backend talks in raw rows. These
+// helpers convert between the two so the JSX downstream stays untouched.
+// ─────────────────────────────────────────────────────────────────────────────
+const TYPE_PALETTE: Array<{ bg: string; fg: string; color: string }> = [
+  { bg: '#fee2e2', fg: '#b91c1c', color: '#dc2626' },
+  { bg: '#fde8c4', fg: '#a4661c', color: '#f59e0b' },
+  { bg: '#ece6ff', fg: '#5a3fd1', color: '#7c5cfc' },
+  { bg: '#d3f0ee', fg: '#0a716a', color: '#0a716a' },
+  { bg: '#dceefe', fg: '#0c63b0', color: '#0ea5e9' },
+  { bg: '#fdd9ea', fg: '#a02960', color: '#e83e8c' },
+  { bg: '#dcfce7', fg: '#15803d', color: '#16a34a' },
 ];
+const paletteFor = (id: number) => TYPE_PALETTE[id % TYPE_PALETTE.length];
 
-const buildPlans = (): LeavePlan[] => [
-  {
-    id: 'plan-execs',
-    name: 'Leave plan for Executives',
-    isDefault: false,
-    calendarStart: 'fixed_month',
-    startDate: '2025-04-01',
-    showSystemPolicy: true,
-    employees: buildEmployees(),
-    leaveTypes: buildSampleLeaveTypes(),
-  },
-  {
-    id: 'plan-default',
-    name: 'Leave Policy',
-    isDefault: true,
-    calendarStart: 'fixed_month',
-    startDate: '2025-04-01',
-    showSystemPolicy: true,
-    employees: Array.from({ length: 30 }, (_, i) => ({
-      id: `EMP-${String(i + 7).padStart(3, '0')}`,
-      name: ['Aarav Mehta', 'Priya Sharma', 'Rohan Desai', 'Sneha Kulkarni', 'Vikram Nair', 'Anjali Patil', 'Karan Joshi', 'Divya Iyer', 'Manish Verma', 'Pooja Reddy'][i % 10],
-      empNo: `EMP-${String(i + 7).padStart(3, '0')}`,
-      department: ['Software Development', 'Human Resources', 'Product Management', 'Finance & Accounts', 'Sales & Marketing', 'UI/UX Designing', 'Data Science', 'Quality Assurance', 'DevOps & Infrastructure'][i % 9],
-      jobTitle: ['Senior Developer', 'HR Manager', 'Product Manager', 'Finance Analyst', 'Sales Head', 'UX Designer', 'ML Engineer', 'QA Engineer', 'DevOps Engineer'][i % 9],
-      jobTitleTone: JOB_TITLE_TONES[i % JOB_TITLE_TONES.length],
-      reportingTo: { initials: ['GJ', 'SG', 'VN', 'NK', 'RP', 'RC', 'TM', 'SJ'][i % 8], name: ['Gaurav Jagtap', 'Sunita Ghosh', 'Vikram Nair', 'Nisha Kapoor', 'Rajesh Pande', 'Ritika Chauhan', 'Tanya More', 'Swati Joshi'][i % 8], accent: accent(i) },
-      location: ['Pune', 'Mumbai', 'Bengaluru', 'Pune', 'Mumbai'][i % 5],
-      initials: (['Aarav Mehta', 'Priya Sharma', 'Rohan Desai', 'Sneha Kulkarni', 'Vikram Nair', 'Anjali Patil', 'Karan Joshi', 'Divya Iyer', 'Manish Verma', 'Pooja Reddy'][i % 10]).split(' ').map(s => s[0]).join(''),
-      accent: accent(i),
-    })),
-    leaveTypes: buildSampleLeaveTypes(true),
-  },
-  {
-    id: 'plan-managers',
-    name: 'Leave plan for Managers',
-    isDefault: false,
-    calendarStart: 'fixed_month',
-    startDate: '2025-04-01',
-    showSystemPolicy: true,
-    employees: [],
-    leaveTypes: [],
-  },
-  {
-    id: 'plan-tl',
-    name: 'tl plan',
-    isDefault: false,
-    calendarStart: 'fixed_month',
-    startDate: '2025-04-01',
-    showSystemPolicy: true,
-    employees: [],
-    leaveTypes: [],
-  },
-];
+function mapApiTypeCategory(t: ApiLeaveType['type']): string {
+  if (t === 'Compoff') return 'Compensatory offs';
+  if (t === 'Incident Based Leave') return 'Incident based';
+  if (t === 'Unpaid Leave') return 'Unpaid';
+  return 'Regular';
+}
+
+function apiTypeToCatalog(api: ApiLeaveType): CatalogType {
+  const tone = paletteFor(api.id);
+  return {
+    id: String(api.id),
+    name: api.name,
+    type: mapApiTypeCategory(api.type),
+    isPaid: api.paid_unpaid === 'Unpaid' || api.type === 'Unpaid Leave' ? 'Unpaid' : 'Paid',
+    code: api.short_code,
+    initials: (api.short_code || api.name).slice(0, 3).toUpperCase(),
+    bg: tone.bg,
+    fg: tone.fg,
+    group: api.type === 'Incident Based Leave' ? 'incidental' : 'regular',
+  };
+}
+
+function apiTypeToAssigned(api: ApiLeaveType): LeaveTypeRow {
+  const tone = paletteFor(api.id);
+  return {
+    id: String(api.id),
+    name: api.name,
+    color: tone.color,
+    quotaLabel: api.pivot?.quota_summary || 'Not Setup',
+    endOfYearLabel: api.pivot?.eoy_summary || 'Not Setup',
+    configured: !!api.pivot?.is_setup,
+  };
+}
+
+function apiEmployeeToPlanEmployee(api: ApiPlanEmployee, idx: number): PlanEmployee {
+  const fullName = api.display_name?.trim() || `${api.first_name} ${api.last_name ?? ''}`.trim();
+  const initials = fullName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+  const rmName = api.reporting_manager
+    ? (api.reporting_manager.display_name?.trim() || `${api.reporting_manager.first_name} ${api.reporting_manager.last_name ?? ''}`.trim())
+    : '';
+  const rmInitials = rmName ? rmName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() : '';
+  return {
+    id: String(api.id),
+    name: fullName,
+    empNo: api.emp_code || `EMP-${api.id}`,
+    department: api.department?.name ?? '',
+    jobTitle: api.designation?.name ?? '',
+    jobTitleTone: JOB_TITLE_TONES[idx % JOB_TITLE_TONES.length],
+    reportingTo: { initials: rmInitials, name: rmName, accent: accent(idx + 3) },
+    location: api.location ?? '',
+    initials,
+    accent: accent(idx),
+  };
+}
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function apiPlanToFrontend(api: ApiLeavePlan): LeavePlan {
+  // Reconstruct a YYYY-MM-01 string for the <input type="date"> from the
+  // separately-stored from_month + calendar_year. The original adapter
+  // shoved calendar_year ("2025") straight into the date input, which
+  // browsers reject and silently render as empty.
+  let startDate: string | undefined;
+  if (api.from_month && api.calendar_year) {
+    const monthIdx = MONTH_NAMES.indexOf(api.from_month);
+    if (monthIdx >= 0) {
+      startDate = `${api.calendar_year}-${String(monthIdx + 1).padStart(2, '0')}-01`;
+    }
+  }
+  return {
+    id: String(api.id),
+    name: api.plan_name,
+    description: api.description ?? undefined,
+    isDefault: !!api.is_default,
+    calendarStart: api.from_month_type === 'If Joining' ? 'joining_date' : 'fixed_month',
+    startDate,
+    showSystemPolicy: api.policy_explanation_mode !== 'Custom',
+    customPolicyFile: api.policy_doc_path ?? undefined,
+    employees: (api.employees ?? []).map(apiEmployeeToPlanEmployee),
+    leaveTypes: (api.leave_types ?? []).map(apiTypeToAssigned),
+  };
+}
+
+/**
+ * Convert the frontend Add Leave Plan modal payload into the shape
+ * LeavePlanController::store expects. The modal carries `calendarStart`
+ * + `startDate` (a calendar string); the API splits this into
+ * from_month_type + from_month + calendar_year.
+ */
+function frontendPlanToApi(p: Partial<LeavePlan>): Partial<ApiLeavePlan> {
+  let from_month: string | null = null;
+  let calendar_year: string | null = null;
+  if (p.calendarStart === 'fixed_month' && p.startDate) {
+    const d = new Date(p.startDate);
+    if (!Number.isNaN(d.getTime())) {
+      from_month = MONTH_NAMES[d.getMonth()] ?? null;
+      calendar_year = String(d.getFullYear());
+    } else {
+      // Already in YYYY-MM-DD or just a year — store as-is.
+      calendar_year = p.startDate;
+    }
+  }
+  return {
+    plan_name: p.name,
+    description: p.description ?? null,
+    from_month_type: p.calendarStart === 'joining_date' ? 'If Joining' : 'Calendar',
+    from_month,
+    calendar_year,
+    policy_explanation_mode: p.showSystemPolicy === false ? 'Custom' : 'System',
+    policy_doc_path: p.customPolicyFile ?? null,
+    is_default: !!(p as any).isDefault,
+    status: 'Active',
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Component
 // ─────────────────────────────────────────────────────────────────────────────
-type TopTab = 'plans' | 'types' | 'balances' | 'adjustments';
-type SubTab = 'config' | 'employees';
+type TopTab = 'plans' | 'types' | 'balances';
 
 export default function HrLeavePlans() {
   const navigate = useNavigate();
-  const [plans, setPlans] = useState<LeavePlan[]>(buildPlans);
+  const [plans, setPlans] = useState<LeavePlan[]>([]);
   const [topTab, setTopTab] = useState<TopTab>('plans');
-  const [subTab, setSubTab] = useState<SubTab>('config');
-  const [activePlanId, setActivePlanId] = useState<string>('plan-execs');
+  const [activePlanId, setActivePlanId] = useState<string>('');
   const [planSearch, setPlanSearch] = useState('');
-  const [empSearch, setEmpSearch] = useState('');
   const [showAddPlan, setShowAddPlan] = useState(false);
+  // Null = create mode. A plan id = edit that plan.
+  const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [showAssignTypes, setShowAssignTypes] = useState(false);
   // Setup modal — `setupTypeId` is the leave-type id whose configuration
   // popup is currently open. Null when closed. Each (plan, type) pair has
@@ -299,84 +355,173 @@ export default function HrLeavePlans() {
   // and the row id when editing an existing entry. Same modal handles both.
   const [showAddType, setShowAddType] = useState(false);
   const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
-  // Mutable catalog state so newly-added leave types persist while the page
-  // is open. Backend will replace this with a /api/leave-types fetch.
-  const [catalog, setCatalog] = useState<CatalogType[]>(LEAVE_TYPE_CATALOG);
+  // Read-only View popup for a leave type (eye icon).
+  const [viewingTypeId, setViewingTypeId] = useState<string | null>(null);
+  // "Need help configuring?" guidance modal.
+  const [showGuide, setShowGuide] = useState(false);
+  // Catalog of leave types for this branch — fetched from /master/leave_type.
+  const [catalog, setCatalog] = useState<CatalogType[]>([]);
+
+  // ──────────────────────────────────────────────────────────────────────
+  // API loaders
+  // ──────────────────────────────────────────────────────────────────────
+  const loadPlans = useCallback(async () => {
+    try {
+      const list = await leavePlansApi.list();
+      // Hydrate each plan's full detail so the Configuration table has
+      // data without needing a follow-up click. Promise.allSettled so a
+      // single bad row doesn't blank the whole sidebar.
+      const settled = await Promise.allSettled(list.map(p => leavePlansApi.show(p.id)));
+      const detailed = settled.flatMap(s => s.status === 'fulfilled' ? [s.value] : []);
+      const mapped = detailed.map(apiPlanToFrontend);
+      setPlans(mapped);
+      // Seed typeConfigs from the persisted pivot rows so the Setup popup
+      // opens with the saved values instead of the empty default.
+      const seeded: Record<string, LeaveTypeConfig> = {};
+      detailed.forEach(p => {
+        (p.leave_types ?? []).forEach(t => {
+          if (t.pivot?.config_json) {
+            seeded[`${p.id}::${t.id}`] = t.pivot.config_json as LeaveTypeConfig;
+          }
+        });
+      });
+      setTypeConfigs(seeded);
+      // Functional updater so we don't need activePlanId in the dep array
+      // — clicking the sidebar shouldn't trigger a full refetch.
+      setActivePlanId(curr => curr || mapped[0]?.id || '');
+    } catch (err) {
+      console.warn('[HrLeavePlans] failed to load plans', err);
+    }
+  }, []);
+
+  const loadCatalog = useCallback(async () => {
+    try {
+      const list = await leaveTypesApi.list();
+      setCatalog(list.map(apiTypeToCatalog));
+    } catch (err) {
+      console.warn('[HrLeavePlans] failed to load leave-type catalog', err);
+    }
+  }, []);
+
+  useEffect(() => { loadPlans(); }, [loadPlans]);
+  useEffect(() => { loadCatalog(); }, [loadCatalog]);
 
   const editingType = catalog.find(t => t.id === editingTypeId) ?? null;
 
-  const onSaveLeaveType = (t: Omit<CatalogType, 'id' | 'initials' | 'bg' | 'fg'>) => {
-    if (editingTypeId) {
-      // Edit mode — keep id + colour palette, just patch the editable fields
-      // and refresh `initials` to reflect the new code.
-      setCatalog(prev => prev.map(row =>
-        row.id === editingTypeId
-          ? { ...row, ...t, initials: t.code.toUpperCase().slice(0, 3) }
-          : row
-      ));
-    } else {
-      // Create mode — assign a fresh palette tone so each new row reads
-      // distinct in the table.
-      const palette = [
-        { bg: '#fee2e2', fg: '#b91c1c' }, { bg: '#fde8c4', fg: '#a4661c' },
-        { bg: '#ece6ff', fg: '#5a3fd1' }, { bg: '#d3f0ee', fg: '#0a716a' },
-        { bg: '#dceefe', fg: '#0c63b0' }, { bg: '#fdd9ea', fg: '#a02960' },
-      ];
-      const tone = palette[catalog.length % palette.length];
-      setCatalog(prev => [
-        ...prev,
-        { ...t, id: `lt-${Date.now()}`, initials: t.code.toUpperCase().slice(0, 3), bg: tone.bg, fg: tone.fg },
-      ]);
+  // ──────────────────────────────────────────────────────────────────────
+  // Mutation handlers — each calls the API then refetches the affected
+  // collection. Optimistic updates were tempting but the source of truth
+  // for quota_summary / eoy_summary lives on the pivot row, so a refetch
+  // keeps the Configuration table consistent with the backend.
+  // ──────────────────────────────────────────────────────────────────────
+  const onSaveLeaveType = async (t: Omit<CatalogType, 'id' | 'initials' | 'bg' | 'fg'>) => {
+    const apiType = (() => {
+      if (t.type === 'Compensatory offs') return 'Compoff' as const;
+      if (t.type === 'Incident based') return 'Incident Based Leave' as const;
+      if (t.type === 'Unpaid') return 'Unpaid Leave' as const;
+      return 'Regular' as const;
+    })();
+    const payload: Partial<ApiLeaveType> = {
+      name: t.name,
+      type: apiType,
+      short_code: t.code,
+      paid_unpaid: t.isPaid,
+      status: 'Active',
+    };
+    try {
+      if (editingTypeId) {
+        await leaveTypesApi.update(Number(editingTypeId), payload);
+      } else {
+        await leaveTypesApi.create(payload);
+      }
+      await loadCatalog();
+    } catch (err) {
+      console.error('[HrLeavePlans] save leave type failed', err);
+    } finally {
+      setShowAddType(false);
+      setEditingTypeId(null);
     }
-    setShowAddType(false);
-    setEditingTypeId(null);
   };
 
   const onEditLeaveType = (id: string) => {
     setEditingTypeId(id);
     setShowAddType(true);
   };
+  const onViewLeaveType = (id: string) => {
+    setViewingTypeId(id);
+  };
+  const onDeleteLeaveType = async (id: string) => {
+    const row = catalog.find(c => c.id === id);
+    const label = row ? `"${row.name}"` : 'this leave type';
+    if (!window.confirm(`Delete ${label}? This cannot be undone. The type will also be removed from any leave plan it's assigned to.`)) return;
+    try {
+      await leaveTypesApi.remove(Number(id));
+      await loadCatalog();
+      // Plans may have referenced this type — refetch so the Configuration
+      // table for any open plan reflects the removal.
+      await loadPlans();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Delete failed';
+      alert(msg);
+    }
+  };
   const onCloseTypeModal = () => {
     setShowAddType(false);
     setEditingTypeId(null);
   };
 
-  const onMakeDefault = () => {
+  const onMakeDefault = async () => {
     if (!activePlanId) return;
-    setPlans(prev => prev.map(p => ({ ...p, isDefault: p.id === activePlanId })));
-    setPlanMenuOpen(false);
+    try {
+      await leavePlansApi.makeDefault(Number(activePlanId));
+      await loadPlans();
+    } catch (err) {
+      console.error('[HrLeavePlans] make-default failed', err);
+    } finally {
+      setPlanMenuOpen(false);
+    }
   };
-  const onDeletePlan = () => {
+
+  const onDeletePlan = async () => {
     if (!activePlanId) return;
-    setPlans(prev => {
-      const next = prev.filter(p => p.id !== activePlanId);
-      if (next.length > 0) setActivePlanId(next[0].id);
-      return next;
-    });
-    setPlanMenuOpen(false);
+    try {
+      await leavePlansApi.remove(Number(activePlanId));
+      const remaining = plans.filter(p => p.id !== activePlanId);
+      setActivePlanId(remaining[0]?.id ?? '');
+      await loadPlans();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Delete failed';
+      alert(msg);
+    } finally {
+      setPlanMenuOpen(false);
+    }
   };
-  const onClonePlan = () => {
+
+  const onClonePlan = async () => {
     if (!activePlanId) return;
     const source = plans.find(p => p.id === activePlanId);
     if (!source) return;
-    const id = `plan-${Date.now()}`;
-    setPlans(prev => [
-      ...prev,
-      {
-        ...source,
-        id,
-        name: `${source.name} (Copy)`,
-        isDefault: false,
-        // Cloned plans start with no employees so HR explicitly assigns them.
-        employees: [],
-      },
-    ]);
-    setActivePlanId(id);
-    setPlanMenuOpen(false);
+    try {
+      const cloned = await leavePlansApi.clone(Number(activePlanId), `${source.name} (Copy)`);
+      await loadPlans();
+      setActivePlanId(String(cloned.id));
+    } catch (err) {
+      console.error('[HrLeavePlans] clone failed', err);
+    } finally {
+      setPlanMenuOpen(false);
+    }
   };
+
   const onEditPlan = () => {
+    if (!activePlanId) return;
+    setEditingPlanId(activePlanId);
     setShowAddPlan(true);
     setPlanMenuOpen(false);
+  };
+
+  const onClosePlanModal = () => {
+    setShowAddPlan(false);
+    setEditingPlanId(null);
   };
 
   const filteredPlans = useMemo(() => {
@@ -387,40 +532,39 @@ export default function HrLeavePlans() {
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? plans[0];
 
-  const filteredEmployees = useMemo(() => {
-    if (!activePlan) return [];
-    const q = empSearch.trim().toLowerCase();
-    if (!q) return activePlan.employees;
-    return activePlan.employees.filter(e =>
-      [e.name, e.empNo, e.department, e.jobTitle, e.location].some(v => v.toLowerCase().includes(q))
-    );
-  }, [activePlan, empSearch]);
-
-  const onCreatePlan = (plan: Omit<LeavePlan, 'id' | 'employees' | 'leaveTypes'>) => {
-    const id = `plan-${Date.now()}`;
-    setPlans(prev => [
-      ...prev,
-      { ...plan, id, employees: [], leaveTypes: [] },
-    ]);
-    setActivePlanId(id);
-    setShowAddPlan(false);
+  const onSavePlan = async (plan: Omit<LeavePlan, 'id' | 'employees' | 'leaveTypes'>) => {
+    try {
+      if (editingPlanId) {
+        await leavePlansApi.update(Number(editingPlanId), frontendPlanToApi(plan));
+        await loadPlans();
+      } else {
+        const created = await leavePlansApi.create(frontendPlanToApi(plan));
+        await loadPlans();
+        setActivePlanId(String(created.id));
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Save failed';
+      alert(msg);
+      return;
+    } finally {
+      setShowAddPlan(false);
+      setEditingPlanId(null);
+    }
   };
 
-  const onAssignTypes = (chosen: LeaveTypeRow[]) => {
-    setPlans(prev =>
-      prev.map(p =>
-        p.id === activePlanId
-          ? {
-              ...p,
-              leaveTypes: [
-                ...p.leaveTypes,
-                ...chosen.filter(c => !p.leaveTypes.some(t => t.id === c.id)),
-              ],
-            }
-          : p
-      )
-    );
-    setShowAssignTypes(false);
+  const onAssignTypes = async (chosen: LeaveTypeRow[]) => {
+    if (!activePlanId) return;
+    const existingIds = new Set(activePlan?.leaveTypes.map(t => Number(t.id)) ?? []);
+    const newIds = chosen.map(c => Number(c.id)).filter(id => !existingIds.has(id));
+    const allIds = [...existingIds, ...newIds];
+    try {
+      await leavePlansApi.assignTypes(Number(activePlanId), allIds, 'replace');
+      await loadPlans();
+    } catch (err) {
+      console.error('[HrLeavePlans] assign types failed', err);
+    } finally {
+      setShowAssignTypes(false);
+    }
   };
 
   return (
@@ -462,10 +606,9 @@ export default function HrLeavePlans() {
             <div className="lp-top-tabs">
               <div className="lp-tabs-row">
                 {([
-                  { key: 'plans',       label: 'Leave Plans' },
-                  { key: 'types',       label: 'Leave Types' },
-                  { key: 'balances',    label: 'Leave Balances' },
-                  { key: 'adjustments', label: 'Initial Adjustments' },
+                  { key: 'plans',    label: 'Leave Plans' },
+                  { key: 'types',    label: 'Leave Types' },
+                  { key: 'balances', label: 'Leave Balances' },
                 ] as const).map(t => (
                   <button
                     key={t.key}
@@ -576,46 +719,29 @@ export default function HrLeavePlans() {
                       </div>
 
                       <div className="lp-sub-tabs">
-                        {([
-                          { key: 'config',    label: 'Configuration' },
-                          { key: 'employees', label: 'Employees' },
-                        ] as const).map(t => (
-                          <button
-                            key={t.key}
-                            type="button"
-                            className={`lp-sub-tab ${subTab === t.key ? 'is-active' : ''}`}
-                            onClick={() => setSubTab(t.key)}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
+                        <span className="lp-sub-tab is-active">Configuration</span>
                       </div>
 
-                      {subTab === 'config' && (
-                        <ConfigurationTab
-                          plan={activePlan}
-                          onAssignTypes={() => setShowAssignTypes(true)}
-                          onSetupType={(typeId) => setSetupTypeId(typeId)}
-                        />
-                      )}
-                      {subTab === 'employees' && (
-                        <EmployeesTab
-                          employees={filteredEmployees}
-                          totalCount={activePlan.employees.length}
-                          search={empSearch}
-                          onSearch={setEmpSearch}
-                        />
-                      )}
+                      <ConfigurationTab
+                        plan={activePlan}
+                        onAssignTypes={() => setShowAssignTypes(true)}
+                        onSetupType={(typeId) => setSetupTypeId(typeId)}
+                        onShowGuide={() => setShowGuide(true)}
+                      />
                     </>
                   )}
                 </main>
               </div>
             ) : topTab === 'types' ? (
-              <LeaveTypesTab catalog={catalog} onEdit={onEditLeaveType} />
-            ) : topTab === 'balances' ? (
-              <LeaveBalancesTab employees={plans.flatMap(p => p.employees)} />
+              <LeaveTypesTab
+                catalog={catalog}
+                onView={onViewLeaveType}
+                onEdit={onEditLeaveType}
+                onDelete={onDeleteLeaveType}
+                onShowGuide={() => setShowGuide(true)}
+              />
             ) : (
-              <InitialAdjustmentsTab />
+              <LeaveBalancesTab />
             )}
           </div>
         </Col>
@@ -623,8 +749,9 @@ export default function HrLeavePlans() {
 
       <AddLeavePlanModal
         isOpen={showAddPlan}
-        onClose={() => setShowAddPlan(false)}
-        onSave={onCreatePlan}
+        editing={plans.find(p => p.id === editingPlanId) ?? null}
+        onClose={onClosePlanModal}
+        onSave={onSavePlan}
       />
 
       <AddLeaveTypeModal
@@ -638,6 +765,7 @@ export default function HrLeavePlans() {
         isOpen={showAssignTypes}
         planName={activePlan?.name ?? ''}
         existingTypeIds={new Set(activePlan?.leaveTypes.map(t => t.id) ?? [])}
+        catalog={catalog}
         onClose={() => setShowAssignTypes(false)}
         onSave={onAssignTypes}
       />
@@ -653,33 +781,48 @@ export default function HrLeavePlans() {
         onClose={() => setSetupTypeId(null)}
         onChange={(next) => {
           if (!setupTypeId || !activePlan) return;
+          // 1) Optimistically update local state so the popup reflects edits
+          //    immediately without waiting for a round-trip.
           setTypeConfigs(prev => ({
             ...prev,
             [`${activePlan.id}::${setupTypeId}`]: next,
           }));
-          // Marking the row "configured" so the table flips its Quota/EOY pills
-          // from red (Not Setup) to green once HR has touched the popup.
+          const quotaLabel = next.accrual.unlimited ? 'Unlimited' : `${next.accrual.yearlyQuota} ${next.accrual.unit}/year`;
+          const eoyLabel =
+            next.yearEnd.carryForward === 'reset'   ? 'Reset to zero'
+            : next.yearEnd.carryForward === 'carry_all' ? 'Carry all forward'
+            : `Carry up to ${next.yearEnd.carryForwardCap || 0}`;
           setPlans(prev => prev.map(p =>
             p.id === activePlan.id
               ? {
                   ...p,
                   leaveTypes: p.leaveTypes.map(t =>
                     t.id === setupTypeId
-                      ? {
-                          ...t,
-                          configured: true,
-                          quotaLabel: next.accrual.unlimited ? 'Unlimited' : `${next.accrual.yearlyQuota} ${next.accrual.unit}/year`,
-                          endOfYearLabel:
-                            next.yearEnd.carryForward === 'reset'   ? 'Reset to zero'
-                            : next.yearEnd.carryForward === 'carry_all' ? 'Carry all forward'
-                            : `Carry up to ${next.yearEnd.carryForwardCap || 0}`,
-                        }
+                      ? { ...t, configured: true, quotaLabel, endOfYearLabel: eoyLabel }
                       : t
                   ),
                 }
               : p
           ));
+          // 2) Persist to backend. Fire-and-forget — the optimistic update
+          //    above keeps the UI responsive; failure is logged and the
+          //    next loadPlans() will reconcile if needed.
+          leavePlansApi
+            .saveTypeConfig(Number(activePlan.id), Number(setupTypeId), next as any, quotaLabel, eoyLabel)
+            .catch(err => console.error('[HrLeavePlans] save type config failed', err));
         }}
+      />
+
+      <ViewLeaveTypeModal
+        isOpen={!!viewingTypeId}
+        leaveType={catalog.find(c => c.id === viewingTypeId) ?? null}
+        onClose={() => setViewingTypeId(null)}
+        onEdit={(id) => { setViewingTypeId(null); onEditLeaveType(id); }}
+      />
+
+      <GuidanceModal
+        isOpen={showGuide}
+        onClose={() => setShowGuide(false)}
       />
     </>
   );
@@ -688,7 +831,14 @@ export default function HrLeavePlans() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration tab — leave-type table with Setup buttons
 // ─────────────────────────────────────────────────────────────────────────────
-function ConfigurationTab({ plan, onAssignTypes, onSetupType }: { plan: LeavePlan; onAssignTypes: () => void; onSetupType: (typeId: string) => void }) {
+function ConfigurationTab({
+  plan, onAssignTypes, onSetupType, onShowGuide,
+}: {
+  plan: LeavePlan;
+  onAssignTypes: () => void;
+  onSetupType: (typeId: string) => void;
+  onShowGuide: () => void;
+}) {
   return (
     <div className="lp-config">
       <div className="lp-config-actions">
@@ -697,7 +847,14 @@ function ConfigurationTab({ plan, onAssignTypes, onSetupType }: { plan: LeavePla
         </button>
         <span className="lp-help-chip">
           <i className="ri-information-line" />
-          Need help configuring? <a href="#guide">Check the guide here.</a>
+          Need help configuring?{' '}
+          <button
+            type="button"
+            onClick={onShowGuide}
+            style={{ background: 'none', border: 'none', padding: 0, color: '#0c63b0', textDecoration: 'underline', fontWeight: 600, cursor: 'pointer' }}
+          >
+            Check the guide here.
+          </button>
         </span>
       </div>
 
@@ -760,140 +917,6 @@ function ConfigurationTab({ plan, onAssignTypes, onSetupType }: { plan: LeavePla
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Employees tab — list of employees assigned to the plan
-// ─────────────────────────────────────────────────────────────────────────────
-function EmployeesTab({
-  employees, totalCount, search, onSearch,
-}: {
-  employees: PlanEmployee[];
-  totalCount: number;
-  search: string;
-  onSearch: (v: string) => void;
-}) {
-  return (
-    <div className="lp-employees">
-      <div className="lp-employees-head">
-        <div className="d-flex align-items-center gap-2">
-          <h6 className="mb-0 fw-bold">All Employees</h6>
-          <span className="lp-count-pill">{totalCount}</span>
-        </div>
-        <div className="d-flex align-items-center gap-2 flex-wrap">
-          <div className="lp-search-box" style={{ width: 220 }}>
-            <i className="ri-search-line" />
-            <input
-              type="text"
-              placeholder="Search employees..."
-              value={search}
-              onChange={e => onSearch(e.target.value)}
-            />
-          </div>
-          <button type="button" className="rec-btn-primary">
-            <i className="ri-user-add-line" />Assign Employee
-          </button>
-        </div>
-      </div>
-
-      <div className="lp-config-table-wrap">
-        <table className="lp-emp-table">
-          <thead>
-            <tr>
-              <th>EMPLOYEE NAME</th>
-              <th>EMPLOYEE NUMBER</th>
-              <th>DEPARTMENT</th>
-              <th>JOB TITLE</th>
-              <th>REPORTING TO</th>
-              <th>LOCATION</th>
-              <th style={{ minWidth: 200 }}>LEAVE UTILIZATION</th>
-              <th style={{ textAlign: 'right' }}>ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {employees.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="text-center py-5 text-muted">
-                  <i className="ri-team-line d-block mb-2" style={{ fontSize: 32, opacity: 0.35 }} />
-                  No employees match your search
-                </td>
-              </tr>
-            ) : employees.map(e => {
-              // Deterministic per-employee utilization so bars don't reshuffle
-              // on every render. Backend will replace with real consumption.
-              let h = 0;
-              for (let i = 0; i < e.id.length; i++) h = (h * 31 + e.id.charCodeAt(i)) >>> 0;
-              const utilization = 25 + (h % 60);
-              const color = utilization >= 85 ? 'danger'
-                : utilization >= 65 ? 'warning'
-                : 'success';
-              return (
-                <tr key={e.id}>
-                  <td>
-                    <div className="d-flex align-items-center gap-2">
-                      <span
-                        className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                        style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}
-                      >
-                        {e.initials}
-                      </span>
-                      <a href="#" className="lp-emp-name">{e.name}</a>
-                    </div>
-                  </td>
-                  <td>
-                    <a href="#" className="lp-emp-link">{e.empNo}</a>
-                  </td>
-                  <td className="fs-13">{e.department}</td>
-                  <td>
-                    <span className="rec-pill" style={{ background: e.jobTitleTone.bg, color: e.jobTitleTone.fg }}>
-                      {e.jobTitle}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="d-flex align-items-center gap-2">
-                      <span
-                        className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold"
-                        style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${e.reportingTo.accent}, ${e.reportingTo.accent}cc)` }}
-                      >
-                        {e.reportingTo.initials}
-                      </span>
-                      <span className="fs-13">{e.reportingTo.name}</span>
-                    </div>
-                  </td>
-                  <td className="fs-13 text-muted">
-                    <i className="ri-map-pin-line me-1" />
-                    {e.location}
-                  </td>
-                  <td>
-                    {/* Velzon's animated-progress + custom-progress + progress-label
-                        combo: thicker pill bar with the % label sitting above the
-                        fill via the embedded .label child. */}
-                    <Progress
-                      value={utilization}
-                      color={color}
-                      className="animated-progress custom-progress progress-label lp-util-bar"
-                    >
-                      <div className="label">{utilization}%</div>
-                    </Progress>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
-                    <div className="d-flex justify-content-end gap-1">
-                      <button type="button" className="lp-row-action" aria-label="Edit assignment" title="Edit assignment">
-                        <i className="ri-pencil-line" />
-                      </button>
-                      <button type="button" className="lp-row-action lp-row-action-danger" aria-label="Remove from plan" title="Remove from plan">
-                        <i className="ri-user-unfollow-line" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Leave Types tab — master catalog. Two visual groups: Regular leave-types
 // (Sick, Casual, Paid, Comp Off, Unpaid) and Statutory / Incidental ones
 // (Floater, Special, Maternity, Paternity, Bereavement). Each row exposes an
@@ -911,20 +934,15 @@ type CatalogType = {
   group: 'regular' | 'incidental';
 };
 
-const LEAVE_TYPE_CATALOG: CatalogType[] = [
-  { id: 'sick',       name: 'Sick Leave',           type: 'Regular',          isPaid: 'Paid',   code: 'SL',  initials: 'SL',  bg: '#fee2e2', fg: '#b91c1c', group: 'regular' },
-  { id: 'paid_h',     name: 'Paid Leave (Half Day)',type: 'Regular',          isPaid: 'Paid',   code: 'PL',  initials: 'PL',  bg: '#fde8c4', fg: '#a4661c', group: 'regular' },
-  { id: 'casual',     name: 'Casual Leave',         type: 'Regular',          isPaid: 'Paid',   code: 'CL',  initials: 'CL',  bg: '#ece6ff', fg: '#5a3fd1', group: 'regular' },
-  { id: 'comp',       name: 'Comp Offs',            type: 'Compensatory offs',isPaid: 'Paid',   code: 'CO',  initials: 'CO',  bg: '#d3f0ee', fg: '#0a716a', group: 'regular' },
-  { id: 'unpaid',     name: 'Unpaid Leave',         type: 'Unpaid',           isPaid: 'Unpaid', code: 'UL',  initials: 'UL',  bg: '#fee2e2', fg: '#b91c1c', group: 'regular' },
-  { id: 'floater',    name: 'Floater Leave',        type: 'Incident based',   isPaid: 'Paid',   code: 'FL',  initials: 'FL',  bg: '#d3f0ee', fg: '#0a716a', group: 'incidental' },
-  { id: 'special',    name: 'Special Leave',        type: 'Incident based',   isPaid: 'Paid',   code: 'SPL', initials: 'SPL', bg: '#ece6ff', fg: '#5a3fd1', group: 'incidental' },
-  { id: 'maternity',  name: 'Maternity Leave',      type: 'Incident based',   isPaid: 'Paid',   code: 'ML',  initials: 'ML',  bg: '#fdd9ea', fg: '#a02960', group: 'incidental' },
-  { id: 'paternity',  name: 'Paternity Leave',      type: 'Incident based',   isPaid: 'Paid',   code: 'PT',  initials: 'PT',  bg: '#dceefe', fg: '#0c63b0', group: 'incidental' },
-  { id: 'bereavement',name: 'Bereavement Leave',    type: 'Incident based',   isPaid: 'Paid',   code: 'BL',  initials: 'BL',  bg: '#eef2f6', fg: '#374151', group: 'incidental' },
-];
-
-function LeaveTypesTab({ catalog, onEdit }: { catalog: CatalogType[]; onEdit: (id: string) => void }) {
+function LeaveTypesTab({
+  catalog, onView, onEdit, onDelete, onShowGuide,
+}: {
+  catalog: CatalogType[];
+  onView: (id: string) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+  onShowGuide: () => void;
+}) {
   const [search, setSearch] = useState('');
   const filter = (rows: CatalogType[]) => {
     const q = search.trim().toLowerCase();
@@ -938,7 +956,14 @@ function LeaveTypesTab({ catalog, onEdit }: { catalog: CatalogType[]; onEdit: (i
     <div className="lp-types-pane">
       <div className="lp-info-banner-blue">
         <i className="ri-information-line" />
-        Setting up new leave plans or types? <a href="#guide">Here's a quick guide to get you started!</a>
+        Setting up new leave plans or types?{' '}
+        <button
+          type="button"
+          onClick={onShowGuide}
+          style={{ background: 'none', border: 'none', padding: 0, color: '#0c63b0', textDecoration: 'underline', fontWeight: 600, cursor: 'pointer' }}
+        >
+          Here's a quick guide to get you started!
+        </button>
       </div>
 
       <div className="lp-types-head">
@@ -966,17 +991,17 @@ function LeaveTypesTab({ catalog, onEdit }: { catalog: CatalogType[]; onEdit: (i
               <th>TYPE</th>
               <th style={{ width: 110 }}>IS PAID</th>
               <th style={{ width: 100 }}>CODE</th>
-              <th style={{ width: 110, textAlign: 'right' }}>ACTIONS</th>
+              <th style={{ width: 150, textAlign: 'right' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
-            {regular.map(t => <CatalogRow key={t.id} t={t} onEdit={onEdit} />)}
+            {regular.map(t => <CatalogRow key={t.id} t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} />)}
             {incidental.length > 0 && (
               <tr className="lp-group-row">
                 <td colSpan={5}>STATUTORY / INCIDENTAL</td>
               </tr>
             )}
-            {incidental.map(t => <CatalogRow key={t.id} t={t} onEdit={onEdit} />)}
+            {incidental.map(t => <CatalogRow key={t.id} t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} />)}
             {regular.length === 0 && incidental.length === 0 && (
               <tr>
                 <td colSpan={5} className="text-center py-5 text-muted">
@@ -992,7 +1017,14 @@ function LeaveTypesTab({ catalog, onEdit }: { catalog: CatalogType[]; onEdit: (i
   );
 }
 
-function CatalogRow({ t, onEdit }: { t: CatalogType; onEdit: (id: string) => void }) {
+function CatalogRow({
+  t, onView, onEdit, onDelete,
+}: {
+  t: CatalogType;
+  onView: (id: string) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
   return (
     <tr>
       <td>
@@ -1018,11 +1050,21 @@ function CatalogRow({ t, onEdit }: { t: CatalogType; onEdit: (id: string) => voi
       </td>
       <td style={{ textAlign: 'right' }}>
         <div className="d-flex justify-content-end gap-1">
-          <button type="button" className="lp-row-action" aria-label="View" onClick={() => onEdit(t.id)} title="View / edit">
+          <button type="button" className="lp-row-action" aria-label="View" onClick={() => onView(t.id)} title="View details">
             <i className="ri-eye-line" />
           </button>
           <button type="button" className="lp-row-action" aria-label="Edit" onClick={() => onEdit(t.id)} title="Edit leave type">
             <i className="ri-pencil-line" />
+          </button>
+          <button
+            type="button"
+            className="lp-row-action"
+            aria-label="Delete"
+            onClick={() => onDelete(t.id)}
+            title="Delete leave type"
+            style={{ color: '#dc2626' }}
+          >
+            <i className="ri-delete-bin-line" />
           </button>
         </div>
       </td>
@@ -1031,53 +1073,63 @@ function CatalogRow({ t, onEdit }: { t: CatalogType; onEdit: (id: string) => voi
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Leave Balances tab — every employee × every leave-type. Each cell shows a
-// used/total fraction with a thin progress bar so HR can read consumption at
-// a glance. Rows derive from whatever PlanEmployees the parent passes in.
+// Leave Balances tab — every employee × every leave-type, fetched live from
+// /api/leave-balances. Columns are dynamic (driven by what's actually
+// assigned across plans), so HR sees only the leave types that matter for
+// their branch. `used` is currently always 0 because we don't have a
+// leave_requests table yet; once requests exist the backend joins them in.
 // ─────────────────────────────────────────────────────────────────────────────
-// Columns mirror the Figma reference (Sick → Casual). Comp Offs lives in
-// the catalog but is hidden here since it's accrual-driven and isn't a
-// fixed-quota balance the row needs to render.
-const BALANCE_COLUMNS = [
-  { id: 'sick',        label: 'Sick Leave',           total: 12 },
-  { id: 'paid_h',      label: 'Paid Leave (Half Day)',total: 6  },
-  { id: 'unpaid',      label: 'Unpaid Leave',         total: 0  },     // Unlimited
-  { id: 'floater',     label: 'Floater Leave',        total: 2  },
-  { id: 'special',     label: 'Special Leave',        total: 5  },
-  { id: 'maternity',   label: 'Maternity Leave',      total: 90 },
-  { id: 'paternity',   label: 'Paternity Leave',      total: 7  },
-  { id: 'bereavement', label: 'Bereavement Leave',    total: 5  },
-  { id: 'casual',      label: 'Casual Leave',         total: 8  },
-];
-
-function pseudoUsed(seed: string, total: number, idx: number): number {
-  if (total === 0) return 0;
-  let h = 0;
-  const key = `${seed}-${idx}`;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return h % (total + 1);
-}
-
-function LeaveBalancesTab({ employees }: { employees: PlanEmployee[] }) {
+function LeaveBalancesTab() {
+  const [data, setData] = useState<ApiLeaveBalancesResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  // `debouncedSearch` lags `search` by 350ms so each keystroke doesn't fire
+  // a backend request. The dropdown filters fire immediately because they
+  // change one value at a time.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [department, setDepartment] = useState('All');
   const [location, setLocation] = useState('All');
 
-  const uniq = (key: keyof PlanEmployee) =>
-    Array.from(new Set(employees.map(e => String(e[key])))).filter(Boolean).sort();
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  const DEPT_OPTS = [{ value: 'All', label: 'Department' }, ...uniq('department').map(v => ({ value: v, label: v }))];
-  const LOC_OPTS  = [{ value: 'All', label: 'Location'   }, ...uniq('location').map(v => ({ value: v, label: v }))];
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    try {
+      const resp = await leaveBalancesApi.fetch({
+        location: location === 'All' ? undefined : location,
+        search: debouncedSearch || undefined,
+      });
+      setData(resp);
+    } catch (err) {
+      console.warn('[LeaveBalancesTab] fetch failed', err);
+      setData({ columns: [], employees: [], filters: { departments: [], locations: [] } });
+    } finally {
+      setLoading(false);
+    }
+  }, [location, debouncedSearch]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return employees.filter(e => {
-      if (department !== 'All' && e.department !== department) return false;
-      if (location   !== 'All' && e.location   !== location)   return false;
-      if (!q) return true;
-      return [e.name, e.empNo, e.department, e.jobTitle].some(v => v.toLowerCase().includes(q));
-    });
-  }, [employees, search, department, location]);
+  useEffect(() => { refetch(); }, [refetch]);
+
+  const filteredRows = useMemo(() => {
+    if (!data) return [];
+    if (department === 'All') return data.employees;
+    return data.employees.filter(e => e.department === department);
+  }, [data, department]);
+
+  const accentFor = (id: number) => {
+    const palette = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
+    return palette[id % palette.length];
+  };
+  const initialsOf = (name: string) =>
+    name.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+
+  const DEPT_OPTS = [{ value: 'All', label: 'Department' }, ...(data?.filters.departments ?? []).map(v => ({ value: v, label: v }))];
+  const LOC_OPTS  = [{ value: 'All', label: 'Location'   }, ...(data?.filters.locations   ?? []).map(v => ({ value: v, label: v }))];
+
+  const colCount = data?.columns.length ?? 0;
 
   return (
     <div className="lp-balances-pane">
@@ -1106,8 +1158,8 @@ function LeaveBalancesTab({ employees }: { employees: PlanEmployee[] }) {
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <button type="button" className="lp-icon-btn" aria-label="More filters">
-          <i className="ri-equalizer-2-line" />
+        <button type="button" className="lp-icon-btn" aria-label="Refresh" onClick={refetch} title="Refresh">
+          <i className="ri-refresh-line" />
         </button>
       </div>
 
@@ -1118,84 +1170,87 @@ function LeaveBalancesTab({ employees }: { employees: PlanEmployee[] }) {
               <th style={{ minWidth: 220 }}>EMPLOYEE NAME</th>
               <th style={{ minWidth: 100 }}>EMP NO.</th>
               <th style={{ minWidth: 110 }}>LOCATION</th>
-              {BALANCE_COLUMNS.map(c => (
-                <th key={c.id} style={{ minWidth: 140 }}>{c.label.toUpperCase()}</th>
+              {(data?.columns ?? []).map(c => (
+                <th key={c.leave_type_id} style={{ minWidth: 140 }}>{c.name.toUpperCase()}</th>
               ))}
-              <th style={{ minWidth: 100, textAlign: 'right' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {loading ? (
               <tr>
-                <td colSpan={3 + BALANCE_COLUMNS.length + 1} className="text-center py-5 text-muted">
-                  <i className="ri-team-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
-                  No employees match your filters
+                <td colSpan={3 + colCount} className="text-center py-5 text-muted">
+                  <i className="ri-loader-4-line ri-spin d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
+                  Loading balances...
                 </td>
               </tr>
-            ) : filtered.map((e, idx) => (
-              <tr key={e.id}>
-                <td>
-                  <div className="d-flex align-items-center gap-2">
-                    <span
-                      className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                      style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}
-                    >
-                      {e.initials}
-                    </span>
-                    <div>
-                      <a href="#" className="lp-emp-name d-block fs-13">{e.name}</a>
-                      <span className="text-muted" style={{ fontSize: 11 }}>{e.jobTitle}</span>
+            ) : filteredRows.length === 0 ? (
+              <tr>
+                <td colSpan={3 + colCount} className="text-center py-5 text-muted">
+                  <i className="ri-team-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
+                  {data && data.employees.length === 0
+                    ? 'No employees are assigned to a leave plan yet.'
+                    : 'No employees match your filters'}
+                </td>
+              </tr>
+            ) : filteredRows.map((e) => {
+              const accent = accentFor(e.id);
+              return (
+                <tr key={e.id}>
+                  <td>
+                    <div className="d-flex align-items-center gap-2">
+                      <span
+                        className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                        style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}
+                      >
+                        {initialsOf(e.name)}
+                      </span>
+                      <div>
+                        <span className="lp-emp-name d-block fs-13 fw-semibold">{e.name}</span>
+                        <span className="text-muted" style={{ fontSize: 11 }}>{e.designation || e.plan_name || ''}</span>
+                      </div>
                     </div>
-                  </div>
-                </td>
-                <td>
-                  <a href="#" className="lp-emp-link fs-13">{e.empNo}</a>
-                </td>
-                <td className="fs-13 text-muted">
-                  <i className="ri-map-pin-line me-1" />{e.location}
-                </td>
-                {BALANCE_COLUMNS.map((c, ci) => {
-                  if (c.id === 'unpaid') {
+                  </td>
+                  <td>
+                    <span className="lp-emp-link fs-13">{e.emp_code}</span>
+                  </td>
+                  <td className="fs-13 text-muted">
+                    {e.location ? <><i className="ri-map-pin-line me-1" />{e.location}</> : '—'}
+                  </td>
+                  {e.balances.map((b) => {
+                    if (!b.applies) {
+                      return <td key={b.leave_type_id} className="text-muted">—</td>;
+                    }
+                    if (b.unlimited) {
+                      return (
+                        <td key={b.leave_type_id}>
+                          <span className="rec-pill" style={{ background: '#d1fae5', color: '#065f46', fontSize: 10.5 }}>
+                            <i className="ri-infinity-line me-1" />Unlimited
+                          </span>
+                        </td>
+                      );
+                    }
+                    if (b.quota === 0) {
+                      return <td key={b.leave_type_id} className="text-muted">Not Setup</td>;
+                    }
+                    const pct = Math.min(100, Math.round((b.used / b.quota) * 100));
+                    const tone = pct >= 100 ? '#dc2626' : pct >= 70 ? '#f59e0b' : '#7c5cfc';
                     return (
-                      <td key={c.id}>
-                        <span className="rec-pill" style={{ background: '#d1fae5', color: '#065f46', fontSize: 10.5 }}>
-                          <i className="ri-infinity-line me-1" />Unlimited
-                        </span>
+                      <td key={b.leave_type_id}>
+                        <div className="lp-balance-cell">
+                          <div className="d-flex align-items-center justify-content-between">
+                            <span className="fw-semibold fs-13">{b.used}/{b.quota}</span>
+                            <span className="text-muted" style={{ fontSize: 10.5 }}>{pct}%</span>
+                          </div>
+                          <span className="lp-balance-track">
+                            <span className="lp-balance-fill" style={{ width: `${pct}%`, background: tone }} />
+                          </span>
+                        </div>
                       </td>
                     );
-                  }
-                  if (c.total === 0) {
-                    return <td key={c.id} className="text-muted">—</td>;
-                  }
-                  const used = pseudoUsed(e.id, c.total, ci + idx);
-                  const pct = Math.min(100, Math.round((used / c.total) * 100));
-                  const tone = pct >= 100 ? '#dc2626' : pct >= 70 ? '#f59e0b' : '#7c5cfc';
-                  return (
-                    <td key={c.id}>
-                      <div className="lp-balance-cell">
-                        <div className="d-flex align-items-center justify-content-between">
-                          <span className="fw-semibold fs-13">{used}/{c.total}</span>
-                          <span className="text-muted" style={{ fontSize: 10.5 }}>{pct}%</span>
-                        </div>
-                        <span className="lp-balance-track">
-                          <span className="lp-balance-fill" style={{ width: `${pct}%`, background: tone }} />
-                        </span>
-                      </div>
-                    </td>
-                  );
-                })}
-                <td style={{ textAlign: 'right' }}>
-                  <div className="d-flex justify-content-end gap-1">
-                    <button type="button" className="lp-row-action" aria-label="Edit balances" title="Edit balances">
-                      <i className="ri-pencil-line" />
-                    </button>
-                    <button type="button" className="lp-row-action" aria-label="Reset balances" title="Reset balances">
-                      <i className="ri-refresh-line" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -1204,32 +1259,157 @@ function LeaveBalancesTab({ employees }: { employees: PlanEmployee[] }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Initial Adjustments tab — empty-state placeholder. Adjustments are an
-// admin-driven feature so the default view is an explainer + a CTA. Once HR
-// adds the first adjustment, this swaps to a row table (TODO when the
-// backend exposes /api/leave-adjustments).
+// ViewLeaveTypeModal — read-only details popup opened from the eye icon on
+// the Leave Types catalog row. Surfaces every persisted attribute and a
+// shortcut into Edit so HR doesn't need to close → reopen via the pencil.
 // ─────────────────────────────────────────────────────────────────────────────
-function InitialAdjustmentsTab() {
+function ViewLeaveTypeModal({
+  isOpen, leaveType, onClose, onEdit,
+}: {
+  isOpen: boolean;
+  leaveType: CatalogType | null;
+  onClose: () => void;
+  onEdit: (id: string) => void;
+}) {
+  if (!leaveType) return null;
+  const t = leaveType;
   return (
-    <div className="lp-adj-pane">
-      <div className="lp-types-head">
-        <h6 className="mb-1 fw-bold">Initial Adjustments</h6>
-        <div className="text-muted fs-13">Set opening leave balances for employees</div>
-      </div>
-
-      <div className="lp-adj-empty">
-        <span className="lp-adj-empty-icon">
-          <i className="ri-pencil-line" />
-        </span>
-        <div className="fw-bold mt-3" style={{ fontSize: 14 }}>Initial Adjustments</div>
-        <div className="text-muted fs-13 mt-1 mb-3">
-          Configure opening leave balance adjustments for employees at the start of the period.
+    <Modal isOpen={isOpen} toggle={onClose} centered size="md" backdrop="static" modalClassName="rec-form-modal" contentClassName="rec-form-content border-0">
+      <ModalBody className="p-0">
+        <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-2">
+              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className="ri-eye-line" style={{ color: '#fff', fontSize: 16 }} />
+              </span>
+              <div>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                  Leave Type Details
+                </h5>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                  Read-only view of "{t.name}"
+                </div>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
+              <i className="ri-close-line" style={{ fontSize: 17 }} />
+            </button>
+          </div>
         </div>
-        <button type="button" className="rec-btn-primary">
-          <i className="ri-add-line" />Add Adjustment
-        </button>
-      </div>
-    </div>
+
+        <div className="rec-form-body" style={{ padding: '18px 22px' }}>
+          <div className="d-flex align-items-center gap-2 mb-3">
+            <span className="lp-code-pill" style={{ background: t.bg, color: t.fg, fontSize: 13, padding: '4px 10px' }}>{t.initials}</span>
+            <h5 className="fw-bold mb-0" style={{ fontSize: 16 }}>{t.name}</h5>
+          </div>
+
+          <Row className="g-3">
+            <Col md={6}>
+              <div className="text-muted" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4 }}>CATEGORY</div>
+              <div className="fw-semibold" style={{ fontSize: 13 }}>{t.type}</div>
+            </Col>
+            <Col md={6}>
+              <div className="text-muted" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4 }}>SHORT CODE</div>
+              <div className="fw-semibold" style={{ fontSize: 13 }}>{t.code}</div>
+            </Col>
+            <Col md={6}>
+              <div className="text-muted" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4 }}>IS PAID</div>
+              <span className="rec-pill" style={{ background: t.isPaid === 'Paid' ? '#d3f0ee' : '#eef2f6', color: t.isPaid === 'Paid' ? '#0a716a' : '#374151' }}>
+                {t.isPaid}
+              </span>
+            </Col>
+            <Col md={6}>
+              <div className="text-muted" style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.4 }}>GROUP</div>
+              <div className="fw-semibold text-capitalize" style={{ fontSize: 13 }}>{t.group}</div>
+            </Col>
+          </Row>
+        </div>
+
+        <div className="rec-form-footer">
+          <span className="hint">Catalog entry — open Edit to change values</span>
+          <div className="d-flex gap-2">
+            <button type="button" className="rec-btn-ghost" onClick={onClose}>Close</button>
+            <button type="button" className="rec-btn-primary" onClick={() => onEdit(t.id)}>
+              <i className="ri-pencil-line" />Edit
+            </button>
+          </div>
+        </div>
+      </ModalBody>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GuidanceModal — quick reference triggered by the "Here's a quick guide…" /
+// "Check the guide here" links scattered through the page. Opening the same
+// modal from every entry point keeps the help surface consistent.
+// ─────────────────────────────────────────────────────────────────────────────
+function GuidanceModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  return (
+    <Modal isOpen={isOpen} toggle={onClose} centered size="md" backdrop="static" modalClassName="rec-form-modal" contentClassName="rec-form-content border-0">
+      <ModalBody className="p-0">
+        <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-2">
+              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className="ri-question-line" style={{ color: '#fff', fontSize: 16 }} />
+              </span>
+              <div>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                  Leave Setup — Quick Guide
+                </h5>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                  How leave types and plans fit together
+                </div>
+              </div>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
+              <i className="ri-close-line" style={{ fontSize: 17 }} />
+            </button>
+          </div>
+        </div>
+
+        <div className="rec-form-body" style={{ padding: '18px 22px' }}>
+          <ol style={{ paddingLeft: 18, marginBottom: 0 }}>
+            <li className="mb-3">
+              <div className="fw-bold" style={{ fontSize: 13 }}>1. Define your Leave Types</div>
+              <div className="text-muted" style={{ fontSize: 12.5 }}>
+                Open the <strong>Leave Types</strong> tab and add every kind of leave your branch uses (Sick, Casual, Maternity, etc.). Each type carries a name, short code, paid/unpaid flag, and category (Regular, Incident based, Compensatory offs, Unpaid).
+              </div>
+            </li>
+            <li className="mb-3">
+              <div className="fw-bold" style={{ fontSize: 13 }}>2. Create one or more Leave Plans</div>
+              <div className="text-muted" style={{ fontSize: 12.5 }}>
+                A plan groups together the leave types that apply to a set of employees (e.g. "Plan for Executives"). Decide when its calendar year starts — a fixed month or each employee's joining date.
+              </div>
+            </li>
+            <li className="mb-3">
+              <div className="fw-bold" style={{ fontSize: 13 }}>3. Assign types and configure each one</div>
+              <div className="text-muted" style={{ fontSize: 12.5 }}>
+                Inside a plan, click <strong>+ Add leave type</strong> to attach types from your catalog. Then click <strong>Setup</strong> on each row to configure quota, accrual, application rules, approval chain, year-end behaviour, probation rules and notice-period handling.
+              </div>
+            </li>
+            <li className="mb-3">
+              <div className="fw-bold" style={{ fontSize: 13 }}>4. One plan can be the Default</div>
+              <div className="text-muted" style={{ fontSize: 12.5 }}>
+                The plan flagged DEFAULT is auto-applied to new joiners. Use the 3-dot menu on the plan header to mark a plan as default, clone it, or delete it.
+              </div>
+            </li>
+            <li>
+              <div className="fw-bold" style={{ fontSize: 13 }}>5. Track balances</div>
+              <div className="text-muted" style={{ fontSize: 12.5 }}>
+                The <strong>Leave Balances</strong> tab shows every employee with their per-type quota and consumption. Filter by department or location and search by name to drill in.
+              </div>
+            </li>
+          </ol>
+        </div>
+
+        <div className="rec-form-footer">
+          <span className="hint">Need more? Email your HR admin or check the docs.</span>
+          <button type="button" className="rec-btn-primary" onClick={onClose}>Got it</button>
+        </div>
+      </ModalBody>
+    </Modal>
   );
 }
 
@@ -1237,9 +1417,10 @@ function InitialAdjustmentsTab() {
 // Add Leave Plan modal — right-side drawer
 // ─────────────────────────────────────────────────────────────────────────────
 function AddLeavePlanModal({
-  isOpen, onClose, onSave,
+  isOpen, editing, onClose, onSave,
 }: {
   isOpen: boolean;
+  editing: LeavePlan | null;
   onClose: () => void;
   onSave: (plan: Omit<LeavePlan, 'id' | 'employees' | 'leaveTypes'>) => void;
 }) {
@@ -1257,6 +1438,25 @@ function AddLeavePlanModal({
     setCalendarStart('fixed_month'); setStartDate('');
     setShowSystemPolicy(true); setUploadCustom(false); setIsDefault(false);
   };
+
+  // Hydrate from the row being edited every time the modal opens. When
+  // `editing` is null we reset to a clean create-mode form. Mirrors the
+  // pattern AddLeaveTypeModal already uses.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (editing) {
+      setName(editing.name);
+      setDescription(editing.description ?? '');
+      setShowDescription(!!editing.description);
+      setCalendarStart(editing.calendarStart);
+      setStartDate(editing.startDate ?? '');
+      setShowSystemPolicy(editing.showSystemPolicy);
+      setUploadCustom(!!editing.customPolicyFile);
+      setIsDefault(!!editing.isDefault);
+    } else {
+      reset();
+    }
+  }, [isOpen, editing]);
 
   const handleSave = () => {
     if (!name.trim()) return;
@@ -1295,14 +1495,14 @@ function AddLeavePlanModal({
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 }}
               >
-                <i className="ri-calendar-2-line" style={{ color: '#fff', fontSize: 16 }} />
+                <i className={editing ? 'ri-pencil-line' : 'ri-calendar-2-line'} style={{ color: '#fff', fontSize: 16 }} />
               </span>
               <div>
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
-                  Add Leave Plan
+                  {editing ? 'Edit Leave Plan' : 'Add Leave Plan'}
                 </h5>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
-                  Create a new leave policy group
+                  {editing ? `Update "${editing.name}"` : 'Create a new leave policy group'}
                 </div>
               </div>
             </div>
@@ -1511,7 +1711,8 @@ function AddLeavePlanModal({
               onClick={handleSave}
               disabled={!name.trim()}
             >
-              <i className="ri-save-3-line" />Save Plan
+              <i className={editing ? 'ri-save-line' : 'ri-save-3-line'} />
+              {editing ? 'Update Plan' : 'Save Plan'}
             </button>
           </div>
         </div>
@@ -1763,23 +1964,6 @@ type AssignableType = {
   color: string;
 };
 
-const ASSIGNABLE_TYPES: AssignableType[] = [
-  // Regular
-  { id: 'casual',     name: 'Casual Leave',           description: 'For short-notice personal needs (1–3 days).',                 category: 'regular',  color: '#7c5cfc' },
-  { id: 'paid_half',  name: 'Paid Leave (Half Day)',  description: 'Half-day paid leave for short personal errands.',             category: 'regular',  color: '#7c5cfc' },
-  { id: 'sick',       name: 'Sick Leave',             description: 'Medical leave with optional doctor proof.',                   category: 'regular',  color: '#7c5cfc' },
-  // Incident
-  { id: 'special',    name: 'Special Leave',          description: 'Manager-approved discretionary leave.',                       category: 'incident', color: '#0ea5e9' },
-  { id: 'paternity',  name: 'Paternity Leave',        description: 'Statutory paternity benefit per company policy.',             category: 'incident', color: '#0ea5e9' },
-  { id: 'maternity',  name: 'Maternity Leave',        description: 'Statutory maternity benefit per company policy.',             category: 'incident', color: '#0ea5e9' },
-  { id: 'floater',    name: 'Floater Leave',          description: 'Optional holiday(s) employees can choose from a list.',       category: 'incident', color: '#0ea5e9' },
-  { id: 'bereavement',name: 'Bereavement Leave',      description: 'Leave for the loss of an immediate family member.',           category: 'incident', color: '#0ea5e9' },
-  // Unpaid
-  { id: 'unpaid',     name: 'Unpaid Leave',           description: 'Loss-of-pay leave once paid balance is exhausted.',           category: 'unpaid',   color: '#dc2626' },
-  // Comp Off
-  { id: 'compoff',    name: 'Comp Offs',              description: 'Earned by working on holidays or weekends.',                  category: 'compoff',  color: '#16a34a' },
-];
-
 const CATEGORY_META: Record<AssignableType['category'], { label: string; color: string }> = {
   regular:  { label: 'REGULAR',  color: '#7c5cfc' },
   incident: { label: 'INCIDENT', color: '#0ea5e9' },
@@ -1788,16 +1972,33 @@ const CATEGORY_META: Record<AssignableType['category'], { label: string; color: 
 };
 
 function AssignLeaveTypesModal({
-  isOpen, planName, existingTypeIds, onClose, onSave,
+  isOpen, planName, existingTypeIds, catalog, onClose, onSave,
 }: {
   isOpen: boolean;
   planName: string;
   existingTypeIds: Set<string>;
+  catalog: CatalogType[];
   onClose: () => void;
   onSave: (types: LeaveTypeRow[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const visibleSelectedCount = selected.size;
+
+  // Derive AssignableType[] from the live catalog (master_leave_types) so
+  // newly-added types in the master catalog show up here without a code change.
+  const assignableTypes: AssignableType[] = useMemo(() => catalog.map(c => {
+    const category: AssignableType['category'] =
+      c.type === 'Compensatory offs' ? 'compoff'
+      : c.type === 'Incident based' ? 'incident'
+      : c.type === 'Unpaid' ? 'unpaid'
+      : 'regular';
+    const color =
+      category === 'compoff' ? '#16a34a'
+      : category === 'incident' ? '#0ea5e9'
+      : category === 'unpaid' ? '#dc2626'
+      : '#7c5cfc';
+    return { id: c.id, name: c.name, description: c.type, category, color };
+  }), [catalog]);
 
   const toggle = (id: string) => {
     if (existingTypeIds.has(id)) return; // already on the plan
@@ -1810,7 +2011,7 @@ function AssignLeaveTypesModal({
 
   const handleSave = () => {
     if (selected.size === 0) return;
-    const rows: LeaveTypeRow[] = ASSIGNABLE_TYPES
+    const rows: LeaveTypeRow[] = assignableTypes
       .filter(t => selected.has(t.id))
       .map(t => ({
         id: t.id,
@@ -1827,12 +2028,12 @@ function AssignLeaveTypesModal({
   const handleClose = () => { setSelected(new Set()); onClose(); };
 
   const grouped = (cat: AssignableType['category']) =>
-    ASSIGNABLE_TYPES.filter(t => t.category === cat);
+    assignableTypes.filter(t => t.category === cat);
 
   // Progress: out of the *assignable* (not-yet-on-plan) types, how many
   // selected. Caps at 100% so the bar reads correctly when the plan already
   // owns most types.
-  const assignablePool = ASSIGNABLE_TYPES.filter(t => !existingTypeIds.has(t.id)).length || ASSIGNABLE_TYPES.length;
+  const assignablePool = assignableTypes.filter(t => !existingTypeIds.has(t.id)).length || assignableTypes.length || 1;
   const progressPct = Math.min(100, Math.round((visibleSelectedCount / assignablePool) * 100));
 
   return (

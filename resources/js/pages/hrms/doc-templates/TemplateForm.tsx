@@ -115,55 +115,84 @@ export default function TemplateFormPage() {
 
   // Lookups
   const [triggerPoints, setTriggerPoints] = useState<Array<{ id: number; module_name: string; status: string }>>([]);
+  // `roles` is kept around so the signing-flow preview can still resolve a
+  // label for legacy rows that have `role_id` but no `role_name` set.
+  // Designation lookup was dropped along with the designation column.
   const [roles, setRoles]                 = useState<Array<{ id: number; name: string }>>([]);
-  const [designations, setDesignations]   = useState<Array<{ id: number; name: string; level?: string }>>([]);
+  const [loadError, setLoadError]         = useState<string | null>(null);
 
-  // ── Bootstrap: load lookups + (if editing) the existing template ───────────
+  // ── Load lookups (always — independent of edit-vs-create) ──────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [tpRes, rolesRes, desigRes, rowRes] = await Promise.all([
+        const [tpRes, rolesRes] = await Promise.all([
           api.get('/master/trigger_point').catch(() => ({ data: [] })),
           api.get('/master/roles').catch(() => ({ data: [] })),
-          api.get('/master/designations').catch(() => ({ data: [] })),
-          editingId ? api.get(`/hr-document-templates/${editingId}`) : Promise.resolve(null),
         ]);
         if (cancelled) return;
-
         const tps: any[]  = Array.isArray(tpRes.data) ? tpRes.data : [];
         const rls: any[]  = Array.isArray(rolesRes.data) ? rolesRes.data : [];
-        const dsgs: any[] = Array.isArray(desigRes.data) ? desigRes.data : [];
         const isActive = (r: any) => !r.status || String(r.status).toLowerCase() === 'active';
         setTriggerPoints(tps.filter(isActive).map(r => ({ id: r.id, module_name: r.module_name, status: r.status })));
         setRoles(rls.filter(isActive).map(r => ({ id: r.id, name: r.name })));
-        setDesignations(dsgs.filter(isActive).map(r => ({ id: r.id, name: r.name, level: r.level })));
+      } catch { /* lookups are best-effort */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-        if (rowRes) {
-          const row = rowRes.data as TemplateRow;
-          setEditing(row);
-          setName(row.name || '');
-          setDescription(row.description || '');
-          setCode(row.code || '');
-          setCategory(row.employee_category || 'IT');
-          setRoleType(row.role_type || 'Intern / Trainee');
-          setIsMandatory(!!row.is_mandatory);
-          setRequiresSig(!!row.requires_signature);
-          setRequiresMgr(!!row.requires_manager_approval);
-          setIncludeAudit(!!row.include_in_audit);
-          setTriggerPointId(row.trigger_point_id ?? '');
-          setSigningMode(row.signing_mode || 'Sequential');
-          setSigners(Array.isArray(row.signers) && row.signers.length
-            ? row.signers
-            : [{ role_id: null, designation_id: null, role_name: '', designation_name: '', action: 'Sign', days: 3 }]);
-          setEditorMode(row.editor_mode || 'web');
-          setContentHtml(row.content_html || '');
+  // ── Load the template row (edit mode only) ─────────────────────────────────
+  // Independent from lookups so a 403 on /master/roles can't suppress the
+  // edit data. Errors surface inline so the user can see what went wrong
+  // (the old version silently bounced back to the list).
+  useEffect(() => {
+    if (!editingId) { setBootstrapping(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadError(null);
+        const { data: row } = await api.get<TemplateRow>(`/hr-document-templates/${editingId}`);
+        if (cancelled) return;
+        if (!row || typeof row !== 'object') {
+          throw new Error('Empty response from /hr-document-templates/' + editingId);
         }
+        setEditing(row);
+        setName(row.name || '');
+        setDescription(row.description || '');
+        setCode(row.code || '');
+        setCategory((row.employee_category as EmployeeCategory) || 'IT');
+        setRoleType((row.role_type as RoleType) || 'Intern / Trainee');
+        setIsMandatory(!!row.is_mandatory);
+        setRequiresSig(!!row.requires_signature);
+        setRequiresMgr(!!row.requires_manager_approval);
+        setIncludeAudit(!!row.include_in_audit);
+        setTriggerPointId(row.trigger_point_id ?? '');
+        setSigningMode((row.signing_mode as SigningMode) || 'Sequential');
+
+        // signers can come back as a JSON string (sqlite without cast, manual
+        // DB edit, etc.) — be defensive so a stringified value doesn't blank
+        // the wizard. Falls back to one empty row if parsing fails.
+        let signerArr: SignerRow[] = [];
+        const raw = row.signers as any;
+        if (Array.isArray(raw)) signerArr = raw as SignerRow[];
+        else if (typeof raw === 'string' && raw.trim()) {
+          try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) signerArr = parsed; } catch { /* swallow */ }
+        }
+        setSigners(signerArr.length
+          ? signerArr
+          : [{ role_id: null, designation_id: null, role_name: '', designation_name: '', action: 'Sign', days: 3 }]);
+
+        setEditorMode(row.editor_mode || 'web');
+        setContentHtml(row.content_html || '');
       } catch (err: any) {
-        if (!cancelled) {
-          toast.error('Could not load template', err?.response?.data?.message || 'Please try again.');
-          navigate('/hr/doc-templates');
-        }
+        if (cancelled) return;
+        const msg = err?.response?.data?.message
+          || (err?.response?.status === 404 ? 'Template not found or you do not have access to it.'
+              : err?.response?.status === 403 ? 'You do not have permission to view this template.'
+              : err?.message || 'Could not load template');
+        console.error('[doc-templates] load failed', editingId, err);
+        setLoadError(msg);
+        toast.error('Could not load template', msg);
       } finally {
         if (!cancelled) setBootstrapping(false);
       }
@@ -330,6 +359,30 @@ export default function TemplateFormPage() {
     );
   }
 
+  // Fetched but failed — show the actual error so the user can see why the
+  // form is empty (instead of silently rendering blank fields).
+  if (editingId && !editing && loadError) {
+    return (
+      <div className="rec-page" style={{ padding: 24 }}>
+        <Card>
+          <CardBody>
+            <div className="d-flex align-items-start gap-3">
+              <i className="ri-error-warning-line" style={{ fontSize: 28, color: '#ef4444' }} />
+              <div className="flex-grow-1">
+                <h5 className="mb-1">Could not load template #{editingId}</h5>
+                <div style={{ fontSize: 13, color: '#6b7280' }}>{loadError}</div>
+              </div>
+              <button type="button" onClick={() => navigate('/hr/doc-templates')}
+                style={{ padding: '7px 14px', background: '#6366f1', border: 0, borderRadius: 8, color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
+                Back to list
+              </button>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="rec-page">
       {/* Header bar — replaces the modal's gradient strip */}
@@ -411,7 +464,6 @@ export default function TemplateFormPage() {
               triggerPointId={triggerPointId} setTriggerPointId={setTriggerPointId}
               signingMode={signingMode} setSigningMode={setSigningMode}
               signers={signers}
-              roles={roles} designations={designations}
               addSigner={addSigner} updateSigner={updateSigner} removeSigner={removeSigner}
               previewSigners={previewSigners}
               errors={errors}
@@ -479,33 +531,7 @@ function Step1(props: {
 }) {
   return (
     <>
-      {/* Basic info */}
-      <section style={sectionStyle}>
-        <div style={sectionLabel}>Basic Information</div>
-        <div className="row g-3">
-          <div className="col-md-8">
-            <label style={fieldLabel}>Template Name <span style={req}>*</span></label>
-            <input type="text" value={props.name} onChange={e => props.setName(e.target.value)}
-              placeholder="e.g. Internship Offer Letter (November)"
-              style={inputStyle(!!props.errors.name)} />
-            {props.errors.name && <div style={errMsg}>{props.errors.name}</div>}
-          </div>
-          <div className="col-md-4">
-            <label style={fieldLabel}>Template Code</label>
-            <input type="text" value={props.code} readOnly
-              style={{ ...inputStyle(false), background: '#fef9c3', color: '#a16207', fontFamily: 'monospace', fontWeight: 700, border: '1px solid #fde68a' }} />
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Auto-generated per category + role.</div>
-          </div>
-          <div className="col-12">
-            <label style={fieldLabel}>Description</label>
-            <textarea value={props.description} onChange={e => props.setDescription(e.target.value)}
-              placeholder="Short note describing when this template is used…"
-              rows={2} style={{ ...inputStyle(false), resize: 'vertical' }} />
-          </div>
-        </div>
-      </section>
-
-      {/* Employee category */}
+      {/* Employee category — full-width card */}
       <section style={sectionStyle}>
         <div style={sectionLabel}>1. Employee Category <span style={req}>*</span></div>
         <div className="row g-2">
@@ -527,7 +553,7 @@ function Step1(props: {
         </div>
       </section>
 
-      {/* Role / Designation — six designation levels, mirrors master_designations.level */}
+      {/* Role / Designation — full-width card, six designation levels */}
       <section style={sectionStyle}>
         <div style={sectionLabel}>2. Role / Designation Type <span style={req}>*</span></div>
         <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>Sourced from the Designation Master's <code>level</code> field.</div>
@@ -551,14 +577,44 @@ function Step1(props: {
         {props.errors.role_type && <div style={errMsg}>{props.errors.role_type}</div>}
       </section>
 
-      {/* Settings (Document Type field removed per spec) */}
-      <section style={sectionStyle}>
-        <div style={sectionLabel}>3. Settings</div>
-        <Toggle on={props.isMandatory}  setOn={props.setIsMandatory}  title="Mandatory Document"      sub="Must be completed as part of onboarding/offboarding" />
-        <Toggle on={props.requiresSig}  setOn={props.setRequiresSig}  title="Requires Employee Signature" sub="Digital or physical signature required" />
-        <Toggle on={props.requiresMgr}  setOn={props.setRequiresMgr}  title="Requires Manager Approval" sub="Manager must review and approve before sending" />
-        <Toggle on={props.includeAudit} setOn={props.setIncludeAudit} title="Include in Audit Trail"   sub="Track all generation and signing events" />
-      </section>
+      {/* Bottom row — two columns: basic info (left) + settings (right). The
+          row uses align-items: stretch so both cards rise to the same height. */}
+      <div className="row g-3 align-items-stretch">
+        <div className="col-lg-7">
+          <section style={{ ...sectionStyle, marginBottom: 0, height: '100%' }}>
+            <div style={sectionLabel}>3. Basic Information</div>
+            <div className="mb-3">
+              <label style={fieldLabel}>Template Name <span style={req}>*</span></label>
+              <input type="text" value={props.name} onChange={e => props.setName(e.target.value)}
+                placeholder="e.g. Internship Offer Letter (November)"
+                style={inputStyle(!!props.errors.name)} />
+              {props.errors.name && <div style={errMsg}>{props.errors.name}</div>}
+            </div>
+            <div className="mb-3">
+              <label style={fieldLabel}>Template Code</label>
+              <input type="text" value={props.code} readOnly
+                style={{ ...inputStyle(false), background: '#fef9c3', color: '#a16207', fontFamily: 'monospace', fontWeight: 700, border: '1px solid #fde68a' }} />
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Auto-generated per category + role.</div>
+            </div>
+            <div>
+              <label style={fieldLabel}>Description</label>
+              <textarea value={props.description} onChange={e => props.setDescription(e.target.value)}
+                placeholder="Short note describing when this template is used…"
+                rows={3} style={{ ...inputStyle(false), resize: 'vertical' }} />
+            </div>
+          </section>
+        </div>
+
+        <div className="col-lg-5">
+          <section style={{ ...sectionStyle, marginBottom: 0, height: '100%' }}>
+            <div style={sectionLabel}>4. Settings</div>
+            <Toggle on={props.isMandatory}  setOn={props.setIsMandatory}  title="Mandatory Document"          sub="Must be completed as part of onboarding/offboarding" />
+            <Toggle on={props.requiresSig}  setOn={props.setRequiresSig}  title="Requires Employee Signature" sub="Digital or physical signature required" />
+            <Toggle on={props.requiresMgr}  setOn={props.setRequiresMgr}  title="Requires Manager Approval"   sub="Manager must review and approve before sending" />
+            <Toggle on={props.includeAudit} setOn={props.setIncludeAudit} title="Include in Audit Trail"      sub="Track all generation and signing events" />
+          </section>
+        </div>
+      </div>
     </>
   );
 }
@@ -582,8 +638,6 @@ function Step2(props: {
   triggerPointId: number | ''; setTriggerPointId: (v: number | '') => void;
   signingMode: SigningMode; setSigningMode: (v: SigningMode) => void;
   signers: SignerRow[];
-  roles: Array<{ id: number; name: string }>;
-  designations: Array<{ id: number; name: string; level?: string }>;
   addSigner: () => void;
   updateSigner: (i: number, patch: Partial<SignerRow>) => void;
   removeSigner: (i: number) => void;
@@ -591,13 +645,19 @@ function Step2(props: {
   errors: Record<string, string>;
 }) {
   const triggerOptions = props.triggerPoints.map(tp => ({ value: String(tp.id), label: tp.module_name }));
-  const roleOptions = props.roles.map(r => ({ value: String(r.id), label: r.name }));
-  const designationOptions = props.designations.map(d => ({ value: String(d.id), label: d.name + (d.level ? ` · ${d.level}` : '') }));
+  // Fixed signer-role catalogue — three canonical roles used across every
+  // template, independent of the (much larger) master_roles table. Storing
+  // them as `role_name` strings keeps the signers JSON portable across
+  // tenants that don't share the same master_roles ids.
+  const roleOptions = [
+    { value: 'Reporting Manager', label: 'Reporting Manager' },
+    { value: 'Client (CEO)',      label: 'Client (CEO)' },
+    { value: 'Employee',          label: 'Employee' },
+  ];
   const actionOptions = [
-    { value: 'Sign',         label: 'Sign' },
-    { value: 'Approve',      label: 'Approve' },
-    { value: 'Review',       label: 'Review' },
-    { value: 'Acknowledge',  label: 'Acknowledge' },
+    { value: 'Sign',                 label: 'Sign' },
+    { value: 'Review & Acknowledge', label: 'Review & Acknowledge' },
+    { value: 'Approve',              label: 'Approve' },
   ];
 
   return (
@@ -640,31 +700,20 @@ function Step2(props: {
         </div>
 
         <div style={{ padding: 14, background: '#fff' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '36px 1.4fr 1.4fr 1fr 80px 36px', gap: 10, padding: '0 6px 8px', fontSize: 11, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase' }}>
-            <div>#</div><div>Role / Position</div><div>Designation Level</div><div>Action</div><div>Days</div><div />
+          <div style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '0 6px 8px', fontSize: 11, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase' }}>
+            <div>#</div><div>Role / Position</div><div>Action</div><div>Days</div><div />
           </div>
           {props.signers.map((s, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '36px 1.4fr 1.4fr 1fr 80px 36px', gap: 10, padding: '6px', alignItems: 'center' }}>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '6px', alignItems: 'center' }}>
               <span style={{ width: 28, height: 28, borderRadius: '50%', background: '#6366f1', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
+              {/* Role is now a free-text string (not an id) — three canonical
+                  options drive the value, and we mirror it into role_name so
+                  the signing-flow preview + payload stay in sync. */}
               <MasterSelect
-                value={s.role_id ? String(s.role_id) : ''}
-                onChange={(v) => {
-                  const id = v ? Number(v) : null;
-                  const role = props.roles.find(r => r.id === id);
-                  props.updateSigner(i, { role_id: id, role_name: role?.name || '' });
-                }}
+                value={s.role_name || ''}
+                onChange={(v) => props.updateSigner(i, { role_id: null, role_name: v })}
                 options={roleOptions}
                 placeholder="— Select Role —"
-              />
-              <MasterSelect
-                value={s.designation_id ? String(s.designation_id) : ''}
-                onChange={(v) => {
-                  const id = v ? Number(v) : null;
-                  const dsg = props.designations.find(d => d.id === id);
-                  props.updateSigner(i, { designation_id: id, designation_name: dsg?.name || '' });
-                }}
-                options={designationOptions}
-                placeholder="— Select —"
               />
               <MasterSelect
                 value={s.action}
