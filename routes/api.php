@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrOverviewController;
+use App\Http\Controllers\Api\LeavePlanController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OrganizationTypeController;
@@ -190,6 +191,26 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/master/{slug}/{id}',      [MasterController::class, 'show']);
     Route::put   ('/master/{slug}/{id}',    [MasterController::class, 'update']);
     Route::delete('/master/{slug}/{id}',    [MasterController::class, 'destroy']);
+
+    // Leave Plans — Keka-style plan flow. Plan-level CRUD lives here
+    // (not under /master) because each plan owns assigned leave types
+    // (with per-pair Setup config) and assigned employees.
+    Route::get   ('/leave-plans',                                [LeavePlanController::class, 'index']);
+    Route::post  ('/leave-plans',                                [LeavePlanController::class, 'store']);
+    Route::get   ('/leave-plans/{id}',                           [LeavePlanController::class, 'show']);
+    Route::put   ('/leave-plans/{id}',                           [LeavePlanController::class, 'update']);
+    Route::delete('/leave-plans/{id}',                           [LeavePlanController::class, 'destroy']);
+    Route::post  ('/leave-plans/{id}/clone',                     [LeavePlanController::class, 'clone']);
+    Route::post  ('/leave-plans/{id}/make-default',              [LeavePlanController::class, 'makeDefault']);
+    Route::post  ('/leave-plans/{id}/types',                     [LeavePlanController::class, 'assignTypes']);
+    Route::delete('/leave-plans/{id}/types/{typeId}',            [LeavePlanController::class, 'removeType']);
+    Route::put   ('/leave-plans/{id}/types/{typeId}/config',     [LeavePlanController::class, 'saveTypeConfig']);
+    Route::post  ('/leave-plans/{id}/employees',                 [LeavePlanController::class, 'assignEmployees']);
+    Route::delete('/leave-plans/{id}/employees/{employeeId}',    [LeavePlanController::class, 'removeEmployee']);
+    // Aggregated read for the Leave Balances tab — every employee in scope
+    // with their plan's leave-type quotas. Optional filters: department_id,
+    // location, search.
+    Route::get   ('/leave-balances',                             [LeavePlanController::class, 'leaveBalances']);
 
     // Subscription (client buy plan via Razorpay)
     Route::get('/subscription/plans', [SubscriptionController::class, 'plans']);
