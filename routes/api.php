@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeavePlanController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\MasterController;
+use App\Http\Controllers\Api\MyTeamController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OrganizationTypeController;
@@ -198,6 +199,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // against an employee. Inbox surfaces signature tasks where the current
     // user is the next signer. Declare /inbox BEFORE apiResource so the
     // literal segment doesn't get captured as an id.
+    // My Team — profile-dropdown destination for anyone who manages people.
+    // Returns the visible employees + unified approval queue (currently doc
+    // signatures only; expense / leave plug in later).
+    Route::get ('/my-team/employees',                    [MyTeamController::class, 'employees']);
+    Route::get ('/my-team/approvals',                    [MyTeamController::class, 'approvals']);
+
     Route::get ('/hr-document-signatures/inbox',        [HrDocumentSignatureController::class, 'inbox']);
     Route::post('/hr-document-signatures/{id}/action',  [HrDocumentSignatureController::class, 'action']);
     Route::post('/hr-document-signatures/{id}/reject',  [HrDocumentSignatureController::class, 'reject']);

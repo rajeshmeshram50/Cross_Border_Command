@@ -67,6 +67,7 @@ import EmployeePermissions from '../pages/employee/EmployeePermissions';
 import EmployeeProfile from '../pages/employee/EmployeeProfile';
 import PublicOnboarding from '../pages/PublicOnboarding';
 import ClockIn from '../pages/ClockIn';
+import MyTeam from '../pages/MyTeam';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -440,6 +441,7 @@ function DashboardRoutes({ user }: { user: any }) {
                   The controller hard-checks `user.employee_id`, so non-employees
                   hitting this URL get a friendly 404 toast from the page. */}
               <Route path="/clock-in" element={<ClockIn />} />
+              <Route path="/my-team"  element={<MyTeam />} />
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/hr" element={<HrDashboard />} />

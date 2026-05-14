@@ -467,6 +467,16 @@ class AuthController extends Controller
         $linkedEmployeeCode = $linkedEmployee?->emp_code;
         $linkedEmployeePhoto = $linkedEmployee?->photo_url;
 
+        // Flag the My Team menu visibility: anyone who's been assigned as
+        // someone else's reporting manager (i.e. has direct reports) — plus
+        // branch/client users who always need a team view. Computed here so
+        // the SPA can gate the profile-dropdown item without an extra fetch.
+        $hasReports = $linkedEmployeeId
+            ? \App\Models\Employee::where('reporting_manager_id', $linkedEmployeeId)->exists()
+            : false;
+        $isReportingManager = $hasReports
+            || in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true);
+
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -498,6 +508,8 @@ class AuthController extends Controller
             'primary_color' => $this->pickHexColor($user->branch?->primary_color, $user->client?->primary_color),
             'secondary_color' => $this->pickHexColor($user->branch?->secondary_color, $user->client?->secondary_color),
             'is_main_branch' => (bool) ($user->branch?->is_main),
+            'is_reporting_manager' => $isReportingManager,
+            'has_direct_reports'   => $hasReports,
             'status' => $user->status,
             'designation' => $user->designation,
             'phone' => $user->phone,
