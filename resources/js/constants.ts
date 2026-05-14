@@ -196,6 +196,9 @@ export const HR_GROUPS: MenuGroup[] = [
       // NDA, etc) with lifecycle triggers (sourced from trigger_point master)
       // + signing workflows + Tiptap web editor / MS Word DOCX round-trip.
       { id: 'hr.doc_templates', icon: 'FileText', label: 'Document Templates' },
+      // Custom Fields — variables defined here are NOT in employee data; the
+      // template engine prompts for them manually at generation time.
+      { id: 'hr.custom_fields', icon: 'Star', label: 'Custom Fields' },
       // Trigger Point Master — branch-only master defining lifecycle trigger
       // modules (Onboarding, Offboarding, Event-Based) used by Doc Generation
       // Rules. Routes through /master/trigger_point (master.* convention).

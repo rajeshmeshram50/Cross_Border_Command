@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
+use App\Http\Controllers\Api\HrCustomFieldController;
 use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeavePlanController;
@@ -172,12 +173,27 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // triggers (sourced from master_trigger_points), signing workflows, and
     // optional MS Word DOCX round-trip. Stats / next-code declared BEFORE
     // apiResource so the literal segments aren't captured as ids.
-    Route::get ('/hr-document-templates/stats',           [HrDocumentTemplateController::class, 'stats']);
-    Route::get ('/hr-document-templates/next-code',       [HrDocumentTemplateController::class, 'nextCode']);
-    Route::get ('/hr-document-templates/{id}/download',   [HrDocumentTemplateController::class, 'downloadDocx']);
-    Route::post('/hr-document-templates/{id}/upload-docx',[HrDocumentTemplateController::class, 'uploadDocx']);
+    Route::get ('/hr-document-templates/stats',                [HrDocumentTemplateController::class, 'stats']);
+    Route::get ('/hr-document-templates/next-code',            [HrDocumentTemplateController::class, 'nextCode']);
+    // Header logo upload is template-agnostic — it stages the file under the
+    // tenant's doc_templates/logos folder and the path travels along in the
+    // main save payload under header_config.logo_path. No template id required
+    // so the wizard can attach a logo before the first save.
+    Route::post('/hr-document-templates/upload-header-logo',   [HrDocumentTemplateController::class, 'uploadHeaderLogo']);
+    Route::get ('/hr-document-templates/{id}/download',        [HrDocumentTemplateController::class, 'downloadDocx']);
+    Route::post('/hr-document-templates/{id}/upload-docx',     [HrDocumentTemplateController::class, 'uploadDocx']);
     Route::apiResource('hr-document-templates', HrDocumentTemplateController::class)
         ->parameters(['hr-document-templates' => 'id']);
+
+    // HR Custom Fields — user-defined {{variables}} that document templates
+    // reference but the employee dataset doesn't provide. Stats + editor
+    // integration endpoints declared BEFORE apiResource so the literal path
+    // segments aren't captured as ids.
+    Route::get ('/hr-custom-fields/stats',           [HrCustomFieldController::class, 'stats']);
+    Route::get ('/hr-custom-fields/known-tokens',    [HrCustomFieldController::class, 'knownTokens']);
+    Route::post('/hr-custom-fields/validate-tokens', [HrCustomFieldController::class, 'validateTokens']);
+    Route::apiResource('hr-custom-fields', HrCustomFieldController::class)
+        ->parameters(['hr-custom-fields' => 'id']);
 
     // Batch counts for the Master dashboard — one round-trip returns
     // active/inactive/total for every master the user can view.
