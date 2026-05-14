@@ -661,6 +661,13 @@ export default function HrLeave() {
                 </button>
                 <button
                   type="button"
+                  className="rec-btn-ghost"
+                  onClick={() => navigate('/hr/leave-approvals')}
+                >
+                  <i className="ri-check-double-line" />Approvals
+                </button>
+                <button
+                  type="button"
                   className="rec-btn-primary"
                   onClick={() => navigate('/hr/leave-plans')}
                 >

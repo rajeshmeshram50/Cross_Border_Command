@@ -53,6 +53,7 @@ import HrExitManagement from '../pages/hrms/HrExitManagement';
 import HrAttendance from '../pages/hrms/HrAttendance';
 import HrLeave from '../pages/hrms/HrLeave';
 import HrLeavePlans from '../pages/hrms/HrLeavePlans';
+import HrLeaveApprovals from '../pages/hrms/HrLeaveApprovals';
 import HrPIP from '../pages/hrms/HrPIP';
 import HrCalculationMaster from '../pages/hrms/HrCalculationMaster';
 import HrExpenseManagement from '../pages/hrms/HrExpenseManagement';
@@ -452,6 +453,7 @@ function DashboardRoutes({ user }: { user: any }) {
               )}
               <Route path="/hr/leave" element={<HrLeave />} />
               <Route path="/hr/leave-plans" element={<HrLeavePlans />} />
+              <Route path="/hr/leave-approvals" element={<HrLeaveApprovals />} />
               <Route path="/hr/pip" element={<HrPIP />} />
               <Route path="/hr/calculation-master" element={<HrCalculationMaster />} />
               <Route path="/hr/expense" element={<HrExpenseManagement />} />

@@ -132,6 +132,90 @@ class LeaveRequestController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Show — single request with every relation the approval modal needs
+    // ─────────────────────────────────────────────────────────────────────
+    public function show(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $row = LeaveRequest::with([
+            'employee:id,emp_code,first_name,last_name,display_name,department_id,designation_id,reporting_manager_id,email',
+            'employee.department:id,name',
+            'employee.designation:id,name',
+            'employee.reportingManager:id,first_name,last_name,display_name,email',
+            'leaveType:id,name,short_code,type,paid_unpaid',
+            'leavePlan:id,plan_name',
+            'coverPerson:id,first_name,last_name,display_name,emp_code',
+            'approver:id,name',
+            'creator:id,name',
+        ])->findOrFail($id);
+
+        return response()->json(['data' => $row]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Approvals queue — pending requests where the signed-in user is the
+    // approver. Currently keyed off employees.reporting_manager_id matching
+    // an employee record linked to the current user. HR / admin scopes
+    // (super_admin, client_admin, branch_user) see every pending request
+    // in their tenant so they can act on behalf when a manager is offline.
+    // ─────────────────────────────────────────────────────────────────────
+    public function approvals(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $status = $request->input('status', 'Pending');
+        $q = LeaveRequest::query()
+            ->with([
+                'employee:id,emp_code,first_name,last_name,display_name,department_id,reporting_manager_id,branch_id,client_id',
+                'employee.department:id,name',
+                'leaveType:id,name,short_code,type',
+            ])
+            ->orderByDesc('created_at');
+
+        if ($status && $status !== 'All') {
+            $q->where('status', $status);
+        }
+
+        // Super admin sees everything. Client admin / branch user see their
+        // tenant's requests so HR can act regardless of who the direct
+        // reporting manager is. Anyone else only sees requests where they
+        // are the reporting manager of the requestor.
+        $isAdminScope = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        if (!$isAdminScope) {
+            $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+            if (!$myEmployeeId) {
+                return response()->json(['data' => []]);
+            }
+            $q->whereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+            });
+        } elseif ($user->user_type !== 'super_admin' && $user->client_id) {
+            $q->where('client_id', $user->client_id);
+        }
+
+        if ($branchId = $request->integer('branch_id')) {
+            $q->where('branch_id', $branchId);
+        }
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $q->whereIn('employee_id', function ($sub) use ($like) {
+                $sub->select('id')->from('employees')
+                    ->where(function ($w) use ($like) {
+                        $w->where('first_name', 'ilike', $like)
+                          ->orWhere('last_name', 'ilike', $like)
+                          ->orWhere('display_name', 'ilike', $like)
+                          ->orWhere('emp_code', 'ilike', $like);
+                    });
+            });
+        }
+
+        return response()->json(['data' => $q->get()]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Approve / Reject — reporting manager or HR acts on a request
     // ─────────────────────────────────────────────────────────────────────
     public function approve(Request $request, int $id)
