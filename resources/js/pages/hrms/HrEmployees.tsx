@@ -704,6 +704,10 @@ export default function HrEmployees() {
   const [empMode, setEmpMode] = useState<'add' | 'edit'>('add');
   const [empEditingName, setEmpEditingName] = useState<string>('');
   const [empStep, setEmpStep] = useState<1 | 2 | 3 | 4>(1);
+  // Highest step the user has reached via "Next". The stepper allows
+  // jumping back to any step <= empMaxStep, but blocks forward jumps so
+  // users can't skip the per-step validation gate.
+  const [empMaxStep, setEmpMaxStep] = useState<1 | 2 | 3 | 4>(1);
   // Step 1 — Employee Details
   // Country/state state holds the master-row ID (as a string) so the API
   // payload can ship `work_country_id` / `country_id` / `state_id` directly.
@@ -987,6 +991,7 @@ export default function HrEmployees() {
 
   const resetEmpForm = () => {
     setEmpStep(1);
+    setEmpMaxStep(1);
     setEWorkCountry('');
     setEFirstName(''); setEMiddleName(''); setELastName('');
     setEDisplayName(''); setEDisplayNameTouched(false); setEActualName('');
@@ -1298,6 +1303,12 @@ export default function HrEmployees() {
     const resumeAt: 1 | 2 | 3 | 4 =
       lastStep === 0 || lastStep === 4 ? 1 : (((lastStep + 1) as 1 | 2 | 3 | 4));
     setEmpStep(resumeAt);
+    // A fully-filled row (lastStep === 4) means every step is editable;
+    // a partially-filled row unlocks up to the resume step (one past the
+    // last completed step); a brand-new wizard locks everything past 1.
+    const maxStep: 1 | 2 | 3 | 4 =
+      lastStep === 4 ? 4 : lastStep === 0 ? 1 : (((lastStep + 1) as 1 | 2 | 3 | 4));
+    setEmpMaxStep(maxStep);
 
     setEmpOpen(true);
   };
@@ -1615,7 +1626,11 @@ export default function HrEmployees() {
     if (!ok) return;
     setEErrors({});
     toast.success(`Step ${empStep} saved`, `Progress saved — you can resume later.`);
-    setEmpStep((s) => ((s + 1) as 1 | 2 | 3 | 4));
+    setEmpStep((s) => {
+      const next = (s + 1) as 1 | 2 | 3 | 4;
+      setEmpMaxStep((m) => (next > m ? next : m));
+      return next;
+    });
   };
 
   const handleSaveEmployee = async () => {
@@ -3261,6 +3276,18 @@ export default function HrEmployees() {
             color: #7c5cfc;
           }
           .emp-stepper-btn:hover { transform: translateY(-1px); }
+          /* Locked steps — user hasn't unlocked them yet by completing
+             the prior step via "Next". Disabled state, no hover lift. */
+          .emp-stepper-btn.is-locked { cursor: not-allowed; }
+          .emp-stepper-btn.is-locked:hover { transform: none; }
+          .emp-stepper-btn.is-locked .emp-stepper-circle:not(.is-active):not(.is-done) { opacity: 0.55; }
+          .emp-stepper-btn.is-locked .emp-stepper-label:not(.is-active):not(.is-done) { opacity: 0.55; }
+          .emp-stepper-btn.is-locked:hover .emp-stepper-circle:not(.is-active):not(.is-done) {
+            background: rgba(124,92,252,0.04); border-color: #e5e7eb; color: #9ca3af;
+          }
+          .emp-stepper-btn.is-locked:hover .emp-stepper-label:not(.is-active):not(.is-done) {
+            color: #9ca3af;
+          }
 
           /* Dark-mode adapters for the wizard chrome — stepper, footer and
              accent surfaces. The light theme keeps its hardcoded #fff /
@@ -3378,14 +3405,21 @@ export default function HrEmployees() {
               ].map((s, idx, arr) => {
                 const active = empStep === s.n;
                 const done = empStep > s.n;
+                // Forward jumps are blocked: a step is only reachable
+                // via the stepper once the user has actually advanced
+                // past it via "Next". Steps already reached stay
+                // freely clickable so users can go back to edit.
+                const locked = s.n > empMaxStep;
                 return (
                   <div key={s.n} className="d-flex align-items-start" style={{ flex: idx === arr.length - 1 ? '0 0 auto' : '1 1 0' }}>
                     <button
                       type="button"
-                      className="emp-stepper-btn"
-                      onClick={() => setEmpStep(s.n as 1 | 2 | 3 | 4)}
+                      className={`emp-stepper-btn${locked ? ' is-locked' : ''}`}
+                      onClick={() => { if (!locked) setEmpStep(s.n as 1 | 2 | 3 | 4); }}
+                      disabled={locked}
                       aria-label={`Go to step ${s.n}: ${s.label}`}
                       aria-current={active ? 'step' : undefined}
+                      title={locked ? 'Complete the current step first' : undefined}
                     >
                       <div className={`emp-stepper-circle${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}>
                         {done ? <i className="ri-check-line" style={{ fontSize: 16 }} /> : s.n}
