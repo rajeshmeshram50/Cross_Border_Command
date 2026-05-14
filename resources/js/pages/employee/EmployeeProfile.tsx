@@ -4,6 +4,10 @@ import { Button, Card, CardBody, Col, Row, Dropdown, DropdownToggle, DropdownMen
 import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import ComingSoonShell from '../../components/ComingSoonShell';
+import HeaderFooterPanel, {
+  DEFAULT_HEADER, DEFAULT_FOOTER,
+  type HeaderConfig, type FooterConfig,
+} from '../hrms/doc-templates/HeaderFooterPanel';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import ExpenseClaimsTable from '../../components/ExpenseClaimsTable';
@@ -821,6 +825,59 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [payrollTab, setPayrollTab] = useState<PayrollTab>('summary');
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
+
+  // ── Signed Documents — final, fully-signed copies for this employee.
+  // Fetched once when the Vault tab is opened. The route accepts either
+  // the numeric employee id or the EMP-### code (the slug the profile
+  // already has), so no extra resolve hop is required.
+  type SignedDoc = {
+    id: number;
+    code: string | null;
+    status: string;
+    template?: { id: number; code: string; name: string; doc_type: string | null } | null;
+    content_html: string | null;
+    header_config: any;
+    footer_config: any;
+    signers: Array<{ name: string; role_name: string; action: string; status: string; acted_at: string | null }>;
+    updated_at: string;
+  };
+  const [signedDocs, setSignedDocs] = useState<SignedDoc[]>([]);
+  const [signedLoading, setSignedLoading] = useState(false);
+  const [signedPreview, setSignedPreview] = useState<SignedDoc | null>(null);
+
+  useEffect(() => {
+    if (tab !== 'vault' || !employeeId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setSignedLoading(true);
+        const { data } = await api.get(`/employees/${encodeURIComponent(employeeId)}/signed-documents`);
+        if (!cancelled) setSignedDocs(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setSignedDocs([]);
+      } finally {
+        if (!cancelled) setSignedLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tab, employeeId]);
+
+  const downloadSignedPdf = async (docId: number, code: string | null) => {
+    try {
+      const resp = await api.get(`/hr-document-signatures/${docId}/download-pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${code || `doc-${docId}`}-signed.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Downloaded', 'Your signed PDF has been saved.');
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    }
+  };
 
   // ── Change-password modal state ─────────────────────────────────────
   // The signed-in employee uses this to rotate their own login password.
@@ -2597,7 +2654,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
       {/* ── Tab: Evidence Vault ── */}
       {tab === 'vault' && (
-        <ComingSoonShell title="Evidence Vault" subtitle="Document repository, signed agreements, ID uploads">
+        <>
           {/* Hero strip — "Evidence Vault — {Name} Document Repository" + KPIs */}
           <Card className="mb-3 border-0" style={{ borderRadius: 14, overflow: 'hidden' }}>
             <div
@@ -2781,6 +2838,104 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
           ))}
 
+          {/* My Signed Documents — live list of completed signature
+              workflows targeting this employee. Sits above the static
+              Org Docs catalogue so the most recent signed copies are
+              top of the page. */}
+          {vaultTab === 'organizational' && (
+            <div
+              className="ep-section-card-flat ep-section-card mb-3"
+              style={{ borderTop: '3px solid #16a34a' }}
+            >
+              <div
+                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
+                style={{
+                  borderBottom: '1px solid rgba(22,163,74,0.18)',
+                  background: 'linear-gradient(135deg, rgba(22,163,74,0.14) 0%, rgba(22,163,74,0.04) 60%, rgba(22,163,74,0.01) 100%)',
+                }}
+              >
+                <div className="d-flex align-items-center gap-2">
+                  <span className="ep-section-icon" style={{ background: 'rgba(22,163,74,0.18)', color: '#16a34a' }}>
+                    <i className="ri-quill-pen-line" />
+                  </span>
+                  <div>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>My Signed Documents</h6>
+                    <small className="text-muted" style={{ fontSize: 11 }}>
+                      Final, fully-signed copies — view in the browser or download as PDF.
+                    </small>
+                  </div>
+                </div>
+                <div className="text-end">
+                  <h4 className="mb-0 fw-bold" style={{ color: '#16a34a', fontSize: 22, lineHeight: 1 }}>{signedDocs.length}</h4>
+                  <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
+                </div>
+              </div>
+              <div className="px-3 pb-3 pt-2">
+                <div className="table-responsive border rounded ep-att-scroll-wrap">
+                  <table className="table align-middle table-nowrap ep-att-table mb-0">
+                    <thead className="table-light">
+                      <tr>
+                        {['SR', 'Document', 'Code', 'Signers', 'Completed', 'Actions'].map(h => (
+                          <th key={h}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {signedLoading ? (
+                        <tr><td colSpan={6} style={{ padding: 22, textAlign: 'center', color: '#9ca3af' }}>
+                          <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
+                          Loading signed documents…
+                        </td></tr>
+                      ) : signedDocs.length === 0 ? (
+                        <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
+                          <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
+                          No signed documents yet. Completed workflows will land here automatically.
+                        </td></tr>
+                      ) : (
+                        signedDocs.map((doc, i) => (
+                          <tr key={doc.id}>
+                            <td className="text-muted">{i + 1}</td>
+                            <td className="fw-semibold">{doc.template?.name || '(template removed)'}</td>
+                            <td>
+                              <code style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '2px 6px', borderRadius: 4 }}>{doc.code || '—'}</code>
+                            </td>
+                            <td>
+                              <div className="d-flex flex-wrap gap-1">
+                                {(doc.signers || []).slice(0, 3).map((s, j) => (
+                                  <span key={j} style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 999, background: s.status === 'Done' ? '#dcfce7' : '#f3f4f6', color: s.status === 'Done' ? '#15803d' : '#6b7280', fontWeight: 700 }}>
+                                    {s.name}
+                                  </span>
+                                ))}
+                                {doc.signers && doc.signers.length > 3 && (
+                                  <span style={{ fontSize: 10.5, color: '#6b7280' }}>+{doc.signers.length - 3} more</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="font-monospace" style={{ fontSize: 11.5 }}>
+                              {new Date(doc.updated_at).toLocaleDateString()}
+                            </td>
+                            <td>
+                              <div className="d-flex gap-1">
+                                <button type="button" onClick={() => setSignedPreview(doc)}
+                                  style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                                  <i className="ri-eye-line me-1" />View
+                                </button>
+                                <button type="button" onClick={() => downloadSignedPdf(doc.id, doc.code)}
+                                  style={{ padding: '4px 10px', borderRadius: 6, border: 0, background: 'linear-gradient(135deg,#dc2626,#ef4444)', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                                  <i className="ri-file-pdf-2-line me-1" />Download PDF
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Organizational Documents sub-tab */}
           {vaultTab === 'organizational' && VAULT_ORG.map(section => (
             <div
@@ -2857,7 +3012,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </div>
             </div>
           ))}
-        </ComingSoonShell>
+        </>
       )}
 
       {/* ── Tab: Payroll Details ── */}
@@ -4988,6 +5143,57 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {/* Face-biometric enrolment — opens from the Security card and posts
           the 128-d descriptor (with consent) to /api/face/register. */}
       <FaceRegistrationModal open={faceRegOpen} onClose={() => setFaceRegOpen(false)} />
+
+      {/* Signed-document preview — opens from the Vault > My Signed
+          Documents table. Renders the frozen content_html inside the
+          locked header/footer chrome so the employee can read the full
+          letter before downloading the PDF. */}
+      {signedPreview && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => setSignedPreview(null)}>
+          <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 900, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff' }}>
+              <div className="d-flex align-items-center justify-content-between">
+                <div className="min-w-0">
+                  <strong style={{ fontSize: 15 }}><i className="ri-file-shield-2-line me-2" />{signedPreview.template?.name || 'Signed Document'}</strong>
+                  <div style={{ fontSize: 11.5, opacity: 0.9, marginTop: 2 }}>
+                    {signedPreview.code ? `${signedPreview.code} · ` : ''}Status: <strong>{signedPreview.status}</strong>
+                  </div>
+                </div>
+                <button type="button" onClick={() => setSignedPreview(null)} aria-label="Close"
+                  style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
+                  <i className="ri-close-line" />
+                </button>
+              </div>
+            </div>
+            <div style={{ padding: 16, background: '#f9fafb', overflowY: 'auto', flex: 1 }}>
+              <HeaderFooterPanel
+                header={{ ...DEFAULT_HEADER, ...(signedPreview.header_config || {}) } as HeaderConfig}
+                setHeader={() => {}}
+                footer={{ ...DEFAULT_FOOTER, ...(signedPreview.footer_config || {}) } as FooterConfig}
+                setFooter={() => {}}
+                readOnly
+              >
+                <div className="tpl-readonly-preview"
+                  style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 260 }}
+                  dangerouslySetInnerHTML={{ __html: signedPreview.content_html || '<p>(empty)</p>' }}
+                />
+              </HeaderFooterPanel>
+            </div>
+            <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" onClick={() => setSignedPreview(null)}
+                style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                Close
+              </button>
+              <button type="button" onClick={() => downloadSignedPdf(signedPreview.id, signedPreview.code)}
+                style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#dc2626,#ef4444)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+                <i className="ri-file-pdf-2-line me-1" />Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -473,11 +473,15 @@ class HrDocumentTemplateController extends Controller
     }
 
     /**
-     * Shared DOCX builder used by both downloadDocx() (raw template) and
-     * generateForEmployee() (resolved template). Pulled out so both paths
-     * emit an identical header/footer/page layout.
+     * Shared DOCX builder. Public + duck-typed so the signature controller
+     * can reuse it against an HrDocumentSignature row (which carries the
+     * same `content_html` / `header_config` / `footer_config` triple).
+     *
+     * Stage 1 — buildDocxFile — produces a tmp file path. Used by the
+     * email-attachment path so we can attach + unlink after sending.
+     * Stage 2 — renderDocx — wraps stage 1 + streams as a download.
      */
-    private function renderDocx(HrDocumentTemplate $row, string $filename)
+    public function buildDocxFile($row): string
     {
         $phpWord = new PhpWord();
         $section = $phpWord->addSection([
@@ -551,6 +555,13 @@ class HrDocumentTemplateController extends Controller
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
         $writer->save($tmp);
+        return $tmp;
+    }
+
+    /** Streams a freshly-built DOCX as a download. Caller picks the filename. */
+    public function renderDocx($row, string $filename)
+    {
+        $tmp = $this->buildDocxFile($row);
         return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 

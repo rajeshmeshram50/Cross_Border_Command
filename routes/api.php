@@ -209,6 +209,18 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/hr-document-signatures/{id}/action',  [HrDocumentSignatureController::class, 'action']);
     Route::post('/hr-document-signatures/{id}/reject',  [HrDocumentSignatureController::class, 'reject']);
     Route::post('/hr-document-signatures/{id}/cancel',  [HrDocumentSignatureController::class, 'cancel']);
+    // Final-output paths — download the signed DOCX or email it to the
+    // subject employee. Both work only after the workflow reaches
+    // 'Completed' (the controller guards the email path; download stays
+    // permissive so admins can grab a snapshot mid-flow if needed).
+    Route::get ('/hr-document-signatures/{id}/download',       [HrDocumentSignatureController::class, 'downloadSigned']);
+    Route::get ('/hr-document-signatures/{id}/download-pdf',   [HrDocumentSignatureController::class, 'downloadSignedPdf']);
+    Route::post('/hr-document-signatures/{id}/email-employee', [HrDocumentSignatureController::class, 'emailToEmployee']);
+    // Per-employee signed-documents list. Accepts numeric id OR emp_code as
+    // the {slug} so the Employee Profile (which only has the EMP-### slug)
+    // doesn't have to resolve the row first. Defaults to status=Completed.
+    Route::get ('/employees/{slug}/signed-documents',          [HrDocumentSignatureController::class, 'forEmployee'])
+        ->where('slug', '[A-Za-z0-9_-]+');
     Route::get ('/hr-document-signatures',              [HrDocumentSignatureController::class, 'index']);
     Route::post('/hr-document-signatures',              [HrDocumentSignatureController::class, 'store']);
     Route::get ('/hr-document-signatures/{id}',         [HrDocumentSignatureController::class, 'show']);

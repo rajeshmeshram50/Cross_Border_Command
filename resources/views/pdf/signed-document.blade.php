@@ -1,0 +1,100 @@
+@php
+  $h = is_array($header) ? $header : [];
+  $f = is_array($footer) ? $footer : [];
+  $title    = (string) ($h['title']    ?? '');
+  $subtitle = (string) ($h['subtitle'] ?? '');
+  $align    = (string) ($h['align']    ?? 'right');
+  $hBg      = (string) ($h['background'] ?? '#ffffff');
+  $hFg      = (string) ($h['text_color'] ?? '#111827');
+  $showLogo = ($h['show_logo'] ?? true) && !empty($logoDataUri);
+  $showTitle= ($h['show_title'] ?? true);
+
+  $fText    = (string) ($f['text']  ?? '');
+  $fAlign   = (string) ($f['align'] ?? 'center');
+  $fBg      = (string) ($f['background'] ?? '#ffffff');
+  $fFg      = (string) ($f['text_color'] ?? '#6b7280');
+  $showPage = !empty($f['show_page_number']);
+@endphp
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>{{ $row->template?->name ?? 'Signed Document' }}</title>
+<style>
+  @page { margin: 110px 40px 70px 40px; }
+  body  { font-family: DejaVu Sans, Arial, sans-serif; font-size: 12px; color: #1f2937; line-height: 1.6; }
+  header {
+    position: fixed; top: -90px; left: 0; right: 0; height: 80px;
+    background: {{ $hBg }}; color: {{ $hFg }};
+    border-bottom: 2px solid #f3f4f6; padding: 0 8px;
+  }
+  header table { width: 100%; height: 100%; border-collapse: collapse; }
+  header td { vertical-align: middle; }
+  header .logo { width: 35%; text-align: left; }
+  header .title { text-align: {{ $align === 'left' ? 'left' : ($align === 'center' ? 'center' : 'right') }}; }
+  header .title .t1 { font-size: 14px; font-weight: 700; }
+  header .title .t2 { font-size: 10px; color: #6b7280; }
+  footer {
+    position: fixed; bottom: -45px; left: 0; right: 0; height: 36px;
+    background: {{ $fBg }}; color: {{ $fFg }}; border-top: 2px solid #f3f4f6;
+    font-size: 10px;
+  }
+  footer table { width: 100%; height: 100%; border-collapse: collapse; }
+  footer td { vertical-align: middle; padding: 0 8px; }
+  .pn { text-align: right; }
+  .body p { margin: 0 0 8px 0; }
+  .body h1, .body h2, .body h3 { margin: 14px 0 8px; }
+  .body table { width: 100%; border-collapse: collapse; }
+  .body img { max-width: 100%; }
+</style>
+</head>
+<body>
+<header>
+  <table>
+    <tr>
+      <td class="logo">
+        @if($showLogo)
+          <img src="{{ $logoDataUri }}" style="max-height:50px; max-width:160px;" />
+        @endif
+      </td>
+      <td class="title">
+        @if($showTitle && $title !== '')
+          <div class="t1">{{ $title }}</div>
+        @endif
+        @if($subtitle !== '')
+          <div class="t2">{{ $subtitle }}</div>
+        @endif
+      </td>
+    </tr>
+  </table>
+</header>
+
+<footer>
+  <table>
+    <tr>
+      <td style="text-align:{{ $fAlign }};">{{ $fText }}</td>
+      @if($showPage)
+        <td class="pn">
+          Page <span class="pagenum"></span>
+        </td>
+      @endif
+    </tr>
+  </table>
+  <script type="text/php">
+    if (isset($pdf)) {
+      $font = $fontMetrics->get_font("DejaVu Sans", "normal");
+      $size = 8;
+      $pageText = "Page {PAGE_NUM} of {PAGE_COUNT}";
+      $w = $fontMetrics->get_text_width($pageText, $font, $size);
+      $x = $pdf->get_width() - $w - 20;
+      $y = $pdf->get_height() - 28;
+      $pdf->page_text($x, $y, $pageText, $font, $size, [0.42, 0.45, 0.50]);
+    }
+  </script>
+</footer>
+
+<main class="body">
+  {!! $bodyHtml !!}
+</main>
+</body>
+</html>
