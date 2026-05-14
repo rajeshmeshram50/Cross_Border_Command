@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Input } from 'reactstrap';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
@@ -44,7 +44,18 @@ const TYPE_TONES: Record<FieldType, { bg: string; fg: string; border: string; la
 export default function HrCustomFields() {
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Back button — prefer browser history so we return to whichever page
+  // the user came from. If they landed here directly (refresh / typed URL /
+  // bookmark), React Router sets location.key to 'default' and there's
+  // nothing to go back to, so fall back to the sibling Document Templates
+  // page rather than a no-op.
+  const goBack = () => {
+    if (location.key !== 'default') navigate(-1);
+    else navigate('/hr/doc-templates');
+  };
 
   const [rows, setRows]   = useState<CustomFieldRow[]>([]);
   const [stats, setStats] = useState<Stats>(ZERO_STATS);
@@ -280,8 +291,8 @@ export default function HrCustomFields() {
           {/* Header */}
           <Card className="mb-3 cf-header-card" style={{ borderRadius: 14 }}>
             <CardBody className="d-flex align-items-center gap-3 flex-wrap">
-              <button type="button" onClick={() => navigate('/hr/doc-templates')}
-                title="Back to Document Templates"
+              <button type="button" onClick={goBack}
+                title="Back"
                 className="cf-back-btn"
                 style={{ width: 36, height: 36, borderRadius: 10, background: '#f3f4f6', border: '1px solid #e5e7eb', color: '#4338ca', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
