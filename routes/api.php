@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
+use App\Http\Controllers\Api\HrCustomFieldController;
 use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\MasterController;
@@ -176,6 +177,16 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/hr-document-templates/{id}/upload-docx',[HrDocumentTemplateController::class, 'uploadDocx']);
     Route::apiResource('hr-document-templates', HrDocumentTemplateController::class)
         ->parameters(['hr-document-templates' => 'id']);
+
+    // HR Custom Fields — user-defined {{variables}} that document templates
+    // reference but the employee dataset doesn't provide. Stats + editor
+    // integration endpoints declared BEFORE apiResource so the literal path
+    // segments aren't captured as ids.
+    Route::get ('/hr-custom-fields/stats',           [HrCustomFieldController::class, 'stats']);
+    Route::get ('/hr-custom-fields/known-tokens',    [HrCustomFieldController::class, 'knownTokens']);
+    Route::post('/hr-custom-fields/validate-tokens', [HrCustomFieldController::class, 'validateTokens']);
+    Route::apiResource('hr-custom-fields', HrCustomFieldController::class)
+        ->parameters(['hr-custom-fields' => 'id']);
 
     // Batch counts for the Master dashboard — one round-trip returns
     // active/inactive/total for every master the user can view.
