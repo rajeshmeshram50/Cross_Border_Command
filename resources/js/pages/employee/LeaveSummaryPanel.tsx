@@ -314,7 +314,15 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
       </div>
 
       {/* ── Approvers popover (small modal) ── */}
-      <Modal isOpen={approversFor !== null} toggle={() => setApproversFor(null)} centered size="sm">
+      <Modal
+        isOpen={approversFor !== null}
+        toggle={() => setApproversFor(null)}
+        centered
+        size="sm"
+        zIndex={2100}
+        modalClassName="ep-leave-modal"
+        backdropClassName="ep-leave-backdrop"
+      >
         <ModalBody>
           <div className="d-flex justify-content-between align-items-center mb-2">
             <h6 className="fw-bold mb-0" style={{ fontSize: 13 }}>Approver chain</h6>
@@ -369,7 +377,15 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
       />
 
       {/* ── Balance History modal ── */}
-      <Modal isOpen={detailsType !== null} toggle={() => setDetailsType(null)} centered size="lg">
+      <Modal
+        isOpen={detailsType !== null}
+        toggle={() => setDetailsType(null)}
+        centered
+        size="lg"
+        zIndex={2100}
+        modalClassName="ep-leave-modal"
+        backdropClassName="ep-leave-backdrop"
+      >
         <ModalBody className="p-4">
           <div className="d-flex justify-content-between align-items-center mb-3">
             <h5 className="fw-bold mb-0">Leave details</h5>

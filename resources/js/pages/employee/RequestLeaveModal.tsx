@@ -146,7 +146,22 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   };
 
   return (
-    <Modal isOpen={isOpen} toggle={onClose} centered size="md" backdrop="static">
+    <Modal
+      isOpen={isOpen}
+      toggle={onClose}
+      centered
+      size="md"
+      backdrop="static"
+      // Reactstrap sets z-index INLINE on its outer wrapper from the
+      // `zIndex` prop (default 1050). CSS classes can't override that
+      // inline style, so a `modalClassName` alone leaves the wrapper at
+      // 1050 — below EmployeeProfile's .ep-fullscreen-overlay (z:1080)
+      // and the modal opens invisible. Pass zIndex={2100} so the
+      // wrapper inline style paints above the overlay.
+      zIndex={2100}
+      modalClassName="ep-leave-modal"
+      backdropClassName="ep-leave-backdrop"
+    >
       <ModalBody className="p-0">
         {/* Header */}
         <div className="d-flex align-items-center justify-content-between" style={{ padding: '18px 22px 14px', borderBottom: '1px solid #e5e7eb' }}>

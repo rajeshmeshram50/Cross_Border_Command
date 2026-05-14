@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
 use App\Http\Controllers\Api\HrDocumentSignatureController;
 use App\Http\Controllers\Api\HrDocumentTemplateController;
+use App\Http\Controllers\Api\HrGeneratedDocumentController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeavePlanController;
 use App\Http\Controllers\Api\LeaveRequestController;
@@ -236,6 +237,15 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/hr-custom-fields/validate-tokens', [HrCustomFieldController::class, 'validateTokens']);
     Route::apiResource('hr-custom-fields', HrCustomFieldController::class)
         ->parameters(['hr-custom-fields' => 'id']);
+
+    // HR Generated Documents — one row per (template × employee) render.
+    // Powers the 3-step "Generate Document" wizard launched from a template
+    // row. Preview returns rendered HTML without persisting; store bulk-
+    // creates rows; downloadDocx streams the rendered output as a .docx.
+    Route::post('/hr-generated-documents/preview',       [HrGeneratedDocumentController::class, 'preview']);
+    Route::get ('/hr-generated-documents/{id}/download', [HrGeneratedDocumentController::class, 'downloadDocx']);
+    Route::post('/hr-generated-documents',               [HrGeneratedDocumentController::class, 'store']);
+    Route::get ('/hr-generated-documents/{id}',          [HrGeneratedDocumentController::class, 'show']);
 
     // Batch counts for the Master dashboard — one round-trip returns
     // active/inactive/total for every master the user can view.

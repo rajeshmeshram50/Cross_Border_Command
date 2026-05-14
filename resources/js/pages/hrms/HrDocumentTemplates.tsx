@@ -112,7 +112,10 @@ export default function HrDocumentTemplates() {
       toast.error('Not active', 'Only Active templates can be generated. Publish this template first.');
       return;
     }
-    window.open(`/api/hr-document-templates/${row.id}/download`, '_blank');
+    // Launch the 3-step Generate wizard (Select Employees → Fill Variables
+    // → Preview & Generate). Replaces the old "download the empty template"
+    // shortcut, which never actually produced a usable document.
+    navigate(`/hr/doc-templates/${row.id}/generate`);
   };
 
   // KPI strip

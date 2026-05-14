@@ -555,13 +555,6 @@ class HrDocumentTemplateController extends Controller
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
         $writer->save($tmp);
-        return $tmp;
-    }
-
-    /** Streams a freshly-built DOCX as a download. Caller picks the filename. */
-    public function renderDocx($row, string $filename)
-    {
-        $tmp = $this->buildDocxFile($row);
         return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 

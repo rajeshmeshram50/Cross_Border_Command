@@ -25,6 +25,11 @@
            the rule applies on the very first open. */
         .modal.ep-reg-modal { z-index: 2100 !important; }
         .modal-backdrop.ep-reg-backdrop { z-index: 2095 !important; }
+        /* Leave tab modals — Request Leave, Leave Request Details, the
+           View Approvers popover and the Balance History viewer. Same
+           lift as ep-reg-modal so they paint above the fullscreen overlay. */
+        .modal.ep-leave-modal { z-index: 2100 !important; }
+        .modal-backdrop.ep-leave-backdrop { z-index: 2095 !important; }
         /* MasterSelect / MasterDatePicker popups default to z-index 2000,
            which sits BELOW our EpModal overlay (5000). Lift them so the
            calendar / dropdown menu paint on top of the modal. */
