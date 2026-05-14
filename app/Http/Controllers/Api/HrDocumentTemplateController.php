@@ -228,15 +228,118 @@ class HrDocumentTemplateController extends Controller
         }
 
         $phpWord = new PhpWord();
-        $section = $phpWord->addSection();
+        // Section page setup — give the header + footer enough vertical room
+        // to render at the heights the SPA preview uses (header ≈ 90pt, footer
+        // ≈ 50pt). PhpWord expects twentieths of a point, hence the *20.
+        $section = $phpWord->addSection([
+            'headerHeight' => 90 * 20,
+            'footerHeight' => 50 * 20,
+        ]);
 
+        // ── Header: logo + title (matches the fixed-height preview zone) ──
+        $header = $section->addHeader();
+        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
+        $logoPath  = $headerCfg['logo_path'] ?? null;
+        $title     = (string) ($headerCfg['title'] ?? '');
+        $subtitle  = (string) ($headerCfg['subtitle'] ?? '');
+        $hAlign    = (string) ($headerCfg['align']    ?? 'space-between');
+
+        // Two-cell table so the logo can sit on one side and the title on
+        // the other (Word's header has no flexbox; a 2-col table is the
+        // standard trick).
+        $table = $header->addTable([
+            'borderSize'   => 0,
+            'cellMargin'   => 0,
+            'unit'         => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
+            'width'        => 100 * 50,
+        ]);
+        $row1 = $table->addRow();
+        $logoCell  = $row1->addCell(2500, ['valign' => 'center']);
+        $titleCell = $row1->addCell(7500, ['valign' => 'center']);
+
+        $absLogo = $logoPath && Storage::disk('public')->exists($logoPath)
+            ? Storage::disk('public')->path($logoPath) : null;
+        if ($absLogo) {
+            try {
+                $logoCell->addImage($absLogo, ['height' => 60, 'width' => 120]);
+            } catch (\Throwable $e) {
+                $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']);
+            }
+        }
+        $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
+        if ($title !== '') {
+            $titleCell->addText($title, ['bold' => true, 'size' => 14], ['alignment' => $align]);
+        }
+        if ($subtitle !== '') {
+            $titleCell->addText($subtitle, ['size' => 10, 'color' => '6B7280'], ['alignment' => $align]);
+        }
+
+        // ── Footer ──
+        // Word footers have no flex layout either — we use a 3-cell table
+        // so footer.align and footer.page_number_align can point at separate
+        // cells (matching the SPA preview). The page number is rendered as
+        // live PAGE / NUMPAGES fields so it stays accurate across exports.
+        $footer = $section->addFooter();
+        $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
+        $footerText = (string) ($footerCfg['text']  ?? '');
+        $fAlign     = (string) ($footerCfg['align'] ?? 'center');
+        $showPage   = !empty($footerCfg['show_page_number']);
+        $pnAlign    = (string) ($footerCfg['page_number_align']  ?? 'right');
+        $pnFormat   = (string) ($footerCfg['page_number_format'] ?? 'Page N of M');
+
+        $fTable = $footer->addTable([
+            'borderSize'   => 0,
+            'cellMargin'   => 0,
+            'unit'         => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
+            'width'        => 100 * 50,
+        ]);
+        $fRow = $fTable->addRow();
+        $cells = [
+            'left'   => $fRow->addCell(3333, ['valign' => 'center']),
+            'center' => $fRow->addCell(3333, ['valign' => 'center']),
+            'right'  => $fRow->addCell(3333, ['valign' => 'center']),
+        ];
+
+        if ($footerText !== '' && isset($cells[$fAlign])) {
+            $cells[$fAlign]->addText($footerText, ['size' => 9, 'color' => '6B7280'], ['alignment' => $fAlign]);
+        }
+
+        if ($showPage && isset($cells[$pnAlign])) {
+            $cell  = $cells[$pnAlign];
+            $style = ['size' => 9, 'color' => '6B7280'];
+            $para  = ['alignment' => $pnAlign];
+            // PhpWord's TextRun lets us interleave literal text with PAGE /
+            // NUMPAGES fields. Word will render the fields live on open.
+            $run = $cell->addTextRun($para);
+            switch ($pnFormat) {
+                case 'N':
+                    $run->addField('PAGE', [], [], '', false);
+                    break;
+                case 'Page N':
+                    $run->addText('Page ', $style);
+                    $run->addField('PAGE', [], [], '', false);
+                    break;
+                case 'N / M':
+                    $run->addField('PAGE', [], [], '', false);
+                    $run->addText(' / ', $style);
+                    $run->addField('NUMPAGES', [], [], '', false);
+                    break;
+                case 'Page N of M':
+                default:
+                    $run->addText('Page ', $style);
+                    $run->addField('PAGE', [], [], '', false);
+                    $run->addText(' of ', $style);
+                    $run->addField('NUMPAGES', [], [], '', false);
+                    break;
+            }
+        }
+
+        // ── Body ──
         $html = (string) ($row->content_html ?: '<p>(empty template)</p>');
-        // PhpWord's HTML loader is strict — wrap in a body so partial fragments parse.
         $wrapped = '<html><body>' . $html . '</body></html>';
         try {
             Html::addHtml($section, $wrapped, false, false);
         } catch (\Throwable $e) {
-            // Fallback for malformed HTML: dump as plain text.
             $section->addText(strip_tags($html));
         }
 
@@ -432,7 +535,65 @@ class HrDocumentTemplateController extends Controller
             'content_html' => 'nullable|string',
             'docx'         => 'nullable|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB,
 
+            // Header / footer config — both are stored as JSON. The frontend
+            // owns the schema; we just validate that it's an object with the
+            // expected keys present.
+            'header_config'                  => 'nullable|array',
+            'header_config.logo_path'        => 'nullable|string|max:500',
+            'header_config.logo_url'         => 'nullable|string|max:500',
+            'header_config.title'            => 'nullable|string|max:191',
+            'header_config.subtitle'         => 'nullable|string|max:191',
+            'header_config.align'            => ['nullable', Rule::in(['left', 'center', 'right', 'space-between'])],
+            'header_config.background'       => 'nullable|string|max:30',
+            'header_config.text_color'       => 'nullable|string|max:30',
+            'header_config.show_logo'        => 'nullable|boolean',
+            'header_config.show_title'       => 'nullable|boolean',
+            // Free-drag positions (percentages of the header container,
+            // center-anchored). Saved alongside the rest of the config.
+            'header_config.logo_pos'         => 'nullable|array',
+            'header_config.logo_pos.x'       => 'nullable|numeric|between:0,100',
+            'header_config.logo_pos.y'       => 'nullable|numeric|between:0,100',
+            'header_config.title_pos'        => 'nullable|array',
+            'header_config.title_pos.x'      => 'nullable|numeric|between:0,100',
+            'header_config.title_pos.y'      => 'nullable|numeric|between:0,100',
+
+            'footer_config'                       => 'nullable|array',
+            'footer_config.text'                  => 'nullable|string|max:500',
+            'footer_config.align'                 => ['nullable', Rule::in(['left', 'center', 'right'])],
+            'footer_config.background'            => 'nullable|string|max:30',
+            'footer_config.text_color'            => 'nullable|string|max:30',
+            'footer_config.show_page_number'      => 'nullable|boolean',
+            'footer_config.page_number_align'     => ['nullable', Rule::in(['left', 'center', 'right'])],
+            'footer_config.page_number_format'    => ['nullable', Rule::in(['N', 'Page N', 'Page N of M', 'N / M'])],
+
             'status' => ['nullable', Rule::in(self::STATUSES)],
+        ]);
+    }
+
+    /* ───── Header logo upload ───── */
+
+    /**
+     * Stand-alone endpoint for uploading the header logo image. Works
+     * pre-save (no template id required) so the wizard can attach a logo
+     * before the row exists, and the path then rides along in the main
+     * save payload under header_config.logo_path.
+     */
+    public function uploadHeaderLogo(Request $request)
+    {
+        $this->authorize($request, 'can_add');
+        $request->validate(['logo' => 'required|file|mimes:png,jpg,jpeg,svg,webp|max:5120']);
+
+        [$clientId] = $this->resolveOwnership($request);
+        $clientSlug = $clientId ? 'c' . $clientId : 'public';
+        $folder = "doc_templates/{$clientSlug}/logos";
+        $file = $request->file('logo');
+        $ext = strtolower($file->getClientOriginalExtension() ?: 'png');
+        $filename = Str::random(16) . '.' . $ext;
+        $path = $file->storeAs($folder, $filename, 'public');
+
+        return response()->json([
+            'path' => $path,
+            'url'  => Storage::disk('public')->url($path),
         ]);
     }
 

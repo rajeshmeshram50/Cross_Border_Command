@@ -171,10 +171,15 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // triggers (sourced from master_trigger_points), signing workflows, and
     // optional MS Word DOCX round-trip. Stats / next-code declared BEFORE
     // apiResource so the literal segments aren't captured as ids.
-    Route::get ('/hr-document-templates/stats',           [HrDocumentTemplateController::class, 'stats']);
-    Route::get ('/hr-document-templates/next-code',       [HrDocumentTemplateController::class, 'nextCode']);
-    Route::get ('/hr-document-templates/{id}/download',   [HrDocumentTemplateController::class, 'downloadDocx']);
-    Route::post('/hr-document-templates/{id}/upload-docx',[HrDocumentTemplateController::class, 'uploadDocx']);
+    Route::get ('/hr-document-templates/stats',                [HrDocumentTemplateController::class, 'stats']);
+    Route::get ('/hr-document-templates/next-code',            [HrDocumentTemplateController::class, 'nextCode']);
+    // Header logo upload is template-agnostic — it stages the file under the
+    // tenant's doc_templates/logos folder and the path travels along in the
+    // main save payload under header_config.logo_path. No template id required
+    // so the wizard can attach a logo before the first save.
+    Route::post('/hr-document-templates/upload-header-logo',   [HrDocumentTemplateController::class, 'uploadHeaderLogo']);
+    Route::get ('/hr-document-templates/{id}/download',        [HrDocumentTemplateController::class, 'downloadDocx']);
+    Route::post('/hr-document-templates/{id}/upload-docx',     [HrDocumentTemplateController::class, 'uploadDocx']);
     Route::apiResource('hr-document-templates', HrDocumentTemplateController::class)
         ->parameters(['hr-document-templates' => 'id']);
 

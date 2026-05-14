@@ -17,7 +17,8 @@ class HrDocumentTemplate extends Model
         'version',
         'is_mandatory', 'requires_signature', 'requires_manager_approval', 'include_in_audit',
         'signing_mode', 'signers',
-        'editor_mode', 'content_html', 'docx_path', 'docx_original_name',
+        'editor_mode', 'content_html', 'header_config', 'footer_config',
+        'docx_path', 'docx_original_name',
         'status', 'created_by',
     ];
 
@@ -27,6 +28,8 @@ class HrDocumentTemplate extends Model
         'requires_manager_approval' => 'boolean',
         'include_in_audit'          => 'boolean',
         'signers'                   => 'array',
+        'header_config'             => 'array',
+        'footer_config'             => 'array',
     ];
 
     public function client(): BelongsTo

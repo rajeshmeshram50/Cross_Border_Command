@@ -5,6 +5,10 @@ import { useToast } from '../../../contexts/ToastContext';
 import api from '../../../api';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import TemplateEditor from './TemplateEditor';
+import HeaderFooterPanel, {
+  DEFAULT_HEADER, DEFAULT_FOOTER,
+  type HeaderConfig, type FooterConfig,
+} from './HeaderFooterPanel';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export type EmployeeCategory = 'IT' | 'Non-IT' | 'Legal';
@@ -46,6 +50,8 @@ export interface TemplateRow {
   signers: SignerRow[] | null;
   editor_mode: 'web' | 'word';
   content_html: string | null;
+  header_config: HeaderConfig | null;
+  footer_config: FooterConfig | null;
   docx_path: string | null;
   docx_original_name: string | null;
   status: DocStatus;
@@ -111,6 +117,8 @@ export default function TemplateFormPage() {
   // Step 3
   const [editorMode, setEditorMode] = useState<'web' | 'word'>('web');
   const [contentHtml, setContentHtml] = useState<string>('');
+  const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(DEFAULT_HEADER);
+  const [footerConfig, setFooterConfig] = useState<FooterConfig>(DEFAULT_FOOTER);
   const docxRef = useRef<HTMLInputElement | null>(null);
 
   // Lookups
@@ -184,6 +192,11 @@ export default function TemplateFormPage() {
 
         setEditorMode(row.editor_mode || 'web');
         setContentHtml(row.content_html || '');
+
+        // Header / footer — merge over defaults so missing keys (older rows
+        // saved before this column existed) still render correctly.
+        setHeaderConfig({ ...DEFAULT_HEADER, ...(row.header_config || {}) } as HeaderConfig);
+        setFooterConfig({ ...DEFAULT_FOOTER, ...(row.footer_config || {}) } as FooterConfig);
       } catch (err: any) {
         if (cancelled) return;
         const msg = err?.response?.data?.message
@@ -256,6 +269,8 @@ export default function TemplateFormPage() {
       signers,
       editor_mode: editorMode,
       content_html: contentHtml,
+      header_config: headerConfig,
+      footer_config: footerConfig,
     };
     if (status) payload.status = status;
     return payload;
@@ -473,6 +488,8 @@ export default function TemplateFormPage() {
             <Step3
               editorMode={editorMode} setEditorMode={setEditorMode}
               contentHtml={contentHtml} setContentHtml={setContentHtml}
+              headerConfig={headerConfig} setHeaderConfig={setHeaderConfig}
+              footerConfig={footerConfig} setFooterConfig={setFooterConfig}
               signers={signers}
               editingId={editing?.id || null}
               docxName={editing?.docx_original_name || null}
@@ -764,6 +781,8 @@ function Step2(props: {
 function Step3(props: {
   editorMode: 'web' | 'word'; setEditorMode: (v: 'web' | 'word') => void;
   contentHtml: string; setContentHtml: (v: string) => void;
+  headerConfig: HeaderConfig; setHeaderConfig: (v: HeaderConfig) => void;
+  footerConfig: FooterConfig; setFooterConfig: (v: FooterConfig) => void;
   signers: SignerRow[];
   editingId: number | null;
   docxName: string | null;
@@ -779,46 +798,78 @@ function Step3(props: {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
-        <button type="button" style={tabBtn(props.editorMode === 'web')}  onClick={() => props.setEditorMode('web')}><i className="ri-global-line me-1" />Web Editor</button>
-        <button type="button" style={tabBtn(props.editorMode === 'word')} onClick={() => props.setEditorMode('word')}><i className="ri-file-word-2-line me-1" />MS Word</button>
+      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <div style={{ fontSize: 11.5, color: '#6b7280' }}>
+          <i className="ri-information-line me-1" />
+          Header and footer have fixed heights — click any zone in the preview to edit logo / text / styling.
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" style={tabBtn(props.editorMode === 'web')}  onClick={() => props.setEditorMode('web')}><i className="ri-global-line me-1" />Web Editor</button>
+          <button type="button" style={tabBtn(props.editorMode === 'word')} onClick={() => props.setEditorMode('word')}><i className="ri-file-word-2-line me-1" />MS Word</button>
+        </div>
       </div>
 
       {props.editorMode === 'web' && (
-        <TemplateEditor value={props.contentHtml} onChange={props.setContentHtml} signers={props.signers} />
+        <HeaderFooterPanel
+          header={props.headerConfig} setHeader={props.setHeaderConfig}
+          footer={props.footerConfig} setFooter={props.setFooterConfig}
+        >
+          <TemplateEditor value={props.contentHtml} onChange={props.setContentHtml} signers={props.signers} />
+        </HeaderFooterPanel>
       )}
 
       {props.editorMode === 'word' && (
-        <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, background: '#fff' }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>MS Word Workflow</div>
-          <ol style={{ paddingLeft: 18, fontSize: 13, color: '#374151', lineHeight: 1.7, marginBottom: 16 }}>
-            <li>Download → Edit in Word</li>
-            <li>Add tables, formatting, signature blocks</li>
-            <li>Upload revised version below — it replaces the saved DOCX</li>
-          </ol>
-          <div className="d-flex gap-2 flex-wrap">
-            <button type="button" onClick={props.onDownloadDocx} disabled={!props.editingId}
-              style={{ padding: '8px 16px', background: '#1f2937', color: '#fff', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.editingId ? 'pointer' : 'not-allowed', opacity: props.editingId ? 1 : 0.5 }}>
-              <i className="ri-download-2-line me-1" /> Download DOCX
-            </button>
-            <input ref={props.docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) props.onUploadDocx(f); e.currentTarget.value = ''; }} />
-            <button type="button" onClick={() => props.docxRef.current?.click()} disabled={!props.editingId}
-              style={{ padding: '8px 16px', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.editingId ? 'pointer' : 'not-allowed', opacity: props.editingId ? 1 : 0.5 }}>
-              <i className="ri-upload-2-line me-1" /> Upload Revised DOCX
-            </button>
+        <>
+          {/* MS Word workflow card */}
+          <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, background: '#fff', marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>MS Word Workflow</div>
+            <ol style={{ paddingLeft: 18, fontSize: 13, color: '#374151', lineHeight: 1.7, marginBottom: 16 }}>
+              <li>Download → the generated DOCX comes pre-baked with the fixed header (logo + title) and footer</li>
+              <li>Add tables, formatting, signature blocks in Word</li>
+              <li>Upload revised version below — it replaces the saved DOCX and refreshes the web preview</li>
+            </ol>
+            <div className="d-flex gap-2 flex-wrap">
+              <button type="button" onClick={props.onDownloadDocx} disabled={!props.editingId}
+                style={{ padding: '8px 16px', background: '#1f2937', color: '#fff', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.editingId ? 'pointer' : 'not-allowed', opacity: props.editingId ? 1 : 0.5 }}>
+                <i className="ri-download-2-line me-1" /> Download DOCX (with header/footer)
+              </button>
+              <input ref={props.docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) props.onUploadDocx(f); e.currentTarget.value = ''; }} />
+              <button type="button" onClick={() => props.docxRef.current?.click()} disabled={!props.editingId}
+                style={{ padding: '8px 16px', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.editingId ? 'pointer' : 'not-allowed', opacity: props.editingId ? 1 : 0.5 }}>
+                <i className="ri-upload-2-line me-1" /> Upload Revised DOCX
+              </button>
+            </div>
+            {!props.editingId && (
+              <div style={{ marginTop: 10, fontSize: 11.5, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', padding: '6px 10px', borderRadius: 8 }}>
+                <i className="ri-information-line me-1" />Save the template as a draft first to enable DOCX export/import.
+              </div>
+            )}
+            {props.docxName && (
+              <div style={{ marginTop: 12, padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12.5, color: '#374151' }}>
+                <i className="ri-file-word-2-line me-1" /> Latest uploaded: <strong>{props.docxName}</strong>
+              </div>
+            )}
           </div>
-          {!props.editingId && (
-            <div style={{ marginTop: 10, fontSize: 11.5, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', padding: '6px 10px', borderRadius: 8 }}>
-              <i className="ri-information-line me-1" />Save the template as a draft first to enable DOCX export/import.
-            </div>
-          )}
-          {props.docxName && (
-            <div style={{ marginTop: 12, padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12.5, color: '#374151' }}>
-              <i className="ri-file-word-2-line me-1" /> Latest uploaded: <strong>{props.docxName}</strong>
-            </div>
-          )}
-        </div>
+
+          {/* Page preview — read-only render of the latest content with the
+              fixed header/footer wrapped around it. Useful so the user can
+              verify the uploaded DOCX content came through correctly. */}
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 0.4, margin: '4px 4px 8px' }}>Preview</div>
+          <HeaderFooterPanel
+            header={props.headerConfig} setHeader={props.setHeaderConfig}
+            footer={props.footerConfig} setFooter={props.setFooterConfig}
+            readOnly
+          >
+            <div className="tpl-readonly-preview"
+              style={{ fontSize: 13.5, lineHeight: 1.6, color: '#374151', minHeight: 260 }}
+              // The HTML originates from PhpWord's docxToHtml (server-controlled) +
+              // the Tiptap editor's getHTML (sanitised by ProseMirror), so dangerous
+              // dangerouslySetInnerHTML is acceptable here.
+              dangerouslySetInnerHTML={{ __html: props.contentHtml || '<p style="color:#9ca3af;font-style:italic;">No content yet — download the DOCX, edit it in Word, then upload it back to preview here.</p>' }}
+            />
+          </HeaderFooterPanel>
+        </>
       )}
     </>
   );
