@@ -471,9 +471,28 @@ class LeavePlanController extends Controller
         // Plan name lookup so each row can show which plan an employee is on.
         $planNames = LeavePlans::whereIn('id', $planIds)->pluck('plan_name', 'id')->all();
 
-        $rows = $employees->map(function ($e) use ($columns, $quotaByPlanType, $planNames) {
+        // Used-days lookup: SUM(days) of Approved leave_requests per
+        // (employee, leave_type). Single SQL pass; cell render below does
+        // O(1) hash lookup. Period-aware proration is a future task — for
+        // now we sum across all approved history.
+        $empIds = $employees->pluck('id')->all();
+        $usedByEmpType = [];
+        if (!empty($empIds)) {
+            $usedRows = DB::table('leave_requests')
+                ->whereIn('employee_id', $empIds)
+                ->where('status', 'Approved')
+                ->groupBy('employee_id', 'leave_type_id')
+                ->select('employee_id', 'leave_type_id', DB::raw('SUM(days) as used_days'))
+                ->get();
+            foreach ($usedRows as $r) {
+                $usedByEmpType[(int)$r->employee_id][(int)$r->leave_type_id] = (float) $r->used_days;
+            }
+        }
+
+        $rows = $employees->map(function ($e) use ($columns, $quotaByPlanType, $planNames, $usedByEmpType) {
             $planId = (int) $e->leave_plan_id;
             $planQuotas = $quotaByPlanType[$planId] ?? [];
+            $empUsed = $usedByEmpType[$e->id] ?? [];
             $balances = [];
             foreach ($columns as $col) {
                 $entry = $planQuotas[$col['leave_type_id']] ?? null;
@@ -489,14 +508,14 @@ class LeavePlanController extends Controller
                     ];
                     continue;
                 }
-                // No usage tracking yet — `used` is 0 until leave_requests exists.
+                $used = (float) ($empUsed[$col['leave_type_id']] ?? 0);
                 $balances[] = [
                     'leave_type_id' => $col['leave_type_id'],
                     'applies' => true,
                     'unlimited' => $entry['unlimited'],
                     'quota' => $entry['quota'],
-                    'used' => 0,
-                    'available' => $entry['unlimited'] ? null : $entry['quota'],
+                    'used' => $used,
+                    'available' => $entry['unlimited'] ? null : max(0, $entry['quota'] - $used),
                 ];
             }
 

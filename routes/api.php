@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeavePlanController;
+use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\OrganizationTypeController;
@@ -211,6 +212,15 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // with their plan's leave-type quotas. Optional filters: department_id,
     // location, search.
     Route::get   ('/leave-balances',                             [LeavePlanController::class, 'leaveBalances']);
+
+    // Leave Requests — employee self-service. Index returns the signed-in
+    // employee's own requests (or the explicit ?employee_id= for HR view).
+    Route::get   ('/leave-requests',                             [LeaveRequestController::class, 'index']);
+    Route::post  ('/leave-requests',                             [LeaveRequestController::class, 'store']);
+    Route::get   ('/leave-requests/{id}/approvers',              [LeaveRequestController::class, 'approvers']);
+    Route::post  ('/leave-requests/{id}/approve',                [LeaveRequestController::class, 'approve']);
+    Route::post  ('/leave-requests/{id}/reject',                 [LeaveRequestController::class, 'reject']);
+    Route::post  ('/leave-requests/{id}/cancel',                 [LeaveRequestController::class, 'cancel']);
 
     // Subscription (client buy plan via Razorpay)
     Route::get('/subscription/plans', [SubscriptionController::class, 'plans']);

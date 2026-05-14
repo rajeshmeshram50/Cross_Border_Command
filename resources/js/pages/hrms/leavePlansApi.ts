@@ -178,3 +178,80 @@ export const leaveTypesApi = {
   remove: (id: number) =>
     api.delete(`/master/leave_type/${id}`),
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Leave Requests — employee self-service apply / list / approve. Used by
+// the Employee Profile's Leave tab and (future) the HR approval queue.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface ApiLeaveRequest {
+  id: number;
+  client_id: number | null;
+  branch_id: number | null;
+  employee_id: number;
+  leave_type_id: number;
+  leave_plan_id: number | null;
+  from_date: string;
+  to_date: string;
+  days: string | number;
+  day_type: 'full' | 'first_half' | 'second_half';
+  reason: string | null;
+  attachment_path: string | null;
+  notify: Record<string, any> | null;
+  handover_required: boolean;
+  cover_person_id: number | null;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled';
+  approved_by: number | null;
+  approved_at: string | null;
+  approver_comment: string | null;
+  created_at: string;
+  updated_at: string;
+  leave_type?: { id: number; name: string; short_code: string; type: string | null };
+  leave_plan?: { id: number; plan_name: string };
+  cover_person?: { id: number; first_name: string; last_name: string | null; display_name: string | null };
+  approver?: { id: number; name: string };
+}
+
+export interface ApiLeaveRequestPayload {
+  employee_id?: number;
+  leave_type_id: number;
+  from_date: string;
+  to_date: string;
+  day_type?: 'full' | 'first_half' | 'second_half';
+  reason?: string;
+  attachment_path?: string;
+  notify?: Record<string, any>;
+  handover_required?: boolean;
+  cover_person_id?: number;
+  handover_notes?: string;
+  critical_tasks?: string;
+  avail_on_call?: boolean;
+  emergency_number?: string;
+  avail_note?: string;
+}
+
+export interface ApiLeaveApprover {
+  role: string;
+  employee_id: number;
+  name: string;
+  email: string | null;
+}
+
+export const leaveRequestsApi = {
+  list: (params: { employee_id?: number; status?: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' } = {}) =>
+    api.get<{ data: ApiLeaveRequest[] }>('/leave-requests', { params }).then(r => r.data.data),
+
+  create: (payload: ApiLeaveRequestPayload) =>
+    api.post<{ data: ApiLeaveRequest }>('/leave-requests', payload).then(r => r.data.data),
+
+  approvers: (id: number) =>
+    api.get<{ data: ApiLeaveApprover[] }>(`/leave-requests/${id}/approvers`).then(r => r.data.data),
+
+  approve: (id: number, comment?: string) =>
+    api.post<{ data: ApiLeaveRequest }>(`/leave-requests/${id}/approve`, { comment }).then(r => r.data.data),
+
+  reject: (id: number, comment?: string) =>
+    api.post<{ data: ApiLeaveRequest }>(`/leave-requests/${id}/reject`, { comment }).then(r => r.data.data),
+
+  cancel: (id: number) =>
+    api.post<{ data: ApiLeaveRequest }>(`/leave-requests/${id}/cancel`).then(r => r.data.data),
+};

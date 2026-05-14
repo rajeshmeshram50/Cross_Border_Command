@@ -9,6 +9,7 @@ import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import { leavePlansApi } from './leavePlansApi';
 // Borrow the polished pill-button styles used by the recruitment / hiring
 // request modal so the Add Employee wizard footer matches the same design
 // language (gradient primary CTA + soft outlined secondary).
@@ -114,8 +115,9 @@ const NOTICE_PERIOD_OPTIONS = [
   { value: CUSTOM_NOTICE_VALUE, label: 'Set Custom Notice Period…' },
 ];
 
-// Step 3 — Work Details option lists
-const LEAVE_PLAN_OPTIONS    = ['Leave Policy','Standard Leave','Senior Leave Policy'].map(v => ({ value: v, label: v }));
+// Step 3 — Work Details option lists. LEAVE_PLAN_OPTIONS was hardcoded
+// to three plan names; it's now fetched live from /api/leave-plans into
+// component state (see leavePlanOptions inside the component below).
 const HOLIDAY_LIST_OPTIONS  = ['Holiday Calendar','India Holidays 2026','Global Holidays 2026'].map(v => ({ value: v, label: v }));
 const SHIFT_OPTIONS         = ['General Shift','Morning Shift','Evening Shift','Night Shift','Flexible'].map(v => ({ value: v, label: v }));
 const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Only','Rotational'].map(v => ({ value: v, label: v }));
@@ -763,7 +765,26 @@ export default function HrEmployees() {
   const [eCustomProbation, setECustomProbation]  = useState('');
   const [eCustomNotice, setECustomNotice]        = useState('');
   // Step 3 — Work Details
-  const [eLeavePlan, setELeavePlan]              = useState('Leave Policy');
+  // eLeavePlan stores the LeavePlan id as a string (the legacy column is
+  // string(100); the new normalized pivot stores numeric leave_plan_id).
+  // Dropdown options are fetched live from /api/leave-plans so HR sees the
+  // actual plans configured for the branch instead of three hardcoded names.
+  const [eLeavePlan, setELeavePlan]              = useState('');
+  const [leavePlanOptions, setLeavePlanOptions]  = useState<Array<{ value: string; label: string }>>([]);
+  useEffect(() => {
+    leavePlansApi.list()
+      .then(plans => {
+        setLeavePlanOptions(plans.map(p => ({ value: String(p.id), label: p.plan_name })));
+        // Auto-select the default plan for the branch when creating a new
+        // employee. Doesn't override an existing selection (edit mode).
+        setELeavePlan(prev => {
+          if (prev) return prev;
+          const def = plans.find(p => p.is_default);
+          return def ? String(def.id) : (plans[0] ? String(plans[0].id) : '');
+        });
+      })
+      .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
+  }, []);
   const [eHolidayList, setEHolidayList]          = useState('Holiday Calendar');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
   const [eShift, setEShift]                      = useState('General Shift');
@@ -1628,6 +1649,20 @@ export default function HrEmployees() {
           setEditingDbId(newId);
         }
       }
+      // Mirror the Leave Plan selection into the leave_plan_employees pivot
+      // so the Leave Balances tab + employee Leave summary have data. The
+      // legacy `leave_plan` string column on employees is updated in the
+      // same PUT/POST above; this normalized assignment is what new code
+      // (LeavePlanController::leaveBalances) reads. Fire-and-forget so a
+      // backend hiccup doesn't block the wizard.
+      const empId = editingDbIdRef.current;
+      if (empId && eLeavePlan) {
+        const planId = Number(eLeavePlan);
+        if (Number.isFinite(planId)) {
+          leavePlansApi.assignEmployees(planId, [empId])
+            .catch(err => console.warn('[HrEmployees] leave plan assign failed', err));
+        }
+      }
       // Refresh background lists so the half-filled row appears in the
       // disabled directory — fire-and-forget so the wizard can advance
       // immediately instead of waiting for a full /employees roundtrip
@@ -1743,6 +1778,18 @@ export default function HrEmployees() {
           'Employee saved',
           `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`,
         );
+      }
+      // Mirror Leave Plan into the normalized pivot — same logic as
+      // persistCurrentStep above. Done on final Submit too so a user that
+      // changes the plan dropdown right before clicking Save still has
+      // their assignment recorded.
+      const finalEmpId = editingDbIdRef.current;
+      if (finalEmpId && eLeavePlan) {
+        const planId = Number(eLeavePlan);
+        if (Number.isFinite(planId)) {
+          leavePlansApi.assignEmployees(planId, [finalEmpId])
+            .catch(err => console.warn('[HrEmployees] leave plan assign failed', err));
+        }
       }
       // Same fire-and-forget treatment as persistCurrentStep — the modal
       // closes immediately and the table refreshes in the background, so
@@ -3925,7 +3972,7 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={6}>
                       <label className="emp-label">Leave Plan<span className="req">*</span></label>
-                      <MasterSelect value={eLeavePlan} onChange={setELeavePlan} options={LEAVE_PLAN_OPTIONS} />
+                      <MasterSelect value={eLeavePlan} onChange={setELeavePlan} options={leavePlanOptions} placeholder={leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} />
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Holiday List<span className="req">*</span></label>

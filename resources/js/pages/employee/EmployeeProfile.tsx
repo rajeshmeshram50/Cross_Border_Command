@@ -11,6 +11,7 @@ import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import './EmployeeProfile.css';
 import ImageCropperModal from '../../components/ui/ImageCropperModal';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leavePlansApi';
 
 // Custom portal-based modal — renders directly to document.body so it always
 // escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
@@ -5135,6 +5136,84 @@ function ApplyLeavePanel(props: {
     onClose,
   } = props;
 
+  // Live leave-type catalog — replaces the hardcoded LEAVE_TYPES slugs so
+  // Stage 1 shows the actual types HR configured for the branch, and so
+  // Submit can post a real master_leave_types.id to /api/leave-requests.
+  // Visual fields (icon, colours) are derived from the type's category.
+  const [apiLeaveTypes, setApiLeaveTypes] = useState<typeof LEAVE_TYPES>([]);
+  const [submitting, setSubmitting] = useState(false);
+  useEffect(() => {
+    leaveTypesApi.list()
+      .then(types => {
+        const mapped: typeof LEAVE_TYPES = types
+          .filter(t => t.status === 'Active')
+          .map(t => {
+            const isUnpaid = t.type === 'Unpaid Leave';
+            const isSick = t.is_sick_medical || /sick/i.test(t.name);
+            const isCompoff = t.type === 'Compoff';
+            const icon = isSick ? 'ri-emotion-sad-line'
+              : isCompoff ? 'ri-time-line'
+              : isUnpaid ? 'ri-file-list-3-line'
+              : 'ri-focus-3-line';
+            const iconBg = isSick ? '#fee2e2'
+              : isCompoff ? '#dcfce7'
+              : isUnpaid ? '#e5e7eb'
+              : '#fed7aa';
+            const iconFg = isSick ? '#dc2626'
+              : isCompoff ? '#15803d'
+              : isUnpaid ? '#6b7280'
+              : '#c2410c';
+            return {
+              id: String(t.id),
+              name: t.name,
+              desc: t.description || `${t.type ?? 'Regular'} leave`,
+              icon, iconBg, iconFg,
+              days: null, used: null, total: null,
+              daysColor: iconFg,
+              noLimit: isUnpaid,
+            };
+          });
+        setApiLeaveTypes(mapped);
+      })
+      .catch(err => console.warn('[ApplyLeavePanel] leave types load failed', err));
+  }, []);
+  // Render-time list — falls back to the hardcoded sample slugs only when
+  // the backend hasn't responded yet (or the branch has no types created).
+  const renderLeaveTypes = apiLeaveTypes.length > 0 ? apiLeaveTypes : LEAVE_TYPES;
+
+  const submitApplication = async () => {
+    if (!leaveType) { alert('Please pick a leave type first.'); return; }
+    const numericId = Number(leaveType);
+    if (!Number.isFinite(numericId)) {
+      alert('This wizard is showing demo types — please refresh once you have created leave types in HR > Leave > Leave Types.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await leaveRequestsApi.create({
+        employee_id: employeeId ? Number(employeeId) : undefined,
+        leave_type_id: numericId,
+        from_date: fromDate,
+        to_date: toDate || fromDate,
+        day_type: dayType === 'half' ? 'first_half' : 'full',
+        reason: reason || undefined,
+        notify: { ...notify, employees_csv: specificEmps || undefined },
+        handover_required: handoverReq,
+        handover_notes: handoverNotes || undefined,
+        critical_tasks: criticalTasks || undefined,
+        avail_on_call: availOnCall,
+        emergency_number: emergencyNumber || undefined,
+        avail_note: availNote || undefined,
+      });
+      onClose();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Submit failed';
+      alert(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const totalStages = LEAVE_STAGES.length;
   const currentStage = LEAVE_STAGES[stage - 1];
 
@@ -5148,7 +5227,7 @@ function ApplyLeavePanel(props: {
   const department = employee?.department || 'Engineering';
   const designation = employee?.designation || 'Software Engineer';
 
-  const selectedLeaveType = LEAVE_TYPES.find(lt => lt.id === leaveType);
+  const selectedLeaveType = renderLeaveTypes.find(lt => lt.id === leaveType);
   const totalDays = dayType === 'half' ? (diffDaysInclusive(fromDate, toDate) ? 0.5 : 0) : diffDaysInclusive(fromDate, toDate);
 
   const fileInputRef = (typeof window !== 'undefined') ? { current: null as HTMLInputElement | null } : { current: null };
@@ -5237,7 +5316,7 @@ function ApplyLeavePanel(props: {
           {stage === 1 && (
             <>
               <p className="lvm-section-heading">Select Leave Type</p>
-              {LEAVE_TYPES.map(lt => {
+              {renderLeaveTypes.map(lt => {
                 const selected = leaveType === lt.id;
                 return (
                   <button
@@ -5664,8 +5743,13 @@ function ApplyLeavePanel(props: {
               Next Stage <i className="ri-arrow-right-s-line" />
             </button>
           ) : (
-            <button type="button" className="lvm-btn-next" onClick={onClose}>
-              Submit Application <i className="ri-check-line" />
+            <button
+              type="button"
+              className="lvm-btn-next"
+              onClick={submitApplication}
+              disabled={submitting}
+            >
+              {submitting ? <>Submitting… <i className="ri-loader-4-line ri-spin" /></> : <>Submit Application <i className="ri-check-line" /></>}
             </button>
           )}
         </div>
