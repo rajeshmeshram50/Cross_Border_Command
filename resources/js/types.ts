@@ -48,6 +48,9 @@ export interface AuthUser {
   // dropdown (anyone with direct reports + every branch / client user).
   is_reporting_manager?: boolean;
   has_direct_reports?: boolean;
+  // Snapshot count of pending signature tasks (rows where this user is the
+  // next signer). Drives the badge on the profile dropdown's Inbox item.
+  inbox_count?: number;
   status: string;
   designation?: string;
   phone?: string;

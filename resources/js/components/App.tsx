@@ -68,6 +68,7 @@ import EmployeeProfile from '../pages/employee/EmployeeProfile';
 import PublicOnboarding from '../pages/PublicOnboarding';
 import ClockIn from '../pages/ClockIn';
 import MyTeam from '../pages/MyTeam';
+import Inbox from '../pages/Inbox';
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -442,6 +443,7 @@ function DashboardRoutes({ user }: { user: any }) {
                   hitting this URL get a friendly 404 toast from the page. */}
               <Route path="/clock-in" element={<ClockIn />} />
               <Route path="/my-team"  element={<MyTeam />} />
+              <Route path="/inbox"    element={<Inbox />} />
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/hr" element={<HrDashboard />} />
