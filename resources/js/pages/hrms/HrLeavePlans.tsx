@@ -6,6 +6,8 @@ import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse } from './leavePlansApi';
+import EmployeePicker, { PickedEmployee } from '../../components/ui/EmployeePicker';
+import api from '../../api';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -2799,6 +2801,59 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
     ? cfg.chain
     : [{ approver_kind: 'reporting_manager' }];
 
+  // Local cache of full PickedEmployee objects keyed by level index — the
+  // chain entry only stores ID + label, so on first render we hydrate
+  // photos/designations by calling /api/employees once with all stored
+  // IDs in scope. The user gets nice chips immediately on reload instead
+  // of bare "Employee #12" placeholders.
+  const [chainPicked, setChainPicked] = useState<Record<number, PickedEmployee | null>>({});
+  useEffect(() => {
+    // Only hydrate the entries we haven't already resolved this session.
+    const needIds = chain
+      .map((l, idx) => ({ idx, l }))
+      .filter(({ idx, l }) =>
+        !chainPicked[idx]
+        && (l.approver_kind === 'user' || l.approver_kind === 'employee')
+        && (l.approver_user_id || l.approver_employee_id)
+      );
+    if (needIds.length === 0) return;
+    // The employees endpoint supports a numeric search but not a bulk
+    // id-in filter, so fall back to per-row fetches. Batched in a single
+    // Promise.all so we only pay one render cycle. Keep this minimal —
+    // most chains are 1-3 levels.
+    Promise.all(needIds.map(({ idx, l }) => {
+      // For `user` kind we have a user_id, not an employee_id. The
+      // employees endpoint accepts ?user_id=N as part of the standard
+      // filters. For `employee` kind we have the id directly.
+      const params = l.approver_kind === 'employee'
+        ? { id: l.approver_employee_id }
+        : { user_id: l.approver_user_id };
+      return api.get('/employees', { params: { ...params, per_page: 1 } })
+        .then(r => {
+          const raw = r.data?.data ?? r.data ?? [];
+          const e = Array.isArray(raw) ? raw[0] : null;
+          if (!e) return { idx, picked: null as PickedEmployee | null };
+          const picked: PickedEmployee = {
+            id: e.id,
+            user_id: e.user_id ?? null,
+            name: (e.display_name?.trim() || `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim()) || `Employee #${e.id}`,
+            emp_code: e.emp_code || `EMP-${e.id}`,
+            designation: e.designation?.name || e.designation_name || null,
+            photo_url: e.profile_photo_url || e.photo_url || null,
+          };
+          return { idx, picked };
+        })
+        .catch(() => ({ idx, picked: null as PickedEmployee | null }));
+    })).then(results => {
+      setChainPicked(prev => {
+        const next = { ...prev };
+        results.forEach(({ idx, picked }) => { next[idx] = picked; });
+        return next;
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.chain]);
+
   const setChain = (next: ApprovalLevel[]) => update({ chain: next });
   const updateLevel = (idx: number, patch: Partial<ApprovalLevel>) => {
     const next = chain.map((c, i) => i === idx ? { ...c, ...patch } : c);
@@ -2918,28 +2973,34 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
                     )}
 
                     {level.approver_kind === 'user' && (
-                      <input
-                        type="number"
-                        className="lts-input"
-                        placeholder="User ID"
-                        style={{ width: 140 }}
-                        value={level.approver_user_id ?? ''}
-                        onChange={e => updateLevel(idx, {
-                          approver_user_id: e.target.value ? Number(e.target.value) : null,
-                        })}
+                      <EmployeePicker
+                        value={chainPicked[idx] ?? (level.approver_user_id
+                          ? { id: 0, user_id: level.approver_user_id, name: level.label || `User #${level.approver_user_id}`, emp_code: '' }
+                          : null)}
+                        placeholder="Search user…"
+                        onChange={(picked) => {
+                          setChainPicked(prev => ({ ...prev, [idx]: picked }));
+                          updateLevel(idx, {
+                            approver_user_id: picked?.user_id ?? null,
+                            label: picked?.name ?? null,
+                          });
+                        }}
                       />
                     )}
 
                     {level.approver_kind === 'employee' && (
-                      <input
-                        type="number"
-                        className="lts-input"
-                        placeholder="Employee ID"
-                        style={{ width: 160 }}
-                        value={level.approver_employee_id ?? ''}
-                        onChange={e => updateLevel(idx, {
-                          approver_employee_id: e.target.value ? Number(e.target.value) : null,
-                        })}
+                      <EmployeePicker
+                        value={chainPicked[idx] ?? (level.approver_employee_id
+                          ? { id: level.approver_employee_id, name: level.label || `Employee #${level.approver_employee_id}`, emp_code: '' }
+                          : null)}
+                        placeholder="Search employee…"
+                        onChange={(picked) => {
+                          setChainPicked(prev => ({ ...prev, [idx]: picked }));
+                          updateLevel(idx, {
+                            approver_employee_id: picked?.id ?? null,
+                            label: picked?.name ?? null,
+                          });
+                        }}
                       />
                     )}
 
@@ -2964,11 +3025,11 @@ function ApprovalSectionView({ cfg, update }: { cfg: ApprovalConfig; update: (p:
                         ? `Any user holding the ${ROLE_OPTIONS.find(r => r.value === level.approver_role)?.label ?? level.approver_role} role can approve.`
                         : 'Pick a role to gate this level.')}
                       {level.approver_kind === 'user' && (level.approver_user_id
-                        ? `Only user #${level.approver_user_id} can approve this level.`
-                        : 'Enter the user ID that should act on this level.')}
+                        ? `Only ${level.label || `user #${level.approver_user_id}`} can approve this level.`
+                        : 'Search and pick the user who should act on this level.')}
                       {level.approver_kind === 'employee' && (level.approver_employee_id
-                        ? `Only the user linked to employee #${level.approver_employee_id} can approve.`
-                        : 'Enter the employee ID whose user account should approve.')}
+                        ? `Only ${level.label || `employee #${level.approver_employee_id}`} can approve this level.`
+                        : 'Search and pick the employee whose user account should approve.')}
                     </span>
                   </div>
                 </div>

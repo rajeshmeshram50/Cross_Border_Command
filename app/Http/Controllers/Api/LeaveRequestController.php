@@ -5,10 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
+use App\Models\User;
+use App\Notifications\LeaveRequestNotification;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\Rule;
 
 class LeaveRequestController extends Controller
@@ -136,6 +141,10 @@ class LeaveRequestController extends Controller
             'created_by' => $user->id,
         ]);
 
+        // Fire-and-forget notifications. Wrap in try/catch so a flaky SMTP
+        // doesn't kill a successful submit — the row is already persisted.
+        $this->notifyForSubmission($row, $employee);
+
         return response()->json(['data' => $row->load(['leaveType:id,name,short_code', 'leavePlan:id,plan_name'])], 201);
     }
 
@@ -260,6 +269,10 @@ class LeaveRequestController extends Controller
         }
         $row->status = 'Cancelled';
         $row->save();
+
+        // Let the current-level approver know they can drop it from the queue.
+        $this->notifyForCancellation($row);
+
         return response()->json(['data' => $row]);
     }
 
@@ -311,6 +324,10 @@ class LeaveRequestController extends Controller
             }
         }
         $row->save();
+
+        // Fire notifications based on the new state. Logged-only on failure.
+        $this->notifyForDecision($row, $data['comment'] ?? null);
+
         return response()->json(['data' => $row->fresh(['leaveType:id,name,short_code'])]);
     }
 
@@ -494,5 +511,140 @@ class LeaveRequestController extends Controller
             }
         }
         return false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Notification dispatchers — fire and forget. Every send is wrapped
+    // in try/catch + Log::warning so a flaky SMTP / missing recipient
+    // doesn't break the API call that triggered it.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private function notifyForSubmission(LeaveRequest $row, Employee $employee): void
+    {
+        // 1) Current-level approver
+        $approverNotifiable = $this->resolveApproverNotifiable($row, 1, $employee);
+        $this->safeSend($approverNotifiable, new LeaveRequestNotification($row, 'submitted_to_approver'));
+
+        // 2) CC'd colleagues from notify.employee_ids
+        $ccIds = $this->extractNotifyEmployeeIds($row);
+        foreach ($ccIds as $ccEmpId) {
+            $cc = Employee::find($ccEmpId);
+            if (!$cc) continue;
+            $n = LeaveRequestNotification::notifiableFromEmployee($cc);
+            $this->safeSend($n instanceof AnonymousNotifiable ? $n->route('mail', $cc->email) : $n,
+                new LeaveRequestNotification($row, 'cc_submitted'));
+        }
+    }
+
+    private function notifyForDecision(LeaveRequest $row, ?string $comment): void
+    {
+        $employee = Employee::find($row->employee_id);
+        if (!$employee) return;
+        $employeeNotifiable = LeaveRequestNotification::notifiableFromEmployee($employee);
+        $employeeNotifiable = $employeeNotifiable instanceof AnonymousNotifiable
+            ? $employeeNotifiable->route('mail', $employee->email)
+            : $employeeNotifiable;
+
+        if ($row->status === 'Rejected') {
+            $this->safeSend($employeeNotifiable, new LeaveRequestNotification($row, 'rejected', $comment));
+            return;
+        }
+
+        if ($row->status === 'Approved') {
+            // Final approval reached — tell the employee
+            $this->safeSend($employeeNotifiable, new LeaveRequestNotification($row, 'approved', $comment));
+            return;
+        }
+
+        // Still Pending → advanced to a new level. Notify the next approver.
+        $next = $this->resolveApproverNotifiable($row, (int)$row->current_approval_level, $employee);
+        $this->safeSend($next, new LeaveRequestNotification($row, 'submitted_to_approver'));
+    }
+
+    private function notifyForCancellation(LeaveRequest $row): void
+    {
+        $employee = Employee::find($row->employee_id);
+        if (!$employee) return;
+        $approverNotifiable = $this->resolveApproverNotifiable($row, (int)$row->current_approval_level, $employee);
+        $this->safeSend($approverNotifiable, new LeaveRequestNotification($row, 'cancelled'));
+    }
+
+    /**
+     * Resolve the notifiable for the given level (1-based) on a request.
+     * Returns null when the chain entry is role-based (no concrete
+     * recipient resolvable without a roles table) or the level is out
+     * of range / has no linked user account.
+     */
+    private function resolveApproverNotifiable(LeaveRequest $row, int $level, Employee $employee): mixed
+    {
+        $chain = $row->approval_chain ?? [];
+        $entry = $chain[$level - 1] ?? null;
+        if (!$entry) {
+            // Pre-migration fallback — single Reporting Manager line.
+            if ($employee->reporting_manager_id) {
+                $rm = Employee::find($employee->reporting_manager_id);
+                return $rm ? $this->employeeAsRecipient($rm) : null;
+            }
+            return null;
+        }
+
+        $kind = $entry['approver_kind'] ?? 'reporting_manager';
+
+        if (!empty($entry['approver_user_id'])) {
+            $u = User::find((int)$entry['approver_user_id']);
+            return $u && $u->email ? $u : null;
+        }
+
+        if (!empty($entry['approver_employee_id'])) {
+            $emp = Employee::find((int)$entry['approver_employee_id']);
+            return $emp ? $this->employeeAsRecipient($emp) : null;
+        }
+
+        if ($kind === 'reporting_manager' && $employee->reporting_manager_id) {
+            $rm = Employee::find($employee->reporting_manager_id);
+            return $rm ? $this->employeeAsRecipient($rm) : null;
+        }
+
+        // Role-based approvers — no email push for v1. The recipient will
+        // see the request in their /hr/leave-approvals queue on next visit.
+        return null;
+    }
+
+    private function employeeAsRecipient(Employee $emp): mixed
+    {
+        if ($emp->user_id) {
+            $u = User::find($emp->user_id);
+            if ($u && $u->email) return $u;
+        }
+        if (!empty($emp->email)) {
+            return (new AnonymousNotifiable)->route('mail', $emp->email);
+        }
+        return null;
+    }
+
+    private function extractNotifyEmployeeIds(LeaveRequest $row): array
+    {
+        $notify = $row->notify;
+        if (!is_array($notify)) return [];
+        $ids = $notify['employee_ids'] ?? null;
+        if (!is_array($ids)) return [];
+        return array_values(array_filter(array_map('intval', $ids), fn($v) => $v > 0));
+    }
+
+    private function safeSend(mixed $notifiable, LeaveRequestNotification $notif): void
+    {
+        if (!$notifiable) return;
+        try {
+            if ($notifiable instanceof AnonymousNotifiable) {
+                Notification::send($notifiable, $notif);
+            } else {
+                $notifiable->notify($notif);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('[leave-notify] dispatch failed: ' . $e->getMessage(), [
+                'request_id' => $notif->request->id ?? null,
+                'kind'       => $notif->kind ?? null,
+            ]);
+        }
     }
 }
