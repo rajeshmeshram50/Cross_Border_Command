@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\SignedDocumentMail;
 use App\Models\Employee;
 use App\Models\HrDocumentSignature;
 use App\Models\HrDocumentTemplate;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 
 /**
@@ -258,6 +261,143 @@ class HrDocumentSignatureController extends Controller
         $row->save();
         $row->load(self::WITH);
         return response()->json($row);
+    }
+
+    /* ───── SIGNED OUTPUT (download + email) ───── */
+
+    /**
+     * Per-employee list — returns the signature runs targeting an employee.
+     * Accepts either the numeric id or the EMP-### code as `{slug}` so the
+     * Employee Profile (which only knows the emp_code) doesn't need a
+     * separate resolve hop. Defaults to status=Completed but the SPA can
+     * widen with ?status=all to include in-flight runs.
+     */
+    public function forEmployee(Request $request, $slug)
+    {
+        $emp = is_numeric($slug)
+            ? Employee::find((int) $slug)
+            : Employee::where('emp_code', $slug)->first();
+        if (!$emp) abort(404, 'Employee not found');
+
+        $status = (string) $request->query('status', 'Completed');
+        $q = HrDocumentSignature::query()->with(self::WITH)
+            ->where('employee_id', $emp->id);
+        if ($status !== 'all') $q->where('status', $status);
+
+        $this->applyScope($q, $request->user());
+        return response()->json($q->orderByDesc('id')->get());
+    }
+
+    /**
+     * PDF version of the signed document. Wraps the frozen content_html
+     * in the same fixed-height header/footer chrome and pipes it through
+     * DomPDF. Used by the Employee Profile so employees can self-serve a
+     * portable copy without needing Word installed.
+     */
+    public function downloadSignedPdf(Request $request, $id)
+    {
+        $row = $this->loadForRead($request, (int) $id);
+        $row->load(self::WITH);
+
+        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
+        $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
+        $logoUrl = null;
+        if (!empty($headerCfg['logo_path'])) {
+            $abs = storage_path('app/public/' . ltrim((string) $headerCfg['logo_path'], '/'));
+            if (is_file($abs)) {
+                // Inline as data URI — DomPDF can't reach the storage URL
+                // because of relative-path resolution in headless renders.
+                $mime = 'image/' . (pathinfo($abs, PATHINFO_EXTENSION) ?: 'png');
+                $logoUrl = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($abs));
+            }
+        }
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', [
+            'row'        => $row,
+            'header'     => $headerCfg,
+            'footer'     => $footerCfg,
+            'logoDataUri'=> $logoUrl,
+            'bodyHtml'   => (string) ($row->content_html ?: '<p>(empty)</p>'),
+        ]);
+        $pdf->setPaper('A4');
+
+        $filename = ($row->code ?: ('doc-' . $row->id)) . '-signed.pdf';
+        return $pdf->download($filename);
+    }
+
+    /**
+     * Stream the run's current content as a DOCX. For a completed run this
+     * is the final signed copy (every {{SignerNSign}} has been replaced
+     * with the signer's typed name). For an in-flight run it still works —
+     * the signatures collected so far are baked in; unsigned spots stay
+     * as their placeholder tokens.
+     */
+    public function downloadSigned(Request $request, $id)
+    {
+        $row = $this->loadForRead($request, (int) $id);
+        $filename = ($row->code ?: ('doc-' . $row->id)) . '-signed.docx';
+        return (new HrDocumentTemplateController())->renderDocx($row, $filename);
+    }
+
+    /**
+     * Email the signed DOCX to the subject employee. Records an audit
+     * event so the sender can see the document was dispatched (and to
+     * whom) from the audit trail modal.
+     */
+    public function emailToEmployee(Request $request, $id)
+    {
+        $row = $this->loadForRead($request, (int) $id);
+        $row->load(self::WITH);
+
+        if ($row->status !== 'Completed') {
+            abort(422, 'Only completed workflows can be emailed. Current status: ' . $row->status);
+        }
+
+        $emp = $row->employee;
+        $email = $emp?->email;
+        if (!$email) {
+            abort(422, 'Subject employee has no email address on file.');
+        }
+
+        $orgName = $emp->client?->org_name
+            ?? $request->user()?->client?->org_name
+            ?? config('mail.from.name', 'HR');
+        $recipientName = $emp->display_name
+            ?: trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''))
+            ?: $email;
+        $filename = ($row->code ?: ('doc-' . $row->id)) . '-signed.docx';
+
+        $tmp = (new HrDocumentTemplateController())->buildDocxFile($row);
+
+        try {
+            Mail::to($email)->send(new SignedDocumentMail(
+                $row, $tmp, $filename, $recipientName, $orgName,
+            ));
+        } catch (\Throwable $e) {
+            Log::error('[hr-document-signatures] email failed', ['id' => $row->id, 'err' => $e->getMessage()]);
+            @unlink($tmp);
+            abort(500, 'Email delivery failed: ' . $e->getMessage());
+        }
+        @unlink($tmp);
+
+        $user = $request->user();
+        $row->audit_log = array_merge($row->audit_log ?? [], [
+            $this->event($user, 'emailed', "Signed document emailed to {$recipientName} <{$email}>"),
+        ]);
+        $row->save();
+
+        return response()->json([
+            'message' => 'Signed document emailed.',
+            'sent_to' => $email,
+        ]);
+    }
+
+    /** Same applyScope wrapper as elsewhere, scoped for read-only fetches. */
+    private function loadForRead(Request $request, int $id): HrDocumentSignature
+    {
+        $q = HrDocumentSignature::query();
+        $this->applyScope($q, $request->user());
+        return $q->findOrFail($id);
     }
 
     /* ───── HELPERS ───── */

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\HrDocumentTemplate;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
@@ -26,7 +25,17 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
  */
 class HrTemplateDocxRenderer
 {
-    public static function render(HrDocumentTemplate $row, string $filename): BinaryFileResponse
+    /**
+     * Build the DOCX and return the absolute path to the generated tmp file.
+     * Callers that need to attach the file to email (and unlink afterwards)
+     * use this; callers that just want a download response use `render`.
+     *
+     * The row is duck-typed (no explicit class hint) so this works equally
+     * for HrDocumentTemplate, HrGeneratedDocument clones, and the signature
+     * runtime's HrDocumentSignature snapshots — they all carry the same
+     * `header_config` / `footer_config` / `content_html` triple.
+     */
+    public static function buildPath($row): string
     {
         $phpWord = new PhpWord();
         $section = $phpWord->addSection([
@@ -45,6 +54,13 @@ class HrTemplateDocxRenderer
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
         $writer->save($tmp);
+        return $tmp;
+    }
+
+    /** Streams the freshly-built DOCX as a download response. */
+    public static function render($row, string $filename): BinaryFileResponse
+    {
+        $tmp = self::buildPath($row);
         return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 
