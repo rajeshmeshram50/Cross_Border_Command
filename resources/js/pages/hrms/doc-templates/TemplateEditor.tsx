@@ -51,13 +51,15 @@ export type SignerLite = { role_name?: string | null; designation_name?: string 
 
 // Build per-signer placeholder rows from the workflow configured in step 2.
 // Mirrors the right-hand "REQUIRED SIGNER VARIABLES" panel from the screenshot.
+// Designation token is intentionally omitted — the wizard no longer captures
+// a designation per signer (role + action + days are the only inputs).
 export function buildSignerGroup(signers: SignerLite[]): PlaceholderGroup {
   const fields: PlaceholderField[] = [];
-  signers.forEach((_s, i) => {
+  signers.forEach((s, i) => {
     const n = i + 1;
-    fields.push({ label: `Signer ${n} Name`,        token: `{{Signer${n}Name}}` });
-    fields.push({ label: `Signer ${n} Designation`, token: `{{Signer${n}Designation}}` });
-    fields.push({ label: `Signer ${n} Date`,        token: `{{Signer${n}Date}}` });
+    const roleLabel = s.role_name ? ` (${s.role_name})` : '';
+    fields.push({ label: `Signer ${n} Name${roleLabel}`, token: `{{Signer${n}Name}}` });
+    fields.push({ label: `Signer ${n} Date`,             token: `{{Signer${n}Date}}` });
   });
   return { id: 'signers', label: 'Workflow Signers', fields };
 }
@@ -91,7 +93,9 @@ export default function TemplateEditor({
   useEffect(() => {
     if (!editor) return;
     if (value !== lastSyncedRef.current && value !== editor.getHTML()) {
-      editor.commands.setContent(value || '<p></p>', false);
+      // Tiptap v3: second arg is options; `emitUpdate: false` suppresses the
+      // onUpdate callback so this hydration doesn't bounce back through onChange.
+      editor.commands.setContent(value || '<p></p>', { emitUpdate: false });
       lastSyncedRef.current = value;
     }
   }, [value, editor]);
