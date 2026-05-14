@@ -3405,6 +3405,12 @@ function Stage2Documents({ emp, onDocsChanged }: {
   // Company 1" row they can't get rid of. The user clicks "Add Previous
   // Company" if they actually had prior employers.
   const [prevCompanies, setPrevCompanies] = useState<PrevCompanyRow[]>([]);
+  // Has-experience flag drives the section UI: 'yes' shows the company
+  // form, 'no' shows the fresher confirmation. null = user hasn't
+  // chosen yet (initial state for an empty list). When the server hands
+  // us saved companies we auto-set this to 'yes' so reopening the modal
+  // doesn't ask the question again.
+  const [hasExperience, setHasExperience] = useState<'yes' | 'no' | null>(null);
 
   // Hydrate from server when the modal opens for this employee.
   useEffect(() => {
@@ -3416,10 +3422,15 @@ function Stage2Documents({ emp, onDocsChanged }: {
       if (list.length === 0) {
         // Fresher / no prior employer — keep the list empty so the UI
         // shows the "Skip if fresher" hint instead of an unfillable
-        // placeholder row.
+        // placeholder row. Don't pre-select Yes/No either; let the
+        // user pick so the question is explicit.
         setPrevCompanies([]);
+        setHasExperience(null);
         return;
       }
+      // Server has saved companies → the user already answered "yes"
+      // in a previous session, no need to ask again.
+      setHasExperience('yes');
       setPrevCompanies(list.map(p => ({
         id: p.id,
         company_name:   p.company_name   ?? '',
@@ -3464,6 +3475,16 @@ function Stage2Documents({ emp, onDocsChanged }: {
     if (row.start_date && row.end_date && row.end_date < row.start_date) {
       toast.error('Invalid date range', 'End date cannot be before start date.');
       return row.id ?? null;
+    }
+    // Phone — accept blank (it's optional) but reject anything outside
+    // the ITU-T E.164 7–15 digit window so we don't ship junk like
+    // "asas11111111" to the BGV vendor.
+    if (row.contact_number.trim()) {
+      const phoneDigits = row.contact_number.replace(/\D/g, '');
+      if (phoneDigits.length < 7 || phoneDigits.length > 15) {
+        toast.error('Invalid contact number', 'Phone number must be 7 to 15 digits.');
+        return row.id ?? null;
+      }
     }
     const payload = {
       company_name:   row.company_name.trim(),
@@ -3655,8 +3676,15 @@ function Stage2Documents({ emp, onDocsChanged }: {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('document_key', docKey);
+        // IMPORTANT: don't set Content-Type manually for FormData.
+        // The api instance's default is 'application/json', so we override
+        // with `undefined` to let axios sniff the FormData body and emit
+        // the proper `multipart/form-data; boundary=...` header. Setting
+        // a bare `multipart/form-data` string strips the boundary,
+        // which made the prod backend respond 422 ("file is required")
+        // because PHP couldn't parse the body and never saw the upload.
         await api.post(`/employees/${emp.dbId}/documents`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
+          headers: { 'Content-Type': undefined as unknown as string },
         });
         await reloadDocs();
         toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
@@ -3832,29 +3860,109 @@ function Stage2Documents({ emp, onDocsChanged }: {
             <p className="onb-doc-prev-sub">Optional · Skip if this is the employee's first job</p>
           </div>
           <span className="onb-doc-prev-pill">
-            {prevCompanies.length === 0
+            {hasExperience === 'no'
               ? 'Fresher'
-              : `${prevCompanies.length} ${prevCompanies.length === 1 ? 'Company' : 'Companies'}`}
+              : prevCompanies.length === 0
+                ? 'Not set'
+                : `${prevCompanies.length} ${prevCompanies.length === 1 ? 'Company' : 'Companies'}`}
           </span>
         </div>
 
-        {/* Empty-state hint — surfaces when the list is empty so the user
-            knows the section is intentionally blank, not broken. */}
-        {prevCompanies.length === 0 && (
+        {/* ── Yes / No selector ─────────────────────────────────────────
+            Drives whether the experience form renders or the section
+            collapses into a fresher confirmation. The two-button radio
+            mirrors patterns already used elsewhere in the wizard. */}
+        <div style={{ padding: '14px 14px 0' }}>
+          <p className="onb-init-subgroup" style={{ marginBottom: 8 }}>
+            Has the employee worked anywhere before?
+          </p>
+          <div className="d-flex gap-2 flex-wrap" role="radiogroup" aria-label="Has previous experience">
+            {([
+              { v: 'yes' as const, label: 'Yes — they have prior experience', icon: 'ri-briefcase-line' },
+              { v: 'no'  as const, label: 'No — this is their first job',     icon: 'ri-graduation-cap-line' },
+            ]).map(opt => {
+              const active = hasExperience === opt.v;
+              return (
+                <button
+                  key={opt.v}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    setHasExperience(opt.v);
+                    // Picking "Yes" with an empty list — pre-seed a draft
+                    // row so the user has somewhere to type immediately.
+                    if (opt.v === 'yes' && prevCompanies.length === 0) {
+                      addCompany();
+                    }
+                  }}
+                  style={{
+                    flex: '1 1 240px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    border: `1.5px solid ${active ? '#7c3aed' : 'var(--vz-border-color)'}`,
+                    background: active ? 'rgba(124,58,237,0.08)' : 'var(--vz-card-bg)',
+                    color: active ? '#5a3fd1' : 'var(--vz-body-color)',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all .15s ease',
+                  }}
+                >
+                  <span style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: '50%',
+                    border: `2px solid ${active ? '#7c3aed' : '#cbd5e1'}`,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    {active && <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#7c3aed' }} />}
+                  </span>
+                  <i className={opt.icon} style={{ fontSize: 16 }} />
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Fresher confirmation banner — shown when user picked "No" */}
+        {hasExperience === 'no' && (
+          <div
+            className="onb-doc-bgv-banner"
+            style={{ margin: '12px 14px', alignItems: 'flex-start' }}
+          >
+            <i className="ri-checkbox-circle-line" style={{ fontSize: 14, marginTop: 1 }} />
+            <span>
+              <strong>Marked as fresher.</strong> No previous employer documents
+              are required. You can change this anytime by selecting <strong>Yes</strong> above.
+            </span>
+          </div>
+        )}
+
+        {/* ── Prompt — shown before the user has picked Yes or No */}
+        {hasExperience === null && prevCompanies.length === 0 && (
           <div
             className="onb-doc-bgv-banner"
             style={{ margin: '12px 14px', alignItems: 'flex-start' }}
           >
             <i className="ri-information-line" style={{ fontSize: 14, marginTop: 1 }} />
             <span>
-              No previous employer to record? You can skip this section — it's only
-              required when the employee has worked somewhere before. Click
-              <strong> &quot;+ Add Previous Company&quot; </strong> below if you do need to add one.
+              Pick <strong>Yes</strong> to record one or more previous employers,
+              or <strong>No</strong> if this is the employee's first job.
             </span>
           </div>
         )}
 
-        {prevCompanies.map((c, idx) => {
+        {/* Experience form (companies + docs) — rendered only when the
+            user has explicitly answered Yes. */}
+        {hasExperience === 'yes' && prevCompanies.map((c, idx) => {
           // Per-company doc upload key — namespaced so each row has its
           // own slots in the employee_documents table without colliding
           // with the catalogue keys.
@@ -4042,21 +4150,54 @@ function Stage2Documents({ emp, onDocsChanged }: {
                   <label className="onb-init-label">Company Contact Number</label>
                   <input
                     className="onb-init-input"
+                    type="tel"
+                    inputMode="tel"
                     placeholder="+91 XXXXX XXXXX"
+                    // Hard-cap raw chars at 20 (room for "+91 12345 67890")
+                    // before we strip down to the 15-digit ITU-T limit.
+                    maxLength={20}
                     value={c.contact_number}
-                    onChange={e => updateCompany(c._localKey, { contact_number: e.target.value })}
+                    onChange={e => {
+                      // Only allow digits + the usual phone-format symbols
+                      // (+, space, dash, parentheses). Letters / anything
+                      // else is silently dropped as the user types. Then
+                      // cap the raw digit count at 15 (ITU-T E.164 max).
+                      const cleaned = e.target.value.replace(/[^0-9+\-\s()]/g, '');
+                      const digits  = cleaned.replace(/\D/g, '');
+                      const capped  = digits.length > 15
+                        ? cleaned.slice(0, cleaned.length - (digits.length - 15))
+                        : cleaned;
+                      updateCompany(c._localKey, { contact_number: capped });
+                    }}
                     onBlur={() => persistCompany(c._localKey)}
                     disabled={c._busy}
                   />
+                  {/* Inline length hint — only shown once the user has
+                      typed something but the digit count is outside
+                      the 7–15 ITU-T window. Stays silent while empty
+                      so it isn't visual noise for fresh rows. */}
+                  {(() => {
+                    const d = c.contact_number.replace(/\D/g, '');
+                    if (d.length === 0 || (d.length >= 7 && d.length <= 15)) return null;
+                    return (
+                      <small style={{ color: '#dc2626', fontSize: 11.5 }}>
+                        Enter 7–15 digits
+                      </small>
+                    );
+                  })()}
                 </Col>
               </Row>
             </div>
           </div>
         );})}
 
-        <button type="button" className="onb-doc-add-comp" onClick={addCompany}>
-          <i className="ri-add-line" /> Add Previous Company
-        </button>
+        {/* Add button — only when the user is in Yes mode. Hidden for
+            Fresher so the "No" answer feels final, not half-complete. */}
+        {hasExperience === 'yes' && (
+          <button type="button" className="onb-doc-add-comp" onClick={addCompany}>
+            <i className="ri-add-line" /> Add Previous Company
+          </button>
+        )}
       </div>
 
       {/* Shared delete-confirmation modal (same component used on the

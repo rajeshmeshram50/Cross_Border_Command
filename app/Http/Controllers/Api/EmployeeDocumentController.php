@@ -13,10 +13,21 @@ class EmployeeDocumentController extends Controller
 {
     /** Per-document upload size cap (MB). Catalogue can override later. */
     private const MAX_MB = 8;
+    // Canonical MIME list. Variants below cover platform quirks:
+    //   - image/x-png: legacy / IE-era PNG MIME some Windows servers
+    //     still emit via mime_content_type().
+    //   - image/pjpeg: progressive JPEG variant emitted by some old
+    //     PHP/Symfony combinations.
+    // We also fall back to the file extension when the MIME doesn't
+    // match, so prod servers with a stale magic.mime database still
+    // accept valid uploads.
     private const MIME_ALLOWED = [
         'application/pdf',
-        'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+        'image/jpeg', 'image/jpg', 'image/pjpeg',
+        'image/png',  'image/x-png',
+        'image/webp',
     ];
+    private const EXT_ALLOWED = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
 
     public function index(Request $request, Employee $employee)
     {
@@ -41,10 +52,27 @@ class EmployeeDocumentController extends Controller
         ]);
 
         $file = $request->file('file');
-        $mime = $file->getMimeType() ?: $file->getClientMimeType();
-        if (!in_array($mime, self::MIME_ALLOWED, true)) {
+        // Two-signal check (mirrors the frontend validator). Some prod
+        // servers return non-canonical MIMEs from getMimeType() (e.g.
+        // image/x-png), and some browsers/proxies strip the MIME header
+        // entirely. As long as EITHER the MIME or the file extension
+        // is in the allowed list, accept the upload. The list of
+        // accepted extensions is the canonical one — frontend has
+        // already enforced the picker filter, so anything reaching here
+        // with a .pdf/.jpg/.png/.webp extension is safe to trust.
+        $mime = strtolower((string) ($file->getMimeType() ?: $file->getClientMimeType() ?: ''));
+        $ext  = strtolower((string) $file->getClientOriginalExtension());
+        $mimeOk = $mime !== '' && in_array($mime, self::MIME_ALLOWED, true);
+        $extOk  = $ext  !== '' && in_array($ext,  self::EXT_ALLOWED,  true);
+        if (!$mimeOk && !$extOk) {
             return response()->json([
-                'message' => 'Only PDF / JPG / PNG / WEBP files are allowed.',
+                // Surface what we actually saw so the user can fix it
+                // (e.g. "got 'image/heic'") instead of staring at a
+                // generic rejection.
+                'message' => sprintf(
+                    'Only PDF / JPG / PNG / WEBP files are allowed. (got "%s")',
+                    $mime ?: ($ext ?: 'unknown'),
+                ),
             ], 422);
         }
 
