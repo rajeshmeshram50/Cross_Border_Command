@@ -319,6 +319,7 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
         toggle={() => setApproversFor(null)}
         centered
         size="sm"
+        zIndex={2100}
         modalClassName="ep-leave-modal"
         backdropClassName="ep-leave-backdrop"
       >
@@ -381,6 +382,7 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
         toggle={() => setDetailsType(null)}
         centered
         size="lg"
+        zIndex={2100}
         modalClassName="ep-leave-modal"
         backdropClassName="ep-leave-backdrop"
       >

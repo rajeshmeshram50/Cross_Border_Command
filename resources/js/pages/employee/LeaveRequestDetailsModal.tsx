@@ -91,7 +91,10 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
       centered
       size="lg"
       backdrop="static"
-      // Same z-index lift as RequestLeaveModal — see EmployeeProfile.css.
+      // See RequestLeaveModal — zIndex prop is required to override
+      // reactstrap's inline-style default of 1050 (below the
+      // EmployeeProfile fullscreen overlay at 1080).
+      zIndex={2100}
       modalClassName="ep-leave-modal"
       backdropClassName="ep-leave-backdrop"
     >

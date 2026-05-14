@@ -152,11 +152,13 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
       centered
       size="md"
       backdrop="static"
-      // EmployeeProfile uses an .ep-fullscreen-overlay at z-index:1080 to
-      // claim the whole viewport. Reactstrap defaults to 1055 for the
-      // modal which sits BELOW that overlay — i.e. the modal opens
-      // invisible. Every other modal on this page bumps to z-index 2100;
-      // we do the same via these classes (rules in EmployeeProfile.css).
+      // Reactstrap sets z-index INLINE on its outer wrapper from the
+      // `zIndex` prop (default 1050). CSS classes can't override that
+      // inline style, so a `modalClassName` alone leaves the wrapper at
+      // 1050 — below EmployeeProfile's .ep-fullscreen-overlay (z:1080)
+      // and the modal opens invisible. Pass zIndex={2100} so the
+      // wrapper inline style paints above the overlay.
+      zIndex={2100}
       modalClassName="ep-leave-modal"
       backdropClassName="ep-leave-backdrop"
     >
