@@ -1,21 +1,27 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
 import api from '../../api';
+import { MasterDatePicker } from '../master/masterFormKit';
 import {
   employeeBalancesApi,
   leaveRequestsApi,
   ApiEmployeeBalanceType,
 } from '../hrms/leavePlansApi';
+import '../../../css/request-leave-drawer.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RequestLeaveModal — Keka-style compact "Request Leave" form. Drops the
-// heavy 7-stage wizard for a single focused modal with:
-//   - From / To date strip with auto-computed day count
+// RequestLeaveModal — Keka-style right-side drawer. Sits on top of the
+// EmployeeProfile fullscreen overlay (z-index 1080) via zIndex={2100}.
+//
+// Layout:
+//   - Header: gradient strip, leave icon, title + subtitle, X close button
+//   - From / To date strip using MasterDatePicker for proper calendar UX
 //   - Leave type dropdown showing "N days available" per option
 //   - Note textarea
-//   - Notify field that searches employees by name / emp_code and lets
-//     the requester pick one or more colleagues to CC
-//   - Submit posts to /api/leave-requests; parent refetches on success
+//   - Notify list — searchable employee chooser with checkbox rows
+//     showing avatar / designation / emp_code. Selected colleagues
+//     render as removable chips above the search.
+//   - Footer: Cancel + Request buttons
 // ─────────────────────────────────────────────────────────────────────────────
 interface NotifyEmployee {
   id: number;
@@ -27,9 +33,9 @@ interface NotifyEmployee {
 
 interface Props {
   isOpen: boolean;
-  employeeId: string;            // the requester (parent's employee record id)
+  employeeId: string;
   onClose: () => void;
-  onSubmitted: () => void;       // parent should refetch lists on success
+  onSubmitted: () => void;
 }
 
 function diffDaysInclusive(from: string, to: string): number {
@@ -40,6 +46,11 @@ function diffDaysInclusive(from: string, to: string): number {
   if (ms < 0) return 0;
   return Math.round(ms / 86400000) + 1;
 }
+
+const ACCENT_PALETTE = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
+const accentFor = (id: number) => ACCENT_PALETTE[id % ACCENT_PALETTE.length];
+const initialsOf = (name: string) =>
+  name.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
 
 export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmitted }: Props) {
   const [fromDate, setFromDate] = useState('');
@@ -52,9 +63,9 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   const [selectedNotify, setSelectedNotify] = useState<NotifyEmployee[]>([]);
   const [balanceTypes, setBalanceTypes] = useState<ApiEmployeeBalanceType[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const notifyBoxRef = useRef<HTMLDivElement | null>(null);
 
-  // Reset when the modal closes/opens
+  // Reset when the modal opens (preserve nothing across cycles).
   useEffect(() => {
     if (!isOpen) return;
     setFromDate(''); setToDate('');
@@ -62,12 +73,10 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     setNote('');
     setNotifySearch(''); setDebouncedSearch('');
     setNotifyOptions([]); setSelectedNotify([]);
-    setShowSuggestions(false);
   }, [isOpen]);
 
   // Pull this employee's balance summary so the type dropdown can show
-  // "Paid Leave — 6 days available". We don't want stale options, so
-  // refetch every time the modal opens.
+  // "Paid Leave — 6 days available".
   useEffect(() => {
     if (!isOpen) return;
     const empId = Number(employeeId);
@@ -77,48 +86,47 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
       .catch(err => console.warn('[RequestLeaveModal] balance fetch failed', err));
   }, [isOpen, employeeId]);
 
-  // Debounce the notify search 300ms — typing is fast, the network is not.
+  // Debounced notify search.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(notifySearch.trim()), 300);
     return () => clearTimeout(t);
   }, [notifySearch]);
 
-  // Hit /api/employees with the debounced search. Skip empty queries —
-  // we don't want to show the whole employee list as a dropdown.
+  // The Notify list is "open" whenever the user has typed something —
+  // initial empty state shows the selected chips only. Once they type,
+  // we fetch matching employees and show checkbox rows so they can pick
+  // multiple in one go (closer to the Keka pattern).
   useEffect(() => {
     if (!debouncedSearch) { setNotifyOptions([]); return; }
     let alive = true;
-    api.get('/employees', { params: { search: debouncedSearch, per_page: 8 } })
+    api.get('/employees', { params: { search: debouncedSearch, per_page: 12 } })
       .then(r => {
         if (!alive) return;
         const raw = r.data?.data ?? r.data ?? [];
-        const list: NotifyEmployee[] = (Array.isArray(raw) ? raw : []).slice(0, 8).map((e: any) => ({
+        const list: NotifyEmployee[] = (Array.isArray(raw) ? raw : []).slice(0, 12).map((e: any) => ({
           id: e.id,
-          name: e.display_name?.trim() || `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim() || `Employee #${e.id}`,
+          name: (e.display_name?.trim() || `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim()) || `Employee #${e.id}`,
           emp_code: e.emp_code || `EMP-${e.id}`,
           designation: e.designation?.name || e.designation_name || null,
           photo_url: e.profile_photo_url || e.photo_url || null,
         }));
         setNotifyOptions(list);
       })
-      .catch(() => { /* silent — dropdown just stays empty */ });
+      .catch(() => { /* silent — list stays empty */ });
     return () => { alive = false; };
   }, [debouncedSearch]);
 
   const totalDays = useMemo(() => diffDaysInclusive(fromDate, toDate), [fromDate, toDate]);
 
-  const pickType = useCallback((id: string) => setLeaveTypeId(id), []);
+  const isSelected = useCallback(
+    (id: number) => selectedNotify.some(s => s.id === id),
+    [selectedNotify],
+  );
 
-  const pickNotify = (e: NotifyEmployee) => {
-    if (selectedNotify.find(s => s.id === e.id)) return;
-    setSelectedNotify(prev => [...prev, e]);
-    setNotifySearch('');
-    setShowSuggestions(false);
+  const toggleNotify = (e: NotifyEmployee) => {
+    setSelectedNotify(prev => prev.some(s => s.id === e.id) ? prev.filter(s => s.id !== e.id) : [...prev, e]);
   };
-
-  const removeNotify = (id: number) => {
-    setSelectedNotify(prev => prev.filter(s => s.id !== id));
-  };
+  const removeNotify = (id: number) => setSelectedNotify(prev => prev.filter(s => s.id !== id));
 
   const canSubmit = !!fromDate && !!toDate && !!leaveTypeId && !submitting;
 
@@ -149,74 +157,98 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     <Modal
       isOpen={isOpen}
       toggle={onClose}
-      centered
-      size="md"
       backdrop="static"
-      // Reactstrap sets z-index INLINE on its outer wrapper from the
-      // `zIndex` prop (default 1050). CSS classes can't override that
-      // inline style, so a `modalClassName` alone leaves the wrapper at
-      // 1050 — below EmployeeProfile's .ep-fullscreen-overlay (z:1080)
-      // and the modal opens invisible. Pass zIndex={2100} so the
-      // wrapper inline style paints above the overlay.
+      // zIndex prop is required — reactstrap sets z-index as an inline
+      // style on the outer wrapper (default 1050). EmployeeProfile's
+      // fullscreen overlay sits at 1080, so we need at least 2100 here.
       zIndex={2100}
-      modalClassName="ep-leave-modal"
-      backdropClassName="ep-leave-backdrop"
+      // Custom class flips the modal into a right-side drawer (see CSS
+      // .lvr-drawer-modal in resources/css/leave.css).
+      modalClassName="lvr-drawer-modal"
+      contentClassName="lvr-drawer-content"
+      backdropClassName="lvr-drawer-backdrop"
+      fade
     >
-      <ModalBody className="p-0">
-        {/* Header */}
-        <div className="d-flex align-items-center justify-content-between" style={{ padding: '18px 22px 14px', borderBottom: '1px solid #e5e7eb' }}>
-          <h5 className="fw-bold mb-0" style={{ fontSize: 18 }}>Request Leave</h5>
-          <button type="button" className="btn-close" onClick={onClose} aria-label="Close" />
+      <ModalBody className="p-0 d-flex flex-column h-100">
+        {/* Header — gradient strip with leave icon */}
+        <div className="lvr-header">
+          <div className="d-flex align-items-center gap-3">
+            <span className="lvr-header-icon">
+              <i className="ri-calendar-2-line" />
+            </span>
+            <div>
+              <h5 className="fw-bold mb-0 text-white" style={{ fontSize: 16 }}>Request Leave</h5>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>
+                File a new leave application
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="lvr-close-btn"
+          >
+            <i className="ri-close-line" />
+          </button>
         </div>
 
-        <div style={{ padding: '20px 22px' }}>
-          {/* From / Days / To strip */}
-          <div className="d-flex align-items-center gap-2 mb-3" style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 14px' }}>
-            <div className="flex-grow-1">
-              <div className="text-muted" style={{ fontSize: 11 }}>From</div>
-              <input
-                type="date"
-                className="form-control border-0 p-0 fw-bold"
-                style={{ fontSize: 14, boxShadow: 'none' }}
-                value={fromDate}
-                onChange={e => {
-                  setFromDate(e.target.value);
-                  if (toDate && new Date(toDate) < new Date(e.target.value)) setToDate(e.target.value);
-                }}
-              />
+        {/* Scrollable body */}
+        <div className="lvr-body">
+          {/* ── Section: Dates ── */}
+          <div className="lvr-section">
+            <div className="lvr-section-title">
+              <i className="ri-calendar-line" />
+              <span>Leave Dates</span>
             </div>
-            <div className="text-center px-3 py-2" style={{ background: '#f3f4f6', borderRadius: 8, minWidth: 70 }}>
-              <div className="fw-bold" style={{ fontSize: 14 }}>{totalDays}</div>
-              <div className="text-muted" style={{ fontSize: 10 }}>{totalDays === 1 ? 'day' : 'days'}</div>
-            </div>
-            <div className="flex-grow-1 text-end">
-              <div className="text-muted" style={{ fontSize: 11 }}>To</div>
-              <input
-                type="date"
-                className="form-control border-0 p-0 fw-bold text-end"
-                style={{ fontSize: 14, boxShadow: 'none' }}
-                value={toDate}
-                min={fromDate || undefined}
-                onChange={e => setToDate(e.target.value)}
-              />
+            <div className="lvr-date-strip">
+              <div className="lvr-date-cell">
+                <label className="lvr-mini-label">From</label>
+                <MasterDatePicker
+                  value={fromDate}
+                  onChange={(v) => {
+                    setFromDate(v);
+                    if (toDate && new Date(toDate) < new Date(v)) setToDate(v);
+                  }}
+                  placeholder="Select date"
+                />
+              </div>
+              <div className="lvr-days-pill">
+                <div className="fw-bold" style={{ fontSize: 18, lineHeight: 1 }}>{totalDays}</div>
+                <div className="text-muted" style={{ fontSize: 10, marginTop: 2 }}>
+                  {totalDays === 1 ? 'day' : 'days'}
+                </div>
+              </div>
+              <div className="lvr-date-cell">
+                <label className="lvr-mini-label">To</label>
+                <MasterDatePicker
+                  value={toDate}
+                  onChange={setToDate}
+                  minDate={fromDate || undefined}
+                  placeholder="Select date"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Leave type dropdown with balance */}
-          <label className="fw-semibold mb-2" style={{ fontSize: 13 }}>Select type of leave you want to apply</label>
-          {balanceTypes.length === 0 ? (
-            <div className="text-muted mb-3" style={{ fontSize: 12, padding: 10, background: '#fef3c7', borderRadius: 8 }}>
-              <i className="ri-information-line me-1" />
-              No leave plan / types assigned yet. Ask HR to add you to a plan.
+          {/* ── Section: Leave Type ── */}
+          <div className="lvr-section">
+            <div className="lvr-section-title">
+              <i className="ri-bookmark-line" />
+              <span>Leave Type</span>
             </div>
-          ) : (
-            <div className="position-relative mb-3">
+            {balanceTypes.length === 0 ? (
+              <div className="lvr-warning">
+                <i className="ri-information-line" />
+                <span>No leave plan / types assigned yet. Ask HR to add you to a plan.</span>
+              </div>
+            ) : (
               <select
-                className="form-select"
+                className="lvr-input"
                 value={leaveTypeId}
-                onChange={e => pickType(e.target.value)}
+                onChange={e => setLeaveTypeId(e.target.value)}
               >
-                <option value="">Select</option>
+                <option value="">Select a leave type…</option>
                 {balanceTypes.map(t => {
                   const avail = t.unlimited ? '∞' : (t.available ?? 0);
                   return (
@@ -226,105 +258,137 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                   );
                 })}
               </select>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Note */}
-          <label className="fw-semibold mb-2" style={{ fontSize: 13 }}>Note</label>
-          <textarea
-            className="form-control mb-3"
-            rows={3}
-            placeholder="Type here"
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            style={{ fontSize: 13 }}
-          />
-
-          {/* Notify (employee search + chips) */}
-          <label className="fw-semibold mb-2" style={{ fontSize: 13 }}>Notify</label>
-          {selectedNotify.length > 0 && (
-            <div className="d-flex gap-2 flex-wrap mb-2">
-              {selectedNotify.map(e => (
-                <span key={e.id} className="d-inline-flex align-items-center gap-1 rec-pill" style={{
-                  background: '#ede9fe', color: '#5a3fd1', fontSize: 11, padding: '4px 10px',
-                }}>
-                  {e.name}
-                  <button
-                    type="button"
-                    onClick={() => removeNotify(e.id)}
-                    className="btn p-0"
-                    style={{ fontSize: 12, color: '#5a3fd1', lineHeight: 1, marginLeft: 4 }}
-                    aria-label={`Remove ${e.name}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
+          {/* ── Section: Note ── */}
+          <div className="lvr-section">
+            <div className="lvr-section-title">
+              <i className="ri-edit-2-line" />
+              <span>Note</span>
             </div>
-          )}
-          <div className="position-relative">
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Search employee"
-              value={notifySearch}
-              onChange={e => { setNotifySearch(e.target.value); setShowSuggestions(true); }}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              style={{ fontSize: 13 }}
+            <textarea
+              className="lvr-input lvr-textarea"
+              rows={3}
+              placeholder="Share the reason for your leave (optional)…"
+              value={note}
+              onChange={e => setNote(e.target.value)}
             />
-            {showSuggestions && notifyOptions.length > 0 && (
-              <div className="position-absolute w-100 shadow-sm" style={{
-                background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, marginTop: 4,
-                zIndex: 100, maxHeight: 280, overflowY: 'auto',
-              }}>
-                {notifyOptions.map(e => {
-                  const initials = e.name.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase();
-                  const accent = '#0ab39c';
-                  return (
+          </div>
+
+          {/* ── Section: Notify colleagues ── */}
+          <div className="lvr-section">
+            <div className="lvr-section-title">
+              <i className="ri-user-shared-line" />
+              <span>Notify Colleagues</span>
+              {selectedNotify.length > 0 && (
+                <span className="lvr-count-pill">{selectedNotify.length}</span>
+              )}
+            </div>
+
+            {selectedNotify.length > 0 && (
+              <div className="lvr-chip-row">
+                {selectedNotify.map(e => (
+                  <span key={e.id} className="lvr-chip">
+                    {e.photo_url ? (
+                      <img src={e.photo_url} alt={e.name} className="lvr-chip-avatar" />
+                    ) : (
+                      <span
+                        className="lvr-chip-avatar lvr-chip-avatar-letter"
+                        style={{ background: `linear-gradient(135deg, ${accentFor(e.id)}, ${accentFor(e.id)}cc)` }}
+                      >
+                        {initialsOf(e.name)}
+                      </span>
+                    )}
+                    <span className="lvr-chip-text">{e.name}</span>
                     <button
-                      key={e.id}
                       type="button"
-                      className="d-flex align-items-center gap-2 w-100 text-start"
-                      onMouseDown={() => pickNotify(e)}
-                      style={{
-                        padding: '10px 12px', border: 'none', background: 'transparent',
-                        borderBottom: '1px solid #f1f3f5', cursor: 'pointer',
-                      }}
-                      onMouseEnter={ev => (ev.currentTarget.style.background = '#f8f9fa')}
-                      onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}
+                      onClick={() => removeNotify(e.id)}
+                      className="lvr-chip-x"
+                      aria-label={`Remove ${e.name}`}
                     >
-                      {e.photo_url ? (
-                        <img src={e.photo_url} alt={e.name} style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                      ) : (
-                        <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0" style={{
-                          width: 32, height: 32, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
-                        }}>{initials || '?'}</span>
-                      )}
-                      <div className="min-w-0">
-                        <div className="fw-semibold" style={{ fontSize: 13 }}>{e.name}</div>
-                        {e.designation && <div className="text-muted" style={{ fontSize: 11 }}>{e.designation}</div>}
-                        <div className="text-muted" style={{ fontSize: 11 }}>Employee Number: {e.emp_code}</div>
-                      </div>
+                      <i className="ri-close-line" />
                     </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="lvr-search-wrap" ref={notifyBoxRef}>
+              <i className="ri-search-line lvr-search-icon" />
+              <input
+                type="text"
+                className="lvr-input lvr-search-input"
+                placeholder="Search employees by name or code…"
+                value={notifySearch}
+                onChange={e => setNotifySearch(e.target.value)}
+              />
+            </div>
+
+            {/* Inline checkbox list. Always shown when there are search
+                results; expanded layout (vs. dropdown) makes it easier
+                to scan multiple matches in a drawer width. */}
+            {notifyOptions.length > 0 && (
+              <div className="lvr-notify-list">
+                {notifyOptions.map(e => {
+                  const checked = isSelected(e.id);
+                  return (
+                    <label
+                      key={e.id}
+                      className={`lvr-notify-row ${checked ? 'is-selected' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="lvr-notify-check"
+                        checked={checked}
+                        onChange={() => toggleNotify(e)}
+                      />
+                      {e.photo_url ? (
+                        <img src={e.photo_url} alt={e.name} className="lvr-notify-avatar" />
+                      ) : (
+                        <span
+                          className="lvr-notify-avatar lvr-notify-avatar-letter"
+                          style={{ background: `linear-gradient(135deg, ${accentFor(e.id)}, ${accentFor(e.id)}cc)` }}
+                        >
+                          {initialsOf(e.name)}
+                        </span>
+                      )}
+                      <div className="lvr-notify-meta">
+                        <div className="lvr-notify-name">{e.name}</div>
+                        {e.designation && (
+                          <div className="lvr-notify-sub">{e.designation}</div>
+                        )}
+                        <div className="lvr-notify-code">
+                          Employee Number: {e.emp_code}
+                        </div>
+                      </div>
+                    </label>
                   );
                 })}
+              </div>
+            )}
+
+            {!notifyOptions.length && debouncedSearch && (
+              <div className="lvr-empty-search">
+                <i className="ri-search-eye-line" />
+                <span>No employees matched "{debouncedSearch}".</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="d-flex justify-content-end gap-2" style={{ padding: '14px 22px', borderTop: '1px solid #e5e7eb' }}>
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
+        {/* Footer — sticky bottom */}
+        <div className="lvr-footer">
+          <button type="button" className="lvr-btn-ghost" onClick={onClose}>
+            <i className="ri-close-line" /> Cancel
+          </button>
           <button
             type="button"
-            className="rec-btn-primary"
+            className="lvr-btn-primary"
             onClick={submit}
             disabled={!canSubmit}
-            style={{ minWidth: 100 }}
           >
-            {submitting ? <>Submitting… <i className="ri-loader-4-line ri-spin" /></> : 'Request'}
+            {submitting ? <><i className="ri-loader-4-line ri-spin" /> Submitting…</> : <><i className="ri-send-plane-2-line" /> Request</>}
           </button>
         </div>
       </ModalBody>
