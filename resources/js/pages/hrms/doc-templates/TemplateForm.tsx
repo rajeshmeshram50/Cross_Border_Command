@@ -115,55 +115,84 @@ export default function TemplateFormPage() {
 
   // Lookups
   const [triggerPoints, setTriggerPoints] = useState<Array<{ id: number; module_name: string; status: string }>>([]);
+  // `roles` is kept around so the signing-flow preview can still resolve a
+  // label for legacy rows that have `role_id` but no `role_name` set.
+  // Designation lookup was dropped along with the designation column.
   const [roles, setRoles]                 = useState<Array<{ id: number; name: string }>>([]);
-  const [designations, setDesignations]   = useState<Array<{ id: number; name: string; level?: string }>>([]);
+  const [loadError, setLoadError]         = useState<string | null>(null);
 
-  // ── Bootstrap: load lookups + (if editing) the existing template ───────────
+  // ── Load lookups (always — independent of edit-vs-create) ──────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [tpRes, rolesRes, desigRes, rowRes] = await Promise.all([
+        const [tpRes, rolesRes] = await Promise.all([
           api.get('/master/trigger_point').catch(() => ({ data: [] })),
           api.get('/master/roles').catch(() => ({ data: [] })),
-          api.get('/master/designations').catch(() => ({ data: [] })),
-          editingId ? api.get(`/hr-document-templates/${editingId}`) : Promise.resolve(null),
         ]);
         if (cancelled) return;
-
         const tps: any[]  = Array.isArray(tpRes.data) ? tpRes.data : [];
         const rls: any[]  = Array.isArray(rolesRes.data) ? rolesRes.data : [];
-        const dsgs: any[] = Array.isArray(desigRes.data) ? desigRes.data : [];
         const isActive = (r: any) => !r.status || String(r.status).toLowerCase() === 'active';
         setTriggerPoints(tps.filter(isActive).map(r => ({ id: r.id, module_name: r.module_name, status: r.status })));
         setRoles(rls.filter(isActive).map(r => ({ id: r.id, name: r.name })));
-        setDesignations(dsgs.filter(isActive).map(r => ({ id: r.id, name: r.name, level: r.level })));
+      } catch { /* lookups are best-effort */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-        if (rowRes) {
-          const row = rowRes.data as TemplateRow;
-          setEditing(row);
-          setName(row.name || '');
-          setDescription(row.description || '');
-          setCode(row.code || '');
-          setCategory(row.employee_category || 'IT');
-          setRoleType(row.role_type || 'Intern / Trainee');
-          setIsMandatory(!!row.is_mandatory);
-          setRequiresSig(!!row.requires_signature);
-          setRequiresMgr(!!row.requires_manager_approval);
-          setIncludeAudit(!!row.include_in_audit);
-          setTriggerPointId(row.trigger_point_id ?? '');
-          setSigningMode(row.signing_mode || 'Sequential');
-          setSigners(Array.isArray(row.signers) && row.signers.length
-            ? row.signers
-            : [{ role_id: null, designation_id: null, role_name: '', designation_name: '', action: 'Sign', days: 3 }]);
-          setEditorMode(row.editor_mode || 'web');
-          setContentHtml(row.content_html || '');
+  // ── Load the template row (edit mode only) ─────────────────────────────────
+  // Independent from lookups so a 403 on /master/roles can't suppress the
+  // edit data. Errors surface inline so the user can see what went wrong
+  // (the old version silently bounced back to the list).
+  useEffect(() => {
+    if (!editingId) { setBootstrapping(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadError(null);
+        const { data: row } = await api.get<TemplateRow>(`/hr-document-templates/${editingId}`);
+        if (cancelled) return;
+        if (!row || typeof row !== 'object') {
+          throw new Error('Empty response from /hr-document-templates/' + editingId);
         }
+        setEditing(row);
+        setName(row.name || '');
+        setDescription(row.description || '');
+        setCode(row.code || '');
+        setCategory((row.employee_category as EmployeeCategory) || 'IT');
+        setRoleType((row.role_type as RoleType) || 'Intern / Trainee');
+        setIsMandatory(!!row.is_mandatory);
+        setRequiresSig(!!row.requires_signature);
+        setRequiresMgr(!!row.requires_manager_approval);
+        setIncludeAudit(!!row.include_in_audit);
+        setTriggerPointId(row.trigger_point_id ?? '');
+        setSigningMode((row.signing_mode as SigningMode) || 'Sequential');
+
+        // signers can come back as a JSON string (sqlite without cast, manual
+        // DB edit, etc.) — be defensive so a stringified value doesn't blank
+        // the wizard. Falls back to one empty row if parsing fails.
+        let signerArr: SignerRow[] = [];
+        const raw = row.signers as any;
+        if (Array.isArray(raw)) signerArr = raw as SignerRow[];
+        else if (typeof raw === 'string' && raw.trim()) {
+          try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) signerArr = parsed; } catch { /* swallow */ }
+        }
+        setSigners(signerArr.length
+          ? signerArr
+          : [{ role_id: null, designation_id: null, role_name: '', designation_name: '', action: 'Sign', days: 3 }]);
+
+        setEditorMode(row.editor_mode || 'web');
+        setContentHtml(row.content_html || '');
       } catch (err: any) {
-        if (!cancelled) {
-          toast.error('Could not load template', err?.response?.data?.message || 'Please try again.');
-          navigate('/hr/doc-templates');
-        }
+        if (cancelled) return;
+        const msg = err?.response?.data?.message
+          || (err?.response?.status === 404 ? 'Template not found or you do not have access to it.'
+              : err?.response?.status === 403 ? 'You do not have permission to view this template.'
+              : err?.message || 'Could not load template');
+        console.error('[doc-templates] load failed', editingId, err);
+        setLoadError(msg);
+        toast.error('Could not load template', msg);
       } finally {
         if (!cancelled) setBootstrapping(false);
       }
@@ -326,6 +355,30 @@ export default function TemplateFormPage() {
     return (
       <div className="rec-page" style={{ padding: 24 }}>
         <Card><CardBody>Loading template…</CardBody></Card>
+      </div>
+    );
+  }
+
+  // Fetched but failed — show the actual error so the user can see why the
+  // form is empty (instead of silently rendering blank fields).
+  if (editingId && !editing && loadError) {
+    return (
+      <div className="rec-page" style={{ padding: 24 }}>
+        <Card>
+          <CardBody>
+            <div className="d-flex align-items-start gap-3">
+              <i className="ri-error-warning-line" style={{ fontSize: 28, color: '#ef4444' }} />
+              <div className="flex-grow-1">
+                <h5 className="mb-1">Could not load template #{editingId}</h5>
+                <div style={{ fontSize: 13, color: '#6b7280' }}>{loadError}</div>
+              </div>
+              <button type="button" onClick={() => navigate('/hr/doc-templates')}
+                style={{ padding: '7px 14px', background: '#6366f1', border: 0, borderRadius: 8, color: '#fff', fontWeight: 600, cursor: 'pointer' }}>
+                Back to list
+              </button>
+            </div>
+          </CardBody>
+        </Card>
       </div>
     );
   }
