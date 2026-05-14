@@ -58,6 +58,8 @@ import HrCalculationMaster from '../pages/hrms/HrCalculationMaster';
 import HrExpenseManagement from '../pages/hrms/HrExpenseManagement';
 import HrPayroll from '../pages/hrms/HrPayroll';
 import HrBroadcastCentre from '../pages/hrms/HrBroadcastCentre';
+import HrDocumentTemplates from '../pages/hrms/HrDocumentTemplates';
+import TemplateFormPage from '../pages/hrms/doc-templates/TemplateForm';
 import HrEmployeeOnboarding from '../pages/employee-onboarding/HrEmployeeOnboarding';
 import EmployeePermissions from '../pages/employee/EmployeePermissions';
 import EmployeeProfile from '../pages/employee/EmployeeProfile';
@@ -98,6 +100,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'hr-expense': return '/hr/expense';
     case 'hr-payroll': return '/hr/payroll';
     case 'hr-broadcast': return '/hr/broadcast';
+    case 'hr-doc-templates': return '/hr/doc-templates';
     case 'hr-employee-onboarding': return '/hr/employee-onboarding';
     case 'employee-permissions': return `/hr/employees/${data?.employeeId}/permissions`;
     case 'employee-profile':     return `/hr/employees/${data?.employeeId}/profile`;
@@ -453,6 +456,9 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr/expense" element={<HrExpenseManagement />} />
               <Route path="/hr/payroll" element={<HrPayroll />} />
               <Route path="/hr/broadcast" element={<HrBroadcastCentre />} />
+              <Route path="/hr/doc-templates" element={<HrDocumentTemplates />} />
+              <Route path="/hr/doc-templates/new" element={<TemplateFormPage />} />
+              <Route path="/hr/doc-templates/:id/edit" element={<TemplateFormPage />} />
               <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
               <Route path="/hr/employees/:id/profile" element={<EmployeeProfileWrapper />} />

@@ -1,0 +1,351 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Card, CardBody, Col, Row, Input } from 'reactstrap';
+import { useNavigate } from 'react-router-dom';
+import { useToast } from '../../contexts/ToastContext';
+import api from '../../api';
+import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import { MasterSelect } from '../../components/ui/MasterSelect';
+import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
+import '../../../css/recruitment.css';
+
+// ── Constants ────────────────────────────────────────────────────────────────
+const CATEGORIES: { key: EmployeeCategory; label: string; icon: string }[] = [
+  { key: 'IT',     label: 'IT Employee Documents',                  icon: '💻' },
+  { key: 'Non-IT', label: 'Non IT Employee Documents (Operations)', icon: '🏭' },
+  { key: 'Legal',  label: 'Legal Employee Documents',               icon: '⚖️' },
+];
+
+const STATUS_TONES: Record<DocStatus, { bg: string; fg: string; dot: string }> = {
+  Draft:      { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' },
+  Active:     { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' },
+  Deprecated: { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' },
+};
+
+interface Stats { total: number; active: number; draft: number; deprecated: number; by_category: Record<string, number>; }
+const ZERO_STATS: Stats = { total: 0, active: 0, draft: 0, deprecated: 0, by_category: { 'IT': 0, 'Non-IT': 0, 'Legal': 0 } };
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+export default function HrDocumentTemplates() {
+  const toast = useToast();
+  const navigate = useNavigate();
+
+  const [rows, setRows] = useState<TemplateRow[]>([]);
+  const [stats, setStats] = useState<Stats>(ZERO_STATS);
+  const [loading, setLoading] = useState(true);
+
+  const [category, setCategory] = useState<EmployeeCategory>('IT');
+  // Default to the first designation level so the list isn't empty on first
+  // visit. Users flip between levels via the chip strip below.
+  const [roleType, setRoleType] = useState<RoleType>(ROLE_TYPES[5].value); // 'Intern / Trainee'
+  const [search, setSearch] = useState('');
+  const [triggerFilter, setTriggerFilter] = useState('');
+  const [statusFilter, setStatusFilter]   = useState('');
+
+  // Lookups — used to populate the trigger filter dropdown
+  const [triggerPoints, setTriggerPoints] = useState<Array<{ id: number; module_name: string }>>([]);
+
+  const fetchAll = async () => {
+    try {
+      setLoading(true);
+      const [listRes, statsRes, tpRes] = await Promise.all([
+        api.get('/hr-document-templates'),
+        api.get('/hr-document-templates/stats').catch(() => ({ data: ZERO_STATS })),
+        api.get('/master/trigger_point').catch(() => ({ data: [] })),
+      ]);
+      setRows(Array.isArray(listRes.data) ? listRes.data : []);
+      setStats({ ...ZERO_STATS, ...(statsRes.data || {}) });
+      const tps: any[] = Array.isArray(tpRes.data) ? tpRes.data : [];
+      setTriggerPoints(tps.map(r => ({ id: r.id, module_name: r.module_name })));
+    } catch (err: any) {
+      toast.error('Could not load templates', err?.response?.data?.message || 'Please try again.');
+      setRows([]);
+      setStats(ZERO_STATS);
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { fetchAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Filtered view — category + role + search + filter dropdowns
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return rows
+      .filter(r => r.employee_category === category)
+      .filter(r => r.role_type === roleType)
+      .filter(r => !triggerFilter || String(r.trigger_point_id) === triggerFilter)
+      .filter(r => !statusFilter || r.status === statusFilter)
+      .filter(r => {
+        if (!needle) return true;
+        return (
+          (r.name || '').toLowerCase().includes(needle) ||
+          (r.code || '').toLowerCase().includes(needle) ||
+          (r.description || '').toLowerCase().includes(needle)
+        );
+      });
+  }, [rows, category, roleType, triggerFilter, statusFilter, search]);
+
+  const handleDelete = async (row: TemplateRow) => {
+    if (!confirm(`Delete template ${row.code}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/hr-document-templates/${row.id}`);
+      toast.success('Deleted', `${row.code} removed.`);
+      fetchAll();
+    } catch (err: any) {
+      toast.error('Could not delete', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
+  const handleToggleStatus = async (row: TemplateRow) => {
+    const next: DocStatus = row.status === 'Active' ? 'Deprecated' : 'Active';
+    try {
+      const { data } = await api.put(`/hr-document-templates/${row.id}`, { status: next });
+      toast.success(next === 'Active' ? 'Activated' : 'Deprecated', `${data.code} is now ${next}.`);
+      setRows(prev => prev.map(r => r.id === data.id ? data : r));
+      fetchAll();
+    } catch (err: any) {
+      toast.error('Could not update', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
+  const handleGenerate = (row: TemplateRow) => {
+    if (row.status !== 'Active') {
+      toast.error('Not active', 'Only Active templates can be generated. Publish this template first.');
+      return;
+    }
+    window.open(`/api/hr-document-templates/${row.id}/download`, '_blank');
+  };
+
+  // KPI strip
+  const KPI = [
+    { label: 'Total Templates', value: stats.total,       icon: 'ri-file-text-line',         deep: '#4338ca', gradient: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)' },
+    { label: 'Active',          value: stats.active,      icon: 'ri-checkbox-circle-fill',   deep: '#089d7a', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)' },
+    { label: 'Draft',           value: stats.draft,       icon: 'ri-draft-line',             deep: '#a4661c', gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)' },
+    { label: 'Deprecated',      value: stats.deprecated,  icon: 'ri-forbid-2-line',          deep: '#b1401d', gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)' },
+  ];
+
+  return (
+    <Row>
+      <Col xs={12}>
+        <div className="rec-page">
+          {/* Header */}
+          <Card className="mb-3" style={{ borderRadius: 14 }}>
+            <CardBody className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+              <div className="d-flex align-items-center gap-3">
+                <span style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#eef2ff,#e0e7ff)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className="ri-file-text-line" style={{ fontSize: 22, color: '#4338ca' }} />
+                </span>
+                <div>
+                  <h4 className="mb-0 fw-bold d-flex align-items-center gap-2">
+                    Document Template Management
+                    <span style={{ fontSize: 11.5, color: '#15803d', background: '#dcfce7', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
+                      <i className="ri-checkbox-circle-fill me-1" style={{ fontSize: 12 }} />Active
+                    </span>
+                  </h4>
+                  <div className="text-muted" style={{ fontSize: 12.5 }}>Role-based document templates — versions, variables &amp; approval flows</div>
+                </div>
+              </div>
+              <button type="button" onClick={() => navigate('/hr/doc-templates/new')}
+                style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
+                <i className="ri-add-line me-1" /> Add Template
+              </button>
+            </CardBody>
+          </Card>
+
+          {/* Category top tabs */}
+          <div className="d-flex flex-wrap gap-2 mb-3">
+            {CATEGORIES.map(c => {
+              const active = category === c.key;
+              const cnt = stats.by_category?.[c.key] || 0;
+              return (
+                <button key={c.key} type="button" onClick={() => setCategory(c.key)}
+                  style={{ flex: '1 1 250px', minWidth: 200, padding: '12px 16px', borderRadius: 12,
+                    border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
+                    background: active ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#fff',
+                    color: active ? '#fff' : '#374151', textAlign: 'left', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <span className="d-flex align-items-center gap-2">
+                    <span style={{ fontSize: 22 }}>{c.icon}</span>
+                    <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.label}</span>
+                  </span>
+                  <span style={{ fontSize: 11.5, background: active ? 'rgba(255,255,255,0.25)' : '#f3f4f6', color: active ? '#fff' : '#6b7280', padding: '2px 10px', borderRadius: 999, fontWeight: 700 }}>{cnt}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Designation level chips — 6 options sourced from designation master */}
+          <div className="d-flex flex-wrap gap-2 mb-3">
+            {ROLE_TYPES.map(r => {
+              const active = roleType === r.value;
+              return (
+                <button key={r.value} type="button" onClick={() => setRoleType(r.value)}
+                  style={{ padding: '7px 14px', borderRadius: 999,
+                    border: '1px solid ' + (active ? r.tone.fg : r.tone.border),
+                    background: active ? r.tone.fg : r.tone.bg,
+                    color: active ? '#fff' : r.tone.fg,
+                    cursor: 'pointer', fontWeight: 700, fontSize: 12.5,
+                    display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 14 }}>{r.icon}</span>
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* KPI strip */}
+          <div className="row g-2 mb-3">
+            {KPI.map(k => (
+              <div key={k.label} className="col-md-3 col-sm-6">
+                <div style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
+                  <div style={{ height: 4, background: k.gradient }} />
+                  <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
+                    <div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
+                    </div>
+                    <span style={{ width: 38, height: 38, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Filters + count badge */}
+          <Card className="mb-3" style={{ borderRadius: 12 }}>
+            <CardBody className="d-flex flex-wrap gap-3 align-items-center" style={{ padding: 12 }}>
+              <div style={{ position: 'relative', minWidth: 260 }}>
+                <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+                <Input type="text" placeholder="Search templates…" value={search} onChange={e => setSearch(e.target.value)}
+                  style={{ paddingLeft: 30, height: 36 }} />
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Trigger</span>
+                <div style={{ minWidth: 180 }}>
+                  <MasterSelect
+                    value={triggerFilter}
+                    onChange={setTriggerFilter}
+                    options={[{ value: '', label: 'All' }, ...triggerPoints.map(t => ({ value: String(t.id), label: t.module_name }))]}
+                    placeholder="All"
+                  />
+                </div>
+              </div>
+              <div className="d-flex align-items-center gap-2">
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Status</span>
+                <div style={{ minWidth: 160 }}>
+                  <MasterSelect
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    options={[
+                      { value: '', label: 'All' },
+                      { value: 'Active', label: 'Active' },
+                      { value: 'Draft', label: 'Draft' },
+                      { value: 'Deprecated', label: 'Deprecated' },
+                    ]}
+                    placeholder="All"
+                  />
+                </div>
+              </div>
+              <div className="ms-auto">
+                <span style={{ fontSize: 11.5, fontWeight: 700, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', padding: '5px 12px', borderRadius: 999 }}>
+                  {filtered.length} {filtered.length === 1 ? 'template' : 'templates'}
+                </span>
+              </div>
+            </CardBody>
+          </Card>
+
+          {/* Table */}
+          <Card style={{ borderRadius: 12 }}>
+            <CardBody style={{ padding: 0 }}>
+              <div className="table-responsive">
+                <table className="table align-middle mb-0" style={{ fontSize: 13 }}>
+                  <thead style={{ background: '#f5f3ff' }}>
+                    <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
+                      <th style={{ padding: '10px 12px', width: 40 }}>#</th>
+                      <th>Code</th>
+                      <th>Template Name</th>
+                      <th>Version</th>
+                      <th>Auto-Trigger</th>
+                      <th>Status</th>
+                      <th>Generate</th>
+                      <th style={{ width: 200 }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <ShimmerTableRows rows={5} cols={8} />
+                    ) : filtered.length === 0 ? (
+                      <tr><td colSpan={8} style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
+                        <i className="ri-inbox-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
+                        No templates yet for {category} · {roleType}. Click <strong>+ Add Template</strong> to create one.
+                      </td></tr>
+                    ) : (
+                      filtered.map((r, i) => {
+                        const tone = STATUS_TONES[r.status] || STATUS_TONES.Draft;
+                        return (
+                          <tr key={r.id}>
+                            <td style={{ padding: '10px 12px' }}>{i + 1}</td>
+                            <td>
+                              <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#fef3c7', color: '#a16207' }}>{r.code}</span>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 700, color: '#1f2937' }}>{r.name}</div>
+                              {r.requires_manager_approval && (
+                                <div className="d-flex gap-1 mt-1">
+                                  <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 700 }}><i className="ri-error-warning-line" /> Approval</span>
+                                </div>
+                              )}
+                            </td>
+                            <td><span style={{ padding: '2px 8px', borderRadius: 6, background: '#f3f4f6', color: '#374151', fontSize: 11.5, fontWeight: 700 }}>{r.version}</span></td>
+                            <td><span style={{ padding: '3px 8px', borderRadius: 6, background: '#e0e7ff', color: '#4338ca', fontSize: 11.5, fontWeight: 600 }}>{r.trigger_point?.module_name || '—'}</span></td>
+                            <td>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 9px', borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 11.5, fontWeight: 700 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot, display: 'inline-block' }} />{r.status}
+                              </span>
+                            </td>
+                            <td>
+                              <button type="button" onClick={() => handleGenerate(r)}
+                                style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <i className="ri-play-fill" /> Generate Document
+                              </button>
+                            </td>
+                            <td>
+                              <div className="d-flex gap-1">
+                                <ActionBtn icon="ri-pencil-line"  tone="info"    onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
+                                <ActionBtn icon="ri-more-2-fill"  tone="dark"    onClick={() => toast.info('Coming soon', 'More actions menu.')} title="More" />
+                                <ActionBtn icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'} tone={r.status === 'Active' ? 'danger' : 'success'} onClick={() => handleToggleStatus(r)} title={r.status === 'Active' ? 'Deprecate' : 'Activate'} />
+                                <ActionBtn icon="ri-delete-bin-line" tone="danger" onClick={() => handleDelete(r)} title="Delete" />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+      </Col>
+    </Row>
+  );
+}
+
+function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primary' | 'info' | 'success' | 'danger' | 'dark'; onClick: () => void; title: string }) {
+  const palette: Record<string, { bg: string; fg: string }> = {
+    primary: { bg: '#ede9fe', fg: '#6d28d9' },
+    info:    { bg: '#dbeafe', fg: '#1d4ed8' },
+    success: { bg: '#dcfce7', fg: '#15803d' },
+    danger:  { bg: '#fee2e2', fg: '#b91c1c' },
+    dark:    { bg: '#e5e7eb', fg: '#374151' },
+  };
+  const c = palette[tone];
+  return (
+    <button type="button" onClick={onClick} title={title}
+      style={{ width: 30, height: 30, borderRadius: 8, border: 0, background: c.bg, color: c.fg, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+      <i className={icon} />
+    </button>
+  );
+}

@@ -26,6 +26,7 @@ const HR_PATH_TO_LEAF: Record<string, string> = {
   'employee-onboarding': 'hr.onboarding',
   'attendance':          'hr.attendance',
   'broadcast':           'hr.broadcast',
+  'doc-templates':       'hr.doc_templates',
   'leave':               'hr.leave',
   'leave-plans':         'hr.leave',
   'expense':             'hr.expense',

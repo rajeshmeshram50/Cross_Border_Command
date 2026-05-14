@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\ExitController;
 use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
+use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\OnboardingController;
@@ -164,6 +165,17 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/announcements/stats',     [AnnouncementController::class, 'stats']);
     Route::get('/announcements/next-code', [AnnouncementController::class, 'nextCode']);
     Route::apiResource('announcements', AnnouncementController::class);
+
+    // HR Document Templates — role-based document templates with lifecycle
+    // triggers (sourced from master_trigger_points), signing workflows, and
+    // optional MS Word DOCX round-trip. Stats / next-code declared BEFORE
+    // apiResource so the literal segments aren't captured as ids.
+    Route::get ('/hr-document-templates/stats',           [HrDocumentTemplateController::class, 'stats']);
+    Route::get ('/hr-document-templates/next-code',       [HrDocumentTemplateController::class, 'nextCode']);
+    Route::get ('/hr-document-templates/{id}/download',   [HrDocumentTemplateController::class, 'downloadDocx']);
+    Route::post('/hr-document-templates/{id}/upload-docx',[HrDocumentTemplateController::class, 'uploadDocx']);
+    Route::apiResource('hr-document-templates', HrDocumentTemplateController::class)
+        ->parameters(['hr-document-templates' => 'id']);
 
     // Batch counts for the Master dashboard — one round-trip returns
     // active/inactive/total for every master the user can view.

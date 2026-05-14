@@ -192,6 +192,10 @@ export const HR_GROUPS: MenuGroup[] = [
     icon: 'FileText',
     children: [
       { id: 'hr.broadcast', icon: 'Megaphone', label: 'Broadcast Centre' },
+      // Document Templates — role-based document templates (Offer Letter,
+      // NDA, etc) with lifecycle triggers (sourced from trigger_point master)
+      // + signing workflows + Tiptap web editor / MS Word DOCX round-trip.
+      { id: 'hr.doc_templates', icon: 'FileText', label: 'Document Templates' },
       // Trigger Point Master — branch-only master defining lifecycle trigger
       // modules (Onboarding, Offboarding, Event-Based) used by Doc Generation
       // Rules. Routes through /master/trigger_point (master.* convention).

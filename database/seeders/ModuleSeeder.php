@@ -197,6 +197,11 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Document Types',          'slug' => 'hr.doc_types',     'icon' => 'FileBadge',   'description' => 'Document type definitions'],
                 ['name' => 'Doc Generation Rules',    'slug' => 'hr.doc_gen_rules', 'icon' => 'Settings2',   'description' => 'Auto-generation rule sets'],
                 ['name' => 'Custom Fields',           'slug' => 'hr.custom_fields', 'icon' => 'PlusSquare',  'description' => 'Custom data fields for HR documents'],
+                // Document Templates — role-based document templates with
+                // lifecycle triggers + signing workflows. Backed by the
+                // dedicated HrDocumentTemplateController (not the generic
+                // master shell — too domain-specific for the 50-master mold).
+                ['name' => 'Document Templates',      'slug' => 'hr.doc_templates', 'icon' => 'FileText',    'description' => 'Role-based document templates — versions, variables & approval flows'],
                 // Trigger Point Master — defines lifecycle trigger modules
                 // (Onboarding, Offboarding, Event Based) used by the Doc
                 // Generation Rules engine. Uses `master.` prefix so the
