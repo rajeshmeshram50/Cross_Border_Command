@@ -203,6 +203,30 @@ export default function TemplateEditor({
     editor.chain().focus().insertContent(token + ' ').run();
   };
 
+  // Copy the raw {{Token}} to the clipboard so the user can paste it into a
+  // Word doc, an email, or anywhere outside this editor. Falls back to a
+  // hidden textarea on browsers that don't expose navigator.clipboard
+  // (older Safari / non-secure contexts).
+  const copyToken = async (token: string) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(token);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = token;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      toast.success('Copied', `${token} copied to clipboard.`);
+    } catch {
+      toast.error('Could not copy', 'Clipboard access was blocked — copy manually.');
+    }
+  };
+
   const handleAddCustomField = async (payload: CustomFieldFormPayload) => {
     try {
       await api.post('/hr-custom-fields', payload);
@@ -262,17 +286,26 @@ export default function TemplateEditor({
                     </div>
                   )}
                   {g.fields.map(f => (
-                    <button
-                      key={f.token}
-                      type="button"
-                      className="tpl-token-btn"
-                      onClick={() => insertToken(f.token)}
-                      title={`Insert ${f.token}`}
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '5px 6px', background: 'transparent', border: 0, borderRadius: 6, cursor: 'pointer', fontSize: 12 }}
-                    >
-                      <span className="tpl-token-label" style={{ color: '#374151', textAlign: 'left' }}>{f.label}</span>
-                      <span className="tpl-token-pill" style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#6366f1', background: '#eef2ff', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>{f.token}</span>
-                    </button>
+                    <div key={f.token} className="tpl-token-row">
+                      <button
+                        type="button"
+                        className="tpl-token-btn"
+                        onClick={() => insertToken(f.token)}
+                        title={`Click to insert ${f.token} at the cursor`}
+                      >
+                        <span className="tpl-token-label">{f.label}</span>
+                        <span className="tpl-token-pill">{f.token}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="tpl-token-copy"
+                        onClick={() => copyToken(f.token)}
+                        title={`Copy ${f.token} to clipboard`}
+                        aria-label={`Copy ${f.token}`}
+                      >
+                        <i className="ri-file-copy-line" />
+                      </button>
+                    </div>
                   ))}
                   {g.id === 'custom' && (
                     <button
@@ -381,9 +414,48 @@ export default function TemplateEditor({
             color: #9ca3af; pointer-events: none; height: 0; float: left;
           }
 
+          /* Token row — split into an insert-button + a small copy action.
+             The insert button takes the full remaining width so clicking the
+             label area still drops the token at the cursor; the copy icon
+             stays subtle until hovered. */
+          .tpl-editor-root .tpl-token-row {
+            display: flex; align-items: stretch; gap: 4px;
+            border-radius: 6px;
+          }
+          .tpl-editor-root .tpl-token-row:hover .tpl-token-copy { opacity: 1; }
+          .tpl-editor-root .tpl-token-btn {
+            flex: 1 1 auto; min-width: 0;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 8px; padding: 5px 6px;
+            background: transparent; border: 0; border-radius: 6px;
+            cursor: pointer; font-size: 12px;
+            transition: background 120ms ease;
+          }
+          .tpl-editor-root .tpl-token-btn:hover { background: #f3f4f6; }
+          .tpl-editor-root .tpl-token-label {
+            color: #374151; text-align: left;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+          }
+          .tpl-editor-root .tpl-token-pill {
+            font-size: 10.5px; font-family: monospace;
+            color: #6366f1; background: #eef2ff;
+            padding: 1px 5px; border-radius: 4px; white-space: nowrap;
+            flex-shrink: 0;
+          }
+          .tpl-editor-root .tpl-token-copy {
+            width: 26px; flex-shrink: 0;
+            display: inline-flex; align-items: center; justify-content: center;
+            background: transparent; border: 0; border-radius: 6px;
+            color: #6366f1; font-size: 13px;
+            cursor: pointer;
+            opacity: 0.45;
+            transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+          }
+          .tpl-editor-root .tpl-token-copy:hover {
+            background: #eef2ff; color: #4338ca; opacity: 1;
+          }
+
           /* Sidebar interaction polish (light) */
-          .tpl-editor-root .tpl-token-btn { transition: background 120ms ease; }
-          .tpl-editor-root .tpl-token-btn:hover { background: #f3f4f6 !important; }
           .tpl-editor-root .tpl-add-cf:hover { background: #f5f3ff !important; border-color: #a5b4fc !important; }
 
           /* ── Dark-mode parity ───────────────────────────────────────────── */
@@ -418,6 +490,15 @@ export default function TemplateEditor({
           [data-layout-mode="dark"] .tpl-editor-root .tpl-token-pill {
             background: rgba(99, 102, 241, 0.20) !important;
             color: #c7d2fe !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-token-copy,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-token-copy {
+            color: #a5b4fc !important;
+          }
+          [data-bs-theme="dark"] .tpl-editor-root .tpl-token-copy:hover,
+          [data-layout-mode="dark"] .tpl-editor-root .tpl-token-copy:hover {
+            background: rgba(99, 102, 241, 0.20) !important;
+            color: #e0e7ff !important;
           }
           [data-bs-theme="dark"] .tpl-editor-root .tpl-empty,
           [data-layout-mode="dark"] .tpl-editor-root .tpl-empty { color: rgba(255, 255, 255, 0.45) !important; }
