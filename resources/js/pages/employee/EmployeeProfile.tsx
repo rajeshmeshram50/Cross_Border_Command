@@ -1478,7 +1478,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     { key: 'vault',      label: 'Evidence Vault',  icon: 'ri-folder-shield-2-line',     color: 'linear-gradient(135deg,#a855f7,#c084fc)' },
     { key: 'payroll',    label: 'Payroll Details', icon: 'ri-money-dollar-circle-line', color: 'linear-gradient(135deg,#f59e0b,#fbbf24)' },
     { key: 'expense',    label: 'Expense Details', icon: 'ri-wallet-3-line',            color: 'linear-gradient(135deg,#f06548,#ff7a5c)' },
-    { key: 'apply_leave',label: 'Apply Leave',     icon: 'ri-calendar-2-line',          color: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' },
+    { key: 'apply_leave',label: 'Leave',           icon: 'ri-calendar-2-line',          color: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' },
   ];
 
   // Onboarding progress as a numeric percent for the hero ring chart.
@@ -3624,36 +3624,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         </>
       )}
 
-      {/* ── Tab: Apply Leave (Summary + inline wizard) ── */}
+      {/* ── Tab: Leave (clean Keka-style flow) ──
+           LeaveSummaryPanel owns the whole experience now: the "Request
+           Leave" button at the top opens a compact modal, the Pending /
+           History rows are clickable to open the read-only details modal,
+           and the donut cards show per-type balances inline. The old
+           7-stage ApplyLeavePanel wizard is no longer rendered — kept in
+           the file for now in case we want to re-introduce a "detailed
+           application" entry point later. */}
       {tab === 'apply_leave' && (
-        <>
-          {/* Summary above the wizard — pending requests + balance donuts
-              + leave history. Lives in a sibling component so this monolith
-              doesn't grow further. */}
-          <LeaveSummaryPanel employeeId={employeeId} />
-          <ApplyLeavePanel
-          employee={employee}
-          employeeId={employeeId}
-          stage={leaveStage}
-          setStage={setLeaveStage}
-          leaveType={leaveType} setLeaveType={setLeaveType}
-          dayType={leaveDayType} setDayType={setLeaveDayType}
-          fromDate={leaveFromDate} setFromDate={setLeaveFromDate}
-          toDate={leaveToDate} setToDate={setLeaveToDate}
-          reason={leaveReason} setReason={setLeaveReason}
-          docName={leaveDocName} setDocName={setLeaveDocName}
-          notify={leaveNotify} setNotify={setLeaveNotify}
-          specificEmps={leaveSpecificEmps} setSpecificEmps={setLeaveSpecificEmps}
-          handoverReq={leaveHandoverReq} setHandoverReq={setLeaveHandoverReq}
-          coverPerson={leaveCoverPerson} setCoverPerson={setLeaveCoverPerson}
-          handoverNotes={leaveHandoverNotes} setHandoverNotes={setLeaveHandoverNotes}
-          criticalTasks={leaveCriticalTasks} setCriticalTasks={setLeaveCriticalTasks}
-          availOnCall={leaveAvailOnCall} setAvailOnCall={setLeaveAvailOnCall}
-          emergencyNumber={leaveEmergencyNumber} setEmergencyNumber={setLeaveEmergencyNumber}
-          availNote={leaveAvailNote} setAvailNote={setLeaveAvailNote}
-          onClose={() => { resetLeaveWizard(); setTab('profile'); }}
-        />
-        </>
+        <LeaveSummaryPanel employeeId={employeeId} />
       )}
 
       </div>
