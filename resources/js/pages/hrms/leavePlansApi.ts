@@ -207,8 +207,25 @@ export interface ApiLeaveRequest {
   updated_at: string;
   leave_type?: { id: number; name: string; short_code: string; type: string | null };
   leave_plan?: { id: number; plan_name: string };
-  cover_person?: { id: number; first_name: string; last_name: string | null; display_name: string | null };
+  cover_person?: { id: number; first_name: string; last_name: string | null; display_name: string | null; emp_code?: string };
   approver?: { id: number; name: string };
+  // Populated by /leave-requests/approvals and /leave-requests/:id (the
+  // employee profile's `index` call doesn't eager-load this — caller knows
+  // who they're asking for there).
+  employee?: {
+    id: number;
+    emp_code: string;
+    first_name: string;
+    last_name: string | null;
+    display_name: string | null;
+    email?: string | null;
+    department_id?: number | null;
+    designation_id?: number | null;
+    reporting_manager_id?: number | null;
+    department?: { id: number; name: string } | null;
+    designation?: { id: number; name: string } | null;
+    reporting_manager?: { id: number; first_name: string; last_name: string | null; display_name: string | null; email?: string | null } | null;
+  };
 }
 
 export interface ApiLeaveRequestPayload {
@@ -230,15 +247,27 @@ export interface ApiLeaveRequestPayload {
 }
 
 export interface ApiLeaveApprover {
+  // Multi-level approval response. `level` is 1-based; `is_current` marks
+  // the level the request is currently waiting on. Older single-level
+  // responses populate the same fields with level=1 / is_current=true.
+  level: number;
   role: string;
-  employee_id: number;
+  kind: string;
+  employee_id: number | null;
   name: string;
   email: string | null;
+  status: 'Pending' | 'Approved' | 'Rejected' | 'Skipped';
+  acted_at: string | null;
+  comment: string | null;
+  is_current: boolean;
 }
 
 export const leaveRequestsApi = {
   list: (params: { employee_id?: number; status?: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' } = {}) =>
     api.get<{ data: ApiLeaveRequest[] }>('/leave-requests', { params }).then(r => r.data.data),
+
+  show: (id: number) =>
+    api.get<{ data: ApiLeaveRequest }>(`/leave-requests/${id}`).then(r => r.data.data),
 
   create: (payload: ApiLeaveRequestPayload) =>
     api.post<{ data: ApiLeaveRequest }>('/leave-requests', payload).then(r => r.data.data),
@@ -254,4 +283,50 @@ export const leaveRequestsApi = {
 
   cancel: (id: number) =>
     api.post<{ data: ApiLeaveRequest }>(`/leave-requests/${id}/cancel`).then(r => r.data.data),
+
+  // HR approval queue — pending requests where current user is the
+  // reporting manager (or every pending in tenant for HR / admin roles).
+  approvals: (params: { status?: string; search?: string; branch_id?: number } = {}) =>
+    api.get<{ data: ApiLeaveRequest[] }>('/leave-requests/approvals', { params }).then(r => r.data.data),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-employee balance summary — drives the Leave tab on EmployeeProfile.
+// Different shape than /leave-balances (which is a matrix of all employees).
+// ─────────────────────────────────────────────────────────────────────────────
+export interface ApiEmployeeBalanceTransaction {
+  date: string;
+  change: string;
+  balance: number;
+  reason: string;
+  kind: 'accrual' | 'approved' | 'pending' | 'adjustment';
+}
+
+export interface ApiEmployeeBalanceType {
+  leave_type_id: number;
+  name: string;
+  short_code: string;
+  category: string | null;
+  paid_unpaid: 'Paid' | 'Unpaid' | null;
+  quota: number;
+  used: number;
+  available: number | null;
+  unlimited: boolean;
+  transactions: ApiEmployeeBalanceTransaction[];
+}
+
+export interface ApiEmployeeBalanceResponse {
+  employee: {
+    id: number;
+    name: string;
+    department?: string | null;
+    plan_id: number | null;
+    plan_name: string | null;
+  };
+  types: ApiEmployeeBalanceType[];
+}
+
+export const employeeBalancesApi = {
+  fetch: (employeeId: number) =>
+    api.get<{ data: ApiEmployeeBalanceResponse }>(`/employees/${employeeId}/leave-balances`).then(r => r.data.data),
 };

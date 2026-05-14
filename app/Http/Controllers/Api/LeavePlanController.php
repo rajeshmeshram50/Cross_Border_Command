@@ -354,6 +354,138 @@ class LeavePlanController extends Controller
         return response()->json(['data' => ['assigned' => count($allowed)]]);
     }
 
+    /**
+     * Per-employee balance summary — used by the Leave tab on the Employee
+     * Profile to render donut cards (one per assigned type) plus a simple
+     * balance ledger for the Balance History modal. Returns:
+     *   {
+     *     employee: { id, name, plan_id, plan_name },
+     *     types: [{ leave_type_id, name, short_code, category,
+     *                 quota, used, available, unlimited,
+     *                 transactions: [{ date, change, balance, reason }] }]
+     *   }
+     */
+    public function employeeBalances(Request $request, int $employeeId)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $employee = Employee::with(['department:id,name'])->find($employeeId);
+        if (!$employee) abort(404, 'Employee not found.');
+
+        // Resolve the employee's current leave plan via the pivot.
+        $planRow = DB::table('leave_plan_employees as lpe')
+            ->join('master_leave_plans as p', 'p.id', '=', 'lpe.leave_plan_id')
+            ->where('lpe.employee_id', $employeeId)
+            ->select('p.id', 'p.plan_name', 'p.from_month', 'p.calendar_year')
+            ->first();
+
+        if (!$planRow) {
+            return response()->json([
+                'data' => [
+                    'employee' => [
+                        'id' => $employee->id,
+                        'name' => trim(($employee->display_name ?? '') ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? ''))),
+                        'plan_id' => null,
+                        'plan_name' => null,
+                    ],
+                    'types' => [],
+                ],
+            ]);
+        }
+
+        $planTypeRows = DB::table('leave_plan_leave_types as lplt')
+            ->join('master_leave_types as lt', 'lt.id', '=', 'lplt.leave_type_id')
+            ->where('lplt.leave_plan_id', $planRow->id)
+            ->select(
+                'lplt.leave_type_id',
+                'lplt.config_json',
+                'lplt.quota_summary',
+                'lt.name as type_name',
+                'lt.short_code',
+                'lt.type as category',
+                'lt.paid_unpaid'
+            )->get();
+
+        // Pull this employee's approved+pending leave requests in one pass —
+        // approved rows contribute to `used`, every row appears in the ledger.
+        $requestsByType = LeaveRequest::query()
+            ->where('employee_id', $employeeId)
+            ->whereIn('leave_type_id', $planTypeRows->pluck('leave_type_id'))
+            ->orderBy('from_date')
+            ->get(['id', 'leave_type_id', 'from_date', 'to_date', 'days', 'status'])
+            ->groupBy('leave_type_id');
+
+        $types = $planTypeRows->map(function ($row) use ($requestsByType, $planRow) {
+            $cfg = $row->config_json ? json_decode($row->config_json, true) : null;
+            $accrual = $cfg['accrual'] ?? null;
+            $unlimited = (bool) ($accrual['unlimited'] ?? false);
+            $quota = (int) ($accrual['yearlyQuota'] ?? 0);
+            $reqs = $requestsByType[$row->leave_type_id] ?? collect();
+
+            // Build a simple ledger: start-of-year accrual, then each
+            // approved leave as a deduction. Pending entries surface but
+            // don't affect the running balance.
+            $transactions = [];
+            $balance = 0;
+            if (!$unlimited && $quota > 0) {
+                $accrualDate = $planRow->from_month && $planRow->calendar_year
+                    ? sprintf('01 %s %s', substr($planRow->from_month, 0, 3), $planRow->calendar_year)
+                    : 'Start of year';
+                $transactions[] = [
+                    'date' => $accrualDate,
+                    'change' => "+ {$quota}",
+                    'balance' => $quota,
+                    'reason' => 'Leave Accrual allocated at the start of year.',
+                    'kind' => 'accrual',
+                ];
+                $balance = $quota;
+            }
+
+            $used = 0.0;
+            foreach ($reqs as $r) {
+                if ($r->status === 'Approved') {
+                    $days = (float) $r->days;
+                    $used += $days;
+                    $balance = max(0, $balance - $days);
+                    $transactions[] = [
+                        'date' => optional($r->from_date)->format('d M Y') ?? '',
+                        'change' => "- " . rtrim(rtrim(number_format($days, 2), '0'), '.'),
+                        'balance' => $balance,
+                        'reason' => 'Leave taken (' . optional($r->from_date)->format('d M') . ' – ' . optional($r->to_date)->format('d M') . ')',
+                        'kind' => 'approved',
+                    ];
+                }
+            }
+
+            return [
+                'leave_type_id' => (int) $row->leave_type_id,
+                'name' => $row->type_name,
+                'short_code' => $row->short_code,
+                'category' => $row->category,
+                'paid_unpaid' => $row->paid_unpaid,
+                'quota' => $quota,
+                'used' => $used,
+                'available' => $unlimited ? null : max(0, $quota - $used),
+                'unlimited' => $unlimited,
+                'transactions' => $transactions,
+            ];
+        })->values();
+
+        return response()->json([
+            'data' => [
+                'employee' => [
+                    'id' => $employee->id,
+                    'name' => trim(($employee->display_name ?? '') ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? ''))),
+                    'department' => $employee->department?->name,
+                    'plan_id' => (int) $planRow->id,
+                    'plan_name' => $planRow->plan_name,
+                ],
+                'types' => $types,
+            ],
+        ]);
+    }
+
     public function removeEmployee(Request $request, int $id, int $employeeId)
     {
         $user = $request->user();

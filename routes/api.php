@@ -255,10 +255,18 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // employee's own requests (or the explicit ?employee_id= for HR view).
     Route::get   ('/leave-requests',                             [LeaveRequestController::class, 'index']);
     Route::post  ('/leave-requests',                             [LeaveRequestController::class, 'store']);
+    // /approvals MUST be declared BEFORE /{id} so the literal segment
+    // doesn't get captured as an id parameter.
+    Route::get   ('/leave-requests/approvals',                   [LeaveRequestController::class, 'approvals']);
+    Route::get   ('/leave-requests/{id}',                        [LeaveRequestController::class, 'show']);
     Route::get   ('/leave-requests/{id}/approvers',              [LeaveRequestController::class, 'approvers']);
     Route::post  ('/leave-requests/{id}/approve',                [LeaveRequestController::class, 'approve']);
     Route::post  ('/leave-requests/{id}/reject',                 [LeaveRequestController::class, 'reject']);
     Route::post  ('/leave-requests/{id}/cancel',                 [LeaveRequestController::class, 'cancel']);
+
+    // Per-employee balance summary — drives the Leave tab cards on the
+    // Employee Profile page (donut + ledger per assigned leave type).
+    Route::get   ('/employees/{employeeId}/leave-balances',      [LeavePlanController::class, 'employeeBalances']);
 
     // Subscription (client buy plan via Razorpay)
     Route::get('/subscription/plans', [SubscriptionController::class, 'plans']);

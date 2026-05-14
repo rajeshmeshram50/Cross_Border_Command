@@ -35,6 +35,8 @@ class LeaveRequest extends Model
         'approved_by',
         'approved_at',
         'approver_comment',
+        'approval_chain',
+        'current_approval_level',
         'created_by',
     ];
 
@@ -46,6 +48,8 @@ class LeaveRequest extends Model
         'handover_required' => 'boolean',
         'avail_on_call' => 'boolean',
         'approved_at' => 'datetime',
+        'approval_chain' => 'array',
+        'current_approval_level' => 'integer',
     ];
 
     public function employee(): BelongsTo

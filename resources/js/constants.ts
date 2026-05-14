@@ -183,6 +183,7 @@ export const HR_GROUPS: MenuGroup[] = [
         ? [{ id: 'hr.attendance', icon: 'CalendarCheck', label: 'Attendance' } as MenuItem]
         : []),
       { id: 'hr.leave',              icon: 'CalendarOff',   label: 'Leave' },
+      { id: 'hr.leave_approvals',    icon: 'BadgeCheck',    label: 'Leave Approvals' },
       { id: 'hr.expense',            icon: 'Receipt',       label: 'Expense Management' },
     ],
   },

@@ -12,6 +12,7 @@ import './EmployeeProfile.css';
 import ImageCropperModal from '../../components/ui/ImageCropperModal';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leavePlansApi';
+import LeaveSummaryPanel from './LeaveSummaryPanel';
 
 // Custom portal-based modal — renders directly to document.body so it always
 // escapes the .ep-fullscreen-overlay stacking context. Reactstrap's Modal had
@@ -3623,9 +3624,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         </>
       )}
 
-      {/* ── Tab: Apply Leave (inline wizard) ── */}
+      {/* ── Tab: Apply Leave (Summary + inline wizard) ── */}
       {tab === 'apply_leave' && (
-        <ApplyLeavePanel
+        <>
+          {/* Summary above the wizard — pending requests + balance donuts
+              + leave history. Lives in a sibling component so this monolith
+              doesn't grow further. */}
+          <LeaveSummaryPanel employeeId={employeeId} />
+          <ApplyLeavePanel
           employee={employee}
           employeeId={employeeId}
           stage={leaveStage}
@@ -3647,6 +3653,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           availNote={leaveAvailNote} setAvailNote={setLeaveAvailNote}
           onClose={() => { resetLeaveWizard(); setTab('profile'); }}
         />
+        </>
       )}
 
       </div>

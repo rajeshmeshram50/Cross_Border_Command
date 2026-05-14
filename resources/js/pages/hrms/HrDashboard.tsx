@@ -18,6 +18,7 @@ const HR_LEAF_ROUTES: Record<string, string> = {
   'hr.broadcast':       '/hr/broadcast',
   'hr.doc_templates':   '/hr/doc-templates',
   'hr.leave':       '/hr/leave',
+  'hr.leave_approvals': '/hr/leave-approvals',
   'hr.attendance':  '/hr/attendance',
   'hr.expense':     '/hr/expense',
   'hr.payroll':     '/hr/payroll',
