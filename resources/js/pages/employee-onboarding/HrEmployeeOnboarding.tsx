@@ -4,8 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
+import HeaderFooterPanel, {
+  DEFAULT_HEADER, DEFAULT_FOOTER,
+  type HeaderConfig, type FooterConfig,
+} from '../hrms/doc-templates/HeaderFooterPanel';
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
@@ -1217,18 +1222,253 @@ function VaultModal({
   tab: 'employee' | 'organizational';
   onTabChange: (t: 'employee' | 'organizational') => void;
 }) {
-  const allDocs = [...VAULT_EMPLOYEE_DOCS, ...VAULT_ORG_DOCS].flatMap(s => s.docs);
+  // ── Organizational documents (Document Templates) — pulled from the API.
+  // The Document Template Master classifies templates by employee_category
+  // (IT / Non-IT / Legal) × role_type (designation level). The Vault's
+  // Organizational tab fetches just the templates that match THIS employee.
+  type MatchedTemplate = {
+    id: number; code: string; name: string; doc_type: string | null;
+    status: 'Active' | 'Draft' | 'Deprecated';
+    trigger_point?: { id: number; module_name: string } | null;
+  };
+  const [orgTemplates, setOrgTemplates] = useState<MatchedTemplate[]>([]);
+  const [orgMeta, setOrgMeta] = useState<{ employee_category: string; role_type: string | null; department_name: string | null; designation_name: string | null } | null>(null);
+  const [orgLoading, setOrgLoading] = useState(false);
+  const toast = useToast();
+  const { user: authUser } = useAuth();
+  const currentUserId = authUser?.id ?? null;
+
+  useEffect(() => {
+    // Only fetch when the modal opens for a specific employee. We refetch on
+    // every open so tweaks to the template master are picked up immediately.
+    if (!isOpen || !emp?.dbId) { setOrgTemplates([]); setOrgMeta(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        setOrgLoading(true);
+        const { data } = await api.get('/hr-document-templates/match', { params: { employee_id: emp.dbId } });
+        if (cancelled) return;
+        setOrgTemplates(Array.isArray(data?.templates) ? data.templates : []);
+        setOrgMeta({
+          employee_category: data?.employee_category ?? 'Non-IT',
+          role_type:         data?.role_type ?? null,
+          department_name:   data?.department_name ?? null,
+          designation_name:  data?.designation_name ?? null,
+        });
+      } catch {
+        if (!cancelled) { setOrgTemplates([]); setOrgMeta(null); }
+      } finally {
+        if (!cancelled) setOrgLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, emp?.dbId]);
+
+  const allDocs = VAULT_EMPLOYEE_DOCS.flatMap(s => s.docs);
   const counts = {
-    total:    allDocs.length,
+    total:    allDocs.length + orgTemplates.length,
     verified: allDocs.filter(d => d.status === 'Verified').length,
-    signed:   allDocs.filter(d => d.status === 'Signed' || d.status === 'Sent').length,
+    signed:   allDocs.filter(d => d.status === 'Signed' || d.status === 'Sent').length + orgTemplates.filter(t => t.status === 'Active').length,
     pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length,
     notGen:   allDocs.filter(d => d.status === 'Not Generated').length,
   };
   const empCount = VAULT_EMPLOYEE_DOCS.flatMap(s => s.docs).length;
-  const orgCount = VAULT_ORG_DOCS.flatMap(s => s.docs).length;
+  const orgCount = orgTemplates.length;
   const completion = counts.total ? Math.round(((counts.verified + counts.signed) / counts.total) * 100) : 0;
-  const sections = tab === 'employee' ? VAULT_EMPLOYEE_DOCS : VAULT_ORG_DOCS;
+  const sections = tab === 'employee' ? VAULT_EMPLOYEE_DOCS : [];  // org tab renders from orgTemplates below
+
+  // ── In-modal preview state ────────────────────────────────────────────────
+  // Click "View" → fetch resolved HTML + header/footer JSON, render inside
+  // the same fixed-height page-style chrome the template editor uses.
+  const [previewOpen, setPreviewOpen]   = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewTpl, setPreviewTpl]     = useState<MatchedTemplate | null>(null);
+  const [previewHtml, setPreviewHtml]   = useState<string>('');
+  const [previewHeader, setPreviewHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
+  const [previewFooter, setPreviewFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
+  const [previewMissing, setPreviewMissing] = useState<string[]>([]);
+
+  const handleView = async (tpl: MatchedTemplate) => {
+    if (!emp?.dbId) return;
+    setPreviewTpl(tpl);
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    try {
+      const { data } = await api.get(`/hr-document-templates/${tpl.id}/preview`, {
+        params: { employee_id: emp.dbId },
+      });
+      setPreviewHtml((data?.content_html as string) || '<p style="color:#9ca3af;font-style:italic;">(empty template)</p>');
+      setPreviewHeader({ ...DEFAULT_HEADER, ...(data?.header_config || {}) } as HeaderConfig);
+      setPreviewFooter({ ...DEFAULT_FOOTER, ...(data?.footer_config || {}) } as FooterConfig);
+      setPreviewMissing(Array.isArray(data?.tokens_missing) ? data.tokens_missing : []);
+    } catch (err: any) {
+      toast.error('Could not load preview', err?.response?.data?.message || 'Please try again.');
+      setPreviewOpen(false);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // ── Signature runs (signing workflow runtime) ────────────────────────────
+  type SignerState = {
+    index: number; role_name: string; action: string; days: number;
+    user_id: number | null; name: string;
+    status: 'Pending' | 'Done' | 'Rejected' | 'Skipped';
+    acted_at: string | null; signed_name: string | null; note: string | null;
+  };
+  type AuditEvent = { at: string; actor_id: number | null; actor_name: string; action: string; message: string };
+  type SignatureRun = {
+    id: number; code: string | null; status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
+    template_id: number; template?: { id: number; code: string; name: string; doc_type: string | null } | null;
+    employee_id: number;
+    content_html: string | null;
+    header_config: HeaderConfig | null;
+    footer_config: FooterConfig | null;
+    signers: SignerState[];
+    current_index: number;
+    audit_log: AuditEvent[];
+    created_at: string;
+  };
+
+  // Existing runs for this employee — drives the 3-dot menu + audit trail link
+  // on each template row. We list runs once on open and re-fetch after any
+  // action so badges (e.g. "1 active run") stay in sync.
+  const [runs, setRuns] = useState<SignatureRun[]>([]);
+  const fetchRuns = async () => {
+    if (!emp?.dbId) { setRuns([]); return; }
+    try {
+      const { data } = await api.get('/hr-document-signatures', { params: { employee_id: emp.dbId } });
+      setRuns(Array.isArray(data) ? data : []);
+    } catch {
+      setRuns([]);
+    }
+  };
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) { setRuns([]); return; }
+    fetchRuns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, emp?.dbId]);
+
+  // Latest run per template_id — handy to surface a status pill alongside the template.
+  const runByTemplateId = useMemo(() => {
+    const m = new Map<number, SignatureRun>();
+    for (const r of runs) {
+      const existing = m.get(r.template_id);
+      if (!existing || r.id > existing.id) m.set(r.template_id, r);
+    }
+    return m;
+  }, [runs]);
+
+  // 3-dot menu state (which row is open)
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+
+  // Audit trail modal state
+  const [auditRun, setAuditRun] = useState<SignatureRun | null>(null);
+
+  // Action modal state (current signer takes action: Sign / Approve / Acknowledge)
+  const [actionRun, setActionRun] = useState<SignatureRun | null>(null);
+  const [actionSubmitting, setActionSubmitting] = useState(false);
+  const [actionName, setActionName] = useState('');
+  const [actionNote, setActionNote] = useState('');
+
+  // Send-confirmation modal
+  const [sendForTpl, setSendForTpl] = useState<MatchedTemplate | null>(null);
+  const [sending, setSending] = useState(false);
+
+  const openSend = (tpl: MatchedTemplate) => { setSendForTpl(tpl); };
+  const confirmSend = async () => {
+    if (!sendForTpl || !emp?.dbId) return;
+    setSending(true);
+    try {
+      const { data } = await api.post('/hr-document-signatures', {
+        template_id: sendForTpl.id,
+        employee_id: emp.dbId,
+      });
+      toast.success('Sent for signing', `${data.code || data.template?.code || 'Document'} entered the workflow.`);
+      setSendForTpl(null);
+      fetchRuns();
+    } catch (err: any) {
+      toast.error('Could not send', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const openAudit = (run: SignatureRun) => { setAuditRun(run); setOpenMenuId(null); };
+  const cancelRun = async (run: SignatureRun) => {
+    if (!confirm(`Cancel signing workflow for ${run.code || `run #${run.id}`}? This cannot be undone.`)) return;
+    setOpenMenuId(null);
+    try {
+      await api.post(`/hr-document-signatures/${run.id}/cancel`);
+      toast.success('Cancelled', 'Workflow halted.');
+      fetchRuns();
+    } catch (err: any) {
+      toast.error('Could not cancel', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
+  // Take Action — opens the SignActionModal with prefilled signer name when
+  // the action type is "Sign" so the signer can confirm or override.
+  const openAction = (run: SignatureRun) => {
+    const current = run.signers[run.current_index];
+    setActionRun(run);
+    setActionName(current?.name || '');
+    setActionNote('');
+  };
+  const submitAction = async () => {
+    if (!actionRun) return;
+    const current = actionRun.signers[actionRun.current_index];
+    if (!current) return;
+    // Map the wizard's action label to the API enum: "Review & Acknowledge" → "Acknowledge"
+    const apiAction = current.action === 'Sign' ? 'Sign'
+                     : current.action === 'Approve' ? 'Approve'
+                     : 'Acknowledge';
+    if (apiAction === 'Sign' && !actionName.trim()) {
+      toast.error('Signature required', 'Please type your name to sign.');
+      return;
+    }
+    setActionSubmitting(true);
+    try {
+      const { data } = await api.post(`/hr-document-signatures/${actionRun.id}/action`, {
+        action:      apiAction,
+        signed_name: apiAction === 'Sign' ? actionName.trim() : null,
+        note:        actionNote.trim() || null,
+      });
+      toast.success(
+        apiAction === 'Sign' ? 'Signed' : apiAction === 'Approve' ? 'Approved' : 'Acknowledged',
+        `${data.code || `Run #${data.id}`} updated.`,
+      );
+      setActionRun(null);
+      fetchRuns();
+    } catch (err: any) {
+      toast.error('Could not record action', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setActionSubmitting(false);
+    }
+  };
+
+  // Click "Generate" → backend resolves {{Tokens}} with this employee's
+  // data and streams the filled DOCX back.
+  const handleGenerate = async (tpl: MatchedTemplate) => {
+    if (!emp?.dbId) return;
+    try {
+      const resp = await api.get(`/hr-document-templates/${tpl.id}/generate`, {
+        params: { employee_id: emp.dbId },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([resp.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(emp.name || 'employee').replace(/\s+/g, '-')}-${tpl.code || tpl.id}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Document generated', `${tpl.code || tpl.name} downloaded.`);
+    } catch (err: any) {
+      toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
+    }
+  };
 
   return (
     <Modal
@@ -1319,16 +1559,10 @@ function VaultModal({
           </div>
         </div>
 
-        {/* Body — wrapped in ComingSoonShell since the document
-            catalogue, signing flow and download links aren't backed
-            by a real backend yet. The header (with the close button
-            + status ring) stays fully interactive so the user can
-            preview the layout and dismiss the modal. */}
+        {/* Body — Organizational Documents tab is now backed by the
+            HR Document Templates API (matched per department × designation
+            level), so the vault is fully interactive. */}
         <div style={{ padding: '16px 24px 22px', flex: '1 1 auto', overflowY: 'auto', minHeight: 0 }}>
-          <ComingSoonShell
-            title="Evidence Vault"
-            subtitle="Document repository, signed agreements, and ID uploads"
-          >
             {/* KPI strip */}
             <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--vz-border-color)' }}>
               <Row className="g-3 align-items-stretch">
@@ -1379,7 +1613,8 @@ function VaultModal({
 
             {/* Section list */}
             <div>
-              {sections.map(section => (
+              {/* Employee tab — static doc catalogue (Identity / Address / Education / Employment) */}
+              {tab === 'employee' && sections.map(section => (
                 <div key={section.title} style={{ paddingTop: 16 }}>
                   <div className="d-flex align-items-center justify-content-between mb-2">
                     <div>
@@ -1433,13 +1668,470 @@ function VaultModal({
                   </div>
                 </div>
               ))}
+
+              {/* Organizational tab — pulled from HR Document Templates,
+                  filtered by (department → category) × (designation.level → role_type). */}
+              {tab === 'organizational' && (
+                <div style={{ paddingTop: 16 }}>
+                  {/* Match context banner — surfaces WHY each template is here */}
+                  {orgMeta && (
+                    <div className="d-flex align-items-center gap-2 flex-wrap mb-3"
+                      style={{ padding: '10px 14px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 10 }}>
+                      <i className="ri-magic-line" style={{ color: '#4338ca' }} />
+                      <strong style={{ fontSize: 12.5, color: '#4338ca' }}>Matched Templates</strong>
+                      <span style={{ fontSize: 12, color: '#374151' }}>
+                        Department <strong>{orgMeta.department_name || '—'}</strong> → Category{' '}
+                        <span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{orgMeta.employee_category}</span>
+                        {orgMeta.role_type && (
+                          <>{' '}· Level{' '}<span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{orgMeta.role_type}</span></>
+                        )}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="d-flex align-items-center justify-content-between mb-2">
+                    <div>
+                      <div className="fw-bold" style={{ fontSize: 14 }}>Signed Company Documents</div>
+                      <div className="text-muted" style={{ fontSize: 11.5 }}>
+                        {orgLoading ? 'Loading matching templates…'
+                          : orgTemplates.length === 0 ? 'No templates configured for this department × level.'
+                          : `${orgTemplates.length} template${orgTemplates.length === 1 ? '' : 's'} ready to generate`}
+                      </div>
+                    </div>
+                    <span className="d-inline-flex align-items-center"
+                      style={{ padding: '4px 12px', borderRadius: 999, background: '#f5f0ff', color: '#5a3fd1', fontSize: 11.5, fontWeight: 600 }}>
+                      {orgTemplates.length} docs
+                    </span>
+                  </div>
+
+                  {orgLoading && (
+                    <div style={{ padding: 18, textAlign: 'center', color: '#6b7280', fontSize: 12.5 }}>
+                      <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
+                      Looking up matching templates…
+                    </div>
+                  )}
+
+                  {!orgLoading && orgTemplates.length === 0 && (
+                    <div style={{ padding: 22, textAlign: 'center', color: '#6b7280', background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: 10 }}>
+                      <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
+                      <div style={{ fontSize: 13 }}>
+                        No templates match this employee's department + designation level yet.<br />
+                        Create a template under HR &gt; Document &amp; Evidence &gt; Document Templates.
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    {orgTemplates.map(tpl => {
+                      const tone = tpl.status === 'Active'
+                        ? VAULT_STATUS_TONE['Signed']
+                        : tpl.status === 'Draft'
+                          ? VAULT_STATUS_TONE['Pending']
+                          : VAULT_STATUS_TONE['Not Generated'];
+                      const canGenerate = tpl.status === 'Active' && !!emp?.dbId;
+                      const run = runByTemplateId.get(tpl.id) || null;
+                      const currentSigner = run?.signers?.[run.current_index] || null;
+                      const isMyTurn = !!(run && currentSigner
+                        && (run.status === 'Pending' || run.status === 'In Progress')
+                        && currentSigner.user_id === currentUserId);
+                      const runStatusTone =
+                        run?.status === 'Completed' ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
+                        : run?.status === 'Rejected' ? { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' }
+                        : run?.status === 'Cancelled' ? { bg: '#e5e7eb', fg: '#374151', dot: '#6b7280' }
+                        : run?.status === 'In Progress' ? { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' }
+                        : run ? { bg: '#dbeafe', fg: '#1d4ed8', dot: '#3b82f6' }
+                        : null;
+                      return (
+                        <div key={tpl.id} className="vault-doc-row flex-wrap" style={{ position: 'relative' }}>
+                          <div className="vault-doc-icon" style={{ background: '#eef2ff', color: '#4338ca' }}>
+                            <i className="ri-file-text-line" />
+                          </div>
+                          <div className="vault-doc-meta">
+                            <div className="vault-doc-name">
+                              {tpl.name || '(unnamed template)'}{' '}
+                              <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>{tpl.code}</span>
+                              {run && runStatusTone && (
+                                <span style={{ marginLeft: 8, padding: '1px 8px', borderRadius: 999, background: runStatusTone.bg, color: runStatusTone.fg, fontSize: 11, fontWeight: 700 }}>
+                                  <i className="ri-flow-chart" style={{ fontSize: 11, marginRight: 3 }} />{run.status}
+                                </span>
+                              )}
+                            </div>
+                            <div className="vault-doc-desc">
+                              {tpl.doc_type || 'Document'}{tpl.trigger_point?.module_name ? ` · Trigger: ${tpl.trigger_point.module_name}` : ''}
+                              {run && currentSigner && (run.status === 'Pending' || run.status === 'In Progress') && (
+                                <> · Waiting on <strong>{currentSigner.name}</strong> ({currentSigner.action})</>
+                              )}
+                            </div>
+                          </div>
+                          <span className="vault-status-pill" style={{ background: tone.bg, color: tone.fg }}>
+                            <span className="vault-status-dot" style={{ background: tone.dot }} />
+                            {tpl.status}
+                          </span>
+                          <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}
+                            title="Preview this document with this employee's data filled in">
+                            <i className="ri-eye-line" /> View
+                          </button>
+                          {/* If the current user is the next signer, surface
+                              their action button inline so they don't have to
+                              hunt for it. */}
+                          {isMyTurn && run && (
+                            <button type="button"
+                              onClick={() => openAction(run)}
+                              style={{ padding: '6px 12px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', border: 0, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                              <i className="ri-quill-pen-line me-1" />{currentSigner!.action}
+                            </button>
+                          )}
+                          {/* Send for signing — only if there isn't an active run already. */}
+                          {(!run || run.status === 'Completed' || run.status === 'Rejected' || run.status === 'Cancelled') && (
+                            <button type="button" onClick={() => openSend(tpl)}
+                              disabled={!canGenerate}
+                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: canGenerate ? 'pointer' : 'not-allowed', opacity: canGenerate ? 1 : 0.5 }}
+                              title={canGenerate ? 'Send through the configured signing workflow' : 'Only Active templates can be sent'}>
+                              <i className="ri-send-plane-line me-1" /> Send
+                            </button>
+                          )}
+                          <button type="button" className="vault-action-download" onClick={() => handleGenerate(tpl)}
+                            disabled={!canGenerate}
+                            style={{ opacity: canGenerate ? 1 : 0.5, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
+                            title={canGenerate ? 'Generate DOCX with this employee\'s data' : 'Only Active templates can be generated'}>
+                            <i className="ri-play-fill" /> Generate
+                          </button>
+
+                          {/* 3-dot menu — audit trail + cancel (when a run exists) */}
+                          <div style={{ position: 'relative' }}>
+                            <button type="button" onClick={() => setOpenMenuId(openMenuId === tpl.id ? null : tpl.id)}
+                              title="More actions"
+                              style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: 'pointer' }}>
+                              <i className="ri-more-2-fill" />
+                            </button>
+                            {openMenuId === tpl.id && (
+                              <div style={{ position: 'absolute', right: 0, top: '110%', minWidth: 180, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 8px 22px rgba(0,0,0,0.08)', padding: 4, zIndex: 20 }}>
+                                {run ? (
+                                  <button type="button" onClick={() => openAudit(run)}
+                                    style={menuItemStyle}>
+                                    <i className="ri-history-line me-2" />Audit Trail
+                                  </button>
+                                ) : (
+                                  <div style={{ ...menuItemStyle, color: '#9ca3af', cursor: 'default' }}>
+                                    <i className="ri-history-line me-2" />No signing run yet
+                                  </div>
+                                )}
+                                {run && (run.status === 'Pending' || run.status === 'In Progress') && (
+                                  <button type="button" onClick={() => cancelRun(run)}
+                                    style={{ ...menuItemStyle, color: '#b91c1c' }}>
+                                    <i className="ri-close-circle-line me-2" />Cancel Workflow
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-          </ComingSoonShell>
         </div>
       </ModalBody>
+
+      {/* Document preview — opens on top of the vault modal */}
+      <Modal isOpen={previewOpen} toggle={() => setPreviewOpen(false)} size="lg" centered
+        contentClassName="border-0" modalClassName="vault-preview-modal" backdrop="static">
+        <ModalBody className="p-0">
+          {/* Preview header bar */}
+          <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)', borderRadius: '6px 6px 0 0' }}>
+            <div className="d-flex align-items-center justify-content-between gap-3">
+              <div className="d-flex align-items-center gap-2 min-w-0">
+                <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <i className="ri-file-search-line" style={{ fontSize: 18, color: '#fff' }} />
+                </span>
+                <div className="min-w-0">
+                  <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>
+                    {previewTpl?.name || 'Document Preview'}
+                  </h5>
+                  <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>
+                    {emp?.name ? `Filled with ${emp.name}'s data` : 'Live preview'}
+                    {previewTpl?.code ? ` · ${previewTpl.code}` : ''}
+                  </div>
+                </div>
+              </div>
+              <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Close"
+                style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
+                <i className="ri-close-line" style={{ fontSize: 18 }} />
+              </button>
+            </div>
+          </div>
+
+          <div style={{ padding: 16, background: '#f9fafb', maxHeight: '70vh', overflowY: 'auto' }}>
+            {previewLoading ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>
+                <i className="ri-loader-4-line" style={{ fontSize: 26, display: 'block', marginBottom: 8 }} />
+                Resolving placeholders…
+              </div>
+            ) : (
+              <>
+                {previewMissing.length > 0 && (
+                  <div className="d-flex align-items-start gap-2 mb-3"
+                    style={{ padding: '8px 12px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12 }}>
+                    <i className="ri-error-warning-line" style={{ color: '#b45309', fontSize: 16, marginTop: 1 }} />
+                    <div style={{ color: '#92400e' }}>
+                      <strong>Unfilled placeholders:</strong>{' '}
+                      {previewMissing.map(t => (
+                        <code key={t} style={{ background: '#fff', color: '#7c2d12', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>{`{{${t}}}`}</code>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <HeaderFooterPanel
+                  header={previewHeader} setHeader={() => {}}
+                  footer={previewFooter} setFooter={() => {}}
+                  readOnly
+                >
+                  <div className="tpl-readonly-preview"
+                    style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 260 }}
+                    // The server resolveTokens htmlspecialchars-escapes every
+                    // substituted value, so the only HTML reaching this sink
+                    // is whatever the admin saved in the template editor.
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  />
+                </HeaderFooterPanel>
+              </>
+            )}
+          </div>
+
+          <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', background: '#fff', display: 'flex', justifyContent: 'flex-end', gap: 8, borderRadius: '0 0 6px 6px' }}>
+            <button type="button" onClick={() => setPreviewOpen(false)}
+              style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+              Close
+            </button>
+            {previewTpl && previewTpl.status === 'Active' && (
+              <button type="button" onClick={() => { handleGenerate(previewTpl); }}
+                style={{ padding: '7px 14px', background: 'linear-gradient(135deg,#16a34a,#22c55e)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+                <i className="ri-download-2-line me-1" /> Download DOCX
+              </button>
+            )}
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* Send-for-signing confirmation */}
+      <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" backdrop="static">
+        <ModalBody className="p-0">
+          <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
+            <div className="d-flex align-items-center justify-content-between">
+              <strong style={{ fontSize: 15 }}><i className="ri-send-plane-line me-2" />Send for Signing</strong>
+              <button type="button" onClick={() => setSendForTpl(null)} aria-label="Close"
+                style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
+                <i className="ri-close-line" />
+              </button>
+            </div>
+          </div>
+          <div style={{ padding: 16, fontSize: 13 }}>
+            <p style={{ marginBottom: 12 }}>
+              Send <strong>{sendForTpl?.name}</strong> for <strong>{emp?.name}</strong>?
+              The document will follow this signing workflow:
+            </p>
+            <SendWorkflowPreview templateId={sendForTpl?.id ?? null} />
+            <div style={{ marginTop: 12, padding: '8px 10px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11.5, color: '#92400e' }}>
+              <i className="ri-information-line me-1" />Placeholders will be locked at send-time using this employee's data.
+            </div>
+          </div>
+          <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" onClick={() => setSendForTpl(null)} disabled={sending}
+              style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+              Cancel
+            </button>
+            <button type="button" onClick={confirmSend} disabled={sending}
+              style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+              {sending ? 'Sending…' : 'Send Document'}
+            </button>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* Audit trail modal */}
+      <Modal isOpen={!!auditRun} toggle={() => setAuditRun(null)} size="lg" centered contentClassName="border-0">
+        <ModalBody className="p-0">
+          <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
+            <div className="d-flex align-items-center justify-content-between">
+              <div>
+                <strong style={{ fontSize: 15 }}><i className="ri-history-line me-2" />Audit Trail</strong>
+                <div style={{ fontSize: 11.5, opacity: 0.85 }}>{auditRun?.template?.name} · {auditRun?.code} · Status {auditRun?.status}</div>
+              </div>
+              <button type="button" onClick={() => setAuditRun(null)} aria-label="Close"
+                style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
+                <i className="ri-close-line" />
+              </button>
+            </div>
+          </div>
+          <div style={{ padding: 16, maxHeight: '60vh', overflowY: 'auto' }}>
+            {/* Signing flow snapshot */}
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Signing Flow</div>
+            <div className="d-flex flex-wrap" style={{ gap: 6, marginBottom: 16 }}>
+              {(auditRun?.signers || []).map((s, i) => {
+                const done = s.status === 'Done';
+                const rejected = s.status === 'Rejected';
+                const isCurrent = i === auditRun?.current_index && (auditRun?.status === 'Pending' || auditRun?.status === 'In Progress');
+                const bg = rejected ? '#fee2e2' : done ? '#dcfce7' : isCurrent ? '#dbeafe' : '#f3f4f6';
+                const fg = rejected ? '#b91c1c' : done ? '#15803d' : isCurrent ? '#1d4ed8' : '#374151';
+                return (
+                  <div key={i} className="d-flex align-items-center" style={{ gap: 6 }}>
+                    <div style={{ padding: '6px 12px', background: bg, border: `1px solid ${fg}33`, borderRadius: 8, fontSize: 12, fontWeight: 700, color: fg }}>
+                      <span style={{ display: 'inline-flex', width: 18, height: 18, borderRadius: '50%', background: fg, color: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 6, fontSize: 10 }}>{i + 1}</span>
+                      {s.name}
+                      <div style={{ fontSize: 10.5, fontWeight: 500 }}>{s.action} {done ? '· Done' : rejected ? '· Rejected' : isCurrent ? '· Pending you' : '· Waiting'}</div>
+                    </div>
+                    {i < (auditRun?.signers?.length || 0) - 1 && <i className="ri-arrow-right-line" style={{ color: '#9ca3af' }} />}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Audit events */}
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 8 }}>Events</div>
+            <div style={{ borderLeft: '2px solid #e5e7eb', paddingLeft: 14 }}>
+              {(auditRun?.audit_log || []).slice().reverse().map((ev, i) => (
+                <div key={i} style={{ position: 'relative', marginBottom: 12 }}>
+                  <span style={{ position: 'absolute', left: -22, top: 6, width: 10, height: 10, borderRadius: '50%', background: '#3b82f6', border: '2px solid #fff' }} />
+                  <div style={{ fontSize: 12.5, color: '#1f2937', fontWeight: 600 }}>{ev.message}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>
+                    {new Date(ev.at).toLocaleString()} · {ev.actor_name} · <code style={{ fontSize: 10.5, background: '#f3f4f6', padding: '1px 5px', borderRadius: 3 }}>{ev.action}</code>
+                  </div>
+                </div>
+              ))}
+              {(!auditRun?.audit_log || auditRun.audit_log.length === 0) && (
+                <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>No events yet.</div>
+              )}
+            </div>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* Sign / Approve / Acknowledge modal */}
+      <Modal isOpen={!!actionRun} toggle={() => setActionRun(null)} size="lg" centered contentClassName="border-0" backdrop="static">
+        <ModalBody className="p-0">
+          {actionRun && (() => {
+            const current = actionRun.signers[actionRun.current_index];
+            const isSign = current?.action === 'Sign';
+            return (
+              <>
+                <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div>
+                      <strong style={{ fontSize: 15 }}><i className="ri-quill-pen-line me-2" />{current?.action}</strong>
+                      <div style={{ fontSize: 11.5, opacity: 0.85 }}>{actionRun.template?.name} · {actionRun.code}</div>
+                    </div>
+                    <button type="button" onClick={() => setActionRun(null)} aria-label="Close"
+                      style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
+                      <i className="ri-close-line" />
+                    </button>
+                  </div>
+                </div>
+                <div style={{ padding: 16, maxHeight: '65vh', overflowY: 'auto', background: '#f9fafb' }}>
+                  {/* Render the locked document for context */}
+                  <HeaderFooterPanel
+                    header={{ ...DEFAULT_HEADER, ...(actionRun.header_config || {}) } as HeaderConfig}
+                    setHeader={() => {}}
+                    footer={{ ...DEFAULT_FOOTER, ...(actionRun.footer_config || {}) } as FooterConfig}
+                    setFooter={() => {}}
+                    readOnly
+                  >
+                    <div className="tpl-readonly-preview"
+                      style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 220 }}
+                      dangerouslySetInnerHTML={{ __html: actionRun.content_html || '<p>(empty)</p>' }}
+                    />
+                  </HeaderFooterPanel>
+
+                  {/* Action inputs */}
+                  <div style={{ marginTop: 14, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+                    {isSign && (
+                      <>
+                        <label style={{ fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                          Type your name to sign <span style={{ color: '#ef4444' }}>*</span>
+                        </label>
+                        <input type="text" value={actionName} onChange={e => setActionName(e.target.value)}
+                          placeholder="Your full name"
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14 }} />
+                        {actionName && (
+                          <div style={{ marginTop: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 11.5, color: '#6b7280' }}>
+                            Preview: <span style={{ fontFamily: '"Brush Script MT", cursive', fontSize: 22, color: '#1d4ed8', marginLeft: 6 }}>{actionName}</span>
+                            <div style={{ fontSize: 10.5, marginTop: 4 }}>
+                              This will replace every <code>{`{{Signer${(actionRun.current_index ?? 0) + 1}Sign}}`}</code> placeholder in the document.
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <label style={{ fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4, marginTop: isSign ? 12 : 0 }}>
+                      Note (optional)
+                    </label>
+                    <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
+                      placeholder="Add a comment for the audit trail"
+                      rows={2} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
+                  </div>
+                </div>
+                <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8, background: '#fff' }}>
+                  <button type="button" onClick={() => setActionRun(null)} disabled={actionSubmitting}
+                    style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={submitAction} disabled={actionSubmitting || (isSign && !actionName.trim())}
+                    style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+                    <i className={isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} style={{ marginRight: 6 }} />
+                    {actionSubmitting ? 'Submitting…' : `Confirm ${current?.action}`}
+                  </button>
+                </div>
+              </>
+            );
+          })()}
+        </ModalBody>
+      </Modal>
     </Modal>
   );
 }
+
+// Small helper — renders a compact preview of the template's configured
+// signing workflow inside the Send confirmation modal. Pulls signers from
+// the template row so the user sees the exact chain before they hit Send.
+function SendWorkflowPreview({ templateId }: { templateId: number | null }) {
+  const [signers, setSigners] = useState<Array<{ role_name?: string | null; action?: string }>>([]);
+  useEffect(() => {
+    if (!templateId) { setSigners([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get(`/hr-document-templates/${templateId}`);
+        if (!cancelled) setSigners(Array.isArray(data?.signers) ? data.signers : []);
+      } catch { if (!cancelled) setSigners([]); }
+    })();
+    return () => { cancelled = true; };
+  }, [templateId]);
+
+  if (signers.length === 0) {
+    return <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>No signers configured on this template.</div>;
+  }
+  return (
+    <div className="d-flex flex-wrap align-items-center" style={{ gap: 6 }}>
+      {signers.map((s, i) => (
+        <div key={i} className="d-flex align-items-center" style={{ gap: 6 }}>
+          <div style={{ padding: '6px 10px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#4338ca' }}>
+            <span style={{ display: 'inline-flex', width: 18, height: 18, borderRadius: '50%', background: '#4338ca', color: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 6, fontSize: 10 }}>{i + 1}</span>
+            {s.role_name || 'Unassigned'}
+            <div style={{ fontSize: 10.5, fontWeight: 500 }}>{s.action || 'Sign'}</div>
+          </div>
+          {i < signers.length - 1 && <i className="ri-arrow-right-line" style={{ color: '#9ca3af' }} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const menuItemStyle: React.CSSProperties = {
+  display: 'block', width: '100%', textAlign: 'left',
+  padding: '8px 12px', border: 0, background: 'transparent', borderRadius: 6,
+  fontSize: 13, color: '#374151', cursor: 'pointer',
+};
 
 // ── Checklist modal ──────────────────────────────────────────────────────────
 function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {

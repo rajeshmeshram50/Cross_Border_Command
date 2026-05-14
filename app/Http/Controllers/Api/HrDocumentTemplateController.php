@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\Employee;
 use App\Models\HrDocumentTemplate;
 use App\Models\Module;
 use App\Models\Permission;
@@ -220,135 +221,16 @@ class HrDocumentTemplateController extends Controller
         $this->authorize($request, 'can_view');
         $row = $this->resolveRow($request, (int) $id);
 
-        // If the user uploaded a revised DOCX previously, prefer that.
+        // If the user uploaded a revised DOCX previously, prefer that —
+        // it's the source of truth for header/footer/body once a Word
+        // round-trip has happened.
         if ($row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
             $abs = Storage::disk('public')->path($row->docx_path);
             $name = $row->docx_original_name ?: ($row->code ?: 'template') . '.docx';
             return response()->download($abs, $name);
         }
 
-        $phpWord = new PhpWord();
-        // Section page setup — give the header + footer enough vertical room
-        // to render at the heights the SPA preview uses (header ≈ 90pt, footer
-        // ≈ 50pt). PhpWord expects twentieths of a point, hence the *20.
-        $section = $phpWord->addSection([
-            'headerHeight' => 90 * 20,
-            'footerHeight' => 50 * 20,
-        ]);
-
-        // ── Header: logo + title (matches the fixed-height preview zone) ──
-        $header = $section->addHeader();
-        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
-        $logoPath  = $headerCfg['logo_path'] ?? null;
-        $title     = (string) ($headerCfg['title'] ?? '');
-        $subtitle  = (string) ($headerCfg['subtitle'] ?? '');
-        $hAlign    = (string) ($headerCfg['align']    ?? 'space-between');
-
-        // Two-cell table so the logo can sit on one side and the title on
-        // the other (Word's header has no flexbox; a 2-col table is the
-        // standard trick).
-        $table = $header->addTable([
-            'borderSize'   => 0,
-            'cellMargin'   => 0,
-            'unit'         => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
-            'width'        => 100 * 50,
-        ]);
-        $row1 = $table->addRow();
-        $logoCell  = $row1->addCell(2500, ['valign' => 'center']);
-        $titleCell = $row1->addCell(7500, ['valign' => 'center']);
-
-        $absLogo = $logoPath && Storage::disk('public')->exists($logoPath)
-            ? Storage::disk('public')->path($logoPath) : null;
-        if ($absLogo) {
-            try {
-                $logoCell->addImage($absLogo, ['height' => 60, 'width' => 120]);
-            } catch (\Throwable $e) {
-                $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']);
-            }
-        }
-        $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
-        if ($title !== '') {
-            $titleCell->addText($title, ['bold' => true, 'size' => 14], ['alignment' => $align]);
-        }
-        if ($subtitle !== '') {
-            $titleCell->addText($subtitle, ['size' => 10, 'color' => '6B7280'], ['alignment' => $align]);
-        }
-
-        // ── Footer ──
-        // Word footers have no flex layout either — we use a 3-cell table
-        // so footer.align and footer.page_number_align can point at separate
-        // cells (matching the SPA preview). The page number is rendered as
-        // live PAGE / NUMPAGES fields so it stays accurate across exports.
-        $footer = $section->addFooter();
-        $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
-        $footerText = (string) ($footerCfg['text']  ?? '');
-        $fAlign     = (string) ($footerCfg['align'] ?? 'center');
-        $showPage   = !empty($footerCfg['show_page_number']);
-        $pnAlign    = (string) ($footerCfg['page_number_align']  ?? 'right');
-        $pnFormat   = (string) ($footerCfg['page_number_format'] ?? 'Page N of M');
-
-        $fTable = $footer->addTable([
-            'borderSize'   => 0,
-            'cellMargin'   => 0,
-            'unit'         => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
-            'width'        => 100 * 50,
-        ]);
-        $fRow = $fTable->addRow();
-        $cells = [
-            'left'   => $fRow->addCell(3333, ['valign' => 'center']),
-            'center' => $fRow->addCell(3333, ['valign' => 'center']),
-            'right'  => $fRow->addCell(3333, ['valign' => 'center']),
-        ];
-
-        if ($footerText !== '' && isset($cells[$fAlign])) {
-            $cells[$fAlign]->addText($footerText, ['size' => 9, 'color' => '6B7280'], ['alignment' => $fAlign]);
-        }
-
-        if ($showPage && isset($cells[$pnAlign])) {
-            $cell  = $cells[$pnAlign];
-            $style = ['size' => 9, 'color' => '6B7280'];
-            $para  = ['alignment' => $pnAlign];
-            // PhpWord's TextRun lets us interleave literal text with PAGE /
-            // NUMPAGES fields. Word will render the fields live on open.
-            $run = $cell->addTextRun($para);
-            switch ($pnFormat) {
-                case 'N':
-                    $run->addField('PAGE', [], [], '', false);
-                    break;
-                case 'Page N':
-                    $run->addText('Page ', $style);
-                    $run->addField('PAGE', [], [], '', false);
-                    break;
-                case 'N / M':
-                    $run->addField('PAGE', [], [], '', false);
-                    $run->addText(' / ', $style);
-                    $run->addField('NUMPAGES', [], [], '', false);
-                    break;
-                case 'Page N of M':
-                default:
-                    $run->addText('Page ', $style);
-                    $run->addField('PAGE', [], [], '', false);
-                    $run->addText(' of ', $style);
-                    $run->addField('NUMPAGES', [], [], '', false);
-                    break;
-            }
-        }
-
-        // ── Body ──
-        $html = (string) ($row->content_html ?: '<p>(empty template)</p>');
-        $wrapped = '<html><body>' . $html . '</body></html>';
-        try {
-            Html::addHtml($section, $wrapped, false, false);
-        } catch (\Throwable $e) {
-            $section->addText(strip_tags($html));
-        }
-
-        $writer = IOFactory::createWriter($phpWord, 'Word2007');
-        $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
-        $writer->save($tmp);
-
-        $filename = ($row->code ?: 'template') . '.docx';
-        return response()->download($tmp, $filename)->deleteFileAfterSend(true);
+        return $this->renderDocx($row, ($row->code ?: 'template') . '.docx');
     }
 
     /**
@@ -382,6 +264,294 @@ class HrDocumentTemplateController extends Controller
         ]);
         $row->load(self::WITH);
         return response()->json($row);
+    }
+
+    /* ───── ONBOARDING INTEGRATION ───── */
+
+    /**
+     * Department-name → employee_category. The Document Template Master
+     * categorises templates into IT / Non-IT / Legal; the onboarding flow
+     * picks the employee's department and we have to slot it into one of
+     * those buckets. Anything that doesn't smell like IT or Legal goes to
+     * Non-IT (Accounts, Logistics, HR, Operations, etc.).
+     */
+    private function mapDepartmentToCategory(?string $deptName): string
+    {
+        $name = strtolower(trim((string) $deptName));
+        if ($name === '') return 'Non-IT';
+
+        $itHints = ['it', 'information technology', 'tech', 'engineering', 'software', 'devops', 'qa', 'mobile', 'data', 'product'];
+        $legalHints = ['legal', 'compliance', 'governance'];
+
+        foreach ($legalHints as $h) { if (str_contains($name, $h)) return 'Legal'; }
+        foreach ($itHints as $h)    { if (str_contains($name, $h)) return 'IT'; }
+        return 'Non-IT';
+    }
+
+    /**
+     * GET /api/hr-document-templates/match?employee_id=N
+     *
+     * Returns the Active templates whose (employee_category, role_type)
+     * matches the given employee's (department-mapped-category,
+     * designation.level). Used by the Onboarding > Evidence Vault to
+     * surface generable documents (Offer Letter, NDA, Welcome Kit, etc).
+     */
+    public function matchForEmployee(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+        $request->validate(['employee_id' => 'required|integer|exists:employees,id']);
+
+        $emp = Employee::with(['department:id,name', 'designation:id,name,level'])
+            ->findOrFail((int) $request->query('employee_id'));
+
+        $category = $this->mapDepartmentToCategory($emp->department?->name);
+        $level    = $emp->designation?->level;  // 'Director / CEO' | 'Head of Department (HOD)' | …
+
+        $q = HrDocumentTemplate::query()->with(self::WITH)
+            ->where('status', 'Active')
+            ->where('employee_category', $category);
+        if ($level) $q->where('role_type', $level);
+
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+
+        return response()->json([
+            'employee_category' => $category,
+            'role_type'         => $level,
+            'department_name'   => $emp->department?->name,
+            'designation_name'  => $emp->designation?->name,
+            'templates'         => $q->orderByDesc('id')->get(),
+        ]);
+    }
+
+    /**
+     * GET /api/hr-document-templates/{id}/generate?employee_id=N
+     *
+     * Resolves the template's {{Tokens}} against the employee's data and
+     * streams the filled DOCX back to the client. Same header/footer baked
+     * in as the plain download endpoint — just with placeholders replaced.
+     */
+    public function generateForEmployee(Request $request, $id)
+    {
+        $this->authorize($request, 'can_view');
+        $request->validate(['employee_id' => 'required|integer|exists:employees,id']);
+
+        $row = $this->resolveRow($request, (int) $id);
+        $emp = Employee::with([
+            'department:id,name', 'designation:id,name,level',
+            'primaryRole:id,name',
+            'reportingManager:id,display_name,first_name,last_name',
+            'workCountry:id,name',
+        ])->findOrFail((int) $request->query('employee_id'));
+
+        $context = $this->buildTokenContext($emp, $row->signers ?? []);
+        $resolvedHtml = $this->resolveTokens((string) $row->content_html, $context);
+
+        // Reuse the existing DOCX builder by temporarily swapping
+        // content_html on a non-persisted clone so we don't have to
+        // duplicate the header/footer + table emission code.
+        $clone = $row->replicate();
+        $clone->setRawAttributes($row->getAttributes(), true);  // preserve casts
+        $clone->id = $row->id;
+        $clone->content_html = $resolvedHtml;
+        // Push the clone through the same renderer used by downloadDocx().
+        return $this->renderDocx($clone, ($emp->display_name ?: ('EMP-' . $emp->id)) . ' - ' . ($row->name ?: $row->code) . '.docx');
+    }
+
+    /**
+     * GET /api/hr-document-templates/{id}/preview?employee_id=N
+     *
+     * Returns the template's resolved body HTML + header/footer config so
+     * the SPA can render a live, page-style preview without round-tripping
+     * through DOCX. Used by the "View" button on the Evidence Vault.
+     */
+    public function previewForEmployee(Request $request, $id)
+    {
+        $this->authorize($request, 'can_view');
+        $request->validate(['employee_id' => 'required|integer|exists:employees,id']);
+
+        $row = $this->resolveRow($request, (int) $id);
+        $emp = Employee::with([
+            'department:id,name', 'designation:id,name,level',
+            'primaryRole:id,name',
+            'reportingManager:id,display_name,first_name,last_name',
+        ])->findOrFail((int) $request->query('employee_id'));
+
+        $context = $this->buildTokenContext($emp, $row->signers ?? []);
+        $resolvedHtml = $this->resolveTokens((string) $row->content_html, $context);
+
+        // Surface which tokens did and didn't resolve so the Vault can warn
+        // the user about unfilled placeholders before they generate.
+        $tokensInTemplate = [];
+        if (preg_match_all('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', (string) $row->content_html, $m)) {
+            $tokensInTemplate = array_values(array_unique($m[1]));
+        }
+        $unresolved = array_values(array_filter($tokensInTemplate, fn ($t) =>
+            !array_key_exists($t, $context) || $context[$t] === ''
+        ));
+
+        return response()->json([
+            'id'             => $row->id,
+            'code'           => $row->code,
+            'name'           => $row->name,
+            'content_html'   => $resolvedHtml,
+            'header_config'  => $row->header_config,
+            'footer_config'  => $row->footer_config,
+            'tokens_used'    => $tokensInTemplate,
+            'tokens_missing' => $unresolved,
+        ]);
+    }
+
+    /**
+     * Token catalogue. Mirrors the placeholder sidebar in TemplateEditor
+     * exactly — every token the user can click in the editor must resolve
+     * to a meaningful string here (or empty if the underlying field is
+     * null). Signer placeholders resolve to the role names captured in
+     * step 2 of the wizard; signing date is left blank until the doc is
+     * actually counter-signed.
+     */
+    private function buildTokenContext(Employee $emp, $signers): array
+    {
+        $signers = is_array($signers) ? $signers : (is_string($signers) ? json_decode($signers, true) : []);
+        $signers = is_array($signers) ? $signers : [];
+
+        $ctx = [
+            // Basic
+            'FirstName'      => (string) ($emp->first_name ?? ''),
+            'MiddleName'     => (string) ($emp->middle_name ?? ''),
+            'LastName'       => (string) ($emp->last_name ?? ''),
+            'FullName'       => (string) ($emp->display_name ?? trim(($emp->first_name ?? '') . ' ' . ($emp->last_name ?? ''))),
+            'DisplayName'    => (string) ($emp->display_name ?? ''),
+            'EmployeeNumber' => (string) ($emp->emp_code ?? $emp->id),
+
+            // Contact
+            'Email'   => (string) ($emp->email ?? ''),
+            'Mobile'  => (string) ($emp->mobile ?? ''),
+            'Address' => trim(((string) ($emp->address_line1 ?? '')) . ' ' . ((string) ($emp->address_line2 ?? ''))),
+            'City'    => (string) ($emp->city ?? ''),
+            'State'   => '',
+
+            // Job
+            'JobTitle'    => (string) ($emp->designation?->name ?? ''),
+            'Department'  => (string) ($emp->department?->name ?? ''),
+            'Designation' => (string) ($emp->designation?->name ?? ''),
+            'JoiningDate' => $emp->date_of_joining ? $emp->date_of_joining->format('d M Y') : '',
+            'ReportsTo'   => (string) ($emp->reportingManager?->display_name ?? ''),
+
+            // Salary
+            'CTC'   => $emp->annual_salary !== null ? number_format((float) $emp->annual_salary, 2) : '',
+            'Basic' => '',
+            'HRA'   => '',
+
+            // Organisation — best-effort from the tenant Client row.
+            'CompanyName'    => (string) ($emp->client?->org_name ?? ''),
+            'CompanyAddress' => '',
+            'CompanyLogo'    => '',
+        ];
+
+        // Signer{N}{Name|Date} — N is 1-indexed, matching the editor sidebar.
+        foreach ($signers as $i => $s) {
+            $n = $i + 1;
+            $ctx["Signer{$n}Name"] = (string) ($s['role_name'] ?? $s['designation_name'] ?? '');
+            $ctx["Signer{$n}Date"] = '';
+            // Designation token is still resolved in case a legacy template
+            // references it — value falls back to role name when the wizard
+            // didn't capture a designation per signer.
+            $ctx["Signer{$n}Designation"] = (string) ($s['designation_name'] ?? $s['role_name'] ?? '');
+        }
+
+        return $ctx;
+    }
+
+    /** Replace every {{Token}} occurrence in $html using $ctx. Unknown
+     *  tokens are left as-is so an admin can spot them in the output. */
+    private function resolveTokens(string $html, array $ctx): string
+    {
+        return preg_replace_callback('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', function ($m) use ($ctx) {
+            $key = $m[1];
+            return array_key_exists($key, $ctx) ? htmlspecialchars((string) $ctx[$key], ENT_QUOTES) : $m[0];
+        }, $html);
+    }
+
+    /**
+     * Shared DOCX builder used by both downloadDocx() (raw template) and
+     * generateForEmployee() (resolved template). Pulled out so both paths
+     * emit an identical header/footer/page layout.
+     */
+    private function renderDocx(HrDocumentTemplate $row, string $filename)
+    {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection([
+            'headerHeight' => 90 * 20,
+            'footerHeight' => 50 * 20,
+        ]);
+
+        $headerCfg = is_array($row->header_config) ? $row->header_config : [];
+        $logoPath  = $headerCfg['logo_path'] ?? null;
+        $title     = (string) ($headerCfg['title'] ?? '');
+        $subtitle  = (string) ($headerCfg['subtitle'] ?? '');
+        $hAlign    = (string) ($headerCfg['align']    ?? 'right');
+
+        $header = $section->addHeader();
+        $table = $header->addTable([
+            'borderSize' => 0, 'cellMargin' => 0,
+            'unit'  => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
+            'width' => 100 * 50,
+        ]);
+        $row1 = $table->addRow();
+        $logoCell  = $row1->addCell(2500, ['valign' => 'center']);
+        $titleCell = $row1->addCell(7500, ['valign' => 'center']);
+        $absLogo = $logoPath && Storage::disk('public')->exists($logoPath)
+            ? Storage::disk('public')->path($logoPath) : null;
+        if ($absLogo) {
+            try { $logoCell->addImage($absLogo, ['height' => 60, 'width' => 120]); }
+            catch (\Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
+        }
+        $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
+        if ($title !== '')    $titleCell->addText($title,    ['bold' => true, 'size' => 14], ['alignment' => $align]);
+        if ($subtitle !== '') $titleCell->addText($subtitle, ['size' => 10, 'color' => '6B7280'], ['alignment' => $align]);
+
+        $footerCfg  = is_array($row->footer_config) ? $row->footer_config : [];
+        $footerText = (string) ($footerCfg['text']  ?? '');
+        $fAlign     = (string) ($footerCfg['align'] ?? 'center');
+        $showPage   = !empty($footerCfg['show_page_number']);
+        $pnAlign    = (string) ($footerCfg['page_number_align']  ?? 'right');
+        $pnFormat   = (string) ($footerCfg['page_number_format'] ?? 'Page N of M');
+        $footer = $section->addFooter();
+        $fTable = $footer->addTable([
+            'borderSize' => 0, 'cellMargin' => 0,
+            'unit'  => \PhpOffice\PhpWord\SimpleType\TblWidth::PERCENT,
+            'width' => 100 * 50,
+        ]);
+        $fRow = $fTable->addRow();
+        $cells = [
+            'left'   => $fRow->addCell(3333, ['valign' => 'center']),
+            'center' => $fRow->addCell(3333, ['valign' => 'center']),
+            'right'  => $fRow->addCell(3333, ['valign' => 'center']),
+        ];
+        if ($footerText !== '' && isset($cells[$fAlign])) {
+            $cells[$fAlign]->addText($footerText, ['size' => 9, 'color' => '6B7280'], ['alignment' => $fAlign]);
+        }
+        if ($showPage && isset($cells[$pnAlign])) {
+            $run = $cells[$pnAlign]->addTextRun(['alignment' => $pnAlign]);
+            $style = ['size' => 9, 'color' => '6B7280'];
+            switch ($pnFormat) {
+                case 'N':            $run->addField('PAGE', [], [], '', false); break;
+                case 'Page N':       $run->addText('Page ', $style); $run->addField('PAGE', [], [], '', false); break;
+                case 'N / M':        $run->addField('PAGE', [], [], '', false); $run->addText(' / ', $style); $run->addField('NUMPAGES', [], [], '', false); break;
+                case 'Page N of M':
+                default:             $run->addText('Page ', $style); $run->addField('PAGE', [], [], '', false); $run->addText(' of ', $style); $run->addField('NUMPAGES', [], [], '', false);
+            }
+        }
+
+        $html = (string) ($row->content_html ?: '<p>(empty template)</p>');
+        $wrapped = '<html><body>' . $html . '</body></html>';
+        try { Html::addHtml($section, $wrapped, false, false); }
+        catch (\Throwable $e) { $section->addText(strip_tags($html)); }
+
+        $writer = IOFactory::createWriter($phpWord, 'Word2007');
+        $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
+        $writer->save($tmp);
+        return response()->download($tmp, $filename)->deleteFileAfterSend(true);
     }
 
     /* ───── HELPERS ───── */

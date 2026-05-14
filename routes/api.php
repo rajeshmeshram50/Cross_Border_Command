@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
+use App\Http\Controllers\Api\HrDocumentSignatureController;
 use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeavePlanController;
@@ -180,8 +181,29 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // main save payload under header_config.logo_path. No template id required
     // so the wizard can attach a logo before the first save.
     Route::post('/hr-document-templates/upload-header-logo',   [HrDocumentTemplateController::class, 'uploadHeaderLogo']);
+    // Onboarding-aware lookup: returns Active templates whose
+    // (employee_category, role_type) match the given employee's
+    // (department-mapped-category, designation.level).
+    Route::get ('/hr-document-templates/match',                [HrDocumentTemplateController::class, 'matchForEmployee']);
     Route::get ('/hr-document-templates/{id}/download',        [HrDocumentTemplateController::class, 'downloadDocx']);
+    // Resolves {{Tokens}} against the employee's data and streams the filled DOCX.
+    Route::get ('/hr-document-templates/{id}/generate',        [HrDocumentTemplateController::class, 'generateForEmployee']);
+    // SPA-friendly preview: returns resolved HTML + header/footer JSON for
+    // an in-modal page-style preview (no DOCX round-trip).
+    Route::get ('/hr-document-templates/{id}/preview',         [HrDocumentTemplateController::class, 'previewForEmployee']);
     Route::post('/hr-document-templates/{id}/upload-docx',     [HrDocumentTemplateController::class, 'uploadDocx']);
+
+    // Document signing workflow runtime — one row per "send" of a template
+    // against an employee. Inbox surfaces signature tasks where the current
+    // user is the next signer. Declare /inbox BEFORE apiResource so the
+    // literal segment doesn't get captured as an id.
+    Route::get ('/hr-document-signatures/inbox',        [HrDocumentSignatureController::class, 'inbox']);
+    Route::post('/hr-document-signatures/{id}/action',  [HrDocumentSignatureController::class, 'action']);
+    Route::post('/hr-document-signatures/{id}/reject',  [HrDocumentSignatureController::class, 'reject']);
+    Route::post('/hr-document-signatures/{id}/cancel',  [HrDocumentSignatureController::class, 'cancel']);
+    Route::get ('/hr-document-signatures',              [HrDocumentSignatureController::class, 'index']);
+    Route::post('/hr-document-signatures',              [HrDocumentSignatureController::class, 'store']);
+    Route::get ('/hr-document-signatures/{id}',         [HrDocumentSignatureController::class, 'show']);
     Route::apiResource('hr-document-templates', HrDocumentTemplateController::class)
         ->parameters(['hr-document-templates' => 'id']);
 

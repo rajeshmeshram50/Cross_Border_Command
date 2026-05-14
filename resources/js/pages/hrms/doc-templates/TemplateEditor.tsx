@@ -83,6 +83,10 @@ export function buildSignerGroup(signers: SignerLite[]): PlaceholderGroup {
     const roleLabel = s.role_name ? ` (${s.role_name})` : '';
     fields.push({ label: `Signer ${n} Name${roleLabel}`, token: `{{Signer${n}Name}}` });
     fields.push({ label: `Signer ${n} Date`,             token: `{{Signer${n}Date}}` });
+    // Drop this token where the signer should sign. At signing time, the
+    // controller replaces it with the signer's typed name in a script
+    // font, and fills the corresponding {{SignerNDate}} automatically.
+    fields.push({ label: `Signer ${n} Signature`,        token: `{{Signer${n}Sign}}` });
   });
   return { id: 'signers', label: 'Workflow Signers', fields };
 }
