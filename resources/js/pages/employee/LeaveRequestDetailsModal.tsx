@@ -85,7 +85,16 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
     : [];
 
   return (
-    <Modal isOpen={isOpen} toggle={onClose} centered size="lg" backdrop="static">
+    <Modal
+      isOpen={isOpen}
+      toggle={onClose}
+      centered
+      size="lg"
+      backdrop="static"
+      // Same z-index lift as RequestLeaveModal — see EmployeeProfile.css.
+      modalClassName="ep-leave-modal"
+      backdropClassName="ep-leave-backdrop"
+    >
       <ModalBody className="p-0">
         {/* Header */}
         <div className="d-flex align-items-center justify-content-between" style={{ padding: '20px 24px 16px', borderBottom: '1px solid #e5e7eb' }}>
