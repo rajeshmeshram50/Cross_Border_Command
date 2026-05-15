@@ -2274,6 +2274,18 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (!assignedHrId)           e.assignedHr      = 'Assigned HR is required';
     if (!startDate)              e.startDate       = 'Start date is required';
     if (!deadline)               e.deadline        = 'TAT/Deadline is required';
+    // ISO yyyy-mm-dd values compare lexicographically — no Date()
+    // ceremony needed. Start date can't be in the past, and the
+    // deadline can't be before the start date. Both checks run only
+    // when the respective fields are non-empty so the "required"
+    // errors above stay the primary message.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (startDate && startDate < todayIso) {
+      e.startDate = 'Start date cannot be in the past';
+    }
+    if (deadline && startDate && deadline < startDate) {
+      e.deadline = 'TAT/Deadline cannot be before the start date';
+    }
     return e;
   };
 
@@ -2595,21 +2607,29 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
               </Col>
               <Col md={3}>
                 <label className="rec-form-label"><i className="ri-calendar-line" />Start Date<span className="req">*</span></label>
+                {/* Picker can't open on a day before today; the inline
+                    error in validate() catches values that bypass the
+                    picker (paste, devtools, etc.). */}
                 <MasterDatePicker
                   value={startDate}
-                  onChange={(v) => { setStartDate(v); clear('startDate'); }}
+                  onChange={(v) => { setStartDate(v); clear('startDate'); clear('deadline'); }}
                   placeholder="dd-mm-yyyy"
                   invalid={!!errors.startDate}
+                  minDate={new Date().toISOString().slice(0, 10)}
                 />
                 {errors.startDate && <div className="rec-error"><i className="ri-error-warning-line" />{errors.startDate}</div>}
               </Col>
               <Col md={3}>
                 <label className="rec-form-label"><i className="ri-calendar-event-line" />TAT / Deadline<span className="req">*</span></label>
+                {/* Deadline picker floor = start date (or today as a
+                    fallback when start hasn't been picked yet) so the
+                    user can't choose a deadline before the kickoff. */}
                 <MasterDatePicker
                   value={deadline}
                   onChange={(v) => { setDeadline(v); clear('deadline'); }}
                   placeholder="dd-mm-yyyy"
                   invalid={!!errors.deadline}
+                  minDate={startDate || new Date().toISOString().slice(0, 10)}
                 />
                 {errors.deadline && <div className="rec-error"><i className="ri-error-warning-line" />{errors.deadline}</div>}
               </Col>
