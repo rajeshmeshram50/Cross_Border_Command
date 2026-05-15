@@ -150,12 +150,19 @@ export default function HrExitManagement() {
     { key: 'missing',    label: 'Missing Exit Details',value: counts.missing,    icon: 'ri-error-warning-line', gradient: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
   ];
 
-  // ── Status pill tones (table cell) ──────────────────────────────────────
-  const STATUS_TONES: Record<ExitStatus, { bg: string; fg: string; dot: string }> = {
-    'Active':           { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' },
-    'Exit In Progress': { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' },
-    'Exited':           { bg: '#e5e7eb', fg: '#374151', dot: '#6b7280' },
-    'Missing Details':  { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' },
+  // ── Status badge colour map ─────────────────────────────────────────────
+  // Mirrors the Clients table pattern (badge rounded-pill bg-{c}-subtle
+  // text-{c}) so the visual language is consistent across modules. Map
+  // each ExitStatus onto a Bootstrap semantic colour:
+  //   Active            → success (green)
+  //   Exit In Progress  → warning (amber)
+  //   Exited            → secondary (grey)
+  //   Missing Details   → danger (red)
+  const STATUS_COLOR: Record<ExitStatus, string> = {
+    'Active':           'success',
+    'Exit In Progress': 'warning',
+    'Exited':           'secondary',
+    'Missing Details':  'danger',
   };
 
   return (
@@ -380,7 +387,7 @@ export default function HrExitManagement() {
                             </td>
                           </tr>
                         ) : visible.map((e, idx) => {
-                          const tone = STATUS_TONES[e.status];
+                          const statusColor = STATUS_COLOR[e.status];
                           const isExited = e.status === 'Exited';
                           const isInProgress = e.status === 'Exit In Progress';
                           return (
@@ -486,8 +493,7 @@ export default function HrExitManagement() {
                                 })()}
                               </td>
                               <td>
-                                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: tone.bg, color: tone.fg }}>
-                                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
+                                <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2`}>
                                   {e.status}
                                 </span>
                               </td>
@@ -842,18 +848,40 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   };
   const [exitTemplates, setExitTemplates] = useState<ExitTemplate[]>([]);
   const [exitTplLoading, setExitTplLoading] = useState(false);
+  // Match metadata returned by the backend — surfaces WHICH category /
+  // level the controller resolved from the employee, so HR can see at a
+  // glance why a template did (or didn't) match. Without this, the
+  // empty state was a dead end ("no templates" with no clue what to
+  // create against).
+  type ExitMatchMeta = {
+    employee_category: string | null;
+    role_type:         string | null;
+    department_name:   string | null;
+    designation_name:  string | null;
+  };
+  const [exitMatchMeta, setExitMatchMeta] = useState<ExitMatchMeta | null>(null);
   useEffect(() => {
-    if (!employee) { setExitTemplates([]); return; }
+    if (!employee) { setExitTemplates([]); setExitMatchMeta(null); return; }
     let cancelled = false;
     setExitTplLoading(true);
     api.get('/hr-document-templates/match', {
-      params: { employee_id: employee.id, trigger_point_name: 'Exit Management' },
+      // Substring keyword — matches any trigger-point master row whose
+      // module_name contains "exit" ("Exit Management", "Exit process
+      // trigger point", etc.). Branch users name their trigger rows
+      // freely so we can't lock to a single literal.
+      params: { employee_id: employee.id, trigger_keyword: 'exit' },
     })
       .then(({ data }) => {
         if (cancelled) return;
         setExitTemplates(Array.isArray(data?.templates) ? data.templates : []);
+        setExitMatchMeta({
+          employee_category: data?.employee_category ?? null,
+          role_type:         data?.role_type         ?? null,
+          department_name:   data?.department_name   ?? null,
+          designation_name:  data?.designation_name  ?? null,
+        });
       })
-      .catch(() => { if (!cancelled) setExitTemplates([]); })
+      .catch(() => { if (!cancelled) { setExitTemplates([]); setExitMatchMeta(null); } })
       .finally(() => { if (!cancelled) setExitTplLoading(false); });
     return () => { cancelled = true; };
   }, [employee?.id]);
@@ -1413,16 +1441,56 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                       designation level. Each card shows the configured
                       signing flow + View / Send / Generate buttons. */}
                   <div className="ep-section-label">Exit Documents</div>
+
+                  {/* Match-context banner — surfaces WHICH category /
+                      level the backend resolved from the employee row,
+                      so HR knows exactly what to set on a template if
+                      they want it to show up here. Trigger filter is a
+                      keyword substring (any trigger-point master row
+                      containing "exit" qualifies). */}
+                  {exitMatchMeta && (
+                    <div className="d-flex align-items-center gap-2 flex-wrap mb-3"
+                      style={{ padding: '10px 14px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 10 }}>
+                      <i className="ri-magic-line" style={{ color: '#4338ca' }} />
+                      <strong style={{ fontSize: 12.5, color: '#4338ca' }}>Matching templates for</strong>
+                      <span style={{ fontSize: 12, color: '#374151' }}>
+                        Department <strong>{exitMatchMeta.department_name || '—'}</strong> → Category{' '}
+                        <span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{exitMatchMeta.employee_category || '—'}</span>
+                        {exitMatchMeta.role_type && (
+                          <>{' '}· Level{' '}<span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{exitMatchMeta.role_type}</span></>
+                        )}
+                        {' '}· Trigger contains{' '}
+                        <span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>“exit”</span>
+                      </span>
+                    </div>
+                  )}
+
                   {exitTplLoading ? (
                     <div style={{ padding: 16, textAlign: 'center', color: 'var(--vz-secondary-color)', fontSize: 12.5, border: '1px dashed var(--vz-border-color)', borderRadius: 10, marginBottom: 12 }}>
                       <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
                       Looking up exit-trigger templates…
                     </div>
                   ) : exitTemplates.length === 0 ? (
-                    <div style={{ padding: 18, textAlign: 'center', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, marginBottom: 12, fontSize: 12.5 }}>
-                      <i className="ri-inbox-line" style={{ fontSize: 24, display: 'block', marginBottom: 6 }} />
-                      No templates yet for trigger point <strong>Exit Management</strong>.
-                      Create one under HR &gt; Document &amp; Evidence &gt; Document Templates.
+                    <div style={{ padding: 18, textAlign: 'left', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, marginBottom: 12, fontSize: 12.5 }}>
+                      <div style={{ textAlign: 'center', marginBottom: 10 }}>
+                        <i className="ri-inbox-line" style={{ fontSize: 24, display: 'block', marginBottom: 6 }} />
+                        <strong>No matching exit-trigger templates found.</strong>
+                      </div>
+                      <div style={{ paddingTop: 8, borderTop: '1px dashed var(--vz-border-color)' }}>
+                        To surface a template here it must be created under <strong>HR &gt; Document &amp; Evidence &gt; Document Templates</strong> with:
+                        <ul style={{ marginBottom: 0, paddingLeft: 20, marginTop: 6 }}>
+                          <li>Status = <strong>Active</strong></li>
+                          <li>Trigger Point = any row whose name contains <strong>“exit”</strong> (e.g. <em>Exit Management</em>, <em>Exit process trigger point</em>)</li>
+                          {exitMatchMeta && (
+                            <>
+                              <li>Employee Category = <strong>{exitMatchMeta.employee_category || '—'}</strong> (this employee's department maps here)</li>
+                              {exitMatchMeta.role_type
+                                ? <li>Role Type = <strong>{exitMatchMeta.role_type}</strong> (this employee's designation level)</li>
+                                : <li style={{ color: '#b45309' }}>⚠ This employee has no designation level set, so the role-type filter is skipped. Set a level on their designation master row.</li>}
+                            </>
+                          )}
+                        </ul>
+                      </div>
                     </div>
                   ) : (
                     <div className="ep-doc-list" style={{ marginBottom: 16 }}>
@@ -2037,8 +2105,8 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
     setTab('employee');
     Promise.allSettled([
       api.get(`/employees/${employee.id}/documents`),
-      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_point_name: 'Onboarding' } }),
-      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_point_name: 'Exit Management' } }),
+      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'onboarding' } }),
+      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'exit' } }),
       api.get('/hr-document-signatures', { params: { employee_id: employee.id } }),
     ]).then(results => {
       if (cancelled) return;

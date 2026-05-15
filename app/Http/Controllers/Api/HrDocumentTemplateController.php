@@ -302,6 +302,13 @@ class HrDocumentTemplateController extends Controller
         $request->validate([
             'employee_id'         => 'required|integer|exists:employees,id',
             'trigger_point_name'  => 'sometimes|nullable|string|max:255',
+            // Substring/keyword variant — preferred over trigger_point_name
+            // because branch users name their trigger-point rows freely
+            // ("Exit process trigger point", "Onboarding point", …) and
+            // the page can't rely on an exact title. Frontend now passes
+            // just the lifecycle keyword ('onboarding' / 'exit') and we
+            // LIKE-match against module_name.
+            'trigger_keyword'     => 'sometimes|nullable|string|max:120',
         ]);
 
         $emp = Employee::with(['department:id,name', 'designation:id,name,level'])
@@ -315,19 +322,25 @@ class HrDocumentTemplateController extends Controller
             ->where('employee_category', $category);
         if ($level) $q->where('role_type', $level);
 
-        // Optional lifecycle filter — when the caller is on the onboarding
-        // page they pass `trigger_point_name=Onboarding`; on the exit page
-        // they pass `trigger_point_name=Exit Management`. We resolve the
-        // name → trigger_point ids inside the tenant's master so only
-        // templates pointing at this client's row(s) match. Case- and
-        // whitespace-insensitive so admins who renamed the row to e.g.
-        // "ONBOARDING " still get matched.
-        $triggerName = trim((string) $request->query('trigger_point_name', ''));
-        if ($triggerName !== '') {
-            $triggerIds = DB::table('master_trigger_points')
-                ->whereRaw('LOWER(TRIM(module_name)) = ?', [strtolower($triggerName)])
-                ->pluck('id')
-                ->all();
+        // Optional lifecycle filter. Two variants:
+        //   - trigger_keyword (preferred) — substring LIKE match against
+        //     module_name. Frontend passes just the lifecycle word
+        //     ("onboarding" / "exit"), and any trigger row containing
+        //     that keyword qualifies. Tolerates branch-user naming
+        //     freedom ("Onboarding point", "Exit process trigger point").
+        //   - trigger_point_name (legacy) — exact case-/whitespace-
+        //     insensitive equality. Kept for any external callers still
+        //     using the old contract.
+        $keyword   = trim((string) $request->query('trigger_keyword', ''));
+        $exactName = trim((string) $request->query('trigger_point_name', ''));
+        if ($keyword !== '' || $exactName !== '') {
+            $tpQuery = DB::table('master_trigger_points');
+            if ($keyword !== '') {
+                $tpQuery->whereRaw('LOWER(TRIM(module_name)) LIKE ?', ['%' . strtolower($keyword) . '%']);
+            } else {
+                $tpQuery->whereRaw('LOWER(TRIM(module_name)) = ?', [strtolower($exactName)]);
+            }
+            $triggerIds = $tpQuery->pluck('id')->all();
             // No matching trigger row → no matching template. Return early
             // with an empty list instead of letting whereIn([]) silently
             // return everything.
@@ -337,7 +350,8 @@ class HrDocumentTemplateController extends Controller
                     'role_type'          => $level,
                     'department_name'    => $emp->department?->name,
                     'designation_name'   => $emp->designation?->name,
-                    'trigger_point_name' => $triggerName,
+                    'trigger_point_name' => $exactName ?: null,
+                    'trigger_keyword'    => $keyword ?: null,
                     'templates'          => [],
                 ]);
             }
@@ -351,7 +365,8 @@ class HrDocumentTemplateController extends Controller
             'role_type'          => $level,
             'department_name'    => $emp->department?->name,
             'designation_name'   => $emp->designation?->name,
-            'trigger_point_name' => $triggerName ?: null,
+            'trigger_point_name' => $exactName ?: null,
+            'trigger_keyword'    => $keyword ?: null,
             'templates'          => $q->orderByDesc('id')->get(),
         ]);
     }
