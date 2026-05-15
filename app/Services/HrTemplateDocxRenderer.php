@@ -38,7 +38,14 @@ class HrTemplateDocxRenderer
     public static function buildPath($row): string
     {
         $phpWord = new PhpWord();
+        // A4 in twips as INTEGERS — PhpWord's default computes these from
+        // inches with floating-point math and emits decimals (e.g.
+        // w:w="11905.51181..."), which Word rejects as a schema violation
+        // ("can't parse XML at line 2"). Hard-coding the spec values forces
+        // valid <w:pgSz> regardless of php's serialize_precision.
         $section = $phpWord->addSection([
+            'pageSizeW'    => 11906,
+            'pageSizeH'    => 16838,
             'headerHeight' => 90 * 20,
             'footerHeight' => 50 * 20,
         ]);
@@ -47,6 +54,13 @@ class HrTemplateDocxRenderer
         self::writeFooter($section, is_array($row->footer_config) ? $row->footer_config : []);
 
         $html = (string) ($row->content_html ?: '<p>(empty template)</p>');
+        // PhpWord's Html::addHtml uses loadXML (not loadHTML) so the body
+        // must be valid XML. Bare void tags from rich-text editors (<br>,
+        // <hr>, <img ...>) abort parsing silently and drop everything that
+        // follows. Self-close them before handing off.
+        $html = preg_replace('/<br\s*>/i',  '<br/>',  $html);
+        $html = preg_replace('/<hr\s*>/i',  '<hr/>',  $html);
+        $html = preg_replace('/<img([^>]*[^\/])>/i', '<img$1/>', $html);
         $wrapped = '<html><body>' . $html . '</body></html>';
         try { Html::addHtml($section, $wrapped, false, false); }
         catch (\Throwable $e) { $section->addText(strip_tags($html)); }
