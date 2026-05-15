@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
@@ -1454,6 +1455,7 @@ function VaultModal({
     }
   };
 
+  const confirmDialog = useConfirm();
   // Same reject path as the MyTeam page — Note field doubles as the
   // required reason, the controller halts the workflow on the row, and
   // the sender sees the suggestion in the audit trail.
@@ -1464,15 +1466,45 @@ function VaultModal({
       toast.error('Reason required', 'Add a suggestion in the Note field explaining what should change.');
       return;
     }
-    if (!confirm(`Reject ${actionRun.code || 'this document'}? The workflow will halt and the sender will see your reason.`)) return;
+    // Snapshot the run so we can restore the action modal if the
+    // user cancels the confirmation. We hide the action modal while
+    // the confirm dialog is open so the user sees only one popup at a
+    // time — without this the reject-confirm sits visually on top of
+    // the still-open acknowledge modal, which read like "the modal
+    // popped back up after I clicked reject."
+    const targetRun = actionRun;
+    const runId = targetRun.id;
+    const code  = targetRun.code || 'this document';
+    setActionRun(null);
+    const ok = await confirmDialog({
+      title: 'Reject Document?',
+      message: (
+        <>
+          Reject <strong>{code}</strong>? The workflow will halt and the sender will see your reason.
+        </>
+      ),
+      confirmLabel: 'Yes, Reject',
+      cancelLabel:  'Cancel',
+      tone:         'danger',
+      icon:         'close-circle-line',
+    });
+    if (!ok) {
+      // User backed out — bring the action modal back so they can
+      // edit the reason or take a different action. actionNote /
+      // actionName state was untouched and remains pre-filled.
+      setActionRun(targetRun);
+      return;
+    }
     setActionSubmitting(true);
     try {
-      await api.post(`/hr-document-signatures/${actionRun.id}/reject`, { reason });
-      toast.success('Rejected', `${actionRun.code || `Run #${actionRun.id}`} returned to the sender with your reason.`);
-      setActionRun(null);
+      await api.post(`/hr-document-signatures/${runId}/reject`, { reason });
+      toast.success('Rejected', `${code} returned to the sender with your reason.`);
       fetchRuns();
     } catch (err: any) {
       toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
+      // On API failure, restore the action modal so the user can retry
+      // or adjust their reason — otherwise their input would be lost.
+      setActionRun(targetRun);
     } finally {
       setActionSubmitting(false);
     }

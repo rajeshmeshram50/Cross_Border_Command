@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row, Input } from 'reactstrap';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
 import SignaturePad from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
@@ -54,6 +55,7 @@ interface ApprovalsResponse {
 export default function MyTeam() {
   const { user } = useAuth();
   const toast = useToast();
+  const confirmDialog = useConfirm();
 
   const [tab, setTab] = useState<'employees' | 'approvals'>('employees');
   const [scope, setScope] = useState<TeamScope | null>(null);
@@ -196,30 +198,73 @@ export default function MyTeam() {
     // posts as `comment` (not `reason`) to match ExpenseClaimController.
     if (actionItem.module === 'expense') {
       const stage = actionItem.raw?.stage === 'hr' ? 'hr' : 'manager';
-      if (!confirm(`Reject ${actionItem.code || 'this expense claim'}? The employee will see your remark in the audit log.`)) return;
+      const targetItem = actionItem;
+      const itemId = targetItem.id;
+      const claimCode = targetItem.code || 'this expense claim';
+      // Close the action modal while confirming so we don't stack two
+      // popups. Restore on cancel / API error so the user keeps their
+      // reason and can retry.
+      setActionItem(null);
+      const okClaim = await confirmDialog({
+        title: 'Reject Expense Claim?',
+        message: (
+          <>
+            Reject <strong>{claimCode}</strong>? The employee will see your remark in the audit log.
+          </>
+        ),
+        confirmLabel: 'Yes, Reject',
+        cancelLabel:  'Cancel',
+        tone:         'danger',
+        icon:         'close-circle-line',
+      });
+      if (!okClaim) {
+        setActionItem(targetItem);
+        return;
+      }
       setActionSubmitting(true);
       try {
-        await api.post(`/expense-claims/${actionItem.id}/${stage}-reject`, { comment: reason });
-        toast.success('Rejected', `${actionItem.code || `Claim #${actionItem.id}`} returned to the employee with your remark.`);
-        setActionItem(null);
+        await api.post(`/expense-claims/${itemId}/${stage}-reject`, { comment: reason });
+        toast.success('Rejected', `${claimCode} returned to the employee with your remark.`);
         loadApprovals();
       } catch (err: any) {
         toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
+        setActionItem(targetItem);
       } finally {
         setActionSubmitting(false);
       }
       return;
     }
 
-    if (!confirm(`Reject ${actionItem.code || 'this document'}? The workflow will halt and the sender will see your reason.`)) return;
+    const targetItem = actionItem;
+    const itemId = targetItem.id;
+    const docCode = targetItem.code || 'this document';
+    setActionItem(null);
+    const okDoc = await confirmDialog({
+      title: 'Reject Document?',
+      message: (
+        <>
+          Reject <strong>{docCode}</strong>? The workflow will halt and the sender will see your reason.
+        </>
+      ),
+      confirmLabel: 'Yes, Reject',
+      cancelLabel:  'Cancel',
+      tone:         'danger',
+      icon:         'close-circle-line',
+    });
+    if (!okDoc) {
+      setActionItem(targetItem);
+      return;
+    }
     setActionSubmitting(true);
     try {
-      await api.post(`/hr-document-signatures/${actionItem.id}/reject`, { reason });
-      toast.success('Rejected', `${actionItem.code || `Run #${actionItem.id}`} returned to the sender with your reason.`);
-      setActionItem(null);
+      await api.post(`/hr-document-signatures/${itemId}/reject`, { reason });
+      toast.success('Rejected', `${docCode} returned to the sender with your reason.`);
       loadApprovals();
     } catch (err: any) {
       toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
+      // On API failure, bring the action modal back so the user keeps
+      // their reason and can retry without re-opening from the list.
+      setActionItem(targetItem);
     } finally {
       setActionSubmitting(false);
     }
