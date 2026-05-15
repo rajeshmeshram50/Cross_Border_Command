@@ -1246,7 +1246,13 @@ function VaultModal({
     (async () => {
       try {
         setOrgLoading(true);
-        const { data } = await api.get('/hr-document-templates/match', { params: { employee_id: emp.dbId } });
+        // Onboarding-stage page → only fetch templates whose trigger point
+        // is "Onboarding". The matchForEmployee endpoint resolves the name
+        // to ids inside the tenant's trigger_point master, so renames /
+        // sub-branch overrides Just Work as long as the row name matches.
+        const { data } = await api.get('/hr-document-templates/match', {
+          params: { employee_id: emp.dbId, trigger_point_name: 'Onboarding' },
+        });
         if (cancelled) return;
         setOrgTemplates(Array.isArray(data?.templates) ? data.templates : []);
         setOrgMeta({

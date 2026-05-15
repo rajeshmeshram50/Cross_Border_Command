@@ -299,7 +299,10 @@ class HrDocumentTemplateController extends Controller
     public function matchForEmployee(Request $request)
     {
         $this->authorize($request, 'can_view');
-        $request->validate(['employee_id' => 'required|integer|exists:employees,id']);
+        $request->validate([
+            'employee_id'         => 'required|integer|exists:employees,id',
+            'trigger_point_name'  => 'sometimes|nullable|string|max:255',
+        ]);
 
         $emp = Employee::with(['department:id,name', 'designation:id,name,level'])
             ->findOrFail((int) $request->query('employee_id'));
@@ -312,14 +315,44 @@ class HrDocumentTemplateController extends Controller
             ->where('employee_category', $category);
         if ($level) $q->where('role_type', $level);
 
+        // Optional lifecycle filter — when the caller is on the onboarding
+        // page they pass `trigger_point_name=Onboarding`; on the exit page
+        // they pass `trigger_point_name=Exit Management`. We resolve the
+        // name → trigger_point ids inside the tenant's master so only
+        // templates pointing at this client's row(s) match. Case- and
+        // whitespace-insensitive so admins who renamed the row to e.g.
+        // "ONBOARDING " still get matched.
+        $triggerName = trim((string) $request->query('trigger_point_name', ''));
+        if ($triggerName !== '') {
+            $triggerIds = DB::table('master_trigger_points')
+                ->whereRaw('LOWER(TRIM(module_name)) = ?', [strtolower($triggerName)])
+                ->pluck('id')
+                ->all();
+            // No matching trigger row → no matching template. Return early
+            // with an empty list instead of letting whereIn([]) silently
+            // return everything.
+            if (empty($triggerIds)) {
+                return response()->json([
+                    'employee_category'  => $category,
+                    'role_type'          => $level,
+                    'department_name'    => $emp->department?->name,
+                    'designation_name'   => $emp->designation?->name,
+                    'trigger_point_name' => $triggerName,
+                    'templates'          => [],
+                ]);
+            }
+            $q->whereIn('trigger_point_id', $triggerIds);
+        }
+
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         return response()->json([
-            'employee_category' => $category,
-            'role_type'         => $level,
-            'department_name'   => $emp->department?->name,
-            'designation_name'  => $emp->designation?->name,
-            'templates'         => $q->orderByDesc('id')->get(),
+            'employee_category'  => $category,
+            'role_type'          => $level,
+            'department_name'    => $emp->department?->name,
+            'designation_name'   => $emp->designation?->name,
+            'trigger_point_name' => $triggerName ?: null,
+            'templates'          => $q->orderByDesc('id')->get(),
         ]);
     }
 

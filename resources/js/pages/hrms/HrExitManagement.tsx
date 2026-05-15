@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Input } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import api from '../../api';
+import { useToast } from '../../contexts/ToastContext';
 import '../../../css/recruitment.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,6 +161,92 @@ export default function HrExitManagement() {
   return (
     <>
       <MasterFormStyles />
+      <style>{`
+        /* Serial-number column — same recipe as the Employees list so the
+           digits stay legible against the dark surface (default text-muted
+           drops to ~30% opacity and disappears). */
+        .hr-exit-srno { color: var(--vz-secondary-color); font-weight: 600; }
+        [data-bs-theme="dark"] .hr-exit-srno,
+        [data-layout-mode="dark"] .hr-exit-srno { color: #d0d4dc; }
+
+        /* Promote the legacy native-select / plain-input look of the exit
+           modal to the same theming the rest of the HR forms use. The old
+           .ep-select / .ep-input rules sit in recruitment.css; these
+           overrides take precedence and bring rounded corners, the
+           consistent border + focus ring, and proper dark-mode colours. */
+        .ep-input,
+        .ep-textarea,
+        .ep-select {
+          background: var(--vz-card-bg) !important;
+          color: var(--vz-heading-color, var(--vz-body-color)) !important;
+          border: 1px solid var(--vz-border-color) !important;
+          border-radius: 10px !important;
+          padding: 8px 12px !important;
+          font-size: 13px !important;
+          font-weight: 500 !important;
+          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04) !important;
+          transition: border-color .18s ease, box-shadow .18s ease !important;
+          width: 100%;
+        }
+        .ep-input { height: 38px; }
+        .ep-textarea { min-height: 64px; resize: vertical; }
+        .ep-select {
+          height: 38px;
+          appearance: none;
+          -webkit-appearance: none;
+          background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23878a99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>") !important;
+          background-repeat: no-repeat !important;
+          background-position: right 10px center !important;
+          padding-right: 34px !important;
+        }
+        .ep-input::placeholder,
+        .ep-textarea::placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.65;
+        }
+        .ep-input:hover:not(:disabled),
+        .ep-textarea:hover:not(:disabled),
+        .ep-select:hover:not(:disabled) {
+          border-color: rgba(99,102,241,0.55) !important;
+          box-shadow: 0 2px 6px rgba(99,102,241,0.08) !important;
+        }
+        .ep-input:focus,
+        .ep-textarea:focus,
+        .ep-select:focus {
+          outline: none !important;
+          border-color: #6366f1 !important;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12) !important;
+        }
+        .ep-input:disabled,
+        .ep-textarea:disabled,
+        .ep-select:disabled {
+          background: var(--vz-secondary-bg) !important;
+          color: var(--vz-secondary-color) !important;
+          cursor: not-allowed;
+          opacity: 0.85;
+          box-shadow: none !important;
+        }
+        /* Native option list inside .ep-select doesn't pick up the parent's
+           dark background — force the dropdown body itself. */
+        [data-bs-theme="dark"] .ep-select option,
+        [data-layout-mode="dark"] .ep-select option {
+          background: #1c2531;
+          color: #e6e8ec;
+        }
+        /* Field label — match the .emp-label recipe used in the Employees
+           form (uppercase, semibold, secondary-color) instead of the
+           bolder dark-grey of the legacy .ep-field-label. */
+        .ep-field-label {
+          font-size: 11px !important;
+          font-weight: 700 !important;
+          color: var(--vz-secondary-color) !important;
+          letter-spacing: 0.06em !important;
+          text-transform: uppercase !important;
+          margin-bottom: 6px !important;
+        }
+        [data-bs-theme="dark"] .ep-field-label,
+        [data-layout-mode="dark"] .ep-field-label { color: #b0b4bd !important; }
+      `}</style>
       <Row>
         <Col xs={12}>
           <div className="rec-page">
@@ -271,6 +358,7 @@ export default function HrExitManagement() {
                     <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                       <thead>
                         <tr>
+                          <th className="ps-3 text-center" style={{ width: 56 }}>#</th>
                           <th>Employee</th>
                           <th>Emp ID</th>
                           <th>Department</th>
@@ -286,17 +374,18 @@ export default function HrExitManagement() {
                       <tbody>
                         {filtered.length === 0 ? (
                           <tr>
-                            <td colSpan={10} className="text-center py-5 text-muted">
+                            <td colSpan={11} className="text-center py-5 text-muted">
                               <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                               No employees match your filters
                             </td>
                           </tr>
-                        ) : visible.map((e) => {
+                        ) : visible.map((e, idx) => {
                           const tone = STATUS_TONES[e.status];
                           const isExited = e.status === 'Exited';
                           const isInProgress = e.status === 'Exit In Progress';
                           return (
                             <tr key={e.id}>
+                              <td className="ps-3 text-center fs-13 hr-exit-srno">{sliceFrom + idx + 1}</td>
                               <td>
                                 <div className="d-flex align-items-center gap-2">
                                   <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -741,6 +830,166 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const [docs, setDocs] = useState<boolean[]>([true, false, false, false, false]);
   const [expandedDoc, setExpandedDoc] = useState<number | null>(0);
 
+  // Templates whose trigger point is "Exit Management" — pulled from the
+  // HR Document Templates master so anything the admin creates against
+  // that trigger surfaces inside the exit flow automatically. Filtered
+  // server-side by the employee's department × designation level, same
+  // matching rules the onboarding vault uses.
+  type TplSigner = { role_name?: string | null; designation_name?: string | null; action?: string | null; days?: number | null };
+  type ExitTemplate = {
+    id: number;
+    code?: string | null;
+    name?: string | null;
+    doc_type?: string | null;
+    status?: string | null;
+    signing_mode?: 'Sequential' | 'Parallel' | string | null;
+    signers?: TplSigner[] | string | null;
+    trigger_point?: { module_name?: string | null } | null;
+  };
+  const [exitTemplates, setExitTemplates] = useState<ExitTemplate[]>([]);
+  const [exitTplLoading, setExitTplLoading] = useState(false);
+  useEffect(() => {
+    if (!employee) { setExitTemplates([]); return; }
+    let cancelled = false;
+    setExitTplLoading(true);
+    api.get('/hr-document-templates/match', {
+      params: { employee_id: employee.id, trigger_point_name: 'Exit Management' },
+    })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setExitTemplates(Array.isArray(data?.templates) ? data.templates : []);
+      })
+      .catch(() => { if (!cancelled) setExitTemplates([]); })
+      .finally(() => { if (!cancelled) setExitTplLoading(false); });
+    return () => { cancelled = true; };
+  }, [employee?.id]);
+
+  // ── Signing-workflow runtime ─────────────────────────────────────────────
+  // Mirrors the runtime used by the onboarding vault. Each template can have
+  // at most one *active* signing run per employee; runByTemplateId surfaces
+  // the latest one so the row can show its status pill (Pending / In Progress
+  // / Completed / Rejected / Cancelled) plus the current signer awaiting
+  // action. /hr-document-signatures returns every run for this employee.
+  const toast = useToast();
+  type SignerState = {
+    index: number; role_name: string; action: string; days: number;
+    user_id: number | null; name: string;
+    status: 'Pending' | 'Done' | 'Rejected' | 'Skipped';
+    acted_at: string | null; signed_name: string | null; note: string | null;
+  };
+  type SignatureRun = {
+    id: number; code: string | null;
+    status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
+    template_id: number;
+    employee_id: number;
+    signers: SignerState[];
+    current_index: number;
+    created_at: string;
+  };
+  const [runs, setRuns] = useState<SignatureRun[]>([]);
+  const fetchRuns = async () => {
+    if (!employee) { setRuns([]); return; }
+    try {
+      const { data } = await api.get('/hr-document-signatures', { params: { employee_id: employee.id } });
+      setRuns(Array.isArray(data) ? data : []);
+    } catch {
+      setRuns([]);
+    }
+  };
+  useEffect(() => {
+    if (!employee) { setRuns([]); return; }
+    fetchRuns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id]);
+  const runByTemplateId = useMemo(() => {
+    const m = new Map<number, SignatureRun>();
+    for (const r of runs) {
+      const existing = m.get(r.template_id);
+      if (!existing || r.id > existing.id) m.set(r.template_id, r);
+    }
+    return m;
+  }, [runs]);
+
+  // ── Preview modal ────────────────────────────────────────────────────────
+  const [previewOpen, setPreviewOpen]     = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewTpl, setPreviewTpl]       = useState<ExitTemplate | null>(null);
+  const [previewHtml, setPreviewHtml]     = useState<string>('');
+  const [previewMissing, setPreviewMissing] = useState<string[]>([]);
+  const handleView = async (tpl: ExitTemplate) => {
+    if (!employee) return;
+    setPreviewTpl(tpl);
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    try {
+      const { data } = await api.get(`/hr-document-templates/${tpl.id}/preview`, {
+        params: { employee_id: employee.id },
+      });
+      setPreviewHtml((data?.content_html as string) || '<p style="color:#9ca3af;font-style:italic;">(empty template)</p>');
+      setPreviewMissing(Array.isArray(data?.tokens_missing) ? data.tokens_missing : []);
+    } catch (err: any) {
+      toast.error('Could not load preview', err?.response?.data?.message || 'Please try again.');
+      setPreviewOpen(false);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // ── Generate (download DOCX with this employee's data) ───────────────────
+  const handleGenerate = async (tpl: ExitTemplate) => {
+    if (!employee) return;
+    try {
+      const resp = await api.get(`/hr-document-templates/${tpl.id}/generate`, {
+        params: { employee_id: employee.id },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([resp.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(employee.name || 'employee').replace(/\s+/g, '-')}-${tpl.code || tpl.id}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Document generated', `${tpl.code || tpl.name || 'Document'} downloaded.`);
+    } catch (err: any) {
+      toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
+  // ── Send for signing — kicks off the configured signing workflow ────────
+  const [sendForTpl, setSendForTpl] = useState<ExitTemplate | null>(null);
+  const [sending, setSending] = useState(false);
+  const openSend = (tpl: ExitTemplate) => setSendForTpl(tpl);
+  const confirmSend = async () => {
+    if (!sendForTpl || !employee) return;
+    setSending(true);
+    try {
+      const { data } = await api.post('/hr-document-signatures', {
+        template_id: sendForTpl.id,
+        employee_id: employee.id,
+      });
+      toast.success('Sent for signing', `${data.code || data.template?.code || 'Document'} entered the workflow.`);
+      setSendForTpl(null);
+      fetchRuns();
+    } catch (err: any) {
+      toast.error('Could not send', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Parse the signers list off a template (can arrive as a JSON string when
+  // the DB casts haven't materialised yet — same defensive parse as the
+  // template editor).
+  const parseSigners = (raw: ExitTemplate['signers']): TplSigner[] => {
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string' && raw.trim()) {
+      try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
+    }
+    return [];
+  };
+
   // Stage 7
   const [validation, setValidation] = useState<boolean[]>([false, false, false, false, false, false]);
   const [empStatus, setEmpStatus] = useState('Active');
@@ -841,6 +1090,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const isLastStage = stage === EXIT_STAGES.length;
 
   return (
+    <>
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ep-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         {/* Header — onboarding-style with avatar, stage pills, status chips */}
@@ -1220,6 +1470,147 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     ))}
                   </div>
 
+                  {/* Trigger-point-driven templates — anything an admin
+                      built under HR > Document Templates with trigger_point
+                      = "Exit Management" surfaces here, matched against this
+                      employee's department × designation level. Each card
+                      shows the configured signing flow + View / Send /
+                      Generate buttons. The legacy hardcoded checklist
+                      below still renders so existing flows keep working. */}
+                  <div className="ep-section-label">Configured Exit Templates</div>
+                  {exitTplLoading ? (
+                    <div style={{ padding: 16, textAlign: 'center', color: 'var(--vz-secondary-color)', fontSize: 12.5, border: '1px dashed var(--vz-border-color)', borderRadius: 10, marginBottom: 12 }}>
+                      <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
+                      Looking up exit-trigger templates…
+                    </div>
+                  ) : exitTemplates.length === 0 ? (
+                    <div style={{ padding: 18, textAlign: 'center', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, marginBottom: 12, fontSize: 12.5 }}>
+                      <i className="ri-inbox-line" style={{ fontSize: 24, display: 'block', marginBottom: 6 }} />
+                      No templates yet for trigger point <strong>Exit Management</strong>.
+                      Create one under HR &gt; Document &amp; Evidence &gt; Document Templates.
+                    </div>
+                  ) : (
+                    <div className="ep-doc-list" style={{ marginBottom: 16 }}>
+                      {exitTemplates.map(tpl => {
+                        const signers = parseSigners(tpl.signers);
+                        const run = runByTemplateId.get(tpl.id) || null;
+                        const canGenerate = tpl.status === 'Active';
+                        const runHasFinished = run && (run.status === 'Completed' || run.status === 'Rejected' || run.status === 'Cancelled');
+                        const canSend = canGenerate && (!run || !!runHasFinished);
+                        const runTone =
+                          run?.status === 'Completed'  ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
+                          : run?.status === 'Rejected'  ? { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' }
+                          : run?.status === 'Cancelled' ? { bg: '#e5e7eb', fg: '#374151', dot: '#6b7280' }
+                          : run?.status === 'In Progress' ? { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' }
+                          : run                          ? { bg: '#dbeafe', fg: '#1d4ed8', dot: '#3b82f6' }
+                          : null;
+                        return (
+                          <div key={`tpl-${tpl.id}`} className="ep-doc-card is-open">
+                            <div className="ep-doc-row" style={{ cursor: 'default', flexWrap: 'wrap' }}>
+                              <span className="ep-doc-icon"><i className="ri-file-text-line" /></span>
+                              <div className="ep-doc-info">
+                                <div className="ep-doc-name">
+                                  {tpl.name || '(unnamed template)'}{' '}
+                                  {tpl.code && (
+                                    <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>{tpl.code}</span>
+                                  )}
+                                  {run && runTone && (
+                                    <span style={{ marginLeft: 8, padding: '2px 10px', borderRadius: 999, background: runTone.bg, color: runTone.fg, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: runTone.dot }} />
+                                      {run.status}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="ep-doc-sub">
+                                  {tpl.doc_type || 'Document'}
+                                  {tpl.trigger_point?.module_name ? ` · Trigger: ${tpl.trigger_point.module_name}` : ''}
+                                  {tpl.signing_mode ? ` · ${tpl.signing_mode} signing` : ''}
+                                  {signers.length ? ` · ${signers.length} signer${signers.length === 1 ? '' : 's'}` : ''}
+                                </div>
+                              </div>
+                              <span className={`ep-doc-tag ${tpl.status === 'Active' ? 'ep-doc-tag--pending' : 'ep-doc-tag--blank'}`}>
+                                {tpl.status || 'Draft'}
+                              </span>
+                              <button type="button" className="ep-doc-btn ep-doc-btn--ghost" onClick={() => handleView(tpl)}>
+                                <i className="ri-eye-line" />View
+                              </button>
+                              <button
+                                type="button"
+                                className="ep-doc-btn"
+                                onClick={() => openSend(tpl)}
+                                disabled={!canSend}
+                                title={canSend ? 'Send through the configured signing workflow' : (run ? 'A signing run is already in flight' : 'Only Active templates can be sent')}
+                                style={{ opacity: canSend ? 1 : 0.5, cursor: canSend ? 'pointer' : 'not-allowed' }}
+                              >
+                                <i className="ri-send-plane-line" />Send
+                              </button>
+                              <button
+                                type="button"
+                                className="ep-doc-btn ep-doc-btn--done"
+                                onClick={() => handleGenerate(tpl)}
+                                disabled={!canGenerate}
+                                title={canGenerate ? 'Generate DOCX with this employee\'s data' : 'Only Active templates can be generated'}
+                                style={{ opacity: canGenerate ? 1 : 0.5, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
+                              >
+                                <i className="ri-download-2-line" />Generate
+                              </button>
+                            </div>
+
+                            {/* Signing flow — render whatever the template
+                                creator configured. When there's a live run,
+                                each signer's status comes from the run; with
+                                no run yet we just preview the configured
+                                pipeline so the HR user knows who will sign. */}
+                            {(signers.length > 0 || run) && (
+                              <div className="ep-signing">
+                                <div className="ep-signing-head">
+                                  <i className="ri-shield-check-line" />Signing Workflow
+                                  {run ? (
+                                    <span className="ep-signing-pct">
+                                      {run.signers.filter(s => s.status === 'Done').length}/{run.signers.length} signed
+                                    </span>
+                                  ) : (
+                                    <span className="ep-signing-pct">Not yet sent</span>
+                                  )}
+                                </div>
+                                <div className="ep-signing-flow">
+                                  {(run ? run.signers.map((s, i) => ({
+                                        name: s.name || s.role_name || `Signer ${i + 1}`,
+                                        role: s.role_name,
+                                        action: s.action,
+                                        status: s.status === 'Done' ? 'Completed' : s.status === 'Rejected' ? 'Rejected' : (i === run.current_index ? 'Awaiting' : 'Pending'),
+                                        active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
+                                      }))
+                                      : signers.map((s, i) => ({
+                                        name: s.role_name || s.designation_name || `Signer ${i + 1}`,
+                                        role: s.role_name,
+                                        action: s.action,
+                                        status: 'Pending' as string,
+                                        active: i === 0,
+                                      }))
+                                  ).map((sg, i) => (
+                                    <div key={i} className={`ep-signer${sg.active ? ' is-active' : ''}`}>
+                                      <span className="ep-signer-dot">{i + 1}</span>
+                                      <span className="ep-signer-name">
+                                        {sg.name}
+                                        {sg.action && (
+                                          <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
+                                            ({sg.action})
+                                          </span>
+                                        )}
+                                      </span>
+                                      <span className="ep-signer-state">{sg.status}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   <div className="ep-section-label">Documents &amp; Signing Tracker</div>
                   <div className="ep-doc-list">
                     {docList.map((d, idx) => {
@@ -1379,6 +1770,121 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
         </div>
       </ModalBody>
     </Modal>
+
+    {/* ── Preview modal — opens on top of the Exit Process modal. Shows the
+        configured template body with this employee's tokens resolved so HR
+        can sanity-check before generating. ── */}
+    <Modal isOpen={previewOpen} toggle={() => setPreviewOpen(false)} size="lg" centered contentClassName="border-0" backdrop="static">
+      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
+        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)', borderRadius: '6px 6px 0 0' }}>
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-2 min-w-0">
+              <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className="ri-file-search-line" style={{ fontSize: 18, color: '#fff' }} />
+              </span>
+              <div className="min-w-0">
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>
+                  {previewTpl?.name || 'Document Preview'}
+                </h5>
+                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>
+                  {employee?.name ? `Filled with ${employee.name}'s data` : 'Live preview'}
+                  {previewTpl?.code ? ` · ${previewTpl.code}` : ''}
+                </div>
+              </div>
+            </div>
+            <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Close"
+              style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+          </div>
+        </div>
+        <div style={{ padding: 16, background: 'var(--vz-secondary-bg)', maxHeight: '70vh', overflowY: 'auto' }}>
+          {previewLoading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+              <i className="ri-loader-4-line" style={{ fontSize: 26, display: 'block', marginBottom: 8 }} />
+              Resolving placeholders…
+            </div>
+          ) : (
+            <>
+              {previewMissing.length > 0 && (
+                <div className="d-flex align-items-start gap-2 mb-3"
+                  style={{ padding: '10px 14px', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, color: '#92400e', fontSize: 12.5 }}>
+                  <i className="ri-error-warning-line" style={{ marginTop: 2 }} />
+                  <div>
+                    <strong>Unfilled placeholders:</strong> {previewMissing.join(', ')}
+                  </div>
+                </div>
+              )}
+              <div
+                style={{ background: '#fff', color: '#1f2937', padding: 24, borderRadius: 10, border: '1px solid var(--vz-border-color)', minHeight: 320 }}
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
+            </>
+          )}
+        </div>
+        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--vz-border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" onClick={() => setPreviewOpen(false)}
+            className="btn rounded-pill px-3 fw-semibold"
+            style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 13 }}>
+            Close
+          </button>
+          {previewTpl && (
+            <button type="button" onClick={() => { handleGenerate(previewTpl); }}
+              className="btn rounded-pill px-3 fw-semibold"
+              style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, fontSize: 13, boxShadow: '0 4px 10px rgba(124,58,237,0.30)' }}>
+              <i className="ri-download-2-line me-1" />Generate DOCX
+            </button>
+          )}
+        </div>
+      </ModalBody>
+    </Modal>
+
+    {/* ── Send-for-signing confirmation modal ── */}
+    <Modal isOpen={!!sendForTpl} toggle={() => !sending && setSendForTpl(null)} size="md" centered contentClassName="border-0" backdrop="static">
+      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 16, overflow: 'hidden' }}>
+        <div style={{ padding: '20px 24px 14px' }}>
+          <div className="d-flex align-items-center gap-3 mb-2">
+            <span style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <i className="ri-send-plane-fill" style={{ fontSize: 20, color: '#fff' }} />
+            </span>
+            <div>
+              <div className="fw-bold" style={{ fontSize: 16, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>Send for signing?</div>
+              <div className="text-muted" style={{ fontSize: 12.5 }}>
+                The document will enter the configured signing workflow.
+              </div>
+            </div>
+          </div>
+          {sendForTpl && (
+            <div style={{ padding: 14, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 10, marginTop: 10 }}>
+              <div className="fw-semibold" style={{ fontSize: 13.5 }}>
+                {sendForTpl.name || '(unnamed template)'}
+                {sendForTpl.code && (
+                  <span style={{ marginLeft: 8, fontSize: 11, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4 }}>{sendForTpl.code}</span>
+                )}
+              </div>
+              <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                {parseSigners(sendForTpl.signers).length} signer(s) · {sendForTpl.signing_mode || 'Sequential'} signing
+              </div>
+            </div>
+          )}
+        </div>
+        <div style={{ padding: '12px 24px 22px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" disabled={sending} onClick={() => setSendForTpl(null)}
+            className="btn rounded-pill px-3 fw-semibold"
+            style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 13 }}>
+            Cancel
+          </button>
+          <button type="button" disabled={sending} onClick={confirmSend}
+            className="btn rounded-pill px-3 fw-semibold"
+            style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, fontSize: 13, boxShadow: '0 4px 10px rgba(124,58,237,0.30)', opacity: sending ? 0.7 : 1 }}>
+            <i className={sending ? 'ri-loader-4-line me-1' : 'ri-send-plane-line me-1'}
+              style={{ animation: sending ? 'onb-spin 0.8s linear infinite' : undefined }} />
+            {sending ? 'Sending…' : 'Yes, send'}
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
+    </>
   );
 }
 
@@ -1499,11 +2005,17 @@ function EpInput({ value, onChange, type = 'text', disabled = false, placeholder
   return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} onChange={e => onChange(e.target.value)} />;
 }
 function EpSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
-  return (
-    <select className="ep-select" value={value} onChange={e => onChange(e.target.value)}>
-      {options.map(o => <option key={o} value={o}>{o.startsWith('— ') ? o : (o === 'Pending' ? '— Pending —' : o)}</option>)}
-    </select>
-  );
+  // Render via MasterSelect so the modal dropdowns match the look + dark-mode
+  // behaviour of every other HR form (rounded toggle, chevron, portalled menu
+  // with proper z-index, search when the option list is long). Native
+  // <select> was previously used, which couldn't be themed past what the
+  // browser allows. The same "— Pending —" prefix is preserved for the
+  // Pending option so existing UX copy stays intact.
+  const items = options.map(o => ({
+    value: o,
+    label: o.startsWith('— ') ? o : (o === 'Pending' ? '— Pending —' : o),
+  }));
+  return <MasterSelect value={value} onChange={onChange} options={items} placeholder="Select…" />;
 }
 function EpApprovalCard({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (

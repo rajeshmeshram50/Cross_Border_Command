@@ -210,6 +210,13 @@ class ClientController extends Controller
                 'created_by' => $request->user()->id,
             ]);
 
+            // Seed canonical lifecycle trigger points so the HR Document
+            // Templates feature has stable rows to match "Onboarding" and
+            // "Exit Management" templates against from day one. Mirrors the
+            // 2026_05_15_000000_seed_canonical_trigger_points migration —
+            // re-runnable, name-comparison is case-insensitive.
+            $this->seedCanonicalTriggerPoints($client->id);
+
             // Create client admin user
             $adminUser = User::create([
                 'name' => $request->admin_name,
@@ -456,6 +463,40 @@ class ClientController extends Controller
      * regex format check, the unique check, and the stored value all see
      * the same string regardless of how the user typed it.
      */
+    /**
+     * Seed the two canonical lifecycle trigger points ("Onboarding" and
+     * "Exit Management") into master_trigger_points for the given client,
+     * scoped at the client level (branch_id = null) so every branch sees
+     * them. Idempotent — re-running on an existing client is a no-op.
+     * Mirrors database/migrations/2026_05_15_000000_seed_canonical_trigger_points.php.
+     */
+    private function seedCanonicalTriggerPoints(?int $clientId): void
+    {
+        $now = now();
+        $rows = [
+            ['Onboarding',      'Documents that auto-attach to the new-hire onboarding flow.'],
+            ['Exit Management', 'Documents that auto-attach to the employee exit flow.'],
+        ];
+        foreach ($rows as [$name, $description]) {
+            $exists = DB::table('master_trigger_points')
+                ->where('client_id', $clientId)
+                ->whereNull('branch_id')
+                ->whereRaw('LOWER(module_name) = ?', [strtolower($name)])
+                ->exists();
+            if ($exists) continue;
+            DB::table('master_trigger_points')->insert([
+                'client_id'   => $clientId,
+                'branch_id'   => null,
+                'module_name' => $name,
+                'description' => $description,
+                'status'      => 'Active',
+                'created_by'  => null,
+                'created_at'  => $now,
+                'updated_at'  => $now,
+            ]);
+        }
+    }
+
     private function normalizeGstPanInput(Request $request): void
     {
         $patch = [];
