@@ -298,24 +298,20 @@ const KPI_CARDS = [
 ] as const;
 
 // ── Filter option lists ────────────────────────────────────────────────────
-const DEPARTMENT_FILTER_OPTIONS = [
-  { value: 'All',         label: 'All' },
-  { value: 'Engineering', label: 'Engineering' },
-  { value: 'Design',      label: 'Design' },
-  { value: 'Sales',       label: 'Sales' },
-  { value: 'HR',          label: 'HR' },
-  { value: 'Finance',     label: 'Finance' },
-  { value: 'Marketing',   label: 'Marketing' },
-  { value: 'Operations',  label: 'Operations' },
-  { value: 'Mobile',      label: 'Mobile' },
-  { value: 'Product',     label: 'Product' },
-];
+// Department options used to be a hardcoded list which silently broke
+// for any tenant whose dept names didn't match (e.g. "Export-Import",
+// "Logistics"). The filter dropdown is now derived from the actual
+// recruitments list at render time — see `deptFilterOptions` below.
+// Priority + Job Type stay hardcoded because they're closed enums.
+// Priority filter — kept in lockstep with the Create Recruitment form
+// (which exposes High / Medium / Low only). 'Critical' used to be in
+// this list but the form never produces it, so the filter dropdown had
+// a permanent dead option.
 const PRIORITY_FILTER_OPTIONS = [
-  { value: 'All',      label: 'All' },
-  { value: 'Low',      label: 'Low' },
-  { value: 'Medium',   label: 'Medium' },
-  { value: 'High',     label: 'High' },
-  { value: 'Critical', label: 'Critical' },
+  { value: 'All',    label: 'All' },
+  { value: 'High',   label: 'High' },
+  { value: 'Medium', label: 'Medium' },
+  { value: 'Low',    label: 'Low' },
 ];
 const JOB_TYPE_FILTER_OPTIONS = [
   { value: 'All',         label: 'All' },
@@ -484,8 +480,12 @@ export default function HrRecruitment() {
   // Filtered rows
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    const df = deptFilter.trim().toLowerCase();
     return recruitments.filter(r => r.status === tab)
-      .filter(r => deptFilter === 'All' || r.department === deptFilter)
+      // Case- and whitespace-tolerant dept compare — guards against
+      // a tenant with trailing spaces / capitalisation drift between
+      // the master row and what's stored on the recruitment.
+      .filter(r => df === 'all' || String(r.department || '').trim().toLowerCase() === df)
       .filter(r => priorityFilter === 'All' || r.priority === priorityFilter)
       .filter(r => jobTypeFilter === 'All' || r.employmentType === jobTypeFilter)
       .filter(r => {
@@ -501,6 +501,37 @@ export default function HrRecruitment() {
       });
   }, [recruitments, tab, q, deptFilter, priorityFilter, jobTypeFilter]);
 
+  // Department dropdown options — pulled from the Departments master so
+  // every dept (including those without recruitments yet) appears in the
+  // filter. We still merge in any dept names that exist on recruitment
+  // rows so legacy / orphaned values stay reachable even if the master
+  // row was renamed or removed. Sorted; "All" sits at the top.
+  const [masterDepts, setMasterDepts] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/master/departments')
+      .then(({ data }) => {
+        if (cancelled) return;
+        const rows: any[] = Array.isArray(data) ? data : [];
+        const names = rows
+          .filter((r: any) => !r.status || String(r.status).toLowerCase() === 'active')
+          .map((r: any) => String(r.name || '').trim())
+          .filter(Boolean);
+        setMasterDepts(names);
+      })
+      .catch(() => { if (!cancelled) setMasterDepts([]); });
+    return () => { cancelled = true; };
+  }, []);
+  const deptFilterOptions = useMemo(() => {
+    const fromMaster = masterDepts;
+    const fromRows   = recruitments
+      .map(r => (r.department || '').trim())
+      .filter(d => d && d !== '—');
+    const names = Array.from(new Set([...fromMaster, ...fromRows]))
+      .sort((a, b) => a.localeCompare(b));
+    return [{ value: 'All', label: 'All' }, ...names.map(n => ({ value: n, label: n }))];
+  }, [masterDepts, recruitments]);
+
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
   const sliceFrom = (safePage - 1) * pageSize;
@@ -513,6 +544,10 @@ export default function HrRecruitment() {
   const [raiseOpen, setRaiseOpen]                   = useState(false);
   const [requestsOpen, setRequestsOpen]             = useState(false);
   const [cancelTarget, setCancelTarget]             = useState<RecruitmentRow | null>(null);
+  // Which path the user clicked into the close modal with — drives the
+  // pre-selected tab inside CancelConfirmModal. Reset alongside the
+  // target so a stale value can't carry over between rows.
+  const [cancelInitialAction, setCancelInitialAction] = useState<'cancel' | 'complete'>('cancel');
   const [candidatesTarget, setCandidatesTarget]     = useState<RecruitmentRow | null>(null);
   // Bumped after a Raise Hiring Request submit so the list modal refetches
   // the next time it's opened (or while it's already open).
@@ -658,7 +693,7 @@ export default function HrRecruitment() {
                     </div>
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Department</span>
                     <div style={{ minWidth: 150 }}>
-                      <MasterSelect value={deptFilter} onChange={setDeptFilter} options={DEPARTMENT_FILTER_OPTIONS} placeholder="All" />
+                      <MasterSelect value={deptFilter} onChange={setDeptFilter} options={deptFilterOptions} placeholder="All" />
                     </div>
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Priority</span>
                     <div style={{ minWidth: 130 }}>
@@ -762,24 +797,35 @@ export default function HrRecruitment() {
                                   color="primary"
                                   onClick={() => navigate(`/hr/recruitment/${r.id}/candidates`)}
                                 />
+                                {/* Two distinct close-out actions —
+                                    Complete (green check) for the
+                                    happy-path "all openings filled",
+                                    Cancel (red forbid) for the
+                                    destructive path. Both open the same
+                                    CancelConfirmModal but pre-select
+                                    the matching tab so the user lands
+                                    on the right path immediately. */}
                                 <ActionBtn
-                                  // Opens a Cancel/Complete chooser — the
-                                  // icon used to be ri-close-circle-line
-                                  // which read as a pure "cancel/delete"
-                                  // affordance and hid the Complete path.
-                                  // ri-flag-line is neutral: it speaks to
-                                  // "close out / mark done" without
-                                  // implying destruction. Disabled once
-                                  // the row reaches a terminal state.
                                   title={
                                     r.status === 'Cancelled' ? 'Already Cancelled'
                                     : r.status === 'Completed' ? 'Already Completed'
-                                    : 'Close Recruitment (Complete or Cancel)'
+                                    : 'Mark Recruitment Completed'
                                   }
-                                  icon="ri-flag-line"
-                                  color="warning"
+                                  icon="ri-checkbox-circle-line"
+                                  color="success"
                                   disabled={r.status === 'Cancelled' || r.status === 'Completed'}
-                                  onClick={() => setCancelTarget(r)}
+                                  onClick={() => { setCancelInitialAction('complete'); setCancelTarget(r); }}
+                                />
+                                <ActionBtn
+                                  title={
+                                    r.status === 'Cancelled' ? 'Already Cancelled'
+                                    : r.status === 'Completed' ? 'Already Completed'
+                                    : 'Cancel Recruitment'
+                                  }
+                                  icon="ri-forbid-2-line"
+                                  color="danger"
+                                  disabled={r.status === 'Cancelled' || r.status === 'Completed'}
+                                  onClick={() => { setCancelInitialAction('cancel'); setCancelTarget(r); }}
                                 />
                               </div>
                             </td>
@@ -890,6 +936,7 @@ export default function HrRecruitment() {
 
       <CancelConfirmModal
         target={cancelTarget}
+        initialAction={cancelInitialAction}
         onClose={() => setCancelTarget(null)}
         onConfirm={async (action, reason, notes) => {
           if (!cancelTarget) return;
@@ -2679,10 +2726,14 @@ const CANCEL_REASONS = [
 type StatusAction = 'cancel' | 'complete';
 
 function CancelConfirmModal({
-  target, candidateCount, onClose, onConfirm,
+  target, candidateCount, initialAction, onClose, onConfirm,
 }: {
   target: RecruitmentRow | null;
   candidateCount?: number;
+  /** Pre-selects the action chooser based on which row-button was
+   *  clicked. The user can still flip between Cancel / Complete once
+   *  the modal is open. */
+  initialAction?: StatusAction;
   onClose: () => void;
   // Returns the chosen action so the parent can flip the status to either
   // 'Cancelled' or 'Completed'. The reason field is only meaningful for
@@ -2694,11 +2745,12 @@ function CancelConfirmModal({
   const [notes, setNotes]     = useState<string>('');
   const [reasonErr, setReasonErr] = useState<boolean>(false);
 
-  // Reset form whenever a new target is selected / modal closes. Default
-  // to 'cancel' since the trigger is the existing × icon on the row.
+  // Reset form whenever a new target is selected / modal closes. The
+  // pre-selected action comes from whichever button the user clicked
+  // on the row (Complete / Cancel) so they land on the right tab.
   useEffect(() => {
-    if (target) { setAction('cancel'); setReason(''); setNotes(''); setReasonErr(false); }
-  }, [target]);
+    if (target) { setAction(initialAction || 'cancel'); setReason(''); setNotes(''); setReasonErr(false); }
+  }, [target, initialAction]);
 
   const handleConfirm = () => {
     if (action === 'cancel' && !reason) { setReasonErr(true); return; }
@@ -2745,42 +2797,11 @@ function CancelConfirmModal({
 
             {/* Body */}
             <div className="rec-cancel-body">
-              {/* Action picker — two pill buttons. Sits at the top so the
-                  rest of the body re-renders to match the chosen path
-                  (e.g. the cancellation reason hides when Complete is on). */}
-              <div className="rec-cancel-field">
-                <label className="rec-cancel-label">Action<span className="req">*</span></label>
-                <div className="d-flex gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => setAction('cancel')}
-                    className="flex-fill"
-                    style={{
-                      padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-                      border: action === 'cancel' ? '1px solid #f06548' : '1px solid #e5e7eb',
-                      background: action === 'cancel' ? '#fff5f3' : '#fff',
-                      color: action === 'cancel' ? '#b1401d' : '#475569',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    }}
-                  >
-                    <i className="ri-forbid-2-line" />Cancel Recruitment
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAction('complete')}
-                    className="flex-fill"
-                    style={{
-                      padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-                      border: action === 'complete' ? '1px solid #10b981' : '1px solid #e5e7eb',
-                      background: action === 'complete' ? '#ecfdf5' : '#fff',
-                      color: action === 'complete' ? '#047857' : '#475569',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    }}
-                  >
-                    <i className="ri-checkbox-circle-line" />Mark as Completed
-                  </button>
-                </div>
-              </div>
+              {/* Action picker was retired — the row now has two
+                  separate buttons (Complete / Cancel), each entering
+                  this modal with `initialAction` pre-selected. Showing
+                  the picker again here just duplicated the choice the
+                  user had already made. */}
 
               {/* Recruitment summary card */}
               <div className="rec-cancel-summary">
