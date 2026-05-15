@@ -2073,8 +2073,11 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   const [jobDescription, setJobDescription]   = useState('');
   const [requirements, setRequirements]       = useState('');
   const [ctcRange, setCtcRange]               = useState('');
-  const [postOnPortal, setPostOnPortal]       = useState(true);
-  const [notifyTeamLeads, setNotifyTeamLeads] = useState(true);
+  // Defaults flipped to off — admins were complaining the toggles
+  // came pre-checked, which made the form look stuck in "yes to
+  // everything" mode. They opt in explicitly now.
+  const [postOnPortal, setPostOnPortal]       = useState(false);
+  const [notifyTeamLeads, setNotifyTeamLeads] = useState(false);
   const [enableReferralBonus, setEnableReferralBonus] = useState(false);
 
   // ── Master dropdown options — values are master IDs (stringified) so the
@@ -2245,7 +2248,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       // doesn't.
       const reqParts = [hr.required_skills, hr.required_qualification].filter(Boolean);
       setRequirements(reqParts.join('\n'));
-      setPostOnPortal(true); setNotifyTeamLeads(true); setEnableReferralBonus(false);
+      setPostOnPortal(false); setNotifyTeamLeads(false); setEnableReferralBonus(false);
       setErrors({});
     } else {
       setJobTitle(''); setDepartmentId(''); setDesignationId(''); setPrimaryRoleId('');
@@ -2253,7 +2256,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setOpenings('1'); setExperience(''); setWorkMode('Hybrid'); setPriority('Medium');
       setHiringManagerId(''); setAssignedHrId(''); setStartDate(''); setDeadline('');
       setJobDescription(''); setRequirements('');
-      setPostOnPortal(true); setNotifyTeamLeads(true); setEnableReferralBonus(false);
+      setPostOnPortal(false); setNotifyTeamLeads(false); setEnableReferralBonus(false);
       setErrors({});
     }
   }, [isOpen, editingId, prefillFromHr]); // eslint-disable-line react-hooks/exhaustive-deps

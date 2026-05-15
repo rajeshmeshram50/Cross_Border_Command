@@ -775,12 +775,33 @@
   background: linear-gradient(180deg,#ffffff 0%,#f9fafb 100%);
   border: 1px solid #e5e7eb;
   cursor: pointer;
-  transition: all .15s ease;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
   display: inline-flex; align-items: center; gap: 5px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+  /* Shadow removed per product call — the button reads as a flat
+     outline now. The previous inset highlight was making it look
+     "raised" against the page surface. */
 }
-.rec-btn-ghost:hover { border-color: #a78bfa; color: #7c5cfc; }
-[data-bs-theme="dark"] .rec-btn-ghost { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); color: var(--vz-body-color); }
+.rec-btn-ghost:hover {
+  border-color: #a78bfa;
+  color: #7c5cfc;
+  background: linear-gradient(180deg, #f5f3ff 0%, #ede9fe 100%);
+}
+[data-bs-theme="dark"] .rec-btn-ghost,
+[data-layout-mode="dark"] .rec-btn-ghost {
+  background: var(--vz-secondary-bg);
+  border-color: var(--vz-border-color);
+  color: var(--vz-body-color);
+  box-shadow: none;
+}
+/* Dark-mode hover — a subtle violet tint that mirrors the light-mode
+   hover state. Without this rule the dark-mode button stayed visually
+   inert under the cursor. */
+[data-bs-theme="dark"] .rec-btn-ghost:hover,
+[data-layout-mode="dark"] .rec-btn-ghost:hover {
+  background: rgba(124,92,252,0.16);
+  border-color: rgba(167,139,250,0.55);
+  color: #c4b5fd;
+}
 
 /* Secondary CTA — vivid blue gradient that pairs with the purple primary */
 .rec-btn-soft {
@@ -890,12 +911,34 @@
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 600; color: var(--vz-secondary-color);
   cursor: pointer; user-select: none;
+  padding: 4px 10px; border-radius: 999px;
+  background: #ffffff; border: 1px solid #e5e7eb;
+  transition: all .15s ease;
 }
-[data-bs-theme="dark"] .rec-toggle { color: var(--vz-body-color); }
+[data-bs-theme="dark"] .rec-toggle {
+  color: var(--vz-body-color);
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+}
+.rec-toggle:hover {
+  border-color: #a78bfa;
+  box-shadow: 0 1px 4px rgba(124,92,252,0.10);
+}
+/* Distinct checked state — purple pill, white text — so the user can
+   tell at a glance which preferences are on. :has() selector lets
+   us style the parent label off the input's checked state without
+   pulling React state into the markup. */
+.rec-toggle:has(input[type="checkbox"]:checked) {
+  background: linear-gradient(135deg,#7c5cfc,#a78bfa);
+  border-color: #7c5cfc;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(124,92,252,0.25);
+}
+.rec-toggle:has(input[type="checkbox"]:checked) i { color: #ffffff; }
 .rec-toggle input[type="checkbox"] {
   width: 14px; height: 14px; accent-color: #7c5cfc; cursor: pointer;
 }
-.rec-toggle i { font-size: 13px; color: #7c5cfc; }
+.rec-toggle i { font-size: 13px; color: #7c5cfc; transition: color .15s ease; }
 
 /* ---------------------------------------------------------------------
    7. Hiring Requests modal (table + KPI strip + signal bar)
