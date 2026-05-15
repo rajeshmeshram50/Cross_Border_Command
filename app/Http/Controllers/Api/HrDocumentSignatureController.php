@@ -12,6 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -159,9 +161,13 @@ class HrDocumentSignatureController extends Controller
     public function action(Request $request, $id)
     {
         $data = $request->validate([
-            'action'      => ['required', Rule::in(['Sign', 'Approve', 'Acknowledge'])],
-            'signed_name' => 'nullable|string|max:120',
-            'note'        => 'nullable|string|max:500',
+            'action'          => ['required', Rule::in(['Sign', 'Approve', 'Acknowledge'])],
+            'signed_name'     => 'nullable|string|max:120',
+            // base64 PNG data URL from the signature pad. Loose `string` rule
+            // here — strict shape ("data:image/png;base64,...") is enforced
+            // inside the transaction so we can give a friendlier 422 message.
+            'signature_image' => 'nullable|string|max:2000000',
+            'note'            => 'nullable|string|max:500',
         ]);
 
         return DB::transaction(function () use ($request, $data, $id) {
@@ -175,15 +181,32 @@ class HrDocumentSignatureController extends Controller
                 abort(403, "You're not the current signer on this document.");
             }
 
-            // For Sign rows we require a typed name and fill the
-            // {{SignerNSign}} token so the next viewer sees the signature.
+            // For Sign rows we require a typed name (always logged in the
+            // audit trail) and fill the {{SignerNSign}} token. The signer
+            // can additionally upload a drawn signature — when present, the
+            // token is replaced with an <img>; otherwise we fall back to
+            // the original cursive-rendered text.
             if (($current['action'] ?? '') === 'Sign') {
                 $name = trim((string) ($data['signed_name'] ?? ''));
                 if ($name === '') abort(422, 'Typed signature is required for Sign step.');
                 $current['signed_name'] = $name;
+
+                $signImgUrl = null;
+                if (!empty($data['signature_image'])) {
+                    $signImgUrl = $this->persistSignatureImage(
+                        (string) $data['signature_image'],
+                        $row->client_id,
+                        (int) $row->id,
+                        $idx + 1,
+                    );
+                    if ($signImgUrl) $current['signature_url'] = $signImgUrl;
+                }
+
                 $rowHtml = $row->content_html ?: '';
                 $n = $idx + 1;
-                $signMarker = sprintf('<span style="font-family: \'Brush Script MT\', cursive; font-size: 22px; color: #1d4ed8;">%s</span>', htmlspecialchars($name, ENT_QUOTES));
+                $signMarker = $signImgUrl
+                    ? sprintf('<img src="%s" alt="Signature of %s" style="max-height: 60px; max-width: 220px; vertical-align: middle;" />', htmlspecialchars($signImgUrl, ENT_QUOTES), htmlspecialchars($name, ENT_QUOTES))
+                    : sprintf('<span style="font-family: \'Brush Script MT\', cursive; font-size: 22px; color: #1d4ed8;">%s</span>', htmlspecialchars($name, ENT_QUOTES));
                 $rowHtml = str_replace("{{Signer{$n}Sign}}", $signMarker, $rowHtml);
                 $rowHtml = str_replace("{{Signer{$n}Date}}", date('d M Y'), $rowHtml);
                 $row->content_html = $rowHtml;
@@ -205,12 +228,18 @@ class HrDocumentSignatureController extends Controller
                 $row->status = 'In Progress';
             }
 
+            $signSuffix = '';
+            if (!empty($data['signed_name'])) {
+                $signSuffix = " (signed: {$data['signed_name']}"
+                    . (!empty($current['signature_url']) ? ' · drawn signature attached' : '')
+                    . ')';
+            }
             $row->audit_log = array_merge($row->audit_log ?? [], [
-                $this->event($user, strtolower(($current['action'] ?? 'action')) , sprintf(
+                $this->event($user, strtolower(($current['action'] ?? 'action')), sprintf(
                     '%s by %s%s',
                     $current['action'] ?? 'Action taken',
                     $user?->name ?? '(unknown)',
-                    !empty($data['signed_name']) ? " (signed: {$data['signed_name']})" : ''
+                    $signSuffix
                 )),
             ]);
             $row->save();
@@ -445,6 +474,41 @@ class HrDocumentSignatureController extends Controller
             'action'     => $action,
             'message'    => $message,
         ];
+    }
+
+    /**
+     * Decode a `data:image/...;base64,...` payload from the SignaturePad
+     * canvas and persist it as a PNG under the tenant's public-disk folder.
+     * Returns the public URL on success, or null if the payload doesn't
+     * look like a valid base64 image (we don't abort — the signer can still
+     * proceed with the typed cursive fallback).
+     *
+     * Accepts PNG only (the SignaturePad always emits PNG via toDataURL())
+     * to keep the validation surface tight.
+     */
+    private function persistSignatureImage(string $dataUrl, ?int $clientId, int $runId, int $signerN): ?string
+    {
+        if (!preg_match('#^data:image/png;base64,([A-Za-z0-9+/=\s]+)$#', trim($dataUrl), $m)) {
+            return null;
+        }
+        $binary = base64_decode(preg_replace('/\s+/', '', $m[1]) ?: '', true);
+        // Hard cap at ~1MB — a 600×200 signature PNG is typically <30 KB,
+        // so anything larger is either malicious or wildly oversized.
+        if ($binary === false || strlen($binary) === 0 || strlen($binary) > 1_048_576) {
+            return null;
+        }
+        $clientSlug = $clientId ? 'c' . $clientId : 'public';
+        $folder = "doc_templates/{$clientSlug}/signatures";
+        $filename = sprintf('run%d-s%d-%s.png', $runId, $signerN, Str::random(10));
+        try {
+            Storage::disk('public')->put($folder . '/' . $filename, $binary, 'public');
+        } catch (\Throwable $e) {
+            Log::error('[hr-document-signatures] save signature image failed', [
+                'run' => $runId, 'signer' => $signerN, 'err' => $e->getMessage(),
+            ]);
+            return null;
+        }
+        return file_url($folder . '/' . $filename);
     }
 
     /** Same tenant-scope rules as the template controller. */
