@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
 import SplashLoader from './ui/SplashLoader';
 import { ToastProvider } from '../contexts/ToastContext';
+import { ConfirmProvider } from '../contexts/ConfirmContext';
 import { LayoutProvider } from '../contexts/LayoutContext';
 import { BranchSwitcherProvider } from '../contexts/BranchSwitcherContext';
 import { SettingsProvider } from '../contexts/SettingsContext';
@@ -512,6 +513,10 @@ export default function App() {
       <ThemeProvider>
         <VariantProvider>
           <ToastProvider>
+            {/* ConfirmProvider exposes an async useConfirm() hook so any
+                page can replace native window.confirm() with a styled
+                modal dialog. */}
+            <ConfirmProvider>
             <AuthProvider>
               {/* SettingsProvider sits inside Auth so its API call carries the
                   bearer token; it sets document.title, favicon, and platform
@@ -527,6 +532,7 @@ export default function App() {
                 <IdleTimeout />
               </SettingsProvider>
             </AuthProvider>
+            </ConfirmProvider>
           </ToastProvider>
         </VariantProvider>
       </ThemeProvider>

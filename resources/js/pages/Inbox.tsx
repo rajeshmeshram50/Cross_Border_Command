@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row } from 'reactstrap';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
 import SignaturePad from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
@@ -43,6 +44,7 @@ interface SignatureRun {
 export default function Inbox() {
   const { user } = useAuth();
   const toast = useToast();
+  const confirmDialog = useConfirm();
 
   const [rows, setRows] = useState<SignatureRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +57,37 @@ export default function Inbox() {
   const [leaveLoading, setLeaveLoading] = useState(true);
   const [leaveActing, setLeaveActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
   const [leaveComment, setLeaveComment] = useState<Record<number, string>>({});
+
+  // Expense approvals — pending claims pulled from /my-team/approvals where
+  // module = 'expense'. Combines manager-stage (when the user is the assigned
+  // reporting manager) and HR-stage (when the user has hr.expense approval
+  // permission, e.g. branch admins / client admins). Stage lives on raw.stage
+  // so the dispatch knows whether to hit manager-approve or hr-approve.
+  type ExpenseApprovalRow = {
+    id: number;
+    code: string | null;
+    title: string;
+    subject_name: string;
+    subject_dept: string;
+    created_at: string;
+    raw: {
+      stage: 'manager' | 'hr';
+      amount: number;
+      currency: string | null;
+      expense_date: string | null;
+      category_name: string | null;
+      vendor: string | null;
+      employee_name: string | null;
+      employee_code: string | null;
+      department_name: string | null;
+      manager_name: string | null;
+      purpose: string | null;
+    };
+  };
+  const [expenseRows, setExpenseRows] = useState<ExpenseApprovalRow[]>([]);
+  const [expenseLoading, setExpenseLoading] = useState(true);
+  const [expenseActing, setExpenseActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
+  const [expenseComment, setExpenseComment] = useState<Record<number, string>>({});
 
   // View modal (read-only preview)
   const [viewRun, setViewRun] = useState<SignatureRun | null>(null);
@@ -100,6 +133,55 @@ export default function Inbox() {
     }
   };
   useEffect(() => { loadLeaves(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Pull pending expense approvals scoped to this user. Hits the same
+  // unified endpoint MyTeam uses and filters for the expense module so
+  // both surfaces stay in sync without duplicating server-side logic.
+  const loadExpenses = async () => {
+    setExpenseLoading(true);
+    try {
+      const { data } = await api.get('/my-team/approvals');
+      const all = Array.isArray(data?.approvals) ? data.approvals : [];
+      const expense: ExpenseApprovalRow[] = all
+        .filter((a: any) => a.module === 'expense')
+        .map((a: any) => ({
+          id: a.id, code: a.code, title: a.title,
+          subject_name: a.subject_name, subject_dept: a.subject_dept,
+          created_at: a.created_at, raw: a.raw,
+        }));
+      setExpenseRows(expense);
+    } catch (err: any) {
+      console.warn('[Inbox] expense approvals load failed', err);
+      setExpenseRows([]);
+    } finally {
+      setExpenseLoading(false);
+    }
+  };
+  useEffect(() => { loadExpenses(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const actOnExpense = async (row: ExpenseApprovalRow, verdict: 'approve' | 'reject') => {
+    const comment = (expenseComment[row.id] || '').trim();
+    if (verdict === 'reject' && !comment) {
+      toast.error('Reason required', 'Please add a short comment explaining the rejection.');
+      return;
+    }
+    const stage = row.raw.stage === 'hr' ? 'hr' : 'manager';
+    setExpenseActing({ id: row.id, verdict });
+    try {
+      await api.post(`/expense-claims/${row.id}/${stage}-${verdict}`, comment ? { comment } : {});
+      toast.success(
+        verdict === 'approve' ? 'Claim approved' : 'Claim rejected',
+        verdict === 'approve' ? 'The employee will be notified.' : 'The employee will see your remark.',
+      );
+      setExpenseComment(prev => { const next = { ...prev }; delete next[row.id]; return next; });
+      await loadExpenses();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Action failed';
+      toast.error('Could not act on this claim', msg);
+    } finally {
+      setExpenseActing(null);
+    }
+  };
 
   const actOnLeave = async (id: number, verdict: 'approve' | 'reject') => {
     const comment = (leaveComment[id] || '').trim();
@@ -150,15 +232,37 @@ export default function Inbox() {
         toast.error('Remark required', 'Add a remark explaining what should change.');
         return;
       }
-      if (!confirm(`Reject ${actionRun.code || 'this document'}? The workflow will halt and the sender will see your remark.`)) return;
+      // Snapshot the run + close the action modal so the confirm
+      // popup isn't stacked on top of the open acknowledge modal.
+      // Restore if the user cancels.
+      const targetRun = actionRun;
+      const runId = targetRun.id;
+      const code  = targetRun.code || 'this document';
+      setActionRun(null);
+      const ok = await confirmDialog({
+        title: 'Reject Document?',
+        message: (
+          <>
+            Reject <strong>{code}</strong>? The workflow will halt and the sender will see your remark.
+          </>
+        ),
+        confirmLabel: 'Yes, Reject',
+        cancelLabel:  'Cancel',
+        tone:         'danger',
+        icon:         'close-circle-line',
+      });
+      if (!ok) {
+        setActionRun(targetRun);
+        return;
+      }
       setSubmitting(true);
       try {
-        await api.post(`/hr-document-signatures/${actionRun.id}/reject`, { reason });
-        toast.success('Rejected', `${actionRun.code || `Run #${actionRun.id}`} returned with your remark.`);
-        setActionRun(null);
+        await api.post(`/hr-document-signatures/${runId}/reject`, { reason });
+        toast.success('Rejected', `${code} returned with your remark.`);
         load();
       } catch (err: any) {
         toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
+        setActionRun(targetRun);
       } finally { setSubmitting(false); }
       return;
     }
@@ -216,7 +320,9 @@ export default function Inbox() {
               </div>
               <span style={{ padding: '6px 14px', borderRadius: 999, background: 'linear-gradient(135deg,#f7b84b,#fbc763)', color: '#fff', fontWeight: 700, fontSize: 13 }}>
                 <i className="ri-mail-unread-line me-1" />
-                {loading || leaveLoading ? '…' : `${rows.length + leaveRows.length} pending`}
+                {loading || leaveLoading || expenseLoading
+                  ? '…'
+                  : `${rows.length + leaveRows.length + expenseRows.length} pending`}
               </span>
             </CardBody>
           </Card>
@@ -326,6 +432,140 @@ export default function Inbox() {
                             <button
                               type="button"
                               onClick={() => actOnLeave(r.id, 'reject')}
+                              disabled={acting}
+                              style={{
+                                padding: '8px 12px', borderRadius: 8,
+                                border: '1px solid #fecaca',
+                                background: '#fff', color: '#b91c1c',
+                                fontSize: 12, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
+                                opacity: acting ? 0.6 : 1,
+                              }}
+                            >
+                              {isRejecting ? <><i className="ri-loader-4-line ri-spin me-1" />Rejecting…</> : <><i className="ri-close-line me-1" />Reject</>}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* Expense claims ─ pending approvals where the current user is
+              either the assigned reporting manager (manager stage) or
+              someone with HR/Finance approval rights (hr stage). raw.stage
+              decides which controller endpoint each action call dispatches. */}
+          <Card className="mb-3" style={{ borderRadius: 12 }}>
+            <CardBody style={{ padding: 0 }}>
+              <div className="d-flex align-items-center justify-content-between"
+                   style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                <div className="d-flex align-items-center gap-2">
+                  <span style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <i className="ri-bill-line" style={{ fontSize: 16, color: '#a16207' }} />
+                  </span>
+                  <div>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Expense Claims</h6>
+                    <div className="text-muted" style={{ fontSize: 11.5 }}>
+                      Approvals waiting on you — reporting managers see manager-stage rows, branch admins see HR-stage rows.
+                    </div>
+                  </div>
+                </div>
+                <span style={{ padding: '4px 10px', borderRadius: 999, background: '#fef3c7', color: '#a16207', fontWeight: 700, fontSize: 11.5 }}>
+                  {expenseLoading ? '…' : `${expenseRows.length}`}
+                </span>
+              </div>
+
+              {expenseLoading ? (
+                <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>
+                  <i className="ri-loader-4-line ri-spin" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
+                  Loading…
+                </div>
+              ) : expenseRows.length === 0 ? (
+                <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
+                  <i className="ri-wallet-3-line" style={{ fontSize: 30, display: 'block', marginBottom: 6 }} />
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>No pending expense claims</div>
+                  <div style={{ fontSize: 11.5 }}>You're all caught up on reimbursements.</div>
+                </div>
+              ) : (
+                <div>
+                  {expenseRows.map((r) => {
+                    const empName = r.raw.employee_name || r.subject_name || '—';
+                    const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
+                    const acting = expenseActing?.id === r.id;
+                    const isApproving = acting && expenseActing?.verdict === 'approve';
+                    const isRejecting = acting && expenseActing?.verdict === 'reject';
+                    const fmtDate = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                    const fmtAmt = `₹${Number(r.raw.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+                    const stageLabel = r.raw.stage === 'hr' ? 'HR / Finance stage' : 'Manager stage';
+                    return (
+                      <div key={r.id} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                        <div className="d-flex align-items-start gap-3 flex-wrap">
+                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                            style={{ width: 38, height: 38, fontSize: 12, background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>
+                            {initials}
+                          </span>
+                          <div style={{ flex: '1 1 320px', minWidth: 240 }}>
+                            <div className="d-flex align-items-center gap-2 flex-wrap">
+                              <strong style={{ fontSize: 13.5 }}>{empName}</strong>
+                              <span style={{ fontSize: 11, color: '#6b7280' }}>
+                                {r.raw.employee_code || '—'}
+                                {r.raw.department_name ? ` · ${r.raw.department_name}` : ''}
+                              </span>
+                            </div>
+                            <div className="mt-1 d-flex align-items-center flex-wrap gap-2" style={{ fontSize: 12.5 }}>
+                              <span style={{ padding: '2px 8px', borderRadius: 6, background: '#fef3c7', color: '#a16207', fontWeight: 700, fontSize: 11 }}>
+                                {r.raw.category_name || 'Expense'}
+                              </span>
+                              {r.code && (
+                                <code style={{ fontSize: 10.5, background: '#f3f4f6', color: '#4b5563', padding: '1px 6px', borderRadius: 4 }}>
+                                  {r.code}
+                                </code>
+                              )}
+                              <span className="text-muted">· {fmtDate(r.raw.expense_date)}</span>
+                              <span className="fw-bold" style={{ color: '#a16207' }}>· {fmtAmt}</span>
+                              <span style={{ padding: '1px 7px', borderRadius: 999, background: r.raw.stage === 'hr' ? '#e0e7ff' : '#dcfce7', color: r.raw.stage === 'hr' ? '#4338ca' : '#15803d', fontSize: 10, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase' }}>
+                                {stageLabel}
+                              </span>
+                            </div>
+                            {r.title && r.title !== 'Expense Claim' && (
+                              <div className="mt-1" style={{ fontSize: 12, color: '#374151' }}>
+                                <strong>{r.title}</strong>
+                                {r.raw.vendor ? <span className="text-muted"> · {r.raw.vendor}</span> : null}
+                              </div>
+                            )}
+                            {r.raw.purpose && (
+                              <div className="mt-1 text-muted" style={{ fontSize: 12 }}>
+                                <i className="ri-double-quotes-l me-1" />{r.raw.purpose}
+                              </div>
+                            )}
+                            <input
+                              type="text"
+                              className="form-control mt-2"
+                              placeholder="Add a remark (required for reject, optional for approve)"
+                              value={expenseComment[r.id] || ''}
+                              onChange={e => setExpenseComment(prev => ({ ...prev, [r.id]: e.target.value }))}
+                              style={{ fontSize: 12.5 }}
+                            />
+                          </div>
+                          <div className="d-flex flex-column gap-2" style={{ minWidth: 140 }}>
+                            <button
+                              type="button"
+                              onClick={() => actOnExpense(r, 'approve')}
+                              disabled={acting}
+                              style={{
+                                padding: '8px 12px', borderRadius: 8, border: 0,
+                                background: 'linear-gradient(135deg,#10b981,#059669)',
+                                color: '#fff', fontSize: 12, fontWeight: 700, cursor: acting ? 'not-allowed' : 'pointer',
+                                opacity: acting ? 0.6 : 1,
+                              }}
+                            >
+                              {isApproving ? <><i className="ri-loader-4-line ri-spin me-1" />Approving…</> : <><i className="ri-check-line me-1" />Approve</>}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => actOnExpense(r, 'reject')}
                               disabled={acting}
                               style={{
                                 padding: '8px 12px', borderRadius: 8,

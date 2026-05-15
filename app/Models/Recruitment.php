@@ -15,6 +15,7 @@ class Recruitment extends Model
 
     protected $fillable = [
         'client_id', 'branch_id', 'created_by',
+        'hiring_request_id',
         'code',
 
         'job_title',

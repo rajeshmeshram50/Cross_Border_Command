@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Row, Col } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from './master/masterFormKit';
@@ -20,22 +19,6 @@ interface MasterOption { id: number; name: string; country_id?: number }
 interface LegalEntityOption { id: number; entity_name: string; city?: string | null }
 
 type StepNum = 1 | 2 | 3;
-
-/**
- * Prefix-icon wrapper for form fields — mirrors masterFormKit's `.master-field`
- * pattern. Defined at module scope (NOT inside the component) so React keeps
- * the same component identity across re-renders. If this were declared inline
- * inside `PublicOnboarding`, every keystroke would re-create the component
- * type, unmount the input, and clobber focus after a single character.
- */
-function IconField({ icon, children }: { icon: string; children: React.ReactNode }) {
-  return (
-    <div className="onb-field">
-      <i className={`onb-field-icon ${icon}`} />
-      {children}
-    </div>
-  );
-}
 
 export default function PublicOnboarding() {
   const { token } = useParams<{ token: string }>();
@@ -57,6 +40,22 @@ export default function PublicOnboarding() {
 
   // Wizard step
   const [step, setStep] = useState<StepNum>(1);
+  // Active sub-tab within each step — mirrors the reference design's
+  // top tab strip (General | Address | Contact | ...). Each step has
+  // its own tab set; see STEP_TABS below.
+  const [tab, setTab] = useState<string>('general');
+
+  // Reset scroll to the top whenever the user moves between steps so each
+  // new step opens at its heading instead of inheriting the previous step's
+  // scroll offset (otherwise Step 2's address fields land mid-page). Also
+  // reset to the first sub-tab so the new step opens on its first section.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    document.documentElement?.scrollTo?.({ top: 0, behavior: 'auto' });
+    document.body?.scrollTo?.({ top: 0, behavior: 'auto' });
+    setTab('general');
+  }, [step]);
 
   // Latest allowed DOB = today − 18 years. Caps the picker so candidates
   // can't even pick a date that would make them under 18 (the validator
@@ -396,8 +395,8 @@ export default function PublicOnboarding() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f5f0ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: '#5a3fd1', fontSize: 14, fontWeight: 600 }}>Loading invitation…</div>
+      <div style={{ minHeight: '100vh', background: '#eef4ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: '#1d4ed8', fontSize: 14, fontWeight: 600 }}>Loading invitation…</div>
       </div>
     );
   }
@@ -435,17 +434,22 @@ export default function PublicOnboarding() {
   const jumpToStep = (n: StepNum) => { if (n < step) setStep(n); };
 
   // Sidebar step config — title + description shown in the left rail.
-  const SIDE_STEPS: { n: StepNum; icon: string; title: string; sub: string }[] = [
-    { n: 1, icon: 'ri-user-3-line',     title: 'Your personal details', sub: 'Name, gender, contact info' },
-    { n: 2, icon: 'ri-map-pin-line',    title: 'Address details',       sub: 'Current & permanent address' },
-    { n: 3, icon: 'ri-briefcase-line',  title: 'Job details',           sub: 'Confirm role & joining date' },
+  const SIDE_STEPS: { n: StepNum; title: string; sub: string }[] = [
+    { n: 1, title: 'Your personal details', sub: 'Name, gender, contact info' },
+    { n: 2, title: 'Address details',       sub: 'Current & permanent address' },
+    { n: 3, title: 'Job details',           sub: 'Confirm role & joining date' },
   ];
-  const stepCopy: Record<StepNum, { title: string; description: string }> = {
-    1: { title: 'Basic Info',        description: `Tell us a bit about yourself to get started with your ${invite?.org_name ?? ''} account.`.trim() },
-    2: { title: 'Address Details',   description: 'Where you currently live and your permanent address on record.' },
-    3: { title: 'Job Details',       description: 'These were set by HR when you were invited — confirm them or make small updates.' },
+
+  // Per-step tab strip — purely visual section header that matches
+  // the reference design's top tab nav. We keep ALL fields visible
+  // per step (no sub-tab filtering); the tab just labels the section.
+  const STEP_TABS: Record<StepNum, { id: string; label: string }[]> = {
+    1: [{ id: 'general', label: 'Personal Details' }],
+    2: [{ id: 'general', label: 'Address Details' }],
+    3: [{ id: 'general', label: 'Job Details' }],
   };
-  const current = stepCopy[step];
+  const currentTabs = STEP_TABS[step];
+  const activeTab = currentTabs.some(t => t.id === tab) ? tab : currentTabs[0].id;
 
   return (
     <>
@@ -457,10 +461,18 @@ export default function PublicOnboarding() {
         .emp-input.is-readonly { background: #eef4ff; border-color: #c9d8f7; color: #1d4fc4; font-weight: 600; }
         .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
         .emp-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
-        [data-bs-theme="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
-        [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
+        [data-bs-theme="dark"] .emp-input {
+          background: #0f1623;
+          border-color: rgba(255,255,255,0.14);
+          color: #e5e7eb;
+        }
+        [data-bs-theme="dark"] .emp-input::placeholder { color: rgba(255,255,255,0.40); }
+        [data-bs-theme="dark"] .emp-input:focus {
+          border-color: #60a5fa;
+          box-shadow: 0 0 0 3px rgba(96,165,250,0.22);
+        }
         .emp-label { font-size: 12px; font-weight: 600; color: var(--vz-heading-color, #374151); letter-spacing: 0; text-transform: none; margin-bottom: 5px; display: block; }
-        [data-bs-theme="dark"] .emp-label { color: var(--vz-body-color); }
+        [data-bs-theme="dark"] .emp-label { color: #e5e7eb; }
         .emp-label .req { color: #f06548; margin-left: 2px; }
 
         /* Prefix-icon wrapper for fields — mirrors masterFormKit's .master-field */
@@ -487,9 +499,9 @@ export default function PublicOnboarding() {
         .onb-page-bg {
           position: fixed; inset: 0;
           background:
-            radial-gradient(900px 700px at 100% -20%,  rgba(59,130,246,0.10) 0%, transparent 60%),
-            radial-gradient(700px 900px at 100% 120%, rgba(29,79,196,0.10)  0%, transparent 60%),
-            linear-gradient(135deg, #eef3fb 0%, #e6ecf7 100%);
+            radial-gradient(900px 700px at 100% -20%,  rgba(37,99,235,0.12) 0%, transparent 60%),
+            radial-gradient(700px 900px at 100% 120%, rgba(29,78,216,0.10)  0%, transparent 60%),
+            linear-gradient(135deg, #f0f5ff 0%, #e0e9fb 100%);
           z-index: 0;
           pointer-events: none;
         }
@@ -500,25 +512,35 @@ export default function PublicOnboarding() {
             linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
         }
         /* Decorative arc rings — mimics the quarter-circle motifs in the
-           reference template's corners. Pure CSS borders so no SVG dep. */
+           reference template's corners. Pure CSS borders so no SVG dep.
+           The reference has a thick blue ring + a thinner inner ring in
+           the bottom-right corner, plus a thinner one in the top-right. */
         .onb-arc {
           position: fixed;
-          border: 60px solid rgba(59,130,246,0.06);
           border-radius: 50%;
           pointer-events: none;
           z-index: 0;
         }
         .onb-arc-tr {
-          width: 360px; height: 360px;
-          top: -180px; right: -180px;
+          width: 380px; height: 380px;
+          top: -190px; right: -190px;
+          border: 50px solid rgba(37,99,235,0.10);
         }
         .onb-arc-br {
-          width: 420px; height: 420px;
-          bottom: -210px; right: -210px;
-          border-color: rgba(29,79,196,0.07);
-          border-width: 80px;
+          width: 480px; height: 480px;
+          bottom: -240px; right: -240px;
+          border: 90px solid rgba(29,78,216,0.18);
         }
-        @media (max-width: 900px) { .onb-arc { display: none; } }
+        .onb-arc-br-inner {
+          position: fixed;
+          width: 320px; height: 320px;
+          bottom: -160px; right: -160px;
+          border-radius: 50%;
+          border: 30px solid rgba(37,99,235,0.10);
+          pointer-events: none;
+          z-index: 0;
+        }
+        @media (max-width: 900px) { .onb-arc, .onb-arc-br-inner { display: none; } }
 
         .onb-layout {
           min-height: 100vh;
@@ -565,7 +587,7 @@ export default function PublicOnboarding() {
           position: absolute;
           top: 28px; bottom: 28px;
           left: calc(28px + 300px - 1px);
-          width: 60px;
+          width: 72px;
           z-index: 2;
           pointer-events: none;
           overflow: visible;
@@ -573,49 +595,63 @@ export default function PublicOnboarding() {
         .onb-wave svg {
           width: 100%; height: 100%;
           display: block;
-          filter: drop-shadow(6px 0 16px rgba(13,38,76,0.18));
+          filter: drop-shadow(8px 0 18px rgba(13,38,76,0.22));
         }
         @media (max-width: 900px) { .onb-wave { display: none; } }
 
-        /* Vertical brand label on the sidebar's outer-right edge — the
-           "DiveShop360" rotated text in the reference template. Uses
-           the tenant org name so each customer's white-label name shows. */
-        .onb-side-vlabel {
+        /* Vertical brand label on the form card's outer right edge —
+           matches the reference's "DiveShop360" rotated wordmark. Sits
+           inside the layout's right padding so it overlaps the form
+           card's right margin area, just like the reference. */
+        .onb-form-vlabel {
           position: absolute;
           top: 50%;
-          right: -10px;
+          right: 6px;
           transform: translateY(-50%) rotate(90deg);
           transform-origin: center;
-          font-size: 10px;
+          font-size: 12px;
           font-weight: 800;
-          letter-spacing: 0.32em;
+          letter-spacing: 0.36em;
           text-transform: uppercase;
-          color: rgba(255,255,255,0.55);
+          color: rgba(15,38,76,0.35);
           white-space: nowrap;
-          z-index: 1;
+          z-index: 3;
+          pointer-events: none;
         }
-        @media (max-width: 900px) { .onb-side-vlabel { display: none; } }
+        [data-bs-theme="dark"] .onb-form-vlabel { color: rgba(255,255,255,0.30); }
+        @media (max-width: 900px) { .onb-form-vlabel { display: none; } }
 
-        /* Left rail — deep blue gradient, sticky so only the right side scrolls */
+        /* Left rail — bright blue gradient matching the reference
+           template's vibrant blue sidebar. Sticky so only the right
+           side scrolls. */
         .onb-side {
           background:
-            radial-gradient(circle at 100% 0%, rgba(255,255,255,0.16) 0%, transparent 38%),
-            radial-gradient(circle at 0% 100%, rgba(96,165,250,0.32) 0%, transparent 48%),
-            linear-gradient(165deg, #0b2545 0%, #133e8c 45%, #1e62d6 100%);
+            radial-gradient(circle at 100% 0%, rgba(255,255,255,0.18) 0%, transparent 38%),
+            radial-gradient(circle at 0% 100%, rgba(96,165,250,0.30) 0%, transparent 48%),
+            linear-gradient(165deg, #1e3a8a 0%, #1d4ed8 35%, #2563eb 70%, #3b82f6 100%);
           color: #fff;
           padding: 32px 24px 24px;
           display: flex;
           flex-direction: column;
-          gap: 40px;
-          /* Rounded card-style sidebar matching the reference template
-             where the blue panel sits inside the page with corner radii. */
+          gap: 24px;
+          /* Only the LEFT corners get rounded — the right side has its
+             curved silhouette drawn by the wave SVG which overlays the
+             seam (top-right and bottom-right stay flat so the wave's
+             curves don't fight with a corner-radius curve). */
           border-radius: 20px 0 0 20px;
           height: calc(100vh - 56px);
           position: sticky;
           top: 28px;
           align-self: start;
-          overflow: hidden auto;
-          box-shadow: 0 18px 40px -10px rgba(13,38,76,0.35);
+          /* overflow visible so the step number circles can OVERLAP the
+             seam between sidebar and form (matches the DiveShop360 ref).
+             Brand + 3 steps + footer fit comfortably without scroll.
+             z-index: 3 sits ABOVE the wave SVG (z:2) and the white notch
+             tab (z:2) so the absolute-positioned circles that overflow
+             the sidebar's right edge actually render on top of the wave. */
+          overflow: visible;
+          z-index: 3;
+          box-shadow: 0 18px 40px -10px rgba(29,78,216,0.40);
         }
         @media (max-width: 900px) {
           .onb-side { border-radius: 0; height: auto; position: static; }
@@ -633,11 +669,11 @@ export default function PublicOnboarding() {
         }
         .onb-side-brand-logo {
           display: inline-flex; align-items: center; justify-content: center;
-          backdrop-filter: blur(22px) ;
-          
-          padding: 14px 18px;
-          height: 90px; max-width: 100%;
-          
+          background: rgba(255,255,255,0.96);
+          border-radius: 10px;
+          padding: 10px 16px;
+          height: 76px; max-width: 100%;
+          box-shadow: 0 6px 16px rgba(13,38,76,0.18);
         }
         .onb-side-brand-logo img {
           max-width: 100%; max-height: 100%;
@@ -651,62 +687,126 @@ export default function PublicOnboarding() {
           text-shadow: 0 6px 14px rgba(0,0,0,0.30);
           padding: 4px 0;
         }
-        .onb-side-brand-name {
-          font-size: 24px; font-weight: 800; letter-spacing: -0.01em;
-          line-height: 1.2; word-break: break-word; color: #fff;
+        .onb-side-steps {
+          display: flex; flex-direction: column;
+          position: relative; z-index: 1;
+          gap: 28px;
+          /* Push the step list into the middle of the sidebar so the empty
+             space distributes evenly above (after the brand) and below
+             (before the footer) instead of dumping it all at the bottom.
+             Looks clean whether the page is short or scrolled. */
+          margin: auto 0;
         }
-
-        .onb-side-steps { display: flex; flex-direction: column; position: relative; z-index: 1; margin-top: 4px; gap: 6px; }
         .onb-step {
           position: relative;
-          display: flex; align-items: flex-start; gap: 14px;
-          background: transparent; border: 0; padding: 16px 0;
+          display: flex; align-items: center; gap: 14px;
+          background: transparent; border: 0; padding: 18px 0;
           color: inherit; text-align: left; width: 100%;
           cursor: pointer; transition: opacity .15s ease;
+          /* Reserve room on the right for the floating circle which is
+             absolute-positioned so it ACTUALLY extends past the sidebar's
+             right edge (negative margin alone wouldn't visually move it). */
+          padding-right: 36px;
+          min-height: 56px;
         }
         .onb-step:disabled { cursor: default; }
         .onb-step:not(:disabled):hover .onb-step-title { color: #fff; }
+        /* Step NUMBER badge — sits on the RIGHT side of each label (the
+           reference template's "1 / 2 / 3 / 4 / 5" circles on the right
+           edge of the sidebar). White circles with a faint outline by
+           default; the active step gets a thick green ring; completed
+           steps get a solid green fill with a check. */
         .onb-step-circle {
-          width: 36px; height: 36px; border-radius: 50%;
-          background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85);
-          border: 1.5px solid rgba(255,255,255,0.30);
+          /* Absolute-position the circle so its CENTER sits ON the seam
+             between sidebar and form pane (half on blue, half on white).
+             Sidebar has 24px right padding; circle is 48px wide, so
+             right: -48px puts the right edge 48px past the .onb-step's
+             content-box right edge — meaning the circle's center lands
+             exactly on the sidebar's outer right edge. */
+          position: absolute;
+          right: -48px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 48px; height: 48px; border-radius: 50%;
+          background: #ffffff; color: #94a3b8;
+          border: 1.5px solid rgba(255,255,255,0.85);
           display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0; font-size: 14px; z-index: 2;
+          font-size: 14px;
           transition: all .2s ease;
+          z-index: 4;
+          box-shadow: 0 4px 12px rgba(15,23,42,0.18);
         }
         /* Step NUMBER inside the circle — bold, slightly larger so it
            reads as a "1", "2", "3" badge (matches the reference). */
         .onb-step-num {
-          font-size: 13.5px;
+          font-size: 16px;
           font-weight: 800;
           letter-spacing: -0.01em;
           font-feature-settings: 'tnum';
+          color: inherit;
         }
-        /* Current step — solid white-on-blue gradient ring with a soft
-           outer glow, matches the active node in the reference. */
+        /* Current step — white circle with a bright GREEN outer ring,
+           exactly as in the reference template. The number stays in the
+           primary blue so it pops against the white pill. */
         .onb-step.is-active .onb-step-circle {
-          background: linear-gradient(135deg, #3b82f6 0%, #1d4fc4 100%);
-          color: #fff;
-          border-color: rgba(255,255,255,0.55);
-          box-shadow: 0 0 0 4px rgba(255,255,255,0.18), 0 8px 20px rgba(29,79,196,0.45);
+          background: #ffffff;
+          color: #1d4ed8;
+          border-color: #22c55e;
+          box-shadow: 0 0 0 3px rgba(34,197,94,0.35), 0 8px 18px rgba(34,197,94,0.32);
+          transform: translateY(-50%) scale(1.04);
         }
         /* Done step — solid green badge with the check icon. */
         .onb-step.is-done .onb-step-circle {
-          background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+          background: linear-gradient(135deg, #10b981 0%, #22c55e 100%);
           color: #fff;
           border-color: transparent;
           box-shadow: 0 6px 16px rgba(16,185,129,0.35);
         }
-        .onb-step-text { display: flex; flex-direction: column; padding-top: 5px; }
-        .onb-step-title { font-size: 14.5px; font-weight: 600; color: rgba(255,255,255,0.88); line-height: 1.25; }
-        .onb-step.is-active .onb-step-title { color: #fff; font-weight: 700; }
-        .onb-step-sub { font-size: 12px; color: rgba(255,255,255,0.62); margin-top: 3px; }
-        .onb-step-line {
-          position: absolute; left: 17.25px; top: 56px;
-          width: 1.5px; height: 38px;
-          background: rgba(255,255,255,0.22);
+        .onb-step-text {
+          display: flex; flex-direction: column;
+          min-width: 0; flex: 1 1 auto;
+          /* Title/sub may be longer than the available column, so allow
+             words to break and ellipsize gracefully instead of overflowing
+             under the circle. */
+          overflow: hidden;
         }
-        .onb-step.is-done .onb-step-line { background: rgba(10,179,156,0.55); }
+        .onb-step-title {
+          font-size: 15px; font-weight: 600;
+          color: rgba(255,255,255,0.85); line-height: 1.3;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .onb-step.is-active .onb-step-title { color: #ffffff; font-weight: 700; }
+        .onb-step.is-done .onb-step-title { color: rgba(255,255,255,0.75); }
+        .onb-step-sub {
+          font-size: 11.5px; color: rgba(255,255,255,0.55); margin-top: 3px;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        /* Vertical connector line — runs through the centers of the
+           floating circles on the seam. Same x-offset as circle center:
+           circle is margin-right: -48px with width 48px, so its center
+           sits at right: -24px. Line is 1.5px wide, so right: -24.75px.
+           z-index: 3 sits below the circles (z:4) but above the wave. */
+        .onb-step-line {
+          /* Bridges the visible gap from THIS circle's bottom edge to the
+             NEXT circle's top edge. With .onb-side-steps gap: 28px and
+             circle radius 24px, the line needs to extend ~52px below the
+             current circle's center to reach the next circle's center,
+             then we subtract another 24px so it stops at the next circle's
+             top edge. So height = 52px - 24px = 28px below current circle. */
+          position: absolute; right: -24.75px; top: calc(50% + 26px);
+          width: 1.5px; height: calc(50% + 22px);
+          background: rgba(255,255,255,0.45);
+          z-index: 3;
+        }
+        .onb-step.is-done .onb-step-line { background: rgba(34,197,94,0.7); }
+        /* Mobile (no form pane beside sidebar) — pull the floating circle
+           and connector line back inside the sidebar so they don't hang
+           off the right edge of the screen. */
+        @media (max-width: 900px) {
+          .onb-step { padding-right: 64px; }
+          .onb-step-circle { right: 8px; }
+          .onb-step-line { right: 31.25px; }
+        }
 
         .onb-side-foot {
           margin-top: auto; position: relative; z-index: 1;
@@ -774,107 +874,38 @@ export default function PublicOnboarding() {
            treatment while preserving the tenant context. */
         .onb-welcome {
           display: flex; align-items: center; gap: 10px;
-          padding: 8px 14px; border-radius: 10px;
-          background: linear-gradient(120deg, rgba(29,79,196,0.06) 0%, rgba(96,165,250,0.07) 100%);
-          border: 1px solid rgba(29,79,196,0.10);
+          padding: 10px 16px; border-radius: 12px;
+          background: linear-gradient(120deg, rgba(37,99,235,0.06) 0%, rgba(59,130,246,0.08) 100%);
+          border: 1px solid rgba(37,99,235,0.14);
           margin-bottom: 14px;
         }
-        .onb-welcome-icon {
-          width: 32px; height: 32px; border-radius: 8px;
-          background: linear-gradient(135deg, #1d4fc4, #3b82f6);
-          color: #fff; display: flex; align-items: center; justify-content: center;
-          font-size: 15px; flex-shrink: 0;
-          box-shadow: 0 4px 10px rgba(29,79,196,0.28);
+        [data-bs-theme="dark"] .onb-welcome {
+          background: linear-gradient(120deg, rgba(59,130,246,0.16) 0%, rgba(96,165,250,0.20) 100%);
+          border-color: rgba(96,165,250,0.32);
         }
-        .onb-welcome-title { font-size: 13px; font-weight: 700; letter-spacing: -0.005em; color: var(--vz-heading-color, #0b2545); line-height: 1.2; }
+        .onb-welcome-icon {
+          width: 36px; height: 36px; border-radius: 10px;
+          background: linear-gradient(135deg, #2563eb, #3b82f6);
+          color: #fff; display: flex; align-items: center; justify-content: center;
+          font-size: 16px; flex-shrink: 0;
+          box-shadow: 0 4px 12px rgba(37,99,235,0.35);
+        }
+        .onb-welcome-title { font-size: 13px; font-weight: 700; letter-spacing: -0.005em; color: var(--vz-heading-color, #0f1e4b); line-height: 1.2; }
         .onb-welcome-sub { font-size: 11.5px; color: var(--vz-secondary-color, #6b7280); margin-top: 1px; }
         .onb-welcome-sub strong { color: var(--vz-heading-color, #374151); font-weight: 600; }
-
-        .onb-step-pill {
-          display: inline-block;
-          font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em;
-          color: #1d4fc4; background: rgba(29,79,196,0.10);
-          padding: 4px 10px; border-radius: 999px; margin-bottom: 10px;
-          text-transform: uppercase;
-        }
-
-        /* Horizontal step indicator — slim circle-line-circle progress
-           strip sitting just below the welcome banner. Mirrors what the
-           user sketched: each step is a small circle, completed steps
-           filled, current step highlighted with a glowing ring, future
-           steps dimmed. The connector line tints in proportion to
-           progress so the strip works as both a step indicator AND a
-           progress meter. */
-        .onb-stepper {
-          display: flex;
-          align-items: center;
-          gap: 0;
-          margin: 0 0 22px;
-          padding: 14px 18px;
-          background: linear-gradient(120deg, rgba(29,79,196,0.04), rgba(96,165,250,0.05));
-          border: 1px solid rgba(29,79,196,0.10);
-          border-radius: 12px;
-        }
-        .onb-stepper-node {
-          display: flex; flex-direction: column;
-          align-items: center; gap: 6px;
-          flex-shrink: 0;
-          position: relative;
-        }
-        .onb-stepper-dot {
-          width: 28px; height: 28px;
-          border-radius: 50%;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 12px; font-weight: 800;
-          background: #ffffff;
-          border: 2px solid var(--vz-border-color, #e5e7eb);
-          color: var(--vz-secondary-color, #94a3b8);
-          transition: all .25s ease;
-        }
-        .onb-stepper-node.is-done .onb-stepper-dot {
-          background: linear-gradient(135deg, #10b981, #34d399);
-          border-color: transparent;
-          color: #fff;
-        }
-        .onb-stepper-node.is-current .onb-stepper-dot {
-          background: linear-gradient(135deg, #1d4fc4, #3b82f6);
-          border-color: transparent;
-          color: #fff;
-          box-shadow: 0 0 0 4px rgba(29,79,196,0.18), 0 4px 12px rgba(29,79,196,0.30);
-        }
-        .onb-stepper-label {
-          font-size: 11px; font-weight: 600;
-          color: var(--vz-secondary-color, #94a3b8);
-          text-align: center;
-          line-height: 1.2;
-          max-width: 110px;
-        }
-        .onb-stepper-node.is-done .onb-stepper-label,
-        .onb-stepper-node.is-current .onb-stepper-label {
-          color: var(--vz-heading-color, #0f172a);
-        }
-        .onb-stepper-line {
-          flex: 1; height: 2px;
-          background: var(--vz-border-color, #e5e7eb);
-          margin: 0 6px; margin-bottom: 22px;
-          align-self: center;
-          position: relative;
-          overflow: hidden;
-        }
-        .onb-stepper-line::after {
-          content: '';
-          position: absolute; inset: 0;
-          background: linear-gradient(90deg, #10b981, #34d399);
-          width: var(--fill, 0%);
-          transition: width .35s ease;
-        }
 
         /* Bottom progress bar — slim track + filled gradient with the
            "X of Y · NN% complete" label next to it. Sits inside the
            foot row, replaces the lonely Next button at the bottom. */
         .onb-progress {
           display: flex; align-items: center; gap: 12px;
-          flex: 1; max-width: 380px;
+          flex: 1 1 auto; max-width: 420px; min-width: 180px;
+        }
+        /* Right-side button cluster — Previous (outlined) + Next (solid)
+           grouped together, matching the reference template. */
+        .onb-foot-actions {
+          display: flex; align-items: center; gap: 12px;
+          flex-shrink: 0;
         }
         .onb-progress-track {
           flex: 1; height: 6px;
@@ -903,36 +934,143 @@ export default function PublicOnboarding() {
           font-size: 13.5px; color: var(--vz-secondary-color, #6b7280);
           margin: 0 0 14px; line-height: 1.55; max-width: 680px;
         }
-        .onb-main-divider { height: 1px; background: var(--vz-border-color, #e5e7eb); margin-bottom: 18px; }
 
-        /* Title row — title block on the left, "Approx Time" badge on
-           the right (matches the reference template's top-right corner
-           approx-time chip). Stacks on mobile so the title doesn't
-           wrap awkwardly. */
+        /* Title row — wraps the tab strip; kept as a flex row so future
+           right-side content slots in without re-layouts. */
         .onb-title-row {
           display: flex;
-          align-items: flex-start;
+          align-items: center;
           justify-content: space-between;
           gap: 16px;
           flex-wrap: wrap;
+          margin-bottom: 22px;
+          border-bottom: 1px solid var(--vz-border-color, #e5e7eb);
         }
-        .onb-title-block { flex: 1; min-width: 0; }
-        .onb-approx-time {
+        .onb-title-row .onb-tabs {
+          flex: 1; min-width: 0;
+          margin: 0;
+          border-bottom: 0;
+        }
+
+        /* Top tab strip — mirrors the reference template's
+           "General | Address | Contact | …" tab nav above the form.
+           Underline-style tabs with a thick blue indicator on the
+           active tab and muted labels on the inactive ones. */
+        .onb-tabs {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          border-bottom: 1px solid var(--vz-border-color, #e5e7eb);
+          margin: 0 0 22px;
+          padding: 0 4px;
+          overflow-x: auto;
+          scrollbar-width: none;
+        }
+        .onb-tabs::-webkit-scrollbar { display: none; }
+        .onb-tab {
+          position: relative;
+          background: transparent;
+          border: 0;
+          padding: 10px 18px 12px;
+          font-size: 13.5px;
+          font-weight: 600;
+          color: var(--vz-secondary-color, #94a3b8);
+          cursor: pointer;
+          white-space: nowrap;
+          transition: color .18s ease;
+        }
+        .onb-tab:hover:not(:disabled) { color: var(--vz-heading-color, #1f2937); }
+        .onb-tab:disabled { cursor: not-allowed; opacity: 0.55; }
+        .onb-tab.is-active {
+          color: #1d4ed8;
+          font-weight: 700;
+        }
+        .onb-tab.is-active::after {
+          content: '';
+          position: absolute;
+          left: 12px; right: 12px; bottom: -1px;
+          height: 3px;
+          background: linear-gradient(90deg, #2563eb, #3b82f6);
+          border-radius: 3px 3px 0 0;
+        }
+
+        /* Stacked label rows — label sits ABOVE the input, matching the
+           older IGC Basic Info layout and the 3-column grid below. */
+        .onb-hrow {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .onb-hrow > .emp-label {
+          margin: 0;
+          text-align: left;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--vz-heading-color, #374151);
+        }
+        .onb-hrow > .onb-hrow-input {
+          min-width: 0;
+        }
+        .onb-hrow .emp-err {
+          margin-top: 4px;
+        }
+        /* Three-column row grid so 9 fields fit in 3 tidy rows without
+           scrolling — matches the older Basic Info / IGC layout where
+           labels stack ABOVE inputs in compact column cells. */
+        .onb-hgrid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 14px 24px;
+          max-width: 1100px;
+          margin: 0 auto;
+        }
+        @media (max-width: 900px) {
+          .onb-hgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 600px) {
+          .onb-hgrid { grid-template-columns: 1fr; }
+        }
+        /* Section title between groups of fields (e.g. "Current Address"
+           / "Permanent Address" on step 2). Sits in the same centered
+           column as the field grid. */
+        .onb-section-title {
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--vz-heading-color, #0f172a);
+          margin: 6px auto 14px;
+          max-width: 920px;
+          padding-left: 4px;
+          letter-spacing: -0.005em;
+        }
+        .onb-section-title-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          max-width: 920px;
+          margin: 22px auto 12px;
+          padding-left: 4px;
+        }
+        .onb-section-title-row .onb-section-title {
+          margin: 0;
+          padding-left: 0;
+        }
+        .onb-same-toggle {
+          font-size: 12.5px;
+          color: var(--vz-secondary-color, #6b7280);
+          font-weight: 600;
+          cursor: pointer;
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          padding: 6px 12px;
-          background: rgba(29,79,196,0.06);
-          border: 1px solid rgba(29,79,196,0.18);
+          padding: 4px 10px;
+          border: 1px solid rgba(37,99,235,0.18);
           border-radius: 999px;
-          font-size: 11.5px;
-          font-weight: 600;
-          color: var(--vz-secondary-color, #6b7280);
-          white-space: nowrap;
-          flex-shrink: 0;
+          background: rgba(37,99,235,0.04);
+          transition: background .15s ease, border-color .15s ease;
         }
-        .onb-approx-time i { color: #1d4fc4; font-size: 14px; }
-        .onb-approx-time strong { color: var(--vz-heading-color, #0f172a); font-weight: 700; }
+        .onb-same-toggle:hover { background: rgba(37,99,235,0.08); border-color: rgba(37,99,235,0.28); }
+        .onb-same-toggle input[type="checkbox"] { accent-color: #2563eb; margin: 0; }
 
         /* Foot buttons — match the reference template's uppercase
            Previous (outlined) and Next (solid blue) treatment. */
@@ -952,22 +1090,22 @@ export default function PublicOnboarding() {
         }
         .onb-btn-ghost {
           background: #ffffff;
-          color: #475569;
-          border: 1.5px solid #cbd5e1;
+          color: #2563eb;
+          border: 1.5px solid #2563eb;
         }
         .onb-btn-ghost:hover:not(:disabled) {
-          border-color: #1d4fc4;
-          color: #1d4fc4;
-          background: rgba(29,79,196,0.04);
+          border-color: #1d4ed8;
+          color: #1d4ed8;
+          background: rgba(37,99,235,0.06);
         }
         .onb-btn-primary {
-          background: linear-gradient(135deg, #1d4fc4 0%, #3b82f6 100%);
+          background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
           color: #ffffff;
-          box-shadow: 0 6px 16px rgba(29,79,196,0.32);
+          box-shadow: 0 6px 16px rgba(37,99,235,0.35);
         }
         .onb-btn-primary:hover:not(:disabled) {
           transform: translateY(-1px);
-          box-shadow: 0 10px 22px rgba(29,79,196,0.42);
+          box-shadow: 0 10px 22px rgba(37,99,235,0.45);
           filter: brightness(1.05);
         }
         .onb-btn-success {
@@ -989,53 +1127,17 @@ export default function PublicOnboarding() {
           to   { transform: rotate(360deg); }
         }
 
-        .onb-subhead {
-          display: flex; align-items: center; gap: 8px;
-          font-size: 13px; font-weight: 700; color: var(--vz-heading-color, #111827);
-          margin: 4px 0 12px;
-        }
-        .onb-subhead i { color: #1d4fc4; font-size: 16px; }
-        .onb-subhead-row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 12px; }
-        .onb-subhead-row .onb-subhead { margin: 0; }
-
         .onb-main-foot {
           display: flex; align-items: center; justify-content: space-between;
+          gap: 24px;
           padding-top: 18px; margin-top: 22px;
           border-top: 1px solid var(--vz-border-color, #e5e7eb);
         }
-
-        /* Compact density for Step 3 — shrinks field height, label gap and
-           row spacing so the 6 Job-details fields plus chrome (welcome
-           banner, title, footer) fit in one viewport without scroll. */
-        .onb-main .onb-compact .emp-input,
-        .onb-main .onb-compact .emp-input.form-control,
-        .onb-main .onb-compact .form-select,
-        .onb-main .onb-compact .master-select-toggle,
-        .onb-main .onb-compact .master-datepicker-toggle {
-          height: 34px;
-          min-height: 34px;
-          padding-top: 6px;
-          padding-bottom: 6px;
-          font-size: 12.5px;
-          border-radius: 8px;
+        @media (max-width: 600px) {
+          .onb-main-foot { flex-wrap: wrap; gap: 12px; }
+          .onb-progress { max-width: 100%; }
+          .onb-foot-actions { width: 100%; justify-content: flex-end; }
         }
-        .onb-main .onb-compact .emp-label {
-          margin-bottom: 3px;
-          font-size: 11.5px;
-        }
-        .onb-main .onb-compact .row { --bs-gutter-y: 8px; }
-        .onb-main .onb-compact .onb-field .emp-input { padding-left: 32px; }
-        .onb-main .onb-compact .onb-field-icon { font-size: 13px; }
-        /* On step 3 also shrink the chrome above the form so the whole
-           pane fits in one viewport. */
-        .onb-main-inner.is-compact .onb-welcome { margin-bottom: 10px; padding: 6px 12px; }
-        .onb-main-inner.is-compact .onb-welcome-icon { width: 28px; height: 28px; font-size: 13px; }
-        .onb-main-inner.is-compact .onb-welcome-title { font-size: 12.5px; }
-        .onb-main-inner.is-compact .onb-welcome-sub { font-size: 11px; }
-        .onb-main-inner.is-compact .onb-main-title { font-size: 22px; margin-bottom: 4px; }
-        .onb-main-inner.is-compact .onb-main-sub { font-size: 12.5px; margin-bottom: 10px; }
-        .onb-main-inner.is-compact .onb-main-divider { margin-bottom: 12px; }
-        .onb-main-inner.is-compact .onb-main-foot { padding-top: 12px; margin-top: 14px; }
 
         @media (max-width: 900px) {
           .onb-side { padding: 20px 20px 16px; gap: 18px; }
@@ -1045,6 +1147,76 @@ export default function PublicOnboarding() {
           .onb-welcome { padding: 12px 14px; }
           .onb-welcome-icon { width: 38px; height: 38px; font-size: 18px; }
         }
+
+        /* ── Dark-mode overrides ────────────────────────────────────────
+           Components that hardcode light-mode colors get explicit dark
+           variants here so the page reads correctly under both themes. */
+        [data-bs-theme="dark"] .onb-main { background: #131c2b; }
+        [data-bs-theme="dark"] .onb-main-title { color: #f8fafc; }
+        [data-bs-theme="dark"] .onb-main-sub { color: #94a3b8; }
+        [data-bs-theme="dark"] .onb-section-title { color: #e2e8f0; }
+        [data-bs-theme="dark"] .onb-welcome-title { color: #f1f5f9; }
+        [data-bs-theme="dark"] .onb-welcome-sub { color: #94a3b8; }
+        [data-bs-theme="dark"] .onb-welcome-sub strong { color: #e2e8f0; }
+        [data-bs-theme="dark"] .onb-tab { color: #94a3b8; }
+        [data-bs-theme="dark"] .onb-tab:hover:not(:disabled) { color: #e2e8f0; }
+        [data-bs-theme="dark"] .onb-tab.is-active { color: #60a5fa; }
+        [data-bs-theme="dark"] .onb-tab.is-active::after {
+          background: linear-gradient(90deg, #3b82f6, #60a5fa);
+        }
+        [data-bs-theme="dark"] .onb-tabs { border-bottom-color: rgba(255,255,255,0.12); }
+        [data-bs-theme="dark"] .onb-main-foot { border-top-color: rgba(255,255,255,0.12); }
+        [data-bs-theme="dark"] .onb-same-toggle {
+          color: var(--vz-secondary-color);
+          background: rgba(96,165,250,0.10);
+          border-color: rgba(96,165,250,0.24);
+        }
+        [data-bs-theme="dark"] .onb-same-toggle:hover {
+          background: rgba(96,165,250,0.16);
+          border-color: rgba(96,165,250,0.34);
+        }
+        /* MasterSelect / MasterDatePicker share the input look — give
+           them the same dark-mode treatment so dropdowns and pickers
+           don't appear as blank white pills on the dark form. */
+        [data-bs-theme="dark"] .onb-main .master-select-toggle,
+        [data-bs-theme="dark"] .onb-main .master-datepicker-toggle {
+          background: #0f1623 !important;
+          border-color: rgba(255,255,255,0.14) !important;
+          color: #e5e7eb !important;
+        }
+        [data-bs-theme="dark"] .onb-progress-track {
+          background: var(--vz-border-color, #2b3445);
+        }
+        [data-bs-theme="dark"] .onb-progress-label {
+          color: var(--vz-secondary-color);
+        }
+        /* Logo plate sits on dark navy in dark mode — slightly tinted so
+           it doesn't glow as a pure-white rectangle. */
+        [data-bs-theme="dark"] .onb-side-brand-logo {
+          background: rgba(255,255,255,0.88);
+          box-shadow: 0 6px 16px rgba(0,0,0,0.40);
+        }
+        /* Form input row error text — slightly different red for dark bg. */
+        [data-bs-theme="dark"] .onb-main .emp-err { color: #f87171; }
+
+        /* ── Final-touch polish ─────────────────────────────────────────
+           Subtle entrance animation, smoother focus rings, and a small
+           hover bounce on the step circles. */
+        .onb-main-inner { animation: onb-fade-in .4s ease both; }
+        @keyframes onb-fade-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .onb-step:not(:disabled):hover .onb-step-circle {
+          box-shadow: 0 6px 16px rgba(15,23,42,0.24);
+        }
+        .emp-input:focus,
+        .onb-main .master-select-toggle:focus-within,
+        .onb-main .master-datepicker-toggle:focus-within {
+          outline: none;
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37,99,235,0.18);
+        }
       `}</style>
 
       {/* Tinted backdrop + decorative quarter-circle arcs that mimic
@@ -1053,6 +1225,7 @@ export default function PublicOnboarding() {
       <div className="onb-page-bg" aria-hidden />
       <div className="onb-arc onb-arc-tr" aria-hidden />
       <div className="onb-arc onb-arc-br" aria-hidden />
+      <div className="onb-arc-br-inner" aria-hidden />
 
       <div className="onb-layout">
         {/* SVG wave silhouette extending the sidebar's blue color into
@@ -1064,22 +1237,17 @@ export default function PublicOnboarding() {
           <svg viewBox="0 0 100 800" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <linearGradient id="onb-wave-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#0b2545" />
-                <stop offset="45%" stopColor="#133e8c" />
-                <stop offset="100%" stopColor="#1e62d6" />
+                <stop offset="0%" stopColor="#1e3a8a" />
+                <stop offset="45%" stopColor="#1d4ed8" />
+                <stop offset="100%" stopColor="#3b82f6" />
               </linearGradient>
             </defs>
             <path
               d="
                 M 0 0
-                L 0 800
-                L 0 800
-                Q 0 800 0 780
-                C 30 720, 70 700, 60 620
-                C 50 540, 0 520, 0 460
-                C 0 400, 60 380, 60 300
-                C 60 220, 0 200, 0 140
-                Q 0 80 30 40
+                Q 32 0, 32 32
+                L 32 768
+                Q 32 800, 0 800
                 L 0 0
                 Z
               "
@@ -1088,9 +1256,13 @@ export default function PublicOnboarding() {
           </svg>
         </div>
 
+        {/* Vertical brand label on the form card's OUTER right edge —
+            "DiveShop360"-style rotated text sitting just inside the
+            white card's right edge, like the reference template. */}
+        <span className="onb-form-vlabel" aria-hidden>{invite?.org_name || 'CrossBorder'}</span>
+
         {/* ── Left rail — brand + step breadcrumbs ─────────────────────── */}
         <aside className="onb-side">
-          <span className="onb-side-vlabel">{invite?.org_name || 'CrossBorder'}</span>
           <div className="onb-side-brand">
             {invite?.logo_url ? (
               <span className="onb-side-brand-logo"><img src={invite.logo_url} alt={invite.org_name} /></span>
@@ -1099,7 +1271,6 @@ export default function PublicOnboarding() {
                 {(invite?.org_name || '?').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || 'CB'}
               </span>
             )}
-            {/* <span className="onb-side-brand-name">{invite?.org_name}</span> */}
           </div>
 
           <nav className="onb-side-steps" aria-label="Onboarding steps">
@@ -1116,14 +1287,14 @@ export default function PublicOnboarding() {
                   disabled={!canJump && !active}
                   aria-current={active ? 'step' : undefined}
                 >
+                  <span className="onb-step-text">
+                    <span className="onb-step-title">{s.title}</span>
+                    <span className="onb-step-sub">{s.sub}</span>
+                  </span>
                   <span className="onb-step-circle">
                     {done2
                       ? <i className="ri-check-line" />
                       : <span className="onb-step-num">{s.n}</span>}
-                  </span>
-                  <span className="onb-step-text">
-                    <span className="onb-step-title">{s.title}</span>
-                    <span className="onb-step-sub">{s.sub}</span>
                   </span>
                   {idx < SIDE_STEPS.length - 1 && <span className="onb-step-line" />}
                 </button>
@@ -1148,275 +1319,278 @@ export default function PublicOnboarding() {
 
         {/* ── Right pane — current step's form ─────────────────────────── */}
         <main className="onb-main">
-          <div className={`onb-main-inner${step === 3 ? ' is-compact' : ''}`}>
+          <div className="onb-main-inner">
 
-            {/* Welcome banner — sits above the per-step heading */}
-            <div className="onb-welcome">
-              <span className="onb-welcome-icon"><i className="ri-hand-heart-line" /></span>
-              <div className="min-w-0 flex-grow-1">
-                <div className="onb-welcome-title">Welcome to {invite?.org_name} · Onboarding Form</div>
-                <div className="onb-welcome-sub">
-                  Hi <strong>{invite?.invitee_name}</strong> · {invite?.invitee_email}
+            {/* Welcome banner — greets the invitee by name and surfaces
+                the tenant context. Only shown when we know who they are. */}
+            {invite && (
+              <div className="onb-welcome">
+                <div className="onb-welcome-icon"><i className="ri-hand-heart-line" /></div>
+                <div>
+                  <div className="onb-welcome-title">Welcome to {invite.org_name} · Onboarding Form</div>
+                  <div className="onb-welcome-sub">
+                    Hi <strong>{firstName || invite.invitee_email?.split('@')[0] || 'there'}</strong>
+                    {invite.invitee_email && <> · {invite.invitee_email}</>}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Horizontal stepper removed — the left sidebar already
-                shows the step list (Personal / Address / Job) with the
-                done-check and current-highlight states, so duplicating
-                it at the top of the form was visual noise that pushed
-                the actual fields below the fold. */}
+            {/* Per-step title + subtitle — gives the form section a clear
+                heading like "Basic Info" / "Tell us a bit about yourself". */}
+            <h1 className="onb-main-title">
+              {step === 1 ? 'Basic Info' : step === 2 ? 'Address' : 'Job Details'}
+            </h1>
+            <p className="onb-main-sub">
+              {step === 1
+                ? `Tell us a bit about yourself to get started with your ${invite?.org_name || ''} account.`
+                : step === 2
+                  ? 'Where can we reach you? Add your current and permanent addresses.'
+                  : 'Confirm your role and joining date to wrap up onboarding.'}
+            </p>
 
+            {/* Top row — tab strip on the left, "Approx Time" chip on
+                the right. Mirrors the reference design where the tabs
+                read across the top of the form pane and the time
+                estimate sits in the top-right corner. */}
             <div className="onb-title-row">
-              <div className="onb-title-block">
-                <h1 className="onb-main-title">{current.title}</h1>
-                <p className="onb-main-sub">{current.description}</p>
-              </div>
-              <div className="onb-approx-time" aria-label="Approximate time to complete this step">
-                <i className="ri-time-line" />
-                <span>Approx Time:</span>
-                <strong>2 Mins</strong>
-              </div>
+              <nav className="onb-tabs" role="tablist" aria-label="Step sections">
+                {currentTabs.map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={t.id === activeTab}
+                    className={`onb-tab${t.id === activeTab ? ' is-active' : ''}`}
+                    onClick={() => setTab(t.id)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </nav>
             </div>
-            <div className="onb-main-divider" />
 
           {step === 1 && (
-            <div>
-              <Row className="g-2">
-                <Col md={4}>
-                  <label className="emp-label">First Name<span className="req">*</span></label>
-                  <IconField icon="ri-user-line">
-                    <input className={`emp-input${errs.first_name ? ' is-invalid' : ''}`} placeholder="e.g. Aarav" value={firstName} onChange={e => { setFirstName(e.target.value); clearErr('first_name'); }} />
-                  </IconField>
+            <div className="onb-hgrid">
+              <div className="onb-hrow">
+                <label className="emp-label">First Name<span className="req">*</span></label>
+                <div className="onb-hrow-input">
+                  <input className={`emp-input${errs.first_name ? ' is-invalid' : ''}`} placeholder="e.g. Aarav" value={firstName} onChange={e => { setFirstName(e.target.value); clearErr('first_name'); }} />
                   {errs.first_name && <small className="emp-err">{errs.first_name}</small>}
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Middle Name</label>
-                  <IconField icon="ri-user-line">
-                    <input className={`emp-input${errs.middle_name ? ' is-invalid' : ''}`} placeholder="Middle name (optional)" value={middleName} onChange={e => { setMiddleName(e.target.value); clearErr('middle_name'); }} />
-                  </IconField>
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Middle Name</label>
+                <div className="onb-hrow-input">
+                  <input className={`emp-input${errs.middle_name ? ' is-invalid' : ''}`} placeholder="Middle name (optional)" value={middleName} onChange={e => { setMiddleName(e.target.value); clearErr('middle_name'); }} />
                   {errs.middle_name && <small className="emp-err">{errs.middle_name}</small>}
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Last Name<span className="req">*</span></label>
-                  <IconField icon="ri-user-line">
-                    <input className={`emp-input${errs.last_name ? ' is-invalid' : ''}`} placeholder="e.g. Kale" value={lastName} onChange={e => { setLastName(e.target.value); clearErr('last_name'); }} />
-                  </IconField>
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Last Name<span className="req">*</span></label>
+                <div className="onb-hrow-input">
+                  <input className={`emp-input${errs.last_name ? ' is-invalid' : ''}`} placeholder="e.g. Kale" value={lastName} onChange={e => { setLastName(e.target.value); clearErr('last_name'); }} />
                   {errs.last_name && <small className="emp-err">{errs.last_name}</small>}
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Gender<span className="req">*</span></label>
-                  <IconField icon="ri-user-2-line">
-                    <MasterSelect value={gender} onChange={v => { setGender(v); clearErr('gender'); }} options={genderOpts} placeholder="Select gender" invalid={!!errs.gender} />
-                  </IconField>
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Gender<span className="req">*</span></label>
+                <div className="onb-hrow-input">
+                  <MasterSelect value={gender} onChange={v => { setGender(v); clearErr('gender'); }} options={genderOpts} placeholder="Select gender" invalid={!!errs.gender} />
                   {errs.gender && <small className="emp-err">{errs.gender}</small>}
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Date of Birth<span className="req">*</span></label>
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Date of Birth<span className="req">*</span></label>
+                <div className="onb-hrow-input">
                   <MasterDatePicker value={dob} onChange={v => { setDob(v); clearErr('date_of_birth'); }} placeholder="dd-mm-yyyy" invalid={!!errs.date_of_birth} maxDate={dobMaxDate} />
                   {errs.date_of_birth && <small className="emp-err">{errs.date_of_birth}</small>}
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Nationality<span className="req">*</span></label>
-                  <IconField icon="ri-flag-line">
-                    <MasterSelect value={nationality} onChange={v => { setNationality(v); clearErr('nationality_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.nationality_country_id} />
-                  </IconField>
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Nationality<span className="req">*</span></label>
+                <div className="onb-hrow-input">
+                  <MasterSelect value={nationality} onChange={v => { setNationality(v); clearErr('nationality_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.nationality_country_id} />
                   {errs.nationality_country_id && <small className="emp-err">{errs.nationality_country_id}</small>}
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Work Country<span className="req">*</span></label>
-                  <IconField icon="ri-earth-line">
-                    <MasterSelect value={workCountry} onChange={v => { setWorkCountry(v); clearErr('work_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.work_country_id} />
-                  </IconField>
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Work Country<span className="req">*</span></label>
+                <div className="onb-hrow-input">
+                  <MasterSelect value={workCountry} onChange={v => { setWorkCountry(v); clearErr('work_country_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.work_country_id} />
                   {errs.work_country_id && <small className="emp-err">{errs.work_country_id}</small>}
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Mobile Number<span className="req">*</span></label>
-                  <IconField icon="ri-phone-line">
-                    <input className={`emp-input${errs.mobile ? ' is-invalid' : ''}`} value={mobile} onChange={e => { setMobile(e.target.value); clearErr('mobile'); }} placeholder="10-digit mobile" />
-                  </IconField>
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Mobile Number<span className="req">*</span></label>
+                <div className="onb-hrow-input">
+                  <input className={`emp-input${errs.mobile ? ' is-invalid' : ''}`} value={mobile} onChange={e => { setMobile(e.target.value); clearErr('mobile'); }} placeholder="10-digit mobile" />
                   {errs.mobile && <small className="emp-err">{errs.mobile}</small>}
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Alternate Mobile</label>
-                  <IconField icon="ri-phone-line">
-                    <input className={`emp-input${errs.alt_mobile ? ' is-invalid' : ''}`} value={altMobile} onChange={e => { setAltMobile(e.target.value); clearErr('alt_mobile'); }} placeholder="(optional)" />
-                  </IconField>
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Alternate Mobile</label>
+                <div className="onb-hrow-input">
+                  <input className={`emp-input${errs.alt_mobile ? ' is-invalid' : ''}`} value={altMobile} onChange={e => { setAltMobile(e.target.value); clearErr('alt_mobile'); }} placeholder="(optional)" />
                   {errs.alt_mobile && <small className="emp-err">{errs.alt_mobile}</small>}
-                </Col>
-              </Row>
+                </div>
+              </div>
             </div>
           )}
 
           {step === 2 && (
             <>
-              <div>
-                <div className="onb-subhead"><i className="ri-map-pin-line" /> Current Address</div>
-                <Row className="g-2">
-                  <Col md={8}>
-                    <label className="emp-label">Address Line 1<span className="req">*</span></label>
-                    <IconField icon="ri-road-map-line">
-                      <input className={`emp-input${errs.address_line1 ? ' is-invalid' : ''}`} value={curAddr1} onChange={e => { setCurAddr1(e.target.value); clearErr('address_line1'); }} />
-                    </IconField>
+              <div className="onb-section-title">Current Address</div>
+              <div className="onb-hgrid">
+                <div className="onb-hrow">
+                  <label className="emp-label">Address Line 1<span className="req">*</span></label>
+                  <div className="onb-hrow-input">
+                    <input className={`emp-input${errs.address_line1 ? ' is-invalid' : ''}`} value={curAddr1} onChange={e => { setCurAddr1(e.target.value); clearErr('address_line1'); }} />
                     {errs.address_line1 && <small className="emp-err">{errs.address_line1}</small>}
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">Address Line 2</label>
-                    <IconField icon="ri-road-map-line">
-                      <input className="emp-input" value={curAddr2} onChange={e => setCurAddr2(e.target.value)} placeholder="(optional)" />
-                    </IconField>
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">City<span className="req">*</span></label>
-                    <IconField icon="ri-building-2-line">
-                      <input className={`emp-input${errs.city ? ' is-invalid' : ''}`} value={curCity} onChange={e => { setCurCity(e.target.value); clearErr('city'); }} />
-                    </IconField>
-                    {errs.city && <small className="emp-err">{errs.city}</small>}
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">Country<span className="req">*</span></label>
-                    <IconField icon="ri-earth-line">
-                      <MasterSelect value={curCountry} onChange={v => { setCurCountry(v); if (curState) setCurState(''); clearErr('country_id'); clearErr('state_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.country_id} />
-                    </IconField>
-                    {errs.country_id && <small className="emp-err">{errs.country_id}</small>}
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">State<span className="req">*</span></label>
-                    <IconField icon="ri-map-pin-line">
-                      <MasterSelect value={curState} onChange={v => { setCurState(v); clearErr('state_id'); }} options={curStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={curCountry ? 'Select state' : 'Pick country first'} disabled={!curCountry} invalid={!!errs.state_id} />
-                    </IconField>
-                    {errs.state_id && <small className="emp-err">{errs.state_id}</small>}
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">Pincode<span className="req">*</span></label>
-                    <IconField icon="ri-mail-send-line">
-                      <input className={`emp-input${errs.pincode ? ' is-invalid' : ''}`} value={curPin} onChange={e => { setCurPin(e.target.value); clearErr('pincode'); }} />
-                    </IconField>
-                    {errs.pincode && <small className="emp-err">{errs.pincode}</small>}
-                  </Col>
-                </Row>
-              </div>
-
-              <div style={{ marginTop: 24 }}>
-                <div className="onb-subhead-row">
-                  <div className="onb-subhead"><i className="ri-home-4-line" /> Permanent Address</div>
-                  <label style={{ fontSize: 12, color: '#6b7280', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <input type="checkbox" checked={sameAsCurrent} onChange={e => {
-                      const c = e.target.checked;
-                      setSameAsCurrent(c);
-                      if (c) { setPermAddr1(curAddr1); setPermAddr2(curAddr2); setPermCity(curCity); setPermCountry(curCountry); setPermState(curState); setPermPin(curPin); }
-                    }} /> Same as Current Address
-                  </label>
+                  </div>
                 </div>
-                <Row className="g-2">
-                  <Col md={8}>
-                    <label className="emp-label">Address Line 1</label>
-                    <IconField icon="ri-road-map-line">
-                      <input className="emp-input" value={permAddr1} onChange={e => setPermAddr1(e.target.value)} disabled={sameAsCurrent} />
-                    </IconField>
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">Address Line 2</label>
-                    <IconField icon="ri-road-map-line">
-                      <input className="emp-input" value={permAddr2} onChange={e => setPermAddr2(e.target.value)} disabled={sameAsCurrent} />
-                    </IconField>
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">City</label>
-                    <IconField icon="ri-building-2-line">
-                      <input className="emp-input" value={permCity} onChange={e => setPermCity(e.target.value)} disabled={sameAsCurrent} />
-                    </IconField>
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">Country</label>
-                    <IconField icon="ri-earth-line">
-                      <MasterSelect value={permCountry} onChange={v => { setPermCountry(v); if (permState) setPermState(''); }} options={countryOpts} placeholder="Select country" disabled={sameAsCurrent} />
-                    </IconField>
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">State</label>
-                    <IconField icon="ri-map-pin-line">
-                      <MasterSelect value={permState} onChange={setPermState} options={permStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={permCountry ? 'Select state' : 'Pick country first'} disabled={sameAsCurrent || !permCountry} />
-                    </IconField>
-                  </Col>
-                  <Col md={4}>
-                    <label className="emp-label">Pincode</label>
-                    <IconField icon="ri-mail-send-line">
-                      <input className={`emp-input${errs.perm_pincode ? ' is-invalid' : ''}`} value={permPin} onChange={e => { setPermPin(e.target.value); clearErr('perm_pincode'); }} disabled={sameAsCurrent} />
-                    </IconField>
+                <div className="onb-hrow">
+                  <label className="emp-label">Address Line 2</label>
+                  <div className="onb-hrow-input">
+                    <input className="emp-input" value={curAddr2} onChange={e => setCurAddr2(e.target.value)} placeholder="(optional)" />
+                  </div>
+                </div>
+                <div className="onb-hrow">
+                  <label className="emp-label">City<span className="req">*</span></label>
+                  <div className="onb-hrow-input">
+                    <input className={`emp-input${errs.city ? ' is-invalid' : ''}`} value={curCity} onChange={e => { setCurCity(e.target.value); clearErr('city'); }} />
+                    {errs.city && <small className="emp-err">{errs.city}</small>}
+                  </div>
+                </div>
+                <div className="onb-hrow">
+                  <label className="emp-label">Country<span className="req">*</span></label>
+                  <div className="onb-hrow-input">
+                    <MasterSelect value={curCountry} onChange={v => { setCurCountry(v); if (curState) setCurState(''); clearErr('country_id'); clearErr('state_id'); }} options={countryOpts} placeholder="Select country" invalid={!!errs.country_id} />
+                    {errs.country_id && <small className="emp-err">{errs.country_id}</small>}
+                  </div>
+                </div>
+                <div className="onb-hrow">
+                  <label className="emp-label">State<span className="req">*</span></label>
+                  <div className="onb-hrow-input">
+                    <MasterSelect value={curState} onChange={v => { setCurState(v); clearErr('state_id'); }} options={curStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={curCountry ? 'Select state' : 'Pick country first'} disabled={!curCountry} invalid={!!errs.state_id} />
+                    {errs.state_id && <small className="emp-err">{errs.state_id}</small>}
+                  </div>
+                </div>
+                <div className="onb-hrow">
+                  <label className="emp-label">Pincode<span className="req">*</span></label>
+                  <div className="onb-hrow-input">
+                    <input className={`emp-input${errs.pincode ? ' is-invalid' : ''}`} value={curPin} onChange={e => { setCurPin(e.target.value); clearErr('pincode'); }} />
+                    {errs.pincode && <small className="emp-err">{errs.pincode}</small>}
+                  </div>
+                </div>
+              </div>
+              <div className="onb-section-title-row">
+                <div className="onb-section-title">Permanent Address</div>
+                <label className="onb-same-toggle">
+                  <input type="checkbox" checked={sameAsCurrent} onChange={e => {
+                    const c = e.target.checked;
+                    setSameAsCurrent(c);
+                    if (c) { setPermAddr1(curAddr1); setPermAddr2(curAddr2); setPermCity(curCity); setPermCountry(curCountry); setPermState(curState); setPermPin(curPin); }
+                  }} /> Same as Current Address
+                </label>
+              </div>
+              <div className="onb-hgrid">
+                <div className="onb-hrow">
+                  <label className="emp-label">Address Line 1</label>
+                  <div className="onb-hrow-input">
+                    <input className="emp-input" value={permAddr1} onChange={e => setPermAddr1(e.target.value)} disabled={sameAsCurrent} />
+                  </div>
+                </div>
+                <div className="onb-hrow">
+                  <label className="emp-label">Address Line 2</label>
+                  <div className="onb-hrow-input">
+                    <input className="emp-input" value={permAddr2} onChange={e => setPermAddr2(e.target.value)} disabled={sameAsCurrent} />
+                  </div>
+                </div>
+                <div className="onb-hrow">
+                  <label className="emp-label">City</label>
+                  <div className="onb-hrow-input">
+                    <input className="emp-input" value={permCity} onChange={e => setPermCity(e.target.value)} disabled={sameAsCurrent} />
+                  </div>
+                </div>
+                <div className="onb-hrow">
+                  <label className="emp-label">Country</label>
+                  <div className="onb-hrow-input">
+                    <MasterSelect value={permCountry} onChange={v => { setPermCountry(v); if (permState) setPermState(''); }} options={countryOpts} placeholder="Select country" disabled={sameAsCurrent} />
+                  </div>
+                </div>
+                <div className="onb-hrow">
+                  <label className="emp-label">State</label>
+                  <div className="onb-hrow-input">
+                    <MasterSelect value={permState} onChange={setPermState} options={permStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={permCountry ? 'Select state' : 'Pick country first'} disabled={sameAsCurrent || !permCountry} />
+                  </div>
+                </div>
+                <div className="onb-hrow">
+                  <label className="emp-label">Pincode</label>
+                  <div className="onb-hrow-input">
+                    <input className={`emp-input${errs.perm_pincode ? ' is-invalid' : ''}`} value={permPin} onChange={e => { setPermPin(e.target.value); clearErr('perm_pincode'); }} disabled={sameAsCurrent} />
                     {errs.perm_pincode && <small className="emp-err">{errs.perm_pincode}</small>}
-                  </Col>
-                </Row>
+                  </div>
+                </div>
               </div>
             </>
           )}
 
           {step === 3 && (
-            <div className="onb-compact">
-              <Row className="g-2">
-                <Col md={4}>
-                  <label className="emp-label">Department</label>
-                  <IconField icon="ri-organization-chart">
-                    <MasterSelect value={departmentId} onChange={setDepartmentId} options={departmentOpts} placeholder="Select department" />
-                  </IconField>
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Designation</label>
-                  <IconField icon="ri-medal-line">
-                    <MasterSelect value={designationId} onChange={setDesignationId} options={designationOpts} placeholder="Select designation" />
-                  </IconField>
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Primary Role</label>
-                  <IconField icon="ri-shield-user-line">
-                    <MasterSelect value={primaryRoleId} onChange={setPrimaryRoleId} options={roleOpts} placeholder="Select role" />
-                  </IconField>
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Legal Entity</label>
-                  <IconField icon="ri-building-line">
-                    <MasterSelect value={legalEntityId} onChange={v => {
-                      setLegalEntityId(v);
-                      const ent = legalEntities.find(le => String(le.id) === String(v));
-                      setLocation(ent?.city || '');
-                    }} options={legalEntityOpts} placeholder="Select entity" />
-                  </IconField>
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Location</label>
-                  <IconField icon="ri-map-pin-2-line">
-                    <input
-                      className={`emp-input${legalEntityId ? ' is-readonly' : ''}`}
-                      value={location}
-                      onChange={e => setLocation(e.target.value)}
-                      placeholder={legalEntityId ? 'Set by legal entity' : 'Select a legal entity'}
-                      disabled={!!legalEntityId}
-                      readOnly={!!legalEntityId}
-                    />
-                  </IconField>
-                </Col>
-                <Col md={4}>
-                  <label className="emp-label">Joining Date</label>
+            <div className="onb-hgrid">
+              <div className="onb-hrow">
+                <label className="emp-label">Department</label>
+                <div className="onb-hrow-input">
+                  <MasterSelect value={departmentId} onChange={setDepartmentId} options={departmentOpts} placeholder="Select department" />
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Designation</label>
+                <div className="onb-hrow-input">
+                  <MasterSelect value={designationId} onChange={setDesignationId} options={designationOpts} placeholder="Select designation" />
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Primary Role</label>
+                <div className="onb-hrow-input">
+                  <MasterSelect value={primaryRoleId} onChange={setPrimaryRoleId} options={roleOpts} placeholder="Select role" />
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Legal Entity</label>
+                <div className="onb-hrow-input">
+                  <MasterSelect value={legalEntityId} onChange={v => {
+                    setLegalEntityId(v);
+                    const ent = legalEntities.find(le => String(le.id) === String(v));
+                    setLocation(ent?.city || '');
+                  }} options={legalEntityOpts} placeholder="Select entity" />
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Location</label>
+                <div className="onb-hrow-input">
+                  <input
+                    className={`emp-input${legalEntityId ? ' is-readonly' : ''}`}
+                    value={location}
+                    onChange={e => setLocation(e.target.value)}
+                    placeholder={legalEntityId ? 'Set by legal entity' : 'Select a legal entity'}
+                    disabled={!!legalEntityId}
+                    readOnly={!!legalEntityId}
+                  />
+                </div>
+              </div>
+              <div className="onb-hrow">
+                <label className="emp-label">Joining Date</label>
+                <div className="onb-hrow-input">
                   <MasterDatePicker value={joiningDate} onChange={setJoiningDate} placeholder="dd-mm-yyyy" />
-                </Col>
-              </Row>
+                </div>
+              </div>
             </div>
           )}
 
-            {/* Footer — Back / Next / Submit */}
+            {/* Footer — Progress on left, Previous/Next grouped on right
+                (matches the DiveShop360 reference layout). */}
             <div className="onb-main-foot">
-              {step > 1 ? (
-                <button
-                  type="button" onClick={goBack}
-                  className="onb-btn onb-btn-ghost"
-                >
-                  <i className="ri-arrow-left-line" /> PREVIOUS
-                </button>
-              ) : <span />}
-
-              {/* Inline progress bar — shows the user how much of the
-                  3-step flow is done. Sits between Back and Next so it
-                  centers naturally inside the foot row. */}
               <div className="onb-progress">
                 <div className="onb-progress-track">
                   <div
@@ -1428,23 +1602,34 @@ export default function PublicOnboarding() {
                   {100 - Math.round(((step - 1) / 3) * 100)}% Left
                 </div>
               </div>
-              {step < 3 ? (
-                <button
-                  type="button" onClick={goNext}
-                  className="onb-btn onb-btn-primary"
-                >
-                  NEXT <i className="ri-arrow-right-line" />
-                </button>
-              ) : (
-                <button
-                  type="button" disabled={submitting} onClick={handleSubmit}
-                  className="onb-btn onb-btn-success"
-                  style={{ opacity: submitting ? 0.6 : 1 }}
-                >
-                  <i className={submitting ? 'ri-loader-4-line emp-spin' : 'ri-check-line'} />
-                  {submitting ? 'SUBMITTING…' : 'SUBMIT'}
-                </button>
-              )}
+
+              <div className="onb-foot-actions">
+                {step > 1 && (
+                  <button
+                    type="button" onClick={goBack}
+                    className="onb-btn onb-btn-ghost"
+                  >
+                    <i className="ri-arrow-left-line" /> PREVIOUS
+                  </button>
+                )}
+                {step < 3 ? (
+                  <button
+                    type="button" onClick={goNext}
+                    className="onb-btn onb-btn-primary"
+                  >
+                    NEXT <i className="ri-arrow-right-line" />
+                  </button>
+                ) : (
+                  <button
+                    type="button" disabled={submitting} onClick={handleSubmit}
+                    className="onb-btn onb-btn-success"
+                    style={{ opacity: submitting ? 0.6 : 1 }}
+                  >
+                    <i className={submitting ? 'ri-loader-4-line emp-spin' : 'ri-check-line'} />
+                    {submitting ? 'SUBMITTING…' : 'SUBMIT'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </main>

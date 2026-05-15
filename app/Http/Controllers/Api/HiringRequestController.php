@@ -419,10 +419,13 @@ class HiringRequestController extends Controller
             'required_qualification' => 'nullable|string|max:100',
             'preferred_profile'      => 'nullable|string|max:191',
 
-            // Section 4
-            'request_type'           => [$req(), Rule::in(self::REQUEST_TYPES)],
-            'business_justification' => [$req(), 'string'],
-            'hiring_need_reason'     => [$req(), 'string'],
+            // Section 4 — Business Justification was removed from the
+            // form. These columns stay nullable on the DB and we no
+            // longer require them on Submit either; existing rows
+            // keep whatever value they had.
+            'request_type'           => ['nullable', Rule::in(self::REQUEST_TYPES)],
+            'business_justification' => 'nullable|string',
+            'hiring_need_reason'     => 'nullable|string',
             'current_team_gap'       => 'nullable|string',
             'what_if_not_filled'     => 'nullable|string',
 
