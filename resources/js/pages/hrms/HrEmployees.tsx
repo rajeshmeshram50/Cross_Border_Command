@@ -2760,26 +2760,30 @@ export default function HrEmployees() {
           @keyframes onb-spin { to { transform: rotate(360deg); } }
           .onb-close-btn { width: 32px; height: 32px; border-radius: 10px; background: transparent; border: none; color: #6b7280; transition: background .15s ease, color .15s ease; }
           .onb-close-btn:hover { background: #f3f4f6; color: #1f2937; }
+          [data-bs-theme="dark"] .onb-close-btn { color: var(--vz-secondary-color); }
+          [data-bs-theme="dark"] .onb-close-btn:hover { background: rgba(255,255,255,0.06); color: #fff; }
+          .onb-header-title { font-size: 19px; letter-spacing: -0.01em; color: #1f2937; }
+          .onb-header-sub   { font-size: 13.5px; color: #6b7280; }
+          .onb-header-icon  { width: 52px; height: 52px; border-radius: 14px; background: #f3edff; }
+          .onb-header-divider { height: 1px; background: #eef0f4; margin: 0 28px; }
+          [data-bs-theme="dark"] .onb-header-title   { color: var(--vz-heading-color, #fff) !important; }
+          [data-bs-theme="dark"] .onb-header-sub     { color: var(--vz-secondary-color) !important; }
+          [data-bs-theme="dark"] .onb-header-icon    { background: rgba(124,92,252,0.18) !important; }
+          [data-bs-theme="dark"] .onb-header-divider { background: var(--vz-border-color) !important; }
         `}</style>
 
         <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
           {/* Header */}
           <div className="d-flex align-items-start justify-content-between" style={{ padding: '24px 28px 18px' }}>
             <div className="d-flex align-items-center gap-3">
-              <div
-                className="d-flex align-items-center justify-content-center flex-shrink-0"
-                style={{
-                  width: 52, height: 52, borderRadius: 14,
-                  background: '#f3edff',
-                }}
-              >
+              <div className="onb-header-icon d-flex align-items-center justify-content-center flex-shrink-0">
                 <i className="ri-link" style={{ fontSize: 22, color: '#7c3aed' }} />
               </div>
               <div>
-                <h5 className="fw-bold mb-1" style={{ fontSize: 19, letterSpacing: '-0.01em', color: '#1f2937' }}>
+                <h5 className="onb-header-title fw-bold mb-1">
                   Generate Onboarding Link
                 </h5>
-                <div style={{ fontSize: 13.5, color: '#6b7280' }}>
+                <div className="onb-header-sub">
                   Create a secure link for new employee onboarding
                 </div>
               </div>
@@ -2795,7 +2799,7 @@ export default function HrEmployees() {
           </div>
 
           {/* Divider */}
-          <div style={{ height: 1, background: '#eef0f4', margin: '0 28px' }} />
+          <div className="onb-header-divider" />
 
           {generatedInviteUrl ? (
             // ── Success state — invite created, show copy panel ──
