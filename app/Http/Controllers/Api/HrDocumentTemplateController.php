@@ -511,8 +511,20 @@ class HrDocumentTemplateController extends Controller
             catch (\Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
         }
         $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
-        if ($title !== '')    $titleCell->addText($title,    ['bold' => true, 'size' => 14], ['alignment' => $align]);
-        if ($subtitle !== '') $titleCell->addText($subtitle, ['size' => 10, 'color' => '6B7280'], ['alignment' => $align]);
+        // Split on CR/LF so multi-line titles entered in the SPA preview
+        // (Enter → \n) render as separate Word paragraphs instead of a
+        // single run with literal newline glyphs.
+        $addMultiline = function ($cell, string $text, array $font, array $para) {
+            $lines = preg_split('/\r\n|\r|\n/', $text) ?: [];
+            $first = true;
+            foreach ($lines as $line) {
+                if (!$first) $cell->addTextBreak(1, $font);
+                $cell->addText($line, $font, $para);
+                $first = false;
+            }
+        };
+        if ($title !== '')    $addMultiline($titleCell, $title,    ['bold' => true, 'size' => 14], ['alignment' => $align]);
+        if ($subtitle !== '') $addMultiline($titleCell, $subtitle, ['size' => 10, 'color' => '6B7280'], ['alignment' => $align]);
 
         $footerCfg  = is_array($row->footer_config) ? $row->footer_config : [];
         $footerText = (string) ($footerCfg['text']  ?? '');
@@ -727,8 +739,8 @@ class HrDocumentTemplateController extends Controller
             'header_config'                  => 'nullable|array',
             'header_config.logo_path'        => 'nullable|string|max:500',
             'header_config.logo_url'         => 'nullable|string|max:500',
-            'header_config.title'            => 'nullable|string|max:191',
-            'header_config.subtitle'         => 'nullable|string|max:191',
+            'header_config.title'            => 'nullable|string|max:2000',
+            'header_config.subtitle'         => 'nullable|string|max:2000',
             'header_config.align'            => ['nullable', Rule::in(['left', 'center', 'right', 'space-between'])],
             'header_config.background'       => 'nullable|string|max:30',
             'header_config.text_color'       => 'nullable|string|max:30',

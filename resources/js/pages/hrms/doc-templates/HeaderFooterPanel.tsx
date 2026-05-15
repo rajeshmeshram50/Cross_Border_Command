@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 
@@ -167,17 +167,26 @@ export default function HeaderFooterPanel({
   return (
     <div className="tpl-page-shell" style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
       <HfpDarkStyles />
-      {/* HEADER zone — fixed height, absolute children, free drag */}
+      {/* HEADER zone — min-height (grows to fit multi-line title), absolute
+          children, free drag. Title + subtitle are inline-editable. */}
       <div
         ref={headerRef}
-        onClick={() => !readOnly && setOpenZone(openZone === 'header' ? null : 'header')}
+        onClick={(e) => {
+          // Only open the settings popover when the click landed on the
+          // empty header backdrop — not on the title/subtitle (which is
+          // inline-editable) or the logo (which is draggable).
+          if (readOnly) return;
+          if ((e.target as HTMLElement).closest('[data-tpl-no-popover="1"]')) return;
+          setOpenZone(openZone === 'header' ? null : 'header');
+        }}
         title={readOnly ? '' : 'Drag the logo / title; click any empty area to edit settings'}
         style={{
-          height: HEADER_HEIGHT, minHeight: HEADER_HEIGHT, maxHeight: HEADER_HEIGHT,
+          minHeight: HEADER_HEIGHT,
           background: header.background, color: header.text_color,
           borderBottom: '2px solid #f3f4f6',
           cursor: readOnly ? 'default' : 'pointer',
           position: 'relative',
+          paddingTop: 32, paddingBottom: 12,
           backgroundImage: readOnly ? undefined :
             // Faint dotted grid so the user can see the drop zone & alignment.
             'radial-gradient(circle, rgba(99,102,241,0.10) 1px, transparent 1px)',
@@ -187,6 +196,7 @@ export default function HeaderFooterPanel({
         {header.show_logo && (
           <div
             onMouseDown={startDrag('logo')}
+            data-tpl-no-popover="1"
             style={draggableItemStyle(logoPos)}
             title={readOnly ? '' : 'Drag to reposition logo'}
           >
@@ -202,12 +212,46 @@ export default function HeaderFooterPanel({
         )}
         {header.show_title && (
           <div
-            onMouseDown={startDrag('title')}
-            style={{ ...draggableItemStyle(titlePos), textAlign: (header.align === 'left' || header.align === 'center' || header.align === 'right') ? header.align : 'right', maxWidth: '60%' }}
-            title={readOnly ? '' : 'Drag to reposition title'}
+            data-tpl-no-popover="1"
+            style={{
+              ...draggableItemStyle(titlePos),
+              cursor: readOnly ? 'default' : 'text',
+              textAlign: (header.align === 'left' || header.align === 'center' || header.align === 'right') ? header.align : 'right',
+              maxWidth: '60%',
+            }}
+            title={readOnly ? '' : 'Click to edit, or drag the handle to reposition'}
           >
-            <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.2, pointerEvents: 'none' }}>{header.title || 'Company Name'}</div>
-            {header.subtitle && <div style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2, pointerEvents: 'none' }}>{header.subtitle}</div>}
+            {!readOnly && (
+              <span
+                onMouseDown={startDrag('title')}
+                className="tpl-title-drag-handle"
+                title="Drag to reposition"
+                style={{
+                  position: 'absolute', top: -10, left: -10,
+                  width: 22, height: 22, borderRadius: 6,
+                  background: 'rgba(99,102,241,0.15)', color: '#4338ca',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'grab', fontSize: 12,
+                  border: '1px solid rgba(99,102,241,0.30)',
+                }}
+              >
+                <i className="ri-drag-move-2-line" />
+              </span>
+            )}
+            <EditableText
+              value={header.title}
+              placeholder="Company Name"
+              readOnly={readOnly}
+              onChange={(v) => setHeader({ ...header, title: v })}
+              style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+            />
+            <EditableText
+              value={header.subtitle}
+              placeholder="Subtitle (optional)"
+              readOnly={readOnly}
+              onChange={(v) => setHeader({ ...header, subtitle: v })}
+              style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+            />
           </div>
         )}
         {!readOnly && (
@@ -216,7 +260,7 @@ export default function HeaderFooterPanel({
               <i className="ri-edit-line me-1" />Edit Header
             </span>
             <span className="tpl-drag-hint" style={{ position: 'absolute', left: 10, top: 8, fontSize: 10.5, color: '#6366f1', background: '#eef2ff', padding: '2px 8px', borderRadius: 999, fontWeight: 700 }}>
-              <i className="ri-drag-move-2-line me-1" />Drag logo / title to reposition
+              <i className="ri-text" />&nbsp;Click title to edit · Enter for a new line
             </span>
           </>
         )}
@@ -318,14 +362,18 @@ function HeaderEditor({
       <PopoverHeader title="Header Settings" onClose={onClose} />
       <div className="row g-3" style={{ padding: 14 }}>
         <div className="col-md-6">
-          <label className="tpl-popover-label" style={labelStyle}>Title</label>
-          <input type="text" value={header.title} onChange={e => setHeader({ ...header, title: e.target.value })}
-            placeholder="e.g. Inorbvict Healthcare" className="tpl-popover-input" style={inputStyle} />
+          <label className="tpl-popover-label" style={labelStyle}>Title <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
+          <textarea rows={3} value={header.title} onChange={e => setHeader({ ...header, title: e.target.value })}
+            placeholder={'e.g. Inorbvict Healthcare\nNew Delhi Office'}
+            className="tpl-popover-input"
+            style={{ ...inputStyle, resize: 'vertical', minHeight: 64, lineHeight: 1.4 }} />
         </div>
         <div className="col-md-6">
-          <label className="tpl-popover-label" style={labelStyle}>Subtitle</label>
-          <input type="text" value={header.subtitle} onChange={e => setHeader({ ...header, subtitle: e.target.value })}
-            placeholder="e.g. Confidential / Document name" className="tpl-popover-input" style={inputStyle} />
+          <label className="tpl-popover-label" style={labelStyle}>Subtitle <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
+          <textarea rows={3} value={header.subtitle} onChange={e => setHeader({ ...header, subtitle: e.target.value })}
+            placeholder={'e.g. Confidential\nDocument: Offer Letter'}
+            className="tpl-popover-input"
+            style={{ ...inputStyle, resize: 'vertical', minHeight: 64, lineHeight: 1.4 }} />
         </div>
 
         <div className="col-md-6">
@@ -472,6 +520,71 @@ function FooterEditor({
 }
 
 /* ── Small primitives ──────────────────────────────────────────────────────── */
+
+/**
+ * Inline-editable text block. Renders a contentEditable div that commits to
+ * `onChange` on blur. Supports multi-line (Enter inserts a newline). Keeps its
+ * DOM text in sync with the external `value` when the user isn't actively
+ * editing, so popover edits / external resets stay visible.
+ */
+function EditableText({
+  value, placeholder, readOnly, onChange, style,
+}: {
+  value: string;
+  placeholder?: string;
+  readOnly?: boolean;
+  onChange: (next: string) => void;
+  style?: React.CSSProperties;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [focused, setFocused] = useState(false);
+
+  // Sync external value → DOM only when the field isn't focused, otherwise
+  // typing would fight React (cursor would jump on every keystroke).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (focused) return;
+    if ((el.innerText || '') !== (value || '')) {
+      el.innerText = value || '';
+    }
+  }, [value, focused]);
+
+  const stop = (e: React.MouseEvent | React.KeyboardEvent) => e.stopPropagation();
+
+  return (
+    <div
+      ref={ref}
+      contentEditable={!readOnly}
+      suppressContentEditableWarning
+      role={readOnly ? undefined : 'textbox'}
+      aria-multiline="true"
+      data-placeholder={placeholder || ''}
+      className={`tpl-editable${!value ? ' is-empty' : ''}`}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        setFocused(false);
+        const next = e.currentTarget.innerText || '';
+        if (next !== value) onChange(next);
+      }}
+      onMouseDown={stop}
+      onClick={stop}
+      onKeyDown={(e) => {
+        // Plain Enter inserts a newline (default browser behavior in
+        // contentEditable already does this); we just want to keep the
+        // event from bubbling up to anything else.
+        stop(e);
+      }}
+      style={{
+        outline: 'none',
+        cursor: readOnly ? 'default' : 'text',
+        minHeight: '1.2em',
+        ...style,
+      }}
+    />
+  );
+}
+
 function PopoverHeader({ title, onClose }: { title: string; onClose: () => void }) {
   return (
     <div style={{ padding: '10px 14px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -617,6 +730,16 @@ function HfpDarkStyles() {
         background: rgba(248,113,113,0.18) !important;
         color: #fca5a5 !important;
       }
+
+      /* Inline-editable title / subtitle in the header preview */
+      .tpl-editable { caret-color: #6366f1; }
+      .tpl-editable:hover { outline: 1px dashed rgba(99,102,241,0.40); outline-offset: 2px; border-radius: 4px; }
+      .tpl-editable:focus { outline: 2px solid #6366f1; outline-offset: 2px; border-radius: 4px; background: rgba(99,102,241,0.04); }
+      .tpl-editable.is-empty:before {
+        content: attr(data-placeholder);
+        opacity: 0.45; pointer-events: none;
+      }
+      [data-bs-theme="dark"] .tpl-editable:focus { background: rgba(99,102,241,0.10); }
     `}</style>
   );
 }
