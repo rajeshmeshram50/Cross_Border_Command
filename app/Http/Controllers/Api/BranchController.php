@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\User;
 use App\Support\Settings;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -235,11 +236,15 @@ class BranchController extends Controller
                 ]);
             }
 
-            // Create branch user
+            // Create branch user. We store TWO copies of the password:
+            //   - `password`           — bcrypt hash, used for auth.
+            //   - `password_encrypted` — reversibly encrypted (Crypt::encryptString)
+            //     so Super Admin / Client Admin can read the original on edit.
             $branchUser = User::create([
                 'name' => $request->user_name,
                 'email' => $request->user_email,
                 'password' => Hash::make($request->user_password),
+                'password_encrypted' => Crypt::encryptString($request->user_password),
                 'phone' => $request->user_phone,
                 'user_type' => 'branch_user',
                 'client_id' => $clientId,
@@ -304,9 +309,31 @@ class BranchController extends Controller
             ->where('user_type', 'branch_user')
             ->first();
 
+        // Super Admin AND the owning Client Admin (managing their own branches)
+        // both get the decrypted password back so they can review/edit it.
+        // Anyone else (other client_admin, branch_user, etc.) gets the
+        // redacted payload — no cross-tenant credential leakage.
+        $canReadPassword = $user && (
+            $user->user_type === 'super_admin'
+            || ($user->user_type === 'client_admin' && $user->client_id === $branch->client_id)
+        );
+        $userPayload = null;
+        if ($branchUser) {
+            $userPayload = $branchUser->only(['id', 'name', 'email', 'phone', 'designation', 'status']);
+            if ($canReadPassword && $branchUser->password_encrypted) {
+                try {
+                    $userPayload['password_plain'] = Crypt::decryptString($branchUser->password_encrypted);
+                } catch (\Throwable $e) {
+                    // APP_KEY rotated since the value was stored — fall through
+                    // and let the admin set a fresh password.
+                    $userPayload['password_plain'] = null;
+                }
+            }
+        }
+
         return response()->json([
             'branch' => $branch,
-            'branch_user' => $branchUser ? $branchUser->only(['id', 'name', 'email', 'phone', 'designation', 'status']) : null,
+            'branch_user' => $userPayload,
         ]);
     }
 
@@ -451,6 +478,8 @@ class BranchController extends Controller
                 $passwordChanged = false;
                 if ($request->user_password) {
                     $userData['password'] = Hash::make($request->user_password);
+                    // Keep the readable mirror in sync with the new password.
+                    $userData['password_encrypted'] = Crypt::encryptString($request->user_password);
                     $passwordChanged = true;
                 }
 

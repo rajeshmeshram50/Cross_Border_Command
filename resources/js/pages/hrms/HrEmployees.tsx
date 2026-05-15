@@ -505,8 +505,12 @@ export default function HrEmployees() {
       api.get('/master/designations').then(r => setMDesignations(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/roles').then(r => setMRoles(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/legal_entities').then(r => setMLegalEntities(Array.isArray(r.data) ? r.data : [])),
-      api.get('/master/countries').then(r => setMCountries(Array.isArray(r.data) ? r.data : [])),
-      api.get('/master/states').then(r => setMStates(Array.isArray(r.data) ? r.data : [])),
+      api.get('/master/countries').then(r => setMCountries(
+        Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []
+      )),
+      api.get('/master/states').then(r => setMStates(
+        Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []
+      )),
     ]);
   }, []);
   useEffect(() => {
@@ -4881,10 +4885,7 @@ export default function HrEmployees() {
             className="d-flex align-items-center justify-content-between gap-2 flex-wrap"
             style={{ padding: '14px 24px 18px', borderTop: '1px solid var(--vz-border-color)' }}
           >
-            <span className="d-inline-flex align-items-center gap-1 text-muted" style={{ fontSize: 12.5 }}>
-              <i className="ri-information-line" style={{ fontSize: 14 }} />
-              Fields marked <span style={{ color: '#f06548', fontWeight: 700, margin: '0 2px' }}>*</span> are required
-            </span>
+            <span />
             <div className="d-flex align-items-center gap-2">
               <Button onClick={closeAssign} className="master-modal-cancel d-inline-flex align-items-center gap-1">
                 <i className="ri-close-line" style={{ fontSize: 15 }} /> Cancel

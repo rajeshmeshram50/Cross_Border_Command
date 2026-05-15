@@ -39,7 +39,7 @@ const formatPlanLabel = (p: PlanOption): string => {
 
 const empty = {
   org_name: '', org_type: '', email: '', phone: '', website: '',
-  status: 'inactive', sports: '', industry: '', address: '', city: '',
+  status: 'active', sports: '', industry: '', address: '', city: '',
   district: '', taluka: '', pincode: '', state: '', country: '',
   gst_number: '', pan_number: '', plan_id: '', plan_type: 'free',
   plan_expires_at: '', primary_color: '#4F46E5', secondary_color: '#10B981',
@@ -199,6 +199,12 @@ export default function ClientForm({ onBack, editId }: Props) {
   const toast = useToast();
   const [saving, setSaving]           = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  // Snapshot of the password as it was loaded from the server. If the admin
+  // leaves the field unchanged we skip sending admin_password on submit so
+  // the backend won't re-hash and won't fire the password-changed email.
+  const [originalAdminPassword, setOriginalAdminPassword] = useState('');
   const [serverErrors, setServerErrors]         = useState<Record<string, string[]>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const touchedRef = useRef<Record<string, boolean>>({});
@@ -221,8 +227,17 @@ export default function ClientForm({ onBack, editId }: Props) {
       setOrgTypes(Array.isArray(otRes.data) ? otRes.data : []);
       const allPlans: PlanOption[] = Array.isArray(planRes.data) ? planRes.data : [];
       setPlans(allPlans.filter(p => p.status === 'active'));
-      setCountries(Array.isArray(countryRes.data) ? countryRes.data.filter((c: any) => c.status === 'Active') : []);
-      setStatesAll(Array.isArray(stateRes.data) ? stateRes.data.filter((s: any) => s.status === 'Active') : []);
+      // Sort countries A→Z so the dropdown reads alphabetically (QA requirement).
+      const activeCountries = Array.isArray(countryRes.data)
+        ? countryRes.data.filter((c: any) => c.status === 'Active')
+            .sort((a: any, b: any) => a.name.localeCompare(b.name))
+        : [];
+      const activeStates = Array.isArray(stateRes.data)
+        ? stateRes.data.filter((s: any) => s.status === 'Active')
+            .sort((a: any, b: any) => a.name.localeCompare(b.name))
+        : [];
+      setCountries(activeCountries);
+      setStatesAll(activeStates);
     }).finally(() => setLoadingLookups(false));
   }, []);
 
@@ -301,17 +316,70 @@ export default function ClientForm({ onBack, editId }: Props) {
   const fieldError   = useCallback((key: string) => serverErrors[key]?.[0] || validationErrors[key], [serverErrors, validationErrors]);
   const fieldInvalid = (key: string) => !!fieldError(key);
 
-  const handleLogoChange = (file: File | null) => {
+  const handleLogoChange = (file: File | null, inputEl?: HTMLInputElement) => {
+    if (file) {
+      // Client-side guardrail — backend also validates. 2MB max + image types only.
+      const okTypes = ['image/jpeg', 'image/png', 'image/webp'];
+      if (!okTypes.includes(file.type)) {
+        toast.error('Invalid logo', 'Logo must be PNG, JPG or WebP.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error('Logo too large', 'Logo must be 2MB or smaller.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+    }
     setLogoFile(file);
     if (file) { const r = new FileReader(); r.onload = ev => setLogoPreview(ev.target?.result as string); r.readAsDataURL(file); }
     else setLogoPreview(null);
   };
-  const handleFaviconChange = (file: File | null) => {
+  const handleFaviconChange = (file: File | null, inputEl?: HTMLInputElement) => {
+    if (file) {
+      // Favicon validation — match backend `mimes:jpg,jpeg,png,ico,svg,webp` rule
+      // plus the 512KB cap so we surface the error before the upload round-trips.
+      const okTypes = ['image/x-icon', 'image/vnd.microsoft.icon', 'image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
+      const okExt = /\.(ico|png|jpe?g|svg|webp)$/i.test(file.name);
+      if (!okTypes.includes(file.type) && !okExt) {
+        toast.error('Invalid favicon', 'Favicon must be ICO, PNG, JPG, SVG or WebP.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+      if (file.size > 512 * 1024) {
+        toast.error('Favicon too large', 'Favicon must be 512KB or smaller.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+      // Recommend square dimensions — non-blocking warning so admin can still use rectangles.
+      const img = new Image();
+      img.onload = () => {
+        if (img.width !== img.height) {
+          toast.info('Favicon tip', 'Favicons render best when square (e.g. 32×32 or 64×64).');
+        }
+      };
+      img.src = URL.createObjectURL(file);
+    }
     setFaviconFile(file);
     if (file) { const r = new FileReader(); r.onload = ev => setFaviconPreview(ev.target?.result as string); r.readAsDataURL(file); }
     else setFaviconPreview(null);
   };
-  const handleProfilePhotoChange = (file: File | null) => {
+  const handleProfilePhotoChange = (file: File | null, inputEl?: HTMLInputElement) => {
+    if (file) {
+      // Match backend `mimes:jpg,jpeg,png|max:2048` — surface the failure as a
+      // toast before the upload round-trips and 422s.
+      const okTypes = ['image/jpeg', 'image/png'];
+      if (!okTypes.includes(file.type)) {
+        toast.error('Invalid photo', 'Profile photo must be JPG or PNG.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error('Photo too large', 'Profile photo must be 2MB or smaller.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+    }
     setProfilePhotoFile(file);
     if (file) { const r = new FileReader(); r.onload = ev => setProfilePhotoPreview(ev.target?.result as string); r.readAsDataURL(file); }
     else setProfilePhotoPreview(null);
@@ -334,10 +402,23 @@ export default function ClientForm({ onBack, editId }: Props) {
         secondary_color: c.secondary_color||'#10B981', notes: c.notes||'',
         admin_name: admin?.name||'', admin_email: admin?.email||'',
         admin_phone: admin?.phone||'', admin_designation: admin?.designation||'',
-        admin_password: '', admin_password_confirmation: '', admin_status: admin?.status||'active',
+        // Backend decrypts `password_encrypted` for super admins and returns it
+        // as `password_plain` — pre-fill both fields so the admin can SEE the
+        // current password (per QA request) and edit if they want to change it.
+        admin_password: admin?.password_plain || '',
+        admin_password_confirmation: admin?.password_plain || '',
+        admin_status: admin?.status||'active',
       });
-      if (c.logo)    setLogoPreview(c.logo);
-      if (c.favicon) setFaviconPreview(c.favicon);
+      setOriginalAdminPassword(admin?.password_plain || '');
+      // If we successfully retrieved the original password, reveal it by
+      // default so the super admin sees it immediately on the edit screen
+      // (matches the QA request — "should be able to see the password").
+      if (admin?.password_plain) setShowPassword(true);
+      // Prefer the accessor URLs (`logo_url`, `favicon_url`) which the Client
+      // model appends — those resolve to a public Storage URL. Fall back to
+      // the raw path for older API responses.
+      if (c.logo_url    || c.logo)    setLogoPreview(c.logo_url    || c.logo);
+      if (c.favicon_url || c.favicon) setFaviconPreview(c.favicon_url || c.favicon);
       if (c.profile_photo_url || c.profile_photo) setProfilePhotoPreview(c.profile_photo_url || c.profile_photo);
     }).catch(()=>{}).finally(()=>setLoadingData(false));
   }, [editId]);
@@ -352,6 +433,13 @@ export default function ClientForm({ onBack, editId }: Props) {
     try {
       const payload: Record<string, any> = { ...form };
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
+      // On edit, skip the password fields if they match the originally-loaded
+      // value — otherwise every save would re-hash the password and fire the
+      // password-changed email to the client admin.
+      if (isEdit && form.admin_password === originalAdminPassword) {
+        payload.admin_password = null;
+        payload.admin_password_confirmation = null;
+      }
       if (isEdit) {
         if (logoFile || faviconFile || profilePhotoFile) {
           const fd = new FormData();
@@ -817,9 +905,6 @@ export default function ClientForm({ onBack, editId }: Props) {
               </span>
               <div>
                 <h6 className="mb-0 fw-bold" style={{ fontSize: 15 }}>Client Registration Form</h6>
-                <p className="mb-0 text-muted" style={{ fontSize: 12, marginTop: 2 }}>
-                  Fields marked <span className="text-danger fw-bold">*</span> are required
-                </p>
               </div>
             </div>
             <span
@@ -960,17 +1045,6 @@ export default function ClientForm({ onBack, editId }: Props) {
 
             {/* ══ C: Legal & Tax ══ */}
             <SectionHeader icon="ri-file-text-line" title="Legal & Tax Information" badge="C" />
-            {form.country === 'India' && (
-              <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(245,158,11,0.10), rgba(255,212,122,0.05))', border: '1px solid rgba(245,158,11,0.28)', color: '#B45309' }}>
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                  style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#f7b84b,#ffd47a)', boxShadow: '0 3px 8px rgba(247,184,75,0.3)' }}
-                >
-                  <i className="ri-information-line" style={{ color: '#fff', fontSize: 13 }} />
-                </span>
-                <span>GST and PAN are recommended for Indian organizations.</span>
-              </div>
-            )}
             <Row className="g-2 mb-3">
               <Col md={6}>
                 <Lbl>GST Number</Lbl>
@@ -990,15 +1064,6 @@ export default function ClientForm({ onBack, editId }: Props) {
 
             {/* ══ D: Plan ══ */}
             <SectionHeader icon="ri-shield-check-line" title="Plan & Billing" badge="D" />
-            <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(10,179,156,0.10), rgba(48,213,181,0.05))', border: '1px solid rgba(10,179,156,0.28)', color: '#059669' }}>
-              <span
-                className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#0ab39c,#30d5b5)', boxShadow: '0 3px 8px rgba(10,179,156,0.3)' }}
-              >
-                <i className="ri-checkbox-circle-line" style={{ color: '#fff', fontSize: 13 }} />
-              </span>
-              <span>Client must complete payment after creation to activate.</span>
-            </div>
             <Row className="g-2 mb-3">
               <Col md={4}>
                 <Lbl>Assign Plan <span className="text-danger">*</span></Lbl>
@@ -1030,6 +1095,7 @@ export default function ClientForm({ onBack, editId }: Props) {
                     value={form.plan_expires_at}
                     onChange={v => set('plan_expires_at', v)}
                     placeholder="Select date"
+                    minDate={new Date().toISOString().slice(0, 10)}
                   />
                 </div>
               </Col>
@@ -1037,15 +1103,6 @@ export default function ClientForm({ onBack, editId }: Props) {
 
             {/* ══ E: Admin ══ */}
             <SectionHeader icon="ri-user-line" title="Admin Credentials" badge="E" />
-            <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(106,90,205,0.10), rgba(167,139,250,0.05))', border: '1px solid rgba(106,90,205,0.28)', color: '#4c3fb1' }}>
-              <span
-                className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#6a5acd,#a78bfa)', boxShadow: '0 3px 8px rgba(106,90,205,0.3)' }}
-              >
-                <i className="ri-lock-line" style={{ color: '#fff', fontSize: 13 }} />
-              </span>
-              <span>Creates the first login user (Client Admin) for this organization.</span>
-            </div>
             <Row className="g-2 mb-3">
               <Col md={4}>
                 <Lbl>Full Name <span className="text-danger">*</span></Lbl>
@@ -1074,11 +1131,44 @@ export default function ClientForm({ onBack, editId }: Props) {
                   placeholder="CEO / Director" />
               </Col>
               <Col md={4}>
-                <Lbl>{isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Lbl>
-                <Input style={css.input} type="password" value={form.admin_password} invalid={fieldInvalid('admin_password')}
-                  autoComplete="new-password"
-                  onChange={e => set('admin_password', e.target.value)} onBlur={() => touch('admin_password')}
-                  placeholder={isEdit ? 'Leave blank to keep' : 'Minimum 8 characters'} />
+                <Lbl>{isEdit ? 'Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Lbl>
+                <div style={{ position: 'relative' }}>
+                  <Input
+                    style={{ ...css.input, paddingRight: 36 }}
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.admin_password}
+                    invalid={fieldInvalid('admin_password')}
+                    autoComplete="new-password"
+                    onChange={e => set('admin_password', e.target.value)}
+                    onBlur={() => touch('admin_password')}
+                    placeholder={isEdit ? 'Enter new password to change' : 'Minimum 8 characters'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(s => !s)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="btn btn-link p-0 position-absolute"
+                    style={{
+                      top: '50%', right: 10, transform: 'translateY(-50%)',
+                      color: 'var(--vz-secondary-color)', textDecoration: 'none',
+                      lineHeight: 1, fontSize: 16,
+                    }}
+                  >
+                    <i className={showPassword ? 'ri-eye-off-line' : 'ri-eye-line'} />
+                  </button>
+                </div>
+                {/* In edit mode, tell the admin which state they're in: either
+                    the original password is loaded (toggle the eye to read it)
+                    or the client was created before the encrypted mirror was
+                    added — in which case the password can no longer be
+                    retrieved and a new one must be set. */}
+                {isEdit && (
+                  <small style={{ ...css.small, color: originalAdminPassword ? '#10b981' : '#f59e0b', marginTop: 4, display: 'block' }}>
+                    {originalAdminPassword
+                      ? <><i className="ri-shield-check-line" style={{ marginRight: 4 }} />Original password loaded — click the eye to view.</>
+                      : <><i className="ri-information-line" style={{ marginRight: 4 }} />Stored before password recovery was enabled. Set a new password to make it visible on next edit.</>}
+                  </small>
+                )}
                 <FormFeedback style={css.formFeedback}>{fieldError('admin_password')}</FormFeedback>
                 {form.admin_password && (
                   <div className="mt-2">
@@ -1111,11 +1201,31 @@ export default function ClientForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Confirm Password {!isEdit && <span className="text-danger">*</span>}</Lbl>
-                <Input style={css.input} type="password" value={form.admin_password_confirmation}
-                  invalid={fieldInvalid('admin_password_confirmation')}
-                  autoComplete="new-password"
-                  onChange={e => set('admin_password_confirmation', e.target.value)}
-                  onBlur={() => touch('admin_password_confirmation')} placeholder="Re-enter password" />
+                <div style={{ position: 'relative' }}>
+                  <Input
+                    style={{ ...css.input, paddingRight: 36 }}
+                    type={showPasswordConfirm ? 'text' : 'password'}
+                    value={form.admin_password_confirmation}
+                    invalid={fieldInvalid('admin_password_confirmation')}
+                    autoComplete="new-password"
+                    onChange={e => set('admin_password_confirmation', e.target.value)}
+                    onBlur={() => touch('admin_password_confirmation')}
+                    placeholder="Re-enter password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordConfirm(s => !s)}
+                    aria-label={showPasswordConfirm ? 'Hide password' : 'Show password'}
+                    className="btn btn-link p-0 position-absolute"
+                    style={{
+                      top: '50%', right: 10, transform: 'translateY(-50%)',
+                      color: 'var(--vz-secondary-color)', textDecoration: 'none',
+                      lineHeight: 1, fontSize: 16,
+                    }}
+                  >
+                    <i className={showPasswordConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} />
+                  </button>
+                </div>
                 {form.admin_password_confirmation && (
                   <div className="mt-2 d-inline-flex align-items-center gap-1 fs-11 fw-semibold">
                     {form.admin_password === form.admin_password_confirmation ? (
@@ -1169,23 +1279,23 @@ export default function ClientForm({ onBack, editId }: Props) {
                 <Lbl>Organization Logo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {logoPreview && <img src={logoPreview} alt="logo" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleLogoChange(e.target.files?.[0] || null)} />
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleLogoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
-                <small style={css.small}>PNG, JPG — Max 2MB</small>
+                <small style={css.small}>PNG, JPG, WebP &middot; Recommended 200&times;400 px &middot; Max 2 MB</small>
               </Col>
               <Col md={6}>
                 <Lbl>Favicon</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {faviconPreview && <img src={faviconPreview} alt="favicon" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/x-icon,image/png" onChange={e => handleFaviconChange(e.target.files?.[0] || null)} />
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/x-icon,image/png,image/jpeg,image/svg+xml,image/webp,.ico" onChange={e => handleFaviconChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
-                <small style={css.small}>PNG, ICO — Max 512KB</small>
+                <small style={css.small}>ICO, PNG, JPG, SVG, WebP &middot; Recommended 32&times;32 or 64&times;64 px &middot; Max 512 KB</small>
               </Col>
               <Col md={6}>
                 <Lbl>Profile Photo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {profilePhotoPreview && <img src={profilePhotoPreview} alt="profile" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)} />
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
                 <small style={css.small}>JPG, PNG — Max 2MB</small>
               </Col>

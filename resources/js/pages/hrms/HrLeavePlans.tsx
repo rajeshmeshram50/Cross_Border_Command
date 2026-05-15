@@ -1755,9 +1755,7 @@ function AddLeavePlanModal({
 
         {/* Footer — shared rec-form-footer chrome. */}
         <div className="rec-form-footer">
-          <span className="hint">
-            Fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required
-          </span>
+          <span className="hint" />
           <div className="d-flex gap-2">
             <button type="button" className="rec-btn-ghost" onClick={handleClose}>Cancel</button>
             <button
@@ -1983,9 +1981,7 @@ function AddLeaveTypeModal({
         </div>
 
         <div className="rec-form-footer">
-          <span className="hint">
-            Fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required
-          </span>
+          <span className="hint" />
           <div className="d-flex gap-2">
             <button type="button" className="rec-btn-ghost" onClick={handleClose}>Cancel</button>
             <button

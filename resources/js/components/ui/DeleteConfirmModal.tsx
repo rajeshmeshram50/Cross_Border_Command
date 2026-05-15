@@ -192,11 +192,10 @@ export default function DeleteConfirmModal({ open, clientName, itemName: itemNam
           background: rgba(255,255,255,0.1);
         }
       `}</style>
-      <div
-        className="dcm-overlay"
-        onClick={(e) => e.target === e.currentTarget && !loading && onClose()}
-      >
-        <div className="dcm-popup" onClick={e => e.stopPropagation()}>
+      {/* Backdrop click does NOT close the dialog — a destructive
+          confirmation should require an explicit Cancel / X / Esc. */}
+      <div className="dcm-overlay">
+        <div className="dcm-popup">
           <button type="button" className="dcm-close" onClick={onClose} disabled={loading} aria-label="Close">
             <X size={13} />
           </button>

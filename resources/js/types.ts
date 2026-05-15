@@ -57,6 +57,9 @@ export interface AuthUser {
   avatar?: string;
   permissions: Record<string, ModulePermission>;
   plan?: {
+    /** Plan id the Super Admin assigned to this client (used to highlight
+     *  the recommended plan card on the My Plan / purchase page). */
+    suggested_plan_id?: number | null;
     has_plan: boolean;
     expired: boolean;
     plan_name: string | null;

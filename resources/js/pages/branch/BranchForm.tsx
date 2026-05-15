@@ -270,6 +270,12 @@ export default function BranchForm({ onBack, editId }: Props) {
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  // Snapshot of the password as loaded from the server. If unchanged on
+  // save we skip sending user_password so the backend won't re-hash and
+  // won't fire the password-changed email.
+  const [originalUserPassword, setOriginalUserPassword] = useState('');
   const [serverErrors, setServerErrors] = useState<Record<string, string[]>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const touchedRef = useRef<Record<string, boolean>>({});
@@ -282,7 +288,22 @@ export default function BranchForm({ onBack, editId }: Props) {
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
 
-  const handleLogoChange = (file: File | null) => {
+  const handleLogoChange = (file: File | null, inputEl?: HTMLInputElement) => {
+    if (file) {
+      // Match backend image validation — surface failures as toast before
+      // the upload round-trips.
+      const okTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
+      if (!okTypes.includes(file.type)) {
+        toast.error('Invalid logo', 'Logo must be PNG, JPG, WebP or SVG.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error('Logo too large', 'Logo must be 2MB or smaller.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+    }
     setLogoFile(file);
     if (file) {
       const r = new FileReader();
@@ -293,7 +314,20 @@ export default function BranchForm({ onBack, editId }: Props) {
     }
   };
 
-  const handleProfilePhotoChange = (file: File | null) => {
+  const handleProfilePhotoChange = (file: File | null, inputEl?: HTMLInputElement) => {
+    if (file) {
+      const okTypes = ['image/jpeg', 'image/png'];
+      if (!okTypes.includes(file.type)) {
+        toast.error('Invalid photo', 'Profile photo must be JPG or PNG.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error('Photo too large', 'Profile photo must be 2MB or smaller.');
+        if (inputEl) inputEl.value = '';
+        return;
+      }
+    }
     setProfilePhotoFile(file);
     if (file) {
       const r = new FileReader();
@@ -323,8 +357,16 @@ export default function BranchForm({ onBack, editId }: Props) {
       api.get('/master/countries').catch(() => ({ data: [] })),
       api.get('/master/states').catch(() => ({ data: [] })),
     ]).then(([countryRes, stateRes]) => {
-      setCountries(Array.isArray(countryRes.data) ? countryRes.data.filter((c: any) => c.status === 'Active') : []);
-      setStatesAll(Array.isArray(stateRes.data) ? stateRes.data.filter((s: any) => s.status === 'Active') : []);
+      const activeCountries = Array.isArray(countryRes.data)
+        ? countryRes.data.filter((c: any) => c.status === 'Active')
+            .sort((a: any, b: any) => a.name.localeCompare(b.name))
+        : [];
+      const activeStates = Array.isArray(stateRes.data)
+        ? stateRes.data.filter((s: any) => s.status === 'Active')
+            .sort((a: any, b: any) => a.name.localeCompare(b.name))
+        : [];
+      setCountries(activeCountries);
+      setStatesAll(activeStates);
     });
   }, []);
 
@@ -420,10 +462,19 @@ export default function BranchForm({ onBack, editId }: Props) {
         secondary_color: b.secondary_color || '#10B981',
         user_name: u?.name || '', user_email: u?.email || '',
         user_phone: u?.phone || '', user_designation: u?.designation || '',
-        user_password: '', user_password_confirmation: '',
+        // Backend decrypts `password_encrypted` for super_admin / owning
+        // client_admin and returns it as `password_plain` — pre-fill both
+        // fields so the admin can SEE the current password and edit it.
+        user_password: u?.password_plain || '',
+        user_password_confirmation: u?.password_plain || '',
         user_status: u?.status || 'active',
       });
-      if (b.logo) setLogoPreview(b.logo);
+      setOriginalUserPassword(u?.password_plain || '');
+      if (u?.password_plain) setShowPassword(true);
+      // Prefer the `logo_url` accessor (resolves to a public Storage URL)
+      // over the raw `logo` path — otherwise the <img> tries to load
+      // "branches/logos/foo.png" relative to the SPA root and 404s.
+      if (b.logo_url || b.logo) setLogoPreview(b.logo_url || b.logo);
       if (b.profile_photo_url || b.profile_photo) setProfilePhotoPreview(b.profile_photo_url || b.profile_photo);
     }).catch(() => {}).finally(() => setLoadingData(false));
   }, [editId]);
@@ -459,6 +510,12 @@ export default function BranchForm({ onBack, editId }: Props) {
     try {
       const payload: Record<string, any> = { ...form };
       delete payload.user_password_confirmation;
+      // On edit, skip the password field if it matches the originally-loaded
+      // value — otherwise every save would re-hash and fire the
+      // password-changed email to the branch user.
+      if (isEdit && form.user_password === originalUserPassword) {
+        payload.user_password = null;
+      }
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
       // Serialize as '1'/'0' so the value survives multipart/form-data
       // (which only carries strings) — Laravel's `boolean` rule accepts
@@ -1072,9 +1129,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </span>
               <div>
                 <h6 className="mb-0 fw-bold" style={{ fontSize: 15 }}>Branch Registration Form</h6>
-                <p className="mb-0 text-muted" style={{ fontSize: 12, marginTop: 2 }}>
-                  Fields marked <span className="text-danger fw-bold">*</span> are required
-                </p>
               </div>
             </div>
             <span
@@ -1209,17 +1263,17 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Lbl>Branch Logo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {logoPreview && <img src={logoPreview} alt="logo" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" onChange={e => handleLogoChange(e.target.files?.[0] || null)} />
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" onChange={e => handleLogoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
-                <small style={css.small}>PNG, JPG, SVG — Max 2MB. Falls back to client logo if blank.</small>
+                <small style={css.small}>PNG, JPG, WebP, SVG &middot; Recommended 200&times;400 px &middot; Max 2 MB &middot; Falls back to client logo if blank</small>
               </Col>
               <Col md={4}>
                 <Lbl>Profile Photo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {profilePhotoPreview && <img src={profilePhotoPreview} alt="profile" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)} />
+                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
                 </div>
-                <small style={css.small}>JPG, PNG — Max 2MB</small>
+                <small style={css.small}>JPG, PNG &middot; Square 200&times;200 px recommended &middot; Max 2 MB</small>
               </Col>
               <Col md={6}>
                 <Lbl>Primary Color</Lbl>
@@ -1241,15 +1295,6 @@ export default function BranchForm({ onBack, editId }: Props) {
 
             {/* ══ B: Main Branch & Limits ══ */}
             <SectionHeader icon="ri-star-line" title="Main Branch & Limits" badge="B" />
-            <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(245,158,11,0.10), rgba(255,212,122,0.05))', border: '1px solid rgba(245,158,11,0.28)', color: '#B45309' }}>
-              <span
-                className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#f7b84b,#ffd47a)', boxShadow: '0 3px 8px rgba(247,184,75,0.3)' }}
-              >
-                <i className="ri-information-line" style={{ color: '#fff', fontSize: 13 }} />
-              </span>
-              <span>Main Branch users can view all branches data. Only one branch can be main at a time.</span>
-            </div>
             <Row className="g-2 mb-3">
               <Col md={4}>
                 <Lbl>Is Main Branch?</Lbl>
@@ -1360,19 +1405,6 @@ export default function BranchForm({ onBack, editId }: Props) {
 
             {/* ══ E: Branch User Credentials ══ */}
             <SectionHeader icon="ri-user-line" title={isEdit ? 'Branch User Credentials' : 'Branch User Credentials (Required)'} badge="E" />
-            <div style={{ ...css.alert, background: 'linear-gradient(135deg, rgba(106,90,205,0.10), rgba(167,139,250,0.05))', border: '1px solid rgba(106,90,205,0.28)', color: '#4c3fb1' }}>
-              <span
-                className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                style={{ width: 26, height: 26, background: 'linear-gradient(135deg,#6a5acd,#a78bfa)', boxShadow: '0 3px 8px rgba(106,90,205,0.3)' }}
-              >
-                <i className={isEdit ? 'ri-lock-line' : 'ri-error-warning-line'} style={{ color: '#fff', fontSize: 13 }} />
-              </span>
-              <span>
-                {isEdit
-                  ? 'Update the login user for this branch. Leave password blank to keep current.'
-                  : 'Name, Email and Password are required — this creates the first login user for this branch.'}
-              </span>
-            </div>
             <Row className="g-2 mb-3">
               <Col md={4}>
                 <Lbl>Full Name {!isEdit && <span className="text-danger">*</span>}</Lbl>
@@ -1403,13 +1435,41 @@ export default function BranchForm({ onBack, editId }: Props) {
                   placeholder="Branch Manager" />
               </Col>
               <Col md={4}>
-                <Lbl>{isEdit ? 'New Password' : 'Password'} {!isEdit && <span className="text-danger">*</span>}</Lbl>
-                <Input name="user_password" style={css.input} type="password" value={form.user_password}
-                  invalid={fieldInvalid('user_password')}
-                  autoComplete="new-password"
-                  onChange={e => set('user_password', e.target.value)} onBlur={() => touch('user_password')}
-                  placeholder={isEdit ? 'Leave blank to keep' : 'Minimum 8 characters'} />
+                <Lbl>Password {!isEdit && <span className="text-danger">*</span>}</Lbl>
+                <div style={{ position: 'relative' }}>
+                  <Input
+                    name="user_password"
+                    style={{ ...css.input, paddingRight: 36 }}
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.user_password}
+                    invalid={fieldInvalid('user_password')}
+                    autoComplete="new-password"
+                    onChange={e => set('user_password', e.target.value)}
+                    onBlur={() => touch('user_password')}
+                    placeholder={isEdit ? 'Enter new password to change' : 'Minimum 8 characters'}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(s => !s)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="btn btn-link p-0 position-absolute"
+                    style={{
+                      top: '50%', right: 10, transform: 'translateY(-50%)',
+                      color: 'var(--vz-secondary-color)', textDecoration: 'none',
+                      lineHeight: 1, fontSize: 16,
+                    }}
+                  >
+                    <i className={showPassword ? 'ri-eye-off-line' : 'ri-eye-line'} />
+                  </button>
+                </div>
                 <FormFeedback style={css.formFeedback}>{fieldError('user_password')}</FormFeedback>
+                {isEdit && (
+                  <small style={{ ...css.small, color: originalUserPassword ? '#10b981' : '#f59e0b', marginTop: 4, display: 'block' }}>
+                    {originalUserPassword
+                      ? <><i className="ri-shield-check-line" style={{ marginRight: 4 }} />Original password loaded — click the eye to view.</>
+                      : <><i className="ri-information-line" style={{ marginRight: 4 }} />Stored before password recovery was enabled. Set a new password to make it visible on next edit.</>}
+                  </small>
+                )}
                 {form.user_password && (
                   <div className="mt-2">
                     <div className="d-flex align-items-center gap-2 mb-1">
@@ -1441,13 +1501,32 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Confirm Password {!isEdit && <span className="text-danger">*</span>}</Lbl>
-                <Input name="user_password_confirmation" style={css.input} type="password"
-                  value={form.user_password_confirmation}
-                  invalid={fieldInvalid('user_password_confirmation')}
-                  autoComplete="new-password"
-                  onChange={e => set('user_password_confirmation', e.target.value)}
-                  onBlur={() => touch('user_password_confirmation')}
-                  placeholder="Re-enter password" />
+                <div style={{ position: 'relative' }}>
+                  <Input
+                    name="user_password_confirmation"
+                    style={{ ...css.input, paddingRight: 36 }}
+                    type={showPasswordConfirm ? 'text' : 'password'}
+                    value={form.user_password_confirmation}
+                    invalid={fieldInvalid('user_password_confirmation')}
+                    autoComplete="new-password"
+                    onChange={e => set('user_password_confirmation', e.target.value)}
+                    onBlur={() => touch('user_password_confirmation')}
+                    placeholder="Re-enter password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordConfirm(s => !s)}
+                    aria-label={showPasswordConfirm ? 'Hide password' : 'Show password'}
+                    className="btn btn-link p-0 position-absolute"
+                    style={{
+                      top: '50%', right: 10, transform: 'translateY(-50%)',
+                      color: 'var(--vz-secondary-color)', textDecoration: 'none',
+                      lineHeight: 1, fontSize: 16,
+                    }}
+                  >
+                    <i className={showPasswordConfirm ? 'ri-eye-off-line' : 'ri-eye-line'} />
+                  </button>
+                </div>
                 {form.user_password_confirmation && (
                   <div className="mt-2 d-inline-flex align-items-center gap-1 fs-11 fw-semibold">
                     {form.user_password === form.user_password_confirmation ? (
