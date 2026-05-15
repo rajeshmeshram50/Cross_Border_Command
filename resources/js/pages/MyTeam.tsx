@@ -4,6 +4,7 @@ import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
+import SignaturePad from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -72,6 +73,11 @@ export default function MyTeam() {
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionName, setActionName] = useState('');
   const [actionNote, setActionNote] = useState('');
+  // Signature mode + drawn-PNG state for the Sign step. Reset each time the
+  // action modal opens (see openAction below).
+  // Single PNG data URL produced by the signature pad regardless of which
+  // mode (Type/Draw/Upload) the user picked.
+  const [drawnSignature, setDrawnSignature] = useState<string | null>(null);
 
   // View-only preview modal — opens the locked document without the
   // action form, so approvers can read first and decide later.
@@ -115,6 +121,7 @@ export default function MyTeam() {
     // Pre-fill the typed-signature field with the user's name for Sign rows.
     setActionName(user?.name || '');
     setActionNote('');
+    setDrawnSignature(null);
   };
 
   const submitAction = async () => {
@@ -122,16 +129,23 @@ export default function MyTeam() {
     const apiAction = actionItem.action === 'Sign' ? 'Sign'
                     : actionItem.action === 'Approve' ? 'Approve'
                     : 'Acknowledge';
-    if (apiAction === 'Sign' && !actionName.trim()) {
-      toast.error('Signature required', 'Please type your name to sign.');
-      return;
+    if (apiAction === 'Sign') {
+      if (!actionName.trim()) {
+        toast.error('Signature required', 'Please type your name to sign.');
+        return;
+      }
+      if (!drawnSignature) {
+        toast.error('Signature required', 'Please type, draw, or upload your signature.');
+        return;
+      }
     }
     setActionSubmitting(true);
     try {
       await api.post(`/hr-document-signatures/${actionItem.id}/action`, {
-        action:      apiAction,
-        signed_name: apiAction === 'Sign' ? actionName.trim() : null,
-        note:        actionNote.trim() || null,
+        action:          apiAction,
+        signed_name:     apiAction === 'Sign' ? actionName.trim() : null,
+        signature_image: apiAction === 'Sign' ? drawnSignature : null,
+        note:            actionNote.trim() || null,
       });
       toast.success(
         apiAction === 'Sign' ? 'Signed' : apiAction === 'Approve' ? 'Approved' : 'Acknowledged',
@@ -250,6 +264,7 @@ export default function MyTeam() {
           onClose={() => setActionItem(null)}
           actionName={actionName} setActionName={setActionName}
           actionNote={actionNote} setActionNote={setActionNote}
+          drawnSignature={drawnSignature} setDrawnSignature={setDrawnSignature}
           submitting={actionSubmitting}
           onSubmit={submitAction}
           onReject={submitReject}
@@ -473,11 +488,13 @@ function ActionModal({
   item, onClose,
   actionName, setActionName,
   actionNote, setActionNote,
+  drawnSignature, setDrawnSignature,
   submitting, onSubmit, onReject,
 }: {
   item: ApprovalItem; onClose: () => void;
   actionName: string; setActionName: (v: string) => void;
   actionNote: string; setActionNote: (v: string) => void;
+  drawnSignature: string | null; setDrawnSignature: (v: string | null) => void;
   submitting: boolean; onSubmit: () => void; onReject: () => void;
 }) {
   const isSign = item.action === 'Sign';
@@ -519,16 +536,21 @@ function ActionModal({
           <div className="myteam-form-card" style={{ marginTop: 14, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>
             {isSign && (
               <>
-                <label className="myteam-input-label" style={inputLabelStyle}>Type your name to sign <span style={{ color: '#ef4444' }}>*</span></label>
+                <label className="myteam-input-label" style={inputLabelStyle}>
+                  Signer name <span style={{ color: '#ef4444' }}>*</span>
+                </label>
                 <input type="text" value={actionName} onChange={e => setActionName(e.target.value)}
-                  placeholder="Your full name"
+                  placeholder="Your full name (used in the audit trail)"
                   className="myteam-input"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14 }} />
-                {actionName && (
-                  <div className="myteam-sig-preview" style={{ marginTop: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 11.5, color: '#6b7280' }}>
-                    Preview: <span style={{ fontFamily: '"Brush Script MT", cursive', fontSize: 22, color: '#1d4ed8', marginLeft: 6 }}>{actionName}</span>
-                  </div>
-                )}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, marginBottom: 12 }} />
+                <label className="myteam-input-label" style={inputLabelStyle}>
+                  Signature <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <SignaturePad
+                  typedName={actionName}
+                  onChange={(v) => setDrawnSignature(v.dataUrl)}
+                  height={150}
+                />
               </>
             )}
             <label className="myteam-input-label" style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Remark</label>
@@ -557,7 +579,8 @@ function ActionModal({
             {/* Primary action — green for Approve, blue for Sign, indigo
                 for Review & Acknowledge. Colour cues match the meaning of
                 the button so the decision is unambiguous. */}
-            <button type="button" onClick={onSubmit} disabled={submitting || (isSign && !actionName.trim())}
+            <button type="button" onClick={onSubmit}
+              disabled={submitting || (isSign && (!actionName.trim() || !drawnSignature))}
               style={{
                 padding: '7px 16px',
                 background: item.action === 'Approve'
@@ -753,10 +776,6 @@ function MyTeamDarkStyles() {
       }
       [data-bs-theme="dark"] .myteam-input::placeholder { color: rgba(255,255,255,0.45) !important; }
       [data-bs-theme="dark"] .myteam-input-label { color: rgba(255,255,255,0.55) !important; }
-      [data-bs-theme="dark"] .myteam-sig-preview {
-        background: var(--vz-secondary-bg) !important;
-        color: rgba(255,255,255,0.65) !important;
-      }
       [data-bs-theme="dark"] .myteam-hint { color: rgba(255,255,255,0.45) !important; }
       [data-bs-theme="dark"] .myteam-btn-ghost {
         background: var(--vz-secondary-bg) !important;
