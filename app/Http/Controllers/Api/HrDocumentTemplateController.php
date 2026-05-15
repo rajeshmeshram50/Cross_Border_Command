@@ -494,6 +494,11 @@ class HrDocumentTemplateController extends Controller
         $title     = (string) ($headerCfg['title'] ?? '');
         $subtitle  = (string) ($headerCfg['subtitle'] ?? '');
         $hAlign    = (string) ($headerCfg['align']    ?? 'right');
+        // Logo size — pixels in the SPA, clamped 24-200. DOCX uses the same
+        // pixel scale so the exported Word doc matches the on-screen preview.
+        // Width is left to PhpWord's auto-scale (passed as 0) so non-2:1
+        // logos aren't squished; ratio is preserved from the source image.
+        $logoH     = (int) max(24, min(200, $headerCfg['logo_height'] ?? 60));
 
         $header = $section->addHeader();
         $table = $header->addTable([
@@ -507,7 +512,7 @@ class HrDocumentTemplateController extends Controller
         $absLogo = $logoPath && Storage::disk('public')->exists($logoPath)
             ? Storage::disk('public')->path($logoPath) : null;
         if ($absLogo) {
-            try { $logoCell->addImage($absLogo, ['height' => 60, 'width' => 120]); }
+            try { $logoCell->addImage($absLogo, ['height' => $logoH]); }
             catch (\Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
         }
         $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
@@ -746,6 +751,7 @@ class HrDocumentTemplateController extends Controller
             'header_config.text_color'       => 'nullable|string|max:30',
             'header_config.show_logo'        => 'nullable|boolean',
             'header_config.show_title'       => 'nullable|boolean',
+            'header_config.logo_height'      => 'nullable|integer|between:24,200',
             // Free-drag positions (percentages of the header container,
             // center-anchored). Saved alongside the rest of the config.
             'header_config.logo_pos'         => 'nullable|array',

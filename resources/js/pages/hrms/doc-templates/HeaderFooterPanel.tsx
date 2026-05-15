@@ -24,6 +24,7 @@ export interface HeaderConfig {
   text_color: string;
   show_logo: boolean;
   show_title: boolean;
+  logo_height?: number;         // px — clamped 24-200, width auto-scales (legacy rows: undefined → 62)
 }
 
 export type PageNumberFormat = 'N' | 'Page N' | 'Page N of M' | 'N / M';
@@ -53,7 +54,15 @@ export const DEFAULT_HEADER: HeaderConfig = {
   text_color: '#111827',
   show_logo:  true,
   show_title: true,
+  logo_height: 62,
 };
+
+// Allowed pixel range for the user-configurable logo height. The lower bound
+// keeps the image legible; the upper bound prevents the user from accidentally
+// blowing the header up to fill the entire page.
+export const LOGO_HEIGHT_MIN = 24;
+export const LOGO_HEIGHT_MAX = 200;
+export const LOGO_HEIGHT_DEFAULT = 62;
 
 export const DEFAULT_FOOTER: FooterConfig = {
   text:       'Company Name Pvt. Ltd.  |  Confidential',
@@ -154,6 +163,14 @@ export default function HeaderFooterPanel({
     window.addEventListener('mouseup', onUp);
   };
 
+  // Resolve & clamp the configured logo height — falls back to the legacy
+  // baked-in value (HEADER_HEIGHT - 28) so rows saved before this field
+  // existed keep rendering identically.
+  const logoHeightPx = clamp(
+    typeof header.logo_height === 'number' ? header.logo_height : LOGO_HEIGHT_DEFAULT,
+    LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX,
+  );
+
   const draggableItemStyle = (pos: PointPct): React.CSSProperties => ({
     position: 'absolute',
     left: `${pos.x}%`,
@@ -181,7 +198,10 @@ export default function HeaderFooterPanel({
         }}
         title={readOnly ? '' : 'Drag the logo / title; click any empty area to edit settings'}
         style={{
-          minHeight: HEADER_HEIGHT,
+          // Grow the header to fit the logo when the user scales it past the
+          // default. +28 keeps the same vertical breathing room the baked-in
+          // value used to provide.
+          minHeight: Math.max(HEADER_HEIGHT, logoHeightPx + 28),
           background: header.background, color: header.text_color,
           borderBottom: '2px solid #f3f4f6',
           cursor: readOnly ? 'default' : 'pointer',
@@ -202,9 +222,9 @@ export default function HeaderFooterPanel({
           >
             {header.logo_url ? (
               <img src={header.logo_url} alt="logo" draggable={false}
-                style={{ maxHeight: HEADER_HEIGHT - 28, maxWidth: 180, objectFit: 'contain', pointerEvents: 'none' }} />
+                style={{ height: logoHeightPx, maxWidth: Math.max(180, logoHeightPx * 3), objectFit: 'contain', pointerEvents: 'none' }} />
             ) : (
-              <div style={{ width: 92, height: 44, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
+              <div style={{ width: Math.max(72, logoHeightPx * 1.8), height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
                 LOGO
               </div>
             )}
@@ -393,6 +413,36 @@ function HeaderEditor({
             )}
           </div>
           <div className="tpl-popover-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>PNG / JPG / SVG up to 5MB.</div>
+
+          {/* Logo size slider — visible once a logo is uploaded so the user
+              can scale it up/down without re-cropping the source image. */}
+          <div className="mt-2">
+            <div className="d-flex align-items-center justify-content-between mb-1">
+              <span className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Logo Size</span>
+              <span className="tpl-popover-hint" style={{ fontSize: 11, color: '#6b7280', fontWeight: 700 }}>
+                {clamp(header.logo_height ?? LOGO_HEIGHT_DEFAULT, LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX)} px
+              </span>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <input
+                type="range"
+                min={LOGO_HEIGHT_MIN}
+                max={LOGO_HEIGHT_MAX}
+                step={2}
+                value={clamp(header.logo_height ?? LOGO_HEIGHT_DEFAULT, LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX)}
+                onChange={(e) => setHeader({ ...header, logo_height: clamp(Number(e.target.value) || LOGO_HEIGHT_DEFAULT, LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX) })}
+                className="tpl-logo-size-range"
+                style={{ flex: 1, accentColor: '#6366f1' }}
+              />
+              <button type="button"
+                onClick={() => setHeader({ ...header, logo_height: LOGO_HEIGHT_DEFAULT })}
+                title="Reset to default"
+                className="tpl-chip"
+                style={{ ...chipStyle(false), padding: '4px 8px', fontSize: 11 }}>
+                <i className="ri-restart-line" />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="col-md-6">
