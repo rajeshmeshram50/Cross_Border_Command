@@ -368,6 +368,11 @@ class RecruitmentController extends Controller
             'department_id'     => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_departments,id',
             'designation_id'    => ($isUpdate ? 'sometimes|' : '') . 'required|integer|exists:master_designations,id',
             'primary_role_id'   => 'nullable|integer|exists:master_roles,id',
+            // Optional link back to the hiring request that spawned this
+            // recruitment. The Hiring Requests list uses it to surface a
+            // "Recruitment Created" tab. Stays nullable for recruitments
+            // that didn't originate from a request.
+            'hiring_request_id' => 'nullable|integer|exists:hiring_requests,id',
 
             'employment_type'   => ['nullable', Rule::in(self::EMPLOYMENT_TYPES)],
             'openings'          => 'nullable|integer|min:1|max:9999',
