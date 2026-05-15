@@ -1383,7 +1383,13 @@ export default function HrEmployees() {
   // red-border rendering path.
   const validateStep1 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
-    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Stricter than the previous /^[^\s@]+@[^\s@]+\.[^\s@]+$/ — that
+    // pattern accepted "a@b.c" and any uppercase, which then collides
+    // with the lowercase-normalised value stored on save. Lock the
+    // local-part to safe characters, require ≥2-char TLD, and forbid
+    // uppercase entirely so the on-input lowercase guard and the
+    // validator agree.
+    const emailRe = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
     // Identity
     if (!eWorkCountry)        e.work_country_id = 'Work country is required';
     if (!eFirstName.trim())   e.first_name      = 'First name is required';
@@ -1420,8 +1426,14 @@ export default function HrEmployees() {
     }
     if (!eNationality)        e.nationality_country_id = 'Nationality is required';
     // Contact
-    if (!eWorkEmail.trim())   e.email           = 'Email is required';
-    else if (!emailRe.test(eWorkEmail.trim())) e.email = 'Enter a valid email address';
+    if (!eWorkEmail.trim()) {
+      e.email = 'Email is required';
+    } else {
+      const em = eWorkEmail.trim();
+      if (/\s/.test(em))                  e.email = 'Email cannot contain spaces';
+      else if (em !== em.toLowerCase())   e.email = 'Email must be in lowercase';
+      else if (!emailRe.test(em))         e.email = 'Enter a valid email address';
+    }
     if (!eMobile.trim()) {
       e.mobile = 'Mobile is required';
     } else {
@@ -1935,27 +1947,36 @@ export default function HrEmployees() {
   }, []);
   useEffect(() => { reloadManagers(); }, [reloadManagers]);
   const reportingManagerOptions = useMemo(
-    () => managerCandidates.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })),
-    [managerCandidates]
+    () => managerCandidates
+      // An employee can't report to themselves — strip the row currently
+      // being edited out of the manager list. `editingDbId` is the DB id
+      // of the open employee row; kind === 'employee' is the candidate
+      // kind that corresponds to a row in the employees table (the other
+      // kind, 'login_users', is a separate user account and never
+      // collides with the employee id space).
+      .filter(m => !(editingDbId && m.kind === 'employee' && m.id === editingDbId))
+      .map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })),
+    [managerCandidates, editingDbId]
   );
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
+    const df = deptFilter.trim().toLowerCase();
     return apiRows.filter(e => {
-      if (tab === 'active' && !e.enabled) return false;
-      if (tab === 'disabled' && e.enabled) return false;
-      // Status dropdown uses the same concept as the Active/Disabled tabs
-      // above — the employee's `enabled` flag — so the two controls stay
-      // semantically consistent and the user never sees conflicting filters.
-      //   "Active"   → enabled === true
-      //   "Disabled" → enabled === false
-      //   "All"      → no status filter
+      // When the Status dropdown is set to "All", we intentionally skip
+      // the tab filter so the user actually sees every employee — picking
+      // "All" while the Active tab is highlighted otherwise still hides
+      // disabled rows, which is what made the dropdown feel broken.
+      if (statusFilter !== 'All') {
+        if (tab === 'active' && !e.enabled) return false;
+        if (tab === 'disabled' && e.enabled) return false;
+      }
       if (statusFilter === 'Active'   && !e.enabled) return false;
       if (statusFilter === 'Disabled' &&  e.enabled) return false;
-      if (deptFilter !== 'All Depts' && e.department !== deptFilter) return false;
+      if (df && df !== 'all depts' && String(e.department || '').trim().toLowerCase() !== df) return false;
       if (!s) return true;
       return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
-        .some(v => v.toLowerCase().includes(s));
+        .some(v => (v || '').toLowerCase().includes(s));
     });
     // `apiRows` MUST be in the dep list — without it, the memo holds the
     // initial empty-array filter result forever and only re-runs when one of
@@ -2122,6 +2143,55 @@ export default function HrEmployees() {
           box-shadow: 0 8px 18px rgba(0,0,0,0.18);
         }
         .hr-emp-kpi-icon { transition: transform .18s ease, box-shadow .18s ease; }
+
+        /* Serial-number column — must read against both themes. The default
+           Bootstrap text-muted drops to ~30% opacity in dark mode and
+           the digits disappeared against the dark card surface. */
+        .hr-emp-srno { color: var(--vz-secondary-color); font-weight: 600; }
+        [data-bs-theme="dark"] .hr-emp-srno,
+        [data-layout-mode="dark"] .hr-emp-srno { color: #d0d4dc; }
+
+        /* Search box — placeholder and field both need extra contrast in
+           dark mode. The default placeholder is rendered with
+           secondary-color at ~50% opacity which reads as pure grey on
+           the dark surface. */
+        .hr-employees-surface .search-box .form-control::placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.75;
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .search-box .form-control,
+        [data-layout-mode="dark"] .hr-employees-surface .search-box .form-control {
+          background: var(--vz-card-bg);
+          color: #e6e8ec;
+          border-color: var(--vz-border-color);
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .search-box .form-control::placeholder,
+        [data-layout-mode="dark"] .hr-employees-surface .search-box .form-control::placeholder {
+          color: #b0b4bd;
+          opacity: 1;
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .search-box .search-icon,
+        [data-layout-mode="dark"] .hr-employees-surface .search-box .search-icon {
+          color: #b0b4bd;
+        }
+
+        /* KPI cards looked flat — the card surface was the same colour as
+           the page surface so only the 3px gradient strip carried any
+           identity. Tint each card with a soft theme-coloured wash that
+           matches its gradient so the labels pop a little and the cards
+           feel less uniform. */
+        .hr-emp-kpi-card {
+          background-image: linear-gradient(180deg, rgba(124,92,252,0.04) 0%, rgba(124,92,252,0) 60%);
+        }
+        [data-bs-theme="dark"] .hr-emp-kpi-card,
+        [data-layout-mode="dark"] .hr-emp-kpi-card {
+          background-image: linear-gradient(180deg, rgba(124,92,252,0.10) 0%, rgba(124,92,252,0) 70%);
+        }
+        .hr-emp-kpi-label { color: var(--vz-secondary-color); }
+        [data-bs-theme="dark"] .hr-emp-kpi-label,
+        [data-layout-mode="dark"] .hr-emp-kpi-label { color: #c4c8d0; }
+        [data-bs-theme="dark"] .hr-emp-kpi-value,
+        [data-layout-mode="dark"] .hr-emp-kpi-value { color: #f4f5f7 !important; }
       `}</style>
       <MasterFormStyles />
 
@@ -2402,7 +2472,7 @@ export default function HrEmployees() {
                             onClick={() => navigate(`/hr/employees/${encodeURIComponent(e.id)}/profile`, { state: { employee: e } })}
                             style={{ cursor: 'pointer' }}
                           >
-                            <td className="ps-3 text-center text-muted fs-13">{idx + 1}</td>
+                            <td className="ps-3 text-center fs-13 hr-emp-srno">{idx + 1}</td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
                                 {e.photoUrl ? (
@@ -3602,13 +3672,17 @@ export default function HrEmployees() {
                       {eErrors.last_name && <small className="emp-err">{eErrors.last_name}</small>}
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Display Name<span className="req">*</span></label>
+                      <label className="emp-label">
+                        Display Name<span className="req">*</span>
+                        <span className="hint">(auto-generated)</span>
+                      </label>
                       <input
-                        className={`emp-input${eErrors.display_name ? ' is-invalid' : ''}`}
+                        className={`emp-input is-readonly${eErrors.display_name ? ' is-invalid' : ''}`}
                         type="text"
-                        placeholder="e.g. Aarav Kale (auto-filled)"
+                        placeholder="Auto-filled from First / Middle / Last name"
                         value={eDisplayName}
-                        onChange={e => { setEDisplayName(e.target.value); setEDisplayNameTouched(true); clearEErr('display_name'); }}
+                        readOnly
+                        tabIndex={-1}
                       />
                       {eErrors.display_name && <small className="emp-err">{eErrors.display_name}</small>}
                     </Col>
@@ -3658,9 +3732,21 @@ export default function HrEmployees() {
                       <input
                         className={`emp-input${eErrors.email ? ' is-invalid' : ''}`}
                         type="email"
+                        autoComplete="email"
+                        spellCheck={false}
                         placeholder="name@enterprise.com"
                         value={eWorkEmail}
-                        onChange={e => { setEWorkEmail(e.target.value); clearEErr('email'); }}
+                        onChange={e => {
+                          // Emails are case-insensitive per RFC 5321 but
+                          // many auth flows (and our login table) compare
+                          // them exactly — normalise to lowercase and
+                          // strip whitespace at the input boundary so a
+                          // stray capital or pasted leading space never
+                          // creates a duplicate-looking account.
+                          const v = e.target.value.replace(/\s+/g, '').toLowerCase();
+                          setEWorkEmail(v);
+                          clearEErr('email');
+                        }}
                       />
                       {eErrors.email && <small className="emp-err">{eErrors.email}</small>}
                     </Col>
