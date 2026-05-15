@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row } from 'reactstrap';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
 import SignaturePad from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
@@ -43,6 +44,7 @@ interface SignatureRun {
 export default function Inbox() {
   const { user } = useAuth();
   const toast = useToast();
+  const confirmDialog = useConfirm();
 
   const [rows, setRows] = useState<SignatureRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -230,15 +232,37 @@ export default function Inbox() {
         toast.error('Remark required', 'Add a remark explaining what should change.');
         return;
       }
-      if (!confirm(`Reject ${actionRun.code || 'this document'}? The workflow will halt and the sender will see your remark.`)) return;
+      // Snapshot the run + close the action modal so the confirm
+      // popup isn't stacked on top of the open acknowledge modal.
+      // Restore if the user cancels.
+      const targetRun = actionRun;
+      const runId = targetRun.id;
+      const code  = targetRun.code || 'this document';
+      setActionRun(null);
+      const ok = await confirmDialog({
+        title: 'Reject Document?',
+        message: (
+          <>
+            Reject <strong>{code}</strong>? The workflow will halt and the sender will see your remark.
+          </>
+        ),
+        confirmLabel: 'Yes, Reject',
+        cancelLabel:  'Cancel',
+        tone:         'danger',
+        icon:         'close-circle-line',
+      });
+      if (!ok) {
+        setActionRun(targetRun);
+        return;
+      }
       setSubmitting(true);
       try {
-        await api.post(`/hr-document-signatures/${actionRun.id}/reject`, { reason });
-        toast.success('Rejected', `${actionRun.code || `Run #${actionRun.id}`} returned with your remark.`);
-        setActionRun(null);
+        await api.post(`/hr-document-signatures/${runId}/reject`, { reason });
+        toast.success('Rejected', `${code} returned with your remark.`);
         load();
       } catch (err: any) {
         toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
+        setActionRun(targetRun);
       } finally { setSubmitting(false); }
       return;
     }

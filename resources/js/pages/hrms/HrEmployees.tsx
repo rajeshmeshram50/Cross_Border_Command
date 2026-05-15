@@ -1387,12 +1387,7 @@ export default function HrEmployees() {
   // red-border rendering path.
   const validateStep1 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
-    // Stricter than the previous /^[^\s@]+@[^\s@]+\.[^\s@]+$/ — that
-    // pattern accepted "a@b.c" and any uppercase, which then collides
-    // with the lowercase-normalised value stored on save. Lock the
-    // local-part to safe characters, require ≥2-char TLD, and forbid
-    // uppercase entirely so the on-input lowercase guard and the
-    // validator agree.
+   
     const emailRe = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
     // Identity
     if (!eWorkCountry)        e.work_country_id = 'Work country is required';
@@ -2844,6 +2839,45 @@ export default function HrEmployees() {
           [data-bs-theme="dark"] .onb-header-sub     { color: var(--vz-secondary-color) !important; }
           [data-bs-theme="dark"] .onb-header-icon    { background: rgba(124,92,252,0.18) !important; }
           [data-bs-theme="dark"] .onb-header-divider { background: var(--vz-border-color) !important; }
+
+          /* Success state — the banner, URL field and helper text all
+             ship with hard-coded light palette values (white bg, light
+             grey copy). In dark mode they read as a bright slab; tone
+             them down so the green stays semantic but everything else
+             matches the surrounding card. */
+          .onb-success-banner       { background: linear-gradient(135deg,#ecfaf3,#d6f4e3); border: 1px solid #b6e9d9; }
+          .onb-success-title        { color: #0a8a78; }
+          .onb-success-sub          { color: #0a6e5d; }
+          .onb-url-input            { background: #f7f8fc !important; }
+          .onb-helper-text          { color: #6b7280; }
+          .onb-secondary-btn        { background: #fff; color: #475569; border: 1px solid #e5e7eb; }
+          [data-bs-theme="dark"] .onb-success-banner,
+          [data-layout-mode="dark"] .onb-success-banner {
+            background: linear-gradient(135deg, rgba(10,179,156,0.18), rgba(10,179,156,0.08)) !important;
+            border-color: rgba(10,179,156,0.40) !important;
+          }
+          [data-bs-theme="dark"] .onb-success-title,
+          [data-layout-mode="dark"] .onb-success-title { color: #6ee7c7 !important; }
+          [data-bs-theme="dark"] .onb-success-sub,
+          [data-layout-mode="dark"] .onb-success-sub   { color: #a3e3cf !important; }
+          [data-bs-theme="dark"] .onb-url-input,
+          [data-layout-mode="dark"] .onb-url-input {
+            background: var(--vz-secondary-bg) !important;
+            border-color: var(--vz-border-color) !important;
+            color: var(--vz-body-color) !important;
+          }
+          [data-bs-theme="dark"] .onb-helper-text,
+          [data-layout-mode="dark"] .onb-helper-text { color: var(--vz-secondary-color) !important; }
+          [data-bs-theme="dark"] .onb-secondary-btn,
+          [data-layout-mode="dark"] .onb-secondary-btn {
+            background: var(--vz-secondary-bg) !important;
+            color: var(--vz-body-color) !important;
+            border-color: var(--vz-border-color) !important;
+          }
+          [data-bs-theme="dark"] .onb-secondary-btn:hover,
+          [data-layout-mode="dark"] .onb-secondary-btn:hover {
+            background: var(--vz-tertiary-bg, rgba(255,255,255,0.06)) !important;
+          }
         `}</style>
 
         <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
@@ -2879,9 +2913,8 @@ export default function HrEmployees() {
             // ── Success state — invite created, show copy panel ──
             <>
               <div style={{ padding: '24px 28px 6px' }}>
-                <div style={{
-                  background: 'linear-gradient(135deg,#ecfaf3,#d6f4e3)',
-                  border: '1px solid #b6e9d9', borderRadius: 12,
+                <div className="onb-success-banner" style={{
+                  borderRadius: 12,
                   padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 14,
                 }}>
                   <div style={{
@@ -2892,8 +2925,8 @@ export default function HrEmployees() {
                     <i className="ri-check-line" />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: '#0a8a78' }}>Invite link generated</div>
-                    <div style={{ fontSize: 12.5, color: '#0a6e5d' }}>
+                    <div className="onb-success-title" style={{ fontSize: 14, fontWeight: 800 }}>Invite link generated</div>
+                    <div className="onb-success-sub" style={{ fontSize: 12.5 }}>
                       Sent to <strong>{onbEmail}</strong>. Expires in {onbExpiry} days.
                     </div>
                   </div>
@@ -2906,8 +2939,8 @@ export default function HrEmployees() {
                     readOnly
                     value={generatedInviteUrl}
                     onFocus={(e) => e.currentTarget.select()}
-                    className="onb-input"
-                    style={{ background: '#f7f8fc', flex: 1 }}
+                    className="onb-input onb-url-input"
+                    style={{ flex: 1 }}
                   />
                   <button
                     type="button"
@@ -2924,7 +2957,7 @@ export default function HrEmployees() {
                     {copiedAt ? 'Copied' : 'Copy link'}
                   </button>
                 </div>
-                <p style={{ fontSize: 11.5, color: '#6b7280', marginTop: 8, marginBottom: 0 }}>
+                <p className="onb-helper-text" style={{ fontSize: 11.5, marginTop: 8, marginBottom: 0 }}>
                   Share this link if the email doesn't arrive. The link is single-use — it stops working as soon as the candidate submits the form.
                 </p>
               </div>
@@ -2939,8 +2972,8 @@ export default function HrEmployees() {
                     setCopiedAt(0);
                     setOnbName(''); setOnbEmail(''); setOnbDept(''); setOnbDate(''); setOnbExpiry(15); setOnbErrors({});
                   }}
-                  className="btn fw-semibold rounded-pill flex-grow-1"
-                  style={{ fontSize: 13, background: '#fff', color: '#475569', border: '1px solid #e5e7eb', padding: '10px 16px' }}
+                  className="btn onb-secondary-btn fw-semibold rounded-pill flex-grow-1"
+                  style={{ fontSize: 13, padding: '10px 16px' }}
                 >
                   Send another invite
                 </button>

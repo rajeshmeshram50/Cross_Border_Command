@@ -968,12 +968,13 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  // Section 1 — Basics
+  // Section 1 — Basics. Team / Sub-Department and Requested By were
+  // removed per product call (the requester is already captured by
+  // created_by on the row, and Sub-Department wasn't being used
+  // downstream).
   const [title, setTitle]               = useState('');
   const [jobRole, setJobRole]           = useState('');
   const [departmentId, setDepartmentId] = useState('');
-  const [team, setTeam]                 = useState('');
-  const [requestedBy, setRequestedBy]   = useState('');
   // The form's last column was relabelled from Request Date → Target Join
   // Date. The submission timestamp is now sourced from the row's
   // server-generated created_at, so this picker captures *when the user
@@ -986,27 +987,26 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
   const [workMode, setWorkMode]         = useState<'Onsite' | 'Remote' | 'Hybrid' | 'Flexible'>('Onsite');
   const [urgency, setUrgency]           = useState<RequestUrgency>('Medium');
 
-  // Section 3 — Role Details
+  // Section 3 — Role Details. Preferred Candidate Profile was dropped
+  // per product call (overlapped with required_qualification).
   const [jobDesc, setJobDesc]                 = useState('');
   const [dailyResp, setDailyResp]             = useState('');
   const [requiredSkills, setRequiredSkills]   = useState('');
   const [requiredExp, setRequiredExp]         = useState('');
   const [requiredQual, setRequiredQual]       = useState('');
-  const [preferred, setPreferred]             = useState('');
 
-  // Section 4 — Business Justification
-  const [needReason, setNeedReason]       = useState('');
-  const [requestType, setRequestType]     = useState<RequestType>('New Position');
-  const [businessJust, setBusinessJust]   = useState('');
-  const [teamGap, setTeamGap]             = useState('');
-  const [whatIfNot, setWhatIfNot]         = useState('');
+  // Section 4 (Business Justification) was removed entirely. The
+  // request_type column on the backend stays nullable; new rows now
+  // submit with request_type = null. Hiring Need Reason / Business
+  // Justification / Current Team Gap / What If Not Filled were all
+  // free-text rationales that the recruitment team rarely consumed.
 
   const [saving, setSaving] = useState(false);
 
-  // Errors
+  // Errors — only fields still on the form.
   type RaiseErrors = Partial<Record<
     'title' | 'jobRole' | 'department' | 'openings' | 'employType' | 'workMode' | 'urgency'
-    | 'jobDesc' | 'requiredSkills' | 'requiredExp' | 'needReason' | 'requestType' | 'businessJust',
+    | 'jobDesc' | 'requiredSkills' | 'requiredExp',
     string
   >>;
   const [errors, setErrors] = useState<RaiseErrors>({});
@@ -1014,10 +1014,9 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
   // Reset when reopened
   useEffect(() => {
     if (!isOpen) return;
-    setTitle(''); setJobRole(''); setDepartmentId(''); setTeam(''); setRequestedBy(''); setTargetDate('');
+    setTitle(''); setJobRole(''); setDepartmentId(''); setTargetDate('');
     setOpenings('1'); setEmployType('Full-time'); setWorkMode('Onsite'); setUrgency('Medium');
-    setJobDesc(''); setDailyResp(''); setRequiredSkills(''); setRequiredExp(''); setRequiredQual(''); setPreferred('');
-    setNeedReason(''); setRequestType('New Position'); setBusinessJust(''); setTeamGap(''); setWhatIfNot('');
+    setJobDesc(''); setDailyResp(''); setRequiredSkills(''); setRequiredExp(''); setRequiredQual('');
     setErrors({}); setSaving(false);
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1036,16 +1035,29 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
     if (!jobDesc.trim())        e.jobDesc        = 'Job description is required';
     if (!requiredSkills.trim()) e.requiredSkills = 'Required skills are required';
     if (!requiredExp)           e.requiredExp    = 'Required experience is required';
-    if (!needReason.trim())     e.needReason     = 'Hiring need reason is required';
-    if (!requestType)           e.requestType    = 'Request type is required';
-    if (!businessJust.trim())   e.businessJust   = 'Business justification is required';
     return e;
   };
 
   const handleSubmit = async (asDraft: boolean) => {
-    // Submit-to-HR enforces the full required-field set; Save-as-Draft
-    // skips validation so partial forms can still be persisted.
-    if (!asDraft) {
+    // Submit-to-HR enforces the full required-field set. Save-as-Draft
+    // still requires the minimum needed for the row to exist — Title
+    // and Job Role are NOT NULL columns on the hiring_requests table
+    // (they identify the draft in the list), so blank values bounce
+    // out of the DB as a raw not-null-violation. Catch it client-side
+    // and surface clean inline errors instead.
+    if (asDraft) {
+      const draftErrs: RaiseErrors = {};
+      if (!title.trim())   draftErrs.title   = 'Add a title before saving the draft';
+      if (!jobRole.trim()) draftErrs.jobRole = 'Add a job role before saving the draft';
+      if (Object.keys(draftErrs).length > 0) {
+        setErrors(draftErrs);
+        toast.error(
+          'A few details are required',
+          `Add a title and job role first — the rest can wait. ${Object.keys(draftErrs).length} field${Object.keys(draftErrs).length === 1 ? '' : 's'} need attention.`,
+        );
+        return;
+      }
+    } else {
       const errs = validate();
       if (Object.keys(errs).length > 0) {
         setErrors(errs);
@@ -1055,12 +1067,15 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
     }
 
     // Build the API payload — snake_case keys matching the controller.
+    // team / requested_by_name / preferred_profile and the whole
+    // Business Justification block were removed from the form; their
+    // columns stay nullable on the backend so we just send null (or
+    // omit). Sending null keeps existing rows intact if the column
+    // exists, and is a no-op on installs without it.
     const payload: Record<string, any> = {
       title:                  title.trim() || null,
       job_role:               jobRole.trim() || null,
       department_id:          departmentId ? Number(departmentId) : null,
-      team:                   team || null,
-      requested_by_name:      requestedBy || null,
       // The picker now captures the desired target join date; the
       // server-generated created_at is used for the list's "Req Date"
       // column, so request_date is intentionally not sent.
@@ -1074,12 +1089,6 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
       required_skills:        requiredSkills || null,
       required_experience:    requiredExp || null,
       required_qualification: requiredQual || null,
-      preferred_profile:      preferred || null,
-      request_type:           requestType,
-      business_justification: businessJust || null,
-      hiring_need_reason:     needReason || null,
-      current_team_gap:       teamGap || null,
-      what_if_not_filled:     whatIfNot || null,
       status:                 asDraft ? 'Draft' : 'Submitted',
     };
 
@@ -1096,7 +1105,6 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
           title: 'title', job_role: 'jobRole', department_id: 'department',
           openings: 'openings', employment_type: 'employType', work_mode: 'workMode', urgency: 'urgency',
           job_description: 'jobDesc', required_skills: 'requiredSkills', required_experience: 'requiredExp',
-          hiring_need_reason: 'needReason', request_type: 'requestType', business_justification: 'businessJust',
         };
         const mapped: RaiseErrors = {};
         for (const k of Object.keys(serverErrs)) {
@@ -1107,7 +1115,32 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
         setErrors(mapped);
         toast.error('Validation failed', 'Please fix the highlighted fields.');
       } else {
-        toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
+        // Detect raw DB-constraint failures bubbling up from a 500. The
+        // server returns the full SQLSTATE trace in `message` — surface
+        // a friendly version that names the offending column when we
+        // can spot it, instead of dumping the connection details into
+        // the toast.
+        const raw = String(err?.response?.data?.message || '');
+        const sqlMatch = /not[- ]null|null value in column ["`']?(\w+)["`']?/i.exec(raw);
+        if (sqlMatch) {
+          const col = sqlMatch[1] || 'a required field';
+          // Reverse-map the DB column → form field so we can highlight it.
+          const colToField: Record<string, keyof RaiseErrors> = {
+            title: 'title', job_role: 'jobRole', department_id: 'department',
+            openings: 'openings', employment_type: 'employType', work_mode: 'workMode', urgency: 'urgency',
+            job_description: 'jobDesc', required_skills: 'requiredSkills', required_experience: 'requiredExp',
+          };
+          const ui = colToField[col];
+          if (ui) {
+            setErrors(prev => ({ ...prev, [ui]: 'This field is required.' }));
+          }
+          toast.error(
+            'Some details are missing',
+            ui ? 'The highlighted field is required.' : `Please fill in ${col.replace(/_/g, ' ')}.`,
+          );
+        } else {
+          toast.error('Could not save', err?.response?.data?.message?.split('\n')[0] || 'Please try again.');
+        }
       }
     } finally {
       setSaving(false);
@@ -1155,11 +1188,14 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
               </span>
               <div>
                 <p className="rec-form-section-title">Section 1 · Request Basics</p>
-                <p className="rec-form-section-sub">Core identification of the hiring request</p>
               </div>
             </div>
+            {/* Section 1 — all four fields share one row at md+; the
+                Col span dropped from md={4} → md={3} so 4 columns fit
+                across the 12-grid (md={4} gave 3-per-row, wrapping the
+                4th onto its own line). */}
             <Row className="g-2">
-              <Col md={4}>
+              <Col md={3}>
                 <label className="rec-form-label">Request Title<span className="req">*</span></label>
                 <input
                   type="text"
@@ -1170,7 +1206,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.title && <div className="rec-error"><i className="ri-error-warning-line" />{errors.title}</div>}
               </Col>
-              <Col md={4}>
+              <Col md={3}>
                 <label className="rec-form-label">Job Role / Position Name<span className="req">*</span></label>
                 <input
                   type="text"
@@ -1181,7 +1217,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.jobRole && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobRole}</div>}
               </Col>
-              <Col md={4}>
+              <Col md={3}>
                 <label className="rec-form-label">Department<span className="req">*</span></label>
                 <MasterSelect
                   value={departmentId}
@@ -1192,27 +1228,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.department && <div className="rec-error"><i className="ri-error-warning-line" />{errors.department}</div>}
               </Col>
-              <Col md={4}>
-                <label className="rec-form-label">Team / Sub-Department</label>
-                <input
-                  type="text"
-                  className="rec-input"
-                  placeholder="e.g. AI/ML, Infrastructure"
-                  value={team}
-                  onChange={e => setTeam(e.target.value)}
-                />
-              </Col>
-              <Col md={4}>
-                <label className="rec-form-label">Requested By</label>
-                <input
-                  type="text"
-                  className="rec-input"
-                  placeholder="Your Name (Role)"
-                  value={requestedBy}
-                  onChange={e => setRequestedBy(e.target.value)}
-                />
-              </Col>
-              <Col md={4}>
+              <Col md={3}>
                 <label className="rec-form-label">Target Join Date</label>
                 <MasterDatePicker
                   value={targetDate}
@@ -1231,11 +1247,14 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
               </span>
               <div>
                 <p className="rec-form-section-title">Section 2 · Hiring Need</p>
-                <p className="rec-form-section-sub">Openings, type, mode and urgency</p>
               </div>
             </div>
+            {/* Section 2 — all four fields share one row at md+. Work
+                Mode used to be a button grid and Urgency a chip row;
+                both became MasterSelect dropdowns so they line up
+                with Openings + Employment Type. */}
             <Row className="g-2">
-              <Col md={4}>
+              <Col md={3}>
                 <label className="rec-form-label">No. of Openings<span className="req">*</span></label>
                 <input
                   type="number"
@@ -1246,7 +1265,7 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.openings && <div className="rec-error"><i className="ri-error-warning-line" />{errors.openings}</div>}
               </Col>
-              <Col md={8}>
+              <Col md={3}>
                 <label className="rec-form-label">Employment Type<span className="req">*</span></label>
                 <MasterSelect
                   value={employType}
@@ -1257,51 +1276,32 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                 />
                 {errors.employType && <div className="rec-error"><i className="ri-error-warning-line" />{errors.employType}</div>}
               </Col>
-              <Col xs={12}>
+              <Col md={3}>
                 <label className="rec-form-label">Work Mode<span className="req">*</span></label>
-                <div className="rec-mode-grid">
-                  {([
-                    { val: 'Onsite',   icon: 'ri-building-line',     variant: 'onsite'   },
-                    { val: 'Remote',   icon: 'ri-globe-line',        variant: 'remote'   },
-                    { val: 'Hybrid',   icon: 'ri-flashlight-line',   variant: 'hybrid'   },
-                    { val: 'Flexible', icon: 'ri-shuffle-line',      variant: 'flexible' },
-                  ] as const).map(m => (
-                    <button
-                      key={m.val}
-                      type="button"
-                      className={`rec-mode-btn${workMode === m.val ? ` is-active ${m.variant}` : ''}`}
-                      onClick={() => { setWorkMode(m.val); clear('workMode'); }}
-                    >
-                      <i className={m.icon} />
-                      {m.val}
-                    </button>
-                  ))}
-                </div>
+                <MasterSelect
+                  value={workMode}
+                  onChange={(v) => { setWorkMode(v as 'Onsite' | 'Remote' | 'Hybrid' | 'Flexible'); clear('workMode'); }}
+                  options={[
+                    { value: 'Onsite',   label: 'Onsite'   },
+                    { value: 'Remote',   label: 'Remote'   },
+                    { value: 'Hybrid',   label: 'Hybrid'   },
+                    { value: 'Flexible', label: 'Flexible' },
+                  ]}
+                  placeholder="Select"
+                  invalid={!!errors.workMode}
+                />
+                {errors.workMode && <div className="rec-error"><i className="ri-error-warning-line" />{errors.workMode}</div>}
               </Col>
-              <Col xs={12}>
+              <Col md={3}>
                 <label className="rec-form-label">Urgency Level<span className="req">*</span></label>
-                <div className="rec-urgency-row">
-                  {(['Low', 'Medium', 'High', 'Critical'] as RequestUrgency[]).map(u => {
-                    const tone = REQUEST_URGENCY_TONES[u];
-                    const active = urgency === u;
-                    return (
-                      <button
-                        key={u}
-                        type="button"
-                        className={`rec-urgency${active ? ' is-active' : ''}`}
-                        style={{
-                          background: active ? tone.bg : '#fff',
-                          color: tone.fg,
-                          borderColor: active ? tone.fg : '#e5e7eb',
-                        }}
-                        onClick={() => { setUrgency(u); clear('urgency'); }}
-                      >
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.fg }} />
-                        {u}
-                      </button>
-                    );
-                  })}
-                </div>
+                <MasterSelect
+                  value={urgency}
+                  onChange={(v) => { setUrgency(v as RequestUrgency); clear('urgency'); }}
+                  options={(['Low', 'Medium', 'High', 'Critical'] as RequestUrgency[]).map(u => ({ value: u, label: u }))}
+                  placeholder="Select"
+                  invalid={!!errors.urgency}
+                />
+                {errors.urgency && <div className="rec-error"><i className="ri-error-warning-line" />{errors.urgency}</div>}
               </Col>
             </Row>
           </div>
@@ -1314,7 +1314,6 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
               </span>
               <div>
                 <p className="rec-form-section-title">Section 3 · Role Details</p>
-                <p className="rec-form-section-sub">Job description, skills and qualifications</p>
               </div>
             </div>
             <Row className="g-2">
@@ -1337,12 +1336,16 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                   onChange={e => setDailyResp(e.target.value)}
                 />
               </Col>
-              <Col md={3}>
+              <Col md={6}>
                 <label className="rec-form-label">Required Skills<span className="req">*</span></label>
-                <input
-                  type="text"
-                  className={`rec-input${errors.requiredSkills ? ' is-invalid' : ''}`}
-                  placeholder="e.g. React, Node.js, AWS"
+                {/* Textarea (rec-textarea) instead of single-line so the
+                    requester can list as many skills as they need —
+                    one per line or comma-separated. Width bumped to
+                    md=6 to give the longer text room to breathe. */}
+                <textarea
+                  className={`rec-input rec-textarea${errors.requiredSkills ? ' is-invalid' : ''}`}
+                  rows={3}
+                  placeholder="e.g. React, Node.js, AWS, Docker, Kubernetes…"
                   value={requiredSkills}
                   onChange={e => { setRequiredSkills(e.target.value); clear('requiredSkills'); }}
                 />
@@ -1367,81 +1370,6 @@ function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringReque
                   placeholder="e.g. B.Tech, MBA"
                   value={requiredQual}
                   onChange={e => setRequiredQual(e.target.value)}
-                />
-              </Col>
-              <Col md={3}>
-                <label className="rec-form-label">Preferred Candidate Profile</label>
-                <input
-                  type="text"
-                  className="rec-input"
-                  placeholder="Ideal candidate background…"
-                  value={preferred}
-                  onChange={e => setPreferred(e.target.value)}
-                />
-              </Col>
-            </Row>
-          </div>
-
-          {/* Section 4 — Business Justification */}
-          <div className="rec-form-section">
-            <div className="rec-form-section-head">
-              <span className="rec-form-section-icon" style={{ background: 'linear-gradient(135deg,#b1401d 0%,#ef4444 50%,#f87171 100%)', color: '#ffffff', boxShadow: '0 4px 12px rgba(239,68,68,0.35), inset 0 1px 0 rgba(255,255,255,0.30)' }}>
-                <i className="ri-flashlight-line" style={{ fontSize: 18 }} />
-              </span>
-              <div>
-                <p className="rec-form-section-title">Section 4 · Business Justification</p>
-                <p className="rec-form-section-sub">Why this hire is needed now</p>
-              </div>
-            </div>
-            <Row className="g-2">
-              <Col md={4}>
-                <label className="rec-form-label">Request Type<span className="req">*</span></label>
-                <MasterSelect
-                  value={requestType}
-                  onChange={(v) => { setRequestType(v as RequestType); clear('requestType'); }}
-                  options={REQUEST_TYPE_OPTIONS}
-                  placeholder="Select"
-                  invalid={!!errors.requestType}
-                />
-                {errors.requestType && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requestType}</div>}
-              </Col>
-              <Col md={8}>
-                <label className="rec-form-label">Business Justification<span className="req">*</span></label>
-                <input
-                  type="text"
-                  className={`rec-input${errors.businessJust ? ' is-invalid' : ''}`}
-                  placeholder="Business impact and value of this hire…"
-                  value={businessJust}
-                  onChange={e => { setBusinessJust(e.target.value); clear('businessJust'); }}
-                />
-                {errors.businessJust && <div className="rec-error"><i className="ri-error-warning-line" />{errors.businessJust}</div>}
-              </Col>
-              <Col md={4}>
-                <label className="rec-form-label">Hiring Need Reason<span className="req">*</span></label>
-                <textarea
-                  className={`rec-input rec-textarea${errors.needReason ? ' is-invalid' : ''}`}
-                  placeholder="Why is this position needed now?…"
-                  value={needReason}
-                  onChange={e => { setNeedReason(e.target.value); clear('needReason'); }}
-                />
-                {errors.needReason && <div className="rec-error"><i className="ri-error-warning-line" />{errors.needReason}</div>}
-              </Col>
-              <Col md={4}>
-                <label className="rec-form-label">Current Team Gap</label>
-                <textarea
-                  className="rec-input rec-textarea"
-                  placeholder="Describe the current gap or overload…"
-                  value={teamGap}
-                  onChange={e => setTeamGap(e.target.value)}
-                />
-              </Col>
-              <Col md={4}>
-                <label className="rec-form-label">What If Not Filled?</label>
-                <textarea
-                  className="rec-input rec-textarea"
-                  placeholder="Consequence of not hiring…"
-                  value={whatIfNot}
-                  onChange={e => setWhatIfNot(e.target.value)}
                 />
               </Col>
             </Row>
@@ -1484,6 +1412,12 @@ interface HiringRequestsListModalProps {
 function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitment, refreshKey }: HiringRequestsListModalProps & { refreshKey?: number }) {
   const toast = useToast();
 
+  // Top-level tab — splits the list into "Pending" (no recruitment row
+  // yet) vs "Recruitment Created" (one or more recruitments link back
+  // via hiring_request_id). The membership Set is rebuilt every time
+  // the modal opens / the refresh key changes.
+  const [tab, setTab] = useState<'pending' | 'created'>('pending');
+
   const [statusFilter, setStatusFilter]   = useState<string>('All');
   const [urgencyFilter, setUrgencyFilter] = useState<string>('All');
   const [q, setQ] = useState('');
@@ -1493,21 +1427,36 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
   const [pageSize, setPageSize] = useState(5);
 
   // Server-fed list — loaded every time the modal opens (or whenever the
-  // parent bumps `refreshKey` after a new request is submitted).
+  // parent bumps `refreshKey` after a new request is submitted). We
+  // also fetch /recruitments alongside so we can build the set of
+  // hiring_request_ids that already have a recruitment, which powers
+  // the Pending / Recruitment-Created tab split.
   const [requests, setRequests] = useState<HiringRequestRow[]>([]);
+  const [linkedHrIds, setLinkedHrIds] = useState<Set<number>>(new Set());
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await api.get('/hiring-requests');
+        const [reqRes, recRes] = await Promise.all([
+          api.get('/hiring-requests'),
+          api.get('/recruitments').catch(() => ({ data: [] })),
+        ]);
         if (cancelled) return;
-        const rows: any[] = Array.isArray(data) ? data : [];
+        const rows: any[] = Array.isArray(reqRes.data) ? reqRes.data : [];
         setRequests(rows.map(apiToHiringRequestRow));
+        const recs: any[] = Array.isArray(recRes.data) ? recRes.data : [];
+        const ids = new Set<number>();
+        for (const r of recs) {
+          const id = Number(r?.hiring_request_id);
+          if (id) ids.add(id);
+        }
+        setLinkedHrIds(ids);
       } catch (err: any) {
         if (!cancelled) {
           toast.error('Could not load hiring requests', err?.response?.data?.message || 'Please try again.');
           setRequests([]);
+          setLinkedHrIds(new Set());
         }
       }
     })();
@@ -1517,23 +1466,39 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
   // Detail-view sub-modal (when "View" is clicked on a row).
   const [viewing, setViewing] = useState<HiringRequestRow | null>(null);
 
-  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); setViewing(null); setPage(1); } }, [isOpen]);
-  // Reset to page 1 whenever filters or search change so the user never
-  // ends up on an empty page after narrowing the result set.
-  useEffect(() => { setPage(1); }, [statusFilter, urgencyFilter, q]);
+  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); setViewing(null); setPage(1); setTab('pending'); } }, [isOpen]);
+  // Reset to page 1 whenever filters, search or the active tab change
+  // so the user never ends up on an empty page after narrowing.
+  useEffect(() => { setPage(1); }, [statusFilter, urgencyFilter, q, tab]);
 
   const stats = useMemo(() => {
-    const total       = requests.length;
-    const underReview = requests.filter(r => r.status === 'Under Review').length;
-    const approved    = requests.filter(r => r.status === 'Approved').length;
-    const critical    = requests.filter(r => r.urgency === 'Critical').length;
-    const sentBack    = requests.filter(r => r.status === 'Sent Back').length;
-    return { total, underReview, approved, critical, sentBack };
-  }, [requests]);
+    // Counts driven by what the workflow actually produces today:
+    // requests start as Draft → Submitted, and once a recruitment is
+    // raised they show up under the cross-referenced "Recruitment
+    // Created" bucket. Under Review / Approved / Sent Back / Rejected
+    // KPIs were retired because no path in the app sets those statuses
+    // — they were aspirational and always read as zero.
+    const total              = requests.length;
+    const draft              = requests.filter(r => r.status === 'Draft').length;
+    const submitted          = requests.filter(r => r.status === 'Submitted').length;
+    const critical           = requests.filter(r => r.urgency === 'Critical').length;
+    const recruitmentCreated = requests.filter(r => linkedHrIds.has(Number(r.id))).length;
+    return { total, draft, submitted, critical, recruitmentCreated };
+  }, [requests, linkedHrIds]);
+
+  // Tab partition runs FIRST so the count on each tab reflects the
+  // server-fed list, not the post-filter slice. Subsequent filters
+  // (status / urgency / search) then narrow within the active tab.
+  const tabRequests = useMemo(() => {
+    return requests.filter(r => {
+      const linked = linkedHrIds.has(Number(r.id));
+      return tab === 'created' ? linked : !linked;
+    });
+  }, [requests, linkedHrIds, tab]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return requests
+    return tabRequests
       .filter(r => statusFilter === 'All' || r.status === statusFilter)
       .filter(r => urgencyFilter === 'All' || r.urgency === urgencyFilter)
       .filter(r => {
@@ -1545,7 +1510,11 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
           r.requestedByName.toLowerCase().includes(needle)
         );
       });
-  }, [requests, statusFilter, urgencyFilter, q]);
+  }, [tabRequests, statusFilter, urgencyFilter, q]);
+
+  // Per-tab counts for the badge pills.
+  const pendingCount = useMemo(() => requests.filter(r => !linkedHrIds.has(Number(r.id))).length, [requests, linkedHrIds]);
+  const createdCount = useMemo(() => requests.filter(r =>  linkedHrIds.has(Number(r.id))).length, [requests, linkedHrIds]);
 
   // Derive page slice — clamp `page` so a stale value can't land us past
   // the end of the list when filters shrink the result set.
@@ -1592,11 +1561,11 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
         {/* KPI strip — premium vivid gradient palette per status */}
         <div className="rec-req-stats">
           {[
-            { label: 'Total',        value: stats.total,       icon: 'ri-file-list-3-line',     accent: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
-            { label: 'Under Review', value: stats.underReview, icon: 'ri-time-line',            accent: 'linear-gradient(135deg, #7c3aed 0%, #9333ea 60%, #a855f7 100%)', deep: '#7c3aed' },
-            { label: 'Approved',     value: stats.approved,    icon: 'ri-checkbox-circle-line', accent: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
-            { label: 'Critical',     value: stats.critical,    icon: 'ri-flashlight-line',      accent: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
-            { label: 'Sent Back',    value: stats.sentBack,    icon: 'ri-arrow-go-back-line',   accent: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
+            { label: 'Total',                value: stats.total,              icon: 'ri-file-list-3-line',     accent: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
+            { label: 'Draft',                value: stats.draft,              icon: 'ri-draft-line',           accent: 'linear-gradient(135deg, #525252 0%, #737373 60%, #a3a3a3 100%)', deep: '#525252' },
+            { label: 'Submitted',            value: stats.submitted,          icon: 'ri-send-plane-line',      accent: 'linear-gradient(135deg, #7c3aed 0%, #9333ea 60%, #a855f7 100%)', deep: '#7c3aed' },
+            { label: 'Recruitment Created',  value: stats.recruitmentCreated, icon: 'ri-user-search-line',     accent: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
+            { label: 'Critical',             value: stats.critical,           icon: 'ri-flashlight-line',      accent: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
           ].map(k => (
             <div className="rec-kpi-card" key={k.label}>
               <span className="rec-kpi-strip" style={{ background: k.accent }} />
@@ -1609,6 +1578,48 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
               </span>
             </div>
           ))}
+        </div>
+
+        {/* Tab strip — Pending Requests vs Recruitment Created. The
+            count badge reflects the server-fed list, not the filtered
+            view, so the user can see at a glance how many sit in each
+            bucket regardless of search / status filters. */}
+        <div className="rec-req-tab-strip d-flex align-items-center gap-2 flex-wrap" style={{ padding: '8px 18px 0' }}>
+          {([
+            { key: 'pending', label: 'Pending Hiring Requests', icon: 'ri-time-line',  count: pendingCount },
+            { key: 'created', label: 'Recruitment Created',     icon: 'ri-user-search-line', count: createdCount },
+          ] as const).map(t => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className="btn d-inline-flex align-items-center gap-2 fw-semibold"
+                style={{
+                  background: active ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'var(--vz-secondary-bg)',
+                  color: active ? '#fff' : 'var(--vz-secondary-color)',
+                  border: active ? 'none' : '1px solid var(--vz-border-color)',
+                  borderRadius: 999,
+                  padding: '6px 14px',
+                  fontSize: 12.5,
+                  boxShadow: active ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
+                }}
+              >
+                <i className={t.icon} style={{ fontSize: 14 }} />
+                {t.label}
+                <span style={{
+                  marginLeft: 2,
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  background: active ? 'rgba(255,255,255,0.25)' : '#fff',
+                  color: active ? '#fff' : '#4338ca',
+                }}>{t.count}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Filter row */}
@@ -1682,7 +1693,13 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
                 <tr>
                   <td colSpan={11} className="text-center py-5 text-muted">
                     <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
-                    {requests.length === 0 ? 'No hiring requests yet — click Raise New Request to add one' : 'No requests match your filters'}
+                    {requests.length === 0
+                      ? 'No hiring requests yet — click Raise New Request to add one'
+                      : tabRequests.length === 0
+                        ? (tab === 'created'
+                            ? 'No hiring requests have been promoted into a recruitment yet.'
+                            : 'Every hiring request has been moved into a recruitment.')
+                        : 'No requests match your filters'}
                   </td>
                 </tr>
               ) : visible.map(r => {
@@ -1738,15 +1755,23 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
                         >
                           <i className="ri-eye-line" />
                         </button>
-                        <button
-                          type="button"
-                          className="rec-act rec-act-create rec-act--icon"
-                          onClick={() => onCreateRecruitment(r)}
-                          title="Create Recruitment"
-                          aria-label="Create Recruitment"
-                        >
-                          <i className="ri-user-search-line" />
-                        </button>
+                        {/* Create-Recruitment is only meaningful for
+                            rows in the Pending tab. Rows in the
+                            "Recruitment Created" tab already have one,
+                            so we hide the button to prevent a second
+                            recruitment from being raised against the
+                            same hiring request. */}
+                        {tab === 'pending' && (
+                          <button
+                            type="button"
+                            className="rec-act rec-act-create rec-act--icon"
+                            onClick={() => onCreateRecruitment(r)}
+                            title="Create Recruitment"
+                            aria-label="Create Recruitment"
+                          >
+                            <i className="ri-user-search-line" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1813,14 +1838,38 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
 function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRow | null; onClose: () => void }) {
   if (!request) return null;
   const r = request;
+  // _raw carries the full API row including the long-text fields
+  // (job_description, daily_responsibilities, required_skills, …).
+  // We read everything off it so the view matches every field on the
+  // raise form one-to-one.
+  const raw = r._raw || {};
   const u = REQUEST_URGENCY_TONES[r.urgency];
   const s = REQUEST_STATUS_TONES[r.status];
   const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div className="rec-view-field">
       <div className="rec-view-label">{label}</div>
-      <div className="rec-view-value">{value || <span className="text-muted">—</span>}</div>
+      <div className="rec-view-value">{value !== undefined && value !== null && value !== '' ? value : <span className="text-muted">—</span>}</div>
     </div>
   );
+  const SectionHeader = ({ icon, title }: { icon: string; title: string }) => (
+    <div className="d-flex align-items-center gap-2" style={{ margin: '14px 0 8px' }}>
+      <span style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <i className={icon} style={{ fontSize: 14 }} />
+      </span>
+      <div className="fw-bold" style={{ fontSize: 13, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{title}</div>
+    </div>
+  );
+  // Long-text fields look nicer in their own paragraph below the grid
+  // instead of squashed into a single Field cell.
+  const LongText = ({ label, value }: { label: string; value: any }) => {
+    if (!value) return null;
+    return (
+      <div style={{ padding: '10px 14px', background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 10, marginBottom: 10 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
+        <div style={{ fontSize: 13, color: 'var(--vz-body-color)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{value}</div>
+      </div>
+    );
+  };
   return (
     <Modal isOpen={!!request} toggle={onClose} centered size="lg" backdrop="static" contentClassName="rec-view-content border-0">
       <ModalBody className="p-0">
@@ -1846,13 +1895,47 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
         </div>
 
         <div className="rec-view-body" style={{ padding: '14px 18px', maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+          {/* Section 1 — Request Basics */}
+          <SectionHeader icon="ri-calendar-event-line" title="Section 1 · Request Basics" />
           <div className="rec-view-card">
             <div className="rec-view-grid">
-              <Field label="Position Type" value={r.positionType} />
-              <Field label="Work Mode" value={r.positionMode} />
-              <Field label="Openings" value={r.openings} />
-              <Field label="Request Type" value={r.requestType} />
-              <Field label="Urgency" value={<span className="rec-pill" style={{ background: u.bg, color: u.fg }}>{r.urgency}</span>} />
+              <Field label="Request Title"    value={raw.title} />
+              <Field label="Job Role"         value={raw.job_role || r.position} />
+              <Field label="Department"       value={r.department} />
+              <Field label="Target Join Date" value={formatDate(r.targetJoinDate)} />
+            </div>
+          </div>
+
+          {/* Section 2 — Hiring Need */}
+          <SectionHeader icon="ri-time-line" title="Section 2 · Hiring Need" />
+          <div className="rec-view-card">
+            <div className="rec-view-grid">
+              <Field label="No. of Openings"  value={r.openings} />
+              <Field label="Employment Type"  value={raw.employment_type || r.positionType} />
+              <Field label="Work Mode"        value={raw.work_mode || r.positionMode} />
+              <Field label="Urgency Level"    value={<span className="rec-pill" style={{ background: u.bg, color: u.fg }}>{r.urgency}</span>} />
+            </div>
+          </div>
+
+          {/* Section 3 — Role Details */}
+          <SectionHeader icon="ri-team-line" title="Section 3 · Role Details" />
+          <div className="rec-view-card">
+            <div className="rec-view-grid">
+              <Field label="Required Experience"   value={raw.required_experience} />
+              <Field label="Required Qualification" value={raw.required_qualification} />
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <LongText label="Job Description"         value={raw.job_description} />
+              <LongText label="Daily Responsibilities"  value={raw.daily_responsibilities} />
+              <LongText label="Required Skills"         value={raw.required_skills} />
+            </div>
+          </div>
+
+          {/* Meta — surface status + request timestamps below so the
+              read-only view still shows the lifecycle context. */}
+          <SectionHeader icon="ri-information-line" title="Status &amp; Timeline" />
+          <div className="rec-view-card">
+            <div className="rec-view-grid">
               <Field label="Status" value={
                 <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: s.bg, color: s.fg }}>
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot }} />
@@ -1860,7 +1943,8 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
                 </span>
               } />
               <Field label="Request Date" value={formatDate(r.requestDate)} />
-              <Field label="Target Join Date" value={formatDate(r.targetJoinDate)} />
+              <Field label="Requested By" value={r.requestedByName} />
+              <Field label="Request Code" value={r.code} />
             </div>
           </div>
         </div>
@@ -2152,7 +2236,11 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     }
 
     // Backend payload — snake_case keys, FK ids cast back to integers.
-    const payload = {
+    // When the form opened pre-filled from a hiring request, stamp that
+    // id on the new recruitment so the Hiring Requests list's
+    // "Recruitment Created" tab can surface it. Edit mode leaves the
+    // existing link untouched (omits the key).
+    const payload: Record<string, any> = {
       job_title:             jobTitle.trim(),
       department_id:         Number(departmentId),
       designation_id:        Number(designationId),
@@ -2173,6 +2261,9 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       notify_team_leads:     !!notifyTeamLeads,
       enable_referral_bonus: !!enableReferralBonus,
     };
+    if (mode === 'add' && prefillFromHr?.id) {
+      payload.hiring_request_id = Number(prefillFromHr.id);
+    }
 
     setSaving(true);
     try {

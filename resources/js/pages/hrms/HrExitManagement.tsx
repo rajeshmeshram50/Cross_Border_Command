@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, CardBody, Col, Row, Modal, ModalBody, Input } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import api from '../../api';
+import { useToast } from '../../contexts/ToastContext';
 import '../../../css/recruitment.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,17 +150,110 @@ export default function HrExitManagement() {
     { key: 'missing',    label: 'Missing Exit Details',value: counts.missing,    icon: 'ri-error-warning-line', gradient: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
   ];
 
-  // ── Status pill tones (table cell) ──────────────────────────────────────
-  const STATUS_TONES: Record<ExitStatus, { bg: string; fg: string; dot: string }> = {
-    'Active':           { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' },
-    'Exit In Progress': { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' },
-    'Exited':           { bg: '#e5e7eb', fg: '#374151', dot: '#6b7280' },
-    'Missing Details':  { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' },
+  // ── Status badge colour map ─────────────────────────────────────────────
+  // Mirrors the Clients table pattern (badge rounded-pill bg-{c}-subtle
+  // text-{c}) so the visual language is consistent across modules. Map
+  // each ExitStatus onto a Bootstrap semantic colour:
+  //   Active            → success (green)
+  //   Exit In Progress  → warning (amber)
+  //   Exited            → secondary (grey)
+  //   Missing Details   → danger (red)
+  const STATUS_COLOR: Record<ExitStatus, string> = {
+    'Active':           'success',
+    'Exit In Progress': 'warning',
+    'Exited':           'secondary',
+    'Missing Details':  'danger',
   };
 
   return (
     <>
       <MasterFormStyles />
+      <style>{`
+        /* Serial-number column — same recipe as the Employees list so the
+           digits stay legible against the dark surface (default text-muted
+           drops to ~30% opacity and disappears). */
+        .hr-exit-srno { color: var(--vz-secondary-color); font-weight: 600; }
+        [data-bs-theme="dark"] .hr-exit-srno,
+        [data-layout-mode="dark"] .hr-exit-srno { color: #d0d4dc; }
+
+        /* Promote the legacy native-select / plain-input look of the exit
+           modal to the same theming the rest of the HR forms use. The old
+           .ep-select / .ep-input rules sit in recruitment.css; these
+           overrides take precedence and bring rounded corners, the
+           consistent border + focus ring, and proper dark-mode colours. */
+        .ep-input,
+        .ep-textarea,
+        .ep-select {
+          background: var(--vz-card-bg) !important;
+          color: var(--vz-heading-color, var(--vz-body-color)) !important;
+          border: 1px solid var(--vz-border-color) !important;
+          border-radius: 10px !important;
+          padding: 8px 12px !important;
+          font-size: 13px !important;
+          font-weight: 500 !important;
+          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04) !important;
+          transition: border-color .18s ease, box-shadow .18s ease !important;
+          width: 100%;
+        }
+        .ep-input { height: 38px; }
+        .ep-textarea { min-height: 64px; resize: vertical; }
+        .ep-select {
+          height: 38px;
+          appearance: none;
+          -webkit-appearance: none;
+          background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23878a99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>") !important;
+          background-repeat: no-repeat !important;
+          background-position: right 10px center !important;
+          padding-right: 34px !important;
+        }
+        .ep-input::placeholder,
+        .ep-textarea::placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.65;
+        }
+        .ep-input:hover:not(:disabled),
+        .ep-textarea:hover:not(:disabled),
+        .ep-select:hover:not(:disabled) {
+          border-color: rgba(99,102,241,0.55) !important;
+          box-shadow: 0 2px 6px rgba(99,102,241,0.08) !important;
+        }
+        .ep-input:focus,
+        .ep-textarea:focus,
+        .ep-select:focus {
+          outline: none !important;
+          border-color: #6366f1 !important;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12) !important;
+        }
+        .ep-input:disabled,
+        .ep-textarea:disabled,
+        .ep-select:disabled {
+          background: var(--vz-secondary-bg) !important;
+          color: var(--vz-secondary-color) !important;
+          cursor: not-allowed;
+          opacity: 0.85;
+          box-shadow: none !important;
+        }
+        /* Native option list inside .ep-select doesn't pick up the parent's
+           dark background — force the dropdown body itself. */
+        [data-bs-theme="dark"] .ep-select option,
+        [data-layout-mode="dark"] .ep-select option {
+          background: #1c2531;
+          color: #e6e8ec;
+        }
+        /* Field label — match the .emp-label recipe used in the Employees
+           form (uppercase, semibold, secondary-color) instead of the
+           bolder dark-grey of the legacy .ep-field-label. */
+        .ep-field-label {
+          font-size: 11px !important;
+          font-weight: 700 !important;
+          color: var(--vz-secondary-color) !important;
+          letter-spacing: 0.06em !important;
+          text-transform: uppercase !important;
+          margin-bottom: 6px !important;
+        }
+        [data-bs-theme="dark"] .ep-field-label,
+        [data-layout-mode="dark"] .ep-field-label { color: #b0b4bd !important; }
+      `}</style>
       <Row>
         <Col xs={12}>
           <div className="rec-page">
@@ -271,6 +365,7 @@ export default function HrExitManagement() {
                     <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                       <thead>
                         <tr>
+                          <th className="ps-3 text-center" style={{ width: 56 }}>#</th>
                           <th>Employee</th>
                           <th>Emp ID</th>
                           <th>Department</th>
@@ -286,17 +381,18 @@ export default function HrExitManagement() {
                       <tbody>
                         {filtered.length === 0 ? (
                           <tr>
-                            <td colSpan={10} className="text-center py-5 text-muted">
+                            <td colSpan={11} className="text-center py-5 text-muted">
                               <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                               No employees match your filters
                             </td>
                           </tr>
-                        ) : visible.map((e) => {
-                          const tone = STATUS_TONES[e.status];
+                        ) : visible.map((e, idx) => {
+                          const statusColor = STATUS_COLOR[e.status];
                           const isExited = e.status === 'Exited';
                           const isInProgress = e.status === 'Exit In Progress';
                           return (
                             <tr key={e.id}>
+                              <td className="ps-3 text-center fs-13 hr-exit-srno">{sliceFrom + idx + 1}</td>
                               <td>
                                 <div className="d-flex align-items-center gap-2">
                                   <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -397,8 +493,7 @@ export default function HrExitManagement() {
                                 })()}
                               </td>
                               <td>
-                                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: tone.bg, color: tone.fg }}>
-                                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
+                                <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2`}>
                                   {e.status}
                                 </span>
                               </td>
@@ -675,16 +770,16 @@ const OWNER_LABEL: Record<RoleOwner, string> = {
 // ─────────────────────────────────────────────────────────────────────────────
 type StageStatus = 'Completed' | 'In Progress' | 'Pending';
 
-// Notice Period Management was previously Stage 2 — removed per
-// product call. Asset Recovery moved up to Stage 2 (Clearance now
-// follows once devices have been collected back).
+// Trimmed to 4 stages per product call:
+//   - Asset Recovery merged INTO Clearance & Handover (assets listed
+//     at the top of that stage now)
+//   - Full & Final Settlement removed entirely
+//   - Notice Period Management was already removed in an earlier pass
 const EXIT_STAGES = [
-  { num: 1, title: 'Exit Initiation & Approval',         short: 'Exit Initiation & Approval',         sub: 'Record exit details, reason, dates, and collect approvals.', icon: 'ri-clipboard-line' },
-  { num: 2, title: 'Asset Recovery & Access Revocation', short: 'Asset Recovery & Access Revocation', sub: 'Track all company assets and revoke system access.', icon: 'ri-lock-2-line' },
-  { num: 3, title: 'Clearance & Handover',               short: 'Clearance & Handover',               sub: 'All departmental clearances must be approved before proceeding.', icon: 'ri-checkbox-line' },
-  { num: 4, title: 'Full & Final Settlement (FnF)',      short: 'Full & Final Settlement (FnF)',      sub: 'Calculate final settlement amount, deductions, and process payment.', icon: 'ri-money-rupee-circle-line' },
-  { num: 5, title: 'Exit Documents Management',          short: 'Exit Documents Management',          sub: 'Generate each document, then track the signing workflow for every stakeholder.', icon: 'ri-file-text-line' },
-  { num: 6, title: 'Final Deactivation & Closure',       short: 'Final Deactivation & Closure',       sub: 'Complete final validation, lock profile, and close the exit case.', icon: 'ri-flag-line' },
+  { num: 1, title: 'Exit Initiation & Approval', short: 'Exit Initiation & Approval', sub: 'Record exit details, reason, dates, and collect approvals.',           icon: 'ri-clipboard-line' },
+  { num: 2, title: 'Clearance & Handover',       short: 'Clearance & Handover',       sub: 'Confirm asset handover then collect every departmental clearance.',     icon: 'ri-checkbox-line' },
+  { num: 3, title: 'Exit Documents Management',  short: 'Exit Documents Management',  sub: 'Generate each document, then track the signing workflow per stakeholder.', icon: 'ri-file-text-line' },
+  { num: 4, title: 'Final Deactivation & Closure', short: 'Final Deactivation & Closure', sub: 'Complete final validation, lock profile, and close the exit case.',  icon: 'ri-flag-line' },
 ] as const;
 
 function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
@@ -697,9 +792,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   // read-only (auto-fetched from the employee's reporting_manager
   // relation); `reportingManagerId` carries the FK we PUT back.
   const [exitType, setExitType]           = useState('');
-  const [initiatedBy, setInitiatedBy]     = useState('Employee');
   const [reasonForExit, setReasonForExit] = useState('');
-  const [otherReason, setOtherReason]     = useState('');
   const [noticeDate, setNoticeDate]       = useState('');
   const [lwd, setLwd]                     = useState('');
   const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
@@ -709,10 +802,18 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const [replacementNeeded, setReplacementNeeded] = useState('Yes — Immediate');
   const [stage1Saving, setStage1Saving] = useState(false);
 
-  // Stage 2 (Notice Period Management) was removed per product call;
-  // the related state lived here and is gone with it.
+  // Date guards — Notice Date and Last Working Day must be strictly in
+  // the future. ISO yyyy-mm-dd compares lexicographically so a string
+  // compare against today's ISO date is enough; no Date() ceremony.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const noticeDateInvalid = !!noticeDate && noticeDate <= todayIso;
+  const lwdInvalid        = !!lwd        && lwd        <= todayIso;
 
-  // Stage 2 — Clearance & Handover (was Stage 3 before renumber).
+  // Stage 2 — Clearance & Handover. Asset Recovery used to be its own
+  // stage; we now surface the asset handover dropdown at the TOP of
+  // this stage so the manager confirms hardware return before the rest
+  // of the clearances run. `assetReturns` is keyed by master_asset_id
+  // so it grows / shrinks with whatever the employee actually holds.
   const [clearances, setClearances] = useState<{ checked: boolean; status: string }[]>([
     { checked: false, status: 'Pending' },
     { checked: false, status: 'Pending' },
@@ -721,28 +822,200 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     { checked: false, status: 'Pending' },
   ]);
   const [handoverNotes, setHandoverNotes] = useState('');
+  const [assetReturns, setAssetReturns]   = useState<Record<number, { checked: boolean; status: string }>>({});
 
-  // Stage 4
-  // Asset return state — keyed by master_asset_id so it grows /
-  // shrinks naturally with whatever the employee actually has
-  // assigned (no more hard-coded 5-row array).
-  const [assetReturns, setAssetReturns] = useState<Record<number, { checked: boolean; status: string }>>({});
-  const [accessRevoke, setAccessRevoke] = useState<string[]>(['Pending','Pending','Pending','Pending','Pending','Pending']);
-  const [missingAssets, setMissingAssets] = useState('');
-  const [recoveryAction, setRecoveryAction] = useState('None');
+  // Stage 5 used to render a hardcoded checklist (Relieving Letter, Experience
+  // Letter, …) with a per-row "generated?" boolean. That list now comes from
+  // the HR Document Templates master (matched on department × designation
+  // level × trigger=Exit Management), so the local generated-state and
+  // accordion-expansion state were retired.
 
-  // Stage 5
-  const [financeApproval, setFinanceApproval] = useState('Pending');
-  const [paymentStatus, setPaymentStatus]     = useState('Pending');
-  const [paymentMode, setPaymentMode]         = useState('Bank Transfer (NEFT)');
-  const [paymentDate, setPaymentDate]         = useState('');
+  // Templates whose trigger point is "Exit Management" — pulled from the
+  // HR Document Templates master so anything the admin creates against
+  // that trigger surfaces inside the exit flow automatically. Filtered
+  // server-side by the employee's department × designation level, same
+  // matching rules the onboarding vault uses.
+  type TplSigner = { role_name?: string | null; designation_name?: string | null; action?: string | null; days?: number | null };
+  type ExitTemplate = {
+    id: number;
+    code?: string | null;
+    name?: string | null;
+    doc_type?: string | null;
+    status?: string | null;
+    signing_mode?: 'Sequential' | 'Parallel' | string | null;
+    signers?: TplSigner[] | string | null;
+    trigger_point?: { module_name?: string | null } | null;
+  };
+  const [exitTemplates, setExitTemplates] = useState<ExitTemplate[]>([]);
+  const [exitTplLoading, setExitTplLoading] = useState(false);
+  // Match metadata returned by the backend — surfaces WHICH category /
+  // level the controller resolved from the employee, so HR can see at a
+  // glance why a template did (or didn't) match. Without this, the
+  // empty state was a dead end ("no templates" with no clue what to
+  // create against).
+  type ExitMatchMeta = {
+    employee_category: string | null;
+    role_type:         string | null;
+    department_name:   string | null;
+    designation_name:  string | null;
+  };
+  const [exitMatchMeta, setExitMatchMeta] = useState<ExitMatchMeta | null>(null);
+  useEffect(() => {
+    if (!employee) { setExitTemplates([]); setExitMatchMeta(null); return; }
+    let cancelled = false;
+    setExitTplLoading(true);
+    api.get('/hr-document-templates/match', {
+      // Substring keyword — matches any trigger-point master row whose
+      // module_name contains "exit" ("Exit Management", "Exit process
+      // trigger point", etc.). Branch users name their trigger rows
+      // freely so we can't lock to a single literal.
+      params: { employee_id: employee.id, trigger_keyword: 'exit' },
+    })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setExitTemplates(Array.isArray(data?.templates) ? data.templates : []);
+        setExitMatchMeta({
+          employee_category: data?.employee_category ?? null,
+          role_type:         data?.role_type         ?? null,
+          department_name:   data?.department_name   ?? null,
+          designation_name:  data?.designation_name  ?? null,
+        });
+      })
+      .catch(() => { if (!cancelled) { setExitTemplates([]); setExitMatchMeta(null); } })
+      .finally(() => { if (!cancelled) setExitTplLoading(false); });
+    return () => { cancelled = true; };
+  }, [employee?.id]);
 
-  // Stage 6 — document generated state + accordion (one open at a time)
-  const [docs, setDocs] = useState<boolean[]>([true, false, false, false, false]);
-  const [expandedDoc, setExpandedDoc] = useState<number | null>(0);
+  // ── Signing-workflow runtime ─────────────────────────────────────────────
+  // Mirrors the runtime used by the onboarding vault. Each template can have
+  // at most one *active* signing run per employee; runByTemplateId surfaces
+  // the latest one so the row can show its status pill (Pending / In Progress
+  // / Completed / Rejected / Cancelled) plus the current signer awaiting
+  // action. /hr-document-signatures returns every run for this employee.
+  const toast = useToast();
+  type SignerState = {
+    index: number; role_name: string; action: string; days: number;
+    user_id: number | null; name: string;
+    status: 'Pending' | 'Done' | 'Rejected' | 'Skipped';
+    acted_at: string | null; signed_name: string | null; note: string | null;
+  };
+  type SignatureRun = {
+    id: number; code: string | null;
+    status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
+    template_id: number;
+    employee_id: number;
+    signers: SignerState[];
+    current_index: number;
+    created_at: string;
+  };
+  const [runs, setRuns] = useState<SignatureRun[]>([]);
+  const fetchRuns = async () => {
+    if (!employee) { setRuns([]); return; }
+    try {
+      const { data } = await api.get('/hr-document-signatures', { params: { employee_id: employee.id } });
+      setRuns(Array.isArray(data) ? data : []);
+    } catch {
+      setRuns([]);
+    }
+  };
+  useEffect(() => {
+    if (!employee) { setRuns([]); return; }
+    fetchRuns();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id]);
+  const runByTemplateId = useMemo(() => {
+    const m = new Map<number, SignatureRun>();
+    for (const r of runs) {
+      const existing = m.get(r.template_id);
+      if (!existing || r.id > existing.id) m.set(r.template_id, r);
+    }
+    return m;
+  }, [runs]);
+
+  // ── Preview modal ────────────────────────────────────────────────────────
+  const [previewOpen, setPreviewOpen]     = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewTpl, setPreviewTpl]       = useState<ExitTemplate | null>(null);
+  const [previewHtml, setPreviewHtml]     = useState<string>('');
+  const [previewMissing, setPreviewMissing] = useState<string[]>([]);
+  const handleView = async (tpl: ExitTemplate) => {
+    if (!employee) return;
+    setPreviewTpl(tpl);
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    try {
+      const { data } = await api.get(`/hr-document-templates/${tpl.id}/preview`, {
+        params: { employee_id: employee.id },
+      });
+      setPreviewHtml((data?.content_html as string) || '<p style="color:#9ca3af;font-style:italic;">(empty template)</p>');
+      setPreviewMissing(Array.isArray(data?.tokens_missing) ? data.tokens_missing : []);
+    } catch (err: any) {
+      toast.error('Could not load preview', err?.response?.data?.message || 'Please try again.');
+      setPreviewOpen(false);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // ── Generate (download DOCX with this employee's data) ───────────────────
+  const handleGenerate = async (tpl: ExitTemplate) => {
+    if (!employee) return;
+    try {
+      const resp = await api.get(`/hr-document-templates/${tpl.id}/generate`, {
+        params: { employee_id: employee.id },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([resp.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(employee.name || 'employee').replace(/\s+/g, '-')}-${tpl.code || tpl.id}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Document generated', `${tpl.code || tpl.name || 'Document'} downloaded.`);
+    } catch (err: any) {
+      toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
+    }
+  };
+
+  // ── Send for signing — kicks off the configured signing workflow ────────
+  const [sendForTpl, setSendForTpl] = useState<ExitTemplate | null>(null);
+  const [sending, setSending] = useState(false);
+  const openSend = (tpl: ExitTemplate) => setSendForTpl(tpl);
+  const confirmSend = async () => {
+    if (!sendForTpl || !employee) return;
+    setSending(true);
+    try {
+      const { data } = await api.post('/hr-document-signatures', {
+        template_id: sendForTpl.id,
+        employee_id: employee.id,
+      });
+      toast.success('Sent for signing', `${data.code || data.template?.code || 'Document'} entered the workflow.`);
+      setSendForTpl(null);
+      fetchRuns();
+    } catch (err: any) {
+      toast.error('Could not send', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  // Parse the signers list off a template (can arrive as a JSON string when
+  // the DB casts haven't materialised yet — same defensive parse as the
+  // template editor).
+  const parseSigners = (raw: ExitTemplate['signers']): TplSigner[] => {
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string' && raw.trim()) {
+      try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
+    }
+    return [];
+  };
 
   // Stage 7
-  const [validation, setValidation] = useState<boolean[]>([false, false, false, false, false, false]);
+  // 5 entries to match the trimmed Final Validation Checklist (FnF
+  // payment row was dropped along with the FnF stage).
+  const [validation, setValidation] = useState<boolean[]>([false, false, false, false, false]);
   const [empStatus, setEmpStatus] = useState('Active');
   const [profileLock, setProfileLock] = useState('Unlocked');
   const [exitCaseStatus, setExitCaseStatus] = useState('Open');
@@ -772,9 +1045,10 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
       .then(({ data }) => {
         if (cancelled || !data) return;
         setExitType(String(data.exit_type ?? ''));
-        setInitiatedBy(String(data.initiated_by ?? 'Employee'));
+        // initiated_by + other_reason no longer ride along on the form.
+        // We still read whatever the row had so re-saves don't blank
+        // them server-side — they're just not surfaced as fields.
         setReasonForExit(String(data.reason_for_exit ?? ''));
-        setOtherReason(String(data.other_reason ?? ''));
         setNoticeDate(data.notice_date ? String(data.notice_date) : '');
         setLwd(data.last_working_day ? String(data.last_working_day) : '');
         setReportingManagerId(data.reporting_manager_id ?? null);
@@ -817,11 +1091,15 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     if (!employee || stage1Saving) return false;
     setStage1Saving(true);
     try {
+      // Block the save when either date isn't strictly in the future —
+      // the same rule the field-level invalid banners surface to the user.
+      if (noticeDateInvalid || lwdInvalid) return false;
       await api.put(`/employees/${employee.id}/exit`, {
         exit_type:            exitType || null,
-        initiated_by:         initiatedBy || null,
-        reason_for_exit:      reasonForExit || null,
-        other_reason:         (exitType === 'Other' || reasonForExit === 'Other') ? (otherReason.trim() || null) : null,
+        // initiated_by + other_reason were removed from the form; we no
+        // longer send them. The backend column stays nullable so older
+        // rows that have a value remain readable.
+        reason_for_exit:      reasonForExit.trim() || null,
         notice_date:          noticeDate || null,
         last_working_day:     lwd || null,
         reporting_manager_id: reportingManagerId,
@@ -841,6 +1119,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const isLastStage = stage === EXIT_STAGES.length;
 
   return (
+    <>
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ep-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         {/* Header — onboarding-style with avatar, stage pills, status chips */}
@@ -856,26 +1135,9 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               <div className="ep-head-sub">
                 {employee.empId} · {employee.department} · {employee.designation}
               </div>
-              {/* Stage stepper pills — rounded chips with checkmark / number
-                  + label, current pill highlighted in white. */}
-              <div className="ep-step-strip">
-                {EXIT_STAGES.map(s => {
-                  const st = statusOf(s.num);
-                  const isCurrent = stage === s.num;
-                  const isDone = st === 'Completed';
-                  return (
-                    <button
-                      key={s.num}
-                      type="button"
-                      className={`ep-step-pill${isCurrent ? ' is-current' : ''}${isDone ? ' is-done' : ''}`}
-                      onClick={() => { setStage(s.num); setStageStatus(prev => ({ ...prev, [s.num]: prev[s.num] === 'Completed' ? 'Completed' : 'In Progress' })); }}
-                    >
-                      {isDone ? <i className="ri-check-line" /> : <span className="ep-step-pill-num">{s.num}</span>}
-                      <span className="ep-step-pill-label">{shortStageLabel(s.num)}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              {/* Stage stepper pills were removed — the left sidebar
+                  (.ep-stage-card list) already shows the same stage
+                  navigation, so the header pills duplicated it. */}
             </div>
             <div className="ep-head-right">
               <div className="ep-head-chips">
@@ -888,10 +1150,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                   </span>
                 </span>
               </div>
-              <div className="ep-head-brand">
-                <div className="ep-head-brand-top">EMPLOYEE EXIT PROCESS</div>
-                <div className="ep-head-brand-bot">Manage end-to-end exit workflow</div>
-              </div>
+              
             </div>
             <button type="button" className="ep-close" onClick={onClose} aria-label="Close">
               <i className="ri-close-line" />
@@ -951,27 +1210,48 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label="Initiated By">
-                      <EpSelect value={initiatedBy} onChange={setInitiatedBy} options={['Employee', 'HR', 'Manager']} />
-                    </EpField>
-                  </Col>
-                  <Col md={6}>
                     <EpField label="Reason for Exit">
-                      <EpSelect
+                      {/* Free-text now (was a dropdown). HR rarely fits a
+                          real-world reason into a fixed enum, so the form
+                          asks them to type whatever's accurate. */}
+                      <EpInput
                         value={reasonForExit}
                         onChange={setReasonForExit}
-                        options={['Better Opportunity', 'Personal Reasons', 'Higher Studies', 'Relocation', 'Health', 'Performance', 'Other']}
+                        placeholder="Describe the reason for exit"
                       />
                     </EpField>
                   </Col>
                   <Col md={6}>
                     <EpField label="Notice Date">
-                      <EpInput type="date" value={noticeDate} onChange={setNoticeDate} />
+                      <EpInput
+                        type="date"
+                        value={noticeDate}
+                        onChange={setNoticeDate}
+                        // Browser-level guard so the picker can't open on
+                        // a past day; the inline error below catches
+                        // pasted / typed values that bypass the picker.
+                        min={todayIso}
+                      />
+                      {noticeDateInvalid && (
+                        <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <i className="ri-error-warning-line" />Notice date must be after today.
+                        </div>
+                      )}
                     </EpField>
                   </Col>
                   <Col md={6}>
                     <EpField label="Last Working Day">
-                      <EpInput type="date" value={lwd} onChange={setLwd} />
+                      <EpInput
+                        type="date"
+                        value={lwd}
+                        onChange={setLwd}
+                        min={todayIso}
+                      />
+                      {lwdInvalid && (
+                        <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <i className="ri-error-warning-line" />Last working day must be after today.
+                        </div>
+                      )}
                     </EpField>
                   </Col>
                   <Col md={6}>
@@ -987,20 +1267,6 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                       />
                     </EpField>
                   </Col>
-                  {/* Free-text "Other" reason — only visible when either
-                      dropdown picks "Other" so the form stays clean for
-                      the common case. */}
-                  {(exitType === 'Other' || reasonForExit === 'Other') && (
-                    <Col xs={12}>
-                      <EpField label="Other (please specify)">
-                        <EpInput
-                          value={otherReason}
-                          onChange={setOtherReason}
-                          placeholder="Describe the exit type / reason"
-                        />
-                      </EpField>
-                    </Col>
-                  )}
                   <Col xs={12}>
                     <EpField label="Comments / Notes">
                       <textarea
@@ -1030,9 +1296,65 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </>
             )}
 
-            {/* ── STAGE 3 — Clearance & Handover ── */}
-            {stage === 3 && (
+            {/* ── STAGE 2 — Clearance & Handover (with Asset Handover at top) ── */}
+            {stage === 2 && (
               <>
+                {/* Asset handover — every device / equipment currently
+                    assigned to the employee, with a "Handed Over" yes/no
+                    picker. Replaces the dedicated Asset Recovery stage. */}
+                <div className="ep-section-label">Asset Handover</div>
+                {(() => {
+                  // Compose the actual asset list from the employee row.
+                  // Laptop and Mobile first if assigned; otherAssets after.
+                  const list: { id: number; label: string; code: string }[] = [];
+                  if (employee.laptopAsset) {
+                    const a = employee.laptopAsset;
+                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
+                  }
+                  if (employee.mobileAsset) {
+                    const a = employee.mobileAsset;
+                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
+                  }
+                  for (const a of employee.otherAssets) {
+                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
+                  }
+                  if (list.length === 0) {
+                    return (
+                      <div className="ep-checklist mb-3" style={{ padding: 16, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+                        <i className="ri-inbox-line" style={{ fontSize: 22, marginRight: 6, verticalAlign: 'middle' }} />
+                        No assets are currently assigned to this employee.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="ep-checklist mb-3">
+                      {list.map(a => {
+                        const row = assetReturns[a.id] ?? { checked: false, status: 'Pending' };
+                        return (
+                          <div key={a.id} className="ep-check-row">
+                            <span className="ep-check-box" style={{ background: row.status === 'Handed Over' ? '#10b981' : 'transparent', borderColor: row.status === 'Handed Over' ? '#10b981' : 'var(--vz-border-color)' }}>
+                              {row.status === 'Handed Over' && <i className="ri-check-line" style={{ color: '#fff' }} />}
+                            </span>
+                            <span className="ep-check-label">
+                              {a.label} <span className="ep-asset-code">({a.code})</span>
+                            </span>
+                            <div style={{ width: 160 }}>
+                              <EpSelect
+                                value={row.status}
+                                onChange={v => setAssetReturns(prev => ({
+                                  ...prev,
+                                  [a.id]: { checked: v === 'Handed Over', status: v },
+                                }))}
+                                options={['Pending', 'Handed Over', 'Not Returned']}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
                 <div className="ep-section-label">Clearance Status</div>
                 <div className="ep-checklist mb-2">
                   {['Manager Clearance','IT Clearance','Admin Clearance','Finance Clearance','Legal / Compliance'].map((label, idx) => (
@@ -1074,133 +1396,25 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </>
             )}
 
-            {/* ── STAGE 2 — Asset Recovery & Access Revocation ── */}
-            {stage === 2 && (
-              <>
-                <div className="ep-section-label">Asset Return Tracking</div>
-                {(() => {
-                  // Build the actual asset list from the employee row.
-                  // Laptop and Mobile go first if assigned; otherAssets
-                  // follows. Empty state shows a friendly message
-                  // instead of dummy hardware.
-                  const list: { id: number; label: string; code: string }[] = [];
-                  if (employee.laptopAsset) {
-                    const a = employee.laptopAsset;
-                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
-                  }
-                  if (employee.mobileAsset) {
-                    const a = employee.mobileAsset;
-                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
-                  }
-                  for (const a of employee.otherAssets) {
-                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
-                  }
-                  if (list.length === 0) {
-                    return (
-                      <div className="ep-checklist mb-3" style={{ padding: 16, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
-                        <i className="ri-inbox-line" style={{ fontSize: 22, marginRight: 6, verticalAlign: 'middle' }} />
-                        No assets are currently assigned to this employee.
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="ep-checklist mb-3">
-                      {list.map(a => {
-                        const row = assetReturns[a.id] ?? { checked: false, status: 'Pending' };
-                        return (
-                          <label key={a.id} className="ep-check-row">
-                            <input
-                              type="checkbox"
-                              checked={row.checked}
-                              onChange={() => setAssetReturns(prev => ({
-                                ...prev,
-                                [a.id]: { checked: !row.checked, status: !row.checked ? 'Returned' : 'Pending' },
-                              }))}
-                            />
-                            <span className="ep-check-box"><i className="ri-check-line" /></span>
-                            <span className="ep-check-label">
-                              {a.label} <span className="ep-asset-code">({a.code})</span>
-                            </span>
-                            <span className={`ep-status-pill ep-status-pill--${row.status === 'Returned' ? 'done' : 'pending'}`}>
-                              {row.status}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-
-                <div className="ep-section-label">Access Revocation</div>
-                <div className="ep-checklist mb-3">
-                  {['ERP / HRMS System Access','Company Email & Google Workspace','GitHub / Code Repositories','Slack / Teams / Communication Tools','Cloud Infrastructure (AWS/Azure)','CRM / Sales Tools'].map((label, idx) => (
-                    <div key={idx} className="ep-check-row">
-                      <input type="checkbox" checked={accessRevoke[idx] === 'Revoked'} onChange={() => setAccessRevoke(prev => prev.map((v, i) => i === idx ? (v === 'Revoked' ? 'Pending' : 'Revoked') : v))} />
-                      <span className="ep-check-box"><i className="ri-check-line" /></span>
-                      <span className="ep-check-label">{label}</span>
-                      <div style={{ width: 140 }}>
-                        <EpSelect
-                          value={accessRevoke[idx]}
-                          onChange={v => setAccessRevoke(prev => prev.map((x, i) => i === idx ? v : x))}
-                          options={['Pending','Revoked','Not Applicable']}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="ep-section-label">Missing Asset Flag</div>
-                <Row className="g-2">
-                  <Col md={6}><EpField label="Missing Assets"><EpInput value={missingAssets} onChange={setMissingAssets} placeholder="Describe missing assets…" /></EpField></Col>
-                  <Col md={6}><EpField label="Recovery Action"><EpSelect value={recoveryAction} onChange={setRecoveryAction} options={['None','Salary Deduction','Legal Notice','Written Off']} /></EpField></Col>
-                </Row>
-              </>
-            )}
-
-            {/* ── STAGE 4 — Full & Final Settlement (FnF) ── */}
-            {stage === 4 && (
-              <>
-                <div className="ep-section-label">Earnings & Deductions</div>
-                <div className="ep-fnf-table mb-3">
-                  <EpFnfRow label="Basic Salary (Pro-rata)"      amount="₹ 42,500" tone="earn" />
-                  <EpFnfRow label="Leave Encashment (12 days)"   amount="₹ 16,000" tone="earn" />
-                  <EpFnfRow label="Bonus / Incentives"           amount="₹ 8,000"  tone="earn" />
-                  <EpFnfRow label="Gratuity (if applicable)"     amount="₹ 24,000" tone="earn" />
-                  <EpFnfRow label="Notice Period Shortfall"      amount="- ₹ 0"    tone="ded" />
-                  <EpFnfRow label="Asset Recovery Pending"       amount="- ₹ 0"    tone="ded" />
-                  <EpFnfRow label="Tax (TDS)"                    amount="- ₹ 9,050" tone="ded" />
-                  <EpFnfRow label="Loan / Advance Recovery"      amount="- ₹ 0"    tone="ded" />
-                  <div className="ep-fnf-row ep-fnf-row--total">
-                    <span>Net FnF Payable</span>
-                    <span>₹ 81,450</span>
-                  </div>
-                </div>
-
-                <div className="ep-section-label">Finance Approval & Payment</div>
-                <Row className="g-2">
-                  <Col md={6}><EpField label="Finance Controller Approval"><EpSelect value={financeApproval} onChange={setFinanceApproval} options={['Pending','Approved','Rejected']} /></EpField></Col>
-                  <Col md={6}><EpField label="Payment Status"><EpSelect value={paymentStatus} onChange={setPaymentStatus} options={['Pending','Processed','On Hold']} /></EpField></Col>
-                  <Col md={6}><EpField label="Payment Mode"><EpSelect value={paymentMode} onChange={setPaymentMode} options={['Bank Transfer (NEFT)','RTGS','UPI','Cheque']} /></EpField></Col>
-                  <Col md={6}><EpField label="Payment Date"><EpInput type="date" value={paymentDate} onChange={setPaymentDate} /></EpField></Col>
-                </Row>
-              </>
-            )}
-
-            {/* ── STAGE 5 — Exit Documents Management ── */}
-            {stage === 5 && (() => {
-              const generatedCount = docs.filter(Boolean).length;
-              const docList = [
-                { icon: 'ri-file-text-line',          name: 'Relieving Letter',     sub: 'Confirms last working day and relieving from duties', signers: ['HR Manager','Department Head','Employee'] },
-                { icon: 'ri-graduation-cap-line',     name: 'Experience Letter',    sub: 'Details role, tenure, and performance summary',        signers: ['HR Manager','CEO / MD','Employee'] },
-                { icon: 'ri-money-rupee-circle-line', name: 'FnF Settlement Sheet', sub: 'Complete breakdown of full and final payment',         signers: ['Finance Head','HR Manager','Employee'] },
-                { icon: 'ri-file-shield-2-line',      name: 'NOC Certificate',      sub: 'No Objection Certificate from the organization',       signers: ['HR Manager','Department Head'] },
-                { icon: 'ri-chat-3-line',             name: 'Exit Interview Form',  sub: 'Feedback captured during exit interview session',      signers: ['HR Executive','Employee'] },
-              ];
+            {/* ── STAGE 3 — Exit Documents Management ── */}
+            {stage === 3 && (() => {
+              // KPI counts derived from real template + run data so the
+              // tiles match what's rendered below. "Generated" counts any
+              // template that has at least one signing run started;
+              // "Pending Sign" filters that down to runs still in flight;
+              // "Completed" tracks runs that have crossed the finish line.
+              const totalDocs = exitTemplates.length;
+              const generatedCount = exitTemplates.filter(t => runByTemplateId.has(t.id)).length;
+              const pendingCount = exitTemplates.filter(t => {
+                const r = runByTemplateId.get(t.id);
+                return r && (r.status === 'Pending' || r.status === 'In Progress');
+              }).length;
+              const completedCount = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
               const KPIS = [
-                { label: 'Total Docs',   value: docList.length,  icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
-                { label: 'Generated',    value: generatedCount,  icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
-                { label: 'Pending Sign', value: generatedCount,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
-                { label: 'Completed',    value: 0,               icon: 'ri-check-double-line',    gradient: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 60%, #38bdf8 100%)', deep: '#0369a1' },
+                { label: 'Total Docs',   value: totalDocs,      icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
+                { label: 'Generated',    value: generatedCount, icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
+                { label: 'Pending Sign', value: pendingCount,   icon: 'ri-time-line',            gradient: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
+                { label: 'Completed',    value: completedCount, icon: 'ri-check-double-line',    gradient: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 60%, #38bdf8 100%)', deep: '#0369a1' },
               ];
               return (
                 <>
@@ -1220,87 +1434,201 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     ))}
                   </div>
 
-                  <div className="ep-section-label">Documents &amp; Signing Tracker</div>
-                  <div className="ep-doc-list">
-                    {docList.map((d, idx) => {
-                      const isGenerated = docs[idx];
-                      const isOpen = expandedDoc === idx;
-                      return (
-                        <div key={idx} className={`ep-doc-card${isOpen ? ' is-open' : ''}`}>
-                          <button
-                            type="button"
-                            className="ep-doc-row"
-                            onClick={() => setExpandedDoc(isOpen ? null : idx)}
-                            aria-expanded={isOpen}
-                          >
-                            <span className="ep-doc-icon"><i className={d.icon} /></span>
-                            <div className="ep-doc-info">
-                              <div className="ep-doc-name">{d.name}</div>
-                              <div className="ep-doc-sub">{d.sub}</div>
-                            </div>
-                            <span className={`ep-doc-tag ${isGenerated ? 'ep-doc-tag--pending' : 'ep-doc-tag--blank'}`}>
-                              {isGenerated ? 'Generated · Pending Signatures' : 'Not Generated'}
-                            </span>
-                            {isGenerated ? (
-                              <span className="ep-doc-btn ep-doc-btn--done" onClick={e => e.stopPropagation()}><i className="ri-check-line" />Generated</span>
-                            ) : (
+                  {/* Trigger-point-driven templates — every document an
+                      admin built under HR > Document Templates with
+                      trigger_point = "Exit Management" surfaces here,
+                      matched against this employee's department ×
+                      designation level. Each card shows the configured
+                      signing flow + View / Send / Generate buttons. */}
+                  <div className="ep-section-label">Exit Documents</div>
+
+                  {/* Match-context banner — surfaces WHICH category /
+                      level the backend resolved from the employee row,
+                      so HR knows exactly what to set on a template if
+                      they want it to show up here. Trigger filter is a
+                      keyword substring (any trigger-point master row
+                      containing "exit" qualifies). */}
+                  {exitMatchMeta && (
+                    <div className="d-flex align-items-center gap-2 flex-wrap mb-3"
+                      style={{ padding: '10px 14px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 10 }}>
+                      <i className="ri-magic-line" style={{ color: '#4338ca' }} />
+                      <strong style={{ fontSize: 12.5, color: '#4338ca' }}>Matching templates for</strong>
+                      <span style={{ fontSize: 12, color: '#374151' }}>
+                        Department <strong>{exitMatchMeta.department_name || '—'}</strong> → Category{' '}
+                        <span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{exitMatchMeta.employee_category || '—'}</span>
+                        {exitMatchMeta.role_type && (
+                          <>{' '}· Level{' '}<span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{exitMatchMeta.role_type}</span></>
+                        )}
+                        {' '}· Trigger contains{' '}
+                        <span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>“exit”</span>
+                      </span>
+                    </div>
+                  )}
+
+                  {exitTplLoading ? (
+                    <div style={{ padding: 16, textAlign: 'center', color: 'var(--vz-secondary-color)', fontSize: 12.5, border: '1px dashed var(--vz-border-color)', borderRadius: 10, marginBottom: 12 }}>
+                      <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
+                      Looking up exit-trigger templates…
+                    </div>
+                  ) : exitTemplates.length === 0 ? (
+                    <div style={{ padding: 18, textAlign: 'left', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, marginBottom: 12, fontSize: 12.5 }}>
+                      <div style={{ textAlign: 'center', marginBottom: 10 }}>
+                        <i className="ri-inbox-line" style={{ fontSize: 24, display: 'block', marginBottom: 6 }} />
+                        <strong>No matching exit-trigger templates found.</strong>
+                      </div>
+                      <div style={{ paddingTop: 8, borderTop: '1px dashed var(--vz-border-color)' }}>
+                        To surface a template here it must be created under <strong>HR &gt; Document &amp; Evidence &gt; Document Templates</strong> with:
+                        <ul style={{ marginBottom: 0, paddingLeft: 20, marginTop: 6 }}>
+                          <li>Status = <strong>Active</strong></li>
+                          <li>Trigger Point = any row whose name contains <strong>“exit”</strong> (e.g. <em>Exit Management</em>, <em>Exit process trigger point</em>)</li>
+                          {exitMatchMeta && (
+                            <>
+                              <li>Employee Category = <strong>{exitMatchMeta.employee_category || '—'}</strong> (this employee's department maps here)</li>
+                              {exitMatchMeta.role_type
+                                ? <li>Role Type = <strong>{exitMatchMeta.role_type}</strong> (this employee's designation level)</li>
+                                : <li style={{ color: '#b45309' }}>⚠ This employee has no designation level set, so the role-type filter is skipped. Set a level on their designation master row.</li>}
+                            </>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="ep-doc-list" style={{ marginBottom: 16 }}>
+                      {exitTemplates.map(tpl => {
+                        const signers = parseSigners(tpl.signers);
+                        const run = runByTemplateId.get(tpl.id) || null;
+                        const canGenerate = tpl.status === 'Active';
+                        const runHasFinished = run && (run.status === 'Completed' || run.status === 'Rejected' || run.status === 'Cancelled');
+                        const canSend = canGenerate && (!run || !!runHasFinished);
+                        const runTone =
+                          run?.status === 'Completed'  ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
+                          : run?.status === 'Rejected'  ? { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' }
+                          : run?.status === 'Cancelled' ? { bg: '#e5e7eb', fg: '#374151', dot: '#6b7280' }
+                          : run?.status === 'In Progress' ? { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' }
+                          : run                          ? { bg: '#dbeafe', fg: '#1d4ed8', dot: '#3b82f6' }
+                          : null;
+                        return (
+                          <div key={`tpl-${tpl.id}`} className="ep-doc-card is-open">
+                            <div className="ep-doc-row" style={{ cursor: 'default', flexWrap: 'wrap' }}>
+                              <span className="ep-doc-icon"><i className="ri-file-text-line" /></span>
+                              <div className="ep-doc-info">
+                                <div className="ep-doc-name">
+                                  {tpl.name || '(unnamed template)'}{' '}
+                                  {tpl.code && (
+                                    <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>{tpl.code}</span>
+                                  )}
+                                  {run && runTone && (
+                                    <span style={{ marginLeft: 8, padding: '2px 10px', borderRadius: 999, background: runTone.bg, color: runTone.fg, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: runTone.dot }} />
+                                      {run.status}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="ep-doc-sub">
+                                  {tpl.doc_type || 'Document'}
+                                  {tpl.trigger_point?.module_name ? ` · Trigger: ${tpl.trigger_point.module_name}` : ''}
+                                  {tpl.signing_mode ? ` · ${tpl.signing_mode} signing` : ''}
+                                  {signers.length ? ` · ${signers.length} signer${signers.length === 1 ? '' : 's'}` : ''}
+                                </div>
+                              </div>
+                              <span className={`ep-doc-tag ${tpl.status === 'Active' ? 'ep-doc-tag--pending' : 'ep-doc-tag--blank'}`}>
+                                {tpl.status || 'Draft'}
+                              </span>
+                              <button type="button" className="ep-doc-btn ep-doc-btn--ghost" onClick={() => handleView(tpl)}>
+                                <i className="ri-eye-line" />View
+                              </button>
                               <button
                                 type="button"
                                 className="ep-doc-btn"
-                                onClick={e => { e.stopPropagation(); setDocs(prev => prev.map((v, i) => i === idx ? true : v)); setExpandedDoc(idx); }}
+                                onClick={() => openSend(tpl)}
+                                disabled={!canSend}
+                                title={canSend ? 'Send through the configured signing workflow' : (run ? 'A signing run is already in flight' : 'Only Active templates can be sent')}
+                                style={{ opacity: canSend ? 1 : 0.5, cursor: canSend ? 'pointer' : 'not-allowed' }}
                               >
-                                <i className="ri-file-add-line" />Generate
+                                <i className="ri-send-plane-line" />Send
                               </button>
+                              <button
+                                type="button"
+                                className="ep-doc-btn ep-doc-btn--done"
+                                onClick={() => handleGenerate(tpl)}
+                                disabled={!canGenerate}
+                                title={canGenerate ? 'Generate DOCX with this employee\'s data' : 'Only Active templates can be generated'}
+                                style={{ opacity: canGenerate ? 1 : 0.5, cursor: canGenerate ? 'pointer' : 'not-allowed' }}
+                              >
+                                <i className="ri-download-2-line" />Generate
+                              </button>
+                            </div>
+
+                            {/* Signing flow — render whatever the template
+                                creator configured. When there's a live run,
+                                each signer's status comes from the run; with
+                                no run yet we just preview the configured
+                                pipeline so the HR user knows who will sign. */}
+                            {(signers.length > 0 || run) && (
+                              <div className="ep-signing">
+                                <div className="ep-signing-head">
+                                  <i className="ri-shield-check-line" />Signing Workflow
+                                  {run ? (
+                                    <span className="ep-signing-pct">
+                                      {run.signers.filter(s => s.status === 'Done').length}/{run.signers.length} signed
+                                    </span>
+                                  ) : (
+                                    <span className="ep-signing-pct">Not yet sent</span>
+                                  )}
+                                </div>
+                                <div className="ep-signing-flow">
+                                  {(run ? run.signers.map((s, i) => ({
+                                        name: s.name || s.role_name || `Signer ${i + 1}`,
+                                        role: s.role_name,
+                                        action: s.action,
+                                        status: s.status === 'Done' ? 'Completed' : s.status === 'Rejected' ? 'Rejected' : (i === run.current_index ? 'Awaiting' : 'Pending'),
+                                        active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
+                                      }))
+                                      : signers.map((s, i) => ({
+                                        name: s.role_name || s.designation_name || `Signer ${i + 1}`,
+                                        role: s.role_name,
+                                        action: s.action,
+                                        status: 'Pending' as string,
+                                        active: i === 0,
+                                      }))
+                                  ).map((sg, i) => (
+                                    <div key={i} className={`ep-signer${sg.active ? ' is-active' : ''}`}>
+                                      <span className="ep-signer-dot">{i + 1}</span>
+                                      <span className="ep-signer-name">
+                                        {sg.name}
+                                        {sg.action && (
+                                          <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
+                                            ({sg.action})
+                                          </span>
+                                        )}
+                                      </span>
+                                      <span className="ep-signer-state">{sg.status}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
                             )}
-                            <button type="button" className="ep-doc-btn ep-doc-btn--ghost" disabled={!isGenerated} onClick={e => e.stopPropagation()}>
-                              <i className="ri-eye-line" />Preview
-                            </button>
-                            <i className="ri-arrow-down-s-line ep-doc-chev" />
-                          </button>
-                          {isOpen && isGenerated && (
-                            <div className="ep-signing">
-                              <div className="ep-signing-head">
-                                <i className="ri-shield-check-line" />Signing Workflow
-                                <span className="ep-signing-pct">0% Signed</span>
-                              </div>
-                              <div className="ep-signing-flow">
-                                {d.signers.map((sg, i) => (
-                                  <div key={i} className={`ep-signer${i === 0 ? ' is-active' : ''}`}>
-                                    <span className="ep-signer-dot">{i + 1}</span>
-                                    <span className="ep-signer-name">{sg}</span>
-                                    <span className="ep-signer-state">{i === 0 ? 'Awaiting' : 'Pending'}</span>
-                                    {i === 0 && <button type="button" className="ep-signer-btn"><i className="ri-quill-pen-line" />e-Sign</button>}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {isOpen && !isGenerated && (
-                            <div className="ep-doc-empty">
-                              <i className="ri-information-line" />
-                              Generate this document first to see the signing workflow.
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                 </>
               );
             })()}
 
-            {/* ── STAGE 6 — Final Deactivation & Closure ── */}
-            {stage === 6 && (
+            {/* ── STAGE 4 — Final Deactivation & Closure ── */}
+            {stage === 4 && (
               <>
                 <div className="ep-section-label">Final Validation Checklist</div>
                 <div className="ep-checklist mb-3">
                   {[
-                    { title: 'All clearances obtained',     sub: 'Manager, IT, Admin, Finance, Legal' },
-                    { title: 'All assets recovered',        sub: 'Laptop, phone, access cards, keys' },
-                    { title: 'All access revoked',          sub: 'ERP, Email, GitHub, Cloud, CRM' },
-                    { title: 'FnF payment processed',       sub: 'Amount: ₹81,450 | Status: Pending' },
-                    { title: 'Exit documents signed',       sub: 'Relieving, Experience, NOC, FnF Sheet' },
-                    { title: 'Exit interview completed',    sub: 'Feedback recorded and filed' },
+                    { title: 'All clearances obtained',    sub: 'Manager, IT, Admin, Finance, Legal' },
+                    { title: 'All assets handed over',     sub: 'Laptop, phone, access cards, keys' },
+                    { title: 'All access revoked',         sub: 'ERP, Email, GitHub, Cloud, CRM' },
+                    { title: 'Exit documents signed',      sub: 'Templates from HR > Document Templates with trigger Exit Management' },
+                    { title: 'Exit interview completed',   sub: 'Feedback recorded and filed' },
                   ].map((v, idx) => (
                     <label key={idx} className="ep-check-row">
                       <input type="checkbox" checked={validation[idx]} onChange={() => setValidation(prev => prev.map((x, i) => i === idx ? !x : x))} />
@@ -1379,6 +1707,121 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
         </div>
       </ModalBody>
     </Modal>
+
+    {/* ── Preview modal — opens on top of the Exit Process modal. Shows the
+        configured template body with this employee's tokens resolved so HR
+        can sanity-check before generating. ── */}
+    <Modal isOpen={previewOpen} toggle={() => setPreviewOpen(false)} size="lg" centered contentClassName="border-0" backdrop="static">
+      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
+        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)', borderRadius: '6px 6px 0 0' }}>
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-2 min-w-0">
+              <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className="ri-file-search-line" style={{ fontSize: 18, color: '#fff' }} />
+              </span>
+              <div className="min-w-0">
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>
+                  {previewTpl?.name || 'Document Preview'}
+                </h5>
+                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>
+                  {employee?.name ? `Filled with ${employee.name}'s data` : 'Live preview'}
+                  {previewTpl?.code ? ` · ${previewTpl.code}` : ''}
+                </div>
+              </div>
+            </div>
+            <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Close"
+              style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
+              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            </button>
+          </div>
+        </div>
+        <div style={{ padding: 16, background: 'var(--vz-secondary-bg)', maxHeight: '70vh', overflowY: 'auto' }}>
+          {previewLoading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+              <i className="ri-loader-4-line" style={{ fontSize: 26, display: 'block', marginBottom: 8 }} />
+              Resolving placeholders…
+            </div>
+          ) : (
+            <>
+              {previewMissing.length > 0 && (
+                <div className="d-flex align-items-start gap-2 mb-3"
+                  style={{ padding: '10px 14px', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 10, color: '#92400e', fontSize: 12.5 }}>
+                  <i className="ri-error-warning-line" style={{ marginTop: 2 }} />
+                  <div>
+                    <strong>Unfilled placeholders:</strong> {previewMissing.join(', ')}
+                  </div>
+                </div>
+              )}
+              <div
+                style={{ background: '#fff', color: '#1f2937', padding: 24, borderRadius: 10, border: '1px solid var(--vz-border-color)', minHeight: 320 }}
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
+            </>
+          )}
+        </div>
+        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--vz-border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" onClick={() => setPreviewOpen(false)}
+            className="btn rounded-pill px-3 fw-semibold"
+            style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 13 }}>
+            Close
+          </button>
+          {previewTpl && (
+            <button type="button" onClick={() => { handleGenerate(previewTpl); }}
+              className="btn rounded-pill px-3 fw-semibold"
+              style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, fontSize: 13, boxShadow: '0 4px 10px rgba(124,58,237,0.30)' }}>
+              <i className="ri-download-2-line me-1" />Generate DOCX
+            </button>
+          )}
+        </div>
+      </ModalBody>
+    </Modal>
+
+    {/* ── Send-for-signing confirmation modal ── */}
+    <Modal isOpen={!!sendForTpl} toggle={() => !sending && setSendForTpl(null)} size="md" centered contentClassName="border-0" backdrop="static">
+      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 16, overflow: 'hidden' }}>
+        <div style={{ padding: '20px 24px 14px' }}>
+          <div className="d-flex align-items-center gap-3 mb-2">
+            <span style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <i className="ri-send-plane-fill" style={{ fontSize: 20, color: '#fff' }} />
+            </span>
+            <div>
+              <div className="fw-bold" style={{ fontSize: 16, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>Send for signing?</div>
+              <div className="text-muted" style={{ fontSize: 12.5 }}>
+                The document will enter the configured signing workflow.
+              </div>
+            </div>
+          </div>
+          {sendForTpl && (
+            <div style={{ padding: 14, background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 10, marginTop: 10 }}>
+              <div className="fw-semibold" style={{ fontSize: 13.5 }}>
+                {sendForTpl.name || '(unnamed template)'}
+                {sendForTpl.code && (
+                  <span style={{ marginLeft: 8, fontSize: 11, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4 }}>{sendForTpl.code}</span>
+                )}
+              </div>
+              <div className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
+                {parseSigners(sendForTpl.signers).length} signer(s) · {sendForTpl.signing_mode || 'Sequential'} signing
+              </div>
+            </div>
+          )}
+        </div>
+        <div style={{ padding: '12px 24px 22px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" disabled={sending} onClick={() => setSendForTpl(null)}
+            className="btn rounded-pill px-3 fw-semibold"
+            style={{ background: 'var(--vz-secondary-bg)', color: 'var(--vz-body-color)', border: '1px solid var(--vz-border-color)', fontSize: 13 }}>
+            Cancel
+          </button>
+          <button type="button" disabled={sending} onClick={confirmSend}
+            className="btn rounded-pill px-3 fw-semibold"
+            style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, fontSize: 13, boxShadow: '0 4px 10px rgba(124,58,237,0.30)', opacity: sending ? 0.7 : 1 }}>
+            <i className={sending ? 'ri-loader-4-line me-1' : 'ri-send-plane-line me-1'}
+              style={{ animation: sending ? 'onb-spin 0.8s linear infinite' : undefined }} />
+            {sending ? 'Sending…' : 'Yes, send'}
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
+    </>
   );
 }
 
@@ -1485,7 +1928,7 @@ function EpField({ label, children }: { label: string; children: React.ReactNode
     </div>
   );
 }
-function EpInput({ value, onChange, type = 'text', disabled = false, placeholder }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string }) {
+function EpInput({ value, onChange, type = 'text', disabled = false, placeholder, min, max }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; min?: string; max?: string }) {
   if (type === 'date') {
     return (
       <MasterDatePicker
@@ -1493,17 +1936,25 @@ function EpInput({ value, onChange, type = 'text', disabled = false, placeholder
         onChange={onChange}
         disabled={disabled}
         placeholder={placeholder ?? 'dd-mm-yyyy'}
+        minDate={min}
+        maxDate={max}
       />
     );
   }
-  return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} onChange={e => onChange(e.target.value)} />;
+  return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} min={min} max={max} onChange={e => onChange(e.target.value)} />;
 }
 function EpSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
-  return (
-    <select className="ep-select" value={value} onChange={e => onChange(e.target.value)}>
-      {options.map(o => <option key={o} value={o}>{o.startsWith('— ') ? o : (o === 'Pending' ? '— Pending —' : o)}</option>)}
-    </select>
-  );
+  // Render via MasterSelect so the modal dropdowns match the look + dark-mode
+  // behaviour of every other HR form (rounded toggle, chevron, portalled menu
+  // with proper z-index, search when the option list is long). Native
+  // <select> was previously used, which couldn't be themed past what the
+  // browser allows. The same "— Pending —" prefix is preserved for the
+  // Pending option so existing UX copy stays intact.
+  const items = options.map(o => ({
+    value: o,
+    label: o.startsWith('— ') ? o : (o === 'Pending' ? '— Pending —' : o),
+  }));
+  return <MasterSelect value={value} onChange={onChange} options={items} placeholder="Select…" />;
 }
 function EpApprovalCard({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (
@@ -1551,20 +2002,6 @@ function MiniProgressRing({ value }: { value: number }) {
   );
 }
 
-// Compact label for the header stepper pills — one chip per stage.
-// Keep these in sync with EXIT_STAGES (Notice removed; Assets moved
-// up to slot 2, Clearance to slot 3).
-function shortStageLabel(num: number): string {
-  switch (num) {
-    case 1: return 'Initiation';
-    case 2: return 'Assets';
-    case 3: return 'Clearance';
-    case 4: return 'FnF';
-    case 5: return 'Documents';
-    case 6: return 'Closure';
-    default: return `Stage ${num}`;
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Evidence Vault — opens for an Exited employee to view all archived docs.
@@ -1591,25 +2028,241 @@ interface VaultGroup {
 
 type VaultTab = 'employee' | 'organizational' | 'exit';
 
+// ── Doc-key catalogue ──────────────────────────────────────────────────────
+// employee_documents.document_key is a free-text slug (e.g. "aadhaar",
+// "pan", "p_photo"…). Map each known key to a pretty label + icon so the
+// vault renders a "Aadhaar Card" row instead of the raw key. Keys we don't
+// know about fall back to a humanised version of the slug so newly-added
+// document types don't disappear from the list.
+const DOC_KEY_CATALOGUE: Record<string, { name: string; desc: string; icon: string; iconBg: string; iconFg: string; category: string }> = {
+  aadhaar:     { name: 'Aadhaar Card',           desc: 'Government issued 12-digit unique identity',     icon: 'ri-fingerprint-line',         iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Identity'        },
+  pan:         { name: 'PAN Card',               desc: 'Permanent Account Number for taxation',          icon: 'ri-bank-card-2-line',         iconBg: '#fef3c7', iconFg: '#92400e', category: 'Identity'        },
+  p_photo:     { name: 'Passport Photo',         desc: 'Recent passport-size photograph',                icon: 'ri-camera-line',              iconBg: '#fdd9ea', iconFg: '#a02960', category: 'Identity'        },
+  p_copy:      { name: 'Passport Copy',          desc: 'Govt issued travel document (if applicable)',    icon: 'ri-passport-line',            iconBg: '#dceefe', iconFg: '#0c63b0', category: 'Identity'        },
+  cur_addr:    { name: 'Current Address Proof',  desc: 'Utility bill or bank statement (last 3 months)', icon: 'ri-home-4-line',              iconBg: '#dcfce7', iconFg: '#15803d', category: 'Address'         },
+  perm_addr:   { name: 'Permanent Address Proof',desc: 'Aadhaar / Voter ID — permanent address proof',   icon: 'ri-map-pin-line',             iconBg: '#fee2e2', iconFg: '#b91c1c', category: 'Address'         },
+  edu_10:      { name: '10th Marksheet',         desc: 'Secondary school certification',                 icon: 'ri-file-text-line',           iconBg: '#fef3c7', iconFg: '#92400e', category: 'Education'       },
+  edu_12:      { name: '12th Marksheet',         desc: 'Higher secondary certification',                 icon: 'ri-file-text-line',           iconBg: '#fef3c7', iconFg: '#92400e', category: 'Education'       },
+  edu_deg:     { name: 'Graduation Degree',      desc: "Bachelor's degree certificate",                  icon: 'ri-graduation-cap-line',      iconBg: '#dcfce7', iconFg: '#15803d', category: 'Education'       },
+  edu_pg:      { name: 'Post Graduation',        desc: "Master's or postgraduate diploma",               icon: 'ri-award-line',               iconBg: '#dceefe', iconFg: '#0c63b0', category: 'Education'       },
+  rel_letter:  { name: 'Relieving Letter',       desc: 'Final relieving from previous employer',         icon: 'ri-mail-send-line',           iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Prev. Employment'},
+  exp_cert:    { name: 'Experience Letter',      desc: 'Past employment experience certificate',         icon: 'ri-briefcase-4-line',         iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Prev. Employment'},
+  pay_slip:    { name: 'Last 3 Pay Slips',       desc: 'Most recent salary slips for reference',         icon: 'ri-money-rupee-circle-line',  iconBg: '#fef3c7', iconFg: '#92400e', category: 'Prev. Employment'},
+};
+const labelForDocKey = (key: string) => DOC_KEY_CATALOGUE[key] || {
+  name: key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+  desc: 'Uploaded document',
+  icon: 'ri-file-text-line',
+  iconBg: '#eef2f6',
+  iconFg: '#475569',
+  category: 'Other',
+};
+
+// ── Server-shape types ────────────────────────────────────────────────────
+type EmpDocApiRow = {
+  id: number;
+  document_key: string;
+  status: 'pending' | 'uploaded' | 'verified' | 'rejected';
+  original_name: string | null;
+  url: string | null;
+  uploaded_at: string | null;
+};
+type VaultTemplate = {
+  id: number;
+  code: string | null;
+  name: string | null;
+  doc_type: string | null;
+  status: string | null;
+  trigger_point?: { module_name?: string | null } | null;
+};
+type VaultRun = {
+  id: number;
+  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
+  template_id: number;
+};
+
 function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
   const [tab, setTab] = useState<VaultTab>('employee');
 
-  useEffect(() => { if (employee) setTab('employee'); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [employee?.id]);
+  // Real data from the backend — replaces the previous mock VAULT_BY_TAB.
+  // Employee tab: rows from /employees/{id}/documents. Organizational +
+  // Exit tabs: HR Document Templates matched by trigger_point_name +
+  // their signing runs (so we can show the live status pill).
+  const [empDocs, setEmpDocs]               = useState<EmpDocApiRow[]>([]);
+  const [orgTemplates, setOrgTemplates]     = useState<VaultTemplate[]>([]);
+  const [exitTemplates, setExitTemplates]   = useState<VaultTemplate[]>([]);
+  const [signingRuns, setSigningRuns]       = useState<VaultRun[]>([]);
+  const [loading, setLoading]               = useState(false);
+
+  useEffect(() => {
+    if (!employee) {
+      setEmpDocs([]); setOrgTemplates([]); setExitTemplates([]); setSigningRuns([]);
+      setTab('employee');
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setTab('employee');
+    Promise.allSettled([
+      api.get(`/employees/${employee.id}/documents`),
+      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'onboarding' } }),
+      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'exit' } }),
+      api.get('/hr-document-signatures', { params: { employee_id: employee.id } }),
+    ]).then(results => {
+      if (cancelled) return;
+      const [docsR, orgR, exitR, runsR] = results;
+      setEmpDocs(docsR.status === 'fulfilled' && Array.isArray(docsR.value.data) ? docsR.value.data : []);
+      setOrgTemplates(orgR.status === 'fulfilled' && Array.isArray(orgR.value.data?.templates) ? orgR.value.data.templates : []);
+      setExitTemplates(exitR.status === 'fulfilled' && Array.isArray(exitR.value.data?.templates) ? exitR.value.data.templates : []);
+      setSigningRuns(runsR.status === 'fulfilled' && Array.isArray(runsR.value.data) ? runsR.value.data : []);
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [employee?.id]);
+
+  // Latest run per template_id — same recipe as the Stage 5 grid so the
+  // vault tab can surface a "Completed / In Progress / …" pill.
+  const runByTemplateId = useMemo(() => {
+    const m = new Map<number, VaultRun>();
+    for (const r of signingRuns) {
+      const existing = m.get(r.template_id);
+      if (!existing || r.id > existing.id) m.set(r.template_id, r);
+    }
+    return m;
+  }, [signingRuns]);
 
   if (!employee) return null;
 
-  const groups = VAULT_BY_TAB[tab];
-  const allDocs = [...VAULT_BY_TAB.employee, ...VAULT_BY_TAB.organizational, ...VAULT_BY_TAB.exit].flatMap(g => g.docs);
+  // Build a flat doc list per tab from real data. Status strings are
+  // normalised to the existing DocStatus enum so the existing CSS
+  // (.ev-doc-status--verified, etc.) keeps working.
+  const empDocsView = empDocs.map(d => {
+    const cat = labelForDocKey(d.document_key);
+    const status: DocStatus =
+      d.status === 'verified' ? 'Verified'
+      : d.status === 'uploaded' ? 'Uploaded'
+      : d.status === 'rejected' ? 'Pending'      // surface rejected as Pending until reuploaded
+      : 'Pending';
+    return {
+      id: d.id, key: d.document_key, name: cat.name, sub: cat.desc, icon: cat.icon, iconBg: cat.iconBg, iconFg: cat.iconFg,
+      category: cat.category, status, url: d.url,
+    };
+  });
+
+  // Group employee docs by their catalogue category so the existing
+  // grouped-list rendering still works (Identity / Address / Education / …).
+  const empGroups = (() => {
+    const buckets: Record<string, typeof empDocsView> = {};
+    for (const d of empDocsView) {
+      const k = d.category || 'Other';
+      (buckets[k] = buckets[k] || []).push(d);
+    }
+    return Object.entries(buckets).map(([title, docs]) => ({
+      title,
+      icon: docs[0]?.icon || 'ri-folder-line',
+      iconBg: docs[0]?.iconBg || '#eef2f6',
+      iconFg: docs[0]?.iconFg || '#475569',
+      docs,
+    }));
+  })();
+
+  const buildTplGroup = (templates: VaultTemplate[], title: string, groupIcon: string, groupBg: string, groupFg: string) => {
+    const docs = templates.map(tpl => {
+      const run = runByTemplateId.get(tpl.id) || null;
+      const status: DocStatus =
+        run?.status === 'Completed'   ? 'Completed'
+        : run?.status === 'In Progress' ? 'Sent'
+        : run?.status === 'Pending'     ? 'Sent'
+        : run?.status === 'Rejected'    ? 'Pending'
+        : run?.status === 'Cancelled'   ? 'Not Generated'
+        : tpl.status === 'Active'       ? 'Not Generated'
+        : 'Not Generated';
+      return {
+        id: tpl.id, key: `tpl-${tpl.id}`,
+        name: tpl.name || '(unnamed template)',
+        sub: `${tpl.doc_type || 'Document'}${tpl.code ? ` · ${tpl.code}` : ''}${run ? ` · Run #${run.id}` : ''}`,
+        icon: 'ri-file-text-line', iconBg: groupBg, iconFg: groupFg,
+        category: tpl.trigger_point?.module_name || 'Template',
+        status,
+        url: null as string | null,
+      };
+    });
+    return docs.length ? [{ title, icon: groupIcon, iconBg: groupBg, iconFg: groupFg, docs }] : [];
+  };
+  const orgGroups  = buildTplGroup(orgTemplates,  'Signed Company Documents', 'ri-file-shield-2-line', '#fef3c7', '#92400e');
+  const exitGroups = buildTplGroup(exitTemplates, 'Exit Process Documents',   'ri-logout-box-r-line',  '#dcfce7', '#15803d');
+
+  const groups =
+    tab === 'employee'       ? empGroups
+    : tab === 'organizational' ? orgGroups
+    : exitGroups;
+
+  // KPI counts pulled from the real, combined list so they always
+  // reconcile with what's visible across the three tabs. Cast to the
+  // wider DocStatus union so future status values added by the backend
+  // (e.g. "Signed", "Generated") are still counted correctly even though
+  // the current code path doesn't assign them.
+  const allDocs: { status: DocStatus }[] = [...empDocsView, ...orgGroups.flatMap(g => g.docs), ...exitGroups.flatMap(g => g.docs)];
   const total      = allDocs.length;
   const verified   = allDocs.filter(d => d.status === 'Verified').length;
   const signed     = allDocs.filter(d => d.status === 'Signed' || d.status === 'Generated' || d.status === 'Completed').length;
-  const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent').length;
+  const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent' || d.status === 'Uploaded').length;
   const notGen     = allDocs.filter(d => d.status === 'Not Generated' || d.status === 'Optional').length;
-  const completionPct = Math.round(((total - notGen) / total) * 100);
+  const completionPct = total > 0 ? Math.round(((total - notGen) / total) * 100) : 0;
 
-  const empCount  = VAULT_BY_TAB.employee.reduce((acc, g) => acc + g.docs.length, 0);
-  const orgCount  = VAULT_BY_TAB.organizational.reduce((acc, g) => acc + g.docs.length, 0);
-  const exitCount = VAULT_BY_TAB.exit.reduce((acc, g) => acc + g.docs.length, 0);
+  const empCount  = empDocsView.length;
+  const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0);
+  const exitCount = exitGroups.reduce((a, g) => a + g.docs.length, 0);
+
+  // View / Download handlers per row. Uploaded employee docs come back
+  // with a `url` pointing at the public disk so View opens in a new tab
+  // and Download triggers a browser save. Template rows generate a DOCX
+  // on demand using the same endpoint the Stage 5 grid uses.
+  const handleViewRow = (d: { url: string | null; key: string; id: number }) => {
+    if (d.url) {
+      window.open(d.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (d.key.startsWith('tpl-')) {
+      // No inline preview here — defer to the Stage 5 modal's preview pane.
+      // For now open the generate endpoint in a new tab as a quick view.
+      window.open(`/api/hr-document-templates/${d.id}/generate?employee_id=${employee.id}`, '_blank', 'noopener,noreferrer');
+    }
+  };
+  const handleDownloadRow = async (d: { url: string | null; key: string; id: number; name: string }) => {
+    if (d.url) {
+      // Force a download for file URLs by re-fetching as a blob.
+      try {
+        const resp = await fetch(d.url, { credentials: 'include' });
+        const blob = await resp.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = d.name || 'document';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objUrl);
+      } catch {
+        window.open(d.url, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+    if (d.key.startsWith('tpl-')) {
+      try {
+        const resp = await api.get(`/hr-document-templates/${d.id}/generate`, {
+          params: { employee_id: employee.id }, responseType: 'blob',
+        });
+        const objUrl = URL.createObjectURL(new Blob([resp.data]));
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = `${(employee.name || 'employee').replace(/\s+/g, '-')}-${d.name}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objUrl);
+      } catch { /* swallow — controller surfaces toast on Stage 5 path */ }
+    }
+  };
 
   return (
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ev-modal">
@@ -1676,7 +2329,21 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
 
         {/* Body — groups + docs */}
         <div className="ev-body">
-          {groups.map((g, gi) => (
+          {loading ? (
+            <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+              <i className="ri-loader-4-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
+              Loading vault…
+            </div>
+          ) : groups.length === 0 ? (
+            <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, fontSize: 13 }}>
+              <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
+              {tab === 'employee'
+                ? 'No documents uploaded yet by this employee.'
+                : tab === 'organizational'
+                  ? 'No onboarding-trigger documents on record. Create templates under HR > Document Templates with trigger “Onboarding”.'
+                  : 'No exit-trigger documents on record. Create templates under HR > Document Templates with trigger “Exit Management”.'}
+            </div>
+          ) : groups.map((g, gi) => (
             <div key={gi} className="ev-group">
               <div className="ev-group-head">
                 <span className="ev-group-icon" style={{ background: g.iconBg, color: g.iconFg }}>
@@ -1686,10 +2353,16 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
                 <span className="ev-group-count">{g.docs.length} docs</span>
               </div>
               <div className="ev-doc-list">
-                {g.docs.map((d, di) => {
-                  const disabled = d.status === 'Not Generated' || d.status === 'Optional';
+                {g.docs.map(d => {
+                  // Cast to the wider DocStatus union so equality checks
+                  // against 'Generated' / 'Optional' aren't narrowed away —
+                  // the current data path only ever produces a subset, but
+                  // the CSS classes / preview switch still need to handle
+                  // the full enum from future status values.
+                  const status = d.status as DocStatus;
+                  const disabled = status === 'Not Generated' || status === 'Optional';
                   return (
-                    <div key={di} className="ev-doc">
+                    <div key={d.key} className="ev-doc">
                       <span className="ev-doc-icon" style={{ background: d.iconBg, color: d.iconFg }}>
                         <i className={d.icon} />
                       </span>
@@ -1698,11 +2371,19 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
                         <div className="ev-doc-sub">{d.sub}</div>
                       </div>
                       <span className="ev-doc-cat">{d.category}</span>
-                      <span className={`ev-doc-status ev-doc-status--${d.status.toLowerCase().replace(/\s+/g, '-')}`}>{d.status}</span>
-                      <button type="button" className={`ev-doc-btn ev-doc-btn--view${d.status === 'Generated' ? ' ev-doc-btn--preview' : ''}`} disabled={disabled}>
-                        <i className="ri-eye-line" />{d.status === 'Generated' ? 'Preview' : 'View'}
+                      <span className={`ev-doc-status ev-doc-status--${status.toLowerCase().replace(/\s+/g, '-')}`}>{status}</span>
+                      <button type="button"
+                        className={`ev-doc-btn ev-doc-btn--view${status === 'Generated' ? ' ev-doc-btn--preview' : ''}`}
+                        disabled={disabled}
+                        onClick={() => handleViewRow(d)}
+                      >
+                        <i className="ri-eye-line" />{status === 'Generated' ? 'Preview' : 'View'}
                       </button>
-                      <button type="button" className="ev-doc-btn ev-doc-btn--download" disabled={disabled}>
+                      <button type="button"
+                        className="ev-doc-btn ev-doc-btn--download"
+                        disabled={disabled}
+                        onClick={() => handleDownloadRow(d)}
+                      >
                         <i className="ri-download-line" />Download
                       </button>
                     </div>

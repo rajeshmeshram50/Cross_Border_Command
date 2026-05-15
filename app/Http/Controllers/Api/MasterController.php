@@ -705,19 +705,21 @@ class MasterController extends Controller
         // Nullable fields with an empty value skip the unique check via
         // Laravel's `nullable` rule.
         $uEach = $schema['uEach'] ?? [];
-        $tenantScoped = !empty($schema['tenantScoped']);
+        // `tenantScoped` was an opt-in per-master flag that added branch_id
+        // to the uniqueness check. We now scope by branch_id for ALL
+        // masters by default — Branch A and Branch B of the same client
+        // can each maintain their own copy of "IT" department, "Manager"
+        // role, etc. Schemas can still opt OUT with 'clientScopedOnly'
+        // => true if a master is genuinely shared across an entire client.
+        $clientScopedOnly = !empty($schema['clientScopedOnly']);
         $modelClass = $this->resolveModel($slug);
         $table = (new $modelClass)->getTable();
         $isComposite = count($uFields) > 1;
 
-        // Uniqueness is ALWAYS scoped by client_id so two different clients
-        // can independently maintain the same value (e.g. both can have a
-        // country named "India"). Masters that also need per-branch
-        // isolation (e.g. departments' DEPT-### numbering restarts per
-        // branch) opt in via 'tenantScoped' => true and additionally scope
-        // by branch_id. Determine the tuple now: on update we keep the
-        // existing row's owner, on create we use resolveOwnership() so the
-        // unique check matches what will be stamped during store().
+        // Determine the (client_id, branch_id) tuple this row will live
+        // under so the unique check matches what `store()` will stamp.
+        // On update we keep the existing row's owner; on create we ask
+        // resolveOwnership() based on the caller's user_type.
         $tenantClientId = null;
         $tenantBranchId = null;
         if ($id !== null) {
@@ -727,12 +729,12 @@ class MasterController extends Controller
         } else {
             [$tenantClientId, $tenantBranchId] = $this->resolveOwnership($request, $request->user());
         }
-        $applyTenantScope = function ($rule) use ($tenantScoped, $tenantClientId, $tenantBranchId) {
-            return $rule->where(function ($q) use ($tenantScoped, $tenantClientId, $tenantBranchId) {
+        $applyTenantScope = function ($rule) use ($clientScopedOnly, $tenantClientId, $tenantBranchId) {
+            return $rule->where(function ($q) use ($clientScopedOnly, $tenantClientId, $tenantBranchId) {
                 $tenantClientId === null
                     ? $q->whereNull('client_id')
                     : $q->where('client_id', $tenantClientId);
-                if ($tenantScoped) {
+                if (!$clientScopedOnly) {
                     $tenantBranchId === null
                         ? $q->whereNull('branch_id')
                         : $q->where('branch_id', $tenantBranchId);
@@ -817,10 +819,14 @@ class MasterController extends Controller
 
             if ($id) $query->where('id', '!=', $id);
 
-            if ($tenantScoped) {
-                $tenantClientId === null
-                    ? $query->whereNull('client_id')
-                    : $query->where('client_id', $tenantClientId);
+            // Always scope the case-insensitive uniqueness check by the
+            // (client_id, branch_id) tuple this row belongs to so the same
+            // name can recur across branches of one client. Masters can
+            // opt back into client-wide scope via 'clientScopedOnly'.
+            $tenantClientId === null
+                ? $query->whereNull('client_id')
+                : $query->where('client_id', $tenantClientId);
+            if (!$clientScopedOnly) {
                 $tenantBranchId === null
                     ? $query->whereNull('branch_id')
                     : $query->where('branch_id', $tenantBranchId);

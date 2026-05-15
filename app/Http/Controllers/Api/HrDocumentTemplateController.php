@@ -299,7 +299,17 @@ class HrDocumentTemplateController extends Controller
     public function matchForEmployee(Request $request)
     {
         $this->authorize($request, 'can_view');
-        $request->validate(['employee_id' => 'required|integer|exists:employees,id']);
+        $request->validate([
+            'employee_id'         => 'required|integer|exists:employees,id',
+            'trigger_point_name'  => 'sometimes|nullable|string|max:255',
+            // Substring/keyword variant — preferred over trigger_point_name
+            // because branch users name their trigger-point rows freely
+            // ("Exit process trigger point", "Onboarding point", …) and
+            // the page can't rely on an exact title. Frontend now passes
+            // just the lifecycle keyword ('onboarding' / 'exit') and we
+            // LIKE-match against module_name.
+            'trigger_keyword'     => 'sometimes|nullable|string|max:120',
+        ]);
 
         $emp = Employee::with(['department:id,name', 'designation:id,name,level'])
             ->findOrFail((int) $request->query('employee_id'));
@@ -312,14 +322,52 @@ class HrDocumentTemplateController extends Controller
             ->where('employee_category', $category);
         if ($level) $q->where('role_type', $level);
 
+        // Optional lifecycle filter. Two variants:
+        //   - trigger_keyword (preferred) — substring LIKE match against
+        //     module_name. Frontend passes just the lifecycle word
+        //     ("onboarding" / "exit"), and any trigger row containing
+        //     that keyword qualifies. Tolerates branch-user naming
+        //     freedom ("Onboarding point", "Exit process trigger point").
+        //   - trigger_point_name (legacy) — exact case-/whitespace-
+        //     insensitive equality. Kept for any external callers still
+        //     using the old contract.
+        $keyword   = trim((string) $request->query('trigger_keyword', ''));
+        $exactName = trim((string) $request->query('trigger_point_name', ''));
+        if ($keyword !== '' || $exactName !== '') {
+            $tpQuery = DB::table('master_trigger_points');
+            if ($keyword !== '') {
+                $tpQuery->whereRaw('LOWER(TRIM(module_name)) LIKE ?', ['%' . strtolower($keyword) . '%']);
+            } else {
+                $tpQuery->whereRaw('LOWER(TRIM(module_name)) = ?', [strtolower($exactName)]);
+            }
+            $triggerIds = $tpQuery->pluck('id')->all();
+            // No matching trigger row → no matching template. Return early
+            // with an empty list instead of letting whereIn([]) silently
+            // return everything.
+            if (empty($triggerIds)) {
+                return response()->json([
+                    'employee_category'  => $category,
+                    'role_type'          => $level,
+                    'department_name'    => $emp->department?->name,
+                    'designation_name'   => $emp->designation?->name,
+                    'trigger_point_name' => $exactName ?: null,
+                    'trigger_keyword'    => $keyword ?: null,
+                    'templates'          => [],
+                ]);
+            }
+            $q->whereIn('trigger_point_id', $triggerIds);
+        }
+
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         return response()->json([
-            'employee_category' => $category,
-            'role_type'         => $level,
-            'department_name'   => $emp->department?->name,
-            'designation_name'  => $emp->designation?->name,
-            'templates'         => $q->orderByDesc('id')->get(),
+            'employee_category'  => $category,
+            'role_type'          => $level,
+            'department_name'    => $emp->department?->name,
+            'designation_name'   => $emp->designation?->name,
+            'trigger_point_name' => $exactName ?: null,
+            'trigger_keyword'    => $keyword ?: null,
+            'templates'          => $q->orderByDesc('id')->get(),
         ]);
     }
 
@@ -385,8 +433,12 @@ class HrDocumentTemplateController extends Controller
         if (preg_match_all('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', (string) $row->content_html, $m)) {
             $tokensInTemplate = array_values(array_unique($m[1]));
         }
+        // "Missing" = the token isn't recognised at all. A known token with
+        // an empty value (e.g. an employee whose Mobile field is blank) is
+        // resolved-as-empty, not missing — flagging those as missing turns
+        // the SPA's warning chip into a permanent false-positive.
         $unresolved = array_values(array_filter($tokensInTemplate, fn ($t) =>
-            !array_key_exists($t, $context) || $context[$t] === ''
+            !array_key_exists($t, $context)
         ));
 
         return response()->json([
@@ -463,11 +515,22 @@ class HrDocumentTemplateController extends Controller
     }
 
     /** Replace every {{Token}} occurrence in $html using $ctx. Unknown
-     *  tokens are left as-is so an admin can spot them in the output. */
-    private function resolveTokens(string $html, array $ctx): string
+     *  tokens are left as-is so an admin can spot them in the output.
+     *
+     *  When $preserveSignerSlots is true, the per-signer fill-at-action
+     *  tokens ({{Signer{N}Sign}} and {{Signer{N}Date}}) are NOT substituted
+     *  even when present in $ctx — they're left as literal placeholders so
+     *  the signature workflow can fill them when each signer acts. Used by
+     *  HrDocumentSignatureController::store() when freezing content_html at
+     *  send time; preview/generate flows leave this false to render unsigned
+     *  slots as empty strings. */
+    private function resolveTokens(string $html, array $ctx, bool $preserveSignerSlots = false): string
     {
-        return preg_replace_callback('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', function ($m) use ($ctx) {
+        return preg_replace_callback('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', function ($m) use ($ctx, $preserveSignerSlots) {
             $key = $m[1];
+            if ($preserveSignerSlots && preg_match('/^Signer\d+(Sign|Date)$/', $key)) {
+                return $m[0];
+            }
             return array_key_exists($key, $ctx) ? htmlspecialchars((string) $ctx[$key], ENT_QUOTES) : $m[0];
         }, $html);
     }
