@@ -699,7 +699,7 @@ export default function HrRecruitment() {
                     <div style={{ minWidth: 130 }}>
                       <MasterSelect value={priorityFilter} onChange={setPriorityFilter} options={PRIORITY_FILTER_OPTIONS} placeholder="All" />
                     </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Job Type</span>
+                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>work Type</span>
                     <div style={{ minWidth: 140 }}>
                       <MasterSelect value={jobTypeFilter} onChange={setJobTypeFilter} options={JOB_TYPE_FILTER_OPTIONS} placeholder="All" />
                     </div>
@@ -2268,7 +2268,41 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (!designationId)          e.designation     = 'Designation is required';
     if (!primaryRoleId)          e.primaryRole     = 'Primary role is required';
     if (!employmentType)         e.employmentType  = 'Employment type is required';
-    if (!openings.trim() || Number(openings) <= 0) e.openings = 'Openings must be at least 1';
+    // Openings — required + positive integer + within the DB cap (9999).
+    // The backend's plain "must be an integer" message used to leak when
+    // a JS-stringified very-large number was coerced to a float; catch
+    // each case here with a clear, actionable explanation.
+    const openingsTrim = openings.trim();
+    if (!openingsTrim) {
+      e.openings = 'No. of openings is required';
+    } else {
+      const n = Number(openingsTrim);
+      if (!Number.isFinite(n)) {
+        e.openings = 'Enter a valid number';
+      } else if (!Number.isInteger(n) || /[^0-9]/.test(openingsTrim)) {
+        e.openings = 'Openings must be a whole number (no decimals or symbols)';
+      } else if (n < 1) {
+        e.openings = 'Openings must be at least 1';
+      } else if (n > 9999) {
+        e.openings = 'Openings cannot exceed 9,999 — split this requisition if you need more';
+      }
+    }
+    // CTC range — optional free text but the column tops out at 50
+    // chars and the salary range itself shouldn't exceed 9999.99 LPA
+    // per opening. Pull every numeric token out and bounds-check it
+    // so "1000000-2000000" type pastes get a clear inline error
+    // instead of a silent 422 from the server.
+    const ctc = ctcRange.trim();
+    if (ctc) {
+      if (ctc.length > 50) {
+        e.ctcRange = 'CTC range cannot exceed 50 characters';
+      } else {
+        const nums = ctc.match(/\d+(?:\.\d+)?/g) || [];
+        if (nums.some(num => Number(num) > 9999.99)) {
+          e.ctcRange = 'CTC values cannot exceed 9,999.99 LPA';
+        }
+      }
+    }
     if (!priority)               e.priority        = 'Priority is required';
     if (!hiringManagerId)        e.hiringManager   = 'Hiring manager is required';
     if (!assignedHrId)           e.assignedHr      = 'Assigned HR is required';
@@ -2295,7 +2329,17 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
-      toast.error('Please complete required fields', `${Object.keys(errs).length} field${Object.keys(errs).length === 1 ? '' : 's'} need attention.`);
+      // Surface the first error verbatim in the toast so the user
+      // sees the actual constraint (e.g. "Openings cannot exceed
+      // 9,999") instead of a generic count. Falls back to the count
+      // when more than one field is wrong.
+      const keys = Object.keys(errs);
+      const firstMsg = errs[keys[0] as keyof CreateErrors] as string | undefined;
+      const heading  = 'Please fix the highlighted fields';
+      const body = keys.length === 1
+        ? (firstMsg || 'One field needs attention.')
+        : `${firstMsg || ''}${firstMsg ? ' ' : ''}(${keys.length - 1} more ${keys.length === 2 ? 'field needs' : 'fields need'} attention.)`;
+      toast.error(heading, body);
       return;
     }
 
@@ -2341,7 +2385,9 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       // convert into the UI shape so the parent list updates without a refetch.
       onSaved(apiToRow(data));
     } catch (err: any) {
-      // Surface any per-field validation errors back into the form.
+      // Surface any per-field validation errors back into the form,
+      // rewriting the Laravel-default phrasing for openings / ctc so
+      // a runaway number doesn't read as "must be an integer".
       if (err?.response?.status === 422 && err?.response?.data?.errors) {
         const serverErrs = err.response.data.errors as Record<string, string | string[]>;
         const mapped: Record<string, string> = {};
@@ -2350,15 +2396,33 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
           department_id: 'department', designation_id: 'designation', primary_role_id: 'primaryRole',
           hiring_manager_id: 'hiringManager', assigned_hr_id: 'assignedHr',
           start_date: 'startDate', deadline: 'deadline', work_mode: 'workMode',
+          openings: 'openings', ctc_range: 'ctcRange',
         };
+        // Friendlier wording for the two fields that historically
+        // surfaced Laravel's terse defaults.
+        const rewrite = (col: string, msg: string): string => {
+          const lower = msg.toLowerCase();
+          if (col === 'openings') {
+            if (lower.includes('integer'))             return 'Openings must be a whole number (no decimals or symbols).';
+            if (lower.includes('max') || lower.includes('not be greater')) return 'Openings cannot exceed 9,999 — split this requisition if you need more.';
+            if (lower.includes('min') || lower.includes('at least'))       return 'Openings must be at least 1.';
+          }
+          if (col === 'ctc_range' && (lower.includes('max') || lower.includes('characters')))
+            return 'CTC range cannot exceed 50 characters.';
+          return msg;
+        };
+        let firstMsg = '';
         for (const k of Object.keys(serverErrs)) {
           const v = serverErrs[k];
-          mapped[fieldMap[k] || k] = Array.isArray(v) ? String(v[0]) : String(v);
+          const raw = Array.isArray(v) ? String(v[0]) : String(v);
+          const pretty = rewrite(k, raw);
+          mapped[fieldMap[k] || k] = pretty;
+          if (!firstMsg) firstMsg = pretty;
         }
         setErrors(mapped);
-        toast.error('Validation failed', 'Please fix the highlighted fields.');
+        toast.error('Please fix the highlighted fields', firstMsg || 'Some inputs need attention.');
       } else {
-        toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
+        toast.error('Could not save', err?.response?.data?.message?.split('\n')[0] || 'Please try again.');
       }
     } finally {
       setSaving(false);
@@ -2507,9 +2571,15 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
               </Col>
               <Col md={4}>
                 <label className="rec-form-label"><i className="ri-team-line" />No. of Openings<span className="req">*</span></label>
+                {/* min/max + step=1 also gate the spinner buttons so
+                    the picker can't crawl past 9999 without the user
+                    typing or pasting a runaway value. The validator
+                    catches typed/pasted overruns. */}
                 <input
                   type="number"
                   min={1}
+                  max={9999}
+                  step={1}
                   className={`rec-input${errors.openings ? ' is-invalid' : ''}`}
                   value={openings}
                   onChange={e => { setOpenings(e.target.value); clear('openings'); }}
@@ -2542,11 +2612,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 <label className="rec-form-label"><i className="ri-money-rupee-circle-line" />CTC Range (LPA)</label>
                 <input
                   type="text"
-                  className="rec-input"
+                  maxLength={50}
+                  className={`rec-input${errors.ctcRange ? ' is-invalid' : ''}`}
                   placeholder="e.g. 8-12"
                   value={ctcRange}
-                  onChange={e => setCtcRange(e.target.value)}
+                  onChange={e => { setCtcRange(e.target.value); clear('ctcRange'); }}
                 />
+                {errors.ctcRange && <div className="rec-error"><i className="ri-error-warning-line" />{errors.ctcRange}</div>}
               </Col>
               <Col xs={12}>
                 <label className="rec-form-label"><i className="ri-flag-line" />Priority<span className="req">*</span></label>

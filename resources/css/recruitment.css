@@ -570,6 +570,28 @@
 [data-bs-theme="dark"] .rec-form-modal .master-datepicker-wrap .master-datepicker-toggle {
   background: var(--vz-card-bg); border-color: var(--vz-border-color); color: var(--vz-body-color);
 }
+/* Invalid state — both the light-mode base rule AND the dark-mode
+   override use a `.rec-form-modal …` ancestor selector that outranks
+   the .invalid border-color rule shipped with MasterDatePicker.css /
+   MasterSelect.css (same specificity, but recruitment.css loads after
+   so it wins by source order). Re-assert the red border + glow inside
+   the .rec-form-modal scope with !important so submitting an empty
+   Start Date / TAT Deadline / required dropdown lights up the field
+   exactly like rec-input.is-invalid. */
+.rec-form-modal .master-datepicker-wrap.invalid .master-datepicker-toggle,
+.rec-form-modal .master-select-wrap.invalid .master-select-toggle {
+  border-color: #f06548 !important;
+  box-shadow: 0 0 0 3px rgba(240,101,72,0.18), 0 2px 8px rgba(240,101,72,0.10) !important;
+}
+[data-bs-theme="dark"] .rec-form-modal .master-datepicker-wrap.invalid .master-datepicker-toggle,
+[data-bs-theme="dark"] .rec-form-modal .master-select-wrap.invalid .master-select-toggle,
+[data-bs-theme="dark"] .master-datepicker-wrap.invalid .master-datepicker-toggle,
+[data-bs-theme="dark"] .master-select-wrap.invalid .master-select-toggle,
+[data-layout-mode="dark"] .rec-form-modal .master-datepicker-wrap.invalid .master-datepicker-toggle,
+[data-layout-mode="dark"] .rec-form-modal .master-select-wrap.invalid .master-select-toggle {
+  border-color: #f06548 !important;
+  box-shadow: 0 0 0 3px rgba(240,101,72,0.20), 0 4px 12px rgba(240,101,72,0.15) !important;
+}
 .rec-error { color: #f06548; font-size: 11.5px; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
 
 /* ---------------------------------------------------------------------

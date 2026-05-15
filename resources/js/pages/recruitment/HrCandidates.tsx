@@ -829,7 +829,76 @@ function ImportCandidatesModal({
     : [];
 
   return (
-    <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" contentClassName="border-0 cand-import-modal">
+    <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" modalClassName="cand-form-clientstyle" contentClassName="border-0 cand-import-modal">
+      {/* Reuse the candidate-form aesthetic for inputs + dropdowns
+          (Client form recipe — 38px height, 10px radius, 13px font,
+          sentence-case labels). Same overrides as CandidateFormModal
+          so the two modals look like a single design system. */}
+      <style>{`
+        .cand-form-clientstyle .rec-form-label,
+        .cand-form-clientstyle .cand-import-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          text-transform: none;
+          margin-bottom: 5px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          line-height: 1.2;
+          background: none;
+          -webkit-background-clip: initial;
+          background-clip: initial;
+          -webkit-text-fill-color: var(--vz-body-color);
+          color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .cand-form-clientstyle .rec-form-label,
+        [data-bs-theme="dark"] .cand-form-clientstyle .cand-import-label,
+        [data-layout-mode="dark"] .cand-form-clientstyle .rec-form-label,
+        [data-layout-mode="dark"] .cand-form-clientstyle .cand-import-label {
+          color: var(--vz-body-color);
+          -webkit-text-fill-color: var(--vz-body-color);
+          background: none;
+        }
+        .cand-form-clientstyle .rec-form-label i,
+        .cand-form-clientstyle .cand-import-label i {
+          color: var(--vz-secondary-color);
+          -webkit-text-fill-color: var(--vz-secondary-color);
+          font-size: 13px;
+        }
+        .cand-form-clientstyle .rec-input,
+        .cand-form-clientstyle .cand-import-input,
+        .cand-form-clientstyle .master-select-wrap .master-select-toggle,
+        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle {
+          height: 38px;
+          padding: 7px 11px;
+          font-size: 13px;
+          border-radius: 10px;
+          background: var(--vz-card-bg);
+          color: var(--vz-body-color);
+          border: 1px solid var(--vz-border-color);
+          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+        }
+        .cand-form-clientstyle .rec-input::placeholder,
+        .cand-form-clientstyle .cand-import-input::placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.65;
+        }
+        .cand-form-clientstyle .rec-input:hover:not(:disabled),
+        .cand-form-clientstyle .cand-import-input:hover:not(:disabled),
+        .cand-form-clientstyle .master-select-wrap .master-select-toggle:hover:not(:disabled),
+        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle:hover:not(:disabled) {
+          border-color: rgba(99,102,241,0.55);
+          box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+        }
+        .cand-form-clientstyle .rec-input:focus,
+        .cand-form-clientstyle .cand-import-input:focus,
+        .cand-form-clientstyle .master-select-wrap.show .master-select-toggle {
+          outline: none;
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+        }
+      `}</style>
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         {/* Header */}
         <div className="cand-import-head">
@@ -1384,12 +1453,7 @@ function CandidateFormModal({
         </div>
 
         <div className="rec-form-body">
-          {/* Linked Recruitment readout */}
-          <div className="cand-linked-recruitment mb-2">
-            <span className="cand-linked-icon"><i className="ri-link" /></span>
-            <span className="cand-linked-label">Linked Recruitment</span>
-            <span className="cand-linked-value">{recruitment ? `${recruitment.code} — ${recruitment.jobTitle}` : '—'}</span>
-          </div>
+         
 
           <div className="rec-form-card">
             {/* Section 1: Candidate Basic Details */}
@@ -1521,7 +1585,27 @@ function CandidateFormModal({
                     <p className="rec-form-section-title">Recruitment Status</p>
                   </div>
                   <label className="rec-form-label">Candidate Status<span className="req">*</span></label>
-                  <MasterSelect value={status} onChange={(v) => setStatus(v as CandidateStatus)} options={STATUSES.map(s => ({ value: s, label: s }))} placeholder="— Select —" />
+                  {/* The form only exposes the three lifecycle states a
+                      recruiter actually picks on create / edit:
+                      Applied (intake), Final Round Selected (shortlist
+                      through interviews — stored as the existing
+                      "Final Interview" enum so historical rows keep
+                      working), and Selected (offer extended). Other
+                      states (Rejected, On Hold, Offered, etc.) still
+                      exist in the type union and continue to be set
+                      programmatically by the Confirm Selection /
+                      Reject modal — they're just not user-selectable
+                      from this dropdown. */}
+                  <MasterSelect
+                    value={status}
+                    onChange={(v) => setStatus(v as CandidateStatus)}
+                    options={[
+                      { value: 'Applied',         label: 'Applied' },
+                      { value: 'Final Interview', label: 'Final Round Selected' },
+                      { value: 'Selected',        label: 'Selected' },
+                    ]}
+                    placeholder="— Select —"
+                  />
                   {errors.status && <div className="rec-error"><i className="ri-error-warning-line" />{errors.status}</div>}
                 </div>
               </Col>
