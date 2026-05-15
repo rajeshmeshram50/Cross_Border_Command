@@ -1472,13 +1472,19 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
   useEffect(() => { setPage(1); }, [statusFilter, urgencyFilter, q, tab]);
 
   const stats = useMemo(() => {
-    const total       = requests.length;
-    const underReview = requests.filter(r => r.status === 'Under Review').length;
-    const approved    = requests.filter(r => r.status === 'Approved').length;
-    const critical    = requests.filter(r => r.urgency === 'Critical').length;
-    const sentBack    = requests.filter(r => r.status === 'Sent Back').length;
-    return { total, underReview, approved, critical, sentBack };
-  }, [requests]);
+    // Counts driven by what the workflow actually produces today:
+    // requests start as Draft → Submitted, and once a recruitment is
+    // raised they show up under the cross-referenced "Recruitment
+    // Created" bucket. Under Review / Approved / Sent Back / Rejected
+    // KPIs were retired because no path in the app sets those statuses
+    // — they were aspirational and always read as zero.
+    const total              = requests.length;
+    const draft              = requests.filter(r => r.status === 'Draft').length;
+    const submitted          = requests.filter(r => r.status === 'Submitted').length;
+    const critical           = requests.filter(r => r.urgency === 'Critical').length;
+    const recruitmentCreated = requests.filter(r => linkedHrIds.has(Number(r.id))).length;
+    return { total, draft, submitted, critical, recruitmentCreated };
+  }, [requests, linkedHrIds]);
 
   // Tab partition runs FIRST so the count on each tab reflects the
   // server-fed list, not the post-filter slice. Subsequent filters
@@ -1555,11 +1561,11 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
         {/* KPI strip — premium vivid gradient palette per status */}
         <div className="rec-req-stats">
           {[
-            { label: 'Total',        value: stats.total,       icon: 'ri-file-list-3-line',     accent: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
-            { label: 'Under Review', value: stats.underReview, icon: 'ri-time-line',            accent: 'linear-gradient(135deg, #7c3aed 0%, #9333ea 60%, #a855f7 100%)', deep: '#7c3aed' },
-            { label: 'Approved',     value: stats.approved,    icon: 'ri-checkbox-circle-line', accent: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
-            { label: 'Critical',     value: stats.critical,    icon: 'ri-flashlight-line',      accent: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
-            { label: 'Sent Back',    value: stats.sentBack,    icon: 'ri-arrow-go-back-line',   accent: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
+            { label: 'Total',                value: stats.total,              icon: 'ri-file-list-3-line',     accent: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
+            { label: 'Draft',                value: stats.draft,              icon: 'ri-draft-line',           accent: 'linear-gradient(135deg, #525252 0%, #737373 60%, #a3a3a3 100%)', deep: '#525252' },
+            { label: 'Submitted',            value: stats.submitted,          icon: 'ri-send-plane-line',      accent: 'linear-gradient(135deg, #7c3aed 0%, #9333ea 60%, #a855f7 100%)', deep: '#7c3aed' },
+            { label: 'Recruitment Created',  value: stats.recruitmentCreated, icon: 'ri-user-search-line',     accent: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
+            { label: 'Critical',             value: stats.critical,           icon: 'ri-flashlight-line',      accent: 'linear-gradient(135deg, #be123c 0%, #ef4444 60%, #fb7185 100%)', deep: '#be123c' },
           ].map(k => (
             <div className="rec-kpi-card" key={k.label}>
               <span className="rec-kpi-strip" style={{ background: k.accent }} />
