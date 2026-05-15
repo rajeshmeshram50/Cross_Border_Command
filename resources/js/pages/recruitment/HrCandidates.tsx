@@ -1292,7 +1292,79 @@ function CandidateFormModal({
   };
 
   return (
-    <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" modalClassName="rec-form-modal" contentClassName="rec-form-content border-0">
+    <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" modalClassName="rec-form-modal cand-form-clientstyle" contentClassName="rec-form-content border-0">
+      {/* Adopt the Client form's field aesthetic — sentence-case label
+          @11.5px / 600, 38px input with 10px radius / 13px text — by
+          overriding the candidate-form's recruitment-themed defaults
+          under this single scope. Keeps the rest of the recruitment
+          modals (Create Recruitment, etc.) untouched. */}
+      <style>{`
+        .cand-form-clientstyle .rec-form-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          text-transform: none;
+          margin-bottom: 5px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          line-height: 1.2;
+          background: none;
+          -webkit-background-clip: initial;
+          background-clip: initial;
+          -webkit-text-fill-color: var(--vz-body-color);
+          color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .cand-form-clientstyle .rec-form-label,
+        [data-layout-mode="dark"] .cand-form-clientstyle .rec-form-label {
+          color: var(--vz-body-color);
+          -webkit-text-fill-color: var(--vz-body-color);
+          background: none;
+        }
+        .cand-form-clientstyle .rec-form-label i {
+          color: var(--vz-secondary-color);
+          -webkit-text-fill-color: var(--vz-secondary-color);
+          font-size: 13px;
+        }
+        .cand-form-clientstyle .rec-input,
+        .cand-form-clientstyle .master-select-wrap .master-select-toggle,
+        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle {
+          height: 38px;
+          padding: 7px 11px;
+          font-size: 13px;
+          border-radius: 10px;
+          background: var(--vz-card-bg);
+          color: var(--vz-body-color);
+          border: 1px solid var(--vz-border-color);
+          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+        }
+        .cand-form-clientstyle textarea.rec-input,
+        .cand-form-clientstyle .rec-input.rec-textarea {
+          height: auto;
+          min-height: 64px;
+          resize: vertical;
+        }
+        .cand-form-clientstyle .rec-input::placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.65;
+        }
+        .cand-form-clientstyle .rec-input:hover:not(:disabled),
+        .cand-form-clientstyle .master-select-wrap .master-select-toggle:hover:not(:disabled),
+        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle:hover:not(:disabled) {
+          border-color: rgba(99,102,241,0.55);
+          box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+        }
+        .cand-form-clientstyle .rec-input:focus,
+        .cand-form-clientstyle .master-select-wrap.show .master-select-toggle {
+          outline: none;
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+        }
+        /* Field row spacing matches the client form's tighter Row(g-2)
+           cadence — section padding pulled in so columns aren't pushed
+           right by the legacy purple sidebar. */
+        .cand-form-clientstyle .rec-form-section > .row { padding-left: 0; }
+      `}</style>
       <ModalBody className="p-0">
         <div className="rec-form-header">
           <div className="d-flex align-items-center justify-content-between gap-3">
@@ -1431,7 +1503,6 @@ function CandidateFormModal({
                     <span className="cand-step cand-step-4">4</span>
                     <p className="rec-form-section-title">Attachment Details</p>
                   </div>
-                  <label className="rec-form-label">Upload CV{!editing && <span className="req">*</span>}</label>
                   <label className="cand-cv-drop" style={errors.cv ? { borderColor: '#f06548' } : undefined}>
                     <input type="file" accept=".pdf,.doc,.docx" onChange={e => setCvFile(e.target.files?.[0] ?? null)} style={{ display: 'none' }} />
                     <i className="ri-attachment-2" />
