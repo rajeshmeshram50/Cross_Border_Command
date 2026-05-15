@@ -38,6 +38,15 @@ class LeaveRequestController extends Controller
             $employeeId = $own->id;
         }
 
+        // Tenant guard — without this an admin from client X can pass any
+        // employee_id and read leave history belonging to client Y.
+        if ($user->user_type !== 'super_admin' && $user->client_id) {
+            $targetClientId = Employee::where('id', $employeeId)->value('client_id');
+            if ($targetClientId !== null && (int) $targetClientId !== (int) $user->client_id) {
+                abort(404);
+            }
+        }
+
         $status = $request->input('status'); // 'Pending' | 'Approved' | 'Rejected' | null
         $q = LeaveRequest::query()
             ->where('employee_id', $employeeId)
@@ -92,22 +101,92 @@ class LeaveRequestController extends Controller
             abort(422, 'Could not resolve target employee for this leave request.');
         }
 
+        // Tenant guard on the resolved employee — prevents an admin from
+        // client X filing leave on behalf of an employee in client Y by
+        // passing employee_id directly. Super_admin bypasses.
+        if ($user->user_type !== 'super_admin'
+            && $user->client_id
+            && (int) $employee->client_id !== (int) $user->client_id) {
+            abort(403, 'You cannot file leave for an employee outside your tenant.');
+        }
+
+        // Past-date guard. Backdated leave bypasses the entire approval
+        // workflow's purpose — if HR really needs to log a historical
+        // absence, we can add a dedicated "Adjustments" path later.
+        $todayStr = now()->toDateString();
+        if ($data['from_date'] < $todayStr) {
+            abort(422, 'You cannot apply for leave in the past. Pick a date from today onward.');
+        }
+
         // Compute days. Half-day requests collapse to 0.5; otherwise count
         // the calendar span inclusive. Weekend exclusion is a future task —
         // for now we count straight calendar days so the math is predictable.
         $from = Carbon::parse($data['from_date']);
         $to = Carbon::parse($data['to_date']);
         $dayType = $data['day_type'] ?? 'full';
+        // Half-day only makes sense on a single calendar day. Reject the
+        // ambiguous "first_half across 5 days" case rather than silently
+        // billing it as 5 full days.
+        if ($dayType !== 'full' && !$from->isSameDay($to)) {
+            abort(422, 'Half-day requests are only valid for a single calendar day. Please pick the same from/to date or switch day type to "Full Day".');
+        }
         if ($dayType !== 'full' && $from->isSameDay($to)) {
             $days = 0.5;
         } else {
             $days = CarbonPeriod::create($from, $to)->count();
         }
 
+        // Overlap guard — same employee already has a Pending or Approved
+        // request whose date range intersects the new one. Two ranges
+        // overlap when each starts on or before the other one ends.
+        $overlap = LeaveRequest::where('employee_id', $employee->id)
+            ->whereIn('status', ['Pending', 'Approved'])
+            ->where('from_date', '<=', $to->toDateString())
+            ->where('to_date',   '>=', $from->toDateString())
+            ->first();
+        if ($overlap) {
+            abort(422, "You already have a {$overlap->status} leave request for {$overlap->from_date} → {$overlap->to_date}. Cancel it before applying for overlapping dates.");
+        }
+
+        // Cover person + notify list must be in the same tenant. The /colleagues
+        // search endpoint enforces this in the UI, but a hand-rolled API call
+        // can still smuggle cross-tenant IDs in.
+        if (!empty($data['cover_person_id'])) {
+            $coverClientId = Employee::where('id', $data['cover_person_id'])->value('client_id');
+            if ($coverClientId !== null && (int) $coverClientId !== (int) $employee->client_id) {
+                abort(422, 'Cover person must be in the same tenant.');
+            }
+        }
+        $notifyIds = is_array($data['notify']['employee_ids'] ?? null)
+            ? array_values(array_filter(array_map('intval', $data['notify']['employee_ids']), fn($v) => $v > 0))
+            : [];
+        if (!empty($notifyIds)) {
+            $crossTenant = Employee::whereIn('id', $notifyIds)
+                ->where('client_id', '!=', $employee->client_id)
+                ->exists();
+            if ($crossTenant) {
+                abort(422, 'Notify list contains employees outside your tenant.');
+            }
+        }
+
         // Find the employee's current leave plan (if any) for stamping.
         $planId = DB::table('leave_plan_employees')
             ->where('employee_id', $employee->id)
             ->value('leave_plan_id');
+
+        // Plan + leave-type sanity. Without a plan there are no quotas
+        // and no approval chain config, so let HR fix the assignment
+        // before the employee can apply.
+        if (!$planId) {
+            abort(422, 'You are not assigned to a leave plan yet. Please contact HR.');
+        }
+        $typeInPlan = DB::table('leave_plan_leave_types')
+            ->where('leave_plan_id', $planId)
+            ->where('leave_type_id', $data['leave_type_id'])
+            ->exists();
+        if (!$typeInPlan) {
+            abort(422, 'The selected leave type is not part of your assigned leave plan.');
+        }
 
         // Snapshot the approval chain from the plan-type config_json so
         // changing the plan rules later doesn't reroute in-flight requests.
@@ -148,6 +227,13 @@ class LeaveRequestController extends Controller
         // Fire-and-forget notifications. Wrap in try/catch so a flaky SMTP
         // doesn't kill a successful submit — the row is already persisted.
         $this->notifyForSubmission($row, $employee);
+
+        // Auto-approved (every chain level was Skipped by rule) — also tell
+        // the requester their leave is granted, otherwise they sit waiting
+        // for an approval email that will never come.
+        if ($autoApproved) {
+            $this->notifyForDecision($row, $row->approver_comment);
+        }
 
         return response()->json(['data' => $row->load(['leaveType:id,name,short_code', 'leavePlan:id,plan_name'])], 201);
     }
@@ -213,6 +299,8 @@ class LeaveRequestController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
+        // Tenant guard before loading relations — prevents IDOR.
+        $this->findScopedOrFail($id, $user);
         $row = LeaveRequest::with([
             'employee:id,emp_code,first_name,last_name,display_name,department_id,designation_id,reporting_manager_id,email',
             'employee.department:id,name',
@@ -256,25 +344,31 @@ class LeaveRequestController extends Controller
         // Super admin sees everything. Client admin / branch user see their
         // tenant's requests so HR can act regardless of who the direct
         // reporting manager is. Anyone else only sees requests where they
-        // are the reporting manager of the requestor.
+        // are the reporting manager of the requestor OR are explicitly
+        // named on the approval chain.
         $isAdminScope = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        $myEmployeeId = null;
         if (!$isAdminScope) {
             $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
             if (!$myEmployeeId) {
                 return response()->json(['data' => []]);
             }
-            // Non-admin path — show pending requests where the current level
-            // has me as approver: either as reporting manager of the
-            // requestor, or as the explicitly-named employee/user on that
-            // level. We do the simple SQL filter for direct reports, then
-            // post-filter in PHP for the per-level chain matching since
-            // approval_chain is a JSON column. Already-decided (Approved /
-            // Rejected) requests fall back to "I was somewhere on the chain".
+            // Pre-filter: anything in my tenant where I might appear on
+            // the chain. We cast a wide net here (RM relation OR approved_by
+            // OR any chain row that name-checks me) and then post-filter
+            // in PHP using canActOnLevel for per-level precision —
+            // approval_chain is JSON so we can't reliably do that match
+            // entirely in SQL across PG / MySQL.
             $q->where(function ($w) use ($myEmployeeId, $user) {
                 $w->whereIn('employee_id', function ($sub) use ($myEmployeeId) {
                     $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
-                })->orWhere('approved_by', $user->id);
+                })->orWhere('approved_by', $user->id)
+                  ->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . (int) $user->id . '%')
+                  ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . (int) $myEmployeeId . '%');
             });
+            if ($user->client_id) {
+                $q->where('client_id', $user->client_id);
+            }
         } elseif ($user->user_type !== 'super_admin' && $user->client_id) {
             $q->where('client_id', $user->client_id);
         }
@@ -295,7 +389,27 @@ class LeaveRequestController extends Controller
             });
         }
 
-        return response()->json(['data' => $q->get()]);
+        $rows = $q->get();
+
+        // Per-level precision pass for non-admins. For Pending requests
+        // only show ones where I can act on the current level. For
+        // decided requests fall back to "I was somewhere on the chain"
+        // so my history view still includes them.
+        if (!$isAdminScope) {
+            $rows = $rows->filter(function (LeaveRequest $row) use ($user) {
+                $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
+                if ($row->status === 'Pending') {
+                    $idx = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
+                    return $this->canActOnLevel($user, $chain, $idx, $row);
+                }
+                foreach (array_keys($chain) as $i) {
+                    if ($this->canActOnLevel($user, $chain, $i, $row)) return true;
+                }
+                return (int) $row->approved_by === (int) $user->id;
+            })->values();
+        }
+
+        return response()->json(['data' => $rows]);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -315,7 +429,7 @@ class LeaveRequestController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row = LeaveRequest::findOrFail($id);
+        $row = $this->findScopedOrFail($id, $user);
         // Only the requester (or HR) can cancel their own pending request.
         $isOwner = Employee::where('id', $row->employee_id)->where('user_id', $user->id)->exists();
         if (!$isOwner && !in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
@@ -337,7 +451,7 @@ class LeaveRequestController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row = LeaveRequest::findOrFail($id);
+        $row = $this->findScopedOrFail($id, $user);
         if ($row->status !== 'Pending') {
             abort(422, "Leave request is already {$row->status}.");
         }
@@ -401,7 +515,7 @@ class LeaveRequestController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $row = LeaveRequest::findOrFail($id);
+        $row = $this->findScopedOrFail($id, $user);
         $chain = $row->approval_chain ?? [];
 
         // Hydrate each level with the resolved approver's name / email.
@@ -859,6 +973,24 @@ class LeaveRequestController extends Controller
         $ids = $notify['employee_ids'] ?? null;
         if (!is_array($ids)) return [];
         return array_values(array_filter(array_map('intval', $ids), fn($v) => $v > 0));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Tenant scope guard — every single-row endpoint (show / approve /
+    // reject / cancel / approvers) must hit this so a user in client X
+    // can't read or act on a leave_request belonging to client Y just by
+    // guessing the ID. Super admins bypass the check; everyone else is
+    // pinned to their own client_id.
+    // ─────────────────────────────────────────────────────────────────────
+    private function findScopedOrFail(int $id, $user): LeaveRequest
+    {
+        $row = LeaveRequest::findOrFail($id);
+        if ($user->user_type !== 'super_admin'
+            && $user->client_id
+            && (int) $row->client_id !== (int) $user->client_id) {
+            abort(404);
+        }
+        return $row;
     }
 
     private function safeSend(mixed $notifiable, LeaveRequestNotification $notif): void

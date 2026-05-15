@@ -302,9 +302,12 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     managerStatus = 'Rejected';
     hrStatus = 'Pending';
   } else if (status === 'Cancelled') {
-    stage = 'Rejected';   // closest existing stage tone
-    managerStatus = 'Rejected';
-    hrStatus = 'Pending';
+    // Withdrawn by the employee before either approver acted — paint it
+    // grey rather than reusing the Rejected red so the row is clearly
+    // distinguishable from a denial in the queue.
+    stage = 'Cancelled';
+    managerStatus = 'NA';
+    hrStatus = 'NA';
   } else {
     // Pending — distinguish manager vs HR by which level we're currently on
     const level = (api as any).current_approval_level ?? 1;

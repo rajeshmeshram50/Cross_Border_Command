@@ -12,6 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -159,9 +161,13 @@ class HrDocumentSignatureController extends Controller
     public function action(Request $request, $id)
     {
         $data = $request->validate([
-            'action'      => ['required', Rule::in(['Sign', 'Approve', 'Acknowledge'])],
-            'signed_name' => 'nullable|string|max:120',
-            'note'        => 'nullable|string|max:500',
+            'action'          => ['required', Rule::in(['Sign', 'Approve', 'Acknowledge'])],
+            'signed_name'     => 'nullable|string|max:120',
+            // base64 PNG data URL from the signature pad. Loose `string` rule
+            // here — strict shape ("data:image/png;base64,...") is enforced
+            // inside the transaction so we can give a friendlier 422 message.
+            'signature_image' => 'nullable|string|max:2000000',
+            'note'            => 'nullable|string|max:500',
         ]);
 
         return DB::transaction(function () use ($request, $data, $id) {
@@ -175,15 +181,32 @@ class HrDocumentSignatureController extends Controller
                 abort(403, "You're not the current signer on this document.");
             }
 
-            // For Sign rows we require a typed name and fill the
-            // {{SignerNSign}} token so the next viewer sees the signature.
+            // For Sign rows we require a typed name (always logged in the
+            // audit trail) and fill the {{SignerNSign}} token. The signer
+            // can additionally upload a drawn signature — when present, the
+            // token is replaced with an <img>; otherwise we fall back to
+            // the original cursive-rendered text.
             if (($current['action'] ?? '') === 'Sign') {
                 $name = trim((string) ($data['signed_name'] ?? ''));
                 if ($name === '') abort(422, 'Typed signature is required for Sign step.');
                 $current['signed_name'] = $name;
+
+                $signImgUrl = null;
+                if (!empty($data['signature_image'])) {
+                    $signImgUrl = $this->persistSignatureImage(
+                        (string) $data['signature_image'],
+                        $row->client_id,
+                        (int) $row->id,
+                        $idx + 1,
+                    );
+                    if ($signImgUrl) $current['signature_url'] = $signImgUrl;
+                }
+
                 $rowHtml = $row->content_html ?: '';
                 $n = $idx + 1;
-                $signMarker = sprintf('<span style="font-family: \'Brush Script MT\', cursive; font-size: 22px; color: #1d4ed8;">%s</span>', htmlspecialchars($name, ENT_QUOTES));
+                $signMarker = $signImgUrl
+                    ? sprintf('<img src="%s" alt="Signature of %s" style="max-height: 60px; max-width: 220px; vertical-align: middle;" />', htmlspecialchars($signImgUrl, ENT_QUOTES), htmlspecialchars($name, ENT_QUOTES))
+                    : sprintf('<span style="font-family: \'Brush Script MT\', cursive; font-size: 22px; color: #1d4ed8;">%s</span>', htmlspecialchars($name, ENT_QUOTES));
                 $rowHtml = str_replace("{{Signer{$n}Sign}}", $signMarker, $rowHtml);
                 $rowHtml = str_replace("{{Signer{$n}Date}}", date('d M Y'), $rowHtml);
                 $row->content_html = $rowHtml;
@@ -205,12 +228,18 @@ class HrDocumentSignatureController extends Controller
                 $row->status = 'In Progress';
             }
 
+            $signSuffix = '';
+            if (!empty($data['signed_name'])) {
+                $signSuffix = " (signed: {$data['signed_name']}"
+                    . (!empty($current['signature_url']) ? ' · drawn signature attached' : '')
+                    . ')';
+            }
             $row->audit_log = array_merge($row->audit_log ?? [], [
-                $this->event($user, strtolower(($current['action'] ?? 'action')) , sprintf(
+                $this->event($user, strtolower(($current['action'] ?? 'action')), sprintf(
                     '%s by %s%s',
                     $current['action'] ?? 'Action taken',
                     $user?->name ?? '(unknown)',
-                    !empty($data['signed_name']) ? " (signed: {$data['signed_name']})" : ''
+                    $signSuffix
                 )),
             ]);
             $row->save();
@@ -317,7 +346,13 @@ class HrDocumentSignatureController extends Controller
             'header'     => $headerCfg,
             'footer'     => $footerCfg,
             'logoDataUri'=> $logoUrl,
-            'bodyHtml'   => (string) ($row->content_html ?: '<p>(empty)</p>'),
+            // Inline any storage-served <img> URLs (signatures, embedded
+            // images) as base64 data URIs. DomPDF runs headless and can't
+            // fetch /storage/... over HTTP — same workaround as the header
+            // logo above.
+            'bodyHtml'   => $this->inlineLocalImagesAsDataUris(
+                (string) ($row->content_html ?: '<p>(empty)</p>')
+            ),
         ]);
         $pdf->setPaper('A4');
 
@@ -445,6 +480,89 @@ class HrDocumentSignatureController extends Controller
             'action'     => $action,
             'message'    => $message,
         ];
+    }
+
+    /**
+     * Decode a `data:image/...;base64,...` payload from the SignaturePad
+     * (Type/Draw modes emit PNG, Upload mode can yield PNG/JPG/GIF/WEBP/SVG)
+     * and persist it under the tenant's public-disk folder. Returns the
+     * public URL on success, or null if the payload doesn't look like a
+     * valid base64 image — we don't abort, the signer can still proceed
+     * with the typed cursive fallback.
+     */
+    private function persistSignatureImage(string $dataUrl, ?int $clientId, int $runId, int $signerN): ?string
+    {
+        if (!preg_match('#^data:image/(png|jpe?g|gif|webp|svg\+xml);base64,([A-Za-z0-9+/=\s]+)$#i', trim($dataUrl), $m)) {
+            return null;
+        }
+        $mime = strtolower($m[1]);
+        $ext = match ($mime) {
+            'jpg', 'jpeg' => 'jpg',
+            'svg+xml'     => 'svg',
+            default       => $mime,
+        };
+        $binary = base64_decode(preg_replace('/\s+/', '', $m[2]) ?: '', true);
+        // Hard cap at ~4 MB — matches the SignaturePad Upload tab limit. A
+        // typed/drawn signature is typically under 30 KB; this only kicks in
+        // for uploaded photo-style images.
+        if ($binary === false || strlen($binary) === 0 || strlen($binary) > 4 * 1024 * 1024) {
+            return null;
+        }
+        $clientSlug = $clientId ? 'c' . $clientId : 'public';
+        $folder = "doc_templates/{$clientSlug}/signatures";
+        $filename = sprintf('run%d-s%d-%s.%s', $runId, $signerN, Str::random(10), $ext);
+        try {
+            Storage::disk('public')->put($folder . '/' . $filename, $binary, 'public');
+        } catch (\Throwable $e) {
+            Log::error('[hr-document-signatures] save signature image failed', [
+                'run' => $runId, 'signer' => $signerN, 'err' => $e->getMessage(),
+            ]);
+            return null;
+        }
+        return file_url($folder . '/' . $filename);
+    }
+
+    /**
+     * Rewrite every <img src="..."> in $html that points to a storage-served
+     * URL (or a /storage/... relative path) into a base64 data URI, reading
+     * the file from the public disk. Skips srcs that are already data URIs
+     * or remote URLs we can't resolve. DomPDF runs headless and can't reach
+     * /storage/... over HTTP, so without this signatures render as broken
+     * images (or, depending on DomPDF settings, as nothing at all).
+     */
+    private function inlineLocalImagesAsDataUris(string $html): string
+    {
+        return preg_replace_callback(
+            '#<img\b([^>]*?)\bsrc=([\'"])(.*?)\2([^>]*)>#i',
+            function ($mm) {
+                [$full, $pre, $quote, $src, $post] = $mm;
+                if ($src === '' || str_starts_with($src, 'data:')) return $full;
+
+                // Resolve the src to a path on the public disk. Handle three
+                // common shapes: absolute URLs hosted on this app's storage,
+                // /storage/... relative paths, and bare disk-relative paths.
+                $diskPath = null;
+                $parsed = parse_url($src);
+                $path = $parsed['path'] ?? $src;
+                if (preg_match('#/storage/(.+)$#', $path, $sm)) {
+                    $diskPath = $sm[1];
+                } elseif (!isset($parsed['scheme']) && !str_starts_with($path, '/')) {
+                    $diskPath = ltrim($path, '/');
+                }
+                if (!$diskPath) return $full;
+
+                try {
+                    if (!Storage::disk('public')->exists($diskPath)) return $full;
+                    $binary = Storage::disk('public')->get($diskPath);
+                    $mime = Storage::disk('public')->mimeType($diskPath) ?: 'image/png';
+                } catch (\Throwable $e) {
+                    return $full;
+                }
+                $dataUri = 'data:' . $mime . ';base64,' . base64_encode($binary);
+                return '<img' . $pre . 'src=' . $quote . $dataUri . $quote . $post . '>';
+            },
+            $html
+        ) ?? $html;
     }
 
     /** Same tenant-scope rules as the template controller. */

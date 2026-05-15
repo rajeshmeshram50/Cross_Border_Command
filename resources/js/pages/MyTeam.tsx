@@ -4,6 +4,7 @@ import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
+import SignaturePad from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -72,6 +73,11 @@ export default function MyTeam() {
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionName, setActionName] = useState('');
   const [actionNote, setActionNote] = useState('');
+  // Signature mode + drawn-PNG state for the Sign step. Reset each time the
+  // action modal opens (see openAction below).
+  // Single PNG data URL produced by the signature pad regardless of which
+  // mode (Type/Draw/Upload) the user picked.
+  const [drawnSignature, setDrawnSignature] = useState<string | null>(null);
 
   // View-only preview modal — opens the locked document without the
   // action form, so approvers can read first and decide later.
@@ -115,23 +121,52 @@ export default function MyTeam() {
     // Pre-fill the typed-signature field with the user's name for Sign rows.
     setActionName(user?.name || '');
     setActionNote('');
+    setDrawnSignature(null);
   };
 
   const submitAction = async () => {
     if (!actionItem) return;
+
+    // Expense approvals route through the expense-claims controller. Stage
+    // (manager vs HR) was resolved server-side in MyTeamController and lives
+    // on raw.stage — the SPA just dispatches the matching endpoint.
+    if (actionItem.module === 'expense') {
+      const stage = actionItem.raw?.stage === 'hr' ? 'hr' : 'manager';
+      setActionSubmitting(true);
+      try {
+        await api.post(`/expense-claims/${actionItem.id}/${stage}-approve`,
+          actionNote.trim() ? { comment: actionNote.trim() } : {});
+        toast.success('Approved', `${actionItem.code || `Claim #${actionItem.id}`} updated.`);
+        setActionItem(null);
+        loadApprovals();
+      } catch (err: any) {
+        toast.error('Could not approve', err?.response?.data?.message || 'Please try again.');
+      } finally {
+        setActionSubmitting(false);
+      }
+      return;
+    }
+
     const apiAction = actionItem.action === 'Sign' ? 'Sign'
                     : actionItem.action === 'Approve' ? 'Approve'
                     : 'Acknowledge';
-    if (apiAction === 'Sign' && !actionName.trim()) {
-      toast.error('Signature required', 'Please type your name to sign.');
-      return;
+    if (apiAction === 'Sign') {
+      if (!actionName.trim()) {
+        toast.error('Signature required', 'Please type your name to sign.');
+        return;
+      }
+      if (!drawnSignature) {
+        toast.error('Signature required', 'Please type, draw, or upload your signature.');
+        return;
+      }
     }
     setActionSubmitting(true);
     try {
       await api.post(`/hr-document-signatures/${actionItem.id}/action`, {
-        action:      apiAction,
-        signed_name: apiAction === 'Sign' ? actionName.trim() : null,
-        note:        actionNote.trim() || null,
+        action:          apiAction,
+        signed_name:     apiAction === 'Sign' ? actionName.trim() : null,
+        signature_image: apiAction === 'Sign' ? drawnSignature : null,
+        note:            actionNote.trim() || null,
       });
       toast.success(
         apiAction === 'Sign' ? 'Signed' : apiAction === 'Approve' ? 'Approved' : 'Acknowledged',
@@ -156,6 +191,26 @@ export default function MyTeam() {
       toast.error('Reason required', 'Add a suggestion in the Note field explaining what should change.');
       return;
     }
+
+    // Expense claims have a dedicated reject endpoint per stage. The remark
+    // posts as `comment` (not `reason`) to match ExpenseClaimController.
+    if (actionItem.module === 'expense') {
+      const stage = actionItem.raw?.stage === 'hr' ? 'hr' : 'manager';
+      if (!confirm(`Reject ${actionItem.code || 'this expense claim'}? The employee will see your remark in the audit log.`)) return;
+      setActionSubmitting(true);
+      try {
+        await api.post(`/expense-claims/${actionItem.id}/${stage}-reject`, { comment: reason });
+        toast.success('Rejected', `${actionItem.code || `Claim #${actionItem.id}`} returned to the employee with your remark.`);
+        setActionItem(null);
+        loadApprovals();
+      } catch (err: any) {
+        toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
+      } finally {
+        setActionSubmitting(false);
+      }
+      return;
+    }
+
     if (!confirm(`Reject ${actionItem.code || 'this document'}? The workflow will halt and the sender will see your reason.`)) return;
     setActionSubmitting(true);
     try {
@@ -250,6 +305,7 @@ export default function MyTeam() {
           onClose={() => setActionItem(null)}
           actionName={actionName} setActionName={setActionName}
           actionNote={actionNote} setActionNote={setActionNote}
+          drawnSignature={drawnSignature} setDrawnSignature={setDrawnSignature}
           submitting={actionSubmitting}
           onSubmit={submitAction}
           onReject={submitReject}
@@ -415,8 +471,22 @@ function ApprovalsPanel({
                     <tr key={`${r.module}-${r.id}`}>
                       <td>{i + 1}</td>
                       <td>
-                        <span className="myteam-module-pill" style={{ padding: '3px 9px', borderRadius: 6, background: '#dbeafe', color: '#1d4ed8', fontSize: 11.5, fontWeight: 700 }}>
-                          <i className="ri-quill-pen-line me-1" />{moduleLabel(r.module)}
+                        <span
+                          className="myteam-module-pill"
+                          style={{
+                            padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700,
+                            background: r.module === 'expense' ? '#fef3c7' : r.module === 'leave' ? '#dcfce7' : '#dbeafe',
+                            color:      r.module === 'expense' ? '#a16207' : r.module === 'leave' ? '#15803d' : '#1d4ed8',
+                          }}
+                        >
+                          <i
+                            className={
+                              r.module === 'expense' ? 'ri-bill-line me-1'
+                              : r.module === 'leave' ? 'ri-calendar-2-line me-1'
+                              : 'ri-quill-pen-line me-1'
+                            }
+                          />
+                          {moduleLabel(r.module)}
                         </span>
                       </td>
                       <td>
@@ -473,14 +543,17 @@ function ActionModal({
   item, onClose,
   actionName, setActionName,
   actionNote, setActionNote,
+  drawnSignature, setDrawnSignature,
   submitting, onSubmit, onReject,
 }: {
   item: ApprovalItem; onClose: () => void;
   actionName: string; setActionName: (v: string) => void;
   actionNote: string; setActionNote: (v: string) => void;
+  drawnSignature: string | null; setDrawnSignature: (v: string | null) => void;
   submitting: boolean; onSubmit: () => void; onReject: () => void;
 }) {
   const isSign = item.action === 'Sign';
+  const isExpense = item.module === 'expense';
   const header = { ...DEFAULT_HEADER, ...(item.raw?.header_config || {}) } as HeaderConfig;
   const footer = { ...DEFAULT_FOOTER, ...(item.raw?.footer_config || {}) } as FooterConfig;
 
@@ -497,6 +570,7 @@ function ActionModal({
               <strong style={{ fontSize: 15 }}><i className="ri-checkbox-circle-line me-2" />Review &amp; Decide</strong>
               <div style={{ fontSize: 11.5, opacity: 0.9, marginTop: 2 }}>
                 Action requested: <strong>{item.action}</strong>{item.code ? ` · ${item.code}` : ''}
+                {isExpense && item.raw?.stage ? ` · ${item.raw.stage === 'hr' ? 'HR / Finance stage' : 'Manager stage'}` : ''}
               </div>
               <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
                 Add a remark below, then choose <strong>{item.action}</strong> or <strong>Reject</strong>.
@@ -509,26 +583,35 @@ function ActionModal({
           </div>
         </div>
         <div className="myteam-modal-body" style={{ padding: 16, overflowY: 'auto', background: '#f9fafb', flex: 1 }}>
-          <HeaderFooterPanel header={header} setHeader={() => {}} footer={footer} setFooter={() => {}} readOnly>
-            <div className="tpl-readonly-preview"
-              style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 220 }}
-              dangerouslySetInnerHTML={{ __html: item.raw?.content_html || '<p>(empty)</p>' }}
-            />
-          </HeaderFooterPanel>
+          {isExpense ? (
+            <ExpenseSummaryCard item={item} />
+          ) : (
+            <HeaderFooterPanel header={header} setHeader={() => {}} footer={footer} setFooter={() => {}} readOnly>
+              <div className="tpl-readonly-preview"
+                style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 220 }}
+                dangerouslySetInnerHTML={{ __html: item.raw?.content_html || '<p>(empty)</p>' }}
+              />
+            </HeaderFooterPanel>
+          )}
 
           <div className="myteam-form-card" style={{ marginTop: 14, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>
             {isSign && (
               <>
-                <label className="myteam-input-label" style={inputLabelStyle}>Type your name to sign <span style={{ color: '#ef4444' }}>*</span></label>
+                <label className="myteam-input-label" style={inputLabelStyle}>
+                  Signer name <span style={{ color: '#ef4444' }}>*</span>
+                </label>
                 <input type="text" value={actionName} onChange={e => setActionName(e.target.value)}
-                  placeholder="Your full name"
+                  placeholder="Your full name (used in the audit trail)"
                   className="myteam-input"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14 }} />
-                {actionName && (
-                  <div className="myteam-sig-preview" style={{ marginTop: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 11.5, color: '#6b7280' }}>
-                    Preview: <span style={{ fontFamily: '"Brush Script MT", cursive', fontSize: 22, color: '#1d4ed8', marginLeft: 6 }}>{actionName}</span>
-                  </div>
-                )}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14, marginBottom: 12 }} />
+                <label className="myteam-input-label" style={inputLabelStyle}>
+                  Signature <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <SignaturePad
+                  typedName={actionName}
+                  onChange={(v) => setDrawnSignature(v.dataUrl)}
+                  height={150}
+                />
               </>
             )}
             <label className="myteam-input-label" style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Remark</label>
@@ -557,7 +640,8 @@ function ActionModal({
             {/* Primary action — green for Approve, blue for Sign, indigo
                 for Review & Acknowledge. Colour cues match the meaning of
                 the button so the decision is unambiguous. */}
-            <button type="button" onClick={onSubmit} disabled={submitting || (isSign && !actionName.trim())}
+            <button type="button" onClick={onSubmit}
+              disabled={submitting || (isSign && (!actionName.trim() || !drawnSignature))}
               style={{
                 padding: '7px 16px',
                 background: item.action === 'Approve'
@@ -628,6 +712,72 @@ function ViewModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Expense summary card ──────────────────────────────────────────────────
+   Rendered in place of the document preview when the approval item is an
+   expense claim. Keeps the same modal chrome (remark + Approve/Reject
+   buttons) so the manager / branch user flow feels consistent with the
+   document-signature one. */
+function ExpenseSummaryCard({ item }: { item: ApprovalItem }) {
+  const raw = item.raw || {};
+  const stageLabel = raw.stage === 'hr' ? 'HR / Finance approval' : 'Manager approval';
+  const amount = typeof raw.amount === 'number' ? raw.amount : Number(raw.amount || 0);
+  const fmtAmount = `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  const fmtDate = (iso?: string | null) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+  return (
+    <div className="myteam-form-card" style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: 16 }}>
+      <div className="d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+            {stageLabel}
+          </div>
+          <div style={{ fontWeight: 800, fontSize: 16, marginTop: 2 }}>
+            {item.title}{item.code ? <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 600 }}> · {item.code}</span> : null}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#a16207' }}>{fmtAmount}</div>
+          <div style={{ fontSize: 11, color: '#6b7280' }}>{(raw.currency as string) || 'INR'}</div>
+        </div>
+      </div>
+      <div className="row g-3" style={{ fontSize: 13 }}>
+        <ExpenseField label="Employee"   value={(raw.employee_name as string) || item.subject_name} sub={(raw.employee_code as string) || ''} />
+        <ExpenseField label="Department" value={(raw.department_name as string) || item.subject_dept} />
+        <ExpenseField label="Category"   value={(raw.category_name as string) || '—'} />
+        <ExpenseField label="Expense Date" value={fmtDate(raw.expense_date as string)} />
+        <ExpenseField label="Vendor"     value={(raw.vendor as string) || '—'} />
+        <ExpenseField label="Project"    value={(raw.project as string) || '—'} />
+        <ExpenseField label="Payment"    value={(raw.payment_method as string) || '—'} />
+        <ExpenseField label="Reporting Manager" value={(raw.manager_name as string) || '—'} />
+      </div>
+      {raw.purpose ? (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginBottom: 4 }}>
+            Purpose
+          </div>
+          <div style={{ fontSize: 13, color: '#374151', whiteSpace: 'pre-wrap' }}>{raw.purpose}</div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ExpenseField({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="col-md-6">
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#1f2937', marginTop: 2 }}>{value || '—'}</div>
+      {sub ? <div style={{ fontSize: 11, color: '#9ca3af' }}>{sub}</div> : null}
     </div>
   );
 }
@@ -753,10 +903,6 @@ function MyTeamDarkStyles() {
       }
       [data-bs-theme="dark"] .myteam-input::placeholder { color: rgba(255,255,255,0.45) !important; }
       [data-bs-theme="dark"] .myteam-input-label { color: rgba(255,255,255,0.55) !important; }
-      [data-bs-theme="dark"] .myteam-sig-preview {
-        background: var(--vz-secondary-bg) !important;
-        color: rgba(255,255,255,0.65) !important;
-      }
       [data-bs-theme="dark"] .myteam-hint { color: rgba(255,255,255,0.45) !important; }
       [data-bs-theme="dark"] .myteam-btn-ghost {
         background: var(--vz-secondary-bg) !important;
