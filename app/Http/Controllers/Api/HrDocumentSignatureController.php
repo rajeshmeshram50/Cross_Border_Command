@@ -128,13 +128,18 @@ class HrDocumentSignatureController extends Controller
                 ];
             }
 
-            // Resolve placeholders to lock the body text at send time.
+            // Resolve placeholders to lock the body text at send time. The
+            // per-signer Sign/Date tokens are intentionally NOT substituted
+            // here — they're filled in by the action handler when each
+            // signer acts, so we pass preserveSignerSlots=true to keep the
+            // {{Signer{N}Sign}} / {{Signer{N}Date}} placeholders intact in
+            // the frozen content_html.
             $hrTplController = new HrDocumentTemplateController();
             $ref = new \ReflectionClass($hrTplController);
             $buildCtx = $ref->getMethod('buildTokenContext'); $buildCtx->setAccessible(true);
             $resolve  = $ref->getMethod('resolveTokens');     $resolve->setAccessible(true);
             $ctx = $buildCtx->invoke($hrTplController, $emp->loadMissing(['client']), $signersTpl);
-            $frozenHtml = $resolve->invoke($hrTplController, (string) $tpl->content_html, $ctx);
+            $frozenHtml = $resolve->invoke($hrTplController, (string) $tpl->content_html, $ctx, true);
 
             $row = HrDocumentSignature::create([
                 'client_id'      => $emp->client_id,
@@ -166,7 +171,9 @@ class HrDocumentSignatureController extends Controller
             // base64 PNG data URL from the signature pad. Loose `string` rule
             // here — strict shape ("data:image/png;base64,...") is enforced
             // inside the transaction so we can give a friendlier 422 message.
-            'signature_image' => 'nullable|string|max:2000000',
+            // Max 4 MB binary ≈ 5.4 MB base64 + ~30 chars for the data: prefix.
+            // Anything larger is rejected here AND by persistSignatureImage().
+            'signature_image' => 'nullable|string|max:5600000',
             'note'            => 'nullable|string|max:500',
         ]);
 
@@ -336,7 +343,17 @@ class HrDocumentSignatureController extends Controller
             if (is_file($abs)) {
                 // Inline as data URI — DomPDF can't reach the storage URL
                 // because of relative-path resolution in headless renders.
-                $mime = 'image/' . (pathinfo($abs, PATHINFO_EXTENSION) ?: 'png');
+                // Normalise the extension to a valid MIME — "jpg" is the
+                // common file extension but "image/jpg" is not a valid type;
+                // it must be "image/jpeg" or some PDF readers refuse to
+                // decode the embedded image.
+                $ext = strtolower((string) pathinfo($abs, PATHINFO_EXTENSION));
+                $mime = match ($ext) {
+                    'jpg', 'jpeg' => 'image/jpeg',
+                    'svg'         => 'image/svg+xml',
+                    ''            => 'image/png',
+                    default       => 'image/' . $ext,
+                };
                 $logoUrl = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($abs));
             }
         }

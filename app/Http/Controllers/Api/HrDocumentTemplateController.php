@@ -433,8 +433,12 @@ class HrDocumentTemplateController extends Controller
         if (preg_match_all('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', (string) $row->content_html, $m)) {
             $tokensInTemplate = array_values(array_unique($m[1]));
         }
+        // "Missing" = the token isn't recognised at all. A known token with
+        // an empty value (e.g. an employee whose Mobile field is blank) is
+        // resolved-as-empty, not missing — flagging those as missing turns
+        // the SPA's warning chip into a permanent false-positive.
         $unresolved = array_values(array_filter($tokensInTemplate, fn ($t) =>
-            !array_key_exists($t, $context) || $context[$t] === ''
+            !array_key_exists($t, $context)
         ));
 
         return response()->json([
@@ -511,11 +515,22 @@ class HrDocumentTemplateController extends Controller
     }
 
     /** Replace every {{Token}} occurrence in $html using $ctx. Unknown
-     *  tokens are left as-is so an admin can spot them in the output. */
-    private function resolveTokens(string $html, array $ctx): string
+     *  tokens are left as-is so an admin can spot them in the output.
+     *
+     *  When $preserveSignerSlots is true, the per-signer fill-at-action
+     *  tokens ({{Signer{N}Sign}} and {{Signer{N}Date}}) are NOT substituted
+     *  even when present in $ctx — they're left as literal placeholders so
+     *  the signature workflow can fill them when each signer acts. Used by
+     *  HrDocumentSignatureController::store() when freezing content_html at
+     *  send time; preview/generate flows leave this false to render unsigned
+     *  slots as empty strings. */
+    private function resolveTokens(string $html, array $ctx, bool $preserveSignerSlots = false): string
     {
-        return preg_replace_callback('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', function ($m) use ($ctx) {
+        return preg_replace_callback('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', function ($m) use ($ctx, $preserveSignerSlots) {
             $key = $m[1];
+            if ($preserveSignerSlots && preg_match('/^Signer\d+(Sign|Date)$/', $key)) {
+                return $m[0];
+            }
             return array_key_exists($key, $ctx) ? htmlspecialchars((string) $ctx[$key], ENT_QUOTES) : $m[0];
         }, $html);
     }
