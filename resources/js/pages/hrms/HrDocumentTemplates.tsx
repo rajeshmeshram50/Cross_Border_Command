@@ -176,38 +176,88 @@ export default function HrDocumentTemplates() {
             ))}
           </div>
 
-          {/* Category top tabs — active/disable styling mirrors the
-              EmployeeProfile tabbar: inactive tabs render muted on a soft
-              tab-strip backdrop, active tab gets a bold colored fill. */}
-          <div className="dtm-cat-tabbar mb-3">
+          {/* Category top tabs — matches the Active/Disabled tab-strip pattern
+              used on HrEmployees: a single container with transparent inactive
+              tabs and a purple-gradient active tab. */}
+          <div
+            className="d-flex mb-3 dtm-cat-tabbar"
+            style={{
+              background: 'var(--vz-secondary-bg)',
+              border: '1px solid var(--vz-border-color)',
+              borderRadius: 10,
+              padding: 4,
+              gap: 4,
+            }}
+          >
             {CATEGORIES.map(c => {
-              const active = category === c.key;
+              const on = category === c.key;
               const cnt = stats.by_category?.[c.key] || 0;
               return (
-                <button key={c.key} type="button" onClick={() => setCategory(c.key)}
-                  className={`dtm-cat-tab-btn${active ? ' is-active' : ''}`}>
-                  <span className="dtm-cat-tab-icon">{c.icon}</span>
-                  <span className="dtm-cat-tab-label">{c.label}</span>
-                  <span className="dtm-cat-tab-count">{cnt}</span>
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => setCategory(c.key)}
+                  className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold dtm-cat-tab-btn"
+                  style={{
+                    borderRadius: 8,
+                    padding: '8px 14px',
+                    fontSize: 13,
+                    background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
+                    color: on ? '#fff' : 'var(--vz-secondary-color)',
+                    border: 'none',
+                    boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
+                  }}
+                >
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>{c.icon}</span>
+                  {c.label}
+                  <span
+                    className="badge rounded-pill"
+                    style={{
+                      fontSize: 11,
+                      background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
+                      color: on ? '#fff' : 'var(--vz-secondary-color)',
+                    }}
+                  >
+                    {cnt}
+                  </span>
                 </button>
               );
             })}
           </div>
 
-          {/* Designation level chips — 6 options sourced from designation master */}
-          <div className="d-flex flex-wrap gap-2 mb-3">
+          {/* Designation level chips — same tab-strip housing as the category
+              row above, just denser. Inactive chips keep their role color as
+              an icon tint; active chip gets the purple-gradient fill. */}
+          <div
+            className="d-flex flex-wrap mb-3 dtm-role-tabbar"
+            style={{
+              background: 'var(--vz-secondary-bg)',
+              border: '1px solid var(--vz-border-color)',
+              borderRadius: 10,
+              padding: 4,
+              gap: 4,
+            }}
+          >
             {ROLE_TYPES.map(r => {
-              const active = roleType === r.value;
+              const on = roleType === r.value;
               return (
-                <button key={r.value} type="button" onClick={() => setRoleType(r.value)}
-                  className={`dtm-role-chip${active ? ' is-active' : ''}`}
-                  style={{ padding: '7px 14px', borderRadius: 999,
-                    border: '1px solid ' + (active ? r.tone.fg : r.tone.border),
-                    background: active ? r.tone.fg : r.tone.bg,
-                    color: active ? '#fff' : r.tone.fg,
-                    cursor: 'pointer', fontWeight: 700, fontSize: 12.5,
-                    display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 14 }}>{r.icon}</span>
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => setRoleType(r.value)}
+                  className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold dtm-role-chip"
+                  style={{
+                    borderRadius: 8,
+                    padding: '6px 12px',
+                    fontSize: 12.5,
+                    minWidth: 120,
+                    background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
+                    color: on ? '#fff' : 'var(--vz-secondary-color)',
+                    border: 'none',
+                    boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
+                  }}
+                >
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>{r.icon}</span>
                   {r.label}
                 </button>
               );
@@ -359,56 +409,33 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primar
 function DtmDarkStyles() {
   return (
     <style>{`
-      /* Category tabbar — mirrors EmployeeProfile's ep-tabbar pattern:
-         inactive buttons read as "disabled" (muted text, transparent fill)
-         and the active button gets a bold colored fill. Works on both
-         light and dark themes via Bootstrap CSS variables. */
-      .dtm-page .dtm-cat-tabbar {
-        display: flex; flex-wrap: wrap; gap: 6px;
-        padding: 6px;
-        background: var(--vz-secondary-bg);
-        border: 1px solid var(--vz-border-color);
-        border-radius: 12px;
+      /* Tab-strip rows (category + role) — hover state on inactive tabs only;
+         active tab already carries its own gradient + shadow so leave it. */
+      .dtm-page .dtm-cat-tab-btn:not([style*="linear-gradient"]):hover,
+      .dtm-page .dtm-role-chip:not([style*="linear-gradient"]):hover {
+        background: var(--vz-card-bg) !important;
+        color: var(--vz-heading-color, var(--vz-body-color)) !important;
       }
-      .dtm-page .dtm-cat-tab-btn {
-        flex: 1 1 220px; min-width: 200px;
-        display: inline-flex; align-items: center; gap: 10px;
-        padding: 10px 14px;
-        background: transparent; border: 0;
-        color: var(--vz-secondary-color);
-        font-weight: 600; font-size: 13px;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
-        text-align: left;
-      }
-      .dtm-page .dtm-cat-tab-btn:hover {
-        background: var(--vz-card-bg);
-        color: var(--vz-heading-color, var(--vz-body-color));
-      }
-      .dtm-page .dtm-cat-tab-btn.is-active {
-        background: linear-gradient(135deg,#6366f1,#8b5cf6);
-        color: #fff;
-        font-weight: 700;
-        box-shadow: 0 4px 12px rgba(99,102,241,0.30);
-      }
-      .dtm-page .dtm-cat-tab-icon { font-size: 20px; line-height: 1; flex-shrink: 0; }
-      .dtm-page .dtm-cat-tab-label { flex: 1; }
-      .dtm-page .dtm-cat-tab-count {
-        font-size: 11px; font-weight: 700;
-        padding: 2px 9px; border-radius: 999px;
-        background: rgba(15,23,42,0.06); color: var(--vz-secondary-color);
-      }
-      .dtm-page .dtm-cat-tab-btn.is-active .dtm-cat-tab-count {
-        background: rgba(255,255,255,0.25); color: #fff;
+      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab-btn:not([style*="linear-gradient"]):hover,
+      [data-bs-theme="dark"] .dtm-page .dtm-role-chip:not([style*="linear-gradient"]):hover {
+        background: rgba(255,255,255,0.06) !important;
+        color: #fff !important;
       }
 
-      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab-btn { color: rgba(255,255,255,0.50); }
-      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab-btn:hover {
-        background: rgba(255,255,255,0.06); color: #fff;
+      /* KPI tile hover — gentle lift + shadow so the cards feel clickable
+         even though they are currently informational. */
+      .dtm-page .dtm-kpi-tile {
+        transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+        cursor: default;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab-count {
-        background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.55);
+      .dtm-page .dtm-kpi-tile:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 22px rgba(15,23,42,0.10);
+        border-color: rgba(124,92,252,0.45) !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile:hover {
+        box-shadow: 0 10px 22px rgba(0,0,0,0.45);
+        border-color: rgba(167,139,250,0.55) !important;
       }
 
       [data-bs-theme="dark"] .dtm-page .dtm-header-icon {
@@ -416,11 +443,6 @@ function DtmDarkStyles() {
       }
       [data-bs-theme="dark"] .dtm-page .dtm-active-badge {
         background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
-      }
-      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab:not(.is-active) {
-        background: var(--vz-secondary-bg) !important;
-        color: var(--vz-body-color) !important;
-        border-color: var(--vz-border-color) !important;
       }
       [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile {
         background: var(--vz-card-bg) !important;

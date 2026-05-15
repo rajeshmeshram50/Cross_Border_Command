@@ -779,7 +779,7 @@ class HrDocumentTemplateController extends Controller
 
         return response()->json([
             'path' => $path,
-            'url'  => Storage::disk('public')->url($path),
+            'url'  => file_url($path),
         ]);
     }
 
