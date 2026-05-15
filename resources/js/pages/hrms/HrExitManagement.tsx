@@ -2103,25 +2103,241 @@ interface VaultGroup {
 
 type VaultTab = 'employee' | 'organizational' | 'exit';
 
+// ── Doc-key catalogue ──────────────────────────────────────────────────────
+// employee_documents.document_key is a free-text slug (e.g. "aadhaar",
+// "pan", "p_photo"…). Map each known key to a pretty label + icon so the
+// vault renders a "Aadhaar Card" row instead of the raw key. Keys we don't
+// know about fall back to a humanised version of the slug so newly-added
+// document types don't disappear from the list.
+const DOC_KEY_CATALOGUE: Record<string, { name: string; desc: string; icon: string; iconBg: string; iconFg: string; category: string }> = {
+  aadhaar:     { name: 'Aadhaar Card',           desc: 'Government issued 12-digit unique identity',     icon: 'ri-fingerprint-line',         iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Identity'        },
+  pan:         { name: 'PAN Card',               desc: 'Permanent Account Number for taxation',          icon: 'ri-bank-card-2-line',         iconBg: '#fef3c7', iconFg: '#92400e', category: 'Identity'        },
+  p_photo:     { name: 'Passport Photo',         desc: 'Recent passport-size photograph',                icon: 'ri-camera-line',              iconBg: '#fdd9ea', iconFg: '#a02960', category: 'Identity'        },
+  p_copy:      { name: 'Passport Copy',          desc: 'Govt issued travel document (if applicable)',    icon: 'ri-passport-line',            iconBg: '#dceefe', iconFg: '#0c63b0', category: 'Identity'        },
+  cur_addr:    { name: 'Current Address Proof',  desc: 'Utility bill or bank statement (last 3 months)', icon: 'ri-home-4-line',              iconBg: '#dcfce7', iconFg: '#15803d', category: 'Address'         },
+  perm_addr:   { name: 'Permanent Address Proof',desc: 'Aadhaar / Voter ID — permanent address proof',   icon: 'ri-map-pin-line',             iconBg: '#fee2e2', iconFg: '#b91c1c', category: 'Address'         },
+  edu_10:      { name: '10th Marksheet',         desc: 'Secondary school certification',                 icon: 'ri-file-text-line',           iconBg: '#fef3c7', iconFg: '#92400e', category: 'Education'       },
+  edu_12:      { name: '12th Marksheet',         desc: 'Higher secondary certification',                 icon: 'ri-file-text-line',           iconBg: '#fef3c7', iconFg: '#92400e', category: 'Education'       },
+  edu_deg:     { name: 'Graduation Degree',      desc: "Bachelor's degree certificate",                  icon: 'ri-graduation-cap-line',      iconBg: '#dcfce7', iconFg: '#15803d', category: 'Education'       },
+  edu_pg:      { name: 'Post Graduation',        desc: "Master's or postgraduate diploma",               icon: 'ri-award-line',               iconBg: '#dceefe', iconFg: '#0c63b0', category: 'Education'       },
+  rel_letter:  { name: 'Relieving Letter',       desc: 'Final relieving from previous employer',         icon: 'ri-mail-send-line',           iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Prev. Employment'},
+  exp_cert:    { name: 'Experience Letter',      desc: 'Past employment experience certificate',         icon: 'ri-briefcase-4-line',         iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Prev. Employment'},
+  pay_slip:    { name: 'Last 3 Pay Slips',       desc: 'Most recent salary slips for reference',         icon: 'ri-money-rupee-circle-line',  iconBg: '#fef3c7', iconFg: '#92400e', category: 'Prev. Employment'},
+};
+const labelForDocKey = (key: string) => DOC_KEY_CATALOGUE[key] || {
+  name: key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+  desc: 'Uploaded document',
+  icon: 'ri-file-text-line',
+  iconBg: '#eef2f6',
+  iconFg: '#475569',
+  category: 'Other',
+};
+
+// ── Server-shape types ────────────────────────────────────────────────────
+type EmpDocApiRow = {
+  id: number;
+  document_key: string;
+  status: 'pending' | 'uploaded' | 'verified' | 'rejected';
+  original_name: string | null;
+  url: string | null;
+  uploaded_at: string | null;
+};
+type VaultTemplate = {
+  id: number;
+  code: string | null;
+  name: string | null;
+  doc_type: string | null;
+  status: string | null;
+  trigger_point?: { module_name?: string | null } | null;
+};
+type VaultRun = {
+  id: number;
+  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
+  template_id: number;
+};
+
 function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
   const [tab, setTab] = useState<VaultTab>('employee');
 
-  useEffect(() => { if (employee) setTab('employee'); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [employee?.id]);
+  // Real data from the backend — replaces the previous mock VAULT_BY_TAB.
+  // Employee tab: rows from /employees/{id}/documents. Organizational +
+  // Exit tabs: HR Document Templates matched by trigger_point_name +
+  // their signing runs (so we can show the live status pill).
+  const [empDocs, setEmpDocs]               = useState<EmpDocApiRow[]>([]);
+  const [orgTemplates, setOrgTemplates]     = useState<VaultTemplate[]>([]);
+  const [exitTemplates, setExitTemplates]   = useState<VaultTemplate[]>([]);
+  const [signingRuns, setSigningRuns]       = useState<VaultRun[]>([]);
+  const [loading, setLoading]               = useState(false);
+
+  useEffect(() => {
+    if (!employee) {
+      setEmpDocs([]); setOrgTemplates([]); setExitTemplates([]); setSigningRuns([]);
+      setTab('employee');
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setTab('employee');
+    Promise.allSettled([
+      api.get(`/employees/${employee.id}/documents`),
+      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_point_name: 'Onboarding' } }),
+      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_point_name: 'Exit Management' } }),
+      api.get('/hr-document-signatures', { params: { employee_id: employee.id } }),
+    ]).then(results => {
+      if (cancelled) return;
+      const [docsR, orgR, exitR, runsR] = results;
+      setEmpDocs(docsR.status === 'fulfilled' && Array.isArray(docsR.value.data) ? docsR.value.data : []);
+      setOrgTemplates(orgR.status === 'fulfilled' && Array.isArray(orgR.value.data?.templates) ? orgR.value.data.templates : []);
+      setExitTemplates(exitR.status === 'fulfilled' && Array.isArray(exitR.value.data?.templates) ? exitR.value.data.templates : []);
+      setSigningRuns(runsR.status === 'fulfilled' && Array.isArray(runsR.value.data) ? runsR.value.data : []);
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [employee?.id]);
+
+  // Latest run per template_id — same recipe as the Stage 5 grid so the
+  // vault tab can surface a "Completed / In Progress / …" pill.
+  const runByTemplateId = useMemo(() => {
+    const m = new Map<number, VaultRun>();
+    for (const r of signingRuns) {
+      const existing = m.get(r.template_id);
+      if (!existing || r.id > existing.id) m.set(r.template_id, r);
+    }
+    return m;
+  }, [signingRuns]);
 
   if (!employee) return null;
 
-  const groups = VAULT_BY_TAB[tab];
-  const allDocs = [...VAULT_BY_TAB.employee, ...VAULT_BY_TAB.organizational, ...VAULT_BY_TAB.exit].flatMap(g => g.docs);
+  // Build a flat doc list per tab from real data. Status strings are
+  // normalised to the existing DocStatus enum so the existing CSS
+  // (.ev-doc-status--verified, etc.) keeps working.
+  const empDocsView = empDocs.map(d => {
+    const cat = labelForDocKey(d.document_key);
+    const status: DocStatus =
+      d.status === 'verified' ? 'Verified'
+      : d.status === 'uploaded' ? 'Uploaded'
+      : d.status === 'rejected' ? 'Pending'      // surface rejected as Pending until reuploaded
+      : 'Pending';
+    return {
+      id: d.id, key: d.document_key, name: cat.name, sub: cat.desc, icon: cat.icon, iconBg: cat.iconBg, iconFg: cat.iconFg,
+      category: cat.category, status, url: d.url,
+    };
+  });
+
+  // Group employee docs by their catalogue category so the existing
+  // grouped-list rendering still works (Identity / Address / Education / …).
+  const empGroups = (() => {
+    const buckets: Record<string, typeof empDocsView> = {};
+    for (const d of empDocsView) {
+      const k = d.category || 'Other';
+      (buckets[k] = buckets[k] || []).push(d);
+    }
+    return Object.entries(buckets).map(([title, docs]) => ({
+      title,
+      icon: docs[0]?.icon || 'ri-folder-line',
+      iconBg: docs[0]?.iconBg || '#eef2f6',
+      iconFg: docs[0]?.iconFg || '#475569',
+      docs,
+    }));
+  })();
+
+  const buildTplGroup = (templates: VaultTemplate[], title: string, groupIcon: string, groupBg: string, groupFg: string) => {
+    const docs = templates.map(tpl => {
+      const run = runByTemplateId.get(tpl.id) || null;
+      const status: DocStatus =
+        run?.status === 'Completed'   ? 'Completed'
+        : run?.status === 'In Progress' ? 'Sent'
+        : run?.status === 'Pending'     ? 'Sent'
+        : run?.status === 'Rejected'    ? 'Pending'
+        : run?.status === 'Cancelled'   ? 'Not Generated'
+        : tpl.status === 'Active'       ? 'Not Generated'
+        : 'Not Generated';
+      return {
+        id: tpl.id, key: `tpl-${tpl.id}`,
+        name: tpl.name || '(unnamed template)',
+        sub: `${tpl.doc_type || 'Document'}${tpl.code ? ` · ${tpl.code}` : ''}${run ? ` · Run #${run.id}` : ''}`,
+        icon: 'ri-file-text-line', iconBg: groupBg, iconFg: groupFg,
+        category: tpl.trigger_point?.module_name || 'Template',
+        status,
+        url: null as string | null,
+      };
+    });
+    return docs.length ? [{ title, icon: groupIcon, iconBg: groupBg, iconFg: groupFg, docs }] : [];
+  };
+  const orgGroups  = buildTplGroup(orgTemplates,  'Signed Company Documents', 'ri-file-shield-2-line', '#fef3c7', '#92400e');
+  const exitGroups = buildTplGroup(exitTemplates, 'Exit Process Documents',   'ri-logout-box-r-line',  '#dcfce7', '#15803d');
+
+  const groups =
+    tab === 'employee'       ? empGroups
+    : tab === 'organizational' ? orgGroups
+    : exitGroups;
+
+  // KPI counts pulled from the real, combined list so they always
+  // reconcile with what's visible across the three tabs. Cast to the
+  // wider DocStatus union so future status values added by the backend
+  // (e.g. "Signed", "Generated") are still counted correctly even though
+  // the current code path doesn't assign them.
+  const allDocs: { status: DocStatus }[] = [...empDocsView, ...orgGroups.flatMap(g => g.docs), ...exitGroups.flatMap(g => g.docs)];
   const total      = allDocs.length;
   const verified   = allDocs.filter(d => d.status === 'Verified').length;
   const signed     = allDocs.filter(d => d.status === 'Signed' || d.status === 'Generated' || d.status === 'Completed').length;
-  const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent').length;
+  const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent' || d.status === 'Uploaded').length;
   const notGen     = allDocs.filter(d => d.status === 'Not Generated' || d.status === 'Optional').length;
-  const completionPct = Math.round(((total - notGen) / total) * 100);
+  const completionPct = total > 0 ? Math.round(((total - notGen) / total) * 100) : 0;
 
-  const empCount  = VAULT_BY_TAB.employee.reduce((acc, g) => acc + g.docs.length, 0);
-  const orgCount  = VAULT_BY_TAB.organizational.reduce((acc, g) => acc + g.docs.length, 0);
-  const exitCount = VAULT_BY_TAB.exit.reduce((acc, g) => acc + g.docs.length, 0);
+  const empCount  = empDocsView.length;
+  const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0);
+  const exitCount = exitGroups.reduce((a, g) => a + g.docs.length, 0);
+
+  // View / Download handlers per row. Uploaded employee docs come back
+  // with a `url` pointing at the public disk so View opens in a new tab
+  // and Download triggers a browser save. Template rows generate a DOCX
+  // on demand using the same endpoint the Stage 5 grid uses.
+  const handleViewRow = (d: { url: string | null; key: string; id: number }) => {
+    if (d.url) {
+      window.open(d.url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (d.key.startsWith('tpl-')) {
+      // No inline preview here — defer to the Stage 5 modal's preview pane.
+      // For now open the generate endpoint in a new tab as a quick view.
+      window.open(`/api/hr-document-templates/${d.id}/generate?employee_id=${employee.id}`, '_blank', 'noopener,noreferrer');
+    }
+  };
+  const handleDownloadRow = async (d: { url: string | null; key: string; id: number; name: string }) => {
+    if (d.url) {
+      // Force a download for file URLs by re-fetching as a blob.
+      try {
+        const resp = await fetch(d.url, { credentials: 'include' });
+        const blob = await resp.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = d.name || 'document';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objUrl);
+      } catch {
+        window.open(d.url, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+    if (d.key.startsWith('tpl-')) {
+      try {
+        const resp = await api.get(`/hr-document-templates/${d.id}/generate`, {
+          params: { employee_id: employee.id }, responseType: 'blob',
+        });
+        const objUrl = URL.createObjectURL(new Blob([resp.data]));
+        const a = document.createElement('a');
+        a.href = objUrl;
+        a.download = `${(employee.name || 'employee').replace(/\s+/g, '-')}-${d.name}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objUrl);
+      } catch { /* swallow — controller surfaces toast on Stage 5 path */ }
+    }
+  };
 
   return (
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ev-modal">
@@ -2188,7 +2404,21 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
 
         {/* Body — groups + docs */}
         <div className="ev-body">
-          {groups.map((g, gi) => (
+          {loading ? (
+            <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+              <i className="ri-loader-4-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
+              Loading vault…
+            </div>
+          ) : groups.length === 0 ? (
+            <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, fontSize: 13 }}>
+              <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
+              {tab === 'employee'
+                ? 'No documents uploaded yet by this employee.'
+                : tab === 'organizational'
+                  ? 'No onboarding-trigger documents on record. Create templates under HR > Document Templates with trigger “Onboarding”.'
+                  : 'No exit-trigger documents on record. Create templates under HR > Document Templates with trigger “Exit Management”.'}
+            </div>
+          ) : groups.map((g, gi) => (
             <div key={gi} className="ev-group">
               <div className="ev-group-head">
                 <span className="ev-group-icon" style={{ background: g.iconBg, color: g.iconFg }}>
@@ -2198,10 +2428,16 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
                 <span className="ev-group-count">{g.docs.length} docs</span>
               </div>
               <div className="ev-doc-list">
-                {g.docs.map((d, di) => {
-                  const disabled = d.status === 'Not Generated' || d.status === 'Optional';
+                {g.docs.map(d => {
+                  // Cast to the wider DocStatus union so equality checks
+                  // against 'Generated' / 'Optional' aren't narrowed away —
+                  // the current data path only ever produces a subset, but
+                  // the CSS classes / preview switch still need to handle
+                  // the full enum from future status values.
+                  const status = d.status as DocStatus;
+                  const disabled = status === 'Not Generated' || status === 'Optional';
                   return (
-                    <div key={di} className="ev-doc">
+                    <div key={d.key} className="ev-doc">
                       <span className="ev-doc-icon" style={{ background: d.iconBg, color: d.iconFg }}>
                         <i className={d.icon} />
                       </span>
@@ -2210,11 +2446,19 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
                         <div className="ev-doc-sub">{d.sub}</div>
                       </div>
                       <span className="ev-doc-cat">{d.category}</span>
-                      <span className={`ev-doc-status ev-doc-status--${d.status.toLowerCase().replace(/\s+/g, '-')}`}>{d.status}</span>
-                      <button type="button" className={`ev-doc-btn ev-doc-btn--view${d.status === 'Generated' ? ' ev-doc-btn--preview' : ''}`} disabled={disabled}>
-                        <i className="ri-eye-line" />{d.status === 'Generated' ? 'Preview' : 'View'}
+                      <span className={`ev-doc-status ev-doc-status--${status.toLowerCase().replace(/\s+/g, '-')}`}>{status}</span>
+                      <button type="button"
+                        className={`ev-doc-btn ev-doc-btn--view${status === 'Generated' ? ' ev-doc-btn--preview' : ''}`}
+                        disabled={disabled}
+                        onClick={() => handleViewRow(d)}
+                      >
+                        <i className="ri-eye-line" />{status === 'Generated' ? 'Preview' : 'View'}
                       </button>
-                      <button type="button" className="ev-doc-btn ev-doc-btn--download" disabled={disabled}>
+                      <button type="button"
+                        className="ev-doc-btn ev-doc-btn--download"
+                        disabled={disabled}
+                        onClick={() => handleDownloadRow(d)}
+                      >
                         <i className="ri-download-line" />Download
                       </button>
                     </div>
