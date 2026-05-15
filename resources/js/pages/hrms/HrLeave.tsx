@@ -377,7 +377,10 @@ export default function HrLeave() {
   // tabs filter further client-side.
   const loadRequests = useCallback(async () => {
     try {
-      const list = await leaveRequestsApi.approvals({ status: undefined });
+      // Pass 'All' explicitly — the backend defaults status to 'Pending'
+      // when omitted, but this page (and its KPI cards / On-Leave-Today
+      // panel) needs every status to compute counts correctly.
+      const list = await leaveRequestsApi.approvals({ status: 'All' });
       setRequests(list.map(apiToLeaveRequest));
     } catch (err) {
       console.warn('[HrLeave] failed to load leave requests', err);
