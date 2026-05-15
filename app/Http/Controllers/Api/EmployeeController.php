@@ -887,9 +887,14 @@ class EmployeeController extends Controller
             // a confusing 500/422 when the user picked it.
             'gender'       => 'nullable|in:Male,Female,Other,Prefer not to say',
             'date_of_birth' => 'nullable|date',
+            'blood_group'   => 'nullable|string|max:10',
             'nationality_country_id' => 'nullable|integer',
             'work_country_id'        => 'nullable|integer',
             'email'        => $emailRule,
+            // Stage 3 provisioning — company-issued mailbox assigned at
+            // onboarding (e.g. "test.demo@company.com"). Independent of
+            // the personal email used for login.
+            'official_email' => 'nullable|email|max:191',
             // Tightened from max:30 → max:15 (E.164 international cap).
             // Without this the DB layer rejected 20–30-digit input with a
             // hard 500 error instead of a friendly 422.

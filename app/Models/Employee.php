@@ -22,9 +22,9 @@ class Employee extends Model
         'emp_code',
 
         'first_name', 'middle_name', 'last_name', 'display_name',
-        'gender', 'date_of_birth',
+        'gender', 'date_of_birth', 'blood_group',
         'nationality_country_id', 'work_country_id',
-        'email', 'mobile', 'alt_mobile',
+        'email', 'official_email', 'mobile', 'alt_mobile',
 
         // Current address
         'country_id', 'state_id', 'city',

@@ -794,7 +794,7 @@ export default function HrEmployeeOnboarding() {
             </Col>
           </Row>
 
-          <div className="table-responsive table-card  rounded p-2">
+          <div className="table-responsive table-card rounded p-2 onb-list-table">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
@@ -839,7 +839,7 @@ export default function HrEmployeeOnboarding() {
                                   {r.initials}
                                 </div>
                                 <div className="min-w-0">
-                                  <div className="fw-semibold fs-13">{r.name}</div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{r.name}</div>
                                   <div className="text-muted" style={{ fontSize: 11.5 }}>{r.joinDate}</div>
                                 </div>
                               </div>
@@ -847,8 +847,8 @@ export default function HrEmployeeOnboarding() {
                             <td>
                               <span className="onb-id-pill">{r.empId}</span>
                             </td>
-                            <td className="fs-13">{r.department}</td>
-                            <td className="fs-13">{r.designation}</td>
+                            <td style={{ fontSize: 13 }}>{r.department}</td>
+                            <td style={{ fontSize: 13 }}>{r.designation}</td>
                             <td>
                               <span className="onb-role-pill">{r.primaryRole}</span>
                             </td>
@@ -869,7 +869,7 @@ export default function HrEmployeeOnboarding() {
                                 >
                                   {r.managerInitials}
                                 </div>
-                                <span className="fs-13 fw-semibold">{r.managerName}</span>
+                                <span style={{ fontSize: 13 }}>{r.managerName}</span>
                               </div>
                             </td>
                             <td>
@@ -2648,6 +2648,11 @@ useEffect(() => {
   // ── Form validation state ──────────────────────────────────────────
 const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
 const [nextLoading, setNextLoading] = useState(false);
+// Two-step confirmation before flipping the employee to "complete". Once
+// the macro watermark hits 6, profile% locks to 100% and several stages
+// stop being editable, so we don't want this firing on an accidental click.
+const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+const [completeNotes, setCompleteNotes] = useState('');
 
 // Wipe any stale errors whenever the modal opens for a new employee so
 // the user doesn't see red borders from a previous attempt.
@@ -2808,10 +2813,15 @@ const validateStage1 = (): boolean => {
    *  saved yet stay null on the row. wizard_step_completed gets bumped
    *  by the controller's high-watermark logic only if we send a higher
    *  value, so passing 4 here marks the wizard fully done. */
-const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
+const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<boolean> => {
   if (!emp?.dbId || s1Saving) return false;
-  // Validate before saving
-  if (!validateStage1()) return false;
+  // Skip Stage-1 specific validation when called from later stages
+  // (e.g. Stage 3 re-uses saveStage1 to persist its asset/provisioning
+  // fields). Without this escape, an employee with any missing Stage 1
+  // field — even one the user already saved — would silently block
+  // Stage 3 saves, and the user's just-typed Stage 3 data would
+  // disappear on modal close.
+  if (!skipValidate && !validateStage1()) return false;
   setS1Saving(true);
   // ... rest of the function
     const intOrNull = (v: string) => {
@@ -2862,6 +2872,14 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
       onSaved?.();
+      // Success feedback — was silent before, so users had no idea the
+      // PUT had landed. `markComplete` means the wizard finished Stage 1
+      // entirely; otherwise it's a partial save (Stage 3 advance, etc).
+      if (markComplete) {
+        toast.success('Stage 1 saved', 'Setup details persisted.');
+      } else if (!skipValidate) {
+        toast.success('Saved', 'Your changes have been persisted.');
+      }
       return true;
     } catch (err: any) {
       // Surface the failure so the user knows their edit didn't persist.
@@ -3192,21 +3210,34 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
     let status: StageStatus, progress: number;
     if (s.num === 1) {
       // Anchored to real wizard state — completion can't roll back.
-      progress = stage1Pct;
-      status   = stage1Done ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
+      // Trust the server's macro watermark too so a finished stage 1
+      // doesn't flip back to "In Progress" before the wizard state
+      // re-hydrates on remount.
+      const done = stage1Done || macroCompleted >= 1;
+      progress = done ? 100 : stage1Pct;
+      status   = done ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 2) {
-      // Anchored to real document upload state.
-      progress = stage2Pct;
-      status   = stage2Done ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
+      // Same trust-the-server-floor rule: if the backend has stamped
+      // macroCompleted >= 2, the stage is done even before this session's
+      // local upload state has loaded. Without this, the sidebar shows
+      // "Pending" on initial render and only flips to "Completed" once
+      // you click the stage and trigger its data fetch.
+      const done = stage2Done || macroCompleted >= 2;
+      progress = done ? 100 : stage2Pct;
+      status   = done ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 3) {
       // Live from the four provisioning tasks — moves as soon as the
-      // user assigns a laptop / mobile / asset / biometric.
-      progress = stage3Done ? 100 : stage3Pct;
-      status   = stage3Done ? 'Completed' : (stage3TasksDone > 0 ? 'In Progress' : 'Pending');
+      // user assigns a laptop / mobile / asset / biometric. Server
+      // floor wins for the same reason as Stage 2.
+      const done = stage3Done || macroCompleted >= 3;
+      progress = done ? 100 : stage3Pct;
+      status   = done ? 'Completed' : (stage3TasksDone > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 4) {
       // Anchored to live Stage 4 readiness checks + persisted stamp.
-      progress = stage4Pct;
-      status   = stage4Done ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
+      // Server floor still applies — guards against lazy-load races.
+      const done = stage4Done || macroCompleted >= 4;
+      progress = done ? 100 : stage4Pct;
+      status   = done ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 5) {
       // No real signing state yet — use server macro watermark as the
       // only completion signal. Otherwise mark In Progress only while
@@ -3263,36 +3294,15 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
                 </div>
               </div>
             </div>
-            <div className="d-flex align-items-center gap-3 flex-wrap">
-              <div className="d-flex align-items-center gap-2">
-                <span className="onb-init-status-pill"><i className="ri-time-line" /> Status: {emp.status}</span>
-                <span className="onb-init-status-pill"><i className="ri-user-line" /> Profile: {emp.profile}% complete</span>
-              </div>
-              <div>
-                <p className="onb-init-prod">PRAANA OS · HRMS</p>
-                <div className="onb-init-prod-name">Employee Onboarding Flow</div>
-              </div>
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              <span className="onb-init-status-pill"><i className="ri-time-line" /> Status: {emp.status}</span>
+              <span className="onb-init-status-pill"><i className="ri-user-line" /> Profile: {emp.profile}% complete</span>
             </div>
           </div>
 
-          {/* Stepper */}
-          <div className="onb-init-stepper">
-            {stagesView.map((s, i) => (
-              <Fragment key={s.key}>
-                <button
-                  type="button"
-                  className={`onb-init-step ${activeStage === s.num ? 'is-active' : ''}`}
-                  onClick={() => setActiveStage(s.num)}
-                >
-                  <span className="num">
-                    {s.status === 'Completed' ? <i className="ri-check-line" /> : s.num}
-                  </span>
-                  {s.label}
-                </button>
-                {i < stagesView.length - 1 && <span className="onb-init-step-sep">·</span>}
-              </Fragment>
-            ))}
-          </div>
+          {/* Header stepper removed — the left sidebar already shows
+              every stage with its status, so the duplicate pill strip
+              here was redundant noise. */}
         </div>
 
         {/* Two-column body */}
@@ -3992,7 +4002,7 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
         setNextLoading(false);
         if (!ok) return;
       }
-      
+
       // Stage 4: validate and save before advancing
       if (activeStage === 4) {
         setNextLoading(true);
@@ -4000,15 +4010,40 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
         setNextLoading(false);
         if (!ok) return;
       }
-      
-      // For other stages (2, 3, 5)
-      if (activeStage !== 1 && activeStage !== 4) {
+
+      // Stage 3 — the provisioning fields (official_email, laptop /
+      // mobile / other-asset assignments, biometric_status, etc.) all
+      // live on the same `s1` state that saveStage1 persists. Without
+      // an explicit save here, anything the user typed on Stage 3
+      // vanished when the modal closed — saveStage1 didn't get called
+      // since the user wasn't on Stage 1. Re-using saveStage1 keeps
+      // the PUT payload identical (so the existing validator on the
+      // backend handles everything correctly).
+      if (activeStage === 3) {
         setNextLoading(true);
-        // Add any stage-specific save logic here if needed
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulate loading
+        // skipValidate=true — we don't want to re-run Stage 1's required-
+        // field checks here; the user is on Stage 3 and might be editing
+        // an employee record whose Stage 1 has gaps. The backend
+        // validator still gates per-field correctness on the PUT.
+        const ok = await saveStage1(false, true);
+        if (!ok) { setNextLoading(false); return; }
+        await bumpMacroStage(3);
+        setNextLoading(false);
+        toast.success('Stage 3 saved', 'Provisioning & asset details persisted.');
+      }
+
+      // For stages 2, 5 — bump the server-side macro watermark so
+      // profile% climbs (formula reads onboarding_stage_completed) and
+      // every stage ≤ N flips to "Completed" via the macroCompleted
+      // floor in stagesView. Without this, the wizard advanced visually
+      // but the backend stayed stuck at macro=1, so the user saw
+      // "Profile: 17% complete" even after walking through every step.
+      if (activeStage === 2 || activeStage === 5) {
+        setNextLoading(true);
+        await bumpMacroStage(activeStage);
         setNextLoading(false);
       }
-      
+
       // Move to next stage
       setActiveStage(activeStage + 1);
     }}
@@ -4030,23 +4065,7 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
     className="onb-init-btn-complete"
     disabled={nextLoading}
     style={nextLoading ? { opacity: 0.85, cursor: 'progress' } : undefined}
-    onClick={async () => {
-      if (nextLoading) return;
-      setNextLoading(true);
-      // Stamp the macro stage at 6 so profile% hits 100%. Race against
-      // a 350ms floor so the spinner is always visible to the user even
-      // when bumpMacroStage short-circuits (e.g. row already at 6).
-      try {
-        await Promise.all([
-          bumpMacroStage(6),
-          new Promise(r => setTimeout(r, 350)),
-        ]);
-        toast.success('Onboarding completed', 'All stages signed off. You can now activate the employee.');
-        onClose();
-      } finally {
-        setNextLoading(false);
-      }
-    }}
+    onClick={() => { if (!nextLoading) setShowCompleteConfirm(true); }}
   >
     {nextLoading ? (
       <>
@@ -4063,6 +4082,227 @@ const saveStage1 = async (markComplete: boolean): Promise<boolean> => {
 </div>
         </div>
       </ModalBody>
+
+      {/* Confirmation popup — stamps macro stage at 6, which is hard to
+          reverse without a manual DB edit. Two-step click guards against
+          accidental completion, with an optional notes field captured
+          alongside the completion event. */}
+      <Modal
+        isOpen={showCompleteConfirm}
+        toggle={() => { if (!nextLoading) { setShowCompleteConfirm(false); setCompleteNotes(''); } }}
+        centered
+        size="md"
+        backdrop="static"
+        keyboard={!nextLoading}
+        contentClassName="onb-complete-confirm"
+      >
+        {/* Header strip — green-to-emerald gradient with white checkmark */}
+        <div className="occ-head">
+          <div className="occ-icon"><i className="ri-checkbox-circle-line" /></div>
+          <div className="occ-titles">
+            <h5 className="occ-title">Complete onboarding</h5>
+            <p className="occ-sub">All stages signed off — confirm to lock in completion</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            disabled={nextLoading}
+            onClick={() => { setShowCompleteConfirm(false); setCompleteNotes(''); }}
+            className="occ-close"
+          >
+            <i className="ri-close-line" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="occ-body">
+          <p className="occ-summary">
+            <strong>{emp?.name}</strong>
+            <span className="occ-summary-sub"> · {emp?.empId}</span>
+          </p>
+          <p className="occ-warning">
+            <i className="ri-information-line" /> Profile completion will lock at 100% and the wizard will close.
+          </p>
+
+          <label className="occ-label" htmlFor="occ-notes">
+            Completion Notes <span className="occ-optional">Optional</span>
+          </label>
+          <textarea
+            id="occ-notes"
+            className="occ-textarea"
+            placeholder="Add a note about this completion — handover details, special instructions, anything worth remembering."
+            value={completeNotes}
+            onChange={(e) => setCompleteNotes(e.target.value)}
+            rows={3}
+            maxLength={500}
+            disabled={nextLoading}
+          />
+          <div className="occ-count">{completeNotes.length}/500</div>
+        </div>
+
+        {/* Footer */}
+        <div className="occ-footer">
+          <button
+            type="button"
+            className="occ-btn-cancel"
+            disabled={nextLoading}
+            onClick={() => { setShowCompleteConfirm(false); setCompleteNotes(''); }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="occ-btn-confirm"
+            disabled={nextLoading}
+            onClick={async () => {
+              if (nextLoading) return;
+              setNextLoading(true);
+              try {
+                // Notes are sent in the PUT payload alongside the macro
+                // bump. The backend currently strips them at validation
+                // (no column yet) — that's intentional; the field is here
+                // so the UX is in place when we wire persistence later.
+                if (emp?.dbId) {
+                  try {
+                    await api.put(`/employees/${emp.dbId}`, {
+                      onboarding_stage_completed: 6,
+                      onboarding_complete_notes: completeNotes.trim() || null,
+                    });
+                    onSaved?.();
+                  } catch { /* fall through to retry via bumpMacroStage */ }
+                }
+                await Promise.all([
+                  bumpMacroStage(6),
+                  new Promise(r => setTimeout(r, 350)),
+                ]);
+                toast.success('Onboarding completed', 'All stages signed off. You can now activate the employee.');
+                setShowCompleteConfirm(false);
+                setCompleteNotes('');
+                onClose();
+              } finally {
+                setNextLoading(false);
+              }
+            }}
+          >
+            {nextLoading ? (
+              <>
+                <span className="spinner-border spinner-border-sm" style={{ width: 13, height: 13 }} />
+                Completing…
+              </>
+            ) : (
+              <>
+                <i className="ri-check-line" /> Confirm &amp; Complete
+              </>
+            )}
+          </button>
+        </div>
+
+        <style>{`
+          .onb-complete-confirm { border-radius: 14px !important; overflow: hidden; border: 0; box-shadow: 0 24px 60px rgba(15,23,42,0.20); }
+          .occ-head {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 18px 20px;
+            background: linear-gradient(135deg, #059669 0%, #10b981 60%, #34d399 100%);
+            color: #fff;
+          }
+          .occ-icon {
+            width: 38px; height: 38px; border-radius: 10px;
+            background: rgba(255,255,255,0.20);
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 20px; flex-shrink: 0;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+          }
+          .occ-titles { flex: 1; min-width: 0; }
+          .occ-title { color: #fff; font-size: 16px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+          .occ-sub { color: rgba(255,255,255,0.85); font-size: 12px; margin: 2px 0 0; }
+          .occ-close {
+            width: 28px; height: 28px; border-radius: 8px;
+            background: rgba(255,255,255,0.18); border: 0; color: #fff;
+            display: inline-flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: background 140ms ease;
+          }
+          .occ-close:hover { background: rgba(255,255,255,0.30); }
+
+          .occ-body { padding: 18px 20px 8px; background: var(--vz-card-bg); }
+          .occ-summary { margin: 0 0 10px; font-size: 14px; color: var(--vz-body-color); }
+          .occ-summary strong { color: var(--vz-heading-color, var(--vz-body-color)); font-weight: 700; }
+          .occ-summary-sub { color: var(--vz-secondary-color); font-size: 12.5px; }
+          .occ-warning {
+            display: flex; align-items: center; gap: 6px;
+            margin: 0 0 14px; padding: 8px 12px; border-radius: 8px;
+            background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.30);
+            color: #b45309; font-size: 12px; font-weight: 600;
+          }
+          [data-bs-theme="dark"] .occ-warning,
+          [data-layout-mode="dark"] .occ-warning { color: #fcd34d; }
+          .occ-warning i { font-size: 14px; }
+
+          .occ-label {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 11px; font-weight: 800; letter-spacing: 0.5px;
+            text-transform: uppercase; color: var(--vz-secondary-color);
+            margin: 0 0 6px;
+          }
+          .occ-optional {
+            font-size: 9.5px; font-weight: 700; letter-spacing: 0.4px;
+            padding: 1px 6px; border-radius: 4px;
+            background: var(--vz-secondary-bg); color: var(--vz-secondary-color);
+          }
+          .occ-textarea {
+            width: 100%; padding: 9px 12px; border-radius: 8px;
+            border: 1px solid var(--vz-border-color);
+            background: var(--vz-card-bg); color: var(--vz-body-color);
+            font-size: 13px; line-height: 1.5; resize: vertical;
+            min-height: 76px;
+            transition: border-color 140ms ease, box-shadow 140ms ease;
+          }
+          .occ-textarea:focus {
+            outline: none;
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16,185,129,0.18);
+          }
+          .occ-textarea::placeholder { color: var(--vz-secondary-color); opacity: 0.7; }
+          .occ-count {
+            text-align: right;
+            font-size: 10.5px; color: var(--vz-secondary-color);
+            margin-top: 4px;
+          }
+
+          .occ-footer {
+            display: flex; justify-content: flex-end; gap: 8px;
+            padding: 12px 20px 18px;
+            background: var(--vz-card-bg);
+            border-top: 1px solid var(--vz-border-color);
+          }
+          .occ-btn-cancel,
+          .occ-btn-confirm {
+            padding: 9px 18px; border-radius: 8px;
+            font-size: 13px; font-weight: 600; cursor: pointer;
+            transition: all 140ms ease;
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+          }
+          .occ-btn-cancel {
+            background: var(--vz-card-bg);
+            border: 1px solid var(--vz-border-color);
+            color: var(--vz-body-color);
+          }
+          .occ-btn-cancel:hover:not(:disabled) {
+            background: var(--vz-secondary-bg);
+            border-color: var(--vz-border-color);
+          }
+          .occ-btn-confirm {
+            background: linear-gradient(135deg, #059669, #10b981);
+            border: 0; color: #fff; font-weight: 700;
+            box-shadow: 0 2px 6px rgba(16,185,129,0.30);
+          }
+          .occ-btn-confirm:hover:not(:disabled) {
+            box-shadow: 0 4px 10px rgba(16,185,129,0.40);
+            transform: translateY(-1px);
+          }
+          .occ-btn-cancel:disabled,
+          .occ-btn-confirm:disabled { opacity: 0.65; cursor: not-allowed; }
+        `}</style>
+      </Modal>
     </Modal>
   );
 }
@@ -4141,37 +4381,42 @@ function Stage2Documents({ emp, onDocsChanged }: {
   // doesn't ask the question again.
   const [hasExperience, setHasExperience] = useState<'yes' | 'no' | null>(null);
 
-  // Hydrate from server when the modal opens for this employee.
+  // Hydrate from server every time this stage mounts for this employee.
+  // The wizard unmounts the stage when the user navigates forward and
+  // re-mounts on revisit, so a per-mount fetch keeps the form in sync
+  // with the server (previous bug: when the same emp.dbId remounted,
+  // the useEffect didn't re-trigger and the local state was the
+  // initial empty array — entered companies appeared "lost"). Adding
+  // `prevCompanies.length` to the dep list isn't right either — we
+  // explicitly want this to run once per mount.
   useEffect(() => {
     if (!emp?.dbId) return;
     let cancelled = false;
-    api.get(`/employees/${emp.dbId}/previous-employments`).then(r => {
-      if (cancelled) return;
-      const list: any[] = Array.isArray(r.data) ? r.data : [];
-      if (list.length === 0) {
-        // Fresher / no prior employer — keep the list empty so the UI
-        // shows the "Skip if fresher" hint instead of an unfillable
-        // placeholder row. Don't pre-select Yes/No either; let the
-        // user pick so the question is explicit.
-        setPrevCompanies([]);
-        setHasExperience(null);
-        return;
-      }
-      // Server has saved companies → the user already answered "yes"
-      // in a previous session, no need to ask again.
-      setHasExperience('yes');
-      setPrevCompanies(list.map(p => ({
-        id: p.id,
-        company_name:   p.company_name   ?? '',
-        job_title:      p.job_title      ?? '',
-        start_date:     p.start_date     ?? '',
-        end_date:       p.end_date       ?? '',
-        hr_email_1:     p.hr_email_1     ?? '',
-        hr_email_2:     p.hr_email_2     ?? '',
-        contact_number: p.contact_number ?? '',
-        _localKey:      `pc_${p.id}`,
-      })));
-    }).catch(() => { /* keep empty draft on error */ });
+    const hydrate = async () => {
+      try {
+        const r = await api.get(`/employees/${emp.dbId}/previous-employments`);
+        if (cancelled) return;
+        const list: any[] = Array.isArray(r.data) ? r.data : [];
+        if (list.length === 0) {
+          setPrevCompanies([]);
+          setHasExperience(null);
+          return;
+        }
+        setHasExperience('yes');
+        setPrevCompanies(list.map(p => ({
+          id: p.id,
+          company_name:   p.company_name   ?? '',
+          job_title:      p.job_title      ?? '',
+          start_date:     p.start_date     ?? '',
+          end_date:       p.end_date       ?? '',
+          hr_email_1:     p.hr_email_1     ?? '',
+          hr_email_2:     p.hr_email_2     ?? '',
+          contact_number: p.contact_number ?? '',
+          _localKey:      `pc_${p.id}`,
+        })));
+      } catch { /* keep empty draft on error */ }
+    };
+    hydrate();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emp?.dbId]);
@@ -4586,7 +4831,6 @@ function Stage2Documents({ emp, onDocsChanged }: {
           <span className="onb-doc-prev-icon"><i className="ri-briefcase-line" style={{ fontSize: 14 }} /></span>
           <div className="min-w-0 flex-grow-1">
             <h6 className="onb-doc-prev-title">Previous Employment Documents</h6>
-            <p className="onb-doc-prev-sub">Optional · Skip if this is the employee's first job</p>
           </div>
           <span className="onb-doc-prev-pill">
             {hasExperience === 'no'
