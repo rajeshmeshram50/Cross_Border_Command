@@ -764,16 +764,16 @@ const OWNER_LABEL: Record<RoleOwner, string> = {
 // ─────────────────────────────────────────────────────────────────────────────
 type StageStatus = 'Completed' | 'In Progress' | 'Pending';
 
-// Notice Period Management was previously Stage 2 — removed per
-// product call. Asset Recovery moved up to Stage 2 (Clearance now
-// follows once devices have been collected back).
+// Trimmed to 4 stages per product call:
+//   - Asset Recovery merged INTO Clearance & Handover (assets listed
+//     at the top of that stage now)
+//   - Full & Final Settlement removed entirely
+//   - Notice Period Management was already removed in an earlier pass
 const EXIT_STAGES = [
-  { num: 1, title: 'Exit Initiation & Approval',         short: 'Exit Initiation & Approval',         sub: 'Record exit details, reason, dates, and collect approvals.', icon: 'ri-clipboard-line' },
-  { num: 2, title: 'Asset Recovery & Access Revocation', short: 'Asset Recovery & Access Revocation', sub: 'Track all company assets and revoke system access.', icon: 'ri-lock-2-line' },
-  { num: 3, title: 'Clearance & Handover',               short: 'Clearance & Handover',               sub: 'All departmental clearances must be approved before proceeding.', icon: 'ri-checkbox-line' },
-  { num: 4, title: 'Full & Final Settlement (FnF)',      short: 'Full & Final Settlement (FnF)',      sub: 'Calculate final settlement amount, deductions, and process payment.', icon: 'ri-money-rupee-circle-line' },
-  { num: 5, title: 'Exit Documents Management',          short: 'Exit Documents Management',          sub: 'Generate each document, then track the signing workflow for every stakeholder.', icon: 'ri-file-text-line' },
-  { num: 6, title: 'Final Deactivation & Closure',       short: 'Final Deactivation & Closure',       sub: 'Complete final validation, lock profile, and close the exit case.', icon: 'ri-flag-line' },
+  { num: 1, title: 'Exit Initiation & Approval', short: 'Exit Initiation & Approval', sub: 'Record exit details, reason, dates, and collect approvals.',           icon: 'ri-clipboard-line' },
+  { num: 2, title: 'Clearance & Handover',       short: 'Clearance & Handover',       sub: 'Confirm asset handover then collect every departmental clearance.',     icon: 'ri-checkbox-line' },
+  { num: 3, title: 'Exit Documents Management',  short: 'Exit Documents Management',  sub: 'Generate each document, then track the signing workflow per stakeholder.', icon: 'ri-file-text-line' },
+  { num: 4, title: 'Final Deactivation & Closure', short: 'Final Deactivation & Closure', sub: 'Complete final validation, lock profile, and close the exit case.',  icon: 'ri-flag-line' },
 ] as const;
 
 function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
@@ -786,9 +786,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   // read-only (auto-fetched from the employee's reporting_manager
   // relation); `reportingManagerId` carries the FK we PUT back.
   const [exitType, setExitType]           = useState('');
-  const [initiatedBy, setInitiatedBy]     = useState('Employee');
   const [reasonForExit, setReasonForExit] = useState('');
-  const [otherReason, setOtherReason]     = useState('');
   const [noticeDate, setNoticeDate]       = useState('');
   const [lwd, setLwd]                     = useState('');
   const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
@@ -798,10 +796,18 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const [replacementNeeded, setReplacementNeeded] = useState('Yes — Immediate');
   const [stage1Saving, setStage1Saving] = useState(false);
 
-  // Stage 2 (Notice Period Management) was removed per product call;
-  // the related state lived here and is gone with it.
+  // Date guards — Notice Date and Last Working Day must be strictly in
+  // the future. ISO yyyy-mm-dd compares lexicographically so a string
+  // compare against today's ISO date is enough; no Date() ceremony.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const noticeDateInvalid = !!noticeDate && noticeDate <= todayIso;
+  const lwdInvalid        = !!lwd        && lwd        <= todayIso;
 
-  // Stage 2 — Clearance & Handover (was Stage 3 before renumber).
+  // Stage 2 — Clearance & Handover. Asset Recovery used to be its own
+  // stage; we now surface the asset handover dropdown at the TOP of
+  // this stage so the manager confirms hardware return before the rest
+  // of the clearances run. `assetReturns` is keyed by master_asset_id
+  // so it grows / shrinks with whatever the employee actually holds.
   const [clearances, setClearances] = useState<{ checked: boolean; status: string }[]>([
     { checked: false, status: 'Pending' },
     { checked: false, status: 'Pending' },
@@ -810,21 +816,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     { checked: false, status: 'Pending' },
   ]);
   const [handoverNotes, setHandoverNotes] = useState('');
-
-  // Stage 4
-  // Asset return state — keyed by master_asset_id so it grows /
-  // shrinks naturally with whatever the employee actually has
-  // assigned (no more hard-coded 5-row array).
-  const [assetReturns, setAssetReturns] = useState<Record<number, { checked: boolean; status: string }>>({});
-  const [accessRevoke, setAccessRevoke] = useState<string[]>(['Pending','Pending','Pending','Pending','Pending','Pending']);
-  const [missingAssets, setMissingAssets] = useState('');
-  const [recoveryAction, setRecoveryAction] = useState('None');
-
-  // Stage 5
-  const [financeApproval, setFinanceApproval] = useState('Pending');
-  const [paymentStatus, setPaymentStatus]     = useState('Pending');
-  const [paymentMode, setPaymentMode]         = useState('Bank Transfer (NEFT)');
-  const [paymentDate, setPaymentDate]         = useState('');
+  const [assetReturns, setAssetReturns]   = useState<Record<number, { checked: boolean; status: string }>>({});
 
   // Stage 5 used to render a hardcoded checklist (Relieving Letter, Experience
   // Letter, …) with a per-row "generated?" boolean. That list now comes from
@@ -993,7 +985,9 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   };
 
   // Stage 7
-  const [validation, setValidation] = useState<boolean[]>([false, false, false, false, false, false]);
+  // 5 entries to match the trimmed Final Validation Checklist (FnF
+  // payment row was dropped along with the FnF stage).
+  const [validation, setValidation] = useState<boolean[]>([false, false, false, false, false]);
   const [empStatus, setEmpStatus] = useState('Active');
   const [profileLock, setProfileLock] = useState('Unlocked');
   const [exitCaseStatus, setExitCaseStatus] = useState('Open');
@@ -1023,9 +1017,10 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
       .then(({ data }) => {
         if (cancelled || !data) return;
         setExitType(String(data.exit_type ?? ''));
-        setInitiatedBy(String(data.initiated_by ?? 'Employee'));
+        // initiated_by + other_reason no longer ride along on the form.
+        // We still read whatever the row had so re-saves don't blank
+        // them server-side — they're just not surfaced as fields.
         setReasonForExit(String(data.reason_for_exit ?? ''));
-        setOtherReason(String(data.other_reason ?? ''));
         setNoticeDate(data.notice_date ? String(data.notice_date) : '');
         setLwd(data.last_working_day ? String(data.last_working_day) : '');
         setReportingManagerId(data.reporting_manager_id ?? null);
@@ -1068,11 +1063,15 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     if (!employee || stage1Saving) return false;
     setStage1Saving(true);
     try {
+      // Block the save when either date isn't strictly in the future —
+      // the same rule the field-level invalid banners surface to the user.
+      if (noticeDateInvalid || lwdInvalid) return false;
       await api.put(`/employees/${employee.id}/exit`, {
         exit_type:            exitType || null,
-        initiated_by:         initiatedBy || null,
-        reason_for_exit:      reasonForExit || null,
-        other_reason:         (exitType === 'Other' || reasonForExit === 'Other') ? (otherReason.trim() || null) : null,
+        // initiated_by + other_reason were removed from the form; we no
+        // longer send them. The backend column stays nullable so older
+        // rows that have a value remain readable.
+        reason_for_exit:      reasonForExit.trim() || null,
         notice_date:          noticeDate || null,
         last_working_day:     lwd || null,
         reporting_manager_id: reportingManagerId,
@@ -1108,26 +1107,9 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               <div className="ep-head-sub">
                 {employee.empId} · {employee.department} · {employee.designation}
               </div>
-              {/* Stage stepper pills — rounded chips with checkmark / number
-                  + label, current pill highlighted in white. */}
-              <div className="ep-step-strip">
-                {EXIT_STAGES.map(s => {
-                  const st = statusOf(s.num);
-                  const isCurrent = stage === s.num;
-                  const isDone = st === 'Completed';
-                  return (
-                    <button
-                      key={s.num}
-                      type="button"
-                      className={`ep-step-pill${isCurrent ? ' is-current' : ''}${isDone ? ' is-done' : ''}`}
-                      onClick={() => { setStage(s.num); setStageStatus(prev => ({ ...prev, [s.num]: prev[s.num] === 'Completed' ? 'Completed' : 'In Progress' })); }}
-                    >
-                      {isDone ? <i className="ri-check-line" /> : <span className="ep-step-pill-num">{s.num}</span>}
-                      <span className="ep-step-pill-label">{shortStageLabel(s.num)}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              {/* Stage stepper pills were removed — the left sidebar
+                  (.ep-stage-card list) already shows the same stage
+                  navigation, so the header pills duplicated it. */}
             </div>
             <div className="ep-head-right">
               <div className="ep-head-chips">
@@ -1140,10 +1122,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                   </span>
                 </span>
               </div>
-              <div className="ep-head-brand">
-                <div className="ep-head-brand-top">EMPLOYEE EXIT PROCESS</div>
-                <div className="ep-head-brand-bot">Manage end-to-end exit workflow</div>
-              </div>
+              
             </div>
             <button type="button" className="ep-close" onClick={onClose} aria-label="Close">
               <i className="ri-close-line" />
@@ -1203,27 +1182,48 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label="Initiated By">
-                      <EpSelect value={initiatedBy} onChange={setInitiatedBy} options={['Employee', 'HR', 'Manager']} />
-                    </EpField>
-                  </Col>
-                  <Col md={6}>
                     <EpField label="Reason for Exit">
-                      <EpSelect
+                      {/* Free-text now (was a dropdown). HR rarely fits a
+                          real-world reason into a fixed enum, so the form
+                          asks them to type whatever's accurate. */}
+                      <EpInput
                         value={reasonForExit}
                         onChange={setReasonForExit}
-                        options={['Better Opportunity', 'Personal Reasons', 'Higher Studies', 'Relocation', 'Health', 'Performance', 'Other']}
+                        placeholder="Describe the reason for exit"
                       />
                     </EpField>
                   </Col>
                   <Col md={6}>
                     <EpField label="Notice Date">
-                      <EpInput type="date" value={noticeDate} onChange={setNoticeDate} />
+                      <EpInput
+                        type="date"
+                        value={noticeDate}
+                        onChange={setNoticeDate}
+                        // Browser-level guard so the picker can't open on
+                        // a past day; the inline error below catches
+                        // pasted / typed values that bypass the picker.
+                        min={todayIso}
+                      />
+                      {noticeDateInvalid && (
+                        <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <i className="ri-error-warning-line" />Notice date must be after today.
+                        </div>
+                      )}
                     </EpField>
                   </Col>
                   <Col md={6}>
                     <EpField label="Last Working Day">
-                      <EpInput type="date" value={lwd} onChange={setLwd} />
+                      <EpInput
+                        type="date"
+                        value={lwd}
+                        onChange={setLwd}
+                        min={todayIso}
+                      />
+                      {lwdInvalid && (
+                        <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <i className="ri-error-warning-line" />Last working day must be after today.
+                        </div>
+                      )}
                     </EpField>
                   </Col>
                   <Col md={6}>
@@ -1239,20 +1239,6 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                       />
                     </EpField>
                   </Col>
-                  {/* Free-text "Other" reason — only visible when either
-                      dropdown picks "Other" so the form stays clean for
-                      the common case. */}
-                  {(exitType === 'Other' || reasonForExit === 'Other') && (
-                    <Col xs={12}>
-                      <EpField label="Other (please specify)">
-                        <EpInput
-                          value={otherReason}
-                          onChange={setOtherReason}
-                          placeholder="Describe the exit type / reason"
-                        />
-                      </EpField>
-                    </Col>
-                  )}
                   <Col xs={12}>
                     <EpField label="Comments / Notes">
                       <textarea
@@ -1282,9 +1268,65 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </>
             )}
 
-            {/* ── STAGE 3 — Clearance & Handover ── */}
-            {stage === 3 && (
+            {/* ── STAGE 2 — Clearance & Handover (with Asset Handover at top) ── */}
+            {stage === 2 && (
               <>
+                {/* Asset handover — every device / equipment currently
+                    assigned to the employee, with a "Handed Over" yes/no
+                    picker. Replaces the dedicated Asset Recovery stage. */}
+                <div className="ep-section-label">Asset Handover</div>
+                {(() => {
+                  // Compose the actual asset list from the employee row.
+                  // Laptop and Mobile first if assigned; otherAssets after.
+                  const list: { id: number; label: string; code: string }[] = [];
+                  if (employee.laptopAsset) {
+                    const a = employee.laptopAsset;
+                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
+                  }
+                  if (employee.mobileAsset) {
+                    const a = employee.mobileAsset;
+                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
+                  }
+                  for (const a of employee.otherAssets) {
+                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
+                  }
+                  if (list.length === 0) {
+                    return (
+                      <div className="ep-checklist mb-3" style={{ padding: 16, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+                        <i className="ri-inbox-line" style={{ fontSize: 22, marginRight: 6, verticalAlign: 'middle' }} />
+                        No assets are currently assigned to this employee.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="ep-checklist mb-3">
+                      {list.map(a => {
+                        const row = assetReturns[a.id] ?? { checked: false, status: 'Pending' };
+                        return (
+                          <div key={a.id} className="ep-check-row">
+                            <span className="ep-check-box" style={{ background: row.status === 'Handed Over' ? '#10b981' : 'transparent', borderColor: row.status === 'Handed Over' ? '#10b981' : 'var(--vz-border-color)' }}>
+                              {row.status === 'Handed Over' && <i className="ri-check-line" style={{ color: '#fff' }} />}
+                            </span>
+                            <span className="ep-check-label">
+                              {a.label} <span className="ep-asset-code">({a.code})</span>
+                            </span>
+                            <div style={{ width: 160 }}>
+                              <EpSelect
+                                value={row.status}
+                                onChange={v => setAssetReturns(prev => ({
+                                  ...prev,
+                                  [a.id]: { checked: v === 'Handed Over', status: v },
+                                }))}
+                                options={['Pending', 'Handed Over', 'Not Returned']}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
                 <div className="ep-section-label">Clearance Status</div>
                 <div className="ep-checklist mb-2">
                   {['Manager Clearance','IT Clearance','Admin Clearance','Finance Clearance','Legal / Compliance'].map((label, idx) => (
@@ -1326,120 +1368,8 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               </>
             )}
 
-            {/* ── STAGE 2 — Asset Recovery & Access Revocation ── */}
-            {stage === 2 && (
-              <>
-                <div className="ep-section-label">Asset Return Tracking</div>
-                {(() => {
-                  // Build the actual asset list from the employee row.
-                  // Laptop and Mobile go first if assigned; otherAssets
-                  // follows. Empty state shows a friendly message
-                  // instead of dummy hardware.
-                  const list: { id: number; label: string; code: string }[] = [];
-                  if (employee.laptopAsset) {
-                    const a = employee.laptopAsset;
-                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
-                  }
-                  if (employee.mobileAsset) {
-                    const a = employee.mobileAsset;
-                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
-                  }
-                  for (const a of employee.otherAssets) {
-                    list.push({ id: a.id, label: a.asset_name, code: a.code || a.asset_number || '—' });
-                  }
-                  if (list.length === 0) {
-                    return (
-                      <div className="ep-checklist mb-3" style={{ padding: 16, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
-                        <i className="ri-inbox-line" style={{ fontSize: 22, marginRight: 6, verticalAlign: 'middle' }} />
-                        No assets are currently assigned to this employee.
-                      </div>
-                    );
-                  }
-                  return (
-                    <div className="ep-checklist mb-3">
-                      {list.map(a => {
-                        const row = assetReturns[a.id] ?? { checked: false, status: 'Pending' };
-                        return (
-                          <label key={a.id} className="ep-check-row">
-                            <input
-                              type="checkbox"
-                              checked={row.checked}
-                              onChange={() => setAssetReturns(prev => ({
-                                ...prev,
-                                [a.id]: { checked: !row.checked, status: !row.checked ? 'Returned' : 'Pending' },
-                              }))}
-                            />
-                            <span className="ep-check-box"><i className="ri-check-line" /></span>
-                            <span className="ep-check-label">
-                              {a.label} <span className="ep-asset-code">({a.code})</span>
-                            </span>
-                            <span className={`ep-status-pill ep-status-pill--${row.status === 'Returned' ? 'done' : 'pending'}`}>
-                              {row.status}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-
-                <div className="ep-section-label">Access Revocation</div>
-                <div className="ep-checklist mb-3">
-                  {['ERP / HRMS System Access','Company Email & Google Workspace','GitHub / Code Repositories','Slack / Teams / Communication Tools','Cloud Infrastructure (AWS/Azure)','CRM / Sales Tools'].map((label, idx) => (
-                    <div key={idx} className="ep-check-row">
-                      <input type="checkbox" checked={accessRevoke[idx] === 'Revoked'} onChange={() => setAccessRevoke(prev => prev.map((v, i) => i === idx ? (v === 'Revoked' ? 'Pending' : 'Revoked') : v))} />
-                      <span className="ep-check-box"><i className="ri-check-line" /></span>
-                      <span className="ep-check-label">{label}</span>
-                      <div style={{ width: 140 }}>
-                        <EpSelect
-                          value={accessRevoke[idx]}
-                          onChange={v => setAccessRevoke(prev => prev.map((x, i) => i === idx ? v : x))}
-                          options={['Pending','Revoked','Not Applicable']}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="ep-section-label">Missing Asset Flag</div>
-                <Row className="g-2">
-                  <Col md={6}><EpField label="Missing Assets"><EpInput value={missingAssets} onChange={setMissingAssets} placeholder="Describe missing assets…" /></EpField></Col>
-                  <Col md={6}><EpField label="Recovery Action"><EpSelect value={recoveryAction} onChange={setRecoveryAction} options={['None','Salary Deduction','Legal Notice','Written Off']} /></EpField></Col>
-                </Row>
-              </>
-            )}
-
-            {/* ── STAGE 4 — Full & Final Settlement (FnF) ── */}
-            {stage === 4 && (
-              <>
-                <div className="ep-section-label">Earnings & Deductions</div>
-                <div className="ep-fnf-table mb-3">
-                  <EpFnfRow label="Basic Salary (Pro-rata)"      amount="₹ 42,500" tone="earn" />
-                  <EpFnfRow label="Leave Encashment (12 days)"   amount="₹ 16,000" tone="earn" />
-                  <EpFnfRow label="Bonus / Incentives"           amount="₹ 8,000"  tone="earn" />
-                  <EpFnfRow label="Gratuity (if applicable)"     amount="₹ 24,000" tone="earn" />
-                  <EpFnfRow label="Notice Period Shortfall"      amount="- ₹ 0"    tone="ded" />
-                  <EpFnfRow label="Asset Recovery Pending"       amount="- ₹ 0"    tone="ded" />
-                  <EpFnfRow label="Tax (TDS)"                    amount="- ₹ 9,050" tone="ded" />
-                  <EpFnfRow label="Loan / Advance Recovery"      amount="- ₹ 0"    tone="ded" />
-                  <div className="ep-fnf-row ep-fnf-row--total">
-                    <span>Net FnF Payable</span>
-                    <span>₹ 81,450</span>
-                  </div>
-                </div>
-
-                <div className="ep-section-label">Finance Approval & Payment</div>
-                <Row className="g-2">
-                  <Col md={6}><EpField label="Finance Controller Approval"><EpSelect value={financeApproval} onChange={setFinanceApproval} options={['Pending','Approved','Rejected']} /></EpField></Col>
-                  <Col md={6}><EpField label="Payment Status"><EpSelect value={paymentStatus} onChange={setPaymentStatus} options={['Pending','Processed','On Hold']} /></EpField></Col>
-                  <Col md={6}><EpField label="Payment Mode"><EpSelect value={paymentMode} onChange={setPaymentMode} options={['Bank Transfer (NEFT)','RTGS','UPI','Cheque']} /></EpField></Col>
-                  <Col md={6}><EpField label="Payment Date"><EpInput type="date" value={paymentDate} onChange={setPaymentDate} /></EpField></Col>
-                </Row>
-              </>
-            )}
-
-            {/* ── STAGE 5 — Exit Documents Management ── */}
-            {stage === 5 && (() => {
+            {/* ── STAGE 3 — Exit Documents Management ── */}
+            {stage === 3 && (() => {
               // KPI counts derived from real template + run data so the
               // tiles match what's rendered below. "Generated" counts any
               // template that has at least one signing run started;
@@ -1620,18 +1550,17 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
               );
             })()}
 
-            {/* ── STAGE 6 — Final Deactivation & Closure ── */}
-            {stage === 6 && (
+            {/* ── STAGE 4 — Final Deactivation & Closure ── */}
+            {stage === 4 && (
               <>
                 <div className="ep-section-label">Final Validation Checklist</div>
                 <div className="ep-checklist mb-3">
                   {[
-                    { title: 'All clearances obtained',     sub: 'Manager, IT, Admin, Finance, Legal' },
-                    { title: 'All assets recovered',        sub: 'Laptop, phone, access cards, keys' },
-                    { title: 'All access revoked',          sub: 'ERP, Email, GitHub, Cloud, CRM' },
-                    { title: 'FnF payment processed',       sub: 'Amount: ₹81,450 | Status: Pending' },
-                    { title: 'Exit documents signed',       sub: 'Relieving, Experience, NOC, FnF Sheet' },
-                    { title: 'Exit interview completed',    sub: 'Feedback recorded and filed' },
+                    { title: 'All clearances obtained',    sub: 'Manager, IT, Admin, Finance, Legal' },
+                    { title: 'All assets handed over',     sub: 'Laptop, phone, access cards, keys' },
+                    { title: 'All access revoked',         sub: 'ERP, Email, GitHub, Cloud, CRM' },
+                    { title: 'Exit documents signed',      sub: 'Templates from HR > Document Templates with trigger Exit Management' },
+                    { title: 'Exit interview completed',   sub: 'Feedback recorded and filed' },
                   ].map((v, idx) => (
                     <label key={idx} className="ep-check-row">
                       <input type="checkbox" checked={validation[idx]} onChange={() => setValidation(prev => prev.map((x, i) => i === idx ? !x : x))} />
@@ -1931,7 +1860,7 @@ function EpField({ label, children }: { label: string; children: React.ReactNode
     </div>
   );
 }
-function EpInput({ value, onChange, type = 'text', disabled = false, placeholder }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string }) {
+function EpInput({ value, onChange, type = 'text', disabled = false, placeholder, min, max }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; min?: string; max?: string }) {
   if (type === 'date') {
     return (
       <MasterDatePicker
@@ -1939,10 +1868,12 @@ function EpInput({ value, onChange, type = 'text', disabled = false, placeholder
         onChange={onChange}
         disabled={disabled}
         placeholder={placeholder ?? 'dd-mm-yyyy'}
+        minDate={min}
+        maxDate={max}
       />
     );
   }
-  return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} onChange={e => onChange(e.target.value)} />;
+  return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} min={min} max={max} onChange={e => onChange(e.target.value)} />;
 }
 function EpSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
   // Render via MasterSelect so the modal dropdowns match the look + dark-mode
@@ -2003,20 +1934,6 @@ function MiniProgressRing({ value }: { value: number }) {
   );
 }
 
-// Compact label for the header stepper pills — one chip per stage.
-// Keep these in sync with EXIT_STAGES (Notice removed; Assets moved
-// up to slot 2, Clearance to slot 3).
-function shortStageLabel(num: number): string {
-  switch (num) {
-    case 1: return 'Initiation';
-    case 2: return 'Assets';
-    case 3: return 'Clearance';
-    case 4: return 'FnF';
-    case 5: return 'Documents';
-    case 6: return 'Closure';
-    default: return `Stage ${num}`;
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Evidence Vault — opens for an Exited employee to view all archived docs.
