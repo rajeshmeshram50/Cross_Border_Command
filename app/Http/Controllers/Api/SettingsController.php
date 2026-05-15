@@ -167,7 +167,7 @@ class SettingsController extends Controller
         return response()->json([
             'message' => ucfirst($kind) . ' uploaded',
             'path'    => $path,
-            'url'     => Storage::disk('public')->url($path),
+            'url'     => file_url($path),
             'value'   => $merged,
         ]);
     }
