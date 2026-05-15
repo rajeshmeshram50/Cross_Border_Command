@@ -447,6 +447,10 @@ class AuthController extends Controller
             $client = $user->client;
             $expired = $client?->plan_expires_at && $client->plan_expires_at->isPast();
             $planInfo = [
+                // suggested_plan_id is the plan the Super Admin assigned to this
+                // client when they were created/edited — the My Plan page uses
+                // it to visually highlight the recommended card on purchase.
+                'suggested_plan_id' => $client?->plan_id,
                 'has_plan' => $client?->plan_id !== null && $client?->plan_type === 'paid',
                 'expired' => $expired,
                 'plan_name' => $client?->plan?->name,

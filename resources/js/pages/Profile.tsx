@@ -515,13 +515,60 @@ export default function Profile() {
             <i className="ri-vip-crown-line" style={{ color: '#fff', fontSize: 30 }}></i>
           </span>
           <p className="text-muted fs-11 text-uppercase fw-semibold mb-1" style={{ letterSpacing: '0.06em' }}>Current Plan</p>
-          <h5 className="mb-1 fw-bold">{plan!.plan_name || 'Active Plan'}</h5>
-          {plan!.expires_at && (
-            <p className="text-muted mb-0 fs-12">
-              <i className={`${plan!.expired ? 'ri-alert-line text-danger' : 'ri-calendar-check-line text-success'} me-1`}></i>
-              {plan!.expired ? 'Plan expired' : `Expires on ${plan!.expires_at}`}
-            </p>
-          )}
+          <h5 className="mb-2 fw-bold">{plan!.plan_name || 'Active Plan'}</h5>
+          {plan!.expires_at && (() => {
+            // Days until expiry — drives the urgency color of the highlight.
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const expiry = new Date(plan!.expires_at + 'T00:00:00');
+            const daysLeft = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
+            const fmt = expiry.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+            const tone = plan!.expired ? 'danger'
+              : daysLeft <= 7      ? 'danger'
+              : daysLeft <= 30     ? 'warning'
+              : 'success';
+            const palette: Record<string, { rgb: string; text: string; icon: string }> = {
+              danger:  { rgb: '240,101,72', text: '#fff', icon: 'ri-alarm-warning-fill' },
+              warning: { rgb: '245,158,11', text: '#fff', icon: 'ri-time-line' },
+              success: { rgb: '10,179,156', text: '#fff', icon: 'ri-calendar-check-line' },
+            };
+            const p = palette[tone];
+
+            const label = plan!.expired
+              ? 'Plan expired'
+              : daysLeft <= 0
+                ? `Expires today · ${fmt}`
+                : `Expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'} · ${fmt}`;
+
+            return (
+              <>
+                {/* Pulse animation keyframe scoped via inline style+class. */}
+                <style>{`
+                  @keyframes profile-expiry-pulse {
+                    0%   { box-shadow: 0 0 0 0 rgba(${p.rgb},0.55), 0 8px 22px rgba(${p.rgb},0.45); }
+                    70%  { box-shadow: 0 0 0 12px rgba(${p.rgb},0.00), 0 8px 22px rgba(${p.rgb},0.45); }
+                    100% { box-shadow: 0 0 0 0 rgba(${p.rgb},0.00), 0 8px 22px rgba(${p.rgb},0.45); }
+                  }
+                  .profile-expiry-pill { animation: profile-expiry-pulse 1.8s ease-out infinite; }
+                `}</style>
+                <span
+                  className="profile-expiry-pill d-inline-flex align-items-center gap-2 rounded-pill fw-bold"
+                  style={{
+                    padding: '8px 18px',
+                    fontSize: 13,
+                    background: `linear-gradient(135deg, rgb(${p.rgb}), rgba(${p.rgb},0.85))`,
+                    color: p.text,
+                    letterSpacing: '0.02em',
+                    border: 'none',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.18)',
+                  }}
+                >
+                  <i className={p.icon} style={{ fontSize: 16 }} />
+                  {label}
+                </span>
+              </>
+            );
+          })()}
         </div>
       </CardBody>
     </Card>

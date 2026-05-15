@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -27,10 +28,10 @@ class ClientController extends Controller
         // page when they click into a client.
         $query = Client::with(['plan', 'createdBy'])
             ->withCount(['branches as branches_count' => function ($q) {
-                $q->where(function ($inner) {
-                    $inner->where('code', '!=', 'HO')
-                          ->orWhere('name', 'not ilike', '% — Head Office');
-                });
+                // Exclude the auto-created Head Office branch (code='HO') so the
+                // count reflects user-created branches only — see show() and
+                // store/update responses below which apply the same filter.
+                $q->where('code', '!=', 'HO');
             }])
             ->withCount('users');
 
@@ -210,11 +211,15 @@ class ClientController extends Controller
                 'created_by' => $request->user()->id,
             ]);
 
-            // Create client admin user
+            // Create client admin user. We store TWO copies of the password:
+            //   - `password`           — bcrypt hash, used for auth.
+            //   - `password_encrypted` — reversibly-encrypted (Crypt::encryptString)
+            //     so Super Admin can read the original value back when editing.
             $adminUser = User::create([
                 'name' => $request->admin_name,
                 'email' => $request->admin_email,
                 'password' => Hash::make($request->admin_password),
+                'password_encrypted' => Crypt::encryptString($request->admin_password),
                 'phone' => $request->admin_phone,
                 'user_type' => 'client_admin',
                 'client_id' => $client->id,
@@ -224,7 +229,10 @@ class ClientController extends Controller
             ]);
 
             $client->load(['plan', 'createdBy']);
-            $client->loadCount(['branches', 'users']);
+            $client->loadCount([
+                'branches as branches_count' => fn ($q) => $q->where('code', '!=', 'HO'),
+                'users',
+            ]);
 
             // Send welcome email — gated by Settings → Notifications → newUser
             if (Settings::shouldSendMail('newUser')) {
@@ -253,16 +261,37 @@ class ClientController extends Controller
     public function show(Client $client)
     {
         $client->load(['plan', 'createdBy']);
-        $client->loadCount(['branches', 'users']);
+        $client->loadCount([
+            'branches as branches_count' => fn ($q) => $q->where('code', '!=', 'HO'),
+            'users',
+        ]);
 
         // Get client admin user
         $adminUser = User::where('client_id', $client->id)
             ->where('user_type', 'client_admin')
             ->first();
 
+        // Only super admins should receive the decrypted password. Other
+        // roles (client_admin viewing their own org, etc.) get the redacted
+        // payload to avoid leaking creds across tenant boundaries.
+        $isSuperAdmin = optional(request()->user())->user_type === 'super_admin';
+        $adminPayload = null;
+        if ($adminUser) {
+            $adminPayload = $adminUser->only(['id', 'name', 'email', 'phone', 'designation', 'status']);
+            if ($isSuperAdmin && $adminUser->password_encrypted) {
+                try {
+                    $adminPayload['password_plain'] = Crypt::decryptString($adminUser->password_encrypted);
+                } catch (\Throwable $e) {
+                    // Decryption fails if APP_KEY rotated since the value was stored
+                    // — fall through and let admin re-set the password.
+                    $adminPayload['password_plain'] = null;
+                }
+            }
+        }
+
         return response()->json([
             'client' => $client,
-            'admin_user' => $adminUser ? $adminUser->only(['id', 'name', 'email', 'phone', 'designation', 'status']) : null,
+            'admin_user' => $adminPayload,
         ]);
     }
 
@@ -389,6 +418,8 @@ class ClientController extends Controller
                 $passwordChanged = false;
                 if ($request->admin_password) {
                     $adminData['password'] = Hash::make($request->admin_password);
+                    // Keep the readable mirror in sync with the new password.
+                    $adminData['password_encrypted'] = Crypt::encryptString($request->admin_password);
                     $passwordChanged = true;
                 }
 
@@ -416,7 +447,10 @@ class ClientController extends Controller
             }
 
             $client->load(['plan', 'createdBy']);
-            $client->loadCount(['branches', 'users']);
+            $client->loadCount([
+                'branches as branches_count' => fn ($q) => $q->where('code', '!=', 'HO'),
+                'users',
+            ]);
 
             return response()->json([
                 'message' => 'Client updated successfully',

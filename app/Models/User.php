@@ -21,6 +21,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'password_encrypted',
         'phone',
         'user_type',
         'client_id',
@@ -41,6 +42,10 @@ class User extends Authenticatable
 
     protected $hidden = [
         'password',
+        // Never serialize the encrypted-mirror password through normal model
+        // serialization — ClientController::show() explicitly decrypts and
+        // adds it to the payload only when the caller is a super_admin.
+        'password_encrypted',
         'remember_token',
         'device_token',
     ];

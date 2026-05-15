@@ -197,13 +197,14 @@ export default function Clients({ onNavigate }: Props) {
                 {info.row.original.org_name.charAt(0)}{info.row.original.org_name.split(' ')[1]?.charAt(0) || ''}
               </div>
             )}
-            <span
-              className="fw-semibold fs-13 text-truncate"
-              title={info.row.original.org_name}
-              style={{ minWidth: 0 }}
-            >
-              {info.row.original.org_name}
-            </span>
+            <Tooltip label={info.row.original.org_name}>
+              <span
+                className="fw-semibold fs-13 text-truncate"
+                style={{ minWidth: 0 }}
+              >
+                {info.row.original.org_name}
+              </span>
+            </Tooltip>
           </div>
         );
       },
@@ -235,16 +236,22 @@ export default function Clients({ onNavigate }: Props) {
           <i className="ri-phone-line text-muted fs-13"></i>
           <span className="fs-13 font-monospace">{info.row.original.phone}</span>
         </a>
-      ) : <span className="text-muted">—</span>,
+      ) : <span className="text-muted fs-13">—</span>,
     },
     {
       header: 'Type',
       accessorKey: 'org_type',
-      cell: (info: any) => (
-        <span className="text-uppercase fw-medium text-muted fs-12">
-          {info.row.original.org_type}
-        </span>
-      ),
+      cell: (info: any) => {
+        // First letter capital, rest lowercase — "BUSINESS" -> "Business",
+        // "REACT" -> "React" etc. Handles multi-word types like "non-profit".
+        const raw = String(info.row.original.org_type || '');
+        const display = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+        return (
+          <span className="fw-medium text-muted fs-13">
+            {display}
+          </span>
+        );
+      },
     },
     {
       header: 'Branches',
@@ -268,12 +275,12 @@ export default function Clients({ onNavigate }: Props) {
       accessorKey: 'plan_price',
       cell: (info: any) => {
         const plan = info.row.original.plan;
-        if (!plan || plan.price <= 0) return <span className="text-muted">—</span>;
+        if (!plan || plan.price <= 0) return <span className="text-muted fs-13">—</span>;
         const suffix = plan.period === 'month' ? '/mo' : plan.period === 'quarter' ? '/qtr' : '/yr';
         return (
           <span className="text-success fw-semibold fs-13">
             ₹{plan.price.toLocaleString()}
-            <small className="text-muted fw-normal fs-11 ms-1">{suffix}</small>
+            <small className="text-muted fw-normal fs-13 ms-1">{suffix}</small>
           </span>
         );
       },
@@ -286,7 +293,7 @@ export default function Clients({ onNavigate }: Props) {
         const color = isActive ? 'success' : 'danger';
         const label = isActive ? 'Active' : 'Inactive';
         return (
-          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2`}>
+          <span className={`badge rounded-pill bg-${color}-subtle text-${color} fw-semibold px-3 py-2 fs-13`}>
             {label}
           </span>
         );
@@ -323,6 +330,19 @@ export default function Clients({ onNavigate }: Props) {
       <style>{`
         .clients-surface { background: #ffffff; }
         [data-bs-theme="dark"] .clients-surface { background: #1c2531; }
+
+        /* Unify table typography — every cell + header reads at the same
+           13px size so the table looks like a single grid, not a patchwork
+           of differently-sized labels. */
+        .clients-surface .table thead th,
+        .clients-surface .table tbody td {
+          font-size: 13px;
+          vertical-align: middle;
+        }
+        .clients-surface .table thead th {
+          font-weight: 600;
+          letter-spacing: 0.01em;
+        }
 
         /* KPI cards — clear lift on hover with a layered shadow so the
            card visibly pops above the surface instead of sitting flat. */

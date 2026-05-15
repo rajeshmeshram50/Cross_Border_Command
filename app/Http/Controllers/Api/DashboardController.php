@@ -198,8 +198,11 @@ class DashboardController extends Controller
 
         $client = Client::with('plan')->find($clientId);
 
-        // Branches — always count via the actual query so a non-existent / sentinel id (-1) returns 0
+        // Branches — always count via the actual query so a non-existent / sentinel id (-1) returns 0.
+        // Exclude the auto-created Head Office branch (code='HO') so the KPI
+        // shows only user-created branches (matches Clients list + show()).
         $branchesBase = fn() => Branch::where('client_id', $clientId)
+            ->where('code', '!=', 'HO')
             ->when($branchId, fn($q) => $q->where('id', $branchId));
         $totalBranches = $branchesBase()->count();
         $activeBranches = $branchesBase()->where('status', 'active')->count();

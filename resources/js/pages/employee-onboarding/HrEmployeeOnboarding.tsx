@@ -2465,7 +2465,10 @@ function InitiateOnboardingModal({
     if (!isOpen) return;
     let cancelled = false;
     Promise.allSettled([
-      api.get('/master/countries').then(r => { if (!cancelled) setMCountries(Array.isArray(r.data) ? r.data : []); }),
+      api.get('/master/countries').then(r => {
+        if (cancelled) return;
+        setMCountries(Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []);
+      }),
       api.get('/master/departments').then(r => { if (!cancelled) setMDepts(Array.isArray(r.data) ? r.data : []); }),
       api.get('/master/designations').then(r => { if (!cancelled) setMDesignations(Array.isArray(r.data) ? r.data : []); }),
       api.get('/master/roles').then(r => { if (!cancelled) setMRoles(Array.isArray(r.data) ? r.data : []); }),
