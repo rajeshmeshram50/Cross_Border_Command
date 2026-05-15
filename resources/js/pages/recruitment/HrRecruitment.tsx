@@ -763,16 +763,21 @@ export default function HrRecruitment() {
                                   onClick={() => navigate(`/hr/recruitment/${r.id}/candidates`)}
                                 />
                                 <ActionBtn
-                                  // Same icon now opens a Cancel/Complete chooser.
-                                  // Disabled only once the recruitment reaches a
-                                  // terminal state (Cancelled or Completed).
+                                  // Opens a Cancel/Complete chooser — the
+                                  // icon used to be ri-close-circle-line
+                                  // which read as a pure "cancel/delete"
+                                  // affordance and hid the Complete path.
+                                  // ri-flag-line is neutral: it speaks to
+                                  // "close out / mark done" without
+                                  // implying destruction. Disabled once
+                                  // the row reaches a terminal state.
                                   title={
                                     r.status === 'Cancelled' ? 'Already Cancelled'
                                     : r.status === 'Completed' ? 'Already Completed'
-                                    : 'Cancel or Mark Completed'
+                                    : 'Close Recruitment (Complete or Cancel)'
                                   }
-                                  icon="ri-close-circle-line"
-                                  color="danger"
+                                  icon="ri-flag-line"
+                                  color="warning"
                                   disabled={r.status === 'Cancelled' || r.status === 'Completed'}
                                   onClick={() => setCancelTarget(r)}
                                 />
