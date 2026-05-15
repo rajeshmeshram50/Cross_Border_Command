@@ -98,6 +98,12 @@ class LeaveRequestController extends Controller
         $from = Carbon::parse($data['from_date']);
         $to = Carbon::parse($data['to_date']);
         $dayType = $data['day_type'] ?? 'full';
+        // Half-day only makes sense on a single calendar day. Reject the
+        // ambiguous "first_half across 5 days" case rather than silently
+        // billing it as 5 full days.
+        if ($dayType !== 'full' && !$from->isSameDay($to)) {
+            abort(422, 'Half-day requests are only valid for a single calendar day. Please pick the same from/to date or switch day type to "Full Day".');
+        }
         if ($dayType !== 'full' && $from->isSameDay($to)) {
             $days = 0.5;
         } else {
@@ -256,25 +262,31 @@ class LeaveRequestController extends Controller
         // Super admin sees everything. Client admin / branch user see their
         // tenant's requests so HR can act regardless of who the direct
         // reporting manager is. Anyone else only sees requests where they
-        // are the reporting manager of the requestor.
+        // are the reporting manager of the requestor OR are explicitly
+        // named on the approval chain.
         $isAdminScope = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
+        $myEmployeeId = null;
         if (!$isAdminScope) {
             $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
             if (!$myEmployeeId) {
                 return response()->json(['data' => []]);
             }
-            // Non-admin path — show pending requests where the current level
-            // has me as approver: either as reporting manager of the
-            // requestor, or as the explicitly-named employee/user on that
-            // level. We do the simple SQL filter for direct reports, then
-            // post-filter in PHP for the per-level chain matching since
-            // approval_chain is a JSON column. Already-decided (Approved /
-            // Rejected) requests fall back to "I was somewhere on the chain".
+            // Pre-filter: anything in my tenant where I might appear on
+            // the chain. We cast a wide net here (RM relation OR approved_by
+            // OR any chain row that name-checks me) and then post-filter
+            // in PHP using canActOnLevel for per-level precision —
+            // approval_chain is JSON so we can't reliably do that match
+            // entirely in SQL across PG / MySQL.
             $q->where(function ($w) use ($myEmployeeId, $user) {
                 $w->whereIn('employee_id', function ($sub) use ($myEmployeeId) {
                     $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
-                })->orWhere('approved_by', $user->id);
+                })->orWhere('approved_by', $user->id)
+                  ->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . (int) $user->id . '%')
+                  ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . (int) $myEmployeeId . '%');
             });
+            if ($user->client_id) {
+                $q->where('client_id', $user->client_id);
+            }
         } elseif ($user->user_type !== 'super_admin' && $user->client_id) {
             $q->where('client_id', $user->client_id);
         }
@@ -295,7 +307,27 @@ class LeaveRequestController extends Controller
             });
         }
 
-        return response()->json(['data' => $q->get()]);
+        $rows = $q->get();
+
+        // Per-level precision pass for non-admins. For Pending requests
+        // only show ones where I can act on the current level. For
+        // decided requests fall back to "I was somewhere on the chain"
+        // so my history view still includes them.
+        if (!$isAdminScope) {
+            $rows = $rows->filter(function (LeaveRequest $row) use ($user) {
+                $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
+                if ($row->status === 'Pending') {
+                    $idx = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
+                    return $this->canActOnLevel($user, $chain, $idx, $row);
+                }
+                foreach (array_keys($chain) as $i) {
+                    if ($this->canActOnLevel($user, $chain, $i, $row)) return true;
+                }
+                return (int) $row->approved_by === (int) $user->id;
+            })->values();
+        }
+
+        return response()->json(['data' => $rows]);
     }
 
     // ─────────────────────────────────────────────────────────────────────

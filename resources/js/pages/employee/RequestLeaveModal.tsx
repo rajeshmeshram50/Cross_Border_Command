@@ -142,6 +142,18 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
 
   const submit = async () => {
     if (!canSubmit) return;
+    // Client-side balance guard. The backend will accept-and-create with
+    // an over-balance request today; surfacing the failure here saves a
+    // round-trip and keeps the user on the form for a quick edit.
+    // Skipped for "unlimited" types since they have no quota cap.
+    const selectedBalance = balanceTypes.find(t => String(t.leave_type_id) === String(leaveTypeId));
+    if (selectedBalance && !selectedBalance.unlimited) {
+      const remaining = selectedBalance.available ?? 0;
+      if (totalDays > remaining) {
+        alert(`Not enough balance — ${selectedBalance.name} has ${remaining} days available but you requested ${totalDays}.`);
+        return;
+      }
+    }
     setSubmitting(true);
     try {
       await leaveRequestsApi.create({
