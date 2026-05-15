@@ -198,6 +198,27 @@ const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
   },
 });
 
+/**
+ * Deep-merge an incoming (possibly partial) config_json blob with the
+ * default. Loaded rows from the DB may pre-date a section (e.g. an
+ * older config without `yearEnd`) — passing it raw to the section
+ * views crashes them when they read `cfg.something` on undefined.
+ * One-level deep merge is enough — the inner shapes never change
+ * without a code-side type update.
+ */
+function mergeWithDefaultConfig(raw: Partial<LeaveTypeConfig> | undefined | null): LeaveTypeConfig {
+  const def = defaultLeaveTypeConfig();
+  if (!raw || typeof raw !== 'object') return def;
+  return {
+    accrual:      { ...def.accrual,      ...(raw.accrual      ?? {}) },
+    leaveApp:     { ...def.leaveApp,     ...(raw.leaveApp     ?? {}) },
+    approval:     { ...def.approval,     ...(raw.approval     ?? {}) },
+    yearEnd:      { ...def.yearEnd,      ...(raw.yearEnd      ?? {}) },
+    probation:    { ...def.probation,    ...(raw.probation    ?? {}) },
+    noticePeriod: { ...def.noticePeriod, ...(raw.noticePeriod ?? {}) },
+  };
+}
+
 interface PlanEmployee {
   id: string;
   name: string;
@@ -406,12 +427,16 @@ export default function HrLeavePlans() {
       const mapped = detailed.map(apiPlanToFrontend);
       setPlans(mapped);
       // Seed typeConfigs from the persisted pivot rows so the Setup popup
-      // opens with the saved values instead of the empty default.
+      // opens with the saved values instead of the empty default. Deep-
+      // merge each loaded config with defaultLeaveTypeConfig() so any
+      // missing section (e.g. an old row that was saved before YearEnd
+      // existed) gets defaulted instead of crashing the section view
+      // when it reads `cfg.unit` on undefined.
       const seeded: Record<string, LeaveTypeConfig> = {};
       detailed.forEach(p => {
         (p.leave_types ?? []).forEach(t => {
           if (t.pivot?.config_json) {
-            seeded[`${p.id}::${t.id}`] = t.pivot.config_json as LeaveTypeConfig;
+            seeded[`${p.id}::${t.id}`] = mergeWithDefaultConfig(t.pivot.config_json as Partial<LeaveTypeConfig>);
           }
         });
       });
@@ -2212,13 +2237,14 @@ function AssignLeaveTypesModal({
 // ─────────────────────────────────────────────────────────────────────────────
 type SetupSection = 'accrual' | 'leaveApp' | 'approval' | 'yearEnd' | 'probation' | 'noticePeriod';
 
+// Year End Processing / Probation / Notice Period removed at user request —
+// their underlying types + section views remain in the file (and the
+// config_json still tracks them via defaults) so they can be re-introduced
+// without a schema change, but they no longer appear in the sidebar.
 const SETUP_SECTIONS: { key: SetupSection; label: string; icon: string; tone: string }[] = [
   { key: 'accrual',      label: 'Accrual',           icon: 'ri-time-line',           tone: '#7c5cfc' },
   { key: 'leaveApp',     label: 'Leave Application', icon: 'ri-file-list-3-line',    tone: '#0ea5e9' },
   { key: 'approval',     label: 'Approval',          icon: 'ri-checkbox-circle-line',tone: '#16a34a' },
-  { key: 'yearEnd',      label: 'Year End Processing', icon: 'ri-calendar-check-line', tone: '#f59e0b' },
-  { key: 'probation',    label: 'Probation',         icon: 'ri-user-3-line',         tone: '#7c5cfc' },
-  { key: 'noticePeriod', label: 'Notice Period',     icon: 'ri-cup-line',            tone: '#dc2626' },
 ];
 
 function LeaveTypeSetupModal({

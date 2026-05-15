@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 
@@ -24,6 +24,7 @@ export interface HeaderConfig {
   text_color: string;
   show_logo: boolean;
   show_title: boolean;
+  logo_height?: number;         // px — clamped 24-200, width auto-scales (legacy rows: undefined → 62)
 }
 
 export type PageNumberFormat = 'N' | 'Page N' | 'Page N of M' | 'N / M';
@@ -53,7 +54,15 @@ export const DEFAULT_HEADER: HeaderConfig = {
   text_color: '#111827',
   show_logo:  true,
   show_title: true,
+  logo_height: 62,
 };
+
+// Allowed pixel range for the user-configurable logo height. The lower bound
+// keeps the image legible; the upper bound prevents the user from accidentally
+// blowing the header up to fill the entire page.
+export const LOGO_HEIGHT_MIN = 24;
+export const LOGO_HEIGHT_MAX = 200;
+export const LOGO_HEIGHT_DEFAULT = 62;
 
 export const DEFAULT_FOOTER: FooterConfig = {
   text:       'Company Name Pvt. Ltd.  |  Confidential',
@@ -154,6 +163,14 @@ export default function HeaderFooterPanel({
     window.addEventListener('mouseup', onUp);
   };
 
+  // Resolve & clamp the configured logo height — falls back to the legacy
+  // baked-in value (HEADER_HEIGHT - 28) so rows saved before this field
+  // existed keep rendering identically.
+  const logoHeightPx = clamp(
+    typeof header.logo_height === 'number' ? header.logo_height : LOGO_HEIGHT_DEFAULT,
+    LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX,
+  );
+
   const draggableItemStyle = (pos: PointPct): React.CSSProperties => ({
     position: 'absolute',
     left: `${pos.x}%`,
@@ -166,17 +183,30 @@ export default function HeaderFooterPanel({
 
   return (
     <div className="tpl-page-shell" style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
-      {/* HEADER zone — fixed height, absolute children, free drag */}
+      <HfpDarkStyles />
+      {/* HEADER zone — min-height (grows to fit multi-line title), absolute
+          children, free drag. Title + subtitle are inline-editable. */}
       <div
         ref={headerRef}
-        onClick={() => !readOnly && setOpenZone(openZone === 'header' ? null : 'header')}
+        onClick={(e) => {
+          // Only open the settings popover when the click landed on the
+          // empty header backdrop — not on the title/subtitle (which is
+          // inline-editable) or the logo (which is draggable).
+          if (readOnly) return;
+          if ((e.target as HTMLElement).closest('[data-tpl-no-popover="1"]')) return;
+          setOpenZone(openZone === 'header' ? null : 'header');
+        }}
         title={readOnly ? '' : 'Drag the logo / title; click any empty area to edit settings'}
         style={{
-          height: HEADER_HEIGHT, minHeight: HEADER_HEIGHT, maxHeight: HEADER_HEIGHT,
+          // Grow the header to fit the logo when the user scales it past the
+          // default. +28 keeps the same vertical breathing room the baked-in
+          // value used to provide.
+          minHeight: Math.max(HEADER_HEIGHT, logoHeightPx + 28),
           background: header.background, color: header.text_color,
           borderBottom: '2px solid #f3f4f6',
           cursor: readOnly ? 'default' : 'pointer',
           position: 'relative',
+          paddingTop: 32, paddingBottom: 12,
           backgroundImage: readOnly ? undefined :
             // Faint dotted grid so the user can see the drop zone & alignment.
             'radial-gradient(circle, rgba(99,102,241,0.10) 1px, transparent 1px)',
@@ -186,14 +216,15 @@ export default function HeaderFooterPanel({
         {header.show_logo && (
           <div
             onMouseDown={startDrag('logo')}
+            data-tpl-no-popover="1"
             style={draggableItemStyle(logoPos)}
             title={readOnly ? '' : 'Drag to reposition logo'}
           >
             {header.logo_url ? (
               <img src={header.logo_url} alt="logo" draggable={false}
-                style={{ maxHeight: HEADER_HEIGHT - 28, maxWidth: 180, objectFit: 'contain', pointerEvents: 'none' }} />
+                style={{ height: logoHeightPx, maxWidth: Math.max(180, logoHeightPx * 3), objectFit: 'contain', pointerEvents: 'none' }} />
             ) : (
-              <div style={{ width: 92, height: 44, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
+              <div style={{ width: Math.max(72, logoHeightPx * 1.8), height: logoHeightPx, borderRadius: 6, border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 11, fontWeight: 700, letterSpacing: 1, background: '#f8fafc', pointerEvents: 'none' }}>
                 LOGO
               </div>
             )}
@@ -201,21 +232,55 @@ export default function HeaderFooterPanel({
         )}
         {header.show_title && (
           <div
-            onMouseDown={startDrag('title')}
-            style={{ ...draggableItemStyle(titlePos), textAlign: (header.align === 'left' || header.align === 'center' || header.align === 'right') ? header.align : 'right', maxWidth: '60%' }}
-            title={readOnly ? '' : 'Drag to reposition title'}
+            data-tpl-no-popover="1"
+            style={{
+              ...draggableItemStyle(titlePos),
+              cursor: readOnly ? 'default' : 'text',
+              textAlign: (header.align === 'left' || header.align === 'center' || header.align === 'right') ? header.align : 'right',
+              maxWidth: '60%',
+            }}
+            title={readOnly ? '' : 'Click to edit, or drag the handle to reposition'}
           >
-            <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.2, pointerEvents: 'none' }}>{header.title || 'Company Name'}</div>
-            {header.subtitle && <div style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2, pointerEvents: 'none' }}>{header.subtitle}</div>}
+            {!readOnly && (
+              <span
+                onMouseDown={startDrag('title')}
+                className="tpl-title-drag-handle"
+                title="Drag to reposition"
+                style={{
+                  position: 'absolute', top: -10, left: -10,
+                  width: 22, height: 22, borderRadius: 6,
+                  background: 'rgba(99,102,241,0.15)', color: '#4338ca',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'grab', fontSize: 12,
+                  border: '1px solid rgba(99,102,241,0.30)',
+                }}
+              >
+                <i className="ri-drag-move-2-line" />
+              </span>
+            )}
+            <EditableText
+              value={header.title}
+              placeholder="Company Name"
+              readOnly={readOnly}
+              onChange={(v) => setHeader({ ...header, title: v })}
+              style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+            />
+            <EditableText
+              value={header.subtitle}
+              placeholder="Subtitle (optional)"
+              readOnly={readOnly}
+              onChange={(v) => setHeader({ ...header, subtitle: v })}
+              style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+            />
           </div>
         )}
         {!readOnly && (
           <>
-            <span style={{ position: 'absolute', right: 10, top: 8, fontSize: 10.5, color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: 999 }}>
+            <span className="tpl-edit-hint" style={{ position: 'absolute', right: 10, top: 8, fontSize: 10.5, color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: 999 }}>
               <i className="ri-edit-line me-1" />Edit Header
             </span>
-            <span style={{ position: 'absolute', left: 10, top: 8, fontSize: 10.5, color: '#6366f1', background: '#eef2ff', padding: '2px 8px', borderRadius: 999, fontWeight: 700 }}>
-              <i className="ri-drag-move-2-line me-1" />Drag logo / title to reposition
+            <span className="tpl-drag-hint" style={{ position: 'absolute', left: 10, top: 8, fontSize: 10.5, color: '#6366f1', background: '#eef2ff', padding: '2px 8px', borderRadius: 999, fontWeight: 700 }}>
+              <i className="ri-text" />&nbsp;Click title to edit · Enter for a new line
             </span>
           </>
         )}
@@ -232,7 +297,7 @@ export default function HeaderFooterPanel({
       )}
 
       {/* BODY — Tiptap or whatever the parent renders */}
-      <div style={{ padding: 18, minHeight: 320, background: '#fff' }}>
+      <div className="tpl-page-body" style={{ padding: 18, minHeight: 320, background: '#fff' }}>
         {children}
       </div>
 
@@ -281,7 +346,7 @@ export default function HeaderFooterPanel({
           );
         })}
         {!readOnly && (
-          <span style={{ position: 'absolute', right: 10, bottom: 6, fontSize: 10.5, color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: 999 }}>
+          <span className="tpl-edit-hint" style={{ position: 'absolute', right: 10, bottom: 6, fontSize: 10.5, color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: 999 }}>
             <i className="ri-edit-line me-1" />Edit Footer
           </span>
         )}
@@ -313,66 +378,104 @@ function HeaderEditor({
   onChooseLogo: () => void;
 }) {
   return (
-    <div style={popoverStyle}>
+    <div className="tpl-popover" style={popoverStyle}>
       <PopoverHeader title="Header Settings" onClose={onClose} />
       <div className="row g-3" style={{ padding: 14 }}>
         <div className="col-md-6">
-          <label style={labelStyle}>Title</label>
-          <input type="text" value={header.title} onChange={e => setHeader({ ...header, title: e.target.value })}
-            placeholder="e.g. Inorbvict Healthcare" style={inputStyle} />
+          <label className="tpl-popover-label" style={labelStyle}>Title <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
+          <textarea rows={3} value={header.title} onChange={e => setHeader({ ...header, title: e.target.value })}
+            placeholder={'e.g. Inorbvict Healthcare\nNew Delhi Office'}
+            className="tpl-popover-input"
+            style={{ ...inputStyle, resize: 'vertical', minHeight: 64, lineHeight: 1.4 }} />
         </div>
         <div className="col-md-6">
-          <label style={labelStyle}>Subtitle</label>
-          <input type="text" value={header.subtitle} onChange={e => setHeader({ ...header, subtitle: e.target.value })}
-            placeholder="e.g. Confidential / Document name" style={inputStyle} />
+          <label className="tpl-popover-label" style={labelStyle}>Subtitle <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
+          <textarea rows={3} value={header.subtitle} onChange={e => setHeader({ ...header, subtitle: e.target.value })}
+            placeholder={'e.g. Confidential\nDocument: Offer Letter'}
+            className="tpl-popover-input"
+            style={{ ...inputStyle, resize: 'vertical', minHeight: 64, lineHeight: 1.4 }} />
         </div>
 
         <div className="col-md-6">
-          <label style={labelStyle}>Logo</label>
+          <label className="tpl-popover-label" style={labelStyle}>Logo</label>
           <div className="d-flex align-items-center gap-2">
             <button type="button" onClick={onChooseLogo}
+              className="tpl-logo-upload"
               style={{ padding: '7px 12px', background: '#6366f1', color: '#fff', border: 0, borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
               <i className="ri-upload-2-line me-1" />{header.logo_url ? 'Replace Logo' : 'Upload Logo'}
             </button>
             {header.logo_url && (
               <button type="button" onClick={() => setHeader({ ...header, logo_path: null, logo_url: null })}
+                className="tpl-logo-remove"
                 style={{ padding: '7px 10px', background: '#fee2e2', color: '#b91c1c', border: 0, borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
                 Remove
               </button>
             )}
           </div>
-          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>PNG / JPG / SVG up to 5MB.</div>
+          <div className="tpl-popover-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>PNG / JPG / SVG up to 5MB.</div>
+
+          {/* Logo size slider — visible once a logo is uploaded so the user
+              can scale it up/down without re-cropping the source image. */}
+          <div className="mt-2">
+            <div className="d-flex align-items-center justify-content-between mb-1">
+              <span className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Logo Size</span>
+              <span className="tpl-popover-hint" style={{ fontSize: 11, color: '#6b7280', fontWeight: 700 }}>
+                {clamp(header.logo_height ?? LOGO_HEIGHT_DEFAULT, LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX)} px
+              </span>
+            </div>
+            <div className="d-flex align-items-center gap-2">
+              <input
+                type="range"
+                min={LOGO_HEIGHT_MIN}
+                max={LOGO_HEIGHT_MAX}
+                step={2}
+                value={clamp(header.logo_height ?? LOGO_HEIGHT_DEFAULT, LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX)}
+                onChange={(e) => setHeader({ ...header, logo_height: clamp(Number(e.target.value) || LOGO_HEIGHT_DEFAULT, LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX) })}
+                className="tpl-logo-size-range"
+                style={{ flex: 1, accentColor: '#6366f1' }}
+              />
+              <button type="button"
+                onClick={() => setHeader({ ...header, logo_height: LOGO_HEIGHT_DEFAULT })}
+                title="Reset to default"
+                className="tpl-chip"
+                style={{ ...chipStyle(false), padding: '4px 8px', fontSize: 11 }}>
+                <i className="ri-restart-line" />
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="col-md-6">
-          <label style={labelStyle}>Title Text Alignment</label>
+          <label className="tpl-popover-label" style={labelStyle}>Title Text Alignment</label>
           <div className="d-flex gap-1 align-items-center flex-wrap">
             {(['left', 'center', 'right'] as HeaderAlign[]).map(a => (
               <button key={a} type="button" onClick={() => setHeader({ ...header, align: a })}
+                className={`tpl-chip${header.align === a ? ' is-active' : ''}`}
                 style={chipStyle(header.align === a)}>{a}</button>
             ))}
             <button type="button"
               onClick={() => setHeader({ ...header, logo_pos: { x: 10, y: 50 }, title_pos: { x: 88, y: 50 } })}
               title="Snap logo to left, title to right"
+              className="tpl-chip tpl-chip-reset"
               style={{ ...chipStyle(false), marginLeft: 6, background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e' }}>
               <i className="ri-restart-line me-1" />Reset Positions
             </button>
           </div>
-          <div style={{ fontSize: 10.5, color: '#9ca3af', marginTop: 4 }}>
+          <div className="tpl-popover-hint" style={{ fontSize: 10.5, color: '#9ca3af', marginTop: 4 }}>
             Drag the logo / title directly in the preview to position them anywhere in the header.
           </div>
         </div>
 
         <div className="col-md-4">
-          <label style={labelStyle}>Background</label>
+          <label className="tpl-popover-label" style={labelStyle}>Background</label>
           <ColorInput value={header.background} onChange={v => setHeader({ ...header, background: v })} />
         </div>
         <div className="col-md-4">
-          <label style={labelStyle}>Text Color</label>
+          <label className="tpl-popover-label" style={labelStyle}>Text Color</label>
           <ColorInput value={header.text_color} onChange={v => setHeader({ ...header, text_color: v })} />
         </div>
         <div className="col-md-4 d-flex flex-column">
-          <label style={labelStyle}>Visibility</label>
+          <label className="tpl-popover-label" style={labelStyle}>Visibility</label>
           <div className="d-flex gap-2 mt-1">
             <ToggleChip on={header.show_logo}  setOn={(v) => setHeader({ ...header, show_logo: v })}  label="Logo" />
             <ToggleChip on={header.show_title} setOn={(v) => setHeader({ ...header, show_title: v })} label="Title" />
@@ -392,39 +495,40 @@ function FooterEditor({
   onClose: () => void;
 }) {
   return (
-    <div style={popoverStyle}>
+    <div className="tpl-popover" style={popoverStyle}>
       <PopoverHeader title="Footer Settings" onClose={onClose} />
       <div className="row g-3" style={{ padding: 14 }}>
         <div className="col-md-8">
-          <label style={labelStyle}>Footer Text</label>
+          <label className="tpl-popover-label" style={labelStyle}>Footer Text</label>
           <input type="text" value={footer.text} onChange={e => setFooter({ ...footer, text: e.target.value })}
-            placeholder="e.g. Company Name Pvt. Ltd. | Confidential" style={inputStyle} />
+            placeholder="e.g. Company Name Pvt. Ltd. | Confidential" className="tpl-popover-input" style={inputStyle} />
         </div>
         <div className="col-md-4">
-          <label style={labelStyle}>Alignment</label>
+          <label className="tpl-popover-label" style={labelStyle}>Alignment</label>
           <div className="d-flex gap-1">
             {(['left', 'center', 'right'] as FooterAlign[]).map(a => (
               <button key={a} type="button" onClick={() => setFooter({ ...footer, align: a })}
+                className={`tpl-chip${footer.align === a ? ' is-active' : ''}`}
                 style={chipStyle(footer.align === a)}>{a}</button>
             ))}
           </div>
         </div>
 
         <div className="col-md-6">
-          <label style={labelStyle}>Background</label>
+          <label className="tpl-popover-label" style={labelStyle}>Background</label>
           <ColorInput value={footer.background} onChange={v => setFooter({ ...footer, background: v })} />
         </div>
         <div className="col-md-6">
-          <label style={labelStyle}>Text Color</label>
+          <label className="tpl-popover-label" style={labelStyle}>Text Color</label>
           <ColorInput value={footer.text_color} onChange={v => setFooter({ ...footer, text_color: v })} />
         </div>
 
         {/* Page number — own row, separator so it visually groups together */}
-        <div className="col-12" style={{ marginTop: 4, paddingTop: 10, borderTop: '1px dashed #e5e7eb' }}>
+        <div className="tpl-popover-divider col-12" style={{ marginTop: 4, paddingTop: 10, borderTop: '1px dashed #e5e7eb' }}>
           <div className="d-flex align-items-center justify-content-between">
             <div>
-              <label style={{ ...labelStyle, marginBottom: 2 }}>Page Number</label>
-              <div style={{ fontSize: 11, color: '#9ca3af' }}>Renders as a live Word field in the exported DOCX.</div>
+              <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 2 }}>Page Number</label>
+              <div className="tpl-popover-hint" style={{ fontSize: 11, color: '#9ca3af' }}>Renders as a live Word field in the exported DOCX.</div>
             </div>
             <ToggleChip on={footer.show_page_number} setOn={(v) => setFooter({ ...footer, show_page_number: v })} label={footer.show_page_number ? 'Enabled' : 'Disabled'} />
           </div>
@@ -433,10 +537,10 @@ function FooterEditor({
         {footer.show_page_number && (
           <>
             <div className="col-md-6">
-              <label style={labelStyle}>Format</label>
+              <label className="tpl-popover-label" style={labelStyle}>Format</label>
               <select value={footer.page_number_format}
                 onChange={e => setFooter({ ...footer, page_number_format: e.target.value as PageNumberFormat })}
-                style={inputStyle}>
+                className="tpl-popover-input" style={inputStyle}>
                 <option value="N">1</option>
                 <option value="Page N">Page 1</option>
                 <option value="Page N of M">Page 1 of 10</option>
@@ -444,15 +548,16 @@ function FooterEditor({
               </select>
             </div>
             <div className="col-md-6">
-              <label style={labelStyle}>Number Position</label>
+              <label className="tpl-popover-label" style={labelStyle}>Number Position</label>
               <div className="d-flex gap-1">
                 {(['left', 'center', 'right'] as FooterAlign[]).map(a => (
                   <button key={a} type="button" onClick={() => setFooter({ ...footer, page_number_align: a })}
+                    className={`tpl-chip${footer.page_number_align === a ? ' is-active' : ''}`}
                     style={chipStyle(footer.page_number_align === a)}>{a}</button>
                 ))}
               </div>
               {footer.page_number_align === footer.align && (
-                <div style={{ fontSize: 10.5, color: '#b45309', marginTop: 4 }}>
+                <div className="tpl-popover-warn" style={{ fontSize: 10.5, color: '#b45309', marginTop: 4 }}>
                   <i className="ri-information-line me-1" />Number sits alongside the footer text (same cell).
                 </div>
               )}
@@ -465,6 +570,71 @@ function FooterEditor({
 }
 
 /* ── Small primitives ──────────────────────────────────────────────────────── */
+
+/**
+ * Inline-editable text block. Renders a contentEditable div that commits to
+ * `onChange` on blur. Supports multi-line (Enter inserts a newline). Keeps its
+ * DOM text in sync with the external `value` when the user isn't actively
+ * editing, so popover edits / external resets stay visible.
+ */
+function EditableText({
+  value, placeholder, readOnly, onChange, style,
+}: {
+  value: string;
+  placeholder?: string;
+  readOnly?: boolean;
+  onChange: (next: string) => void;
+  style?: React.CSSProperties;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [focused, setFocused] = useState(false);
+
+  // Sync external value → DOM only when the field isn't focused, otherwise
+  // typing would fight React (cursor would jump on every keystroke).
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (focused) return;
+    if ((el.innerText || '') !== (value || '')) {
+      el.innerText = value || '';
+    }
+  }, [value, focused]);
+
+  const stop = (e: React.MouseEvent | React.KeyboardEvent) => e.stopPropagation();
+
+  return (
+    <div
+      ref={ref}
+      contentEditable={!readOnly}
+      suppressContentEditableWarning
+      role={readOnly ? undefined : 'textbox'}
+      aria-multiline="true"
+      data-placeholder={placeholder || ''}
+      className={`tpl-editable${!value ? ' is-empty' : ''}`}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        setFocused(false);
+        const next = e.currentTarget.innerText || '';
+        if (next !== value) onChange(next);
+      }}
+      onMouseDown={stop}
+      onClick={stop}
+      onKeyDown={(e) => {
+        // Plain Enter inserts a newline (default browser behavior in
+        // contentEditable already does this); we just want to keep the
+        // event from bubbling up to anything else.
+        stop(e);
+      }}
+      style={{
+        outline: 'none',
+        cursor: readOnly ? 'default' : 'text',
+        minHeight: '1.2em',
+        ...style,
+      }}
+    />
+  );
+}
+
 function PopoverHeader({ title, onClose }: { title: string; onClose: () => void }) {
   return (
     <div style={{ padding: '10px 14px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -481,8 +651,10 @@ function ColorInput({ value, onChange }: { value: string; onChange: (v: string) 
   return (
     <div className="d-flex align-items-center gap-2">
       <input type="color" value={value} onChange={e => onChange(e.target.value)}
+        className="tpl-color-swatch"
         style={{ width: 36, height: 32, border: '1px solid #e5e7eb', borderRadius: 6, padding: 2, cursor: 'pointer', background: '#fff' }} />
       <input type="text" value={value} onChange={e => onChange(e.target.value)}
+        className="tpl-popover-input"
         style={{ ...inputStyle, flex: 1, fontFamily: 'monospace' }} />
     </div>
   );
@@ -491,6 +663,7 @@ function ColorInput({ value, onChange }: { value: string; onChange: (v: string) 
 function ToggleChip({ on, setOn, label }: { on: boolean; setOn: (v: boolean) => void; label: string }) {
   return (
     <button type="button" onClick={() => setOn(!on)}
+      className={`tpl-toggle-chip${on ? ' is-on' : ''}`}
       style={{ padding: '6px 10px', borderRadius: 999, border: '1px solid ' + (on ? '#6366f1' : '#e5e7eb'),
         background: on ? '#6366f1' : '#fff', color: on ? '#fff' : '#374151', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
       {on ? <i className="ri-check-line me-1" /> : <i className="ri-eye-off-line me-1" />}{label}
@@ -531,4 +704,92 @@ function chipStyle(active: boolean): React.CSSProperties {
     background: active ? '#6366f1' : '#fff', color: active ? '#fff' : '#374151',
     fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize',
   };
+}
+
+/* Dark-theme overrides. The "document page" itself (header / body / footer
+   backgrounds) intentionally stays driven by the user's saved config so the
+   preview matches what gets exported. Only the surrounding chrome — popover
+   editors, edit-hint pills, page-body slot — adapts to dark mode. */
+function HfpDarkStyles() {
+  return (
+    <style>{`
+      [data-bs-theme="dark"] .tpl-page-shell {
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell .tpl-edit-hint {
+        background: rgba(255,255,255,0.10) !important;
+        color: rgba(255,255,255,0.75) !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell .tpl-drag-hint {
+        background: rgba(99,102,241,0.20) !important;
+        color: #c7d2fe !important;
+      }
+      [data-bs-theme="dark"] .tpl-page-shell .tpl-page-body {
+        background: var(--vz-secondary-bg) !important;
+      }
+
+      /* Popover (Header Settings / Footer Settings) */
+      [data-bs-theme="dark"] .tpl-popover {
+        background: var(--vz-card-bg) !important;
+        border-bottom-color: #8b5cf6 !important;
+      }
+      [data-bs-theme="dark"] .tpl-popover-label {
+        color: rgba(255,255,255,0.55) !important;
+      }
+      [data-bs-theme="dark"] .tpl-popover-hint {
+        color: rgba(255,255,255,0.45) !important;
+      }
+      [data-bs-theme="dark"] .tpl-popover-warn {
+        color: #fbbf24 !important;
+      }
+      [data-bs-theme="dark"] .tpl-popover-input {
+        background: var(--vz-secondary-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-popover-input::placeholder {
+        color: rgba(255,255,255,0.40) !important;
+      }
+      [data-bs-theme="dark"] .tpl-popover-divider {
+        border-top-color: var(--vz-border-color) !important;
+      }
+
+      /* Inline chips (alignment selector, page-number alignment) */
+      [data-bs-theme="dark"] .tpl-chip:not(.is-active) {
+        background: var(--vz-secondary-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-chip.tpl-chip-reset {
+        background: rgba(245,158,11,0.18) !important;
+        border-color: rgba(245,158,11,0.40) !important;
+        color: #fbbf24 !important;
+      }
+
+      [data-bs-theme="dark"] .tpl-toggle-chip:not(.is-on) {
+        background: var(--vz-secondary-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+
+      [data-bs-theme="dark"] .tpl-color-swatch {
+        background: var(--vz-secondary-bg) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-logo-remove {
+        background: rgba(248,113,113,0.18) !important;
+        color: #fca5a5 !important;
+      }
+
+      /* Inline-editable title / subtitle in the header preview */
+      .tpl-editable { caret-color: #6366f1; }
+      .tpl-editable:hover { outline: 1px dashed rgba(99,102,241,0.40); outline-offset: 2px; border-radius: 4px; }
+      .tpl-editable:focus { outline: 2px solid #6366f1; outline-offset: 2px; border-radius: 4px; background: rgba(99,102,241,0.04); }
+      .tpl-editable.is-empty:before {
+        content: attr(data-placeholder);
+        opacity: 0.45; pointer-events: none;
+      }
+      [data-bs-theme="dark"] .tpl-editable:focus { background: rgba(99,102,241,0.10); }
+    `}</style>
+  );
 }

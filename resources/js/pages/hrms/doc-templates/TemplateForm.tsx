@@ -399,7 +399,8 @@ export default function TemplateFormPage() {
   }
 
   return (
-    <div className="rec-page">
+    <div className="rec-page tpl-form-page">
+      <TplFormDarkStyles />
       {/* Header bar — replaces the modal's gradient strip */}
       <Card className="mb-3" style={{ borderRadius: 14, overflow: 'hidden' }}>
         <div style={{ padding: '16px 22px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)' }}>
@@ -425,7 +426,7 @@ export default function TemplateFormPage() {
         </div>
 
         {/* Step indicator */}
-        <div style={{ padding: '14px 22px', background: '#fff' }}>
+        <div className="tpl-step-strip" style={{ padding: '14px 22px', background: '#fff' }}>
           <div className="d-flex align-items-center" style={{ gap: 18, flexWrap: 'wrap' }}>
             {STEPS.map(s => {
               const active = step === s.key;
@@ -434,11 +435,12 @@ export default function TemplateFormPage() {
                 <button key={s.key} type="button"
                   onClick={() => { if (done || active) setStep(s.key); }}
                   disabled={!done && !active}
-                  className="d-inline-flex align-items-center"
+                  className={`tpl-step-btn d-inline-flex align-items-center${active ? ' is-active' : done ? ' is-done' : ' is-todo'}`}
                   style={{ gap: 8, padding: '4px 8px', border: 0, background: 'transparent',
                     color: active ? '#4338ca' : (done ? '#6366f1' : '#9ca3af'),
                     cursor: (done || active) ? 'pointer' : 'default' }}>
-                  <span style={{ width: 28, height: 28, borderRadius: '50%',
+                  <span className={`tpl-step-circle${active ? ' is-active' : done ? ' is-done' : ' is-todo'}`}
+                    style={{ width: 28, height: 28, borderRadius: '50%',
                     background: active ? '#4338ca' : (done ? '#6366f1' : '#e5e7eb'),
                     color: (active || done) ? '#fff' : '#6b7280',
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -501,17 +503,20 @@ export default function TemplateFormPage() {
         </CardBody>
 
         {/* Footer */}
-        <div style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderRadius: '0 0 14px 14px' }}>
+        <div className="tpl-form-footer" style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderRadius: '0 0 14px 14px' }}>
           <button type="button" onClick={() => handleSubmit(true)} disabled={saving}
+            className="tpl-btn-ghost"
             style={{ padding: '8px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
             <i className="ri-draft-line me-1" /> Save as Draft
           </button>
           <div className="d-flex gap-2">
             <button type="button" onClick={() => navigate('/hr/doc-templates')} disabled={saving}
+              className="tpl-btn-ghost"
               style={{ padding: '8px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
               Cancel
             </button>
             <button type="button" onClick={handleBack} disabled={step === 1 || saving}
+              className="tpl-btn-ghost"
               style={{ padding: '8px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: step === 1 ? '#9ca3af' : '#374151', cursor: step === 1 ? 'default' : 'pointer' }}>
               ← Back
             </button>
@@ -549,7 +554,7 @@ function Step1(props: {
   return (
     <>
       {/* Employee category — full-width card */}
-      <section style={sectionStyle}>
+      <section className="tpl-section" style={sectionStyle}>
         <div style={sectionLabel}>1. Employee Category <span style={req}>*</span></div>
         <div className="row g-2">
           {CATEGORIES.map(c => {
@@ -557,12 +562,13 @@ function Step1(props: {
             return (
               <div key={c.value} className="col-md-4">
                 <button type="button" onClick={() => props.setCategory(c.value)}
+                  className={`tpl-pick-card${active ? ' is-active' : ''}`}
                   style={{ width: '100%', padding: '16px 12px', borderRadius: 10,
                     border: '2px solid ' + (active ? '#6366f1' : '#e5e7eb'),
                     background: active ? '#eef2ff' : '#fff',
                     cursor: 'pointer', textAlign: 'center', transition: 'all .15s ease' }}>
                   <div style={{ fontSize: 22, marginBottom: 6 }}>{c.icon}</div>
-                  <div style={{ fontWeight: 700, fontSize: 13.5, color: active ? '#4338ca' : '#374151' }}>{c.label}</div>
+                  <div className="tpl-pick-card-label" style={{ fontWeight: 700, fontSize: 13.5, color: active ? '#4338ca' : '#374151' }}>{c.label}</div>
                 </button>
               </div>
             );
@@ -571,21 +577,22 @@ function Step1(props: {
       </section>
 
       {/* Role / Designation — full-width card, six designation levels */}
-      <section style={sectionStyle}>
+      <section className="tpl-section" style={sectionStyle}>
         <div style={sectionLabel}>2. Role / Designation Type <span style={req}>*</span></div>
-        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>Sourced from the Designation Master's <code>level</code> field.</div>
+        <div className="tpl-help" style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>Sourced from the Designation Master's <code>level</code> field.</div>
         <div className="row g-2">
           {ROLE_TYPES.map(r => {
             const active = props.roleType === r.value;
             return (
               <div key={r.value} className="col-lg-2 col-md-4 col-sm-6">
                 <button type="button" onClick={() => props.setRoleType(r.value)}
+                  className={`tpl-pick-card${active ? ' is-active' : ''}`}
                   style={{ width: '100%', padding: '14px 10px', borderRadius: 10,
                     border: '2px solid ' + (active ? '#6366f1' : '#e5e7eb'),
                     background: active ? '#eef2ff' : '#fff',
                     cursor: 'pointer', textAlign: 'center', minHeight: 92 }}>
                   <div style={{ fontSize: 22, marginBottom: 6 }}>{r.icon}</div>
-                  <div style={{ fontWeight: 700, fontSize: 12, color: active ? '#4338ca' : '#374151', lineHeight: 1.2 }}>{r.label}</div>
+                  <div className="tpl-pick-card-label" style={{ fontWeight: 700, fontSize: 12, color: active ? '#4338ca' : '#374151', lineHeight: 1.2 }}>{r.label}</div>
                 </button>
               </div>
             );
@@ -598,32 +605,34 @@ function Step1(props: {
           row uses align-items: stretch so both cards rise to the same height. */}
       <div className="row g-3 align-items-stretch">
         <div className="col-lg-7">
-          <section style={{ ...sectionStyle, marginBottom: 0, height: '100%' }}>
+          <section className="tpl-section" style={{ ...sectionStyle, marginBottom: 0, height: '100%' }}>
             <div style={sectionLabel}>3. Basic Information</div>
             <div className="mb-3">
-              <label style={fieldLabel}>Template Name <span style={req}>*</span></label>
+              <label className="tpl-field-label" style={fieldLabel}>Template Name <span style={req}>*</span></label>
               <input type="text" value={props.name} onChange={e => props.setName(e.target.value)}
                 placeholder="e.g. Internship Offer Letter (November)"
+                className="tpl-input"
                 style={inputStyle(!!props.errors.name)} />
               {props.errors.name && <div style={errMsg}>{props.errors.name}</div>}
             </div>
             <div className="mb-3">
-              <label style={fieldLabel}>Template Code</label>
+              <label className="tpl-field-label" style={fieldLabel}>Template Code</label>
               <input type="text" value={props.code} readOnly
+                className="tpl-code-field"
                 style={{ ...inputStyle(false), background: '#fef9c3', color: '#a16207', fontFamily: 'monospace', fontWeight: 700, border: '1px solid #fde68a' }} />
-              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Auto-generated per category + role.</div>
+              <div className="tpl-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Auto-generated per category + role.</div>
             </div>
             <div>
-              <label style={fieldLabel}>Description</label>
+              <label className="tpl-field-label" style={fieldLabel}>Description</label>
               <textarea value={props.description} onChange={e => props.setDescription(e.target.value)}
                 placeholder="Short note describing when this template is used…"
-                rows={3} style={{ ...inputStyle(false), resize: 'vertical' }} />
+                rows={3} className="tpl-input" style={{ ...inputStyle(false), resize: 'vertical' }} />
             </div>
           </section>
         </div>
 
         <div className="col-lg-5">
-          <section style={{ ...sectionStyle, marginBottom: 0, height: '100%' }}>
+          <section className="tpl-section" style={{ ...sectionStyle, marginBottom: 0, height: '100%' }}>
             <div style={sectionLabel}>4. Settings</div>
             <Toggle on={props.isMandatory}  setOn={props.setIsMandatory}  title="Mandatory Document"          sub="Must be completed as part of onboarding/offboarding" />
             <Toggle on={props.requiresSig}  setOn={props.setRequiresSig}  title="Requires Employee Signature" sub="Digital or physical signature required" />
@@ -638,12 +647,12 @@ function Step1(props: {
 
 function Toggle({ on, setOn, title, sub }: { on: boolean; setOn: (v: boolean) => void; title: string; sub: string }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 10, border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 8, background: '#fff', cursor: 'pointer' }}>
+    <label className="tpl-toggle" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 10, border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 8, background: '#fff', cursor: 'pointer' }}>
       <input type="checkbox" checked={on} onChange={e => setOn(e.target.checked)}
         style={{ width: 18, height: 18, marginTop: 2, accentColor: '#6366f1' }} />
       <div>
-        <div style={{ fontSize: 13.5, fontWeight: 700, color: '#374151' }}>{title}</div>
-        <div style={{ fontSize: 12, color: '#6b7280' }}>{sub}</div>
+        <div className="tpl-toggle-title" style={{ fontSize: 13.5, fontWeight: 700, color: '#374151' }}>{title}</div>
+        <div className="tpl-toggle-sub" style={{ fontSize: 12, color: '#6b7280' }}>{sub}</div>
       </div>
     </label>
   );
@@ -695,11 +704,11 @@ function Step2(props: {
   return (
     <>
       {/* Lifecycle event */}
-      <section style={sectionStyle}>
+      <section className="tpl-section" style={sectionStyle}>
         <div style={sectionLabel}>HR Lifecycle Event <span style={req}>*</span></div>
         <div className="row g-3">
           <div className="col-md-8">
-            <label style={fieldLabel}>Trigger</label>
+            <label className="tpl-field-label" style={fieldLabel}>Trigger</label>
             <MasterSelect
               value={props.triggerPointId ? String(props.triggerPointId) : ''}
               onChange={(v) => props.setTriggerPointId(v ? Number(v) : '')}
@@ -708,7 +717,7 @@ function Step2(props: {
               invalid={!!props.errors.trigger_point_id}
             />
             {props.errors.trigger_point_id && <div style={errMsg}>{props.errors.trigger_point_id}</div>}
-            <div style={{ fontSize: 11.5, color: '#6b7280', marginTop: 4 }}>
+            <div className="tpl-help" style={{ fontSize: 11.5, color: '#6b7280', marginTop: 4 }}>
               Sourced from the Trigger Point Master under HR &gt; Document &amp; Evidence.
             </div>
           </div>
@@ -716,7 +725,7 @@ function Step2(props: {
       </section>
 
       {/* Signing workflow */}
-      <section style={{ borderRadius: 12, marginBottom: 16, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
+      <section className="tpl-sign-card" style={{ borderRadius: 12, marginBottom: 16, overflow: 'hidden', border: '1px solid #e5e7eb' }}>
         <div style={{ padding: '12px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div className="d-flex align-items-center gap-2">
             <i className="ri-shield-check-line" style={{ fontSize: 18 }} />
@@ -731,13 +740,13 @@ function Step2(props: {
           </div>
         </div>
 
-        <div style={{ padding: 14, background: '#fff' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '0 6px 8px', fontSize: 11, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase' }}>
+        <div className="tpl-sign-body" style={{ padding: 14, background: '#fff' }}>
+          <div className="tpl-sign-header" style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '0 6px 8px', fontSize: 11, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase' }}>
             <div>#</div><div>Role / Position</div><div>Action</div><div>Days</div><div />
           </div>
           {props.signers.map((s, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '36px 1.6fr 1.2fr 100px 36px', gap: 10, padding: '6px', alignItems: 'center' }}>
-              <span style={{ width: 28, height: 28, borderRadius: '50%', background: '#6366f1', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
+              <span className="tpl-sign-num" style={{ width: 28, height: 28, borderRadius: '50%', background: '#6366f1', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700 }}>{i + 1}</span>
               {/* Role is now a free-text string (not an id) — three canonical
                   options drive the value, and we mirror it into role_name so
                   the signing-flow preview + payload stay in sync. */}
@@ -754,8 +763,10 @@ function Step2(props: {
               />
               <input type="number" min={0} max={365} value={s.days}
                 onChange={e => props.updateSigner(i, { days: Number(e.target.value) || 0 })}
+                className="tpl-input"
                 style={inputStyle(false)} />
               <button type="button" onClick={() => props.removeSigner(i)} title="Remove"
+                className="tpl-sign-remove"
                 style={{ width: 30, height: 30, border: 0, borderRadius: 6, background: '#fee2e2', color: '#b91c1c', cursor: 'pointer' }}>
                 <i className="ri-close-line" />
               </button>
@@ -764,6 +775,7 @@ function Step2(props: {
           {props.errors.signers && <div style={{ ...errMsg, padding: '0 6px' }}>{props.errors.signers}</div>}
 
           <button type="button" onClick={props.addSigner}
+            className="tpl-add-signer"
             style={{ marginTop: 8, width: '100%', padding: 10, borderRadius: 8, border: '1px dashed #c7d2fe', background: '#fafaff', color: '#4338ca', fontWeight: 700, cursor: 'pointer' }}>
             <i className="ri-add-line me-1" /> Add Signer
           </button>
@@ -771,17 +783,17 @@ function Step2(props: {
 
         {/* Preview */}
         {props.previewSigners.length > 0 && (
-          <div style={{ padding: 12, background: '#faf5ff', borderTop: '1px solid #e5e7eb' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 8 }}>Signing Flow Preview</div>
+          <div className="tpl-sign-preview" style={{ padding: 12, background: '#faf5ff', borderTop: '1px solid #e5e7eb' }}>
+            <div className="tpl-sign-preview-label" style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 8 }}>Signing Flow Preview</div>
             <div className="d-flex align-items-center flex-wrap" style={{ gap: 6 }}>
               {props.previewSigners.map((p, i) => (
                 <div key={i} className="d-flex align-items-center" style={{ gap: 6 }}>
-                  <div style={{ padding: '6px 12px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: '#15803d' }}>
+                  <div className="tpl-sign-preview-pill" style={{ padding: '6px 12px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12.5, fontWeight: 700, color: '#15803d' }}>
                     <span style={{ display: 'inline-flex', width: 18, height: 18, borderRadius: '50%', background: '#16a34a', color: '#fff', alignItems: 'center', justifyContent: 'center', marginRight: 6, fontSize: 10 }}>{i + 1}</span>
                     {p.label}
                     <div style={{ fontSize: 10.5, fontWeight: 500, color: '#16a34a' }}>{p.action}</div>
                   </div>
-                  {i < props.previewSigners.length - 1 && <i className="ri-arrow-right-line" style={{ color: '#9ca3af' }} />}
+                  {i < props.previewSigners.length - 1 && <i className="ri-arrow-right-line tpl-sign-arrow" style={{ color: '#9ca3af' }} />}
                 </div>
               ))}
             </div>
@@ -814,13 +826,13 @@ function Step3(props: {
   return (
     <>
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-        <div style={{ fontSize: 11.5, color: '#6b7280' }}>
+        <div className="tpl-help" style={{ fontSize: 11.5, color: '#6b7280' }}>
           <i className="ri-information-line me-1" />
           Header and footer have fixed heights — click any zone in the preview to edit logo / text / styling.
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" style={tabBtn(props.editorMode === 'web')}  onClick={() => props.setEditorMode('web')}><i className="ri-global-line me-1" />Web Editor</button>
-          <button type="button" style={tabBtn(props.editorMode === 'word')} onClick={() => props.setEditorMode('word')}><i className="ri-file-word-2-line me-1" />MS Word</button>
+          <button type="button" className={`tpl-editor-tab${props.editorMode === 'web'  ? ' is-active' : ''}`} style={tabBtn(props.editorMode === 'web')}  onClick={() => props.setEditorMode('web')}><i className="ri-global-line me-1" />Web Editor</button>
+          <button type="button" className={`tpl-editor-tab${props.editorMode === 'word' ? ' is-active' : ''}`} style={tabBtn(props.editorMode === 'word')} onClick={() => props.setEditorMode('word')}><i className="ri-file-word-2-line me-1" />MS Word</button>
         </div>
       </div>
 
@@ -836,32 +848,34 @@ function Step3(props: {
       {props.editorMode === 'word' && (
         <>
           {/* MS Word workflow card */}
-          <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, background: '#fff', marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>MS Word Workflow</div>
-            <ol style={{ paddingLeft: 18, fontSize: 13, color: '#374151', lineHeight: 1.7, marginBottom: 16 }}>
+          <div className="tpl-word-card" style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, background: '#fff', marginBottom: 16 }}>
+            <div className="tpl-word-title" style={{ fontSize: 13, fontWeight: 800, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>MS Word Workflow</div>
+            <ol className="tpl-word-list" style={{ paddingLeft: 18, fontSize: 13, color: '#374151', lineHeight: 1.7, marginBottom: 16 }}>
               <li>Download → the generated DOCX comes pre-baked with the fixed header (logo + title) and footer</li>
               <li>Add tables, formatting, signature blocks in Word</li>
               <li>Upload revised version below — it replaces the saved DOCX and refreshes the web preview</li>
             </ol>
             <div className="d-flex gap-2 flex-wrap">
               <button type="button" onClick={props.onDownloadDocx} disabled={!props.editingId}
+                className="tpl-word-dl-btn"
                 style={{ padding: '8px 16px', background: '#1f2937', color: '#fff', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.editingId ? 'pointer' : 'not-allowed', opacity: props.editingId ? 1 : 0.5 }}>
                 <i className="ri-download-2-line me-1" /> Download DOCX (with header/footer)
               </button>
               <input ref={props.docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) props.onUploadDocx(f); e.currentTarget.value = ''; }} />
               <button type="button" onClick={() => props.docxRef.current?.click()} disabled={!props.editingId}
+                className="tpl-word-up-btn"
                 style={{ padding: '8px 16px', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: props.editingId ? 'pointer' : 'not-allowed', opacity: props.editingId ? 1 : 0.5 }}>
                 <i className="ri-upload-2-line me-1" /> Upload Revised DOCX
               </button>
             </div>
             {!props.editingId && (
-              <div style={{ marginTop: 10, fontSize: 11.5, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', padding: '6px 10px', borderRadius: 8 }}>
+              <div className="tpl-word-warn" style={{ marginTop: 10, fontSize: 11.5, color: '#b45309', background: '#fef3c7', border: '1px solid #fde68a', padding: '6px 10px', borderRadius: 8 }}>
                 <i className="ri-information-line me-1" />Save the template as a draft first to enable DOCX export/import.
               </div>
             )}
             {props.docxName && (
-              <div style={{ marginTop: 12, padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12.5, color: '#374151' }}>
+              <div className="tpl-docx-info" style={{ marginTop: 12, padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12.5, color: '#374151' }}>
                 <i className="ri-file-word-2-line me-1" /> Latest uploaded: <strong>{props.docxName}</strong>
               </div>
             )}
@@ -870,13 +884,13 @@ function Step3(props: {
           {/* Page preview — read-only render of the latest content with the
               fixed header/footer wrapped around it. Useful so the user can
               verify the uploaded DOCX content came through correctly. */}
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 0.4, margin: '4px 4px 8px' }}>Preview</div>
+          <div className="tpl-preview-label" style={{ fontSize: 11.5, fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 0.4, margin: '4px 4px 8px' }}>Preview</div>
           <HeaderFooterPanel
             header={props.headerConfig} setHeader={props.setHeaderConfig}
             footer={props.footerConfig} setFooter={props.setFooterConfig}
             readOnly
           >
-            <div className="tpl-readonly-preview"
+            <div className="tpl-readonly-preview tpl-readonly-body"
               style={{ fontSize: 13.5, lineHeight: 1.6, color: '#374151', minHeight: 260 }}
               // The HTML originates from PhpWord's docxToHtml (server-controlled) +
               // the Tiptap editor's getHTML (sanitised by ProseMirror), so dangerous
@@ -903,3 +917,173 @@ function inputStyle(error: boolean): React.CSSProperties {
   };
 }
 const errMsg: React.CSSProperties = { fontSize: 11.5, color: '#ef4444', marginTop: 4 };
+
+/* Dark-theme overrides for the Add / Edit Template wizard. Page is scoped via
+   .tpl-form-page so the rules don't leak to other pages. Inline styles are
+   beaten with !important; semantically-meaningful brand colors (purple
+   gradients, status pills) stay intact under either theme. */
+function TplFormDarkStyles() {
+  return (
+    <style>{`
+      [data-bs-theme="dark"] .tpl-form-page .tpl-step-strip {
+        background: var(--vz-card-bg) !important;
+        border-top: 1px solid var(--vz-border-color);
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-step-btn.is-todo {
+        color: rgba(255,255,255,0.45) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-step-btn.is-done {
+        color: #a5b4fc !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-step-btn.is-active {
+        color: #c4b5fd !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-step-circle.is-todo {
+        background: rgba(255,255,255,0.10) !important;
+        color: rgba(255,255,255,0.55) !important;
+      }
+
+      [data-bs-theme="dark"] .tpl-form-page .tpl-section {
+        background: rgba(124,92,252,0.06) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-section code {
+        background: rgba(255,255,255,0.08); color: #fbbf24;
+        padding: 1px 6px; border-radius: 4px;
+      }
+
+      [data-bs-theme="dark"] .tpl-form-page .tpl-field-label {
+        color: rgba(255,255,255,0.55) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-help,
+      [data-bs-theme="dark"] .tpl-form-page .tpl-hint {
+        color: rgba(255,255,255,0.50) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-input {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-input::placeholder {
+        color: rgba(255,255,255,0.40) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-code-field {
+        background: rgba(245,158,11,0.12) !important;
+        color: #fbbf24 !important;
+        border-color: rgba(245,158,11,0.35) !important;
+      }
+
+      [data-bs-theme="dark"] .tpl-form-page .tpl-pick-card {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-pick-card.is-active {
+        background: rgba(99,102,241,0.18) !important;
+        border-color: rgba(124,92,252,0.55) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-pick-card .tpl-pick-card-label {
+        color: rgba(255,255,255,0.75) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-pick-card.is-active .tpl-pick-card-label {
+        color: #c4b5fd !important;
+      }
+
+      [data-bs-theme="dark"] .tpl-form-page .tpl-toggle {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-toggle-title {
+        color: rgba(255,255,255,0.90) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-toggle-sub {
+        color: rgba(255,255,255,0.55) !important;
+      }
+
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sign-card {
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sign-body {
+        background: var(--vz-card-bg) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sign-header {
+        color: rgba(255,255,255,0.55) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-add-signer {
+        background: rgba(99,102,241,0.10) !important;
+        border-color: rgba(124,92,252,0.40) !important;
+        color: #c4b5fd !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sign-remove {
+        background: rgba(248,113,113,0.18) !important;
+        color: #fca5a5 !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sign-preview {
+        background: rgba(124,92,252,0.10) !important;
+        border-top-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sign-preview-label {
+        color: rgba(255,255,255,0.55) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sign-preview-pill {
+        background: rgba(34,197,94,0.18) !important;
+        border-color: rgba(34,197,94,0.40) !important;
+        color: #6ee7b7 !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-sign-arrow {
+        color: rgba(255,255,255,0.40) !important;
+      }
+
+      [data-bs-theme="dark"] .tpl-form-page .tpl-editor-tab:not(.is-active) {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+
+      [data-bs-theme="dark"] .tpl-form-page .tpl-word-card {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-word-title {
+        color: rgba(255,255,255,0.55) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-word-list {
+        color: rgba(255,255,255,0.80) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-word-dl-btn {
+        background: rgba(255,255,255,0.10) !important;
+        color: #fff !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-word-up-btn {
+        background: rgba(34,197,94,0.18) !important;
+        color: #6ee7b7 !important;
+        border-color: rgba(34,197,94,0.40) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-word-warn {
+        background: rgba(245,158,11,0.14) !important;
+        color: #fbbf24 !important;
+        border-color: rgba(245,158,11,0.35) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-docx-info {
+        background: var(--vz-secondary-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: rgba(255,255,255,0.80) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-preview-label {
+        color: #c4b5fd !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-readonly-body {
+        color: rgba(255,255,255,0.85) !important;
+      }
+
+      [data-bs-theme="dark"] .tpl-form-page .tpl-form-footer {
+        background: var(--vz-secondary-bg) !important;
+        border-top-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-btn-ghost {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+    `}</style>
+  );
+}

@@ -186,12 +186,13 @@ export default function MyTeam() {
     <>
       <Row>
         <Col xs={12}>
-          <div className="rec-page">
+          <div className="rec-page myteam-page">
+            <MyTeamDarkStyles />
             {/* Header */}
             <Card className="mb-3" style={{ borderRadius: 14 }}>
               <CardBody className="d-flex align-items-center justify-content-between flex-wrap gap-3">
                 <div className="d-flex align-items-center gap-3">
-                  <span style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#eef2ff,#e0e7ff)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span className="myteam-header-icon" style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#eef2ff,#e0e7ff)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                     <i className="ri-team-line" style={{ fontSize: 22, color: '#4338ca' }} />
                   </span>
                   <div>
@@ -205,14 +206,16 @@ export default function MyTeam() {
             {/* Tabs */}
             <div className="d-flex gap-2 mb-3">
               <button type="button" onClick={() => setTab('employees')}
+                className={`myteam-tab${tab === 'employees' ? ' is-active' : ''}`}
                 style={tabBtnStyle(tab === 'employees', '#6366f1')}>
                 <i className="ri-team-line me-1" /> Employee List
-                <span style={countPillStyle(tab === 'employees')}>{employees.length}</span>
+                <span className={`myteam-tab-count${tab === 'employees' ? ' is-active' : ''}`} style={countPillStyle(tab === 'employees')}>{employees.length}</span>
               </button>
               <button type="button" onClick={() => setTab('approvals')}
+                className={`myteam-tab${tab === 'approvals' ? ' is-active' : ''}`}
                 style={tabBtnStyle(tab === 'approvals', '#16a34a')}>
                 <i className="ri-checkbox-circle-line me-1" /> Approval List
-                <span style={countPillStyle(tab === 'approvals')}>{approvalCounts.total}</span>
+                <span className={`myteam-tab-count${tab === 'approvals' ? ' is-active' : ''}`} style={countPillStyle(tab === 'approvals')}>{approvalCounts.total}</span>
               </button>
             </div>
 
@@ -277,7 +280,7 @@ function EmployeesPanel({
   return (
     <Card style={{ borderRadius: 12 }}>
       <CardBody style={{ padding: 0 }}>
-        <div className="d-flex flex-wrap gap-2 align-items-center" style={{ padding: 12, borderBottom: '1px solid #e5e7eb' }}>
+        <div className="myteam-filter-row d-flex flex-wrap gap-2 align-items-center" style={{ padding: 12, borderBottom: '1px solid #e5e7eb' }}>
           <div style={{ position: 'relative', minWidth: 260 }}>
             <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
             <Input type="text" placeholder="Search by name, code, email…" value={search} onChange={e => setSearch(e.target.value)}
@@ -288,8 +291,8 @@ function EmployeesPanel({
           </span>
         </div>
         <div className="table-responsive">
-          <table className="table align-middle mb-0" style={{ fontSize: 13 }}>
-            <thead style={{ background: '#f5f3ff' }}>
+          <table className="table align-middle mb-0 myteam-table" style={{ fontSize: 13 }}>
+            <thead className="myteam-thead" style={{ background: '#f5f3ff' }}>
               <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
                 <th style={{ padding: '10px 12px', width: 40 }}>#</th>
                 <th>Employee</th>
@@ -305,7 +308,7 @@ function EmployeesPanel({
               {loading ? (
                 <ShimmerTableRows rows={5} cols={8} />
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
+                <tr><td colSpan={8} className="myteam-empty" style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
                   <i className="ri-inbox-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
                   No employees in your team yet.
                 </td></tr>
@@ -315,25 +318,25 @@ function EmployeesPanel({
                     <td>{i + 1}</td>
                     <td>
                       <div className="d-flex align-items-center gap-2">
-                        <span style={{ width: 32, height: 32, borderRadius: '50%', background: '#eef2ff', color: '#4338ca', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>
+                        <span className="myteam-avatar" style={{ width: 32, height: 32, borderRadius: '50%', background: '#eef2ff', color: '#4338ca', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12 }}>
                           {(e.display_name || e.first_name || 'E').split(/\s+/).slice(0,2).map(s => s[0]).join('').toUpperCase()}
                         </span>
                         <div>
-                          <div style={{ fontWeight: 700 }}>{e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || '—'}</div>
-                          <div style={{ fontSize: 11.5, color: '#6b7280' }}>{e.email || '—'}</div>
+                          <div className="myteam-emp-name" style={{ fontWeight: 700 }}>{e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || '—'}</div>
+                          <div className="myteam-muted" style={{ fontSize: 11.5, color: '#6b7280' }}>{e.email || '—'}</div>
                         </div>
                       </div>
                     </td>
-                    <td><code style={{ fontSize: 11, background: '#fef3c7', color: '#a16207', padding: '2px 6px', borderRadius: 4 }}>{e.emp_code || '—'}</code></td>
+                    <td><code className="myteam-code-pill" style={{ fontSize: 11, background: '#fef3c7', color: '#a16207', padding: '2px 6px', borderRadius: 4 }}>{e.emp_code || '—'}</code></td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{e.designation?.name || '—'}</div>
-                      {e.designation?.level && <div style={{ fontSize: 11.5, color: '#6b7280' }}>{e.designation.level}</div>}
+                      {e.designation?.level && <div className="myteam-muted" style={{ fontSize: 11.5, color: '#6b7280' }}>{e.designation.level}</div>}
                     </td>
                     <td>{e.department?.name || '—'}</td>
                     <td>{e.branch?.name || '—'}</td>
                     <td>{e.reportingManager?.display_name || '—'}</td>
                     <td>
-                      <span style={{ padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: '#dcfce7', color: '#15803d' }}>
+                      <span className="myteam-status-pill" style={{ padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: '#dcfce7', color: '#15803d' }}>
                         {e.status || 'Active'}
                       </span>
                     </td>
@@ -368,12 +371,12 @@ function ApprovalsPanel({
           { label: 'Leave Approvals',   value: counts.leave,              icon: 'ri-calendar-2-line',    gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
         ].map(k => (
           <div key={k.label} className="col-md-3 col-sm-6">
-            <div style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
+            <div className="myteam-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
               <div style={{ height: 4, background: k.gradient }} />
               <div className="d-flex align-items-center justify-content-between" style={{ padding: '10px 14px' }}>
                 <div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
+                  <div className="myteam-kpi-num" style={{ fontSize: 22, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
+                  <div className="myteam-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
                 </div>
                 <span style={{ width: 36, height: 36, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                   <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
@@ -387,8 +390,8 @@ function ApprovalsPanel({
       <Card style={{ borderRadius: 12 }}>
         <CardBody style={{ padding: 0 }}>
           <div className="table-responsive">
-            <table className="table align-middle mb-0" style={{ fontSize: 13 }}>
-              <thead style={{ background: '#f0fdf4' }}>
+            <table className="table align-middle mb-0 myteam-table" style={{ fontSize: 13 }}>
+              <thead className="myteam-thead-green" style={{ background: '#f0fdf4' }}>
                 <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
                   <th style={{ padding: '10px 12px', width: 40 }}>#</th>
                   <th>Module</th>
@@ -403,7 +406,7 @@ function ApprovalsPanel({
                 {loading ? (
                   <ShimmerTableRows rows={5} cols={7} />
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
+                  <tr><td colSpan={7} className="myteam-empty" style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
                     <i className="ri-checkbox-circle-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
                     No pending approvals — you're all caught up.
                   </td></tr>
@@ -412,35 +415,32 @@ function ApprovalsPanel({
                     <tr key={`${r.module}-${r.id}`}>
                       <td>{i + 1}</td>
                       <td>
-                        <span style={{ padding: '3px 9px', borderRadius: 6, background: '#dbeafe', color: '#1d4ed8', fontSize: 11.5, fontWeight: 700 }}>
+                        <span className="myteam-module-pill" style={{ padding: '3px 9px', borderRadius: 6, background: '#dbeafe', color: '#1d4ed8', fontSize: 11.5, fontWeight: 700 }}>
                           <i className="ri-quill-pen-line me-1" />{moduleLabel(r.module)}
                         </span>
                       </td>
                       <td>
-                        <div style={{ fontWeight: 700 }}>{r.title}</div>
-                        {r.code && <code style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}
+                        <div className="myteam-emp-name" style={{ fontWeight: 700 }}>{r.title}</div>
+                        {r.code && <code className="myteam-code-pill" style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}
                       </td>
                       <td>
                         <div>{r.subject_name}</div>
-                        <div style={{ fontSize: 11.5, color: '#6b7280' }}>{r.subject_dept}</div>
+                        <div className="myteam-muted" style={{ fontSize: 11.5, color: '#6b7280' }}>{r.subject_dept}</div>
                       </td>
                       <td>
-                        <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700,
+                        <span className={`myteam-action-pill myteam-action-${r.action}`} style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700,
                           background: r.action === 'Sign' ? '#fef3c7' : r.action === 'Approve' ? '#dcfce7' : '#e0e7ff',
                           color: r.action === 'Sign' ? '#92400e' : r.action === 'Approve' ? '#15803d' : '#4338ca' }}>
                           {r.action}
                         </span>
                       </td>
-                      <td style={{ fontSize: 12, color: '#6b7280' }}>{new Date(r.created_at).toLocaleString()}</td>
+                      <td className="myteam-muted" style={{ fontSize: 12, color: '#6b7280' }}>{new Date(r.created_at).toLocaleString()}</td>
                       <td>
                         <div className="d-flex gap-1 flex-wrap">
-                          {/* View — only meaningful for document-signature
-                              rows where we already have the frozen HTML on the
-                              row. Other modules will need their own preview
-                              handlers when they plug in. */}
                           {r.module === 'document_signature' && (
                             <button type="button" onClick={() => onView(r)}
                               title="Preview the document before taking action"
+                              className="myteam-view-btn"
                               style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                               <i className="ri-eye-line me-1" />View
                             </button>
@@ -485,11 +485,11 @@ function ActionModal({
   const footer = { ...DEFAULT_FOOTER, ...(item.raw?.footer_config || {}) } as FooterConfig;
 
   return (
-    <div style={{
+    <div className="myteam-modal-backdrop" style={{
       position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 1500,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
     }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 880, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+      <div className="myteam-modal-card" style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 880, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
         onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff' }}>
           <div className="d-flex align-items-center justify-content-between">
@@ -508,7 +508,7 @@ function ActionModal({
             </button>
           </div>
         </div>
-        <div style={{ padding: 16, overflowY: 'auto', background: '#f9fafb', flex: 1 }}>
+        <div className="myteam-modal-body" style={{ padding: 16, overflowY: 'auto', background: '#f9fafb', flex: 1 }}>
           <HeaderFooterPanel header={header} setHeader={() => {}} footer={footer} setFooter={() => {}} readOnly>
             <div className="tpl-readonly-preview"
               style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 220 }}
@@ -516,30 +516,31 @@ function ActionModal({
             />
           </HeaderFooterPanel>
 
-          <div style={{ marginTop: 14, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>
+          <div className="myteam-form-card" style={{ marginTop: 14, padding: 14, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10 }}>
             {isSign && (
               <>
-                <label style={inputLabelStyle}>Type your name to sign <span style={{ color: '#ef4444' }}>*</span></label>
+                <label className="myteam-input-label" style={inputLabelStyle}>Type your name to sign <span style={{ color: '#ef4444' }}>*</span></label>
                 <input type="text" value={actionName} onChange={e => setActionName(e.target.value)}
                   placeholder="Your full name"
+                  className="myteam-input"
                   style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14 }} />
                 {actionName && (
-                  <div style={{ marginTop: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 11.5, color: '#6b7280' }}>
+                  <div className="myteam-sig-preview" style={{ marginTop: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 11.5, color: '#6b7280' }}>
                     Preview: <span style={{ fontFamily: '"Brush Script MT", cursive', fontSize: 22, color: '#1d4ed8', marginLeft: 6 }}>{actionName}</span>
                   </div>
                 )}
               </>
             )}
-            <label style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Remark</label>
+            <label className="myteam-input-label" style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Remark</label>
             <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
               placeholder="Add a remark — optional when approving, REQUIRED when rejecting (describe what should change)."
-              rows={3} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+              rows={3} className="myteam-input" style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
+            <div className="myteam-hint" style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
               Remarks land in the audit trail. Rejection also halts the workflow and returns the document to the sender.
             </div>
           </div>
         </div>
-        <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="myteam-modal-footer" style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {/* Reject lives on the left so it's visually separated from the
               positive action; both are still primary buttons. */}
           <button type="button" onClick={onReject} disabled={submitting || !actionNote.trim()}
@@ -549,6 +550,7 @@ function ActionModal({
           </button>
           <div className="d-flex gap-2">
             <button type="button" onClick={onClose} disabled={submitting}
+              className="myteam-btn-ghost"
               style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
               Cancel
             </button>
@@ -584,11 +586,11 @@ function ViewModal({
   const header = { ...DEFAULT_HEADER, ...(item.raw?.header_config || {}) } as HeaderConfig;
   const footer = { ...DEFAULT_FOOTER, ...(item.raw?.footer_config || {}) } as FooterConfig;
   return (
-    <div style={{
+    <div className="myteam-modal-backdrop" style={{
       position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', zIndex: 1500,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
     }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 880, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+      <div className="myteam-modal-card" style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 880, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
         onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 60%,#a855f7 100%)', color: '#fff' }}>
           <div className="d-flex align-items-center justify-content-between">
@@ -605,7 +607,7 @@ function ViewModal({
             </button>
           </div>
         </div>
-        <div style={{ padding: 16, overflowY: 'auto', background: '#f9fafb', flex: 1 }}>
+        <div className="myteam-modal-body" style={{ padding: 16, overflowY: 'auto', background: '#f9fafb', flex: 1 }}>
           <HeaderFooterPanel header={header} setHeader={() => {}} footer={footer} setFooter={() => {}} readOnly>
             <div className="tpl-readonly-preview"
               style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 260 }}
@@ -613,8 +615,9 @@ function ViewModal({
             />
           </HeaderFooterPanel>
         </div>
-        <div style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <div className="myteam-modal-footer" style={{ padding: 12, borderTop: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button type="button" onClick={onClose}
+            className="myteam-btn-ghost"
             style={{ padding: '7px 14px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
             Close
           </button>
@@ -657,3 +660,109 @@ function countPillStyle(active: boolean): React.CSSProperties {
 const inputLabelStyle: React.CSSProperties = {
   fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4,
 };
+
+/* Dark-theme overrides. Page-scoped via .myteam-page; modals (rendered as
+   siblings of the page) are matched on their own class names so the overrides
+   land regardless of mount location. */
+function MyTeamDarkStyles() {
+  return (
+    <style>{`
+      [data-bs-theme="dark"] .myteam-page .myteam-header-icon {
+        background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.25)) !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-tab:not(.is-active) {
+        background: var(--vz-secondary-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-tab-count:not(.is-active) {
+        background: rgba(255,255,255,0.08) !important;
+        color: rgba(255,255,255,0.65) !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-filter-row {
+        border-bottom-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-kpi-tile {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-kpi-num { color: rgba(255,255,255,0.95) !important; }
+      [data-bs-theme="dark"] .myteam-page .myteam-kpi-label { color: rgba(255,255,255,0.55) !important; }
+
+      [data-bs-theme="dark"] .myteam-page .myteam-thead {
+        background: rgba(124,92,252,0.14) !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-thead-green {
+        background: rgba(34,197,94,0.10) !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-thead tr,
+      [data-bs-theme="dark"] .myteam-page .myteam-thead th,
+      [data-bs-theme="dark"] .myteam-page .myteam-thead-green tr,
+      [data-bs-theme="dark"] .myteam-page .myteam-thead-green th {
+        color: rgba(255,255,255,0.65) !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-table tbody td {
+        border-bottom-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color);
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-emp-name { color: rgba(255,255,255,0.95) !important; }
+      [data-bs-theme="dark"] .myteam-page .myteam-muted { color: rgba(255,255,255,0.55) !important; }
+      [data-bs-theme="dark"] .myteam-page .myteam-empty { color: rgba(255,255,255,0.5) !important; }
+      [data-bs-theme="dark"] .myteam-page .myteam-avatar {
+        background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-code-pill {
+        background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-status-pill {
+        background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-module-pill {
+        background: rgba(96,165,250,0.18) !important; color: #93c5fd !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-action-Sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
+      [data-bs-theme="dark"] .myteam-page .myteam-action-Approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
+      [data-bs-theme="dark"] .myteam-page .myteam-action-Review\\ \\&\\ Acknowledge,
+      [data-bs-theme="dark"] .myteam-page [class*="myteam-action-"]:not(.myteam-action-Sign):not(.myteam-action-Approve) {
+        background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-view-btn {
+        background: rgba(99,102,241,0.18) !important; color: #c4b5fd !important;
+        border-color: rgba(124,92,252,0.35) !important;
+      }
+
+      /* Modals — un-scoped because they render as siblings of the page. */
+      [data-bs-theme="dark"] .myteam-modal-card {
+        background: var(--vz-card-bg) !important;
+        color: var(--vz-body-color);
+      }
+      [data-bs-theme="dark"] .myteam-modal-body {
+        background: var(--vz-secondary-bg) !important;
+      }
+      [data-bs-theme="dark"] .myteam-modal-footer {
+        border-top-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .myteam-form-card {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .myteam-input {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .myteam-input::placeholder { color: rgba(255,255,255,0.45) !important; }
+      [data-bs-theme="dark"] .myteam-input-label { color: rgba(255,255,255,0.55) !important; }
+      [data-bs-theme="dark"] .myteam-sig-preview {
+        background: var(--vz-secondary-bg) !important;
+        color: rgba(255,255,255,0.65) !important;
+      }
+      [data-bs-theme="dark"] .myteam-hint { color: rgba(255,255,255,0.45) !important; }
+      [data-bs-theme="dark"] .myteam-btn-ghost {
+        background: var(--vz-secondary-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+    `}</style>
+  );
+}

@@ -129,18 +129,19 @@ export default function HrDocumentTemplates() {
   return (
     <Row>
       <Col xs={12}>
-        <div className="rec-page">
+        <div className="rec-page dtm-page">
+          <DtmDarkStyles />
           {/* Header */}
           <Card className="mb-3" style={{ borderRadius: 14 }}>
             <CardBody className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
               <div className="d-flex align-items-center gap-3">
-                <span style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#eef2ff,#e0e7ff)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span className="dtm-header-icon" style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#eef2ff,#e0e7ff)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                   <i className="ri-file-text-line" style={{ fontSize: 22, color: '#4338ca' }} />
                 </span>
                 <div>
                   <h4 className="mb-0 fw-bold d-flex align-items-center gap-2">
                     Document Template Management
-                    <span style={{ fontSize: 11.5, color: '#15803d', background: '#dcfce7', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
+                    <span className="dtm-active-badge" style={{ fontSize: 11.5, color: '#15803d', background: '#dcfce7', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
                       <i className="ri-checkbox-circle-fill me-1" style={{ fontSize: 12 }} />Active
                     </span>
                   </h4>
@@ -154,57 +155,17 @@ export default function HrDocumentTemplates() {
             </CardBody>
           </Card>
 
-          {/* Category top tabs */}
-          <div className="d-flex flex-wrap gap-2 mb-3">
-            {CATEGORIES.map(c => {
-              const active = category === c.key;
-              const cnt = stats.by_category?.[c.key] || 0;
-              return (
-                <button key={c.key} type="button" onClick={() => setCategory(c.key)}
-                  style={{ flex: '1 1 250px', minWidth: 200, padding: '12px 16px', borderRadius: 12,
-                    border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
-                    background: active ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : '#fff',
-                    color: active ? '#fff' : '#374151', textAlign: 'left', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <span className="d-flex align-items-center gap-2">
-                    <span style={{ fontSize: 22 }}>{c.icon}</span>
-                    <span style={{ fontWeight: 700, fontSize: 13.5 }}>{c.label}</span>
-                  </span>
-                  <span style={{ fontSize: 11.5, background: active ? 'rgba(255,255,255,0.25)' : '#f3f4f6', color: active ? '#fff' : '#6b7280', padding: '2px 10px', borderRadius: 999, fontWeight: 700 }}>{cnt}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Designation level chips — 6 options sourced from designation master */}
-          <div className="d-flex flex-wrap gap-2 mb-3">
-            {ROLE_TYPES.map(r => {
-              const active = roleType === r.value;
-              return (
-                <button key={r.value} type="button" onClick={() => setRoleType(r.value)}
-                  style={{ padding: '7px 14px', borderRadius: 999,
-                    border: '1px solid ' + (active ? r.tone.fg : r.tone.border),
-                    background: active ? r.tone.fg : r.tone.bg,
-                    color: active ? '#fff' : r.tone.fg,
-                    cursor: 'pointer', fontWeight: 700, fontSize: 12.5,
-                    display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 14 }}>{r.icon}</span>
-                  {r.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* KPI strip */}
+          {/* KPI strip — surfaces the count totals first so users see scale
+              before drilling into a category. */}
           <div className="row g-2 mb-3">
             {KPI.map(k => (
               <div key={k.label} className="col-md-3 col-sm-6">
-                <div style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
+                <div className="dtm-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
                   <div style={{ height: 4, background: k.gradient }} />
                   <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
                     <div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
-                      <div style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
+                      <div className="dtm-kpi-num" style={{ fontSize: 22, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
+                      <div className="dtm-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
                     </div>
                     <span style={{ width: 38, height: 38, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                       <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
@@ -213,6 +174,94 @@ export default function HrDocumentTemplates() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Category top tabs — matches the Active/Disabled tab-strip pattern
+              used on HrEmployees: a single container with transparent inactive
+              tabs and a purple-gradient active tab. */}
+          <div
+            className="d-flex mb-3 dtm-cat-tabbar"
+            style={{
+              background: 'var(--vz-secondary-bg)',
+              border: '1px solid var(--vz-border-color)',
+              borderRadius: 10,
+              padding: 4,
+              gap: 4,
+            }}
+          >
+            {CATEGORIES.map(c => {
+              const on = category === c.key;
+              const cnt = stats.by_category?.[c.key] || 0;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => setCategory(c.key)}
+                  className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold dtm-cat-tab-btn"
+                  style={{
+                    borderRadius: 8,
+                    padding: '8px 14px',
+                    fontSize: 13,
+                    background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
+                    color: on ? '#fff' : 'var(--vz-secondary-color)',
+                    border: 'none',
+                    boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
+                  }}
+                >
+                  <span style={{ fontSize: 16, lineHeight: 1 }}>{c.icon}</span>
+                  {c.label}
+                  <span
+                    className="badge rounded-pill"
+                    style={{
+                      fontSize: 11,
+                      background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
+                      color: on ? '#fff' : 'var(--vz-secondary-color)',
+                    }}
+                  >
+                    {cnt}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Designation level chips — same tab-strip housing as the category
+              row above, just denser. Inactive chips keep their role color as
+              an icon tint; active chip gets the purple-gradient fill. */}
+          <div
+            className="d-flex flex-wrap mb-3 dtm-role-tabbar"
+            style={{
+              background: 'var(--vz-secondary-bg)',
+              border: '1px solid var(--vz-border-color)',
+              borderRadius: 10,
+              padding: 4,
+              gap: 4,
+            }}
+          >
+            {ROLE_TYPES.map(r => {
+              const on = roleType === r.value;
+              return (
+                <button
+                  key={r.value}
+                  type="button"
+                  onClick={() => setRoleType(r.value)}
+                  className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold dtm-role-chip"
+                  style={{
+                    borderRadius: 8,
+                    padding: '6px 12px',
+                    fontSize: 12.5,
+                    minWidth: 120,
+                    background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
+                    color: on ? '#fff' : 'var(--vz-secondary-color)',
+                    border: 'none',
+                    boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
+                  }}
+                >
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>{r.icon}</span>
+                  {r.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Filters + count badge */}
@@ -224,7 +273,7 @@ export default function HrDocumentTemplates() {
                   style={{ paddingLeft: 30, height: 36 }} />
               </div>
               <div className="d-flex align-items-center gap-2">
-                <span style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Trigger</span>
+                <span className="dtm-filter-label" style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Trigger</span>
                 <div style={{ minWidth: 180 }}>
                   <MasterSelect
                     value={triggerFilter}
@@ -235,7 +284,7 @@ export default function HrDocumentTemplates() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2">
-                <span style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Status</span>
+                <span className="dtm-filter-label" style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Status</span>
                 <div style={{ minWidth: 160 }}>
                   <MasterSelect
                     value={statusFilter}
@@ -262,8 +311,8 @@ export default function HrDocumentTemplates() {
           <Card style={{ borderRadius: 12 }}>
             <CardBody style={{ padding: 0 }}>
               <div className="table-responsive">
-                <table className="table align-middle mb-0" style={{ fontSize: 13 }}>
-                  <thead style={{ background: '#f5f3ff' }}>
+                <table className="table align-middle mb-0 dtm-table" style={{ fontSize: 13 }}>
+                  <thead className="dtm-thead" style={{ background: '#f5f3ff' }}>
                     <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
                       <th style={{ padding: '10px 12px', width: 40 }}>#</th>
                       <th>Code</th>
@@ -279,7 +328,7 @@ export default function HrDocumentTemplates() {
                     {loading ? (
                       <ShimmerTableRows rows={5} cols={8} />
                     ) : filtered.length === 0 ? (
-                      <tr><td colSpan={8} style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
+                      <tr><td colSpan={8} className="dtm-empty" style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
                         <i className="ri-inbox-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
                         No templates yet for {category} · {roleType}. Click <strong>+ Add Template</strong> to create one.
                       </td></tr>
@@ -290,20 +339,20 @@ export default function HrDocumentTemplates() {
                           <tr key={r.id}>
                             <td style={{ padding: '10px 12px' }}>{i + 1}</td>
                             <td>
-                              <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#fef3c7', color: '#a16207' }}>{r.code}</span>
+                              <span className="dtm-code-pill" style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#fef3c7', color: '#a16207' }}>{r.code}</span>
                             </td>
                             <td>
-                              <div style={{ fontWeight: 700, color: '#1f2937' }}>{r.name}</div>
+                              <div className="dtm-tpl-name" style={{ fontWeight: 700, color: '#1f2937' }}>{r.name}</div>
                               {r.requires_manager_approval && (
                                 <div className="d-flex gap-1 mt-1">
-                                  <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 700 }}><i className="ri-error-warning-line" /> Approval</span>
+                                  <span className="dtm-approval-pill" style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 700 }}><i className="ri-error-warning-line" /> Approval</span>
                                 </div>
                               )}
                             </td>
-                            <td><span style={{ padding: '2px 8px', borderRadius: 6, background: '#f3f4f6', color: '#374151', fontSize: 11.5, fontWeight: 700 }}>{r.version}</span></td>
-                            <td><span style={{ padding: '3px 8px', borderRadius: 6, background: '#e0e7ff', color: '#4338ca', fontSize: 11.5, fontWeight: 600 }}>{r.trigger_point?.module_name || '—'}</span></td>
+                            <td><span className="dtm-version-pill" style={{ padding: '2px 8px', borderRadius: 6, background: '#f3f4f6', color: '#374151', fontSize: 11.5, fontWeight: 700 }}>{r.version}</span></td>
+                            <td><span className="dtm-trigger-pill" style={{ padding: '3px 8px', borderRadius: 6, background: '#e0e7ff', color: '#4338ca', fontSize: 11.5, fontWeight: 600 }}>{r.trigger_point?.module_name || '—'}</span></td>
                             <td>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 9px', borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 11.5, fontWeight: 700 }}>
+                              <span className={`dtm-status-pill dtm-status-${r.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 9px', borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 11.5, fontWeight: 700 }}>
                                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot, display: 'inline-block' }} />{r.status}
                               </span>
                             </td>
@@ -347,8 +396,102 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primar
   const c = palette[tone];
   return (
     <button type="button" onClick={onClick} title={title}
+      className={`dtm-act-btn dtm-act-${tone}`}
       style={{ width: 30, height: 30, borderRadius: 8, border: 0, background: c.bg, color: c.fg, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
       <i className={icon} />
     </button>
+  );
+}
+
+/* Dark-theme overrides for this page. Light styles stay inline; these rules
+   only fire under [data-bs-theme="dark"] so the page reads cleanly on dark
+   card surfaces (translucent fills instead of pastel light backgrounds). */
+function DtmDarkStyles() {
+  return (
+    <style>{`
+      /* Tab-strip rows (category + role) — hover state on inactive tabs only;
+         active tab already carries its own gradient + shadow so leave it. */
+      .dtm-page .dtm-cat-tab-btn:not([style*="linear-gradient"]):hover,
+      .dtm-page .dtm-role-chip:not([style*="linear-gradient"]):hover {
+        background: var(--vz-card-bg) !important;
+        color: var(--vz-heading-color, var(--vz-body-color)) !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab-btn:not([style*="linear-gradient"]):hover,
+      [data-bs-theme="dark"] .dtm-page .dtm-role-chip:not([style*="linear-gradient"]):hover {
+        background: rgba(255,255,255,0.06) !important;
+        color: #fff !important;
+      }
+
+      /* KPI tile hover — gentle lift + shadow so the cards feel clickable
+         even though they are currently informational. */
+      .dtm-page .dtm-kpi-tile {
+        transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+        cursor: default;
+      }
+      .dtm-page .dtm-kpi-tile:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 22px rgba(15,23,42,0.10);
+        border-color: rgba(124,92,252,0.45) !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile:hover {
+        box-shadow: 0 10px 22px rgba(0,0,0,0.45);
+        border-color: rgba(167,139,250,0.55) !important;
+      }
+
+      [data-bs-theme="dark"] .dtm-page .dtm-header-icon {
+        background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.25)) !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-active-badge {
+        background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile {
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-kpi-num { color: rgba(255,255,255,0.95) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-kpi-label { color: rgba(255,255,255,0.55) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-filter-label { color: rgba(255,255,255,0.5) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-thead {
+        background: rgba(124,92,252,0.14) !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-thead tr,
+      [data-bs-theme="dark"] .dtm-page .dtm-thead th {
+        color: rgba(255,255,255,0.65) !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-table tbody td {
+        border-bottom-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color);
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-tpl-name { color: rgba(255,255,255,0.95) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-empty { color: rgba(255,255,255,0.5) !important; }
+
+      [data-bs-theme="dark"] .dtm-page .dtm-code-pill {
+        background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-approval-pill {
+        background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-version-pill {
+        background: var(--vz-secondary-bg) !important; color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-trigger-pill {
+        background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-status-Draft {
+        background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-status-Active {
+        background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
+      }
+      [data-bs-theme="dark"] .dtm-page .dtm-status-Deprecated {
+        background: rgba(248,113,113,0.18) !important; color: #fca5a5 !important;
+      }
+
+      [data-bs-theme="dark"] .dtm-page .dtm-act-primary { background: rgba(167,139,250,0.18) !important; color: #c4b5fd !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-act-info    { background: rgba(96,165,250,0.18) !important; color: #93c5fd !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-act-success { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-act-danger  { background: rgba(248,113,113,0.18) !important; color: #fca5a5 !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-act-dark    { background: var(--vz-secondary-bg) !important; color: var(--vz-body-color) !important; }
+    `}</style>
   );
 }

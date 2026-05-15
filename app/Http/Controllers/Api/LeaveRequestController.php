@@ -153,6 +153,59 @@ class LeaveRequestController extends Controller
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Colleagues — lightweight employee search for the Notify field of
+    // the Request Leave drawer. The main /api/employees endpoint requires
+    // master.employees.can_view (an HR-only permission), which regular
+    // employees don't hold — so a search there silently 403s. This
+    // endpoint is open to any authenticated user, returns only employees
+    // in their own client (tenant safety), and includes just the fields
+    // the picker needs (id, name, emp_code, designation, photo_url).
+    // ─────────────────────────────────────────────────────────────────────
+    public function colleagues(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $search = trim((string) $request->input('search', ''));
+        $limit = max(1, min(20, (int) $request->integer('limit', 10)));
+
+        $q = Employee::query()
+            ->with(['designation:id,name'])
+            ->where('status', 'Active');
+
+        // Tenant scope — every authenticated user only sees colleagues
+        // in their own client. Super admin sees everyone (rare path).
+        if ($user->user_type !== 'super_admin' && $user->client_id) {
+            $q->where('client_id', $user->client_id);
+        }
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $q->where(function ($w) use ($like) {
+                $w->where('display_name', 'ilike', $like)
+                  ->orWhere('first_name', 'ilike', $like)
+                  ->orWhere('last_name', 'ilike', $like)
+                  ->orWhere('emp_code', 'ilike', $like)
+                  ->orWhere('email', 'ilike', $like);
+            });
+        }
+
+        $rows = $q->orderBy('first_name')->limit($limit)->get();
+
+        $data = $rows->map(function ($e) {
+            $name = trim($e->display_name ?: trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')));
+            return [
+                'id' => $e->id,
+                'name' => $name,
+                'emp_code' => $e->emp_code,
+                'designation' => $e->designation?->name,
+                'photo_url' => null, // wire when employee_documents['photo'] resolution lands
+            ];
+        });
+
+        return response()->json(['data' => $data]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Show — single request with every relation the approval modal needs
     // ─────────────────────────────────────────────────────────────────────
     public function show(Request $request, int $id)
