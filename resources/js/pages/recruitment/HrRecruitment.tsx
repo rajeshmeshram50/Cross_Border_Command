@@ -2142,17 +2142,17 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
             .sort((a, b) => a.label.localeCompare(b.label)),
         );
 
-        // ── Employees → Hiring Manager + Assigned HR dropdowns. Show the
-        // employee's display_name and EMP-### so a recruiter can pick the
-        // right person even when two share a name.
+        // ── Employees → Hiring Manager + Assigned HR dropdowns. Show
+        // the employee's display_name plus their designation (no EMP-###
+        // code — the id is meaningless to the recruiter picking from
+        // the list, and it crowded the label).
         const empOpts = empRows
           .map(e => {
             const name = e.display_name
               || [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')
               || `Employee #${e.id}`;
             const desig = e?.designation?.name ? ` — ${e.designation.name}` : '';
-            const code  = e.emp_code ? ` (${e.emp_code})` : '';
-            return { value: String(e.id), label: `${name}${desig}${code}` };
+            return { value: String(e.id), label: `${name}${desig}` };
           })
           .sort((a, b) => a.label.localeCompare(b.label));
         setEmployeeOptions(empOpts);
