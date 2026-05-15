@@ -826,9 +826,11 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const [paymentMode, setPaymentMode]         = useState('Bank Transfer (NEFT)');
   const [paymentDate, setPaymentDate]         = useState('');
 
-  // Stage 6 — document generated state + accordion (one open at a time)
-  const [docs, setDocs] = useState<boolean[]>([true, false, false, false, false]);
-  const [expandedDoc, setExpandedDoc] = useState<number | null>(0);
+  // Stage 5 used to render a hardcoded checklist (Relieving Letter, Experience
+  // Letter, …) with a per-row "generated?" boolean. That list now comes from
+  // the HR Document Templates master (matched on department × designation
+  // level × trigger=Exit Management), so the local generated-state and
+  // accordion-expansion state were retired.
 
   // Templates whose trigger point is "Exit Management" — pulled from the
   // HR Document Templates master so anything the admin creates against
@@ -1438,19 +1440,23 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
 
             {/* ── STAGE 5 — Exit Documents Management ── */}
             {stage === 5 && (() => {
-              const generatedCount = docs.filter(Boolean).length;
-              const docList = [
-                { icon: 'ri-file-text-line',          name: 'Relieving Letter',     sub: 'Confirms last working day and relieving from duties', signers: ['HR Manager','Department Head','Employee'] },
-                { icon: 'ri-graduation-cap-line',     name: 'Experience Letter',    sub: 'Details role, tenure, and performance summary',        signers: ['HR Manager','CEO / MD','Employee'] },
-                { icon: 'ri-money-rupee-circle-line', name: 'FnF Settlement Sheet', sub: 'Complete breakdown of full and final payment',         signers: ['Finance Head','HR Manager','Employee'] },
-                { icon: 'ri-file-shield-2-line',      name: 'NOC Certificate',      sub: 'No Objection Certificate from the organization',       signers: ['HR Manager','Department Head'] },
-                { icon: 'ri-chat-3-line',             name: 'Exit Interview Form',  sub: 'Feedback captured during exit interview session',      signers: ['HR Executive','Employee'] },
-              ];
+              // KPI counts derived from real template + run data so the
+              // tiles match what's rendered below. "Generated" counts any
+              // template that has at least one signing run started;
+              // "Pending Sign" filters that down to runs still in flight;
+              // "Completed" tracks runs that have crossed the finish line.
+              const totalDocs = exitTemplates.length;
+              const generatedCount = exitTemplates.filter(t => runByTemplateId.has(t.id)).length;
+              const pendingCount = exitTemplates.filter(t => {
+                const r = runByTemplateId.get(t.id);
+                return r && (r.status === 'Pending' || r.status === 'In Progress');
+              }).length;
+              const completedCount = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
               const KPIS = [
-                { label: 'Total Docs',   value: docList.length,  icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
-                { label: 'Generated',    value: generatedCount,  icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
-                { label: 'Pending Sign', value: generatedCount,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
-                { label: 'Completed',    value: 0,               icon: 'ri-check-double-line',    gradient: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 60%, #38bdf8 100%)', deep: '#0369a1' },
+                { label: 'Total Docs',   value: totalDocs,      icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
+                { label: 'Generated',    value: generatedCount, icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
+                { label: 'Pending Sign', value: pendingCount,   icon: 'ri-time-line',            gradient: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
+                { label: 'Completed',    value: completedCount, icon: 'ri-check-double-line',    gradient: 'linear-gradient(135deg, #0369a1 0%, #0ea5e9 60%, #38bdf8 100%)', deep: '#0369a1' },
               ];
               return (
                 <>
@@ -1470,14 +1476,13 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     ))}
                   </div>
 
-                  {/* Trigger-point-driven templates — anything an admin
-                      built under HR > Document Templates with trigger_point
-                      = "Exit Management" surfaces here, matched against this
-                      employee's department × designation level. Each card
-                      shows the configured signing flow + View / Send /
-                      Generate buttons. The legacy hardcoded checklist
-                      below still renders so existing flows keep working. */}
-                  <div className="ep-section-label">Configured Exit Templates</div>
+                  {/* Trigger-point-driven templates — every document an
+                      admin built under HR > Document Templates with
+                      trigger_point = "Exit Management" surfaces here,
+                      matched against this employee's department ×
+                      designation level. Each card shows the configured
+                      signing flow + View / Send / Generate buttons. */}
+                  <div className="ep-section-label">Exit Documents</div>
                   {exitTplLoading ? (
                     <div style={{ padding: 16, textAlign: 'center', color: 'var(--vz-secondary-color)', fontSize: 12.5, border: '1px dashed var(--vz-border-color)', borderRadius: 10, marginBottom: 12 }}>
                       <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
@@ -1611,71 +1616,6 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     </div>
                   )}
 
-                  <div className="ep-section-label">Documents &amp; Signing Tracker</div>
-                  <div className="ep-doc-list">
-                    {docList.map((d, idx) => {
-                      const isGenerated = docs[idx];
-                      const isOpen = expandedDoc === idx;
-                      return (
-                        <div key={idx} className={`ep-doc-card${isOpen ? ' is-open' : ''}`}>
-                          <button
-                            type="button"
-                            className="ep-doc-row"
-                            onClick={() => setExpandedDoc(isOpen ? null : idx)}
-                            aria-expanded={isOpen}
-                          >
-                            <span className="ep-doc-icon"><i className={d.icon} /></span>
-                            <div className="ep-doc-info">
-                              <div className="ep-doc-name">{d.name}</div>
-                              <div className="ep-doc-sub">{d.sub}</div>
-                            </div>
-                            <span className={`ep-doc-tag ${isGenerated ? 'ep-doc-tag--pending' : 'ep-doc-tag--blank'}`}>
-                              {isGenerated ? 'Generated · Pending Signatures' : 'Not Generated'}
-                            </span>
-                            {isGenerated ? (
-                              <span className="ep-doc-btn ep-doc-btn--done" onClick={e => e.stopPropagation()}><i className="ri-check-line" />Generated</span>
-                            ) : (
-                              <button
-                                type="button"
-                                className="ep-doc-btn"
-                                onClick={e => { e.stopPropagation(); setDocs(prev => prev.map((v, i) => i === idx ? true : v)); setExpandedDoc(idx); }}
-                              >
-                                <i className="ri-file-add-line" />Generate
-                              </button>
-                            )}
-                            <button type="button" className="ep-doc-btn ep-doc-btn--ghost" disabled={!isGenerated} onClick={e => e.stopPropagation()}>
-                              <i className="ri-eye-line" />Preview
-                            </button>
-                            <i className="ri-arrow-down-s-line ep-doc-chev" />
-                          </button>
-                          {isOpen && isGenerated && (
-                            <div className="ep-signing">
-                              <div className="ep-signing-head">
-                                <i className="ri-shield-check-line" />Signing Workflow
-                                <span className="ep-signing-pct">0% Signed</span>
-                              </div>
-                              <div className="ep-signing-flow">
-                                {d.signers.map((sg, i) => (
-                                  <div key={i} className={`ep-signer${i === 0 ? ' is-active' : ''}`}>
-                                    <span className="ep-signer-dot">{i + 1}</span>
-                                    <span className="ep-signer-name">{sg}</span>
-                                    <span className="ep-signer-state">{i === 0 ? 'Awaiting' : 'Pending'}</span>
-                                    {i === 0 && <button type="button" className="ep-signer-btn"><i className="ri-quill-pen-line" />e-Sign</button>}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {isOpen && !isGenerated && (
-                            <div className="ep-doc-empty">
-                              <i className="ri-information-line" />
-                              Generate this document first to see the signing workflow.
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
                 </>
               );
             })()}
