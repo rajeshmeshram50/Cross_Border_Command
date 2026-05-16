@@ -27,6 +27,11 @@ interface EmployeeRow {
   name: string;
   initials: string;
   accent: string;
+  /** Public URL of the employee's passport-size photo (document_key='photo').
+   *  Same `photo_url` accessor the HR Employees + Onboarding tables read,
+   *  so the avatar stays in sync across all three pages. Optional — falls
+   *  back to the initials gradient avatar when null. */
+  photoUrl?: string | null;
   department: string;
   designation: string;
   primaryRole: string;
@@ -398,10 +403,19 @@ export default function HrExitManagement() {
                               <td className="ps-3 text-center fs-13 hr-exit-srno">{sliceFrom + idx + 1}</td>
                               <td>
                                 <div className="d-flex align-items-center gap-2">
-                                  <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                    style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}>
-                                    {e.initials}
-                                  </div>
+                                  {e.photoUrl ? (
+                                    <img
+                                      src={e.photoUrl}
+                                      alt={e.name}
+                                      className="rounded-circle flex-shrink-0"
+                                      style={{ width: 26, height: 26, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+                                    />
+                                  ) : (
+                                    <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                                      style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}>
+                                      {e.initials}
+                                    </div>
+                                  )}
                                   <div className="d-flex flex-column" style={{ lineHeight: 1.15 }}>
                                     <span className="fw-bold fs-13">{e.name}</span>
                                     <span className="text-muted" style={{ fontSize: 10.5, fontWeight: 500 }}>
@@ -2540,6 +2554,7 @@ function apiToExitRow(e: any): EmployeeRow {
     name,
     initials:   _exitInitials(name),
     accent:     _exitAccent(name),
+    photoUrl:   (e as any).photo_url || null,
     department: e.department?.name   || '—',
     designation: e.designation?.name || '—',
     primaryRole:   e.primary_role?.name   || '—',
