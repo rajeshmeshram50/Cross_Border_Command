@@ -460,20 +460,19 @@ function AuditLogTrigger({
       {open && pos && createPortal(
         <div
           ref={popRef}
-          // Theme CSS vars are scoped to the Velzon shell; portaled content
-          // lives on document.body where those vars may resolve to nothing.
-          // Use concrete fallbacks so the popover stays opaque & readable
-          // regardless of the page background it overlays.
+          // Pulls theme variables (data-bs-theme cascades from <html>) so
+          // the popover follows light/dark mode. Used to hardcode white +
+          // slate text which made the audit log unreadable on a dark page.
           style={{
             position: 'fixed',
             top: pos.top,
             left: pos.left,
             width: 340,
-            background: '#ffffff',
-            color: '#1f2937',
-            border: '1px solid #e5e7eb',
+            background: 'var(--vz-card-bg, #ffffff)',
+            color: 'var(--vz-body-color, #1f2937)',
+            border: '1px solid var(--vz-border-color, #e5e7eb)',
             borderRadius: 10,
-            boxShadow: '0 18px 44px rgba(15,23,42,0.28)',
+            boxShadow: '0 18px 44px rgba(15,23,42,0.45)',
             padding: 14,
             zIndex: 6500,
           }}
@@ -538,10 +537,10 @@ function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
   ];
 
   return (
-    <div style={{ color: '#1f2937' }}>
-      <div className="fw-bold mb-3" style={{ fontSize: 13, color: '#1f2937' }}>
+    <div style={{ color: 'var(--vz-body-color, #1f2937)' }}>
+      <div className="fw-bold mb-3" style={{ fontSize: 13, color: 'var(--vz-body-color, #1f2937)' }}>
         Approval Audit Log
-        <small className="d-block fw-normal" style={{ fontSize: 11, color: '#6b7280' }}>
+        <small className="d-block fw-normal" style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>
           {c.claim_no} · ₹{Number(c.amount || 0).toLocaleString('en-IN')}
         </small>
       </div>
@@ -584,11 +583,11 @@ function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
                     {s.isCreated ? 'Created' : s.state}
                   </span>
                 </div>
-                <div style={{ fontSize: 11, lineHeight: 1.4, color: '#6b7280' }}>
+                <div style={{ fontSize: 11, lineHeight: 1.4, color: 'var(--vz-secondary-color, #6b7280)' }}>
                   {s.at
-                    ? <>{fmtDateTime(s.at)}{s.actor && <> · <span className="fw-semibold" style={{ color: '#1f2937' }}>{s.actor}</span></>}</>
+                    ? <>{fmtDateTime(s.at)}{s.actor && <> · <span className="fw-semibold" style={{ color: 'var(--vz-body-color, #1f2937)' }}>{s.actor}</span></>}</>
                     : isPending && s.pendingHint
-                      ? <span style={{ color: '#1f2937' }}>{s.pendingHint}</span>
+                      ? <span style={{ color: 'var(--vz-body-color, #1f2937)' }}>{s.pendingHint}</span>
                       : (s.actor || '—')}
                 </div>
                 {s.comment && (
