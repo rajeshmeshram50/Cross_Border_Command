@@ -708,10 +708,7 @@ export default function HrRecruitment() {
                     <div style={{ minWidth: 140 }}>
                       <MasterSelect value={jobTypeFilter} onChange={setJobTypeFilter} options={JOB_TYPE_FILTER_OPTIONS} placeholder="All" />
                     </div>
-                    <span className="cand-result-chip ms-auto">
-                      <i className="ri-filter-3-line" />
-                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
-                    </span>
+                    
                   </div>
                   <div className="rec-list-scroll">
                   <table className="rec-list-table align-middle table-nowrap mb-0">
