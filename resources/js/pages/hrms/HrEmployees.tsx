@@ -282,19 +282,24 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
           ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
           : '')
       || '—',
-    // Profile % spans all six onboarding macro stages. Stage 1 is split
-    // across its 4 internal wizard steps; stages 2-6 each contribute one
-    // sixth on completion (osc bumps to N as the admin clicks Next Stage
-    // out of stage N). Brand-new row = 0%, Stage 1 wizard step 2 = 8%,
-    // Stage 1 done = 17%, Stage 4 done = 67%, Stage 6 done = 100%.
+    // Profile % is weighted so the Add Employee wizard (Stage 1 — Basic,
+    // Job, Work, Compensation) counts for 40% of the bar; the five remaining
+    // onboarding macro stages share the other 60% (12% each). Previously
+    // each macro stage was treated equally (1/6 = 17%) which made admins
+    // who'd filled the entire 4-step Add wizard see only 17% complete,
+    // even though they'd captured the bulk of the HR record. Curve:
+    //   wizard step 1 done = 10%, step 2 = 20%, step 3 = 30%, step 4 = 40%
+    //   stage 2 = 52%, stage 3 = 64%, stage 4 = 76%, stage 5 = 88%, stage 6 = 100%
     profile: ((): number => {
+      const STAGE1_WEIGHT = 0.40;
+      const OTHER_WEIGHT  = 0.60 / 5; // 5 remaining macro stages
       const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
       const macro = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
-      const stage1 = macro >= 1 ? 1 : step / 4;
-      const others = (macro >= 2 ? 1 : 0) + (macro >= 3 ? 1 : 0)
-                   + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
-                   + (macro >= 6 ? 1 : 0);
-      return Math.round(((stage1 + others) / 6) * 100);
+      const stage1Pct = macro >= 1 ? STAGE1_WEIGHT : STAGE1_WEIGHT * (step / 4);
+      const othersDone = (macro >= 2 ? 1 : 0) + (macro >= 3 ? 1 : 0)
+                       + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
+                       + (macro >= 6 ? 1 : 0);
+      return Math.round((stage1Pct + othersDone * OTHER_WEIGHT) * 100);
     })(),
     // Onboarding pill: Completed once macro stage hits 6, In Progress
     // while the admin is partway through, Pending if nothing started.
