@@ -2779,10 +2779,11 @@ useEffect(() => {
     // Next Stage the parent reloads /employees, which gives us a fresh
     // emp.raw reference and re-fires this effect. If we leave email blank
     // here the user's typed value disappears the moment they navigate
-    // away and back. official_email stays blank intentionally — it's a
-    // system-generated field set elsewhere, not user input on this form.
+    // away and back. Official email mirrors the work email by default —
+    // they're the same address — but stays editable on Stage 3 so HR can
+    // override it if the company issues a separate alias.
     email:       String(x.email ?? ''),
-    official_email: '',
+    official_email: String(x.official_email ?? x.email ?? ''),
     mobile:      String(x.mobile ?? ''),
 
     department_id:    x.department_id    ? String(x.department_id)    : '',
@@ -3391,52 +3392,48 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
   // stage's % so finished stages don't visually regress when the user
   // navigates back. e.g. macro=4 → Stages 1-4 always show ≥ 100%.
   const macroCompleted = Number(emp?.raw?.onboarding_stage_completed ?? 0);
-  // Stage 6 ties to whether the employee has been activated. Activation
-  // bumps both status and macro stage to 6, so any of those signals is
-  // enough to flip the sidebar to Completed.
-  const stage6Done = macroCompleted >= 6 || String(emp?.raw?.status ?? '').toLowerCase() === 'active';
+  // Per-stage completion flags, computed once and reused both for the
+  // sidebar pills below AND for the Stage-6 gate. Each stage's "done"
+  // mixes its live readiness signal with the server's macro watermark
+  // (so finished stages don't visually regress before re-hydration). The
+  // exception is Stage 2, which requires BOTH all docs uploaded AND the
+  // macro watermark to have moved past 2 — see comment on the original
+  // change for why the OR was a false positive.
+  const stage1IsDone = stage1Done || macroCompleted >= 1;
+  const stage2IsDone = stage2Done && macroCompleted >= 2;
+  const stage3IsDone = stage3Done || macroCompleted >= 3;
+  const stage4IsDone = stage4Done || macroCompleted >= 4;
+  const stage5IsDone = macroCompleted >= 5;
+  // Stage 6 represents the HR final-approval / activation step. Used to
+  // flip Completed the moment the activate API returned, even when
+  // earlier stages were still Pending (the screenshot bug). Now we
+  // additionally require every prior stage to be done — activation by
+  // itself is no longer enough to mark the wizard as Completed.
+  const allPriorStagesDone =
+    stage1IsDone && stage2IsDone && stage3IsDone && stage4IsDone && stage5IsDone;
+  const isActivated =
+    macroCompleted >= 6 || String(emp?.raw?.status ?? '').toLowerCase() === 'active';
+  const stage6Done = isActivated && allPriorStagesDone;
 
   const stagesView = ONB_STAGES.map(s => {
     let status: StageStatus, progress: number;
     if (s.num === 1) {
-      // Anchored to real wizard state — completion can't roll back.
-      // Trust the server's macro watermark too so a finished stage 1
-      // doesn't flip back to "In Progress" before the wizard state
-      // re-hydrates on remount.
-      const done = stage1Done || macroCompleted >= 1;
-      progress = done ? 100 : stage1Pct;
-      status   = done ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
+      progress = stage1IsDone ? 100 : stage1Pct;
+      status   = stage1IsDone ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 2) {
-      // Stage 2 only flips to "Completed" / 100% when BOTH conditions
-      // hold: every required doc is uploaded AND the user has advanced
-      // past Stage 2. Used to be an OR — that falsely marked Stage 2 as
-      // 100% just because the macro watermark had moved on, even when
-      // the user only uploaded 2 of 3 required docs. Progress otherwise
-      // tracks the live upload ratio (uploaded / total × 100), so the
-      // bar always reflects the real state of the catalogue.
-      const done = stage2Done && macroCompleted >= 2;
-      progress = done ? 100 : stage2Pct;
-      status   = done ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
+      progress = stage2IsDone ? 100 : stage2Pct;
+      status   = stage2IsDone ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 3) {
-      // Live from the four provisioning tasks — moves as soon as the
-      // user assigns a laptop / mobile / asset / biometric. Server
-      // floor wins for the same reason as Stage 2.
-      const done = stage3Done || macroCompleted >= 3;
-      progress = done ? 100 : stage3Pct;
-      status   = done ? 'Completed' : (stage3TasksDone > 0 ? 'In Progress' : 'Pending');
+      progress = stage3IsDone ? 100 : stage3Pct;
+      status   = stage3IsDone ? 'Completed' : (stage3TasksDone > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 4) {
-      // Anchored to live Stage 4 readiness checks + persisted stamp.
-      // Server floor still applies — guards against lazy-load races.
-      const done = stage4Done || macroCompleted >= 4;
-      progress = done ? 100 : stage4Pct;
-      status   = done ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
+      progress = stage4IsDone ? 100 : stage4Pct;
+      status   = stage4IsDone ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 5) {
-      // No real signing state yet — use server macro watermark as the
-      // only completion signal. Otherwise mark In Progress only while
-      // the user is actively on this stage.
-      const done = macroCompleted >= 5;
-      progress = done ? 100 : (activeStage === 5 ? 35 : 0);
-      status   = done ? 'Completed' : (activeStage === 5 ? 'In Progress' : 'Pending');
+      // No live signing state yet — only the server macro watermark
+      // confirms completion. Otherwise In Progress while on the stage.
+      progress = stage5IsDone ? 100 : (activeStage === 5 ? 35 : 0);
+      status   = stage5IsDone ? 'Completed' : (activeStage === 5 ? 'In Progress' : 'Pending');
     } else if (s.num === 6) {
       progress = stage6Done ? 100 : (activeStage === 6 ? 35 : 0);
       status   = stage6Done ? 'Completed' : (activeStage === 6 ? 'In Progress' : 'Pending');
@@ -3584,7 +3581,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
               />
             )}
             {activeStage === 5 && <Stage5Policies />}
-            {activeStage === 6 && <Stage6Verify emp={emp} onActivated={onSaved} />}
+            {activeStage === 6 && <Stage6Verify emp={emp} stagesView={stagesView} onActivated={onSaved} />}
 
             {activeStage === 1 && (
             <>
@@ -3689,8 +3686,23 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
     placeholder="name@enterprise.com"
     value={s1.email}
     onChange={e => {
-      setS1(p => ({ ...p, email: e.target.value }));
-      setS1Errors(p => ({ ...p, email: '' }));
+      const next = e.target.value;
+      setS1(p => {
+        // Auto-mirror Work Email → Official Email (Stage 3) for as long
+        // as the HR hasn't manually overridden the official one. The
+        // "still mirroring" heuristic: official is empty OR equal to the
+        // previous work email. Once the HR types a different value into
+        // the Stage-3 field, the two diverge and changing Work Email
+        // here no longer touches Official Email.
+        const stillMirrored =
+          !p.official_email || p.official_email === p.email;
+        return {
+          ...p,
+          email: next,
+          official_email: stillMirrored ? next : p.official_email,
+        };
+      });
+      setS1Errors(p => ({ ...p, email: '', official_email: '' }));
     }}
   />
   {s1Errors.email && <div className="onb-error-msg">{s1Errors.email}</div>}
@@ -5439,6 +5451,20 @@ function Stage3Provisioning({
     <span className="auto" style={{ background: '#d6f4e3', color: '#108548' }}>EDITABLE</span>
   );
 
+  // Lazy fallback: if HR landed on Stage 3 with an empty official_email
+  // but Stage 1's Work Email IS filled (legacy rows or freshly-loaded
+  // employee where the API column was never populated), backfill it
+  // once on mount so the user doesn't have to re-type the same address.
+  // The Stage-1 onChange auto-mirrors going forward; this just covers
+  // the case where Stage 1 was completed BEFORE the auto-mirror was
+  // wired up.
+  useEffect(() => {
+    if (!s1.official_email && s1.email) {
+      setS1((p: any) => ({ ...p, official_email: p.email }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <>
       {/* Per-stage progress banner removed — sidebar already shows this. */}
@@ -6169,7 +6195,17 @@ function ActivateEmployeeModal({
   );
 }
 
-function Stage6Verify({ emp, onActivated }: { emp: OnboardRow; onActivated?: () => void }) {
+function Stage6Verify({
+  emp, stagesView, onActivated,
+}: {
+  emp: OnboardRow;
+  /** Live per-stage status computed in the parent. Stage 6 reads
+   *  `status === 'Completed'` for each row to decide Verified vs Pending,
+   *  so the summary updates the moment the user advances/finishes any
+   *  earlier stage — no hardcoded `verified: true` anymore. */
+  stagesView: { num: number; status: 'Completed' | 'In Progress' | 'Pending' }[];
+  onActivated?: () => void;
+}) {
   const [flagOpen, setFlagOpen] = useState(false);
   const [activateOpen, setActivateOpen] = useState(false);
   // Local flag flipped the instant the activate API succeeds — gives us
@@ -6184,20 +6220,33 @@ function Stage6Verify({ emp, onActivated }: { emp: OnboardRow; onActivated?: () 
   // again and re-fire the same PUT — annoying at best, error-prone at
   // worst. We swap the action area for a "completed" card so the user
   // can see the result and move on.
+  // `isActivated` still drives the action banner / button toggle below
+  // (activation is irreversible — once it happened, we acknowledge it
+  // even if earlier stages slipped through). But the HR Final Approval
+  // row's "Verified" pill is now gated by a stricter check: the employee
+  // must have been activated AND every prior stage must be Completed in
+  // `stagesView`. Without that, a user could activate while stages 2–5
+  // were still Pending and the wizard would mis-report Onboarding as
+  // 6/6 Verified — see screenshot bug.
   const isActivated =
     justActivated
     || String(emp?.raw?.status ?? '').toLowerCase() === 'active'
     || Number(emp?.raw?.onboarding_stage_completed ?? 0) >= 6;
+  const isStageDone = (num: number): boolean =>
+    !!stagesView.find(s => s.num === num && s.status === 'Completed');
+  const allPriorStagesDone =
+    isStageDone(1) && isStageDone(2) && isStageDone(3) && isStageDone(4) && isStageDone(5);
+  const hrFinalVerified = isActivated && allPriorStagesDone;
   const stageRows: { num: number; name: string; sub: string; icon: string; cls: string; verified: boolean }[] = [
-    { num: 1, name: 'Employee Onboarding Setup',     sub: 'Basic details, job info & compensation · Stage 1', icon: 'ri-user-line',          cls: 's1', verified: true  },
-    { num: 2, name: 'Document Management',           sub: 'Identity, education & employment docs · Stage 2',  icon: 'ri-file-list-3-line',  cls: 's2', verified: true  },
-    { num: 3, name: 'Provisioning & Asset Setup',    sub: 'Email, systems, devices & access · Stage 3',       icon: 'ri-computer-line',     cls: 's3', verified: true  },
-    { num: 4, name: 'Payroll & Finance Setup',       sub: 'Bank, PAN, PF/ESIC & salary structure · Stage 4',  icon: 'ri-money-dollar-circle-line', cls: 's4', verified: true },
-    { num: 5, name: 'Policies & Agreements',         sub: 'NDA, employment agreement & signing · Stage 5',    icon: 'ri-shield-check-line', cls: 's5', verified: true  },
-    { num: 6, name: 'HR Final Approval',             sub: 'HR sign-off & verification',                       icon: 'ri-user-star-line',    cls: 's6', verified: false },
+    { num: 1, name: 'Employee Onboarding Setup',     sub: 'Basic details, job info & compensation · Stage 1', icon: 'ri-user-line',                cls: 's1', verified: isStageDone(1) },
+    { num: 2, name: 'Document Management',           sub: 'Identity, education & employment docs · Stage 2',  icon: 'ri-file-list-3-line',         cls: 's2', verified: isStageDone(2) },
+    { num: 3, name: 'Provisioning & Asset Setup',    sub: 'Email, systems, devices & access · Stage 3',       icon: 'ri-computer-line',            cls: 's3', verified: isStageDone(3) },
+    { num: 4, name: 'Payroll & Finance Setup',       sub: 'Bank, PAN, PF/ESIC & salary structure · Stage 4',  icon: 'ri-money-dollar-circle-line', cls: 's4', verified: isStageDone(4) },
+    { num: 5, name: 'Policies & Agreements',         sub: 'NDA, employment agreement & signing · Stage 5',    icon: 'ri-shield-check-line',        cls: 's5', verified: isStageDone(5) },
+    { num: 6, name: 'HR Final Approval',             sub: 'HR sign-off & verification',                       icon: 'ri-user-star-line',           cls: 's6', verified: hrFinalVerified },
   ];
   const verifiedCount = stageRows.filter(s => s.verified).length;
-  const readyPct = Math.round((verifiedCount === stageRows.length ? 100 : 0));
+  const readyPct = Math.round((verifiedCount / stageRows.length) * 100);
 
   return (
     <>
