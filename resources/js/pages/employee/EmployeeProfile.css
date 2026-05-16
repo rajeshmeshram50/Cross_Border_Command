@@ -447,6 +447,33 @@
           outline: none; border-color: var(--accent);
           box-shadow: 0 0 0 3px var(--accent-soft);
         }
+        /* Invalid-state border + halo + inline error message — mirrors
+           the candidate form's .rec-input.is-invalid / .rec-error look
+           so both flows surface mistakes identically. */
+        .ep-claim-input.is-invalid {
+          border-color: #f06548 !important;
+          box-shadow: 0 0 0 3px rgba(240,101,72,0.18) !important;
+          background-image: none !important;
+          padding-right: 10px !important;
+        }
+        .ep-claim-modal .master-select-wrap.invalid .master-select-toggle,
+        .ep-claim-modal .master-datepicker-wrap.invalid .master-datepicker-toggle {
+          border-color: #f06548 !important;
+          box-shadow: 0 0 0 3px rgba(240,101,72,0.18) !important;
+        }
+        .ep-claim-err {
+          display: inline-flex; align-items: center; gap: 4px;
+          margin-top: 4px;
+          color: #f06548;
+          font-size: 10.5px;
+          font-weight: 600;
+        }
+        .ep-claim-err i { font-size: 12px; }
+        [data-bs-theme="dark"] .ep-claim-input.is-invalid,
+        [data-layout-mode="dark"] .ep-claim-input.is-invalid {
+          background-color: rgba(240,101,72,0.10) !important;
+          color: var(--vz-body-color) !important;
+        }
         .ep-claim-upload {
           padding: 14px; text-align: center;
           background: var(--accent-soft);
@@ -584,19 +611,28 @@
            reads at a glance: input cells get a slightly elevated tint so
            they stand out against the body, and the section header dots /
            helper text get a calmer foreground. */
-        /* Force the EpModal card wrapper to follow the dark theme too —
-           its inline `background: var(--vz-card-bg, #fff)` falls back to
+        /* Force EVERY EpModal card wrapper to follow the dark theme —
+           the inline `background: var(--vz-card-bg, #fff)` falls back to
            white if the variable isn't picked up at portal mount time,
            which leaks a visible cream-coloured border around the dark
-           body. Pinning it with !important here removes that sliver. */
-        [data-bs-theme="dark"] .ep-modal-card.ep-claim-modal,
-        [data-layout-mode="dark"] .ep-modal-card.ep-claim-modal {
-          background: var(--vz-card-bg) !important;
+           body and makes the Change Password / Register Face / similar
+           modals render as light cards on a dark page. Locked to a
+           specific dark hex (#222831) per design spec so every modal
+           reads with the same charcoal regardless of which Velzon dark
+           variant is active. */
+        [data-bs-theme="dark"] .ep-modal-card,
+        [data-layout-mode="dark"] .ep-modal-card {
+          background: #222831 !important;
+          color: var(--vz-body-color);
         }
         [data-bs-theme="dark"] .ep-claim-modal .ep-claim-body,
         [data-layout-mode="dark"] .ep-claim-modal .ep-claim-body {
-          background: var(--vz-card-bg) !important;
+          background: #222831 !important;
           color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .ep-claim-modal .ep-claim-footer,
+        [data-layout-mode="dark"] .ep-claim-modal .ep-claim-footer {
+          background: #222831 !important;
         }
         [data-bs-theme="dark"] .ep-claim-input,
         [data-layout-mode="dark"] .ep-claim-input {
@@ -638,26 +674,44 @@
           border-color: var(--vz-border-color) !important;
           color: var(--vz-body-color) !important;
         }
-        /* Proof & Receipt upload zone + Approval Flow route card use the
-           accent's "soft" tint (translucent orange / indigo). On a dark
-           card that wash reads as a bright cream / peach panel — visibly
-           out of place. Drop the opacity further and switch the border
-           to a translucent accent so it sits politely on the dark body. */
+        /* Proof & Receipt upload zone + Approval Flow route card —
+           previously used `--accent-soft` (rgba(accent, 0.10)) which
+           read as bright cream/peach in light mode and as a translucent
+           wash in dark mode that picked up whatever page gradient sat
+           behind the modal. Anchor them to a slightly elevated dark
+           surface so they sit firmly on the modal body, with a faint
+           accent-tinted border to keep the "drop zone" affordance. */
         [data-bs-theme="dark"] .ep-claim-upload,
         [data-bs-theme="dark"] .ep-claim-route,
         [data-layout-mode="dark"] .ep-claim-upload,
         [data-layout-mode="dark"] .ep-claim-route {
-          background: rgba(255,255,255,0.04) !important;
-          border-color: rgba(255,255,255,0.10) !important;
+          background: rgba(255,255,255,0.03) !important;
+          border-color: color-mix(in srgb, var(--accent) 40%, transparent) !important;
           color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .ep-claim-upload {
+          /* Keep the dashed border treatment from the base rule (2px
+             dashed) — only the colour changes. */
+          border-style: dashed !important;
         }
         [data-bs-theme="dark"] .ep-claim-upload:hover,
         [data-layout-mode="dark"] .ep-claim-upload:hover {
           background: rgba(255,255,255,0.06) !important;
+          border-color: var(--accent) !important;
         }
         [data-bs-theme="dark"] .ep-claim-upload-icon,
         [data-layout-mode="dark"] .ep-claim-upload-icon {
-          background: rgba(255,255,255,0.06) !important;
+          background: rgba(255,255,255,0.08) !important;
+          color: var(--accent) !important;
+        }
+        /* Approval Flow row — keep avatar names readable and tone down
+           the "First-level review" / "Final approval" sub-text against
+           the new dark route panel. */
+        [data-bs-theme="dark"] .ep-claim-route .text-muted,
+        [data-bs-theme="dark"] .ep-claim-route small,
+        [data-layout-mode="dark"] .ep-claim-route .text-muted,
+        [data-layout-mode="dark"] .ep-claim-route small {
+          color: var(--vz-secondary-color) !important;
         }
         .ep-pay-modal .modal-content { border: none; border-radius: 16px; overflow: hidden; }
         .ep-pay-modal .modal-dialog { max-width: 1300px; }

@@ -1337,6 +1337,61 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const setClaimVendor = (v: string) => updateDraft({ vendor: v });
   const claimPurpose = draft.purpose;
   const setClaimPurpose = (v: string) => updateDraft({ purpose: v });
+
+  // Per-field error map for the active expense draft — wired to red
+  // borders + inline error messages on every input, same pattern the
+  // candidate form uses. Reset on draft switch or modal re-open so we
+  // don't carry over errors from a previously-active draft.
+  const [claimErrors, setClaimErrors] = useState<Record<string, string>>({});
+  useEffect(() => { setClaimErrors({}); }, [activeClaimIdx, claimOpen]);
+  const clearClaimErr = (key: string) =>
+    setClaimErrors(prev => (prev[key] ? { ...prev, [key]: '' } : prev));
+  // Advance request — per-field error map. Cleared whenever the modal
+  // re-opens or the mode toggles so old errors don't haunt a fresh form.
+  const [advErrors, setAdvErrors] = useState<Record<string, string>>({});
+  useEffect(() => { setAdvErrors({}); }, [claimOpen, claimMode]);
+  const clearAdvErr = (key: string) =>
+    setAdvErrors(prev => (prev[key] ? { ...prev, [key]: '' } : prev));
+
+  // Validator for the Advance Request form. Same toast-summary +
+  // per-field map pattern the expense draft validator uses, so both
+  // forms surface mistakes identically (red border + inline message).
+  const submitAdvanceRequest = () => {
+    const errs: Record<string, string> = {};
+    const summary: string[] = [];
+    const amt = Number(String(advAmount).replace(/[^\d.]/g, ''));
+    if (!advType)              { errs.type = 'Advance type is required'; summary.push('Advance type is required'); }
+    if (advType === 'Other' && !advTypeOther.trim()) {
+      errs.type_other = 'Please specify the advance type';
+      summary.push('Specify the advance type');
+    }
+    if (!advAmount.trim() || !Number.isFinite(amt) || amt <= 0) {
+      errs.amount = 'Amount must be greater than 0';
+      summary.push('Amount must be greater than 0');
+    }
+    if (!advRequestedDate)     { errs.requested = 'Requested date is required';   summary.push('Requested date is required'); }
+    if (!advRecoveryStart)     { errs.recovery_start = 'Recovery start date is required'; summary.push('Recovery start date is required'); }
+    if (!advRecoveryMode)      { errs.recovery_mode = 'Recovery mode is required'; summary.push('Recovery mode is required'); }
+    if (advRecoveryMode === 'emi') {
+      const months = Number(advMonths);
+      if (!advMonths || !Number.isFinite(months) || months <= 0) {
+        errs.months = 'Months must be greater than 0';
+        summary.push('Months must be greater than 0');
+      }
+    }
+    if (!advReason.trim())     { errs.reason = 'Reason / purpose is required';    summary.push('Reason / purpose is required'); }
+    if (Object.keys(errs).length > 0) {
+      setAdvErrors(errs);
+      toast.error('Fix the highlighted issues', summary.slice(0, 3).join('. '));
+      return;
+    }
+    // No backend endpoint yet — surface a placeholder success toast and
+    // close. When the API is wired, replace this with the POST + refresh
+    // pattern the expense flow uses.
+    toast.success('Advance request submitted', 'Sent for manager + finance approval.');
+    setClaimOpen(false);
+  };
+
   // Advance request fields
   const [advType, setAdvType] = useState('');
   const [advTypeOther, setAdvTypeOther] = useState(''); // shown only when advType === 'Other'
@@ -1597,17 +1652,41 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // required field OR exceeds its category's monthly budget. Used to
     // silently close the modal on an empty form, which the user reported
     // as "form brings us back to profile view".
+    //
+    // We populate two things in parallel:
+    //   - `errors` (toast summary, capped at 3 messages)
+    //   - `firstFieldErrors` for the ACTIVE draft, mapped to the input
+    //     keys (title / amount / date / category / purpose) so the form
+    //     paints red borders + inline messages exactly like the candidate
+    //     form does. Other drafts' errors aren't shown inline (they're
+    //     not currently visible), but the toast still names them.
     const errors: string[] = [];
+    const firstFieldErrors: Record<string, string> = {};
     claimDrafts.forEach((d, idx) => {
       const label = `Claim ${idx + 1}`;
       const title = d.title.trim();
       const amt   = Number(String(d.amount).replace(/[^\d.]/g, ''));
-      if (!title)             errors.push(`${label}: Expense title is required`);
+      const draftErrs: Record<string, string> = {};
+      if (!title) {
+        draftErrs.title = 'Expense title is required';
+        errors.push(`${label}: Expense title is required`);
+      }
       if (!d.amount.trim() || !Number.isFinite(amt) || amt <= 0) {
+        draftErrs.amount = 'Amount must be greater than 0';
         errors.push(`${label}: Amount must be greater than 0`);
       }
-      if (!d.date)            errors.push(`${label}: Expense date is required`);
-      if (!d.category)        errors.push(`${label}: Category is required`);
+      if (!d.date) {
+        draftErrs.date = 'Expense date is required';
+        errors.push(`${label}: Expense date is required`);
+      }
+      if (!d.category) {
+        draftErrs.category = 'Category is required';
+        errors.push(`${label}: Category is required`);
+      }
+      if (!d.purpose.trim()) {
+        draftErrs.purpose = 'Business purpose is required';
+        errors.push(`${label}: Business purpose is required`);
+      }
       // Budget cap — categoryById carries the monthly_limit configured in
       // Master > Expense Categories. We treat it as a hard ceiling per
       // claim: any single claim that already exceeds the monthly cap is
@@ -1615,10 +1694,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       // approval anyway, so block it now.
       const cat = categoryById(d.category);
       if (cat?.monthly_limit && Number.isFinite(amt) && amt > cat.monthly_limit) {
+        draftErrs.amount = `Exceeds the "${cat.name}" monthly budget of ₹${cat.monthly_limit.toLocaleString()}`;
         errors.push(`${label}: Amount ₹${amt.toLocaleString()} exceeds the "${cat.name}" monthly budget of ₹${cat.monthly_limit.toLocaleString()}.`);
       }
+      if (idx === activeClaimIdx) Object.assign(firstFieldErrors, draftErrs);
     });
     if (errors.length > 0) {
+      setClaimErrors(firstFieldErrors);
       toast.error('Fix the highlighted issues', errors.slice(0, 3).join('. '));
       return;
     }
@@ -4868,8 +4950,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={claimCategory}
                       placeholder={claimCategories.length ? 'Select category' : 'Loading…'}
                       options={claimCategories.map(c => ({ value: String(c.id), label: c.name }))}
-                      onChange={setClaimCategory}
+                      onChange={(v) => { setClaimCategory(v); clearClaimErr('category'); }}
+                      invalid={!!claimErrors.category}
                     />
+                    {claimErrors.category && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.category}</div>}
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Currency</div>
@@ -4905,19 +4989,37 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <div className="mb-3">
                   <div className="ep-claim-label">Expense Title <span className="ep-claim-req">*</span></div>
-                  <input className="ep-claim-input" placeholder="Brief description of expense..." value={claimTitle} onChange={e => setClaimTitle(e.target.value)} />
+                  <input
+                    className={`ep-claim-input${claimErrors.title ? ' is-invalid' : ''}`}
+                    placeholder="Brief description of expense..."
+                    value={claimTitle}
+                    onChange={e => { setClaimTitle(e.target.value); clearClaimErr('title'); }}
+                  />
+                  {claimErrors.title && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.title}</div>}
                 </div>
                 <Row className="g-3 mb-3">
                   <Col md={6}>
                     <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
                     <div className="position-relative">
                       <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
-                      <input className="ep-claim-input" style={{ paddingLeft: 28 }} placeholder="0.00" value={claimAmount} onChange={e => setClaimAmount(e.target.value)} />
+                      <input
+                        className={`ep-claim-input${claimErrors.amount ? ' is-invalid' : ''}`}
+                        style={{ paddingLeft: 28 }}
+                        placeholder="0.00"
+                        value={claimAmount}
+                        onChange={e => { setClaimAmount(e.target.value); clearClaimErr('amount'); }}
+                      />
                     </div>
+                    {claimErrors.amount && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.amount}</div>}
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Expense Date <span className="ep-claim-req">*</span></div>
-                    <MasterDatePicker value={claimDate} onChange={setClaimDate} />
+                    <MasterDatePicker
+                      value={claimDate}
+                      onChange={(v) => { setClaimDate(v); clearClaimErr('date'); }}
+                      invalid={!!claimErrors.date}
+                    />
+                    {claimErrors.date && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.date}</div>}
                   </Col>
                 </Row>
                 <div className="mb-3">
@@ -4926,7 +5028,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <div className="mb-0">
                   <div className="ep-claim-label">Business Purpose <span className="ep-claim-req">*</span></div>
-                  <textarea className="ep-claim-input" rows={3} placeholder="Explain the business purpose..." value={claimPurpose} onChange={e => setClaimPurpose(e.target.value)} />
+                  <textarea
+                    className={`ep-claim-input${claimErrors.purpose ? ' is-invalid' : ''}`}
+                    rows={3}
+                    placeholder="Explain the business purpose..."
+                    value={claimPurpose}
+                    onChange={e => { setClaimPurpose(e.target.value); clearClaimErr('purpose'); }}
+                  />
+                  {claimErrors.purpose && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.purpose}</div>}
                 </div>
               </Col>
 
@@ -5044,15 +5153,24 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={advType}
                       placeholder="Select type..."
                       options={['Travel Advance','Salary Advance','Medical Advance','Other'].map(o => ({ value: o, label: o }))}
-                      onChange={setAdvType}
+                      onChange={(v) => { setAdvType(v); clearAdvErr('type'); }}
+                      invalid={!!advErrors.type}
                     />
+                    {advErrors.type && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.type}</div>}
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
                     <div className="position-relative">
                       <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--vz-secondary-color)', fontSize: 13, fontWeight: 600 }}>₹</span>
-                      <input className="ep-claim-input" style={{ paddingLeft: 28 }} placeholder="0" value={advAmount} onChange={e => setAdvAmount(e.target.value)} />
+                      <input
+                        className={`ep-claim-input${advErrors.amount ? ' is-invalid' : ''}`}
+                        style={{ paddingLeft: 28 }}
+                        placeholder="0"
+                        value={advAmount}
+                        onChange={e => { setAdvAmount(e.target.value); clearAdvErr('amount'); }}
+                      />
                     </div>
+                    {advErrors.amount && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.amount}</div>}
                   </Col>
                 </Row>
                 {/* "Other" advance type — free-text input appears only when the
@@ -5062,21 +5180,32 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <div className="mb-3">
                     <div className="ep-claim-label">Specify Advance Type <span className="ep-claim-req">*</span></div>
                     <input
-                      className="ep-claim-input"
+                      className={`ep-claim-input${advErrors.type_other ? ' is-invalid' : ''}`}
                       placeholder="e.g. Conference Registration, Education Loan…"
                       value={advTypeOther}
-                      onChange={e => setAdvTypeOther(e.target.value)}
+                      onChange={e => { setAdvTypeOther(e.target.value); clearAdvErr('type_other'); }}
                     />
+                    {advErrors.type_other && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.type_other}</div>}
                   </div>
                 )}
                 <Row className="g-3 mb-3">
                   <Col md={6}>
                     <div className="ep-claim-label">Requested Date <span className="ep-claim-req">*</span></div>
-                    <MasterDatePicker value={advRequestedDate} onChange={setAdvRequestedDate} />
+                    <MasterDatePicker
+                      value={advRequestedDate}
+                      onChange={(v) => { setAdvRequestedDate(v); clearAdvErr('requested'); }}
+                      invalid={!!advErrors.requested}
+                    />
+                    {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Recovery Start <span className="ep-claim-req">*</span></div>
-                    <MasterDatePicker value={advRecoveryStart} onChange={setAdvRecoveryStart} />
+                    <MasterDatePicker
+                      value={advRecoveryStart}
+                      onChange={(v) => { setAdvRecoveryStart(v); clearAdvErr('recovery_start'); }}
+                      invalid={!!advErrors.recovery_start}
+                    />
+                    {advErrors.recovery_start && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.recovery_start}</div>}
                   </Col>
                 </Row>
                 <div className="mb-3">
@@ -5089,16 +5218,24 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       { value: 'lumpsum', label: 'Single Lump Sum' },
                       { value: 'bimonthly', label: 'Bi-Monthly' },
                     ]}
-                    onChange={setAdvRecoveryMode}
+                    onChange={(v) => { setAdvRecoveryMode(v); clearAdvErr('recovery_mode'); }}
+                    invalid={!!advErrors.recovery_mode}
                   />
+                  {advErrors.recovery_mode && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.recovery_mode}</div>}
                 </div>
                 {/* Months + computed EMI only make sense for EMI mode — hide
                     them for lump sum / bi-monthly so the form stays tight. */}
                 {advRecoveryMode === 'emi' && (
                   <Row className="g-3 mb-3">
                     <Col md={6}>
-                      <div className="ep-claim-label">No. of Months</div>
-                      <input className="ep-claim-input" placeholder="e.g. 6" value={advMonths} onChange={e => setAdvMonths(e.target.value)} />
+                      <div className="ep-claim-label">No. of Months <span className="ep-claim-req">*</span></div>
+                      <input
+                        className={`ep-claim-input${advErrors.months ? ' is-invalid' : ''}`}
+                        placeholder="e.g. 6"
+                        value={advMonths}
+                        onChange={e => { setAdvMonths(e.target.value); clearAdvErr('months'); }}
+                      />
+                      {advErrors.months && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.months}</div>}
                     </Col>
                     <Col md={6}>
                       <div className="ep-claim-label">Monthly EMI</div>
@@ -5120,7 +5257,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 )}
                 <div className="mb-0">
                   <div className="ep-claim-label">Reason / Purpose <span className="ep-claim-req">*</span></div>
-                  <textarea className="ep-claim-input" rows={3} placeholder="Describe why this advance is needed..." value={advReason} onChange={e => setAdvReason(e.target.value)} />
+                  <textarea
+                    className={`ep-claim-input${advErrors.reason ? ' is-invalid' : ''}`}
+                    rows={3}
+                    placeholder="Describe why this advance is needed..."
+                    value={advReason}
+                    onChange={e => { setAdvReason(e.target.value); clearAdvErr('reason'); }}
+                  />
+                  {advErrors.reason && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.reason}</div>}
                 </div>
               </Col>
 
@@ -5236,7 +5380,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <button
               type="button"
               className="ep-claim-submit"
-              onClick={claimMode === 'expense' ? submitAllDrafts : () => setClaimOpen(false)}
+              onClick={claimMode === 'expense' ? submitAllDrafts : submitAdvanceRequest}
               disabled={claimSubmitting}
               style={claimSubmitting ? { opacity: 0.7, cursor: 'wait' } : undefined}
             >
