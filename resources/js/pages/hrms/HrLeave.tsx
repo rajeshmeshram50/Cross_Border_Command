@@ -909,15 +909,16 @@ export default function HrLeave() {
                           return (
                             <tr key={r.id} className={isSelected ? 'table-active' : undefined}>
                               <td className="ps-3 text-center">
-                                <input
-                                  type="checkbox"
-                                  className="form-check-input"
-                                  checked={isSelected}
-                                  disabled={!isPending}
-                                  onChange={() => toggleRow(r.id)}
-                                  aria-label={`Select request ${r.id}`}
-                                  title={isPending ? 'Select for bulk action' : 'Only pending requests can be bulk-actioned'}
-                                />
+                                <Tooltip label={isPending ? 'Select for bulk action' : 'Only pending requests can be bulk-actioned'}>
+                                  <input
+                                    type="checkbox"
+                                    className="form-check-input"
+                                    checked={isSelected}
+                                    disabled={!isPending}
+                                    onChange={() => toggleRow(r.id)}
+                                    aria-label={`Select request ${r.id}`}
+                                  />
+                                </Tooltip>
                               </td>
                               <td className="text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
                               <td>

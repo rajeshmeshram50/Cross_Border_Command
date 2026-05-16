@@ -2081,6 +2081,23 @@ export default function HrEmployees() {
           position: relative;
           padding: 0 48px;
         }
+        /* Swiper defaults to overflow:hidden on its viewport, which
+           clipped the card's hover lift (-4px translateY) and its
+           expanded box-shadow so each card looked half-rendered while
+           hovering. Letting the swiper's overflow be visible vertically
+           but clipped horizontally (overflow: clip + clip-path) lets
+           the hover lift breathe without breaking the slide window.
+           Padding adds room so the lift + shadow don't bleed into
+           adjacent UI either. */
+        .hr-emp-kpi-swiper {
+          overflow: visible !important;
+          padding: 10px 0 22px !important;
+          /* Re-impose horizontal clipping with clip-path so off-screen
+             slides don't show through (Swiper relied on overflow:hidden
+             for this). The vertical inset is wide enough to fit the
+             hover lift + shadow comfortably. */
+          clip-path: inset(-32px 0 -32px 0);
+        }
         .hr-emp-kpi-nav {
           position: absolute;
           top: 50%;
@@ -3557,6 +3574,40 @@ export default function HrEmployees() {
           .emp-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
           [data-bs-theme="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
           [data-bs-theme="dark"] .emp-input::placeholder { color: var(--vz-secondary-color); }
+          /* Dark-mode invalid override — the plain dark .emp-input rule
+             above has the same specificity as .emp-input.is-invalid and
+             comes later in source order, so it wins and wipes out the
+             red border. Scoping the invalid state to the dark selector
+             bumps specificity (attr + 2 classes) so the warning ring
+             survives. */
+          [data-bs-theme="dark"] .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.18); }
+
+          /* Document upload tiles — used by Aadhar / PAN / Photo slots.
+             Light defaults stay close to the original pastel look; dark
+             mode uses translucent tints over the dark card so the bright
+             pastel boxes don't punch holes through the dark surface. */
+          .emp-doc-tile-uploaded { border: 1.5px solid #c4eedc; background: #e6f7f1; color: #065f46; }
+          .emp-doc-tile-uploaded .emp-doc-check { color: #10b981; }
+          .emp-doc-tile-uploaded .emp-doc-fname { color: #065f46; }
+          .emp-doc-tile-empty { border: 1.5px dashed #a78bfa; background: #f5f0ff; color: #7c5cfc; }
+          .emp-doc-tile-empty.has-error { border-color: #f06548; background: #fff1ee; color: #b1401d; }
+          [data-bs-theme="dark"] .emp-doc-tile-uploaded {
+            border-color: rgba(16,185,129,0.35);
+            background: rgba(16,185,129,0.10);
+            color: #6ee7b7;
+          }
+          [data-bs-theme="dark"] .emp-doc-tile-uploaded .emp-doc-check { color: #34d399; }
+          [data-bs-theme="dark"] .emp-doc-tile-uploaded .emp-doc-fname { color: #6ee7b7; }
+          [data-bs-theme="dark"] .emp-doc-tile-empty {
+            border-color: rgba(167,139,250,0.45);
+            background: rgba(124,92,252,0.10);
+            color: #c4b5fd;
+          }
+          [data-bs-theme="dark"] .emp-doc-tile-empty.has-error {
+            border-color: rgba(240,101,72,0.55);
+            background: rgba(240,101,72,0.12);
+            color: #fda993;
+          }
           .emp-label { font-size: 10.5px; font-weight: 700; color: #5a3fd1; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; display: block; }
           [data-bs-theme="dark"] .emp-label { color: #c4b5fd; }
           .emp-label .req { color: #f06548; margin-left: 4px; font-size: 13px; font-weight: 800; line-height: 1; vertical-align: middle; }
@@ -4300,7 +4351,19 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Attendance Number</label>
-                      <input className="emp-input" type="text" placeholder="Attendance number" value={eAttendanceNumber} onChange={e => setEAttendanceNumber(e.target.value)} />
+                      <input
+                        className="emp-input"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Attendance number"
+                        value={eAttendanceNumber}
+                        // Numeric-only — biometric / swipe-in systems issue
+                        // integer IDs, so letters are never valid. Strip
+                        // non-digits as the user types instead of rejecting
+                        // the keystroke (paste-friendly).
+                        onChange={e => setEAttendanceNumber(e.target.value.replace(/\D/g, ''))}
+                        maxLength={20}
+                      />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Time Tracking Policy<span className="req">*</span></label>
@@ -4419,8 +4482,8 @@ export default function HrEmployees() {
                   </div>
                   <Row className="g-3">
                     {[
-                      { key: 'aadhaar', label: 'Aadhar Card',         required: true,  file: eAadharFile, set: setEAadharFile, accept: '.pdf,.jpg,.jpeg,.png',                hint: '' as string },
-                      { key: 'pan',     label: 'Pan Card',             required: true,  file: ePanFile,    set: setEPanFile,    accept: '.pdf,.jpg,.jpeg,.png',                hint: '' as string },
+                      { key: 'aadhaar', label: 'Aadhar Card',         required: true,  file: eAadharFile, set: setEAadharFile, accept: '.pdf,.jpg,.jpeg,.png',                hint: '(format .pdf, .jpg, .png)' as string },
+                      { key: 'pan',     label: 'Pan Card',             required: true,  file: ePanFile,    set: setEPanFile,    accept: '.pdf,.jpg,.jpeg,.png',                hint: '(format .pdf, .jpg, .png)' as string },
                       { key: 'photo',   label: 'Passport Size Photo',  required: false, file: ePhotoFile,  set: setEPhotoFile,  accept: 'image/jpeg,image/png,.jpg,.jpeg,.png', hint: '(format .jpg, .png)' },
                     ].map(d => {
                       const srv = eExistingDocs[d.key];
@@ -4441,9 +4504,8 @@ export default function HrEmployees() {
 
                           {hasUpload ? (
                             <div
+                              className="emp-doc-tile-uploaded"
                               style={{
-                                border: '1.5px solid #c4eedc',
-                                background: '#e6f7f1',
                                 borderRadius: 8,
                                 padding: '8px 12px',
                                 display: 'flex',
@@ -4453,8 +4515,8 @@ export default function HrEmployees() {
                                 minHeight: 38,
                               }}
                             >
-                              <i className="ri-checkbox-circle-line" style={{ color: '#10b981' }} />
-                              <span style={{ flexGrow: 1, color: '#065f46', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <i className="ri-checkbox-circle-line emp-doc-check" />
+                              <span className="emp-doc-fname" style={{ flexGrow: 1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {srv.original_name || `${d.label} uploaded`}
                               </span>
                               {srv.url && (
@@ -4494,18 +4556,11 @@ export default function HrEmployees() {
                             </div>
                           ) : (
                             <label
-                              className="d-flex align-items-center justify-content-center gap-2"
+                              className={`emp-doc-tile-empty d-flex align-items-center justify-content-center gap-2${tileError ? ' has-error' : ''}`}
                               style={{
                                 height: 38,
-                                // Switch the dashed border to a red error
-                                // tint when this tile failed validation,
-                                // so the user can spot the missing upload
-                                // at a glance after clicking Next/Save.
-                                border: tileError ? '1.5px dashed #f06548' : '1.5px dashed #a78bfa',
                                 borderRadius: 8,
-                                background: tileError ? '#fff1ee' : '#f5f0ff',
                                 cursor: busy ? 'wait' : 'pointer',
-                                color: tileError ? '#b1401d' : '#7c5cfc',
                                 fontSize: 12.5,
                                 fontWeight: 600,
                                 opacity: busy ? 0.6 : 1,
@@ -4676,20 +4731,6 @@ export default function HrEmployees() {
                     <label htmlFor="pf-eligible" className="mb-0" style={{ fontSize: 13, cursor: 'pointer' }}>
                       Provident Fund (PF) Eligible
                     </label>
-                  </div>
-                  <div
-                    className="d-flex align-items-center gap-2"
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: 8,
-                      background: '#f5f0ff',
-                      border: '1px solid #d6c9ff',
-                      color: '#5a3fd1',
-                      fontSize: 12.5,
-                    }}
-                  >
-                    <i className="ri-information-line" />
-                    ESi is not applicable for the selected Pay Group
                   </div>
                 </div>
 
