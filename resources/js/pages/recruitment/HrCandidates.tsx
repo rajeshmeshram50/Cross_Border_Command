@@ -75,15 +75,19 @@ function formatDate(raw: any): string {
   return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-const STATUS_TONES: Record<CandidateStatus, { bg: string; fg: string; dot: string }> = {
-  'Applied':         { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' },
-  'Shortlisted':     { bg: '#e0f2fe', fg: '#1d4ed8', dot: '#3b82f6' },
-  'In Interview':    { bg: '#ddd6fe', fg: '#5b21b6', dot: '#7c3aed' },
-  'Final Interview': { bg: '#ede9fe', fg: '#5b3fd1', dot: '#7c5cfc' },
-  'Selected':        { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' },
-  'Offered':         { bg: '#d1fae5', fg: '#047857', dot: '#10b981' },
-  'Rejected':        { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' },
-  'On Hold':         { bg: '#f3f4f6', fg: '#4b5563', dot: '#9ca3af' },
+// Softer pastel palette — mirrors REQUEST_STATUS_TONES in HrRecruitment so
+// the candidate status pill reads in the same visual family as the
+// hiring-request status pill (same rec-pill class, same dot, same tone
+// family). Distinct hue per pipeline stage so the column still scans.
+const STATUS_TONES: Record<CandidateStatus, { bg: string; fg: string; }> = {
+  'Applied':         { bg: '#fde8c4', fg: '#a4661c' },
+  'Shortlisted':     { bg: '#dceefe', fg: '#0c63b0' },
+  'In Interview':    { bg: '#e3dbfa', fg: '#5b3fd1' },
+  'Final Interview': { bg: '#f0e2fa', fg: '#7c2bb5' },
+  'Selected':        { bg: '#d6f4e3', fg: '#108548'},
+  'Offered':         { bg: '#d1f5f1', fg: '#0d7a72' },
+  'Rejected':        { bg: '#fdd9d6', fg: '#b1401d'},
+  'On Hold':         { bg: '#eef2f6', fg: '#5b6478'},
 };
 
 export default function HrCandidates() {
@@ -1857,17 +1861,14 @@ function CandidateConfirmModal({
               <label className="cand-confirm-label">
                 Reason for Rejection<span className="req">*</span>
               </label>
-              <select
-                className={`cand-confirm-select${reasonErr ? ' is-invalid' : ''}`}
+              <MasterSelect
                 value={reason}
-                onChange={e => { setReason(e.target.value); if (e.target.value) setReasonErr(false); }}
+                onChange={v => { setReason(v); if (v) setReasonErr(false); }}
+                options={REJECTION_REASONS}
+                placeholder="— Select a reason —"
                 disabled={submitting}
-              >
-                <option value="">— Select a reason —</option>
-                {REJECTION_REASONS.map(r => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
+                invalid={reasonErr}
+              />
               {reasonErr && (
                 <div className="cand-confirm-error">
                   <i className="ri-error-warning-line" />Please select a reason before confirming
