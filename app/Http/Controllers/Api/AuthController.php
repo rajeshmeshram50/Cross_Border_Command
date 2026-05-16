@@ -19,6 +19,36 @@ class AuthController extends Controller
 {
     use PasswordHistory;
 
+    private const BF_MAX_ATTEMPTS = 5;
+    private const BF_WINDOW_MIN   = 15;
+
+    /** Lowercased + trimmed cache key shared across all login paths so an
+     *  attacker can't bypass rate-limiting by switching login methods. */
+    private function bruteForceKey(?string $email): string
+    {
+        return 'login_attempts:' . strtolower(trim((string) $email));
+    }
+
+    /** Returns true when the account is currently locked. Safe to call with
+     *  bruteForce disabled — short-circuits to false. */
+    private function bruteForceIsLocked(string $lockKey): bool
+    {
+        if (!Settings::is('security', 'bruteForce', true)) return false;
+        return (int) Cache::get($lockKey, 0) >= self::BF_MAX_ATTEMPTS;
+    }
+
+    /** Atomically increment the failure counter. Uses Cache::add to install
+     *  a 15-min TTL on first miss, then Cache::increment so concurrent
+     *  failing requests can't race-bypass the 5-attempt limit (TOCTOU was a
+     *  bug pre-this — two requests both saw 4 attempts and both bumped to 5
+     *  without locking, letting a 6th through). */
+    private function bruteForceRecordFailure(string $lockKey): void
+    {
+        if (!Settings::is('security', 'bruteForce', true)) return;
+        Cache::add($lockKey, 0, now()->addMinutes(self::BF_WINDOW_MIN));
+        Cache::increment($lockKey);
+    }
+
     public function login(Request $request)
     {
         $request->validate([
@@ -26,19 +56,12 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        $lockKey = 'login_attempts:' . strtolower(trim($request->email));
+        $lockKey = $this->bruteForceKey($request->email);
 
-        // Brute-force lockout — gated by Settings → Security → bruteForce.
-        // After 5 failed attempts within 15 min, the account is locked for
-        // 15 min. Cache-based so it survives a fresh DB but resets on cache
-        // clear (intentional — admin can force-unlock by clearing cache).
-        if (Settings::is('security', 'bruteForce', true)) {
-            $attempts = (int) Cache::get($lockKey, 0);
-            if ($attempts >= 5) {
-                throw ValidationException::withMessages([
-                    'email' => ['Too many failed login attempts. Try again in 15 minutes.'],
-                ]);
-            }
+        if ($this->bruteForceIsLocked($lockKey)) {
+            throw ValidationException::withMessages([
+                'email' => ['Too many failed login attempts. Try again in 15 minutes.'],
+            ]);
         }
 
         // Eager-load branch.client too — branch_user / employee rows often
@@ -48,9 +71,7 @@ class AuthController extends Controller
         $user = User::with(['client', 'branch.client'])->where('email', $request->email)->first();
 
         if (! $user || ! Hash::check($request->password, $user->password)) {
-            if (Settings::is('security', 'bruteForce', true)) {
-                Cache::put($lockKey, ((int) Cache::get($lockKey, 0)) + 1, now()->addMinutes(15));
-            }
+            $this->bruteForceRecordFailure($lockKey);
             throw ValidationException::withMessages([
                 'email' => ['Invalid email or password.'],
             ]);
@@ -117,15 +138,12 @@ class AuthController extends Controller
             'descriptor.*' => 'required|numeric',
         ]);
 
-        $lockKey = 'login_attempts:' . strtolower(trim($request->email));
+        $lockKey = $this->bruteForceKey($request->email);
 
-        if (Settings::is('security', 'bruteForce', true)) {
-            $attempts = (int) Cache::get($lockKey, 0);
-            if ($attempts >= 5) {
-                throw ValidationException::withMessages([
-                    'email' => ['Too many failed login attempts. Try again in 15 minutes.'],
-                ]);
-            }
+        if ($this->bruteForceIsLocked($lockKey)) {
+            throw ValidationException::withMessages([
+                'email' => ['Too many failed login attempts. Try again in 15 minutes.'],
+            ]);
         }
 
         $user = User::with(['client', 'branch.client'])->where('email', $request->email)->first();
@@ -135,9 +153,7 @@ class AuthController extends Controller
         // ONE generic failure — we don't want to leak which condition failed
         // (otherwise an attacker can probe valid emails).
         if (!$user || !$employee || empty($employee->face_descriptor) || $employee->face_registered_at === null) {
-            if (Settings::is('security', 'bruteForce', true)) {
-                Cache::put($lockKey, ((int) Cache::get($lockKey, 0)) + 1, now()->addMinutes(15));
-            }
+            $this->bruteForceRecordFailure($lockKey);
             throw ValidationException::withMessages([
                 'email' => ['Face login is not available for this account. Try password login.'],
             ]);
@@ -154,9 +170,7 @@ class AuthController extends Controller
         $threshold = 0.50;
 
         if ($distance > $threshold) {
-            if (Settings::is('security', 'bruteForce', true)) {
-                Cache::put($lockKey, ((int) Cache::get($lockKey, 0)) + 1, now()->addMinutes(15));
-            }
+            $this->bruteForceRecordFailure($lockKey);
             throw ValidationException::withMessages([
                 'email' => ['Face did not match. Please try again with better lighting or use password login.'],
             ]);
@@ -231,15 +245,29 @@ class AuthController extends Controller
         $email = strtolower($payload['email']);
         $googleId = $payload['sub'];
 
+        // Brute-force lockout — shares the same login_attempts:<email> cache
+        // key as password + face login, so an attacker can't bypass the
+        // 5-in-15-min limit by switching login method. Check is gated on the
+        // verified email (post-Google verification) so anonymous token spam
+        // doesn't poison real users' counters.
+        $lockKey = $this->bruteForceKey($email);
+        if ($this->bruteForceIsLocked($lockKey)) {
+            return response()->json([
+                'message' => 'Too many failed login attempts. Try again in 15 minutes.',
+            ], 429);
+        }
+
         $user = User::with(['client', 'branch.client'])->where('email', $email)->first();
 
         if (! $user) {
+            $this->bruteForceRecordFailure($lockKey);
             return response()->json([
                 'message' => 'Account not found. Please contact your administrator.',
             ], 404);
         }
 
         if ($user->status !== 'active') {
+            $this->bruteForceRecordFailure($lockKey);
             return response()->json([
                 'message' => 'Your account is not active. Contact administrator.',
             ], 403);
@@ -247,16 +275,21 @@ class AuthController extends Controller
 
         $effectiveClient = $user->effectiveClient();
         if ($effectiveClient && $effectiveClient->status !== 'active') {
+            $this->bruteForceRecordFailure($lockKey);
             return response()->json([
                 'message' => 'Your organization is ' . $effectiveClient->status . '. Contact administrator.',
             ], 403);
         }
 
         if ($user->branch_id && $user->branch && $user->branch->status !== 'active') {
+            $this->bruteForceRecordFailure($lockKey);
             return response()->json([
                 'message' => 'Your branch is not active. Contact administrator.',
             ], 403);
         }
+
+        // Clear the failure counter on success — mirrors password / face paths.
+        Cache::forget($lockKey);
 
         $updates = [
             'last_login_at' => now(),

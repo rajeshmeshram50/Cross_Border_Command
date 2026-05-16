@@ -359,12 +359,32 @@ class LeaveRequestController extends Controller
             // in PHP using canActOnLevel for per-level precision —
             // approval_chain is JSON so we can't reliably do that match
             // entirely in SQL across PG / MySQL.
-            $q->where(function ($w) use ($myEmployeeId, $user) {
+            //
+            // Match the numeric id with a TRAILING terminator so user 5
+            // doesn't accidentally match `"approver_user_id":50` etc.
+            // JSON-encoded values are always followed by comma, closing
+            // brace, or whitespace (pretty-printed JSON). Three OR'd
+            // patterns cover all real shapes; without this guard, every
+            // user whose id is a prefix of another approver's id would see
+            // cross-row matches in the pre-filter.
+            $uid  = (int) $user->id;
+            $eid  = (int) $myEmployeeId;
+            $q->where(function ($w) use ($myEmployeeId, $user, $uid, $eid) {
                 $w->whereIn('employee_id', function ($sub) use ($myEmployeeId) {
                     $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
                 })->orWhere('approved_by', $user->id)
-                  ->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . (int) $user->id . '%')
-                  ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . (int) $myEmployeeId . '%');
+                  ->orWhere(function ($w2) use ($uid) {
+                      $w2->where('approval_chain', 'ilike', '%"approver_user_id":' . $uid . ',%')
+                         ->orWhere('approval_chain', 'ilike', '%"approver_user_id":' . $uid . '}%')
+                         ->orWhere('approval_chain', 'ilike', '%"approver_user_id": ' . $uid . ',%')
+                         ->orWhere('approval_chain', 'ilike', '%"approver_user_id": ' . $uid . '}%');
+                  })
+                  ->orWhere(function ($w2) use ($eid) {
+                      $w2->where('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . ',%')
+                         ->orWhere('approval_chain', 'ilike', '%"approver_employee_id":' . $eid . '}%')
+                         ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . ',%')
+                         ->orWhere('approval_chain', 'ilike', '%"approver_employee_id": ' . $eid . '}%');
+                  });
             });
             if ($user->client_id) {
                 $q->where('client_id', $user->client_id);

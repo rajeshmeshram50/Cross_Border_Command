@@ -1,6 +1,6 @@
 import React from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { MENU_ITEMS, HR_GROUPS } from "../../constants";
+import { MENU_ITEMS, HR_GROUPS, SALES_GROUPS } from "../../constants";
 import { isMenuOpen, toggleMenu } from "./menuState";
 
 /**
@@ -32,6 +32,7 @@ const iconMap: Record<string, string> = {
   Database: "ri-database-2-line",
   Users: "ri-team-line",
   CalendarCheck: "ri-calendar-check-line",
+  TrendingUp: "ri-line-chart-line",
 };
 
 const resolveIcon = (name?: string) => (name && iconMap[name]) || "ri-circle-line";
@@ -86,6 +87,16 @@ const hrLeafLink = (leafId: string): string => {
   }
 };
 
+// Sales Matrix leaves — wire each id to its real React page as it ships.
+// Anything not listed falls back to /sales (which routes to /dashboard for
+// now since /sales itself isn't built yet).
+const salesLeafLink = (leafId: string): string => {
+  switch (leafId) {
+    case "sales.customers": return "/sales/customers";
+    default:                return "/sales";
+  }
+};
+
 const Navdata = () => {
   const { user } = useAuth();
 
@@ -120,6 +131,17 @@ const Navdata = () => {
     );
   };
 
+  // Sales Matrix rollout — surface the menu to branch_user and employee
+  // unconditionally during initial rollout (per product call: leaves don't
+  // have dedicated pages or per-leaf perms wired up yet). Super_admin /
+  // client_admin are already filtered out by the role check on the MENU_ITEMS
+  // entry, so we just need to gate on plan-active here.
+  const hasAnySalesView = () => {
+    if (isSuperAdmin) return true;
+    if (planExpiredOrMissing) return false;
+    return user?.user_type === "branch_user" || user?.user_type === "employee";
+  };
+
   const hasAnyHrView = () => {
     if (isSuperAdmin) return true;
     if (planExpiredOrMissing) return false;
@@ -150,6 +172,30 @@ const Navdata = () => {
             label: c.label,
             link: hrLeafLink(c.id),
           }));
+        if (childItems.length === 0) return null;
+        return {
+          id: g.id,
+          label: g.label,
+          isChildItem: true,
+          stateVariables: isOpen(g.id),
+          click: (e: any) => { e.preventDefault(); toggle(g.id); },
+          childItems,
+        };
+      })
+      .filter(Boolean);
+  };
+
+  // Build the Sales Matrix dropdown (3 levels): Sales Matrix → categories →
+  // leaves. Mirrors buildHrSubItems but skips the perm check on leaves so
+  // branch_user / employee always see the full tree during initial rollout.
+  const buildSalesSubItems = () => {
+    return SALES_GROUPS
+      .map((g) => {
+        const childItems = g.children.map((c) => ({
+          id: c.id,
+          label: c.label,
+          link: salesLeafLink(c.id),
+        }));
         if (childItems.length === 0) return null;
         return {
           id: g.id,
@@ -199,6 +245,33 @@ const Navdata = () => {
     // initMenu() effect which strips `.show` off active menu-link siblings,
     // and Reactstrap's Collapse never re-applied it because its isOpen state
     // hadn't changed.
+    // Sales Matrix → 3-level nested dropdown, mirroring HR's structure.
+    // The /sales hub page doesn't exist yet, so leaves all link to /sales (a
+    // no-op until pages get built) and clicking "Sales Matrix" itself just
+    // toggles the dropdown open/closed without navigating.
+    if (m.id === "sales") {
+      if (!hasAnySalesView()) continue;
+      const subItems = buildSalesSubItems();
+      if (subItems.length === 0) {
+        menuItems.push({
+          id: m.id,
+          label: m.label,
+          icon: resolveIcon(m.icon),
+          link: slugToPath(m.id),
+        });
+      } else {
+        menuItems.push({
+          id: m.id,
+          label: m.label,
+          icon: resolveIcon(m.icon),
+          stateVariables: isOpen(m.id),
+          click: (e: any) => { e.preventDefault(); toggle(m.id); },
+          subItems,
+        });
+      }
+      continue;
+    }
+
     if (m.id === "hr") {
       if (!hasAnyHrView()) continue;
       const subItems = buildHrSubItems();

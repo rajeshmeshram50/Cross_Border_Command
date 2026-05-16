@@ -9,6 +9,7 @@ use App\Models\ExpenseClaim;
 use App\Models\Module;
 use App\Models\Permission;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -178,30 +179,38 @@ class ExpenseClaimController extends Controller
         $managerActedAt  = $hasManager ? null       : now();
         $managerComment  = $hasManager ? null       : 'Auto-approved · no reporting manager assigned';
 
-        $row = ExpenseClaim::create([
-            'client_id'        => $employee->client_id,
-            'branch_id'        => $employee->branch_id,
-            'claim_no'         => $this->nextClaimNo($employee->client_id, $employee->branch_id),
-            'employee_id'      => $employee->id,
-            'manager_id'       => $employee->reporting_manager_id,
-            'category_id'      => $data['category_id'] ?? null,
-            'category_name'    => $categoryName,
-            'currency'         => $data['currency'] ?? 'INR',
-            'project'          => $data['project'] ?? null,
-            'payment_method'   => $data['payment_method'] ?? null,
-            'title'            => $data['title'],
-            'amount'           => $data['amount'],
-            'expense_date'     => $data['expense_date'],
-            'vendor'           => $data['vendor'] ?? null,
-            'purpose'          => $data['purpose'] ?? null,
-            'attachments'      => $attachments ?: null,
-            'status'           => 'pending',
-            'manager_status'   => $managerStatus,
-            'manager_acted_at' => $managerActedAt,
-            'manager_comment'  => $managerComment,
-            'hr_status'        => 'pending',
-            'created_by'       => $user->id,
-        ]);
+        // Wrap claim_no allocation + insert in a single transaction so the
+        // lockForUpdate inside nextClaimNo() actually holds: two concurrent
+        // submitters in the same tenant must not race to compute the same
+        // EXP-#### sequence (would silently produce duplicate claim_no
+        // values, breaking the audit trail and any later "find by claim_no"
+        // lookup).
+        $row = DB::transaction(function () use ($employee, $data, $attachments, $categoryName, $managerStatus, $managerActedAt, $managerComment, $user) {
+            return ExpenseClaim::create([
+                'client_id'        => $employee->client_id,
+                'branch_id'        => $employee->branch_id,
+                'claim_no'         => $this->nextClaimNo($employee->client_id, $employee->branch_id),
+                'employee_id'      => $employee->id,
+                'manager_id'       => $employee->reporting_manager_id,
+                'category_id'      => $data['category_id'] ?? null,
+                'category_name'    => $categoryName,
+                'currency'         => $data['currency'] ?? 'INR',
+                'project'          => $data['project'] ?? null,
+                'payment_method'   => $data['payment_method'] ?? null,
+                'title'            => $data['title'],
+                'amount'           => $data['amount'],
+                'expense_date'     => $data['expense_date'],
+                'vendor'           => $data['vendor'] ?? null,
+                'purpose'          => $data['purpose'] ?? null,
+                'attachments'      => $attachments ?: null,
+                'status'           => 'pending',
+                'manager_status'   => $managerStatus,
+                'manager_acted_at' => $managerActedAt,
+                'manager_comment'  => $managerComment,
+                'hr_status'        => 'pending',
+                'created_by'       => $user->id,
+            ]);
+        });
 
         $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
         return response()->json($this->serialize($row), 201);
@@ -535,10 +544,17 @@ class ExpenseClaimController extends Controller
     /**
      * Generate the next EXP-### sequence per (client_id, branch_id) tuple so
      * each tenant gets its own numbering independently.
+     *
+     * IMPORTANT: must be called from within a DB::transaction(...) — the
+     * lockForUpdate() row-lock is only held until the surrounding
+     * transaction commits. Without a transaction, two concurrent submitters
+     * in the same tenant would both compute the same next number, producing
+     * duplicate claim_no values. Caller in store() wraps the allocate+create
+     * pair in DB::transaction() for exactly this reason.
      */
     private function nextClaimNo(?int $clientId, ?int $branchId): string
     {
-        $q = ExpenseClaim::query();
+        $q = ExpenseClaim::query()->lockForUpdate();
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
         $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
 

@@ -216,11 +216,16 @@ class AttendanceController extends Controller
             if (strcasecmp($status, 'Missing In') === 0 || strcasecmp($status, 'Missing Out') === 0) {
                 $missingBio++;
             }
-            // Heuristic late check on top of stored status.
+            // Heuristic late check on top of stored status. Must match the
+            // 10-min grace used by resolveDayStatus() — using a raw string
+            // compare here (`$localIn > $shiftStart`) was a bug: it counted
+            // anyone clocked in even one minute past shift_start as late,
+            // contradicting the documented heuristic and double-counting
+            // employees the read-time promotion already marked Late.
             $firstIn = $row->check_in_at;
             if ($firstIn && strcasecmp($status, 'Present') === 0) {
                 $localIn = $firstIn->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i');
-                if ($localIn > $shiftStart) $late++;
+                if ($this->minutesBetween($shiftStart, $localIn) > 10) $late++;
             }
         }
 

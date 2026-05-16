@@ -121,8 +121,25 @@ export function BranchSwitcherProvider({ children }: { children: ReactNode }) {
     if (isBranchUser && !isMainBranchUser) return;
     // Validate id is in our branches list (or null)
     if (id !== null && !branches.some(b => b.id === id)) return;
-    setSelectedBranchIdState(id);
+    // No-op if nothing actually changes — avoids a pointless reload when the
+    // user clicks the already-selected entry.
+    if (id === selectedBranchId) return;
+
     writeSaved(user.id, id);
+
+    // Full page reload after persisting the selection. The axios interceptor
+    // injects ?branch_id=<saved> on every GET, but only ~4 pages subscribe to
+    // selectedBranchId and refetch on change — every other list page fires
+    // its load effect once with `[]` deps and would keep showing stale data
+    // from the previous branch until manual navigation. Reloading is the
+    // safest blanket fix: every page re-mounts and refetches with the new
+    // branch scope, matching the "switch branch and everything updates"
+    // expectation. Same pattern as workspace switching in Notion / Linear.
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+      return;
+    }
+    setSelectedBranchIdState(id);
   };
 
   const selectedBranch = selectedBranchId ? branches.find(b => b.id === selectedBranchId) || null : null;

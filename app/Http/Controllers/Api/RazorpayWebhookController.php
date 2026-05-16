@@ -38,14 +38,53 @@ class RazorpayWebhookController extends Controller
             return response()->json(['ok' => true]);
         }
 
-        $payment = Payment::where('order_id', $orderId)->first();
-        if (!$payment) {
+        // Lock the Payment row for the duration of this handler so two
+        // concurrent webhook deliveries for the same order can't both pass
+        // the "not yet success" check and both call activateFromWebhook().
+        // Razorpay's at-least-once delivery makes concurrent retries a real
+        // possibility, not a theoretical one.
+        $payment = DB::transaction(function () use ($orderId, $event, $paymentEntity) {
+            $p = Payment::where('order_id', $orderId)->lockForUpdate()->first();
+            if (!$p) return null;
+
+            // Idempotent — only act if status hasn't been finalised.
+            if (in_array($p->status, ['success', 'refunded'], true)) {
+                return $p;
+            }
+
+            // Amount-tampering defence: the webhook signature already proves
+            // the payload came from Razorpay, but a fraudulent caller could
+            // still target an order whose `total` doesn't match what was
+            // actually captured (e.g. someone replays a low-tier webhook
+            // against a high-tier order_id from a parallel flow). Razorpay
+            // amounts are in paise; our `total` is in rupees. Reject any
+            // mismatch and force a manual reconcile.
+            if (in_array($event, ['payment.captured', 'order.paid'], true)) {
+                $capturedPaise = (int) ($paymentEntity['amount'] ?? 0);
+                $expectedPaise = (int) round(((float) $p->total) * 100);
+                if ($capturedPaise !== $expectedPaise) {
+                    Log::warning('Razorpay webhook amount mismatch — refusing to activate', [
+                        'order_id'        => $p->order_id,
+                        'expected_paise'  => $expectedPaise,
+                        'captured_paise'  => $capturedPaise,
+                        'event'           => $event,
+                    ]);
+                    return false;  // sentinel: caller returns 200 to ack but skips activation
+                }
+            }
+            return $p;
+        });
+
+        if ($payment === null) {
             Log::info('Razorpay webhook for unknown order', ['order_id' => $orderId, 'event' => $event]);
             return response()->json(['ok' => true]);
         }
-
-        // Idempotent — only act if status hasn't been finalised
-        if (in_array($payment->status, ['success', 'refunded'])) {
+        if ($payment === false) {
+            // Amount mismatch already logged. Ack with 200 so Razorpay stops
+            // retrying — investigation happens via the Log entry above.
+            return response()->json(['ok' => true, 'note' => 'amount mismatch']);
+        }
+        if (in_array($payment->status, ['success', 'refunded'], true)) {
             return response()->json(['ok' => true]);
         }
 

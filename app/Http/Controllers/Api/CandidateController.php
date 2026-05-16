@@ -66,10 +66,20 @@ class CandidateController extends Controller
         if ($recId = $request->query('recruitment_id')) {
             $q->where('recruitment_id', $recId);
         }
+        // Validate enum filters against the whitelist. An unknown value
+        // silently returns nothing today (no rows match), which confuses
+        // the SPA into thinking the candidate list is empty — return 422
+        // so the caller sees the bad input.
         if ($status = $request->query('status')) {
+            if (!in_array($status, self::STATUSES, true)) {
+                return response()->json(['message' => 'Invalid status filter.'], 422);
+            }
             $q->where('status', $status);
         }
         if ($source = $request->query('source')) {
+            if (!in_array($source, self::SOURCES, true)) {
+                return response()->json(['message' => 'Invalid source filter.'], 422);
+            }
             $q->where('source', $source);
         }
         if ($search = $request->query('search')) {
