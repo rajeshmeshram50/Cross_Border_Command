@@ -2186,9 +2186,65 @@ export default function HrEmployees() {
           overflow: hidden;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card {
+          /* Brighten the surface a touch so the cards sit above the page
+             background rather than blending into it. */
+          background: #232f40 !important;
+          border-color: rgba(255,255,255,0.10) !important;
           box-shadow:
             0 8px 20px -4px rgba(0, 0, 0, 0.55),
             0 2px 6px rgba(0, 0, 0, 0.35) !important;
+        }
+        /* Inline styles on the JSX set these to var(--vz-secondary-color)
+           and var(--vz-heading-color) — which are barely visible on the
+           dark KPI surface. Override with !important so the label reads
+           clearly and the value stays high-contrast white. */
+        [data-bs-theme="dark"] .hr-emp-kpi-label {
+          color: #cbd5e1 !important;
+        }
+        [data-bs-theme="dark"] .hr-emp-kpi-value {
+          color: #f8fafc !important;
+        }
+        [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
+          background: #2a374b !important;
+          border-color: rgba(124, 92, 252, 0.55) !important;
+        }
+        /* Page-level text legibility in dark mode — the page subtitle and
+           any other text-muted body copy under this surface default to a
+           gray that disappears against the dark page background. Brighten
+           it scoped to this page so we do not change text-muted globally. */
+        [data-bs-theme="dark"] .hr-employees-surface .text-muted,
+        [data-bs-theme="dark"] .hr-employees-surface .text-secondary {
+          color: #94a3b8 !important;
+        }
+        /* Table row chrome in dark mode — give the rows a subtle alternating
+           tint plus a clear hover state so the eye can track across columns.
+           Without this every row sits on the same flat dark surface and the
+           table reads as one big slab. */
+        [data-bs-theme="dark"] .hr-employees-surface .table tbody tr:nth-child(odd) > * {
+          background: rgba(255,255,255,0.015);
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .table tbody tr:hover > * {
+          background: rgba(124,92,252,0.10) !important;
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .table thead th {
+          color: #e2e8f0;
+          background: #1c2531;
+          border-bottom-color: rgba(255,255,255,0.10);
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .table tbody td {
+          border-bottom-color: rgba(255,255,255,0.06);
+        }
+        /* Action-button icons — the ActionBtn JSX uses inline var(--vz-secondary-color)
+           which is too dim against the dark cell. Bump to a brighter slate. */
+        [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label] i {
+          color: #cbd5e1;
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label] {
+          background: rgba(255,255,255,0.05) !important;
+          border-color: rgba(255,255,255,0.12) !important;
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label]:hover {
+          background: rgba(124,92,252,0.18) !important;
         }
         .hr-emp-kpi-card:hover {
           transform: translateY(-4px);
