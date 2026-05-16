@@ -80,6 +80,12 @@ interface OnboardRow {
   name: string;
   initials: string;
   accent: string;
+  /** Public URL of the employee's passport-size photo (document_key='photo').
+   *  Comes from the Employee model's `photo_url` accessor — same source the
+   *  HR Employees table uses, so the avatar stays in sync between the two
+   *  pages. Optional because legacy seed rows and freshly-created employees
+   *  without a photo render the initials gradient avatar instead. */
+  photoUrl?: string | null;
   joinDate: string;
   department: string;
   designation: string;
@@ -223,6 +229,7 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     name,
     initials: _initials(name),
     accent,
+    photoUrl: (e as any).photo_url || null,
     joinDate: _formatDate(e.date_of_joining),
     department: e.department?.name || '—',
     designation: e.designation?.name || '—',
@@ -818,16 +825,25 @@ export default function HrEmployeeOnboarding() {
                             <td className="ps-3 fw-semibold text-muted">{sliceFrom + idx + 1}</td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
-                                <div
-                                  className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                  style={{
-                                    width: 34, height: 34, fontSize: 12,
-                                    background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
-                                    boxShadow: `0 2px 6px ${r.accent}40`,
-                                  }}
-                                >
-                                  {r.initials}
-                                </div>
+                                {r.photoUrl ? (
+                                  <img
+                                    src={r.photoUrl}
+                                    alt={r.name}
+                                    className="rounded-circle flex-shrink-0"
+                                    style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+                                  />
+                                ) : (
+                                  <div
+                                    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                                    style={{
+                                      width: 34, height: 34, fontSize: 12,
+                                      background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
+                                      boxShadow: `0 2px 6px ${r.accent}40`,
+                                    }}
+                                  >
+                                    {r.initials}
+                                  </div>
+                                )}
                                 <div className="min-w-0">
                                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{r.name}</div>
                                   <div className="text-muted" style={{ fontSize: 11.5 }}>{r.joinDate}</div>
