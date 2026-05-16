@@ -134,7 +134,11 @@ class ExpenseClaimController extends Controller
             'project'        => ['nullable', 'string', 'max:64'],
             'payment_method' => ['nullable', 'string', 'max:64'],
             'title'          => ['required', 'string', 'max:255'],
-            'amount'         => ['required', 'numeric', 'min:0'],
+            // Cap at 9,999,999,999,999.99 — well inside the decimal(18,2)
+            // column on `expense_claims.amount` so a paste of "9999..."
+            // is rejected by the validator with a clean 422 instead of
+            // overflowing the database and surfacing as a 500.
+            'amount'         => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
             'expense_date'   => ['required', 'date'],
             'vendor'         => ['nullable', 'string', 'max:255'],
             'purpose'        => ['nullable', 'string'],

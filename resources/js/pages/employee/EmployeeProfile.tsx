@@ -14,6 +14,7 @@ import ExpenseClaimsTable from '../../components/ExpenseClaimsTable';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import './EmployeeProfile.css';
 import ImageCropperModal from '../../components/ui/ImageCropperModal';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { leaveTypesApi, leaveRequestsApi, ApiLeaveRequest } from '../hrms/leavePlansApi';
 import LeaveSummaryPanel from './LeaveSummaryPanel';
@@ -320,9 +321,24 @@ function AttendanceTabPanel({ employeeId }: { employeeId: string }) {
   };
 
   if (loading) {
+    // Skeleton mirrors the attendance panel's real layout — a KPI strip
+    // row above a wide chart-style block — so the page doesn't reflow
+    // when data lands.
     return (
-      <div className="d-flex align-items-center justify-content-center py-5">
-        <span className="spinner-border spinner-border-sm me-2" /> Loading attendance…
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '12px 4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+          {[0, 1, 2, 3, 4].map(i => (
+            <div key={i} style={{ padding: 14, borderRadius: 12, border: '1px solid var(--vz-border-color)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Shimmer height={10} width="50%" />
+              <Shimmer height={22} width="35%" />
+              <Shimmer height={8} width="65%" />
+            </div>
+          ))}
+        </div>
+        <div style={{ padding: 18, borderRadius: 12, border: '1px solid var(--vz-border-color)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Shimmer height={14} width={180} />
+          <Shimmer height={220} radius={10} />
+        </div>
       </div>
     );
   }
@@ -830,13 +846,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Contact / Address sections so every field reflects what the admin
   // actually saved (was previously hardcoded with sample data).
   const [empDetail, setEmpDetail] = useState<any>(null);
+  // Drives the shimmer placeholders shown across the Profile / Job tabs
+  // while the /employees/{id} fetch is in flight. Without this every
+  // field rendered "—" for the first 200-500ms which looked broken.
+  const [empDetailLoading, setEmpDetailLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
     const empCode = String(employeeId || '').trim();
-    if (!empCode) return;
+    if (!empCode) { setEmpDetailLoading(false); return; }
     // The route uses emp_code (e.g. EMP-001) but the API show endpoint
     // expects the numeric id. Resolve via the search index first, then
     // fetch the full record.
+    setEmpDetailLoading(true);
     (async () => {
       try {
         let dbId: number | undefined = profileEmpIdNum ?? undefined;
@@ -851,6 +872,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         if (!cancelled) setEmpDetail(r.data || null);
       } catch {
         // Non-fatal — the page still renders the props-passed lightweight row.
+      } finally {
+        if (!cancelled) setEmpDetailLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -1257,9 +1280,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const blankDraft = (): ClaimDraft => ({
     employee: employeeId,
     category: '',
-    currency: 'INR',
+    // Currency + payment used to default to 'INR' / 'UPI' which made
+    // them look like "the user already picked something" — the dropdowns
+    // need an explicit choice. Start empty so the placeholder text shows
+    // and the user has to click in.
+    currency: '',
     project: '',
-    payment: 'UPI',
+    payment: '',
     title: '',
     amount: '',
     date: new Date().toISOString().slice(0, 10),
@@ -1744,7 +1771,28 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       setClaimOpen(false);
       await refreshClaims();
     } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Could not submit the claim. Please try again.';
+      // Pick the most useful message out of the response:
+      //   1. 422 field errors (Laravel validator) — pull the first one
+      //   2. Top-level `message` (controller's abort/exception)
+      //   3. Raw status — special-case 500 with a hint, because the most
+      //      common cause is an amount that overflowed the decimal(18,2)
+      //      column and we already cap the input now but legacy payloads
+      //      can still hit it.
+      const fieldErrors = err?.response?.data?.errors;
+      let msg = '';
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const first = Object.values(fieldErrors)[0];
+        msg = Array.isArray(first) ? String(first[0]) : String(first);
+      }
+      if (!msg) msg = err?.response?.data?.message || '';
+      const status = err?.response?.status;
+      if (!msg) {
+        msg = status === 500
+          ? 'The server rejected the claim. Check that the amount fits within 12 digits and try again.'
+          : status === 413
+            ? 'One or more receipts are too large to upload. Trim attachments and retry.'
+            : 'Could not submit the claim. Please try again.';
+      }
       toast.error('Submit failed', msg);
     } finally {
       setClaimSubmitting(false);
@@ -1891,36 +1939,47 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </span>
             </div>
             <div className="d-flex column-gap-4 row-gap-2 flex-wrap">
+              {/* Each meta cell renders a thin shimmer placeholder until
+                  empDetail resolves — keeps the row from flashing "—" /
+                  partial data on first render. */}
               <div className="ep-hero-meta">
                 <i className="ri-mail-line" />
                 <div>
                   <span className="ep-hero-meta-label">Email</span>{' '}
-                  <span className="ep-hero-meta-value">{empDetail?.email || employee?.email || '—'}</span>
+                  {empDetailLoading
+                    ? <Shimmer height={11} width={150} style={{ background: 'rgba(255,255,255,0.18)' }} />
+                    : <span className="ep-hero-meta-value">{empDetail?.email || employee?.email || '—'}</span>}
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-user-line" />
                 <div>
                   <span className="ep-hero-meta-label">Manager</span>{' '}
-                  <span className="ep-hero-meta-value">{(() => {
-                    const m = empDetail?.reporting_manager;
-                    if (!m) return employee?.manager || '—';
-                    return m.display_name || [m.first_name, m.middle_name, m.last_name].filter(Boolean).join(' ') || '—';
-                  })()}</span>
+                  {empDetailLoading
+                    ? <Shimmer height={11} width={120} style={{ background: 'rgba(255,255,255,0.18)' }} />
+                    : <span className="ep-hero-meta-value">{(() => {
+                        const m = empDetail?.reporting_manager;
+                        if (!m) return employee?.manager || '—';
+                        return m.display_name || [m.first_name, m.middle_name, m.last_name].filter(Boolean).join(' ') || '—';
+                      })()}</span>}
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-phone-line" />
                 <div>
                   <span className="ep-hero-meta-label">Mobile</span>{' '}
-                  <span className="ep-hero-meta-value">{empDetail?.mobile || '—'}</span>
+                  {empDetailLoading
+                    ? <Shimmer height={11} width={100} style={{ background: 'rgba(255,255,255,0.18)' }} />
+                    : <span className="ep-hero-meta-value">{empDetail?.mobile || '—'}</span>}
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-calendar-line" />
                 <div>
                   <span className="ep-hero-meta-label">Joined</span>{' '}
-                  <span className="ep-hero-meta-value">{empDetail?.date_of_joining ? fmtDate(empDetail.date_of_joining) : '—'}</span>
+                  {empDetailLoading
+                    ? <Shimmer height={11} width={90} style={{ background: 'rgba(255,255,255,0.18)' }} />
+                    : <span className="ep-hero-meta-value">{empDetail?.date_of_joining ? fmtDate(empDetail.date_of_joining) : '—'}</span>}
                 </div>
               </div>
             </div>
@@ -2134,15 +2193,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       </Col>
     </Row>
 
-    {/* Row 2 — seven identity fields in a single horizontal row on lg+. */}
+    {/* Row 2 — seven identity fields in a single horizontal row on lg+.
+        While empDetail is loading each value cell renders a shimmer
+        placeholder so the page doesn't flash "—" before the API resolves. */}
     <Row className="g-4">
-      <Col lg={3} md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{empDetail?.first_name || (employee?.name || '').split(' ')[0] || '—'}</div></Col>
-      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">{empDetail?.middle_name || '—'}</div></Col>
-      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{empDetail?.last_name || (employee?.name || '').split(' ').slice(1).join(' ') || '—'}</div></Col>
-      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{empDetail?.display_name || employee?.name || '—'}</div></Col>
-      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.date_of_birth)}</div></Col>
-      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">{empDetail?.gender || '—'}</div></Col>
-      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">{empDetail?.nationality_country?.name || '—'}</div></Col>
+      {[
+        { label: 'First Name',  value: empDetail?.first_name || (employee?.name || '').split(' ')[0] },
+        { label: 'Middle Name', value: empDetail?.middle_name },
+        { label: 'Last Name',   value: empDetail?.last_name || (employee?.name || '').split(' ').slice(1).join(' ') },
+        { label: 'Display Name', value: empDetail?.display_name || employee?.name },
+        { label: 'Date of Birth', value: fmtDate(empDetail?.date_of_birth), monospace: true },
+        { label: 'Gender', value: empDetail?.gender },
+        { label: 'Nationality', value: empDetail?.nationality_country?.name },
+      ].map((f, i) => (
+        <Col key={i} lg={3} md={4} sm={6}>
+          <div className="ep-field-label">{f.label}</div>
+          {empDetailLoading
+            ? <Shimmer height={16} width="70%" />
+            : <div className={`ep-field-value${f.monospace ? ' font-monospace' : ''}`}>{(f.value && String(f.value).trim()) ? f.value : '—'}</div>}
+        </Col>
+      ))}
     </Row>
   </div>
 </div>
@@ -3063,7 +3133,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         }}
                       >
                         <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
-                        <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
+                        {(uploadedLoading || signedLoading) ? (
+                          // Translucent-white shimmer bar so the KPI tile
+                          // doesn't flash 0 before the counts resolve.
+                          <div className="d-flex justify-content-center" style={{ paddingTop: 2 }}>
+                            <Shimmer height={13} width={28} style={{ background: 'rgba(255,255,255,0.25)' }} />
+                          </div>
+                        ) : (
+                          <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -3109,15 +3187,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <i className={t.icon} style={{ fontSize: 12 }} />
                       {t.label}
                       <span
-                        className="badge rounded-pill"
+                        className="badge rounded-pill d-inline-flex align-items-center justify-content-center"
                         style={{
                           fontSize: 10,
                           padding: '2px 6px',
+                          minWidth: 24,
                           background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
                           color: on ? '#fff' : 'var(--vz-secondary-color)',
                         }}
                       >
-                        {t.count}
+                        {(t.key === 'employee' ? uploadedLoading : signedLoading)
+                          ? <Shimmer height={9} width={14} style={{ background: on ? 'rgba(255,255,255,0.35)' : 'var(--vz-secondary-color)', opacity: 0.5 }} />
+                          : t.count}
                       </span>
                     </button>
                   );
@@ -3154,7 +3235,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                 </div>
                 <div className="text-end">
-                  <h4 className="mb-0 fw-bold" style={{ color: '#5a3fd1', fontSize: 22, lineHeight: 1 }}>{uploadedDocs.length}</h4>
+                  {uploadedLoading
+                    ? <Shimmer height={20} width={28} style={{ marginBottom: 4 }} />
+                    : <h4 className="mb-0 fw-bold" style={{ color: '#5a3fd1', fontSize: 22, lineHeight: 1 }}>{uploadedDocs.length}</h4>}
                   <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
                 </div>
               </div>
@@ -3170,10 +3253,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </thead>
                     <tbody>
                       {uploadedLoading ? (
-                        <tr><td colSpan={8} style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
-                          <i className="ri-loader-4-line" style={{ fontSize: 24, display: 'block', marginBottom: 6 }} />
-                          Loading uploaded documents…
-                        </td></tr>
+                        <ShimmerTableRows rows={4} cols={8} keyPrefix="uploaded-shim" />
                       ) : uploadedDocs.length === 0 ? (
                         <tr><td colSpan={8} style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
                           <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
@@ -3257,7 +3337,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                 </div>
                 <div className="text-end">
-                  <h4 className="mb-0 fw-bold" style={{ color: '#16a34a', fontSize: 22, lineHeight: 1 }}>{signedDocs.length}</h4>
+                  {signedLoading
+                    ? <Shimmer height={20} width={28} style={{ marginBottom: 4 }} />
+                    : <h4 className="mb-0 fw-bold" style={{ color: '#16a34a', fontSize: 22, lineHeight: 1 }}>{signedDocs.length}</h4>}
                   <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
                 </div>
               </div>
@@ -3273,10 +3355,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </thead>
                     <tbody>
                       {signedLoading ? (
-                        <tr><td colSpan={6} style={{ padding: 22, textAlign: 'center', color: '#9ca3af' }}>
-                          <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
-                          Loading signed documents…
-                        </td></tr>
+                        <ShimmerTableRows rows={3} cols={6} keyPrefix="signed-shim" />
                       ) : signedDocs.length === 0 ? (
                         <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
                           <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
@@ -4957,6 +5036,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div className="ep-claim-label">Currency</div>
                     <MasterSelect
                       value={claimCurrency}
+                      placeholder="Select currency"
                       options={[{ value: 'INR', label: '₹ INR' }, { value: 'USD', label: '$ USD' }, { value: 'EUR', label: '€ EUR' }]}
                       onChange={setClaimCurrency}
                     />
@@ -4976,6 +5056,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div className="ep-claim-label">Payment Method</div>
                     <MasterSelect
                       value={claimPayment}
+                      placeholder="Select payment method"
                       options={['UPI','PhonePe','Cash','Cheque','Bank Transfer'].map(o => ({ value: o, label: o }))}
                       onChange={setClaimPayment}
                     />
@@ -5005,7 +5086,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         style={{ paddingLeft: 28 }}
                         placeholder="0.00"
                         value={claimAmount}
-                        onChange={e => { setClaimAmount(e.target.value); clearClaimErr('amount'); }}
+                        inputMode="decimal"
+                        onChange={e => {
+                          // Sanitise the input as the user types — only digits +
+                          // one dot, cap the whole part at 12 digits and fraction
+                          // at 2. The DB column is decimal(18,2) so 12+2 fits
+                          // comfortably; without this cap a paste of a long
+                          // number used to slip through and crash the backend
+                          // with a "numeric field overflow" SQL error.
+                          let raw = e.target.value.replace(/[^0-9.]/g, '');
+                          const firstDot = raw.indexOf('.');
+                          if (firstDot !== -1) {
+                            raw = raw.slice(0, firstDot + 1) + raw.slice(firstDot + 1).replace(/\./g, '');
+                          }
+                          const [whole, frac] = raw.split('.');
+                          let capped = (whole || '').slice(0, 12);
+                          if (frac !== undefined) capped += '.' + frac.slice(0, 2);
+                          setClaimAmount(capped);
+                          clearClaimErr('amount');
+                        }}
                       />
                     </div>
                     {claimErrors.amount && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.amount}</div>}
@@ -5069,6 +5168,27 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           <div className="ep-claim-file-name">{f.name}</div>
                           <div className="ep-claim-file-size">{(f.size / 1024).toFixed(1)} KB</div>
                         </div>
+                        {/* View — opens the just-picked file in a new tab
+                            using an object URL so the user can sanity-check
+                            their receipt before submitting. The URL is
+                            revoked after a short delay so the new tab has
+                            time to load it without leaking memory. */}
+                        <button
+                          type="button"
+                          className="ep-claim-file-x"
+                          title="View"
+                          onClick={() => {
+                            try {
+                              const url = URL.createObjectURL(f);
+                              window.open(url, '_blank', 'noopener,noreferrer');
+                              setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                            } catch {
+                              toast.error('Could not open file', 'Your browser blocked the preview.');
+                            }
+                          }}
+                        >
+                          <i className="ri-eye-line" />
+                        </button>
                         <button
                           type="button"
                           className="ep-claim-file-x"
@@ -5300,6 +5420,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           <div className="ep-claim-file-name">{f.name}</div>
                           <div className="ep-claim-file-size">{(f.size / 1024).toFixed(1)} KB</div>
                         </div>
+                        <button
+                          type="button"
+                          className="ep-claim-file-x"
+                          title="View"
+                          onClick={() => {
+                            try {
+                              const url = URL.createObjectURL(f);
+                              window.open(url, '_blank', 'noopener,noreferrer');
+                              setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                            } catch {
+                              toast.error('Could not open file', 'Your browser blocked the preview.');
+                            }
+                          }}
+                        >
+                          <i className="ri-eye-line" />
+                        </button>
                         <button
                           type="button"
                           className="ep-claim-file-x"

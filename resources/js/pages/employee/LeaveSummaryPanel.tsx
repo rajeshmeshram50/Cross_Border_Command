@@ -10,6 +10,7 @@ import {
 } from '../hrms/leavePlansApi';
 import RequestLeaveModal from './RequestLeaveModal';
 import LeaveRequestDetailsModal from './LeaveRequestDetailsModal';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LeaveSummaryPanel — renders the "Me → Leave" overview shown above the
@@ -134,8 +135,28 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
       <div className="mb-3">
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Pending leave requests</h6>
         {loading ? (
-          <div className="text-muted text-center py-4" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 12 }}>
-            <i className="ri-loader-4-line ri-spin me-1" /> Loading…
+          // Two skeleton cards in the same shape as the live request rows
+          // (round avatar slot + 4-column meta grid + cancel button) so
+          // the layout doesn't reflow when the API resolves.
+          <div className="d-flex flex-column gap-2">
+            {[0, 1].map(i => (
+              <div
+                key={i}
+                className="d-flex align-items-center gap-3 p-3"
+                style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12 }}
+              >
+                <Shimmer width={44} height={44} radius={999} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, flex: 1, minWidth: 0 }}>
+                  {[0, 1, 2, 3].map(j => (
+                    <div key={j} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <Shimmer height={9} width="55%" />
+                      <Shimmer height={13} width="80%" />
+                    </div>
+                  ))}
+                </div>
+                <Shimmer width={20} height={20} radius={999} />
+              </div>
+            ))}
           </div>
         ) : pending.length === 0 ? (
           <div className="text-muted text-center py-4" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 12, fontSize: 13 }}>
@@ -201,7 +222,32 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
       {/* ── Leave Balances ── */}
       <div className="mb-3">
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave Balances</h6>
-        {!balances || balances.types.length === 0 ? (
+        {loading ? (
+          // Three donut-card placeholders matching the live grid below
+          // (heading + circle + 3-cell footer). Keeps the row height
+          // stable so the page doesn't jump when balances arrive.
+          <div className="d-flex gap-3 flex-wrap">
+            {[0, 1, 2].map(i => (
+              <div key={i} className="flex-grow-1" style={{ minWidth: 240, background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18 }}>
+                <div className="d-flex justify-content-between align-items-start mb-2">
+                  <Shimmer height={14} width={90} />
+                  <Shimmer height={10} width={60} />
+                </div>
+                <div className="d-flex justify-content-center my-2">
+                  <Shimmer width={140} height={140} radius={999} />
+                </div>
+                <div className="d-flex justify-content-between mt-3 pt-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+                  {[0, 1, 2].map(j => (
+                    <div key={j} style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                      <Shimmer height={9} width={60} />
+                      <Shimmer height={13} width={50} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : !balances || balances.types.length === 0 ? (
           <div className="text-muted text-center py-4" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 12, fontSize: 13 }}>
             {balances?.employee?.plan_id == null
               ? 'No leave plan assigned. Ask HR to add you to a plan.'
@@ -265,7 +311,20 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
       {/* ── Leave History ── */}
       <div>
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave History</h6>
-        {history.length === 0 ? (
+        {loading ? (
+          // Mini table skeleton — header strip + 4 rows × 5 columns to
+          // match the live history table's column layout.
+          <div style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ background: 'var(--vz-secondary-bg)', padding: '12px 14px', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
+              {[0, 1, 2, 3, 4].map(i => <Shimmer key={i} height={10} width="60%" />)}
+            </div>
+            {[0, 1, 2, 3].map(r => (
+              <div key={r} style={{ padding: '14px', borderTop: '1px solid var(--vz-border-color)', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
+                {[0, 1, 2, 3, 4].map(c => <Shimmer key={c} height={13} width={c === 3 ? '50%' : '80%'} />)}
+              </div>
+            ))}
+          </div>
+        ) : history.length === 0 ? (
           <div className="text-muted text-center py-4" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 12, fontSize: 13 }}>
             No Leave history to show.
           </div>
