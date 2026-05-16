@@ -1699,18 +1699,23 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-more-2-fill" />
               </button>
             </div>
-            <p className="mb-1" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em' }}>{employeeId}</p>
+            <p className="mb-1" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em' }}>{empDetail?.emp_code || employeeId}</p>
             <p className="mb-2" style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12.5 }}>
-              {employee?.department || 'Accounts'}
+              {/* Hero meta line — prefer the freshly-fetched empDetail
+                  relations so newly-edited Department / Designation / work
+                  type are reflected immediately, instead of the stale
+                  navigation-state row that previously fell back to
+                  hardcoded "Accounts" / "Associate Engineer" / "Full-time". */}
+              {empDetail?.department?.name || employee?.department || '—'}
               <span className="mx-2" style={{ opacity: 0.5 }}>·</span>
-              {employee?.designation || 'Associate Engineer'}
+              {empDetail?.designation?.name || employee?.designation || '—'}
               <span className="mx-2" style={{ opacity: 0.5 }}>·</span>
-              Full-time
+              {empDetail?.worker_type || empDetail?.work_type || empDetail?.time_type || '—'}
             </p>
             <div className="d-flex gap-2 flex-wrap mb-3">
-              {employee?.primaryRole && (
+              {(empDetail?.primary_role?.name || employee?.primaryRole) && (
                 <span className="ep-hero-pill ep-hero-pill-blue">
-                  <i className="ri-suitcase-line" /> {employee.primaryRole}
+                  <i className="ri-suitcase-line" /> {empDetail?.primary_role?.name || employee?.primaryRole}
                 </span>
               )}
               {ancillaryList.map(r => (
@@ -1726,28 +1731,32 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-mail-line" />
                 <div>
                   <span className="ep-hero-meta-label">Email</span>{' '}
-                  <span className="ep-hero-meta-value">{employee?.email || 'aarav.kale@enterprise.com'}</span>
+                  <span className="ep-hero-meta-value">{empDetail?.email || employee?.email || '—'}</span>
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-user-line" />
                 <div>
                   <span className="ep-hero-meta-label">Manager</span>{' '}
-                  <span className="ep-hero-meta-value">{employee?.manager || '—'}</span>
+                  <span className="ep-hero-meta-value">{(() => {
+                    const m = empDetail?.reporting_manager;
+                    if (!m) return employee?.manager || '—';
+                    return m.display_name || [m.first_name, m.middle_name, m.last_name].filter(Boolean).join(' ') || '—';
+                  })()}</span>
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-phone-line" />
                 <div>
                   <span className="ep-hero-meta-label">Mobile</span>{' '}
-                  <span className="ep-hero-meta-value">9635203533</span>
+                  <span className="ep-hero-meta-value">{empDetail?.mobile || '—'}</span>
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-calendar-line" />
                 <div>
                   <span className="ep-hero-meta-label">Joined</span>{' '}
-                  <span className="ep-hero-meta-value">03-Nov-2023</span>
+                  <span className="ep-hero-meta-value">{empDetail?.date_of_joining ? fmtDate(empDetail.date_of_joining) : '—'}</span>
                 </div>
               </div>
             </div>
@@ -1829,69 +1838,139 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Personal Information</h6>
   </div>
   <div className="px-3 py-3">
+    {/* Two-column layout. Left column stacks a compact horizontal Profile
+        Photo block, then the Login Password tile, then the Face Biometric
+        tile. Right column holds the seven identity fields. */}
     <Row className="g-4 align-items-stretch">
-      <Col lg={3} md={4}>
-        <div
-          className="h-100 d-flex flex-column align-items-center justify-content-center text-center p-3"
-          style={{
-            border: '1px dashed rgba(99,102,241,0.35)',
-            borderRadius: 12,
-            background: 'rgba(99,102,241,0.04)',
-          }}
-        >
-      {profilePhotoSrc ? (
-        <img
-          src={profilePhotoSrc}
-          alt="profile"
-          className="rounded-circle mb-3"
-          style={{ width: 112, height: 112, objectFit: 'cover', border: '3px solid var(--vz-card-bg)', boxShadow: '0 8px 24px rgba(15,23,42,0.16)' }}
-        />
-      ) : (
-        <div
-          className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted mb-3"
-          style={{ width: 112, height: 112, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 38 }}
-        >
-          <i className="ri-user-line" />
-        </div>
-      )}
-        <label className="ep-field-label mb-2">Employee Photo</label>
-        <input
-          ref={profilePhotoInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
-          className="form-control form-control-sm"
-          style={{ fontSize: 12 }}
-        />
-        <small className="text-muted mt-2" style={{ fontSize: 11, lineHeight: 1.35 }}>
-          JPG, PNG, WebP — Max 4MB · you'll be able to crop & zoom after picking
-        </small>
-        {profilePhotoFile && (
-          <div className="mt-3 d-flex gap-2 flex-wrap justify-content-center">
-            <button
-              type="button"
-              className="btn btn-sm btn-success"
-              onClick={handleSaveProfilePhoto}
-              disabled={savingPhoto}
-            >
-              {savingPhoto ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="ri-save-line me-1" />}
-              Save Photo
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              onClick={() => {
-                setProfilePhotoFile(null);
-                restoreSavedProfilePhoto();
-              }}
-            >
-              Cancel
-            </button>
+      {/* ── Column 1 — Photo + Security tiles, stacked ─────────────── */}
+      <Col xl={4} lg={4} md={5}>
+        <div className="d-flex flex-column gap-3 h-100">
+          {/* Profile Photo — compact horizontal: small circular avatar,
+              "Profile Photo" title + Choose file input + size hint. */}
+          <div
+            className="p-3"
+            style={{
+              border: '1px dashed rgba(99,102,241,0.35)',
+              borderRadius: 12,
+              background: 'rgba(99,102,241,0.04)',
+            }}
+          >
+            <div className="d-flex align-items-center gap-3">
+              {profilePhotoSrc ? (
+                <img
+                  src={profilePhotoSrc}
+                  alt="profile"
+                  className="rounded-circle flex-shrink-0"
+                  style={{ width: 52, height: 52, objectFit: 'cover', border: '2px solid var(--vz-card-bg)', boxShadow: '0 4px 12px rgba(15,23,42,0.12)' }}
+                />
+              ) : (
+                <div
+                  className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted flex-shrink-0"
+                  style={{ width: 52, height: 52, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 22 }}
+                >
+                  <i className="ri-user-line" />
+                </div>
+              )}
+              <div className="min-w-0 flex-grow-1">
+                <div className="fw-semibold mb-1" style={{ fontSize: 12.5 }}>Profile Photo</div>
+                <input
+                  ref={profilePhotoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
+                  className="form-control form-control-sm"
+                  style={{ fontSize: 11.5 }}
+                />
+              </div>
+            </div>
+            <small className="text-muted d-block mt-2" style={{ fontSize: 11, lineHeight: 1.35 }}>
+              JPG, PNG, WebP — Max 4MB · you'll be able to crop &amp; zoom after picking
+            </small>
+            {profilePhotoFile && (
+              <div className="mt-3 d-flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-success"
+                  onClick={handleSaveProfilePhoto}
+                  disabled={savingPhoto}
+                >
+                  {savingPhoto ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="ri-save-line me-1" />}
+                  Save Photo
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary"
+                  onClick={() => {
+                    setProfilePhotoFile(null);
+                    restoreSavedProfilePhoto();
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Change Password tile — opens the existing EpModal with the
+              strength meter and rule checklist. */}
+          <div
+            className="d-flex align-items-center gap-2 p-3"
+            style={{
+              border: '1px solid rgba(244,63,94,0.25)',
+              borderRadius: 12,
+              background: 'rgba(244,63,94,0.05)',
+            }}
+          >
+            <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c', width: 34, height: 34, fontSize: 16 }}>
+              <i className="ri-shield-keyhole-line" />
+            </span>
+            <div className="min-w-0 flex-grow-1">
+              <div className="fw-semibold" style={{ fontSize: 12 }}>Login Password</div>
+              <small className="text-muted" style={{ fontSize: 10.5, lineHeight: 1.3 }}>Rotate regularly. Email confirmation on every change.</small>
+            </div>
+            <Button
+              color="danger"
+              size="sm"
+              className="d-inline-flex align-items-center gap-1 flex-shrink-0"
+              style={{ fontSize: 11, padding: '4px 10px' }}
+              onClick={() => { resetPwForm(); setPwOpen(true); }}
+            >
+              <i className="ri-lock-password-line" /> Change
+            </Button>
+          </div>
+
+          {/* Face Registration tile — opens FaceRegistrationModal so the
+              employee can self-enrol their face for /clock-in attendance. */}
+          <div
+            className="d-flex align-items-center gap-2 p-3"
+            style={{
+              border: '1px solid rgba(99,102,241,0.25)',
+              borderRadius: 12,
+              background: 'rgba(99,102,241,0.05)',
+            }}
+          >
+            <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca', width: 34, height: 34, fontSize: 16 }}>
+              <i className="ri-user-smile-line" />
+            </span>
+            <div className="min-w-0 flex-grow-1">
+              <div className="fw-semibold" style={{ fontSize: 12 }}>Face Biometric</div>
+              <small className="text-muted" style={{ fontSize: 10.5, lineHeight: 1.3 }}>Register once to clock in without a card or password.</small>
+            </div>
+            <Button
+              color="primary"
+              size="sm"
+              className="d-inline-flex align-items-center gap-1 flex-shrink-0"
+              style={{ fontSize: 11, padding: '4px 10px' }}
+              onClick={() => setFaceRegOpen(true)}
+            >
+              <i className="ri-camera-line" /> Register
+            </Button>
+          </div>
         </div>
       </Col>
-      <Col lg={9} md={8}>
+
+      {/* ── Column 2 — Personal information fields ───────────────── */}
+      <Col xl={8} lg={8} md={7}>
         <Row className="g-4">
           <Col md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{empDetail?.first_name || (employee?.name || '').split(' ')[0] || '—'}</div></Col>
           <Col md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">{empDetail?.middle_name || '—'}</div></Col>
@@ -2212,56 +2291,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </Col>
           </Row>
 
-          {/* Security — Change Password section. Sits at the bottom of the
-              profile tab so identity/contact/address details remain the top
-              of fold. Backend endpoint already enforces the password policy
-              (min:8, no last-3 reuse) and sends a confirmation email. */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #f43f5e' }}>
-            <div
-              className="d-flex align-items-center gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(244,63,94,0.18)',
-                background: 'linear-gradient(135deg, rgba(244,63,94,0.12) 0%, rgba(244,63,94,0.03) 60%, rgba(244,63,94,0.01) 100%)',
-              }}
-            >
-              <span className="ep-section-icon" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c' }}>
-                <i className="ri-shield-keyhole-line" />
-              </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Security</h6>
-            </div>
-            <div className="px-3 py-3 d-flex align-items-center justify-content-between flex-wrap gap-3">
-              <div>
-                <div className="fw-semibold" style={{ fontSize: 13 }}>Login password</div>
-                <small className="text-muted">
-                  Rotate your password regularly. We'll email you a confirmation each time it changes.
-                </small>
-              </div>
-              <Button
-                color="danger"
-                size="sm"
-                className="d-inline-flex align-items-center gap-2"
-                onClick={() => { resetPwForm(); setPwOpen(true); }}
-              >
-                <i className="ri-lock-password-line" /> Change Password
-              </Button>
-            </div>
-            <div className="px-3 py-3 d-flex align-items-center justify-content-between flex-wrap gap-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-              <div>
-                <div className="fw-semibold" style={{ fontSize: 13 }}>Face biometric for attendance</div>
-                <small className="text-muted">
-                  Register your face once so you can clock in / out from <a href="/clock-in">/clock-in</a> without a card or password.
-                </small>
-              </div>
-              <Button
-                color="primary"
-                size="sm"
-                className="d-inline-flex align-items-center gap-2"
-                onClick={() => setFaceRegOpen(true)}
-              >
-                <i className="ri-user-smile-line" /> Register Face
-              </Button>
-            </div>
-          </div>
         </>
       )}
 
