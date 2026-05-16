@@ -727,9 +727,6 @@ function ExportCandidatesModal({
             <h5 className="mb-0">Export Candidates</h5>
             <div className="cand-export-head-sub">Download candidate data as an Excel file</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-export-close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
@@ -947,9 +944,6 @@ function ImportCandidatesModal({
             <h5 className="mb-0">Import Candidates</h5>
             <div className="cand-import-head-sub">Upload an Excel or CSV file to bulk-add candidates</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-import-close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
@@ -1064,9 +1058,6 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
             <h5 className="mb-0">Sample Import Format</h5>
             <div className="cand-sample-head-sub">Download an Excel template to bulk-upload candidates</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-sample-close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
@@ -1537,9 +1528,6 @@ function CandidateFormModal({
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>{editing ? 'Update applicant profile' : 'Register a new applicant profile in the pipeline'}</div>
               </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn">
-              <i className="ri-close-line" />
-            </button>
           </div>
         </div>
 
