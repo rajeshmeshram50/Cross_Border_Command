@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\FaceBiometricController;
 use App\Http\Controllers\Api\CandidateController;
 use App\Http\Controllers\Api\ClientController;
+use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
 use App\Http\Controllers\Api\EmployeeController;
@@ -40,8 +41,16 @@ use Illuminate\Support\Facades\Route;
 // Public — onboarding flow. Token is the only auth: GET previews the invite,
 // POST submits the candidate's completed form. Both fail with 410 if the
 // invite has been used / cancelled / expired.
-Route::get ('/onboarding/{token}',          [OnboardingController::class, 'show']);
-Route::post('/onboarding/{token}/complete', [OnboardingController::class, 'complete']);
+//
+// Rate-limited per IP so an attacker can't brute-force the 64-char token or
+// trigger email/DB churn by spamming the submit endpoint. 30 req/min covers
+// a candidate opening the link, filling the form (which fires several GETs
+// to repopulate masters) and submitting — well under the limit; only abuse
+// scenarios hit it.
+Route::middleware('throttle:30,1')->group(function () {
+    Route::get ('/onboarding/{token}',          [OnboardingController::class, 'show']);
+    Route::post('/onboarding/{token}/complete', [OnboardingController::class, 'complete']);
+});
 
 // Public
 Route::post('/login', [AuthController::class, 'login']);
@@ -75,6 +84,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     // Plans (admin CRUD)
     Route::apiResource('plans', PlanController::class);
+
+    // Sales Matrix → Customers (stub) — backs the design at
+    // public/sales/customers.html. No DB yet; CustomerController returns
+    // the same mock dataset the front-end uses inline. Swap for Eloquent
+    // when the customers table migration lands.
+    Route::apiResource('customers', CustomerController::class)
+        ->only(['index', 'show', 'store', 'update', 'destroy']);
 
     // Organization Types (master data — super admin manages; all auth users can list)
     Route::apiResource('organization-types', OrganizationTypeController::class)

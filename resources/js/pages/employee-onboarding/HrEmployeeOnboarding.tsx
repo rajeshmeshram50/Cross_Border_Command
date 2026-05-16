@@ -804,7 +804,7 @@ export default function HrEmployeeOnboarding() {
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th scope="col" className="ps-3" style={{ width: 60 }}>Sr. No.</th>
+                        <th scope="col" className="ps-3" style={{ width: 60 }}>Sr No</th>
                         <th scope="col">Employee</th>
                         <th scope="col">Emp ID</th>
                         <th scope="col">Department</th>

@@ -21,8 +21,9 @@ class ModuleSeeder extends Seeder
             ['name' => 'Permissions', 'slug' => 'permissions', 'icon' => 'ShieldCheck', 'sort_order' => 7,  'is_default' => false, 'description' => 'Access control'],
             ['name' => 'Master',      'slug' => 'master',      'icon' => 'Database',    'sort_order' => 8,  'is_default' => false, 'description' => 'Master data control center'],
             ['name' => 'HR',          'slug' => 'hr',          'icon' => 'Users',       'sort_order' => 9,  'is_default' => false, 'description' => 'Human resources, payroll, attendance & policies'],
-            ['name' => 'Settings',    'slug' => 'settings',    'icon' => 'Settings',    'sort_order' => 10, 'is_default' => false, 'description' => 'System settings'],
-            ['name' => 'Profile',     'slug' => 'profile',     'icon' => 'UserCircle',  'sort_order' => 11, 'is_default' => true],
+            ['name' => 'Sales Matrix','slug' => 'sales',       'icon' => 'TrendingUp',  'sort_order' => 10, 'is_default' => false, 'description' => 'Sales insights, customer masters & opportunity operations'],
+            ['name' => 'Settings',    'slug' => 'settings',    'icon' => 'Settings',    'sort_order' => 11, 'is_default' => false, 'description' => 'System settings'],
+            ['name' => 'Profile',     'slug' => 'profile',     'icon' => 'UserCircle',  'sort_order' => 12, 'is_default' => true],
         ];
 
         foreach ($topLevel as $mod) {
@@ -216,6 +217,60 @@ class ModuleSeeder extends Seeder
                     ['slug' => $item['slug']],
                     $item + [
                         'parent_id'  => $hrCatIds[$catSlug],
+                        'sort_order' => $i + 1,
+                        'is_active'  => true,
+                        'is_default' => false,
+                    ]
+                );
+            }
+        }
+
+        // Sales Matrix tree — 3 grouping categories + 8 leaves. Matches the
+        // top-nav mega-menu (Sales Insights & Productivity / Sales Core
+        // Masters / Sales Matrix Operations). Permissions are explicit only:
+        // super_admin grants Sales perms to client_admin, who grants to
+        // branch_user, who grants to employees — same cascade the existing
+        // PermissionController enforces. No backfill copy from a peer module.
+        $sales = Module::where('slug', 'sales')->first();
+
+        $salesCategories = [
+            ['name' => 'Sales Insights & Productivity', 'slug' => 'sales.insights',  'icon' => 'BarChart3', 'description' => 'Sales analytics, productivity tracker & P2P summary'],
+            ['name' => 'Sales Core (Masters)',          'slug' => 'sales.core',      'icon' => 'Database',  'description' => 'Customer, consignee & lead acknowledgement masters'],
+            ['name' => 'Sales Matrix Operations',       'slug' => 'sales.operations','icon' => 'Activity',  'description' => 'My Workplace & quotation/PI tracking'],
+        ];
+
+        $salesCatIds = [];
+        foreach ($salesCategories as $i => $cat) {
+            $row = Module::updateOrCreate(
+                ['slug' => $cat['slug']],
+                $cat + ['parent_id' => $sales->id, 'sort_order' => $i + 1, 'is_active' => true, 'is_default' => false]
+            );
+            $salesCatIds[$cat['slug']] = $row->id;
+        }
+
+        $salesLeaves = [
+            'sales.insights' => [
+                ['name' => 'Sales Analytics',          'slug' => 'sales.analytics',            'icon' => 'BarChart3',     'description' => 'Sales dashboard, diagnosis & resolution center'],
+                ['name' => 'Productivity Tracker',     'slug' => 'sales.productivity_tracker', 'icon' => 'ClipboardCheck','description' => 'Manage reminders, meetings & to-do activities'],
+                ['name' => 'Procure to Pay (P2P) Summary', 'slug' => 'sales.p2p_summary',      'icon' => 'ShoppingBag',   'description' => 'Track opportunity-wise product sourcing summary'],
+            ],
+            'sales.core' => [
+                ['name' => 'Customers',                'slug' => 'sales.customers',     'icon' => 'UserSquare', 'description' => 'Manage customer master records'],
+                ['name' => 'Consignee',                'slug' => 'sales.consignee',     'icon' => 'Truck',      'description' => 'Manage consignee master records'],
+                ['name' => 'Lead Acknowledgement Master', 'slug' => 'sales.lead_ack_master', 'icon' => 'BadgeCheck', 'description' => 'Manage Lead Acknowledgement reasons'],
+            ],
+            'sales.operations' => [
+                ['name' => 'My Workplace',             'slug' => 'sales.workplace',        'icon' => 'Activity', 'description' => 'Manage active sales opportunities'],
+                ['name' => 'Quotation Vs PI History',  'slug' => 'sales.quotation_vs_pi',  'icon' => 'FileText', 'description' => 'Track quotation & PI conversion history'],
+            ],
+        ];
+
+        foreach ($salesLeaves as $catSlug => $items) {
+            foreach ($items as $i => $item) {
+                Module::updateOrCreate(
+                    ['slug' => $item['slug']],
+                    $item + [
+                        'parent_id'  => $salesCatIds[$catSlug],
                         'sort_order' => $i + 1,
                         'is_active'  => true,
                         'is_default' => false,

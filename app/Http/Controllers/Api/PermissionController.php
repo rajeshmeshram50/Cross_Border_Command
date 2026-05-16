@@ -134,17 +134,24 @@ class PermissionController extends Controller
             'permissions.*.can_approve' => 'boolean',
         ]);
 
-        // Authorization
+        // Authorization — per spec §5 "Grant scope" table:
+        //   super_admin       → client_admin only
+        //   client_admin      → branch_user only  (NOT employees)
+        //   main_branch_user  → branch_user + employee under client
+        //   sub_branch_user   → employees in same branch (not implemented here yet)
         if ($authUser->isSuperAdmin()) {
-            if ($targetUser->isSuperAdmin()) {
-                return response()->json(['message' => 'Cannot assign permissions to super admin'], 403);
+            if (!$targetUser->isClientAdmin()) {
+                return response()->json([
+                    'message' => 'Super admin can only assign permissions to client admins. For branch-user / employee grants, the tenant\'s client_admin owns the Permissions page.',
+                ], 403);
             }
         } elseif ($authUser->isClientAdmin() || $authUser->isMainBranchUser()) {
-            // Client admin AND main branch user both grant to any
-            // branch_user/employee under their client (excluding self). Main
-            // branch sees sibling sub-branches per the tenant model, so it
-            // also grants across them — matching what HR Employees surfaces.
-            $manageableTypes = ['branch_user', 'employee'];
+            // Client admin = branch_user only. Main branch user can also
+            // grant to employees (they're the tenant's HR proxy and surface
+            // sub-branches in HR Employees).
+            $manageableTypes = $authUser->isClientAdmin()
+                ? ['branch_user']
+                : ['branch_user', 'employee'];
 
             // Adopt orphan targets (NULL client_id — typically employees that
             // super_admin created without tenant attribution) into the

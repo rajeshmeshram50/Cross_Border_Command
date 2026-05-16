@@ -59,7 +59,11 @@ class ExitController extends Controller
         return $request->validate([
             'exit_type'             => 'nullable|in:Resignation,Termination,Retirement,End of Contract,Absconding,Other',
             'initiated_by'          => 'nullable|in:Employee,HR,Manager',
-            'reason_for_exit'       => 'nullable|in:Better Opportunity,Personal Reasons,Higher Studies,Relocation,Health,Performance,Other',
+            // `reason_for_exit` is a free-text field on the form (the HR
+            // can describe the reason in their own words), so we don't
+            // gate it against a fixed enum. Cap matches the column size
+            // on employee_exits.reason_for_exit (varchar(60)).
+            'reason_for_exit'       => 'nullable|string|max:60',
             'other_reason'          => 'nullable|string|max:255',
             'notice_date'           => 'nullable|date',
             'last_working_day'      => 'nullable|date|after_or_equal:notice_date',

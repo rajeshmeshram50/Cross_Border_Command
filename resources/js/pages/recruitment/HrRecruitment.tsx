@@ -718,7 +718,7 @@ export default function HrRecruitment() {
                   <table className="rec-list-table align-middle table-nowrap mb-0">
                     <thead>
                       <tr>
-                        <th scope="col" className="ps-3 text-center" style={{ width: 50 }}>SR.</th>
+                        <th scope="col" className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
                         <th scope="col" style={{ width: 90 }}>REC ID</th>
                         <th scope="col">Job Title</th>
                         <th scope="col" style={{ width: 110 }}>Department</th>
@@ -1945,9 +1945,6 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
                 </div>
               </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
-              <i className="ri-close-line" style={{ fontSize: 17 }} />
-            </button>
           </div>
         </div>
 

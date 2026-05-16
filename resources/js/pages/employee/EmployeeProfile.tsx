@@ -1202,8 +1202,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   // Categories pulled from the expense_category master so the dropdown stays
   // in sync with what admins configure (and so we save the master id, not a
-  // free-text label).
-  const [claimCategories, setClaimCategories] = useState<{ id: number; name: string }[]>([]);
+  // free-text label). `monthly_limit` and `yearly_limit` are also fetched
+  // so we can warn the user on the form when a draft amount exceeds the
+  // per-category budget the admin set in Master > Expense Categories.
+  type ClaimCategory = { id: number; name: string; monthly_limit: number | null; yearly_limit: number | null };
+  const [claimCategories, setClaimCategories] = useState<ClaimCategory[]>([]);
   useEffect(() => {
     if (!claimOpen) return;
     api.get('/master/expense_category')
@@ -1212,7 +1215,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         setClaimCategories(
           rows
             .filter((r: any) => (r.status ?? 'Active') === 'Active')
-            .map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') })),
+            .map((r: any) => ({
+              id: Number(r.id),
+              name: String(r.name ?? ''),
+              monthly_limit: r.monthly_limit != null && r.monthly_limit !== '' ? Number(r.monthly_limit) : null,
+              yearly_limit:  r.yearly_limit  != null && r.yearly_limit  !== '' ? Number(r.yearly_limit)  : null,
+            })),
         );
       })
       .catch(() => setClaimCategories([]));
@@ -1222,6 +1230,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     const num = Number(id);
     const hit = claimCategories.find(c => c.id === num);
     return hit ? hit.name : String(id);
+  };
+  const categoryById = (id: string | number | undefined): ClaimCategory | null => {
+    if (id === undefined || id === '' || id === null) return null;
+    const num = Number(id);
+    return claimCategories.find(c => c.id === num) || null;
   };
 
   // Multi-draft tab support — every form-render reads/writes the active draft
@@ -1256,14 +1269,40 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   });
   const [claimDrafts, setClaimDrafts] = useState<ClaimDraft[]>([blankDraft()]);
   const [activeClaimIdx, setActiveClaimIdx] = useState(0);
-  // Each time the modal re-opens, start with one fresh draft.
+  // Local-storage key for the Save Draft feature. Scoped per employee so
+  // viewing two different profiles doesn't cross-contaminate drafts.
+  const claimDraftKey = `cbc.expense.draft.${employeeId || 'me'}`;
+  // Each time the modal re-opens, restore from localStorage if a draft is
+  // saved there; otherwise start with one fresh draft. Restoring lets HR
+  // type a couple of lines, hit Save Draft, close the modal, and pick
+  // them up later — same behavior other "Save Draft" flows have.
   useEffect(() => {
     if (claimOpen) {
-      setClaimDrafts([blankDraft()]);
+      let restored: ClaimDraft[] | null = null;
+      try {
+        const raw = localStorage.getItem(claimDraftKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) restored = parsed as ClaimDraft[];
+        }
+      } catch { /* ignore — fall through to a blank draft */ }
+      setClaimDrafts(restored || [blankDraft()]);
       setActiveClaimIdx(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimOpen]);
+
+  // Save Draft handler — persists the current claimDrafts array to local
+  // storage so the user can close the modal and resume later. Doesn't hit
+  // the backend (the row is created on actual Submit).
+  const handleSaveDraft = () => {
+    try {
+      localStorage.setItem(claimDraftKey, JSON.stringify(claimDrafts));
+      toast.success('Draft saved', 'Your in-progress claim will be here when you re-open the form.');
+    } catch {
+      toast.error('Could not save draft', 'Browser storage is full or blocked.');
+    }
+  };
   const draft = claimDrafts[activeClaimIdx] ?? blankDraft();
   const updateDraft = (patch: Partial<ClaimDraft>) =>
     setClaimDrafts(d => d.map((x, i) => (i === activeClaimIdx ? { ...x, ...patch } : x)));
@@ -1393,13 +1432,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const photo = employee?.photoUrl || null;
+    // Prefer the freshly-fetched empDetail.photo_url over the lightweight
+    // employee prop passed via navigation state — the prop can be stale if
+    // the user uploaded a new photo elsewhere (HR Employees / Onboarding)
+    // since opening this profile.
+    const photo = empDetail?.photo_url || employee?.photoUrl || null;
     const resolved = photo ? resolveFileUrl(photo) : null;
     setProfilePhotoPreview(prev => (profilePhotoFile ? prev : resolved));
-  }, [employee?.photoUrl, profilePhotoFile]);
+  }, [empDetail?.photo_url, employee?.photoUrl, profilePhotoFile]);
 
   const restoreSavedProfilePhoto = () => {
-    const saved = employee?.photoUrl || null;
+    const saved = empDetail?.photo_url || employee?.photoUrl || null;
     setProfilePhotoPreview(saved ? resolveFileUrl(saved) : null);
   };
 
@@ -1466,6 +1509,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       });
       const nextUrl = res?.data?.document?.url;
       setProfilePhotoPreview(nextUrl ? resolveFileUrl(nextUrl) : profilePhotoPreview);
+      // Mirror the new URL into empDetail so the avatar source stays in
+      // sync without waiting for the next /employees/{id} refetch.
+      if (nextUrl) {
+        setEmpDetail((prev: any) => prev ? { ...prev, photo_url: nextUrl } : prev);
+      }
       setProfilePhotoFile(null);
       toast.success('Photo updated', 'Profile picture has been changed.');
     } catch (err: any) {
@@ -1475,7 +1523,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
   };
 
-  const profilePhotoSrc = profilePhotoPreview || (employee?.photoUrl ? resolveFileUrl(employee.photoUrl) : null);
+  const profilePhotoSrc =
+    profilePhotoPreview
+    || (empDetail?.photo_url ? resolveFileUrl(empDetail.photo_url) : null)
+    || (employee?.photoUrl   ? resolveFileUrl(employee.photoUrl)   : null);
   // "Is this the current user's own profile?" — first try numeric id match,
   // fall back to the linked Employee.id. We don't have the current user's
   // emp_code in /me, so when the URL is a code we trust the backend's later
@@ -1533,12 +1584,50 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   // POST every draft as multipart/form-data so the optional attachments[]
   // upload alongside. On success, clear drafts, close modal, refresh list.
+  //
+  // `claimSubmitting` is a re-entrancy guard — a fast double-click on the
+  // Submit button used to fire the loop twice in parallel, creating two
+  // copies of every draft. The flag flips immediately, the button is
+  // disabled while it's true, and try/finally guarantees we always clear
+  // it (success, failure, or the user closing the modal mid-flight).
+  const [claimSubmitting, setClaimSubmitting] = useState(false);
   const submitAllDrafts = async () => {
-    const valid = claimDrafts.filter(d => d.title.trim() && d.amount.trim());
-    if (valid.length === 0) {
-      setClaimOpen(false);
+    if (claimSubmitting) return;
+    // Per-draft validation — block submit when ANY draft is missing a
+    // required field OR exceeds its category's monthly budget. Used to
+    // silently close the modal on an empty form, which the user reported
+    // as "form brings us back to profile view".
+    const errors: string[] = [];
+    claimDrafts.forEach((d, idx) => {
+      const label = `Claim ${idx + 1}`;
+      const title = d.title.trim();
+      const amt   = Number(String(d.amount).replace(/[^\d.]/g, ''));
+      if (!title)             errors.push(`${label}: Expense title is required`);
+      if (!d.amount.trim() || !Number.isFinite(amt) || amt <= 0) {
+        errors.push(`${label}: Amount must be greater than 0`);
+      }
+      if (!d.date)            errors.push(`${label}: Expense date is required`);
+      if (!d.category)        errors.push(`${label}: Category is required`);
+      // Budget cap — categoryById carries the monthly_limit configured in
+      // Master > Expense Categories. We treat it as a hard ceiling per
+      // claim: any single claim that already exceeds the monthly cap is
+      // an obvious error and the server would reject it after manager
+      // approval anyway, so block it now.
+      const cat = categoryById(d.category);
+      if (cat?.monthly_limit && Number.isFinite(amt) && amt > cat.monthly_limit) {
+        errors.push(`${label}: Amount ₹${amt.toLocaleString()} exceeds the "${cat.name}" monthly budget of ₹${cat.monthly_limit.toLocaleString()}.`);
+      }
+    });
+    if (errors.length > 0) {
+      toast.error('Fix the highlighted issues', errors.slice(0, 3).join('. '));
       return;
     }
+    const valid = claimDrafts.filter(d => d.title.trim() && d.amount.trim());
+    if (valid.length === 0) {
+      toast.warning('Nothing to submit', 'Add at least one expense before submitting.');
+      return;
+    }
+    setClaimSubmitting(true);
     try {
       for (const d of valid) {
         const fd = new FormData();
@@ -1567,11 +1656,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         });
       }
       toast.success('Claim submitted', `${valid.length} claim${valid.length > 1 ? 's' : ''} sent for approval`);
+      // Wipe the local draft cache so re-opening the modal after submit
+      // doesn't restore the just-submitted rows.
+      try { localStorage.removeItem(claimDraftKey); } catch { /* ignore */ }
       setClaimOpen(false);
       await refreshClaims();
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Could not submit the claim. Please try again.';
       toast.error('Submit failed', msg);
+    } finally {
+      setClaimSubmitting(false);
     }
   };
   
@@ -1596,19 +1690,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
   };
 
-  // Live counts for the Evidence Vault hero KPIs.
-  const allVaultDocs = [
-    ...VAULT_EMPLOYEE.flatMap(s => s.docs.map(d => ({ status: d.status }))),
-    ...VAULT_ORG.flatMap(s => s.docs.map(d => ({ status: d.status }))),
-  ];
+  // Live counts for the Evidence Vault hero KPIs and tab badges. Used to
+  // be derived from the hardcoded VAULT_EMPLOYEE / VAULT_ORG mock arrays
+  // (which never matched the actual rows shown in the body); now read
+  // directly from the same `uploadedDocs` + `signedDocs` arrays the
+  // tables render, so the header always agrees with the body.
+  const verifiedUploadedCount = uploadedDocs.filter(d => d.status === 'verified').length;
+  const pendingUploadedCount  = uploadedDocs.filter(d => d.status !== 'verified').length;
+  const signedCompletedCount  = signedDocs.filter(d => String(d.status).toLowerCase() === 'completed').length;
+  const employeeDocCount       = uploadedDocs.length;
+  const organizationalDocCount = signedDocs.length;
   const vaultCounts = {
-    total:    allVaultDocs.length,
-    verified: allVaultDocs.filter(d => d.status === 'Verified').length,
-    pending:  allVaultDocs.filter(d => d.status === 'Pending').length,
-    signed:   allVaultDocs.filter(d => d.status === 'Signed' || d.status === 'Sent').length,
+    total:    employeeDocCount + organizationalDocCount,
+    verified: verifiedUploadedCount,
+    pending:  pendingUploadedCount,
+    signed:   signedCompletedCount,
   };
-  const employeeDocCount      = VAULT_EMPLOYEE.reduce((n, s) => n + s.docs.length, 0);
-  const organizationalDocCount = VAULT_ORG.reduce((n, s) => n + s.docs.length, 0);
 
   const TABS: { key: TabKey; label: string; icon: string; color: string }[] = [
     { key: 'profile',    label: 'Profile Details', icon: 'ri-user-line',                color: 'linear-gradient(135deg,#6366f1,#8b5cf6)' },
@@ -1684,18 +1781,23 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-more-2-fill" />
               </button>
             </div>
-            <p className="mb-1" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em' }}>{employeeId}</p>
+            <p className="mb-1" style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em' }}>{empDetail?.emp_code || employeeId}</p>
             <p className="mb-2" style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12.5 }}>
-              {employee?.department || 'Accounts'}
+              {/* Hero meta line — prefer the freshly-fetched empDetail
+                  relations so newly-edited Department / Designation / work
+                  type are reflected immediately, instead of the stale
+                  navigation-state row that previously fell back to
+                  hardcoded "Accounts" / "Associate Engineer" / "Full-time". */}
+              {empDetail?.department?.name || employee?.department || '—'}
               <span className="mx-2" style={{ opacity: 0.5 }}>·</span>
-              {employee?.designation || 'Associate Engineer'}
+              {empDetail?.designation?.name || employee?.designation || '—'}
               <span className="mx-2" style={{ opacity: 0.5 }}>·</span>
-              Full-time
+              {empDetail?.worker_type || empDetail?.work_type || empDetail?.time_type || '—'}
             </p>
             <div className="d-flex gap-2 flex-wrap mb-3">
-              {employee?.primaryRole && (
+              {(empDetail?.primary_role?.name || employee?.primaryRole) && (
                 <span className="ep-hero-pill ep-hero-pill-blue">
-                  <i className="ri-suitcase-line" /> {employee.primaryRole}
+                  <i className="ri-suitcase-line" /> {empDetail?.primary_role?.name || employee?.primaryRole}
                 </span>
               )}
               {ancillaryList.map(r => (
@@ -1711,28 +1813,32 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className="ri-mail-line" />
                 <div>
                   <span className="ep-hero-meta-label">Email</span>{' '}
-                  <span className="ep-hero-meta-value">{employee?.email || 'aarav.kale@enterprise.com'}</span>
+                  <span className="ep-hero-meta-value">{empDetail?.email || employee?.email || '—'}</span>
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-user-line" />
                 <div>
                   <span className="ep-hero-meta-label">Manager</span>{' '}
-                  <span className="ep-hero-meta-value">{employee?.manager || '—'}</span>
+                  <span className="ep-hero-meta-value">{(() => {
+                    const m = empDetail?.reporting_manager;
+                    if (!m) return employee?.manager || '—';
+                    return m.display_name || [m.first_name, m.middle_name, m.last_name].filter(Boolean).join(' ') || '—';
+                  })()}</span>
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-phone-line" />
                 <div>
                   <span className="ep-hero-meta-label">Mobile</span>{' '}
-                  <span className="ep-hero-meta-value">9635203533</span>
+                  <span className="ep-hero-meta-value">{empDetail?.mobile || '—'}</span>
                 </div>
               </div>
               <div className="ep-hero-meta">
                 <i className="ri-calendar-line" />
                 <div>
                   <span className="ep-hero-meta-label">Joined</span>{' '}
-                  <span className="ep-hero-meta-value">03-Nov-2023</span>
+                  <span className="ep-hero-meta-value">{empDetail?.date_of_joining ? fmtDate(empDetail.date_of_joining) : '—'}</span>
                 </div>
               </div>
             </div>
@@ -1814,79 +1920,147 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Personal Information</h6>
   </div>
   <div className="px-3 py-3">
-    <Row className="g-4 align-items-stretch">
-      <Col lg={3} md={4}>
+    {/* Row 1 — three action tiles side by side: Profile Photo · Login
+        Password · Face Biometric. Each takes 1/3 of the width on md+
+        and stacks on smaller screens. Tiles are vertically aligned (no
+        h-100 stretch) and use compact padding so the row stays low. */}
+    <Row className="g-3 mb-3 align-items-center">
+      {/* Profile Photo tile */}
+      <Col md={4} sm={12}>
         <div
-          className="h-100 d-flex flex-column align-items-center justify-content-center text-center p-3"
+          className="d-flex align-items-center gap-2"
           style={{
             border: '1px dashed rgba(99,102,241,0.35)',
             borderRadius: 12,
             background: 'rgba(99,102,241,0.04)',
+            padding: '8px 12px',
           }}
         >
-      {profilePhotoSrc ? (
-        <img
-          src={profilePhotoSrc}
-          alt="profile"
-          className="rounded-circle mb-3"
-          style={{ width: 112, height: 112, objectFit: 'cover', border: '3px solid var(--vz-card-bg)', boxShadow: '0 8px 24px rgba(15,23,42,0.16)' }}
-        />
-      ) : (
-        <div
-          className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted mb-3"
-          style={{ width: 112, height: 112, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 38 }}
-        >
-          <i className="ri-user-line" />
-        </div>
-      )}
-        <label className="ep-field-label mb-2">Employee Photo</label>
-        <input
-          ref={profilePhotoInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
-          className="form-control form-control-sm"
-          style={{ fontSize: 12 }}
-        />
-        <small className="text-muted mt-2" style={{ fontSize: 11, lineHeight: 1.35 }}>
-          JPG, PNG, WebP — Max 4MB · you'll be able to crop & zoom after picking
-        </small>
-        {profilePhotoFile && (
-          <div className="mt-3 d-flex gap-2 flex-wrap justify-content-center">
-            <button
-              type="button"
-              className="btn btn-sm btn-success"
-              onClick={handleSaveProfilePhoto}
-              disabled={savingPhoto}
+          {profilePhotoSrc ? (
+            <img
+              src={profilePhotoSrc}
+              alt="profile"
+              className="rounded-circle flex-shrink-0"
+              style={{ width: 38, height: 38, objectFit: 'cover', border: '2px solid var(--vz-card-bg)' }}
+            />
+          ) : (
+            <div
+              className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted flex-shrink-0"
+              style={{ width: 38, height: 38, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 16 }}
             >
-              {savingPhoto ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="ri-save-line me-1" />}
-              Save Photo
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary"
-              onClick={() => {
-                setProfilePhotoFile(null);
-                restoreSavedProfilePhoto();
-              }}
-            >
-              Cancel
-            </button>
+              <i className="ri-user-line" />
+            </div>
+          )}
+          <div className="min-w-0 flex-grow-1">
+            <div className="fw-semibold" style={{ fontSize: 12 }}>Profile Photo</div>
+            <input
+              ref={profilePhotoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
+              className="form-control form-control-sm"
+              style={{ fontSize: 11, padding: '2px 6px', height: 26 }}
+            />
           </div>
-        )}
+          {profilePhotoFile && (
+            <div className="d-flex gap-1 flex-shrink-0">
+              <button
+                type="button"
+                className="btn btn-sm btn-success"
+                style={{ fontSize: 10.5, padding: '3px 8px' }}
+                onClick={handleSaveProfilePhoto}
+                disabled={savingPhoto}
+                title="Save photo"
+              >
+                {savingPhoto ? <span className="spinner-border spinner-border-sm" style={{ width: 10, height: 10 }} /> : <i className="ri-save-line" />}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                style={{ fontSize: 10.5, padding: '3px 8px' }}
+                onClick={() => {
+                  setProfilePhotoFile(null);
+                  restoreSavedProfilePhoto();
+                }}
+                title="Cancel"
+              >
+                <i className="ri-close-line" />
+              </button>
+            </div>
+          )}
         </div>
       </Col>
-      <Col lg={9} md={8}>
-        <Row className="g-4">
-          <Col md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{empDetail?.first_name || (employee?.name || '').split(' ')[0] || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">{empDetail?.middle_name || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{empDetail?.last_name || (employee?.name || '').split(' ').slice(1).join(' ') || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{empDetail?.display_name || employee?.name || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.date_of_birth)}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">{empDetail?.gender || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">{empDetail?.nationality_country?.name || '—'}</div></Col>
-        </Row>
+
+      {/* Change Password tile */}
+      <Col md={4} sm={12}>
+        <div
+          className="d-flex align-items-center gap-2"
+          style={{
+            border: '1px solid rgba(244,63,94,0.25)',
+            borderRadius: 12,
+            background: 'rgba(244,63,94,0.05)',
+            padding: '8px 12px',
+          }}
+        >
+          <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c', width: 30, height: 30, fontSize: 14 }}>
+            <i className="ri-shield-keyhole-line" />
+          </span>
+          <div className="min-w-0 flex-grow-1">
+            <div className="fw-semibold" style={{ fontSize: 12 }}>Login Password</div>
+            <small className="text-muted" style={{ fontSize: 10, lineHeight: 1.2 }}>Rotate regularly. Email on change.</small>
+          </div>
+          <Button
+            color="danger"
+            size="sm"
+            className="d-inline-flex align-items-center gap-1 flex-shrink-0"
+            style={{ fontSize: 10.5, padding: '3px 10px' }}
+            onClick={() => { resetPwForm(); setPwOpen(true); }}
+          >
+            <i className="ri-lock-password-line" /> Change
+          </Button>
+        </div>
       </Col>
+
+      {/* Face Biometric tile */}
+      <Col md={4} sm={12}>
+        <div
+          className="d-flex align-items-center gap-2"
+          style={{
+            border: '1px solid rgba(99,102,241,0.25)',
+            borderRadius: 12,
+            background: 'rgba(99,102,241,0.05)',
+            padding: '8px 12px',
+          }}
+        >
+          <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca', width: 30, height: 30, fontSize: 14 }}>
+            <i className="ri-user-smile-line" />
+          </span>
+          <div className="min-w-0 flex-grow-1">
+            <div className="fw-semibold" style={{ fontSize: 12 }}>Face Biometric</div>
+            <small className="text-muted" style={{ fontSize: 10, lineHeight: 1.2 }}>Register once to clock in.</small>
+          </div>
+          <Button
+            color="primary"
+            size="sm"
+            className="d-inline-flex align-items-center gap-1 flex-shrink-0"
+            style={{ fontSize: 10.5, padding: '3px 10px' }}
+            onClick={() => setFaceRegOpen(true)}
+          >
+            <i className="ri-camera-line" /> Register
+          </Button>
+        </div>
+      </Col>
+    </Row>
+
+    {/* Row 2 — seven identity fields in a single horizontal row on lg+. */}
+    <Row className="g-4">
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{empDetail?.first_name || (employee?.name || '').split(' ')[0] || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">{empDetail?.middle_name || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{empDetail?.last_name || (employee?.name || '').split(' ').slice(1).join(' ') || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{empDetail?.display_name || employee?.name || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.date_of_birth)}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">{empDetail?.gender || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">{empDetail?.nationality_country?.name || '—'}</div></Col>
     </Row>
   </div>
 </div>
@@ -2197,56 +2371,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </Col>
           </Row>
 
-          {/* Security — Change Password section. Sits at the bottom of the
-              profile tab so identity/contact/address details remain the top
-              of fold. Backend endpoint already enforces the password policy
-              (min:8, no last-3 reuse) and sends a confirmation email. */}
-          <div className="ep-section-card-flat ep-section-card mb-3" style={{ borderTop: '3px solid #f43f5e' }}>
-            <div
-              className="d-flex align-items-center gap-3 px-3 py-2"
-              style={{
-                borderBottom: '1px solid rgba(244,63,94,0.18)',
-                background: 'linear-gradient(135deg, rgba(244,63,94,0.12) 0%, rgba(244,63,94,0.03) 60%, rgba(244,63,94,0.01) 100%)',
-              }}
-            >
-              <span className="ep-section-icon" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c' }}>
-                <i className="ri-shield-keyhole-line" />
-              </span>
-              <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Security</h6>
-            </div>
-            <div className="px-3 py-3 d-flex align-items-center justify-content-between flex-wrap gap-3">
-              <div>
-                <div className="fw-semibold" style={{ fontSize: 13 }}>Login password</div>
-                <small className="text-muted">
-                  Rotate your password regularly. We'll email you a confirmation each time it changes.
-                </small>
-              </div>
-              <Button
-                color="danger"
-                size="sm"
-                className="d-inline-flex align-items-center gap-2"
-                onClick={() => { resetPwForm(); setPwOpen(true); }}
-              >
-                <i className="ri-lock-password-line" /> Change Password
-              </Button>
-            </div>
-            <div className="px-3 py-3 d-flex align-items-center justify-content-between flex-wrap gap-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-              <div>
-                <div className="fw-semibold" style={{ fontSize: 13 }}>Face biometric for attendance</div>
-                <small className="text-muted">
-                  Register your face once so you can clock in / out from <a href="/clock-in">/clock-in</a> without a card or password.
-                </small>
-              </div>
-              <Button
-                color="primary"
-                size="sm"
-                className="d-inline-flex align-items-center gap-2"
-                onClick={() => setFaceRegOpen(true)}
-              >
-                <i className="ri-user-smile-line" /> Register Face
-              </Button>
-            </div>
-          </div>
         </>
       )}
 
@@ -2271,10 +2395,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <Row className="g-4">
                 <Col>
                   <div className="ep-field-label">Employee Number</div>
-                  <span className=" fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 10 }}>{employeeId}</span>
+                  <span className=" fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 10 }}>{empDetail?.emp_code || employeeId}</span>
                 </Col>
-                <Col><div className="ep-field-label">Joining Date</div><div className="ep-field-value " style={{ fontSize: 11 }}>29-Apr-2026</div></Col>
-                <Col><div className="ep-field-label">Job Title (Primary)</div><div className="ep-field-value">{employee?.designation || '—'}</div></Col>
+                <Col><div className="ep-field-label">Joining Date</div><div className="ep-field-value " style={{ fontSize: 11 }}>{fmtDate(empDetail?.date_of_joining)}</div></Col>
+                <Col><div className="ep-field-label">Job Title (Primary)</div><div className="ep-field-value">{empDetail?.designation?.name || employee?.designation || '—'}</div></Col>
                 <Col>
                   <div className="ep-field-label">Job Title (Secondary)</div>
                   {ancillaryList.length > 0 ? (
@@ -2297,9 +2421,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div className="ep-field-value text-muted fw-normal">—</div>
                   )}
                 </Col>
-                <Col><div className="ep-field-label">Employment Status</div><div className="ep-field-value">{employee?.enabled === false ? 'Disabled' : 'active'}</div></Col>
-                <Col><div className="ep-field-label">Worker Type</div><div className="ep-field-value">Full-time</div></Col>
-                <Col><div className="ep-field-label">Time Type</div><div className="ep-field-value">Full Time</div></Col>
+                <Col><div className="ep-field-label">Employment Status</div><div className="ep-field-value">{empDetail?.status || (employee?.enabled === false ? 'Disabled' : 'Active')}</div></Col>
+                <Col><div className="ep-field-label">Worker Type</div><div className="ep-field-value">{empDetail?.worker_type || empDetail?.work_type || '—'}</div></Col>
+                <Col><div className="ep-field-label">Time Type</div><div className="ep-field-value">{empDetail?.time_type || empDetail?.work_type || '—'}</div></Col>
               </Row>
             </div>
           </div>
@@ -2320,10 +2444,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
-                <Col md={3}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">Inorbvict Healthcare India Pvt. Ltd.</div></Col>
-                <Col md={3}><div className="ep-field-label">Department</div><div className="ep-field-value">{employee?.department || '—'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Location</div><div className="ep-field-value">Pune, Maharashtra</div></Col>
-                <Col md={3}><div className="ep-field-label">Reporting Manager</div><div className="ep-field-value">{employee?.manager || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">{empDetail?.legal_entity?.entity_name || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Department</div><div className="ep-field-value">{empDetail?.department?.name || employee?.department || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Location</div><div className="ep-field-value">{empDetail?.location || '—'}</div></Col>
+                <Col md={3}>
+                  <div className="ep-field-label">Reporting Manager</div>
+                  <div className="ep-field-value">{(() => {
+                    const m = empDetail?.reporting_manager;
+                    if (!m) return employee?.manager || '—';
+                    return m.display_name || [m.first_name, m.middle_name, m.last_name].filter(Boolean).join(' ') || '—';
+                  })()}</div>
+                </Col>
               </Row>
             </div>
           </div>
@@ -2390,10 +2521,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <div className="px-3 py-3">
                   <Row className="g-3">
-                    <Col xs={6}><div className="ep-field-label">Probation Policy</div><div className="ep-field-value">Default Probation Policy</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Probation Duration</div><div className="ep-field-value">3 Months</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Notice Period</div><div className="ep-field-value">2 Months</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Contract Status</div><div className="ep-field-value">Permanent</div></Col>
+                    <Col xs={6}><div className="ep-field-label">Probation Policy</div><div className="ep-field-value">{empDetail?.probation_policy || '—'}</div></Col>
+                    <Col xs={6}><div className="ep-field-label">Probation Duration</div><div className="ep-field-value">{empDetail?.probation_months ? `${empDetail.probation_months} Months` : '—'}</div></Col>
+                    <Col xs={6}><div className="ep-field-label">Notice Period</div><div className="ep-field-value">{empDetail?.notice_period || (empDetail?.notice_period_days ? `${empDetail.notice_period_days} Days` : '—')}</div></Col>
+                    <Col xs={6}><div className="ep-field-label">Contract Status</div><div className="ep-field-value">{empDetail?.contract_status || empDetail?.work_type || '—'}</div></Col>
                   </Row>
                 </div>
               </div>
@@ -2445,23 +2576,42 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             <div className="px-3 py-3">
               <Row className="g-3">
-                <Col md={3}><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">Yes</div></Col>
-                <Col md={3}>
-                  <div className="ep-field-label">Laptop Asset ID</div>
-                  <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 9 }}>LAP-0042</span>
-                </Col>
-                <Col md={3}><div className="ep-field-label">Laptop Type</div><div className="ep-field-value">Dell Latitude 5510</div></Col>
-                <Col md={3}><div className="ep-field-label">Mobile Device</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
+                {(() => {
+                  const laptop = empDetail?.laptop_asset;
+                  const mobile = empDetail?.mobile_asset;
+                  // `other_assets_resolved` is an accessor on the Employee
+                  // model that joins the selected master_asset rows. Falls
+                  // back to the raw id array if the accessor wasn't loaded.
+                  const otherAssets: Array<{ asset_name?: string; code?: string }> =
+                    Array.isArray(empDetail?.other_assets_resolved)
+                      ? empDetail.other_assets_resolved
+                      : [];
+                  const otherSummary = otherAssets.length > 0
+                    ? otherAssets.map(a => a.asset_name || a.code).filter(Boolean).join(', ')
+                    : '—';
+                  return (
+                    <>
+                      <Col md={3}><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">{empDetail?.laptop_assigned || (laptop ? 'Yes' : 'No')}</div></Col>
+                      <Col md={3}>
+                        <div className="ep-field-label">Laptop Asset ID</div>
+                        {laptop ? (
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 9 }}>{laptop.code || laptop.asset_number || `LAP-${laptop.id}`}</span>
+                        ) : <div className="ep-field-value text-muted fw-normal">—</div>}
+                      </Col>
+                      <Col md={3}><div className="ep-field-label">Laptop Type</div><div className="ep-field-value">{laptop?.asset_name || '—'}</div></Col>
+                      <Col md={3}>
+                        <div className="ep-field-label">Mobile Device</div>
+                        {mobile ? (
+                          <div className="ep-field-value">{mobile.asset_name || mobile.code || '—'}</div>
+                        ) : <div className="ep-field-value text-muted fw-normal">—</div>}
+                      </Col>
 
-                <Col md={3}><div className="ep-field-label">Monitor</div><div className="ep-field-value">24" Dell Monitor</div></Col>
-                <Col md={3}><div className="ep-field-label">Keyboard</div><div className="ep-field-value">Logitech K380</div></Col>
-                <Col md={3}><div className="ep-field-label">Mouse</div><div className="ep-field-value">Logitech MX</div></Col>
-                <Col md={3}><div className="ep-field-label">Headset</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-
-                <Col md={3}><div className="ep-field-label">Other Assets</div><div className="ep-field-value">Access Card, Desk</div></Col>
-                <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">17-May-2022</div></Col>
-                <Col md={3}><div className="ep-field-label">Acknowledgment</div><div className="ep-field-value">Signed</div></Col>
-                <Col md={3}><div className="ep-field-label">Return Required</div><div className="ep-field-value">No</div></Col>
+                      <Col md={6}><div className="ep-field-label">Other Assets</div><div className="ep-field-value">{otherSummary}</div></Col>
+                      <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.asset_issued_date)}</div></Col>
+                      <Col md={3}><div className="ep-field-label">Return Required</div><div className="ep-field-value">{empDetail?.return_required || '—'}</div></Col>
+                    </>
+                  );
+                })()}
               </Row>
             </div>
           </div>
@@ -3095,82 +3245,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
           )}
 
-          {/* Organizational Documents sub-tab */}
-          {vaultTab === 'organizational' && VAULT_ORG.map(section => (
-            <div
-              className="ep-section-card-flat ep-section-card mb-3"
-              style={{ borderTop: `3px solid ${section.iconFg}` }}
-              key={section.title}
-            >
-              <div
-                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                style={{
-                  borderBottom: `1px solid color-mix(in srgb, ${section.iconFg} 18%, transparent)`,
-                  background: `linear-gradient(135deg, color-mix(in srgb, ${section.iconFg} 14%, transparent) 0%, color-mix(in srgb, ${section.iconFg} 4%, transparent) 60%, color-mix(in srgb, ${section.iconFg} 1%, transparent) 100%)`,
-                }}
-              >
-                <div className="d-flex align-items-center gap-2">
-                  <span className="ep-section-icon" style={{ background: `color-mix(in srgb, ${section.iconFg} 18%, transparent)`, color: section.iconFg }}>
-                    <i className={section.icon} />
-                  </span>
-                  <div>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>{section.title}</h6>
-                    <small className="text-muted" style={{ fontSize: 11 }}>{section.subtitle}</small>
-                  </div>
-                </div>
-                <div className="text-end">
-                  <h4 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 22, lineHeight: 1 }}>{section.docs.length}</h4>
-                  <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
-                </div>
-              </div>
-              <div className="px-3 pb-3 pt-2">
-                <div className="table-responsive border rounded ep-att-scroll-wrap">
-                  <table className="table align-middle table-nowrap ep-att-table mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        {['SR', 'Document Name', 'Type', 'Effective Date', 'Valid Until', 'Attachment', 'Status'].map(h => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {section.docs.map((doc, idx) => {
-                        const st = VAULT_STATUS_TONE[doc.status];
-                        const typeTone = doc.type === 'AGREEMENT'
-                          ? { bg: '#d6f4e3', fg: '#108548' }
-                          : { bg: '#dceefe', fg: '#0c63b0' };
-                        return (
-                          <tr key={`${section.title}-${doc.name}`}>
-                            <td className="text-muted">{idx + 1}</td>
-                            <td className="fw-semibold">{doc.name}</td>
-                            <td>
-                              <span className="d-inline-flex align-items-center fw-semibold text-uppercase" style={{ fontSize: 9.5, padding: '3px 9px', borderRadius: 999, background: typeTone.bg, color: typeTone.fg, letterSpacing: '0.04em' }}>
-                                {doc.type}
-                              </span>
-                            </td>
-                            <td className="font-monospace">{doc.effectiveDate || <span className="text-muted">—</span>}</td>
-                            <td className="font-monospace">{doc.validUntil || <span className="text-muted">—</span>}</td>
-                            <td>
-                              {doc.attachment
-                                ? <a href="#" onClick={e => { e.preventDefault(); toast.info('Downloading attachment', `${doc.attachment} is being prepared…`); }} className="d-inline-flex align-items-center gap-1 text-decoration-none" style={{ background: 'rgba(16,185,129,0.10)', color: '#0a8a78', padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, border: '1px solid rgba(16,185,129,0.25)' }}>
-                                    <i className="ri-file-text-line" /> {doc.attachment}
-                                  </a>
-                                : <span className="text-muted">—</span>}
-                            </td>
-                            <td>
-                              <span className="d-inline-flex align-items-center gap-1 fw-semibold text-uppercase" style={{ fontSize: 9.5, padding: '3px 9px', borderRadius: 999, background: st.bg, color: st.fg, letterSpacing: '0.04em' }}>
-                                <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot }} /> {doc.status}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          ))}
         </>
       )}
 
@@ -5144,15 +5218,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer — every action is locked while a submit is in flight
+            so the user can't close the modal, stage another draft, or
+            (most importantly) re-fire the submit before the first one
+            returns. */}
         <div className="ep-claim-footer">
-          <button type="button" className="ep-claim-cancel" onClick={() => setClaimOpen(false)}>Cancel</button>
+          <button type="button" className="ep-claim-cancel" onClick={() => setClaimOpen(false)} disabled={claimSubmitting}>Cancel</button>
           <div className="d-flex gap-2 ms-auto">
-            <button type="button" className="ep-claim-secondary">
+            <button type="button" className="ep-claim-secondary" onClick={handleSaveDraft} disabled={claimSubmitting}>
               <i className="ri-save-line me-1" /> Save Draft
             </button>
             {claimMode === 'expense' && (
-              <button type="button" className="ep-claim-secondary" onClick={saveAndAddAnother}>
+              <button type="button" className="ep-claim-secondary" onClick={saveAndAddAnother} disabled={claimSubmitting}>
                 <i className="ri-add-line me-1" /> Save &amp; Add Another
               </button>
             )}
@@ -5160,11 +5237,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               type="button"
               className="ep-claim-submit"
               onClick={claimMode === 'expense' ? submitAllDrafts : () => setClaimOpen(false)}
+              disabled={claimSubmitting}
+              style={claimSubmitting ? { opacity: 0.7, cursor: 'wait' } : undefined}
             >
-              <i className={claimMode === 'expense' ? 'ri-send-plane-line me-1' : 'ri-send-plane-fill me-1'} />
-              {claimMode === 'expense'
-                ? (claimDrafts.length > 1 ? `Submit ${claimDrafts.length} Claims` : 'Submit Claim')
-                : 'Submit Advance Request'}
+              {claimSubmitting ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" style={{ width: 12, height: 12 }} />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  <i className={claimMode === 'expense' ? 'ri-send-plane-line me-1' : 'ri-send-plane-fill me-1'} />
+                  {claimMode === 'expense'
+                    ? (claimDrafts.length > 1 ? `Submit ${claimDrafts.length} Claims` : 'Submit Claim')
+                    : 'Submit Advance Request'}
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -5269,10 +5357,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </button>
             </div>
             {pwErrors.password && <small className="text-danger d-block mt-1" style={{ fontSize: 11 }}>{pwErrors.password}</small>}
-            {/* Strength meter — coloured bar + label that grade the password
-                from Weak → Strong as rules are satisfied. */}
-            {pwNew && (
-              <div className="mt-2">
+            {/* Strength meter + rule checklist. The bar + label only show
+                once the user starts typing (no point grading an empty
+                field), but the checklist below stays visible upfront so
+                users see exactly what a "strong" password needs — same
+                pattern as the Reset Password / Forgot Password flows. */}
+            <div className="mt-2">
+              {pwNew && (
                 <div className="d-flex align-items-center gap-2 mb-1">
                   <div style={{ flex: 1, height: 6, background: 'var(--vz-secondary-bg)', borderRadius: 999, overflow: 'hidden' }}>
                     <div style={{
@@ -5286,20 +5377,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     {pwStrength.text}
                   </span>
                 </div>
-                {/* Rule checklist — each item turns green ✓ once satisfied. */}
-                <ul className="list-unstyled mb-0 mt-1" style={{ fontSize: 11 }}>
-                  {PW_RULES.map(rule => {
-                    const passed = !validatePwRules(pwNew).includes(rule);
-                    return (
-                      <li key={rule} className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}>
-                        <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
-                        {rule}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
+              )}
+              <ul className="list-unstyled mb-0 mt-1" style={{ fontSize: 11 }}>
+                {PW_RULES.map(rule => {
+                  const passed = !!pwNew && !validatePwRules(pwNew).includes(rule);
+                  return (
+                    <li key={rule} className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}>
+                      <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
+                      {rule}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </div>
 
           {/* Confirm New Password */}

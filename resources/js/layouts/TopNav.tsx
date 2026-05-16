@@ -44,6 +44,10 @@ export default function TopNav({ current, onNavigate }: Props) {
     // role-based. MENU_ITEMS already restricts it to client_admin + branch_user;
     // here we just bypass the perms check so branch users actually see it.
     if (id === 'permissions' && user?.user_type === 'branch_user') return true;
+    // Sales Matrix rollout — surface every sales.* leaf to branch_user and
+    // employee unconditionally so the menu shows during initial rollout. Once
+    // per-leaf perms are wired up, delete this branch and revert to perms[id].
+    if (id.startsWith('sales.') && (user?.user_type === 'branch_user' || user?.user_type === 'employee')) return true;
     if (planExpiredOrMissing) return false;
     return !!perms[id]?.can_view;
   };

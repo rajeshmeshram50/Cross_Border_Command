@@ -220,6 +220,43 @@ export const HR_GROUPS: MenuGroup[] = [
   },
 ];
 
+// Sales Matrix sidebar — branch-and-below only. Super admin and client admin
+// hold the perms purely as granters (so they can cascade down to branches);
+// the sidebar entry is gated to branch_user / employee so the menu never
+// surfaces for the granter roles. Inside the group, per-leaf visibility still
+// follows perms[id].can_view (Sidebar.canView).
+export const SALES_GROUPS: MenuGroup[] = [
+  {
+    id: 'sales.insights',
+    label: 'Sales Insights & Productivity',
+    icon: 'BarChart3',
+    children: [
+      { id: 'sales.analytics',            icon: 'BarChart3',      label: 'Sales Analytics' },
+      { id: 'sales.productivity_tracker', icon: 'ClipboardCheck', label: 'Productivity Tracker' },
+      { id: 'sales.p2p_summary',          icon: 'ShoppingBag',    label: 'Procure to Pay (P2P) Summary' },
+    ],
+  },
+  {
+    id: 'sales.core',
+    label: 'Sales Core (Masters)',
+    icon: 'Database',
+    children: [
+      { id: 'sales.customers',       icon: 'UserSquare', label: 'Customers' },
+      { id: 'sales.consignee',       icon: 'Truck',      label: 'Consignee' },
+      { id: 'sales.lead_ack_master', icon: 'BadgeCheck', label: 'Lead Acknowledgement Master' },
+    ],
+  },
+  {
+    id: 'sales.operations',
+    label: 'Sales Matrix Operations',
+    icon: 'Activity',
+    children: [
+      { id: 'sales.workplace',       icon: 'Activity', label: 'My Workplace' },
+      { id: 'sales.quotation_vs_pi', icon: 'FileText', label: 'Quotation Vs PI History' },
+    ],
+  },
+];
+
 // Role alias — keeps menu-item declarations readable. Covers every tenant
 // user type plus super_admin, so any item declared with this role list is
 // visible to everyone (visibility within the group is then narrowed by
@@ -264,6 +301,18 @@ export const MENU_ITEMS: MenuItem[] = [
     // navigate to /hr/employees etc.) — this just hides the sidebar entry.
     roles: ['branch_user'],
     groups: HR_GROUPS,
+  },
+  {
+    id: 'sales',
+    icon: 'TrendingUp',
+    label: 'Sales Matrix',
+    // Branch + employee only — super_admin and client_admin hold the perm
+    // rows purely so they can cascade-grant down (super_admin → client_admin
+    // → branch_user → employee, enforced in PermissionController), but
+    // neither role works inside Sales Matrix. Hiding the entry here matches
+    // the product call: granters don't get a menu they'd never use.
+    roles: ['branch_user', 'employee'],
+    groups: SALES_GROUPS,
   },
 
   // Face-driven attendance — only employees punch in. The signed-in admin /

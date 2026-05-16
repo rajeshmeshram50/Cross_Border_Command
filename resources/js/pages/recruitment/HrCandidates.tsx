@@ -145,22 +145,32 @@ export default function HrCandidates() {
     const rejected = candidates.filter(c => c.status === 'Rejected').length;
     const offered = candidates.filter(c => c.status === 'Offered').length;
     // "Active" = anyone still in the pipeline (everything except Selected /
-    // Offered / Rejected). Drives the first tab's badge so newly-added
-    // Applied / Shortlisted / On Hold rows show up immediately.
+    // Offered / Rejected). Drives the "Active Candidates" tab's badge so
+    // newly-added Applied / Shortlisted / On Hold rows show up immediately.
     const active = candidates.filter(c =>
       c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected'
     ).length;
-    return { total: t, applied, inInterview, selected, rejected, offered, active };
+    // "Final" = ONLY candidates whose status is Final Interview. The tab
+    // label is "Final Round Selected" so it must literally mean that —
+    // used to be `active` which (correctly) showed Applied rows too, but
+    // that contradicted the label and surprised users.
+    const finalRound = candidates.filter(c => c.status === 'Final Interview').length;
+    return { total: t, applied, inInterview, selected, rejected, offered, active, finalRound };
   }, [candidates]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return candidates
       .filter(c => {
-        // The "final" tab covers the whole active pipeline, not just the
-        // final interview round — otherwise Applied / Shortlisted / On Hold
-        // candidates have nowhere to land.
-        if (tab === 'final')    return c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected';
+        // "all" → entire active pipeline (Applied / Shortlisted / In
+        //   Interview / On Hold / Final Interview). Everything except
+        //   the terminal states.
+        // "final" → ONLY candidates whose status is Final Interview. The
+        //   tab label is "Final Round Selected" so it must literally mean
+        //   that; otherwise an Applied row leaks into Final Round which
+        //   confused users.
+        if (tab === 'all')      return c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected';
+        if (tab === 'final')    return c.status === 'Final Interview';
         if (tab === 'selected') return c.status === 'Selected' || c.status === 'Offered';
         if (tab === 'rejected') return c.status === 'Rejected';
         return true;
@@ -285,7 +295,23 @@ export default function HrCandidates() {
                   </div>
                   <div className="cand-rec-pills">
                     {recruitment.priority && (
-                      <span className="rec-pill" style={{ background: '#ffe4e1', color: '#b91c1c' }}>
+                      <span
+                        className="rec-pill"
+                        style={{
+                          // Same per-priority palette as the Priority field
+                          // pill further down — used to be a hardcoded red
+                          // here, which looked wrong for Medium/Low and
+                          // disagreed with the field-level pill below.
+                          background:
+                            recruitment.priority === 'High'   ? '#ffe4e1' :
+                            recruitment.priority === 'Medium' ? '#fef3c7' :
+                                                                '#dbeafe',
+                          color:
+                            recruitment.priority === 'High'   ? '#b91c1c' :
+                            recruitment.priority === 'Medium' ? '#92400e' :
+                                                                '#1d4ed8',
+                        }}
+                      >
                         <i className="ri-alarm-warning-line" style={{ fontSize: 11, marginRight: 3 }} />
                         {recruitment.priority}
                       </span>
@@ -368,7 +394,7 @@ export default function HrCandidates() {
             <div className="mb-2">
               <div className="rec-tab-track">
                 {([
-                  { key: 'final' as const,    label: 'Final Round Selected', count: totals.active,                    icon: 'ri-user-search-line',     variant: 'in-progress' },
+                  { key: 'final' as const,    label: 'Final Round Selected', count: totals.finalRound,                icon: 'ri-user-search-line',     variant: 'in-progress' },
                   { key: 'selected' as const, label: 'Selected Candidates',  count: totals.selected + totals.offered, icon: 'ri-checkbox-circle-line', variant: 'completed' },
                   { key: 'rejected' as const, label: 'Rejected Candidates',  count: totals.rejected,                  icon: 'ri-close-circle-line',    variant: 'cancelled' },
                 ]).map(t => (
@@ -412,7 +438,7 @@ export default function HrCandidates() {
                   <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                     <thead>
                       <tr>
-                        <th className="ps-3 text-center" style={{ width: 56 }}>SR</th>
+                        <th className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
                         <th>Candidate</th>
                         <th>Email</th>
                         <th>Mobile</th>
@@ -727,9 +753,6 @@ function ExportCandidatesModal({
             <h5 className="mb-0">Export Candidates</h5>
             <div className="cand-export-head-sub">Download candidate data as an Excel file</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-export-close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
@@ -947,9 +970,6 @@ function ImportCandidatesModal({
             <h5 className="mb-0">Import Candidates</h5>
             <div className="cand-import-head-sub">Upload an Excel or CSV file to bulk-add candidates</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-import-close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
@@ -1064,9 +1084,6 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
             <h5 className="mb-0">Sample Import Format</h5>
             <div className="cand-sample-head-sub">Download an Excel template to bulk-upload candidates</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-sample-close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
@@ -1286,7 +1303,7 @@ function CandidateFormModal({
   const [expectedSalary, setExpectedSalary]   = useState('');
   const [noticePeriod, setNoticePeriod]       = useState('Immediate');
   const [source, setSource]                   = useState('');
-  const [status, setStatus]                   = useState<CandidateStatus>('Applied');
+  const [status, setStatus]                   = useState<CandidateStatus>('Final Interview');
   const [cvFile, setCvFile]                   = useState<File | null>(null);
   const [errors, setErrors]                   = useState<Record<string, string>>({});
   const [saving, setSaving]                   = useState(false);
@@ -1338,7 +1355,7 @@ function CandidateFormModal({
       setName(''); setEmail(''); setMobile(''); setAddress(''); setQualification('');
       setExperience('0'); setTransport(''); setDistance('');
       setCurrentSalary(''); setExpectedSalary(''); setNoticePeriod('Immediate');
-      setSource(''); setStatus('Applied');
+      setSource(''); setStatus('Final Interview');
     }
     setCvFile(null);
     setErrors({});
@@ -1358,22 +1375,37 @@ function CandidateFormModal({
 
     if (!recruitmentId) errs.recruitment_id = 'Recruitment is required';
 
-    if (email.trim()) {
+    if (!email.trim()) {
+      errs.email = 'Email is required';
+    } else {
       const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRe.test(email.trim())) errs.email = 'Enter a valid email address';
     }
 
-    if (mobile.trim()) {
+    if (!mobile.trim()) {
+      errs.mobile = 'Mobile number is required';
+    } else {
       // 10–15 digits, optional leading + and country code spaces.
       const mobileRe = /^\+?[\d\s\-]{10,18}$/;
       if (!mobileRe.test(mobile.trim())) errs.mobile = 'Enter a valid mobile number (10–15 digits)';
     }
 
-    const expNum = Number(experience);
-    if (experience !== '' && (!Number.isFinite(expNum) || expNum < 0)) errs.experience_years = 'Experience cannot be negative';
-    else if (expNum > 50) errs.experience_years = 'Experience cannot exceed 50 years';
+    if (!qualification.trim()) {
+      errs.qualification = 'Qualification is required';
+    }
 
-    if (distance.trim()) {
+    const expNum = Number(experience);
+    if (experience.trim() === '') {
+      errs.experience_years = 'Experience is required';
+    } else if (!Number.isFinite(expNum) || expNum < 0) {
+      errs.experience_years = 'Experience cannot be negative';
+    } else if (expNum > 50) {
+      errs.experience_years = 'Experience cannot exceed 50 years';
+    }
+
+    if (!distance.trim()) {
+      errs.distance_km = 'Distance is required';
+    } else {
       const dNum = Number(distance);
       if (!Number.isFinite(dNum) || dNum < 0) errs.distance_km = 'Distance cannot be negative';
       else if (dNum > 9999) errs.distance_km = 'Distance cannot exceed 9999 KM';
@@ -1537,9 +1569,6 @@ function CandidateFormModal({
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>{editing ? 'Update applicant profile' : 'Register a new applicant profile in the pipeline'}</div>
               </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn">
-              <i className="ri-close-line" />
-            </button>
           </div>
         </div>
 
@@ -1560,12 +1589,12 @@ function CandidateFormModal({
                   {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
                 </Col>
                 <Col md={4}>
-                  <label className="rec-form-label">Email</label>
+                  <label className="rec-form-label">Email<span className="req">*</span></label>
                   <input type="email" className={`rec-input${errors.email ? ' is-invalid' : ''}`} placeholder="name@email.com" value={email} onChange={e => setEmail(e.target.value)} />
                   {errors.email && <div className="rec-error"><i className="ri-error-warning-line" />{errors.email}</div>}
                 </Col>
                 <Col md={4}>
-                  <label className="rec-form-label">Mobile Number</label>
+                  <label className="rec-form-label">Mobile Number<span className="req">*</span></label>
                   <input type="text" className={`rec-input${errors.mobile ? ' is-invalid' : ''}`} placeholder="+91 9XXXXXXXXX" value={mobile} onChange={e => setMobile(e.target.value)} />
                   {errors.mobile && <div className="rec-error"><i className="ri-error-warning-line" />{errors.mobile}</div>}
                 </Col>
@@ -1574,11 +1603,12 @@ function CandidateFormModal({
                   <input type="text" className="rec-input" placeholder="Full residential address" value={address} onChange={e => setAddress(e.target.value)} />
                 </Col>
                 <Col md={6}>
-                  <label className="rec-form-label">Qualification</label>
-                  <input type="text" className="rec-input" placeholder="e.g. B.Tech Computer Science" value={qualification} onChange={e => setQualification(e.target.value)} />
+                  <label className="rec-form-label">Qualification<span className="req">*</span></label>
+                  <input type="text" className={`rec-input${errors.qualification ? ' is-invalid' : ''}`} placeholder="e.g. B.Tech Computer Science" value={qualification} onChange={e => setQualification(e.target.value)} />
+                  {errors.qualification && <div className="rec-error"><i className="ri-error-warning-line" />{errors.qualification}</div>}
                 </Col>
                 <Col md={4}>
-                  <label className="rec-form-label">Experience (Years)</label>
+                  <label className="rec-form-label">Experience (Years)<span className="req">*</span></label>
                   <input type="number" min={0} step={0.5} className={`rec-input${errors.experience_years ? ' is-invalid' : ''}`} value={experience} onChange={e => setExperience(e.target.value)} />
                   {errors.experience_years && <div className="rec-error"><i className="ri-error-warning-line" />{errors.experience_years}</div>}
                 </Col>
@@ -1587,7 +1617,7 @@ function CandidateFormModal({
                   <MasterSelect value={transport} onChange={setTransport} options={TRANSPORT_MODES.map(m => ({ value: m, label: m }))} placeholder="— Select —" />
                 </Col>
                 <Col md={4}>
-                  <label className="rec-form-label">Distance (KM)</label>
+                  <label className="rec-form-label">Distance (KM)<span className="req">*</span></label>
                   <input type="number" min={0} step={0.1} className={`rec-input${errors.distance_km ? ' is-invalid' : ''}`} placeholder="e.g. 12" value={distance} onChange={e => setDistance(e.target.value)} />
                   {errors.distance_km && <div className="rec-error"><i className="ri-error-warning-line" />{errors.distance_km}</div>}
                 </Col>
@@ -1676,22 +1706,20 @@ function CandidateFormModal({
                     <p className="rec-form-section-title">Recruitment Status</p>
                   </div>
                   <label className="rec-form-label">Candidate Status<span className="req">*</span></label>
-                  {/* The form only exposes the three lifecycle states a
+                  {/* The form only exposes the two lifecycle states a
                       recruiter actually picks on create / edit:
-                      Applied (intake), Final Round Selected (shortlist
-                      through interviews — stored as the existing
-                      "Final Interview" enum so historical rows keep
-                      working), and Selected (offer extended). Other
-                      states (Rejected, On Hold, Offered, etc.) still
-                      exist in the type union and continue to be set
-                      programmatically by the Confirm Selection /
+                      Final Round Selected (shortlist through interviews —
+                      stored as the existing "Final Interview" enum so
+                      historical rows keep working) and Selected (offer
+                      extended). Other states (Rejected, On Hold, Offered,
+                      etc.) still exist in the type union and continue to
+                      be set programmatically by the Confirm Selection /
                       Reject modal — they're just not user-selectable
                       from this dropdown. */}
                   <MasterSelect
                     value={status}
                     onChange={(v) => setStatus(v as CandidateStatus)}
                     options={[
-                      { value: 'Applied',         label: 'Applied' },
                       { value: 'Final Interview', label: 'Final Round Selected' },
                       { value: 'Selected',        label: 'Selected' },
                     ]}

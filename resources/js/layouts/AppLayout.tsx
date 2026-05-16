@@ -56,6 +56,14 @@ const getPageFromPath = (pathname: string): string => {
     return (segments[1] && HR_PATH_TO_LEAF[segments[1]]) || 'hr';
   }
 
+  // Sales Matrix leaf routes: /sales/<slug> -> sales.<slug>. Without this,
+  // landing on /sales/customers leaves the active highlight stuck on the
+  // dashboard chip in both TopNav and Sidebar. Falls back to 'sales' so the
+  // parent dropdown still highlights for any unmapped /sales/* sub-path.
+  if (page === 'sales') {
+    return segments[1] ? `sales.${segments[1]}` : 'sales';
+  }
+
   // Map URL paths to page names
   const pathToPage: Record<string, string> = {
     'dashboard': 'dashboard',
