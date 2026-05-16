@@ -134,18 +134,18 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
       <div className="mb-3">
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Pending leave requests</h6>
         {loading ? (
-          <div className="text-muted text-center py-4" style={{ background: '#f8f9fa', borderRadius: 12 }}>
+          <div className="text-muted text-center py-4" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 12 }}>
             <i className="ri-loader-4-line ri-spin me-1" /> Loading…
           </div>
         ) : pending.length === 0 ? (
-          <div className="text-muted text-center py-4" style={{ background: '#f8f9fa', borderRadius: 12, fontSize: 13 }}>
+          <div className="text-muted text-center py-4" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 12, fontSize: 13 }}>
             <i className="ri-flight-takeoff-line me-1" /> No pending requests
           </div>
         ) : pending.map(r => (
           <div
             key={r.id}
             className="lsp-request-card d-flex align-items-center gap-3 p-3 mb-2"
-            style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, cursor: 'pointer' }}
+            style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12, cursor: 'pointer' }}
             onClick={() => setDetailsRequestId(r.id)}
           >
             <span className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style={{ width: 44, height: 44, background: '#ece6ff' }}>
@@ -202,7 +202,7 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
       <div className="mb-3">
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave Balances</h6>
         {!balances || balances.types.length === 0 ? (
-          <div className="text-muted text-center py-4" style={{ background: '#f8f9fa', borderRadius: 12, fontSize: 13 }}>
+          <div className="text-muted text-center py-4" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 12, fontSize: 13 }}>
             {balances?.employee?.plan_id == null
               ? 'No leave plan assigned. Ask HR to add you to a plan.'
               : 'No leave types configured on your plan yet.'}
@@ -215,7 +215,7 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
               const available = t.unlimited ? null : (t.available ?? 0);
               const pct = !t.unlimited && t.quota > 0 ? Math.min(100, ((t.used / t.quota) * 100)) : 0;
               return (
-                <div key={t.leave_type_id} className="lsp-balance-card flex-grow-1" style={{ minWidth: 240, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, padding: 18 }}>
+                <div key={t.leave_type_id} className="lsp-balance-card flex-grow-1" style={{ minWidth: 240, background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18 }}>
                   <div className="d-flex justify-content-between align-items-start mb-2">
                     <h6 className="fw-bold mb-0" style={{ fontSize: 14 }}>{t.name}</h6>
                     <button
@@ -241,7 +241,7 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
                       )}
                     </Donut>
                   </div>
-                  <div className="d-flex justify-content-between mt-3 pt-2" style={{ borderTop: '1px solid #f1f3f5' }}>
+                  <div className="d-flex justify-content-between mt-3 pt-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
                     <div>
                       <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.4 }}>AVAILABLE</div>
                       <div className="fw-semibold" style={{ fontSize: 13 }}>{t.unlimited ? '∞' : available} {available === 1 ? 'day' : 'days'}</div>
@@ -266,13 +266,13 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
       <div>
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave History</h6>
         {history.length === 0 ? (
-          <div className="text-muted text-center py-4" style={{ background: '#eaf6ff', borderRadius: 12, fontSize: 13 }}>
+          <div className="text-muted text-center py-4" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 12, fontSize: 13 }}>
             No Leave history to show.
           </div>
         ) : (
-          <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12, overflow: 'hidden' }}>
             <table className="table mb-0" style={{ fontSize: 13 }}>
-              <thead style={{ background: '#f8f9fa' }}>
+              <thead style={{ background: 'var(--vz-secondary-bg)' }}>
                 <tr>
                   <th style={{ padding: '10px 14px' }}>DATES</th>
                   <th style={{ padding: '10px 14px' }}>LEAVE TYPE</th>
@@ -394,9 +394,9 @@ export default function LeaveSummaryPanel({ employeeId }: Props) {
           {detailsType && (
             <>
               <h6 className="mb-3" style={{ fontSize: 14 }}>{detailsType.name}</h6>
-              <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ border: '1px solid var(--vz-border-color)', borderRadius: 10, overflow: 'hidden' }}>
                 <table className="table mb-0" style={{ fontSize: 13 }}>
-                  <thead style={{ background: '#f8f9fa' }}>
+                  <thead style={{ background: 'var(--vz-secondary-bg)' }}>
                     <tr>
                       <th style={{ padding: '10px 14px' }}>Transaction date</th>
                       <th style={{ padding: '10px 14px' }}>Change</th>

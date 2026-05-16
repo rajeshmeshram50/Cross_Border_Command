@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
+import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Customers
@@ -73,6 +74,8 @@ export default function SalesCustomers() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [wdhOpen, setWdhOpen] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<EditCustomer | null>(null);
 
   // Inject Google Fonts (DM Sans, Inter) once on mount so the design renders
   // with its intended typography even on a fresh install.
@@ -130,7 +133,7 @@ export default function SalesCustomers() {
           </div>
         </div>
         <div className="smc-cstrip-right">
-          <button className="smc-add-btn" onClick={() => soon('Add Customer')}>
+          <button className="smc-add-btn" onClick={() => { setEditing(null); setAddOpen(true); }}>
             <span className="smc-add-sheen" />
             <IconPlus />
             Add Customer
@@ -239,7 +242,7 @@ export default function SalesCustomers() {
                     <td className="ta-c"><span className="smc-cons">{c.consignees}</span></td>
                     <td className="ta-c">
                       <div className="smc-actions">
-                        <button title="Edit Customer" className="smc-act smc-act-edit" onClick={() => soon('Edit Customer')}><IconEdit /></button>
+                        <button title="Edit Customer" className="smc-act smc-act-edit" onClick={() => { setEditing(c); setAddOpen(true); }}><IconEdit /></button>
                         <button title="Map Consignee" className="smc-act smc-act-map"  onClick={() => soon('Map Consignee')}><IconUsersSm /></button>
                         <button title="Customer Evidence Vault" className="smc-act smc-act-vault" onClick={() => soon('Evidence Vault')}><IconFile /></button>
                       </div>
@@ -262,6 +265,12 @@ export default function SalesCustomers() {
           </div>
         </div>
       </div>
+
+      <AddCustomerModal
+        open={addOpen}
+        customer={editing}
+        onClose={() => { setAddOpen(false); setEditing(null); }}
+      />
     </div>
   );
 }

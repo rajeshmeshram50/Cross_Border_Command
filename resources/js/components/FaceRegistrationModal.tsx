@@ -142,6 +142,13 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
       onClick={() => { if (step !== 'saving' && step !== 'revoking') onClose(); }}
     >
       <div
+        // `ep-modal-card` class hooks into the global dark-mode rule in
+        // EmployeeProfile.css that pins the card background to
+        // var(--vz-card-bg) — without it this inline `var(--vz-card-bg, #fff)`
+        // falls back to white when the variable doesn't propagate into
+        // the portal early enough and the modal renders bright on the
+        // dark page.
+        className="ep-modal-card"
         onClick={e => e.stopPropagation()}
         style={{
           background: 'var(--vz-card-bg, #fff)', borderRadius: 16,
