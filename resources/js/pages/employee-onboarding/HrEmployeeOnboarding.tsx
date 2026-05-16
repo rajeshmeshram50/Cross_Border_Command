@@ -1131,9 +1131,7 @@ function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose:
 
       <ModalBody className="p-0">
         <div className="onb-ee-header">
-          <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
-            <i className="ri-close-line" style={{ fontSize: 14 }} />
-          </button>
+          {/* No top-right X — footer has Cancel; one dismiss path. */}
           <div className="d-flex align-items-center gap-3">
             <span className="onb-ee-icon"><i className="ri-user-3-line" style={{ fontSize: 20 }} /></span>
             <div className="min-w-0">
@@ -2139,13 +2137,8 @@ function VaultModal({
       <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" backdrop="static">
         <ModalBody className="p-0">
           <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
-            <div className="d-flex align-items-center justify-content-between">
-              <strong style={{ fontSize: 15 }}><i className="ri-send-plane-line me-2" />Send for Signing</strong>
-              <button type="button" onClick={() => setSendForTpl(null)} aria-label="Close"
-                style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
-                <i className="ri-close-line" />
-              </button>
-            </div>
+            {/* No top-right X — footer has Cancel; one dismiss path. */}
+            <strong style={{ fontSize: 15 }}><i className="ri-send-plane-line me-2" />Send for Signing</strong>
           </div>
           <div style={{ padding: 16, fontSize: 13 }}>
             <p style={{ marginBottom: 12 }}>
@@ -2237,16 +2230,9 @@ function VaultModal({
             return (
               <>
                 <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
-                  <div className="d-flex align-items-center justify-content-between">
-                    <div>
-                      <strong style={{ fontSize: 15 }}><i className="ri-quill-pen-line me-2" />{current?.action}</strong>
-                      <div style={{ fontSize: 11.5, opacity: 0.85 }}>{actionRun.template?.name} · {actionRun.code}</div>
-                    </div>
-                    <button type="button" onClick={() => setActionRun(null)} aria-label="Close"
-                      style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 28, height: 28 }}>
-                      <i className="ri-close-line" />
-                    </button>
-                  </div>
+                  {/* No top-right X — footer has Cancel; one dismiss path. */}
+                  <strong style={{ fontSize: 15 }}><i className="ri-quill-pen-line me-2" />{current?.action}</strong>
+                  <div style={{ fontSize: 11.5, opacity: 0.85 }}>{actionRun.template?.name} · {actionRun.code}</div>
                 </div>
                 <div style={{ padding: 16, maxHeight: '65vh', overflowY: 'auto', background: '#f9fafb' }}>
                   {/* Render the locked document for context */}
@@ -4416,15 +4402,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
             <h5 className="occ-title">Complete onboarding</h5>
             <p className="occ-sub">All stages signed off — confirm to lock in completion</p>
           </div>
-          <button
-            type="button"
-            aria-label="Close"
-            disabled={nextLoading}
-            onClick={() => { setShowCompleteConfirm(false); setCompleteNotes(''); }}
-            className="occ-close"
-          >
-            <i className="ri-close-line" />
-          </button>
+          {/* No top-right X — Cancel button below is the single
+              dismissal path; two close affordances was redundant. */}
         </div>
 
         {/* Body */}

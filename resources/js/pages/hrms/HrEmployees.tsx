@@ -4919,7 +4919,7 @@ export default function HrEmployees() {
               position: 'absolute', top: -50, right: -40, width: 220, height: 220,
               borderRadius: '50%', background: 'rgba(255,255,255,0.10)',
             }} />
-            <div className="d-flex align-items-center justify-content-between gap-3" style={{ position: 'relative' }}>
+            <div className="d-flex align-items-center gap-3" style={{ position: 'relative' }}>
               <div className="d-flex align-items-center gap-3 min-w-0">
                 <span
                   className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
@@ -4944,20 +4944,7 @@ export default function HrEmployees() {
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={closeAssign}
-                aria-label="Close"
-                className="btn p-0 d-inline-flex align-items-center justify-content-center flex-shrink-0"
-                style={{
-                  width: 32, height: 32, borderRadius: '50%',
-                  background: 'rgba(255,255,255,0.22)',
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  color: '#fff',
-                }}
-              >
-                <i className="ri-close-line" style={{ fontSize: 18 }} />
-              </button>
+              {/* No top-right X — footer has Cancel; one dismiss path. */}
             </div>
           </div>
 

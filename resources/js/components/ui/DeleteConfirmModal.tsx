@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Loader2, X } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 
 interface Props {
   open: boolean;
@@ -60,28 +60,6 @@ export default function DeleteConfirmModal({ open, clientName, itemName: itemNam
           overflow: hidden;
           animation: dcm-scale-in .22s cubic-bezier(.22,1,.36,1) both;
           position: relative;
-        }
-        .dcm-close {
-          position: absolute;
-          top: 12px;
-          right: 12px;
-          width: 26px;
-          height: 26px;
-          border-radius: 8px;
-          background: transparent;
-          border: 1px solid rgba(15,23,42,0.08);
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          color: #64748b;
-          cursor: pointer;
-          transition: all .15s ease;
-          z-index: 2;
-        }
-        .dcm-close:hover {
-          color: #ef4444;
-          border-color: rgba(239,68,68,0.35);
-          background: rgba(239,68,68,0.06);
         }
         .dcm-body {
           padding: 22px 22px 16px;
@@ -171,11 +149,6 @@ export default function DeleteConfirmModal({ open, clientName, itemName: itemNam
         [data-layout-mode="dark"] .dcm-message strong { color: #f8fafc; }
         [data-bs-theme="dark"] .dcm-sub,
         [data-layout-mode="dark"] .dcm-sub { color: #64748b; }
-        [data-bs-theme="dark"] .dcm-close,
-        [data-layout-mode="dark"] .dcm-close {
-          border-color: rgba(255,255,255,0.1);
-          color: #94a3b8;
-        }
         [data-bs-theme="dark"] .dcm-icon,
         [data-layout-mode="dark"] .dcm-icon {
           background: rgba(239,68,68,0.12);
@@ -196,9 +169,9 @@ export default function DeleteConfirmModal({ open, clientName, itemName: itemNam
           confirmation should require an explicit Cancel / X / Esc. */}
       <div className="dcm-overlay">
         <div className="dcm-popup">
-          <button type="button" className="dcm-close" onClick={onClose} disabled={loading} aria-label="Close">
-            <X size={13} />
-          </button>
+          {/* No top-right X — the Cancel button below is the single
+              dismissal path. Two close affordances on a destructive
+              dialog were redundant. */}
 
           <div className="dcm-body">
             <div className="dcm-icon-wrap">
