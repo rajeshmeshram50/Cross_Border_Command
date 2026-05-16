@@ -45,75 +45,18 @@ const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
 const ONB_PF_DEDUCT    = OPT('Employee + Employer', 'Employee only');
 const ONB_BLOOD_GROUP  = OPT('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-');
 
-// ── Evidence Vault — mock document catalogue (mirrors HrEmployees) ──────────
-type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
-interface VaultDoc {
-  id: string;
-  name: string;
-  desc: string;
-  icon: string;
-  tint: string;
-  fg: string;
-  category?: string;
-  status: VaultStatus;
-}
-interface VaultSection { title: string; docs: VaultDoc[] }
-
-const VAULT_EMPLOYEE_DOCS: VaultSection[] = [
-  {
-    title: 'Identity Documents',
-    docs: [
-      { id: 'aadhaar', name: 'Aadhaar Card',  desc: 'Government issued 12-digit unique identity', icon: 'ri-id-card-line',     tint: '#dceefe', fg: '#0c63b0', category: 'Identity', status: 'Verified' },
-      { id: 'pan',     name: 'PAN Card',      desc: 'Permanent Account Number for taxation',      icon: 'ri-bank-card-line',   tint: '#fdf3d6', fg: '#a06f00', category: 'Identity', status: 'Verified' },
-      { id: 'p_photo', name: 'Passport Photo',desc: 'Recent passport-size photograph',            icon: 'ri-image-line',       tint: '#fdd9ea', fg: '#a02960', category: 'Identity', status: 'Verified' },
-      { id: 'p_copy',  name: 'Passport Copy', desc: 'Govt issued travel document (if applicable)',icon: 'ri-passport-line',    tint: '#dceefe', fg: '#0c63b0', category: 'Identity', status: 'Verified' },
-    ],
-  },
-  {
-    title: 'Address Proof',
-    docs: [
-      { id: 'cur_addr',  name: 'Current Address Proof',   desc: 'Utility bill or bank statement (last 3 months)', icon: 'ri-home-4-line',  tint: '#fde8c4', fg: '#a4661c', category: 'Address', status: 'Verified' },
-      { id: 'perm_addr', name: 'Permanent Address Proof', desc: 'Aadhaar / Voter ID — permanent address proof',   icon: 'ri-map-pin-line', tint: '#d6f4e3', fg: '#108548', category: 'Address', status: 'Verified' },
-    ],
-  },
-  {
-    title: 'Education Documents',
-    docs: [
-      { id: 'edu_10',  name: '10th Marksheet',     desc: 'Secondary school certification',         icon: 'ri-graduation-cap-line', tint: '#d6f4e3', fg: '#108548', category: 'Education', status: 'Verified' },
-      { id: 'edu_12',  name: '12th Marksheet',     desc: 'Higher secondary certification',         icon: 'ri-graduation-cap-line', tint: '#d6f4e3', fg: '#108548', category: 'Education', status: 'Verified' },
-      { id: 'edu_deg', name: 'Graduation Degree',  desc: "Bachelor's degree certificate",          icon: 'ri-medal-2-line',        tint: '#fdf3d6', fg: '#a06f00', category: 'Education', status: 'Verified' },
-      { id: 'edu_pg',  name: 'Post Graduation',    desc: "Master's or postgraduate diploma",       icon: 'ri-award-line',          tint: '#dceefe', fg: '#0c63b0', category: 'Education', status: 'Verified' },
-    ],
-  },
-  {
-    title: 'Employment History',
-    docs: [
-      { id: 'rel_letter', name: 'Relieving Letter',  desc: 'Final relieving from previous employer', icon: 'ri-mail-send-line',           tint: '#fde8c4', fg: '#a4661c', category: 'Employment', status: 'Verified' },
-      { id: 'exp_cert',   name: 'Experience Letter', desc: 'Past employment experience certificate', icon: 'ri-briefcase-line',           tint: '#d3f0ee', fg: '#0a716a', category: 'Employment', status: 'Verified' },
-      { id: 'pay_slip',   name: 'Last 3 Pay Slips',  desc: 'Most recent salary slips for reference', icon: 'ri-money-dollar-circle-line', tint: '#d6f4e3', fg: '#108548', category: 'Employment', status: 'Verified' },
-    ],
-  },
-];
-
-const VAULT_ORG_DOCS: VaultSection[] = [
-  {
-    title: 'Signed Company Documents',
-    docs: [
-      { id: 'nda',       name: 'NDA',                          desc: 'Non-Disclosure Agreement — active during and post tenure',  icon: 'ri-lock-line',         tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
-      { id: 'emp_agree', name: 'Employment Agreement',         desc: 'Appointment letter & employment terms and conditions',      icon: 'ri-file-list-3-line',  tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
-      { id: 'coc',       name: 'Code of Conduct Policy',       desc: 'Acknowledgement of company ethical standards and behavior', icon: 'ri-book-2-line',       tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
-      { id: 'it_sec',    name: 'IT Security & Acceptable Use', desc: 'IT asset usage, data access, and acceptable use policy',    icon: 'ri-computer-line',     tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
-      { id: 'leave_pol', name: 'Leave & Attendance Policy',    desc: 'Leave entitlements, attendance rules, and WFH policy',      icon: 'ri-calendar-2-line',   tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
-      { id: 'conf',      name: 'Confidentiality Agreement',    desc: 'Confidential business information protection agreement',    icon: 'ri-shield-check-line', tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
-      { id: 'gratuity',  name: 'Gratuity & Benefit Policy',    desc: 'Gratuity eligibility, PF, and other employee benefit terms',icon: 'ri-gift-line',         tint: '#fde8c4', fg: '#a4661c', status: 'Sent' },
-    ],
-  },
-];
+// ── Evidence Vault — status tone palette ────────────────────────────────────
+// The vault's Employee tab is populated entirely from /employees/{id}/documents
+// at runtime (catalogue lookup happens client-side against STAGE2_CATEGORIES
+// further down). The Org tab is sourced from /hr-document-templates/match
+// + signature runs. Both still share this tone map for the status pill.
+type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Rejected' | 'Signed' | 'Sent' | 'Not Generated';
 
 const VAULT_STATUS_TONE: Record<VaultStatus, { bg: string; fg: string; dot: string }> = {
   'Verified':      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
   'Uploaded':      { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
   'Pending':       { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
+  'Rejected':      { bg: '#fdd9d6', fg: '#b1401d', dot: '#f06548' },
   'Signed':        { bg: '#ece6ff', fg: '#5b3fd1', dot: '#7c5cfc' },
   'Sent':          { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
   'Not Generated': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
@@ -789,9 +732,7 @@ export default function HrEmployeeOnboarding() {
                   />
                 </div>
               </div>
-              <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                {filtered.length} results
-              </div>
+            
             </Col>
           </Row>
 
@@ -1272,19 +1213,6 @@ function VaultModal({
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId]);
 
-  const allDocs = VAULT_EMPLOYEE_DOCS.flatMap(s => s.docs);
-  const counts = {
-    total:    allDocs.length + orgTemplates.length,
-    verified: allDocs.filter(d => d.status === 'Verified').length,
-    signed:   allDocs.filter(d => d.status === 'Signed' || d.status === 'Sent').length + orgTemplates.filter(t => t.status === 'Active').length,
-    pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length,
-    notGen:   allDocs.filter(d => d.status === 'Not Generated').length,
-  };
-  const empCount = VAULT_EMPLOYEE_DOCS.flatMap(s => s.docs).length;
-  const orgCount = orgTemplates.length;
-  const completion = counts.total ? Math.round(((counts.verified + counts.signed) / counts.total) * 100) : 0;
-  const sections = tab === 'employee' ? VAULT_EMPLOYEE_DOCS : [];  // org tab renders from orgTemplates below
-
   // ── In-modal preview state ────────────────────────────────────────────────
   // Click "View" → fetch resolved HTML + header/footer JSON, render inside
   // the same fixed-height page-style chrome the template editor uses.
@@ -1366,6 +1294,152 @@ function VaultModal({
     }
     return m;
   }, [runs]);
+
+  // ── Employee Documents — live from /employees/{id}/documents ─────────────
+  // The Vault used to render a hardcoded VAULT_EMPLOYEE_DOCS catalogue. Now
+  // we pull the actual uploads for THIS employee and group them back into
+  // the same Identity / Address / Education / Bank sections by looking each
+  // document_key up in STAGE2_CATEGORIES. `prev_<companyId>_<docId>` keys
+  // become a Previous Employment section (company_name comes from
+  // /previous-employments). Unknown keys fall into "Other Documents" with
+  // the file's original_name so nothing the user uploaded ever disappears
+  // from the archive.
+  type EmpDocApi = {
+    id: number;
+    document_key: string;
+    status: 'pending' | 'uploaded' | 'verified' | 'rejected';
+    original_name: string | null;
+    mime_type: string | null;
+    size_bytes: number | null;
+    uploaded_at: string | null;
+    url: string | null;
+  };
+  type EmpDocLive = {
+    key: string;
+    name: string;
+    desc: string;
+    icon: string;
+    tint: string;
+    fg: string;
+    category: string;
+    status: VaultStatus;
+    url: string | null;
+  };
+  const [empDocs, setEmpDocs] = useState<EmpDocApi[]>([]);
+  const [prevCompanies, setPrevCompanies] = useState<{ id: number; company_name: string }[]>([]);
+
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) { setEmpDocs([]); setPrevCompanies([]); return; }
+    let cancelled = false;
+    Promise.all([
+      api.get(`/employees/${emp.dbId}/documents`).catch(() => ({ data: [] })),
+      api.get(`/employees/${emp.dbId}/previous-employments`).catch(() => ({ data: [] })),
+    ]).then(([docRes, prevRes]) => {
+      if (cancelled) return;
+      setEmpDocs(Array.isArray(docRes.data) ? docRes.data : []);
+      setPrevCompanies(Array.isArray(prevRes.data) ? prevRes.data : []);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, emp?.dbId]);
+
+  const serverStatusToVault = (s: string): VaultStatus => {
+    switch (s) {
+      case 'verified': return 'Verified';
+      case 'uploaded': return 'Uploaded';
+      case 'rejected': return 'Rejected';
+      default:         return 'Pending';
+    }
+  };
+
+  const employeeSections = useMemo(() => {
+    if (empDocs.length === 0) return [] as { title: string; docs: EmpDocLive[] }[];
+    const byKey = new Map(empDocs.map(d => [d.document_key, d]));
+    const used  = new Set<string>();
+    const out: { title: string; docs: EmpDocLive[] }[] = [];
+
+    for (const cat of STAGE2_CATEGORIES) {
+      const docs: EmpDocLive[] = [];
+      for (const d of cat.docs) {
+        const u = byKey.get(d.id);
+        if (!u) continue;
+        used.add(d.id);
+        docs.push({
+          key: d.id,
+          name: d.name,
+          desc: u.original_name || d.sub,
+          icon: cat.icon,
+          tint: cat.tint,
+          fg:   cat.fg,
+          category: cat.title.replace(/ Documents?$/, '').replace(/ Proof$/, ''),
+          status: serverStatusToVault(u.status),
+          url: u.url,
+        });
+      }
+      if (docs.length) out.push({ title: cat.title, docs });
+    }
+
+    const prevDocs: EmpDocLive[] = [];
+    for (const u of empDocs) {
+      const m = u.document_key.match(/^prev_(\d+)_(.+)$/);
+      if (!m) continue;
+      used.add(u.document_key);
+      const companyId = Number(m[1]);
+      const docId     = m[2];
+      const company   = prevCompanies.find(c => c.id === companyId);
+      const docDef    = STAGE2_COMPANY_DOCS.find(x => x.id === docId);
+      prevDocs.push({
+        key: u.document_key,
+        name: docDef?.name || u.original_name || u.document_key,
+        desc: company ? `${company.company_name}${u.original_name ? ` · ${u.original_name}` : ''}` : (u.original_name || ''),
+        icon: 'ri-briefcase-line',
+        tint: '#fde8c4',
+        fg:   '#a4661c',
+        category: 'Employment',
+        status: serverStatusToVault(u.status),
+        url: u.url,
+      });
+    }
+    if (prevDocs.length) out.push({ title: 'Previous Employment', docs: prevDocs });
+
+    const other: EmpDocLive[] = [];
+    for (const u of empDocs) {
+      if (used.has(u.document_key)) continue;
+      other.push({
+        key: u.document_key,
+        name: u.original_name || u.document_key,
+        desc: u.document_key,
+        icon: 'ri-file-line',
+        tint: '#eef2f6',
+        fg:   '#5b6478',
+        category: 'Other',
+        status: serverStatusToVault(u.status),
+        url: u.url,
+      });
+    }
+    if (other.length) out.push({ title: 'Other Documents', docs: other });
+
+    return out;
+  }, [empDocs, prevCompanies]);
+
+  // Org tab now shows only templates whose signing workflow is Completed —
+  // matches "whatever he sign" semantics for the vault as an archive.
+  const signedTemplates = useMemo(
+    () => orgTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed'),
+    [orgTemplates, runByTemplateId],
+  );
+
+  const allDocs = employeeSections.flatMap(s => s.docs);
+  const counts = {
+    total:    allDocs.length + signedTemplates.length,
+    verified: allDocs.filter(d => d.status === 'Verified').length,
+    signed:   signedTemplates.length,
+    pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length,
+    notGen:   0,
+  };
+  const empCount = allDocs.length;
+  const orgCount = signedTemplates.length;
+  const completion = counts.total ? Math.round(((counts.verified + counts.signed) / counts.total) * 100) : 0;
+  const sections = tab === 'employee' ? employeeSections : [];  // org tab renders from signedTemplates below
 
   // 3-dot menu state (which row is open)
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
@@ -1698,8 +1772,9 @@ function VaultModal({
                   <div>
                     {section.docs.map(doc => {
                       const dt = VAULT_STATUS_TONE[doc.status];
+                      const hasFile = !!doc.url;
                       return (
-                        <div key={doc.id} className="vault-doc-row flex-wrap">
+                        <div key={doc.key} className="vault-doc-row flex-wrap">
                           <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
                             <i className={doc.icon} />
                           </div>
@@ -1719,12 +1794,25 @@ function VaultModal({
                             <span className="vault-status-dot" style={{ background: dt.dot }} />
                             {doc.status}
                           </span>
-                          <button type="button" className="vault-action-view">
+                          <a
+                            href={hasFile ? doc.url! : undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="vault-action-view"
+                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', textDecoration: 'none' }}
+                            title={hasFile ? 'Open in a new tab' : 'No file available'}
+                          >
                             <i className="ri-eye-line" /> View
-                          </button>
-                          <button type="button" className="vault-action-download">
+                          </a>
+                          <a
+                            href={hasFile ? doc.url! : undefined}
+                            download
+                            className="vault-action-download"
+                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', textDecoration: 'none' }}
+                            title={hasFile ? 'Download original upload' : 'No file available'}
+                          >
                             <i className="ri-download-2-line" /> Download
-                          </button>
+                          </a>
                         </div>
                       );
                     })}
@@ -1757,13 +1845,13 @@ function VaultModal({
                       <div className="fw-bold" style={{ fontSize: 14 }}>Signed Company Documents</div>
                       <div className="text-muted" style={{ fontSize: 11.5 }}>
                         {orgLoading ? 'Loading matching templates…'
-                          : orgTemplates.length === 0 ? 'No templates configured for this department × level.'
-                          : `${orgTemplates.length} template${orgTemplates.length === 1 ? '' : 's'} ready to generate`}
+                          : signedTemplates.length === 0 ? 'No documents have been signed by this employee yet.'
+                          : `${signedTemplates.length} signed document${signedTemplates.length === 1 ? '' : 's'}`}
                       </div>
                     </div>
                     <span className="d-inline-flex align-items-center"
                       style={{ padding: '4px 12px', borderRadius: 999, background: '#f5f0ff', color: '#5a3fd1', fontSize: 11.5, fontWeight: 600 }}>
-                      {orgTemplates.length} docs
+                      {signedTemplates.length} docs
                     </span>
                   </div>
 
@@ -1774,18 +1862,18 @@ function VaultModal({
                     </div>
                   )}
 
-                  {!orgLoading && orgTemplates.length === 0 && (
+                  {!orgLoading && signedTemplates.length === 0 && (
                     <div style={{ padding: 22, textAlign: 'center', color: '#6b7280', background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: 10 }}>
                       <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
                       <div style={{ fontSize: 13 }}>
-                        No templates match this employee's department + designation level yet.<br />
-                        Create a template under HR &gt; Document &amp; Evidence &gt; Document Templates.
+                        Nothing has been signed yet. Documents will appear here as
+                        their signing workflow reaches <strong>Completed</strong>.
                       </div>
                     </div>
                   )}
 
                   <div>
-                    {orgTemplates.map(tpl => {
+                    {signedTemplates.map(tpl => {
                       const tone = tpl.status === 'Active'
                         ? VAULT_STATUS_TONE['Signed']
                         : tpl.status === 'Draft'

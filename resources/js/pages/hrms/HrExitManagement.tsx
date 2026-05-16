@@ -355,10 +355,7 @@ export default function HrExitManagement() {
                         placeholder="All"
                       />
                     </div>
-                    <span className="cand-result-chip ms-auto">
-                      <i className="ri-filter-3-line" />
-                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
-                    </span>
+                  
                   </div>
 
                   <div className="rec-list-scroll">
