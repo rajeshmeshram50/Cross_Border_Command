@@ -1046,10 +1046,21 @@
         [data-bs-theme="dark"] .onb-doc-tag                  { background: rgba(124,92,252,0.22); color: #c4b5fd; }
 
 
+        /* Invalid state — use !important to outrank Bootstrap's
+           .form-control.is-invalid icon/background. Light mode gets a
+           soft peach tile; dark mode gets a translucent coral wash so
+           the error reads against the dark card surface instead of
+           glowing as a bright white box. */
         .onb-init-input.is-invalid {
-  border-color: #f06548 !important;
-  background-color: #fff8f7 !important;
-}
+          border-color: #f06548 !important;
+          background-color: #fff8f7 !important;
+        }
+        [data-bs-theme="dark"] .onb-init-input.is-invalid,
+        [data-layout-mode="dark"] .onb-init-input.is-invalid {
+          border-color: #ef4444 !important;
+          background-color: rgba(240,101,72,0.12) !important;
+          color: var(--vz-body-color) !important;
+        }
 
 .onb-error-msg {
   color: #f06548;

@@ -135,6 +135,40 @@ const _todayIso = (): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
+/**
+ * Validate the employee's office / work email. Returns a human-readable
+ * error string when invalid, or an empty string when the email is OK.
+ * Checks (in order): required, whitespace, single @, local + domain parts
+ * present, TLD ≥ 2 chars, no consecutive dots, sensible length (RFC 5321
+ * caps the local part at 64 and the full address at 254). Used by both
+ * the Stage-3 Next handler (gate) and the input's `onChange` so the user
+ * sees inline feedback as they type.
+ */
+const validateOfficialEmail = (raw: string | null | undefined): string => {
+  const email = String(raw ?? '').trim();
+  if (!email) return 'Official email is required.';
+  if (/\s/.test(email)) return 'Email cannot contain spaces.';
+  if (email.length > 254) return 'Email is too long (max 254 characters).';
+  const at = email.indexOf('@');
+  if (at < 0 || at !== email.lastIndexOf('@')) return 'Email must contain exactly one "@" symbol.';
+  const local  = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  if (!local)  return 'Add the part before "@" (e.g. firstname.lastname).';
+  if (!domain) return 'Add the part after "@" (e.g. company.com).';
+  if (local.length > 64) return 'The part before "@" is too long (max 64 characters).';
+  if (local.startsWith('.') || local.endsWith('.')) return 'Email cannot start or end with a dot.';
+  if (/\.\./.test(email)) return 'Email cannot contain two dots in a row.';
+  if (!domain.includes('.')) return 'Domain must include a dot (e.g. company.com).';
+  const tld = domain.split('.').pop() || '';
+  if (tld.length < 2) return 'Domain ending must be at least 2 characters (e.g. .com, .in).';
+  // Final shape check. Restricted to printable ASCII commonly accepted by
+  // SMTP gateways; intentionally stricter than RFC 5322 so we don't admit
+  // exotic local parts that downstream systems (notifications, SSO) reject.
+  const SHAPE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  if (!SHAPE.test(email)) return 'Enter a valid email like firstname.lastname@company.com.';
+  return '';
+};
+
 /** Server-enforced cap for ANY uploaded document. Drives both the
  *  per-doc "max X MB" hint shown in the catalogue and the client-side
  *  guard in triggerUpload() — keeping them sourced from one constant
@@ -3357,12 +3391,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       progress = done ? 100 : stage1Pct;
       status   = done ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 2) {
-      // Same trust-the-server-floor rule: if the backend has stamped
-      // macroCompleted >= 2, the stage is done even before this session's
-      // local upload state has loaded. Without this, the sidebar shows
-      // "Pending" on initial render and only flips to "Completed" once
-      // you click the stage and trigger its data fetch.
-      const done = stage2Done || macroCompleted >= 2;
+      // Stage 2 only flips to "Completed" / 100% when BOTH conditions
+      // hold: every required doc is uploaded AND the user has advanced
+      // past Stage 2. Used to be an OR — that falsely marked Stage 2 as
+      // 100% just because the macro watermark had moved on, even when
+      // the user only uploaded 2 of 3 required docs. Progress otherwise
+      // tracks the live upload ratio (uploaded / total × 100), so the
+      // bar always reflects the real state of the catalogue.
+      const done = stage2Done && macroCompleted >= 2;
       progress = done ? 100 : stage2Pct;
       status   = done ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 3) {
@@ -3515,6 +3551,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
                 emp={emp}
                 s1={s1}
                 setS1={setS1}
+                s1Errors={s1Errors}
+                setS1Errors={setS1Errors}
                 laptopAssets={laptopAssets}
                 mobileAssets={mobileAssets}
                 otherAssets={otherAssets}
@@ -4160,6 +4198,19 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       // the PUT payload identical (so the existing validator on the
       // backend handles everything correctly).
       if (activeStage === 3) {
+        // Official email is mandatory on Stage 3 — it's what the rest
+        // of the platform (notifications, account provisioning, signing
+        // flows) uses to reach the employee. Validate before saving so
+        // the user gets immediate feedback instead of a backend error.
+        const emailErr = validateOfficialEmail(s1.official_email);
+        if (emailErr) {
+          toast.error('Official email — fix this first', emailErr);
+          setS1Errors(p => ({ ...p, official_email: emailErr }));
+          const el = document.getElementById('field-official-email') as HTMLInputElement | null;
+          el?.focus();
+          el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          return;
+        }
         setNextLoading(true);
         // skipValidate=true — we don't want to re-run Stage 1's required-
         // field checks here; the user is on Stage 3 and might be editing
@@ -5341,11 +5392,13 @@ function Stage2Documents({ emp, onDocsChanged }: {
  *  are the only persisted FK columns). Saving Stage 3 reuses
  *  `saveStage1(false)` from the modal scope. */
 function Stage3Provisioning({
-  emp, s1, setS1, laptopAssets, mobileAssets, otherAssets,
+  emp, s1, setS1, s1Errors, setS1Errors, laptopAssets, mobileAssets, otherAssets,
 }: {
   emp: OnboardRow;
   s1: any;
   setS1: React.Dispatch<React.SetStateAction<any>>;
+  s1Errors: Record<string, string>;
+  setS1Errors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   laptopAssets: { value: string; label: string }[];
   mobileAssets: { value: string; label: string }[];
   otherAssets:  { value: string; label: string }[];
@@ -5386,13 +5439,32 @@ function Stage3Provisioning({
   <label className="onb-init-label">
     Official Email Address <span className="req">*</span>
   </label>
-  <input 
+  <input
     id="field-official-email"
-    className="onb-init-input is-required" 
-    placeholder="firstname.lastname@company.com" 
-    value={s1.official_email} 
-    onChange={e => setS1((p: any) => ({ ...p, official_email: e.target.value }))}
+    type="email"
+    autoComplete="email"
+    inputMode="email"
+    spellCheck={false}
+    maxLength={254}
+    className={`onb-init-input is-required${s1Errors.official_email ? ' is-invalid' : ''}`}
+    placeholder="firstname.lastname@company.com"
+    value={s1.official_email}
+    onChange={e => {
+      // Strip whitespace as the user types — pasted emails often
+      // arrive with stray spaces and the SMTP gateway rejects them.
+      const v = e.target.value.replace(/\s/g, '');
+      setS1((p: any) => ({ ...p, official_email: v }));
+      // Inline re-validate so the red border / message disappears
+      // the moment the input becomes valid.
+      setS1Errors(p => ({ ...p, official_email: v ? validateOfficialEmail(v) : '' }));
+    }}
+    onBlur={e => {
+      setS1Errors(p => ({ ...p, official_email: validateOfficialEmail(e.target.value) }));
+    }}
   />
+  {s1Errors.official_email && (
+    <div className="onb-error-msg">{s1Errors.official_email}</div>
+  )}
 </Col>
             <Col md={6}>
               <label className="onb-init-label">Employee Code {autoLabel}</label>

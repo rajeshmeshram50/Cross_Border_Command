@@ -818,6 +818,16 @@ export default function HrEmployees() {
   // by the bigger Stage 2 onboarding modal.
   type ServerDoc = { id: number; document_key: string; original_name: string | null; status: string; url: string | null };
   const [eExistingDocs, setEExistingDocs] = useState<Record<string, ServerDoc>>({});
+  // Ref mirror of eExistingDocs. The Step-3 validator (and any caller that
+  // runs in an async handler) reads from this ref so it ALWAYS sees the
+  // latest server-doc map regardless of when the validator's closure was
+  // created. Without the ref, the user could see a green "Uploaded" tile
+  // (state has hydrated) yet still hit "Aadhar Card upload is required"
+  // because handleSaveEmployee captured the validator from an earlier
+  // render where eExistingDocs was still {} (e.g. clicked Save quickly
+  // after opening Edit, before the GET /documents response landed).
+  const eExistingDocsRef = useRef<Record<string, ServerDoc>>({});
+  useEffect(() => { eExistingDocsRef.current = eExistingDocs; }, [eExistingDocs]);
   const [eDocBusy, setEDocBusy]           = useState<Record<string, boolean>>({});
 
   // Assign Assets modal (opened by the per-row Workstation icon).
@@ -1489,14 +1499,18 @@ export default function HrEmployees() {
   // Step 3 — Documents section requires Aadhar + PAN. A document counts
   // as supplied if EITHER (a) the admin just picked a file in this
   // session (eAadharFile / ePanFile) OR (b) a prior upload already lives
-  // on the server (eExistingDocs.aadhaar / .pan). The Passport-size photo
-  // is intentionally optional.
+  // on the server. The server-doc lookup reads from `eExistingDocsRef`
+  // (not state) so the validator always sees the latest hydrated map even
+  // when called inside an async handler that captured an earlier closure
+  // — fixed the "Aadhar Card upload is required" false positive on edit.
+  // The Passport-size photo is intentionally optional.
   const validateStep3 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
-    if (!eAadharFile && !eExistingDocs['aadhaar']) {
+    const existing = eExistingDocsRef.current;
+    if (!eAadharFile && !existing['aadhaar']) {
       e.doc_aadhaar = 'Aadhar Card upload is required';
     }
-    if (!ePanFile && !eExistingDocs['pan']) {
+    if (!ePanFile && !existing['pan']) {
       e.doc_pan = 'PAN Card upload is required';
     }
     // Pairing rule: if the user opted into a laptop/mobile assignment they
@@ -1509,7 +1523,7 @@ export default function HrEmployees() {
       e.mobile_master_asset_id = 'Mobile Device is required';
     }
     return e;
-  }, [eAadharFile, ePanFile, eExistingDocs, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId]);
+  }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId]);
 
   // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
   // for the employee (the default). The "Enable payroll" toggle is the
