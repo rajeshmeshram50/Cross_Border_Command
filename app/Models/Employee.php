@@ -37,6 +37,7 @@ class Employee extends Model
         'legal_entity_id', 'location',
         'department_id', 'designation_id',
         'primary_role_id', 'ancillary_role_id', 'ancillary_role_ids',
+        'work_type',
         'reporting_manager_id', 'date_of_joining',
 
         'probation_policy', 'probation_months',

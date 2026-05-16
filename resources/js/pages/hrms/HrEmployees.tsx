@@ -1295,19 +1295,17 @@ export default function HrEmployees() {
           ? raw.ancillary_role_ids.map(String)
           : (raw.ancillary_role_id ? [String(raw.ancillary_role_id)] : [])
       );
+      setEWorkType(raw.work_type || '');
       setELegalEntity(raw.legal_entity_id ? String(raw.legal_entity_id) : '');
       setELocation(raw.location || '');
       setEReportingMgr(raw.reporting_manager_id ? `employee:${raw.reporting_manager_id}` : '');
-      // Edit hydration — only carry forward what was actually saved. We
-      // also treat the legacy "Default Probation Policy" / "Default Notice
-      // Period" placeholder strings as empty, since those used to be
-      // auto-filled by the old form code; admins editing a row created
-      // back then should be forced to pick a real value instead of seeing
-      // a meaningless "Default" label.
-      const probLegacy = raw.probation_policy === 'Default Probation Policy';
-      const noticeLegacy = raw.notice_period === 'Default Notice Period';
-      setEProbationPolicy(probLegacy ? '' : (raw.probation_policy || ''));
-      setENoticePeriod(noticeLegacy ? '' : (raw.notice_period || ''));
+      // Edit hydration — show whatever the admin actually saved. Earlier
+      // code special-cased the old "Default Probation Policy" / "Default
+      // Notice Period" placeholder strings and cleared them, but that
+      // wiped legitimate saves too. Trust the data; admins can re-pick if
+      // they want.
+      setEProbationPolicy(raw.probation_policy || '');
+      setENoticePeriod(raw.notice_period || '');
 
       // Permanent address
       setEPermAddr1(raw.perm_address_line1 || '');
@@ -1324,33 +1322,16 @@ export default function HrEmployees() {
         && String(raw.perm_country_id ?? '') === String(raw.country_id ?? '')
       );
 
-      // Step 3 — Work Details. Legacy rows may carry the old hardcoded
-      // placeholder strings (e.g. "Holiday Calendar", "General Shift") that
-      // used to be auto-pre-selected. Treat those as empty so the admin
-      // editing such a row sees the new placeholder and picks a real value.
-      const legacyDefaults: Record<string, string[]> = {
-        holiday_list:        ['Holiday Calendar'],
-        shift:               ['General Shift'],
-        weekly_off:          ['Week Off Policy'],
-        time_tracking:       ['Manual'],
-        penalization_policy: ['Tracking Policy'],
-        overtime:            ['Not applicable'],
-      };
-      const cleanLegacy = (key: string, raw: any) => {
-        const v = raw?.[key];
-        if (v === undefined || v === null) return undefined;
-        if ((legacyDefaults[key] || []).includes(v)) return '';
-        return v;
-      };
+      // Step 3 — Work Details. Plain hydration — load whatever was saved.
       if (raw.leave_plan !== undefined && raw.leave_plan !== null) setELeavePlan(raw.leave_plan);
-      const hl = cleanLegacy('holiday_list', raw);        if (hl !== undefined) setEHolidayList(hl);
+      if (raw.holiday_list !== undefined && raw.holiday_list !== null) setEHolidayList(raw.holiday_list);
       if (raw.attendance_tracking !== undefined && raw.attendance_tracking !== null) setEAttendanceTracking(!!raw.attendance_tracking);
-      const sh = cleanLegacy('shift', raw);               if (sh !== undefined) setEShift(sh);
-      const wo = cleanLegacy('weekly_off', raw);          if (wo !== undefined) setEWeeklyOff(wo);
+      if (raw.shift !== undefined && raw.shift !== null) setEShift(raw.shift);
+      if (raw.weekly_off !== undefined && raw.weekly_off !== null) setEWeeklyOff(raw.weekly_off);
       if (raw.attendance_number !== undefined && raw.attendance_number !== null) setEAttendanceNumber(raw.attendance_number);
-      const tt = cleanLegacy('time_tracking', raw);       if (tt !== undefined) setETimeTracking(tt);
-      const pp = cleanLegacy('penalization_policy', raw); if (pp !== undefined) setEPenalizationPolicy(pp);
-      const ot = cleanLegacy('overtime', raw);            if (ot !== undefined) setEOvertime(ot);
+      if (raw.time_tracking !== undefined && raw.time_tracking !== null) setETimeTracking(raw.time_tracking);
+      if (raw.penalization_policy !== undefined && raw.penalization_policy !== null) setEPenalizationPolicy(raw.penalization_policy);
+      if (raw.overtime !== undefined && raw.overtime !== null) setEOvertime(raw.overtime);
       if (raw.expense_policy !== undefined && raw.expense_policy !== null) setEExpensePolicy(raw.expense_policy);
       if (raw.laptop_assigned !== undefined && raw.laptop_assigned !== null) setELaptopAssigned(raw.laptop_assigned);
       if (raw.laptop_asset_id !== undefined && raw.laptop_asset_id !== null) setELaptopAssetId(raw.laptop_asset_id);
@@ -1366,26 +1347,14 @@ export default function HrEmployees() {
         ? raw.other_master_asset_ids.map((n: any) => String(n))
         : []);
 
-      // Step 4 — Compensation. Same legacy-defaults cleanup as Step 3.
-      const step4Legacy: Record<string, string[]> = {
-        pay_group:        ['Default pay group'],
-        salary_frequency: ['Per annum'],
-        salary_structure: ['Range Based'],
-        tax_regime:       ['New Regime (115BAC)'],
-      };
-      const cleanStep4 = (key: string, raw: any) => {
-        const v = raw?.[key];
-        if (v === undefined || v === null) return undefined;
-        if ((step4Legacy[key] || []).includes(v)) return '';
-        return v;
-      };
+      // Step 4 — Compensation. Plain hydration — load whatever was saved.
       if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
-      const pg = cleanStep4('pay_group', raw);        if (pg !== undefined) setEPayGroup(pg);
+      if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
       if (raw.annual_salary !== undefined && raw.annual_salary !== null) setEAnnualSalary(String(raw.annual_salary));
-      const sf = cleanStep4('salary_frequency', raw); if (sf !== undefined) setESalaryFreq(sf);
+      if (raw.salary_frequency !== undefined && raw.salary_frequency !== null) setESalaryFreq(raw.salary_frequency);
       if (raw.salary_effective_from) setESalaryFrom(String(raw.salary_effective_from).slice(0, 10));
-      const ss = cleanStep4('salary_structure', raw); if (ss !== undefined) setESalaryStructure(ss);
-      const tr = cleanStep4('tax_regime', raw);       if (tr !== undefined) setETaxRegime(tr);
+      if (raw.salary_structure !== undefined && raw.salary_structure !== null) setESalaryStructure(raw.salary_structure);
+      if (raw.tax_regime !== undefined && raw.tax_regime !== null) setETaxRegime(raw.tax_regime);
       if (raw.bonus_in_annual !== undefined && raw.bonus_in_annual !== null) setEBonusInAnnual(!!raw.bonus_in_annual);
       if (raw.pf_eligible !== undefined && raw.pf_eligible !== null) setEPfEligible(!!raw.pf_eligible);
       if (raw.detailed_breakup !== undefined && raw.detailed_breakup !== null) setEDetailedBreakup(!!raw.detailed_breakup);
@@ -1622,6 +1591,7 @@ export default function HrEmployees() {
       // Send the full multi-select array. Backend mirrors the first item
       // into the legacy ancillary_role_id column for SQL/report compat.
       ancillary_role_ids: eAncillaryRole.map(v => Number(v)).filter(n => Number.isFinite(n)),
+      work_type: eWorkType || null,
       legal_entity_id: intOrNull(eLegalEntity),
       location:        eLocation || null,
       reporting_manager_id: (() => {

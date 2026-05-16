@@ -928,6 +928,7 @@ class EmployeeController extends Controller
             'ancillary_role_id'    => 'nullable|integer',
             'ancillary_role_ids'   => 'nullable|array',
             'ancillary_role_ids.*' => 'integer',
+            'work_type' => 'nullable|string|max:50',
             'reporting_manager_id' => 'nullable|integer',
             'date_of_joining' => 'nullable|date',
 
