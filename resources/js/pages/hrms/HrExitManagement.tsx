@@ -1114,11 +1114,24 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
    *  Stage handler can gate the advance on a clean save. */
   const saveStage1 = async (): Promise<boolean> => {
     if (!employee || stage1Saving) return false;
+    // Date-in-the-past guard runs BEFORE we flip the loading flag — no
+    // network round-trip needed and the toast fires immediately. Used to
+    // return false silently here, so clicking "Next Stage" with a past
+    // Notice Date / Last Working Day did nothing visible to the user
+    // (the field-level red text was easy to miss).
+    if (noticeDateInvalid || lwdInvalid) {
+      toast.error(
+        'Fix the highlighted dates',
+        noticeDateInvalid && lwdInvalid
+          ? 'Notice Date and Last Working Day must both be in the future.'
+          : noticeDateInvalid
+            ? 'Notice Date must be in the future.'
+            : 'Last Working Day must be in the future.',
+      );
+      return false;
+    }
     setStage1Saving(true);
     try {
-      // Block the save when either date isn't strictly in the future —
-      // the same rule the field-level invalid banners surface to the user.
-      if (noticeDateInvalid || lwdInvalid) return false;
       await api.put(`/employees/${employee.id}/exit`, {
         exit_type:            exitType || null,
         // initiated_by + other_reason were removed from the form; we no
@@ -1133,7 +1146,22 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
         replacement_required: replacementNeeded || null,
       });
       return true;
-    } catch {
+    } catch (err: any) {
+      // Surface 422 field errors and any server message instead of
+      // swallowing — without this the Next Stage button looked dead
+      // when the backend rejected the PUT (missing field, permission,
+      // network blip, etc.).
+      const fieldErrors = err?.response?.data?.errors;
+      const firstFieldErr =
+        fieldErrors && typeof fieldErrors === 'object'
+          ? (Array.isArray(Object.values(fieldErrors)[0])
+              ? (Object.values(fieldErrors)[0] as string[])[0]
+              : String(Object.values(fieldErrors)[0]))
+          : null;
+      toast.error(
+        'Could not save exit details',
+        firstFieldErr || err?.response?.data?.message || err?.message || 'Please try again.',
+      );
       return false;
     } finally {
       setStage1Saving(false);
@@ -1243,6 +1271,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                         value={reasonForExit}
                         onChange={setReasonForExit}
                         placeholder="Describe the reason for exit"
+                        maxLength={60}
                       />
                     </EpField>
                   </Col>
@@ -1953,7 +1982,7 @@ function EpField({ label, children }: { label: string; children: React.ReactNode
     </div>
   );
 }
-function EpInput({ value, onChange, type = 'text', disabled = false, placeholder, min, max }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; min?: string; max?: string }) {
+function EpInput({ value, onChange, type = 'text', disabled = false, placeholder, min, max, maxLength }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; min?: string; max?: string; maxLength?: number }) {
   if (type === 'date') {
     return (
       <MasterDatePicker
@@ -1966,7 +1995,7 @@ function EpInput({ value, onChange, type = 'text', disabled = false, placeholder
       />
     );
   }
-  return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} min={min} max={max} onChange={e => onChange(e.target.value)} />;
+  return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} min={min} max={max} maxLength={maxLength} onChange={e => onChange(e.target.value)} />;
 }
 function EpSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
   // Render via MasterSelect so the modal dropdowns match the look + dark-mode
