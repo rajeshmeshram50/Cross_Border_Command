@@ -373,7 +373,7 @@ export default function HrExitManagement() {
                     <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                       <thead>
                         <tr>
-                          <th className="ps-3 text-center" style={{ width: 56 }}>#</th>
+                          <th className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
                           <th>Employee</th>
                           <th>Emp ID</th>
                           <th>Department</th>
