@@ -954,17 +954,12 @@ function ImportCandidatesModal({
             <label className="cand-import-label">
               Link Imported Candidates to Recruitment<span className="req">*</span>
             </label>
-            <select
-              className="cand-import-select"
+            <MasterSelect
               value={linkedCode}
-              onChange={e => setLinkedCode(e.target.value)}
-            >
-              {recruitmentOptions.length === 0 ? (
-                <option value="">— Select —</option>
-              ) : recruitmentOptions.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+              onChange={setLinkedCode}
+              options={recruitmentOptions}
+              placeholder="— Select —"
+            />
             <div className="cand-import-help">
               If a row contains a "Recruitment ID" column, that value overrides this default.
             </div>
