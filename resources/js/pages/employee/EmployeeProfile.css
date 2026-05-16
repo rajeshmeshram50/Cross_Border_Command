@@ -575,6 +575,90 @@
           box-shadow: 0 3px 10px var(--accent-border);
         }
         .ep-claim-submit:hover { transform: translateY(-1px); }
+        .ep-claim-submit:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
+        .ep-claim-secondary:disabled, .ep-claim-cancel:disabled { opacity: 0.55; cursor: not-allowed; }
+
+        /* ── Dark-mode polish ─────────────────────────────────────────
+           The claim modal already uses Velzon theme variables, but a few
+           surfaces need a bit of extra contrast in dark mode so the form
+           reads at a glance: input cells get a slightly elevated tint so
+           they stand out against the body, and the section header dots /
+           helper text get a calmer foreground. */
+        /* Force the EpModal card wrapper to follow the dark theme too —
+           its inline `background: var(--vz-card-bg, #fff)` falls back to
+           white if the variable isn't picked up at portal mount time,
+           which leaks a visible cream-coloured border around the dark
+           body. Pinning it with !important here removes that sliver. */
+        [data-bs-theme="dark"] .ep-modal-card.ep-claim-modal,
+        [data-layout-mode="dark"] .ep-modal-card.ep-claim-modal {
+          background: var(--vz-card-bg) !important;
+        }
+        [data-bs-theme="dark"] .ep-claim-modal .ep-claim-body,
+        [data-layout-mode="dark"] .ep-claim-modal .ep-claim-body {
+          background: var(--vz-card-bg) !important;
+          color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .ep-claim-input,
+        [data-layout-mode="dark"] .ep-claim-input {
+          background: var(--vz-secondary-bg) !important;
+          border-color: var(--vz-border-color) !important;
+          color: var(--vz-body-color) !important;
+        }
+        [data-bs-theme="dark"] .ep-claim-input::placeholder,
+        [data-layout-mode="dark"] .ep-claim-input::placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.6;
+        }
+        [data-bs-theme="dark"] .ep-claim-intel,
+        [data-layout-mode="dark"] .ep-claim-intel {
+          background: var(--vz-secondary-bg) !important;
+          border-color: var(--vz-border-color) !important;
+          color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .ep-claim-footer,
+        [data-layout-mode="dark"] .ep-claim-footer {
+          background: var(--vz-card-bg) !important;
+          border-top-color: var(--vz-border-color) !important;
+        }
+        [data-bs-theme="dark"] .ep-claim-cancel,
+        [data-bs-theme="dark"] .ep-claim-secondary,
+        [data-layout-mode="dark"] .ep-claim-cancel,
+        [data-layout-mode="dark"] .ep-claim-secondary {
+          background: var(--vz-secondary-bg) !important;
+          border-color: var(--vz-border-color) !important;
+          color: var(--vz-body-color) !important;
+        }
+        /* MasterSelect / MasterDatePicker toggles inside the claim modal
+           — same elevated dark tint as the plain inputs so the row aligns. */
+        [data-bs-theme="dark"] .ep-claim-modal .master-select-toggle,
+        [data-bs-theme="dark"] .ep-claim-modal .master-datepicker-toggle,
+        [data-layout-mode="dark"] .ep-claim-modal .master-select-toggle,
+        [data-layout-mode="dark"] .ep-claim-modal .master-datepicker-toggle {
+          background: var(--vz-secondary-bg) !important;
+          border-color: var(--vz-border-color) !important;
+          color: var(--vz-body-color) !important;
+        }
+        /* Proof & Receipt upload zone + Approval Flow route card use the
+           accent's "soft" tint (translucent orange / indigo). On a dark
+           card that wash reads as a bright cream / peach panel — visibly
+           out of place. Drop the opacity further and switch the border
+           to a translucent accent so it sits politely on the dark body. */
+        [data-bs-theme="dark"] .ep-claim-upload,
+        [data-bs-theme="dark"] .ep-claim-route,
+        [data-layout-mode="dark"] .ep-claim-upload,
+        [data-layout-mode="dark"] .ep-claim-route {
+          background: rgba(255,255,255,0.04) !important;
+          border-color: rgba(255,255,255,0.10) !important;
+          color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .ep-claim-upload:hover,
+        [data-layout-mode="dark"] .ep-claim-upload:hover {
+          background: rgba(255,255,255,0.06) !important;
+        }
+        [data-bs-theme="dark"] .ep-claim-upload-icon,
+        [data-layout-mode="dark"] .ep-claim-upload-icon {
+          background: rgba(255,255,255,0.06) !important;
+        }
         .ep-pay-modal .modal-content { border: none; border-radius: 16px; overflow: hidden; }
         .ep-pay-modal .modal-dialog { max-width: 1300px; }
 

@@ -1202,8 +1202,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   // Categories pulled from the expense_category master so the dropdown stays
   // in sync with what admins configure (and so we save the master id, not a
-  // free-text label).
-  const [claimCategories, setClaimCategories] = useState<{ id: number; name: string }[]>([]);
+  // free-text label). `monthly_limit` and `yearly_limit` are also fetched
+  // so we can warn the user on the form when a draft amount exceeds the
+  // per-category budget the admin set in Master > Expense Categories.
+  type ClaimCategory = { id: number; name: string; monthly_limit: number | null; yearly_limit: number | null };
+  const [claimCategories, setClaimCategories] = useState<ClaimCategory[]>([]);
   useEffect(() => {
     if (!claimOpen) return;
     api.get('/master/expense_category')
@@ -1212,7 +1215,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         setClaimCategories(
           rows
             .filter((r: any) => (r.status ?? 'Active') === 'Active')
-            .map((r: any) => ({ id: Number(r.id), name: String(r.name ?? '') })),
+            .map((r: any) => ({
+              id: Number(r.id),
+              name: String(r.name ?? ''),
+              monthly_limit: r.monthly_limit != null && r.monthly_limit !== '' ? Number(r.monthly_limit) : null,
+              yearly_limit:  r.yearly_limit  != null && r.yearly_limit  !== '' ? Number(r.yearly_limit)  : null,
+            })),
         );
       })
       .catch(() => setClaimCategories([]));
@@ -1222,6 +1230,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     const num = Number(id);
     const hit = claimCategories.find(c => c.id === num);
     return hit ? hit.name : String(id);
+  };
+  const categoryById = (id: string | number | undefined): ClaimCategory | null => {
+    if (id === undefined || id === '' || id === null) return null;
+    const num = Number(id);
+    return claimCategories.find(c => c.id === num) || null;
   };
 
   // Multi-draft tab support — every form-render reads/writes the active draft
@@ -1256,14 +1269,40 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   });
   const [claimDrafts, setClaimDrafts] = useState<ClaimDraft[]>([blankDraft()]);
   const [activeClaimIdx, setActiveClaimIdx] = useState(0);
-  // Each time the modal re-opens, start with one fresh draft.
+  // Local-storage key for the Save Draft feature. Scoped per employee so
+  // viewing two different profiles doesn't cross-contaminate drafts.
+  const claimDraftKey = `cbc.expense.draft.${employeeId || 'me'}`;
+  // Each time the modal re-opens, restore from localStorage if a draft is
+  // saved there; otherwise start with one fresh draft. Restoring lets HR
+  // type a couple of lines, hit Save Draft, close the modal, and pick
+  // them up later — same behavior other "Save Draft" flows have.
   useEffect(() => {
     if (claimOpen) {
-      setClaimDrafts([blankDraft()]);
+      let restored: ClaimDraft[] | null = null;
+      try {
+        const raw = localStorage.getItem(claimDraftKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) restored = parsed as ClaimDraft[];
+        }
+      } catch { /* ignore — fall through to a blank draft */ }
+      setClaimDrafts(restored || [blankDraft()]);
       setActiveClaimIdx(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimOpen]);
+
+  // Save Draft handler — persists the current claimDrafts array to local
+  // storage so the user can close the modal and resume later. Doesn't hit
+  // the backend (the row is created on actual Submit).
+  const handleSaveDraft = () => {
+    try {
+      localStorage.setItem(claimDraftKey, JSON.stringify(claimDrafts));
+      toast.success('Draft saved', 'Your in-progress claim will be here when you re-open the form.');
+    } catch {
+      toast.error('Could not save draft', 'Browser storage is full or blocked.');
+    }
+  };
   const draft = claimDrafts[activeClaimIdx] ?? blankDraft();
   const updateDraft = (patch: Partial<ClaimDraft>) =>
     setClaimDrafts(d => d.map((x, i) => (i === activeClaimIdx ? { ...x, ...patch } : x)));
@@ -1545,12 +1584,50 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   // POST every draft as multipart/form-data so the optional attachments[]
   // upload alongside. On success, clear drafts, close modal, refresh list.
+  //
+  // `claimSubmitting` is a re-entrancy guard — a fast double-click on the
+  // Submit button used to fire the loop twice in parallel, creating two
+  // copies of every draft. The flag flips immediately, the button is
+  // disabled while it's true, and try/finally guarantees we always clear
+  // it (success, failure, or the user closing the modal mid-flight).
+  const [claimSubmitting, setClaimSubmitting] = useState(false);
   const submitAllDrafts = async () => {
-    const valid = claimDrafts.filter(d => d.title.trim() && d.amount.trim());
-    if (valid.length === 0) {
-      setClaimOpen(false);
+    if (claimSubmitting) return;
+    // Per-draft validation — block submit when ANY draft is missing a
+    // required field OR exceeds its category's monthly budget. Used to
+    // silently close the modal on an empty form, which the user reported
+    // as "form brings us back to profile view".
+    const errors: string[] = [];
+    claimDrafts.forEach((d, idx) => {
+      const label = `Claim ${idx + 1}`;
+      const title = d.title.trim();
+      const amt   = Number(String(d.amount).replace(/[^\d.]/g, ''));
+      if (!title)             errors.push(`${label}: Expense title is required`);
+      if (!d.amount.trim() || !Number.isFinite(amt) || amt <= 0) {
+        errors.push(`${label}: Amount must be greater than 0`);
+      }
+      if (!d.date)            errors.push(`${label}: Expense date is required`);
+      if (!d.category)        errors.push(`${label}: Category is required`);
+      // Budget cap — categoryById carries the monthly_limit configured in
+      // Master > Expense Categories. We treat it as a hard ceiling per
+      // claim: any single claim that already exceeds the monthly cap is
+      // an obvious error and the server would reject it after manager
+      // approval anyway, so block it now.
+      const cat = categoryById(d.category);
+      if (cat?.monthly_limit && Number.isFinite(amt) && amt > cat.monthly_limit) {
+        errors.push(`${label}: Amount ₹${amt.toLocaleString()} exceeds the "${cat.name}" monthly budget of ₹${cat.monthly_limit.toLocaleString()}.`);
+      }
+    });
+    if (errors.length > 0) {
+      toast.error('Fix the highlighted issues', errors.slice(0, 3).join('. '));
       return;
     }
+    const valid = claimDrafts.filter(d => d.title.trim() && d.amount.trim());
+    if (valid.length === 0) {
+      toast.warning('Nothing to submit', 'Add at least one expense before submitting.');
+      return;
+    }
+    setClaimSubmitting(true);
     try {
       for (const d of valid) {
         const fd = new FormData();
@@ -1579,11 +1656,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         });
       }
       toast.success('Claim submitted', `${valid.length} claim${valid.length > 1 ? 's' : ''} sent for approval`);
+      // Wipe the local draft cache so re-opening the modal after submit
+      // doesn't restore the just-submitted rows.
+      try { localStorage.removeItem(claimDraftKey); } catch { /* ignore */ }
       setClaimOpen(false);
       await refreshClaims();
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Could not submit the claim. Please try again.';
       toast.error('Submit failed', msg);
+    } finally {
+      setClaimSubmitting(false);
     }
   };
   
@@ -1838,149 +1920,147 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     <h6 className="mb-0 fw-bold" style={{ fontSize: 13 }}>Personal Information</h6>
   </div>
   <div className="px-3 py-3">
-    {/* Two-column layout. Left column stacks a compact horizontal Profile
-        Photo block, then the Login Password tile, then the Face Biometric
-        tile. Right column holds the seven identity fields. */}
-    <Row className="g-4 align-items-stretch">
-      {/* ── Column 1 — Photo + Security tiles, stacked ─────────────── */}
-      <Col xl={4} lg={4} md={5}>
-        <div className="d-flex flex-column gap-3 h-100">
-          {/* Profile Photo — compact horizontal: small circular avatar,
-              "Profile Photo" title + Choose file input + size hint. */}
-          <div
-            className="p-3"
-            style={{
-              border: '1px dashed rgba(99,102,241,0.35)',
-              borderRadius: 12,
-              background: 'rgba(99,102,241,0.04)',
-            }}
-          >
-            <div className="d-flex align-items-center gap-3">
-              {profilePhotoSrc ? (
-                <img
-                  src={profilePhotoSrc}
-                  alt="profile"
-                  className="rounded-circle flex-shrink-0"
-                  style={{ width: 52, height: 52, objectFit: 'cover', border: '2px solid var(--vz-card-bg)', boxShadow: '0 4px 12px rgba(15,23,42,0.12)' }}
-                />
-              ) : (
-                <div
-                  className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted flex-shrink-0"
-                  style={{ width: 52, height: 52, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 22 }}
-                >
-                  <i className="ri-user-line" />
-                </div>
-              )}
-              <div className="min-w-0 flex-grow-1">
-                <div className="fw-semibold mb-1" style={{ fontSize: 12.5 }}>Profile Photo</div>
-                <input
-                  ref={profilePhotoInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
-                  className="form-control form-control-sm"
-                  style={{ fontSize: 11.5 }}
-                />
-              </div>
-            </div>
-            <small className="text-muted d-block mt-2" style={{ fontSize: 11, lineHeight: 1.35 }}>
-              JPG, PNG, WebP — Max 4MB · you'll be able to crop &amp; zoom after picking
-            </small>
-            {profilePhotoFile && (
-              <div className="mt-3 d-flex gap-2 flex-wrap">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-success"
-                  onClick={handleSaveProfilePhoto}
-                  disabled={savingPhoto}
-                >
-                  {savingPhoto ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="ri-save-line me-1" />}
-                  Save Photo
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline-secondary"
-                  onClick={() => {
-                    setProfilePhotoFile(null);
-                    restoreSavedProfilePhoto();
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Change Password tile — opens the existing EpModal with the
-              strength meter and rule checklist. */}
-          <div
-            className="d-flex align-items-center gap-2 p-3"
-            style={{
-              border: '1px solid rgba(244,63,94,0.25)',
-              borderRadius: 12,
-              background: 'rgba(244,63,94,0.05)',
-            }}
-          >
-            <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c', width: 34, height: 34, fontSize: 16 }}>
-              <i className="ri-shield-keyhole-line" />
-            </span>
-            <div className="min-w-0 flex-grow-1">
-              <div className="fw-semibold" style={{ fontSize: 12 }}>Login Password</div>
-              <small className="text-muted" style={{ fontSize: 10.5, lineHeight: 1.3 }}>Rotate regularly. Email confirmation on every change.</small>
-            </div>
-            <Button
-              color="danger"
-              size="sm"
-              className="d-inline-flex align-items-center gap-1 flex-shrink-0"
-              style={{ fontSize: 11, padding: '4px 10px' }}
-              onClick={() => { resetPwForm(); setPwOpen(true); }}
+    {/* Row 1 — three action tiles side by side: Profile Photo · Login
+        Password · Face Biometric. Each takes 1/3 of the width on md+
+        and stacks on smaller screens. Tiles are vertically aligned (no
+        h-100 stretch) and use compact padding so the row stays low. */}
+    <Row className="g-3 mb-3 align-items-center">
+      {/* Profile Photo tile */}
+      <Col md={4} sm={12}>
+        <div
+          className="d-flex align-items-center gap-2"
+          style={{
+            border: '1px dashed rgba(99,102,241,0.35)',
+            borderRadius: 12,
+            background: 'rgba(99,102,241,0.04)',
+            padding: '8px 12px',
+          }}
+        >
+          {profilePhotoSrc ? (
+            <img
+              src={profilePhotoSrc}
+              alt="profile"
+              className="rounded-circle flex-shrink-0"
+              style={{ width: 38, height: 38, objectFit: 'cover', border: '2px solid var(--vz-card-bg)' }}
+            />
+          ) : (
+            <div
+              className="rounded-circle d-inline-flex align-items-center justify-content-center text-muted flex-shrink-0"
+              style={{ width: 38, height: 38, background: 'var(--vz-secondary-bg)', border: '2px solid var(--vz-border-color)', fontSize: 16 }}
             >
-              <i className="ri-lock-password-line" /> Change
-            </Button>
-          </div>
-
-          {/* Face Registration tile — opens FaceRegistrationModal so the
-              employee can self-enrol their face for /clock-in attendance. */}
-          <div
-            className="d-flex align-items-center gap-2 p-3"
-            style={{
-              border: '1px solid rgba(99,102,241,0.25)',
-              borderRadius: 12,
-              background: 'rgba(99,102,241,0.05)',
-            }}
-          >
-            <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca', width: 34, height: 34, fontSize: 16 }}>
-              <i className="ri-user-smile-line" />
-            </span>
-            <div className="min-w-0 flex-grow-1">
-              <div className="fw-semibold" style={{ fontSize: 12 }}>Face Biometric</div>
-              <small className="text-muted" style={{ fontSize: 10.5, lineHeight: 1.3 }}>Register once to clock in without a card or password.</small>
+              <i className="ri-user-line" />
             </div>
-            <Button
-              color="primary"
-              size="sm"
-              className="d-inline-flex align-items-center gap-1 flex-shrink-0"
-              style={{ fontSize: 11, padding: '4px 10px' }}
-              onClick={() => setFaceRegOpen(true)}
-            >
-              <i className="ri-camera-line" /> Register
-            </Button>
+          )}
+          <div className="min-w-0 flex-grow-1">
+            <div className="fw-semibold" style={{ fontSize: 12 }}>Profile Photo</div>
+            <input
+              ref={profilePhotoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
+              className="form-control form-control-sm"
+              style={{ fontSize: 11, padding: '2px 6px', height: 26 }}
+            />
           </div>
+          {profilePhotoFile && (
+            <div className="d-flex gap-1 flex-shrink-0">
+              <button
+                type="button"
+                className="btn btn-sm btn-success"
+                style={{ fontSize: 10.5, padding: '3px 8px' }}
+                onClick={handleSaveProfilePhoto}
+                disabled={savingPhoto}
+                title="Save photo"
+              >
+                {savingPhoto ? <span className="spinner-border spinner-border-sm" style={{ width: 10, height: 10 }} /> : <i className="ri-save-line" />}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                style={{ fontSize: 10.5, padding: '3px 8px' }}
+                onClick={() => {
+                  setProfilePhotoFile(null);
+                  restoreSavedProfilePhoto();
+                }}
+                title="Cancel"
+              >
+                <i className="ri-close-line" />
+              </button>
+            </div>
+          )}
         </div>
       </Col>
 
-      {/* ── Column 2 — Personal information fields ───────────────── */}
-      <Col xl={8} lg={8} md={7}>
-        <Row className="g-4">
-          <Col md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{empDetail?.first_name || (employee?.name || '').split(' ')[0] || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">{empDetail?.middle_name || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{empDetail?.last_name || (employee?.name || '').split(' ').slice(1).join(' ') || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{empDetail?.display_name || employee?.name || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.date_of_birth)}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">{empDetail?.gender || '—'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">{empDetail?.nationality_country?.name || '—'}</div></Col>
-        </Row>
+      {/* Change Password tile */}
+      <Col md={4} sm={12}>
+        <div
+          className="d-flex align-items-center gap-2"
+          style={{
+            border: '1px solid rgba(244,63,94,0.25)',
+            borderRadius: 12,
+            background: 'rgba(244,63,94,0.05)',
+            padding: '8px 12px',
+          }}
+        >
+          <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c', width: 30, height: 30, fontSize: 14 }}>
+            <i className="ri-shield-keyhole-line" />
+          </span>
+          <div className="min-w-0 flex-grow-1">
+            <div className="fw-semibold" style={{ fontSize: 12 }}>Login Password</div>
+            <small className="text-muted" style={{ fontSize: 10, lineHeight: 1.2 }}>Rotate regularly. Email on change.</small>
+          </div>
+          <Button
+            color="danger"
+            size="sm"
+            className="d-inline-flex align-items-center gap-1 flex-shrink-0"
+            style={{ fontSize: 10.5, padding: '3px 10px' }}
+            onClick={() => { resetPwForm(); setPwOpen(true); }}
+          >
+            <i className="ri-lock-password-line" /> Change
+          </Button>
+        </div>
       </Col>
+
+      {/* Face Biometric tile */}
+      <Col md={4} sm={12}>
+        <div
+          className="d-flex align-items-center gap-2"
+          style={{
+            border: '1px solid rgba(99,102,241,0.25)',
+            borderRadius: 12,
+            background: 'rgba(99,102,241,0.05)',
+            padding: '8px 12px',
+          }}
+        >
+          <span className="ep-section-icon flex-shrink-0" style={{ background: 'rgba(99,102,241,0.18)', color: '#4338ca', width: 30, height: 30, fontSize: 14 }}>
+            <i className="ri-user-smile-line" />
+          </span>
+          <div className="min-w-0 flex-grow-1">
+            <div className="fw-semibold" style={{ fontSize: 12 }}>Face Biometric</div>
+            <small className="text-muted" style={{ fontSize: 10, lineHeight: 1.2 }}>Register once to clock in.</small>
+          </div>
+          <Button
+            color="primary"
+            size="sm"
+            className="d-inline-flex align-items-center gap-1 flex-shrink-0"
+            style={{ fontSize: 10.5, padding: '3px 10px' }}
+            onClick={() => setFaceRegOpen(true)}
+          >
+            <i className="ri-camera-line" /> Register
+          </Button>
+        </div>
+      </Col>
+    </Row>
+
+    {/* Row 2 — seven identity fields in a single horizontal row on lg+. */}
+    <Row className="g-4">
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{empDetail?.first_name || (employee?.name || '').split(' ')[0] || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">{empDetail?.middle_name || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{empDetail?.last_name || (employee?.name || '').split(' ').slice(1).join(' ') || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{empDetail?.display_name || employee?.name || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.date_of_birth)}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">{empDetail?.gender || '—'}</div></Col>
+      <Col lg={3} md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">{empDetail?.nationality_country?.name || '—'}</div></Col>
     </Row>
   </div>
 </div>
@@ -5138,15 +5218,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer — every action is locked while a submit is in flight
+            so the user can't close the modal, stage another draft, or
+            (most importantly) re-fire the submit before the first one
+            returns. */}
         <div className="ep-claim-footer">
-          <button type="button" className="ep-claim-cancel" onClick={() => setClaimOpen(false)}>Cancel</button>
+          <button type="button" className="ep-claim-cancel" onClick={() => setClaimOpen(false)} disabled={claimSubmitting}>Cancel</button>
           <div className="d-flex gap-2 ms-auto">
-            <button type="button" className="ep-claim-secondary">
+            <button type="button" className="ep-claim-secondary" onClick={handleSaveDraft} disabled={claimSubmitting}>
               <i className="ri-save-line me-1" /> Save Draft
             </button>
             {claimMode === 'expense' && (
-              <button type="button" className="ep-claim-secondary" onClick={saveAndAddAnother}>
+              <button type="button" className="ep-claim-secondary" onClick={saveAndAddAnother} disabled={claimSubmitting}>
                 <i className="ri-add-line me-1" /> Save &amp; Add Another
               </button>
             )}
@@ -5154,11 +5237,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               type="button"
               className="ep-claim-submit"
               onClick={claimMode === 'expense' ? submitAllDrafts : () => setClaimOpen(false)}
+              disabled={claimSubmitting}
+              style={claimSubmitting ? { opacity: 0.7, cursor: 'wait' } : undefined}
             >
-              <i className={claimMode === 'expense' ? 'ri-send-plane-line me-1' : 'ri-send-plane-fill me-1'} />
-              {claimMode === 'expense'
-                ? (claimDrafts.length > 1 ? `Submit ${claimDrafts.length} Claims` : 'Submit Claim')
-                : 'Submit Advance Request'}
+              {claimSubmitting ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" style={{ width: 12, height: 12 }} />
+                  Submitting…
+                </>
+              ) : (
+                <>
+                  <i className={claimMode === 'expense' ? 'ri-send-plane-line me-1' : 'ri-send-plane-fill me-1'} />
+                  {claimMode === 'expense'
+                    ? (claimDrafts.length > 1 ? `Submit ${claimDrafts.length} Claims` : 'Submit Claim')
+                    : 'Submit Advance Request'}
+                </>
+              )}
             </button>
           </div>
         </div>
