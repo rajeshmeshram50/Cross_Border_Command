@@ -1945,9 +1945,6 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
                 </div>
               </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
-              <i className="ri-close-line" style={{ fontSize: 17 }} />
-            </button>
           </div>
         </div>
 
