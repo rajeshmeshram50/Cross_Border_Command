@@ -826,6 +826,44 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
 
+  // Full employee record from /employees/{id} — drives the Personal /
+  // Contact / Address sections so every field reflects what the admin
+  // actually saved (was previously hardcoded with sample data).
+  const [empDetail, setEmpDetail] = useState<any>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const empCode = String(employeeId || '').trim();
+    if (!empCode) return;
+    // The route uses emp_code (e.g. EMP-001) but the API show endpoint
+    // expects the numeric id. Resolve via the search index first, then
+    // fetch the full record.
+    (async () => {
+      try {
+        let dbId: number | undefined = profileEmpIdNum ?? undefined;
+        if (!dbId) {
+          const list = await api.get('/employees', { params: { search: empCode } });
+          const rows = Array.isArray(list.data) ? list.data : [];
+          const match = rows.find((r: any) => String(r.emp_code || r.id) === empCode) || rows[0];
+          dbId = match?.id;
+        }
+        if (!dbId) return;
+        const r = await api.get(`/employees/${dbId}`);
+        if (!cancelled) setEmpDetail(r.data || null);
+      } catch {
+        // Non-fatal — the page still renders the props-passed lightweight row.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [employeeId]);
+
+  // Helper — formats a date string like "1985-11-02" → "02-Nov-1985".
+  const fmtDate = (raw: any): string => {
+    if (!raw) return '—';
+    const d = new Date(String(raw));
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
+  };
+
   // ── Signed Documents — final, fully-signed copies for this employee.
   // Fetched once when the Vault tab is opened. The route accepts either
   // the numeric employee id or the EMP-### code (the slug the profile
@@ -1804,13 +1842,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       </Col>
       <Col lg={9} md={8}>
         <Row className="g-4">
-          <Col md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ')[0] || 'Aarav'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">Rajendra</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ').slice(1).join(' ') || 'Kale'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">Indian</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{empDetail?.first_name || (employee?.name || '').split(' ')[0] || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">{empDetail?.middle_name || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{empDetail?.last_name || (employee?.name || '').split(' ').slice(1).join(' ') || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{empDetail?.display_name || employee?.name || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.date_of_birth)}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">{empDetail?.gender || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">{empDetail?.nationality_country?.name || '—'}</div></Col>
         </Row>
       </Col>
     </Row>
@@ -1833,10 +1871,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
-                <Col md={3}><div className="ep-field-label">Work Email</div><div className="ep-field-value">{employee?.email || 'aarav.kale@enterprise.com'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Mobile</div><div className="ep-field-value font-monospace">+91 9635203533</div></Col>
-                <Col md={3}><div className="ep-field-label">Work Country</div><div className="ep-field-value">India</div></Col>
-                <Col md={3}><div className="ep-field-label">Reporting Manager</div><div className="ep-field-value">{employee?.manager || 'Deepa Kulkarni'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Work Email</div><div className="ep-field-value">{empDetail?.email || employee?.email || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Mobile</div><div className="ep-field-value font-monospace">{empDetail?.mobile || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Work Country</div><div className="ep-field-value">{empDetail?.work_country?.name || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Reporting Manager</div><div className="ep-field-value">{(() => {
+                  const mgr = empDetail?.reporting_manager;
+                  if (mgr) {
+                    return mgr.display_name
+                      || [mgr.first_name, mgr.middle_name, mgr.last_name].filter(Boolean).join(' ')
+                      || '—';
+                  }
+                  return employee?.manager || '—';
+                })()}</div></Col>
               </Row>
             </div>
           </div>
@@ -1864,11 +1910,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <span className="dot" style={{ background: '#0ab39c' }} /> Current Address
                   </div>
                   <Row className="g-3">
-                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">Office No. 821, Solitaire Hub, Balewadi</div></Col>
-                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">Pune</div></Col>
-                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">Maharashtra</div></Col>
-                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">India</div></Col>
-                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">411045</div></Col>
+                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">{[empDetail?.address_line1, empDetail?.address_line2].filter(Boolean).join(', ') || '—'}</div></Col>
+                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">{empDetail?.city || '—'}</div></Col>
+                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">{empDetail?.state?.name || '—'}</div></Col>
+                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">{empDetail?.country?.name || '—'}</div></Col>
+                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">{empDetail?.pincode || '—'}</div></Col>
                   </Row>
                 </Col>
                 <Col md={6}>
@@ -1876,11 +1922,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <span className="dot" style={{ background: '#0ab39c' }} /> Permanent Address
                   </div>
                   <Row className="g-3">
-                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">Plot No. 14, Sector 3, Vimaan Nagar Rd</div></Col>
-                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">Pune</div></Col>
-                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">Maharashtra</div></Col>
-                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">India</div></Col>
-                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">411014</div></Col>
+                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">{[empDetail?.perm_address_line1, empDetail?.perm_address_line2].filter(Boolean).join(', ') || '—'}</div></Col>
+                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">{empDetail?.perm_city || '—'}</div></Col>
+                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">{empDetail?.perm_state?.name || '—'}</div></Col>
+                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">{empDetail?.perm_country?.name || '—'}</div></Col>
+                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">{empDetail?.perm_pincode || '—'}</div></Col>
                   </Row>
                 </Col>
               </Row>
