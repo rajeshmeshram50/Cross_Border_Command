@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
@@ -26,21 +26,30 @@ const ONB_NUMBER_SERIES = OPT('Default Number Series');
 const ONB_EMP_STATUS   = OPT('Active', 'On Probation');
 const ONB_LEGAL_ENTITY = OPT('Cross Border Command Pvt Ltd', 'CBC International LLP');
 const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
-const ONB_PROBATION    = OPT('Default Probation Policy', '3 Months', '6 Months');
-const ONB_NOTICE       = OPT('Default Notice Period', '30 Days', '60 Days', '90 Days');
+// Probation / Notice / other option lists MUST mirror the canonical lists
+// used by HrEmployees.tsx (PROBATION_POLICY_OPTIONS, NOTICE_PERIOD_OPTIONS
+// etc.) — otherwise values saved at Add Employee time (e.g. "3-Month
+// Probation", "15 Days") fall outside the onboarding dropdown's options and
+// MasterSelect renders nothing, making the field look empty.
+const ONB_PROBATION    = OPT('Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation');
+const ONB_NOTICE       = OPT('Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days');
 const ONB_LEAVE_PLAN   = OPT('Leave Policy');
-const ONB_HOLIDAY      = OPT('Holiday Calendar');
-const ONB_SHIFT        = OPT('General Shift', 'Morning Shift', 'Night Shift');
-const ONB_WEEKLY_OFF   = OPT('Week Off Policy');
-const ONB_TIME_TRACK   = OPT('Attendance Capture');
-const ONB_PENALIZE     = OPT('Tracking Policy');
-const ONB_OVERTIME     = OPT('Not applicable', 'Applicable');
-const ONB_EXPENSE      = OPT('Default Expense Policy');
+const ONB_HOLIDAY      = OPT('Holiday Calendar', 'India Holidays 2026', 'Global Holidays 2026');
+const ONB_SHIFT        = OPT('General Shift', 'Morning Shift', 'Evening Shift', 'Night Shift', 'Flexible');
+const ONB_WEEKLY_OFF   = OPT('Week Off Policy', 'Saturday & Sunday', 'Sunday Only', 'Rotational');
+// Mirror HrEmployees.tsx canonical lists so values saved at Add Employee
+// time (e.g. "Manual", "Strict Policy") match an option here.
+const ONB_TIME_TRACK   = OPT('Manual', 'Biometric');
+const ONB_PENALIZE     = OPT('Tracking Policy', 'Strict Policy', 'Lenient Policy', 'No Penalty');
+const ONB_OVERTIME     = OPT('Not applicable', 'Hourly Pay', 'Compensation Off', 'Time and a Half');
+const ONB_EXPENSE      = OPT('Standard Expense Policy', 'Manager Approval', 'No Expenses');
 const ONB_YES_NO       = OPT('No', 'Yes');
 const ONB_ACCESS_CARD  = OPT('Not Issued', 'Issued');
-const ONB_PAY_GROUP    = OPT('Default pay group');
-const ONB_PERIOD       = OPT('Per annum', 'Per month');
-const ONB_SAL_STRUCT   = OPT('Range Based', 'Fixed');
+// Compensation option lists — must match HrEmployees.tsx so values saved
+// at Add Employee time can be matched and rendered by MasterSelect here.
+const ONB_PAY_GROUP    = OPT('Default pay group', 'Senior Pay Group', 'Intern Pay Group', 'Contractor Pay Group');
+const ONB_PERIOD       = OPT('Per annum', 'Per month', 'Per hour', 'Per day');
+const ONB_SAL_STRUCT   = OPT('Range Based', 'Fixed', 'Component Based');
 const ONB_TAX_REGIME   = OPT('New Regime (115BAC)', 'Old Regime');
 const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
 const ONB_PF_DEDUCT    = OPT('Employee + Employer', 'Employee only');
@@ -2632,6 +2641,9 @@ function InitiateOnboardingModal({
 }) {
   const toast = useToast();
   const [activeStage, setActiveStage] = useState(1);
+  // Imperative handle into Stage 2 so we can flush its typed-but-not-blurred
+  // company rows before leaving the stage (Previous / sidebar / Next Stage).
+  const stage2Ref = useRef<Stage2DocumentsHandle | null>(null);
   // Reset to stage 1 each time a new employee opens
   useEffect(() => { if (isOpen) setActiveStage(1); }, [isOpen, emp?.id]);
 
@@ -2648,6 +2660,11 @@ function InitiateOnboardingModal({
   const [mRoles, setMRoles]               = useState<{ id: number; name: string }[]>([]);
   const [mLegalEntities, setMLegalEntities] = useState<{ id: number; entity_name: string; city?: string | null }[]>([]);
   const [managerOpts, setManagerOpts]       = useState<{ value: string; label: string }[]>([]);
+  // Leave plans need to come from the API (admin-defined per branch) — the
+  // Add Employee form stores the plan id as the saved value, so a hardcoded
+  // ["Leave Policy"] list would leave the onboarding dropdown blank for
+  // every employee assigned a real plan.
+  const [leavePlanOpts, setLeavePlanOpts] = useState<{ value: string; label: string }[]>([]);
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
@@ -2668,6 +2685,11 @@ function InitiateOnboardingModal({
         ];
         setManagerOpts(merged.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })));
       }).catch(() => { if (!cancelled) setManagerOpts([]); }),
+      api.get('/leave-plans').then(r => {
+        if (cancelled) return;
+        const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
+        setLeavePlanOpts(plans.map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })));
+      }).catch(() => { if (!cancelled) setLeavePlanOpts([]); }),
     ]);
     return () => { cancelled = true; };
   }, [isOpen]);
@@ -3259,6 +3281,30 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
     } catch { /* keep modal open; user can retry */ }
   };
 
+  /** Navigate to a different stage without losing in-flight edits.
+   *  Stages 1, 3, 4 have bound state — flush them to the backend first
+   *  (skipValidate so a partially-filled stage doesn't block the jump),
+   *  then switch. Used by both the Previous button and the sidebar
+   *  stage cards so clicking around the wizard never silently drops
+   *  user input. */
+  const goToStage = async (target: number) => {
+    if (target === activeStage) return;
+    if (activeStage === 1) {
+      await saveStage1(false, true);
+    } else if (activeStage === 2) {
+      // Persist any typed-but-unblurred Previous-Employment rows so
+      // the user doesn't lose Company Name / Job Title / dates on
+      // navigation. onBlur fires the same persistCompany under the
+      // hood — flushing here just awaits any rows that haven't been.
+      await stage2Ref.current?.flush();
+    } else if (activeStage === 3) {
+      await saveStage1(false, true);
+    } else if (activeStage === 4) {
+      await saveStage4(false);
+    }
+    setActiveStage(Math.max(1, Math.min(6, target)));
+  };
+
   if (!emp) return null;
 
   // Pre-fill values from the row (legacy variables kept for the existing
@@ -3507,7 +3553,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
               <div
                 key={s.key}
                 className={`onb-init-stage-card ${activeStage === s.num ? 'is-active' : ''}`}
-                onClick={() => setActiveStage(s.num)}
+                onClick={() => { void goToStage(s.num); }}
               >
                 <span className={`onb-init-stage-num ${s.status === 'Completed' ? 'is-done' : ''}`}>
                   {s.status === 'Completed' ? <i className="ri-check-line" /> : s.num}
@@ -3555,6 +3601,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
 
             {activeStage === 2 && (
               <Stage2Documents
+                ref={stage2Ref}
                 emp={emp}
                 onDocsChanged={(rows) => setStage2Docs(rows)}
               />
@@ -3823,8 +3870,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Probation Policy</label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy || 'Default Probation Policy'} onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Notice Period</label><MasterSelect options={ONB_NOTICE} value={s1.notice_period || 'Default Notice Period'} onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Probation Policy</label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select probation policy" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Notice Period</label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
                 </Row>
               </div>
@@ -3843,14 +3890,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan</label><MasterSelect options={ONB_LEAVE_PLAN} value={s1.leave_plan || 'Leave Policy'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Holiday List</label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list || 'Holiday Calendar'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Shift</label><MasterSelect options={ONB_SHIFT} value={s1.shift || 'General Shift'} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Weekly Off</label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off || 'Week Off Policy'} onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan</label><MasterSelect options={leavePlanOpts.length ? leavePlanOpts : ONB_LEAVE_PLAN} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Holiday List</label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list} placeholder="Select holiday list" onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Shift</label><MasterSelect options={ONB_SHIFT} value={s1.shift} placeholder="Select shift" onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Weekly Off</label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Time Tracking Policy</label><MasterSelect options={ONB_TIME_TRACK} value={s1.time_tracking || 'Attendance Capture'} onChange={(v) => setS1(p => ({ ...p, time_tracking: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Penalization Policy</label><MasterSelect options={ONB_PENALIZE} value={s1.penalization_policy || 'Tracking Policy'} onChange={(v) => setS1(p => ({ ...p, penalization_policy: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} value={s1.overtime || 'Not applicable'} onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Time Tracking Policy</label><MasterSelect options={ONB_TIME_TRACK} value={s1.time_tracking} placeholder="Select time tracking" onChange={(v) => setS1(p => ({ ...p, time_tracking: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Penalization Policy</label><MasterSelect options={ONB_PENALIZE} value={s1.penalization_policy} placeholder="Select penalization policy" onChange={(v) => setS1(p => ({ ...p, penalization_policy: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Overtime</label><MasterSelect options={ONB_OVERTIME} value={s1.overtime} placeholder="Select overtime policy" onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Expense Policy</label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} onChange={(v) => setS1(p => ({ ...p, expense_policy: v }))} /></Col>
                 </Row>
 
@@ -3940,7 +3987,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
                   </Col>
 
                   <Col md={4}><label className="onb-init-label">Access Card</label><MasterSelect options={ONB_ACCESS_CARD} defaultValue="Not Issued" /></Col>
-                  <Col md={4}><label className="onb-init-label">Desk / Workstation</label><input className="onb-init-input" placeholder="e.g. A-12" /></Col>
+                  <Col md={4}>
+                    <label className="onb-init-label">Desk / Workstation</label>
+                    <input
+                      className="onb-init-input"
+                      placeholder="e.g. A-12"
+                      value={s1.desk_workstation_no}
+                      onChange={e => setS1((p: any) => ({ ...p, desk_workstation_no: e.target.value }))}
+                    />
+                  </Col>
                 </Row>
               </div>
             </div>
@@ -3972,7 +4027,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
                 <Row className="g-3">
                   <Col md={4}>
                     <label className="onb-init-label">Pay Group</label>
-                    <MasterSelect options={ONB_PAY_GROUP} value={s1.pay_group || 'Default pay group'} onChange={(v) => setS1(p => ({ ...p, pay_group: v }))} />
+                    <MasterSelect options={ONB_PAY_GROUP} value={s1.pay_group} placeholder="Select pay group" onChange={(v) => setS1(p => ({ ...p, pay_group: v }))} />
                   </Col>
                   {/* Compensation - Annual Salary.
                       Backed by Postgres numeric(14, 2) — max value
@@ -4012,7 +4067,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
 </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Period</label>
-                    <MasterSelect options={ONB_PERIOD} value={s1.salary_frequency || 'Per annum'} onChange={(v) => setS1(p => ({ ...p, salary_frequency: v }))} />
+                    <MasterSelect options={ONB_PERIOD} value={s1.salary_frequency} placeholder="Select frequency" onChange={(v) => setS1(p => ({ ...p, salary_frequency: v }))} />
                   </Col>
                   <Col md={4} data-field="salary_effective_from">
   <label className="onb-init-label">
@@ -4033,11 +4088,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
 </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Salary Structure Type</label>
-                    <MasterSelect options={ONB_SAL_STRUCT} value={s1.salary_structure || 'Range Based'} onChange={(v) => setS1(p => ({ ...p, salary_structure: v }))} />
+                    <MasterSelect options={ONB_SAL_STRUCT} value={s1.salary_structure} placeholder="Select salary structure" onChange={(v) => setS1(p => ({ ...p, salary_structure: v }))} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Tax Regime</label>
-                    <MasterSelect options={ONB_TAX_REGIME} value={s1.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS1(p => ({ ...p, tax_regime: v }))} />
+                    <MasterSelect options={ONB_TAX_REGIME} value={s1.tax_regime} placeholder="Select tax regime" onChange={(v) => setS1(p => ({ ...p, tax_regime: v }))} />
                   </Col>
                 </Row>
 
@@ -4063,11 +4118,6 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
                 <div>
                   <button type="button" className="onb-init-add-btn">+ Add Bonus</button>
                   <button type="button" className="onb-init-add-btn">+ Add Perks</button>
-                </div>
-
-                <div className="onb-init-info-banner">
-                  <i className="ri-information-line" />
-                  ESI is not applicable for the selected Pay Group
                 </div>
 
                 <div className="onb-init-breakup">
@@ -4155,10 +4205,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
             )}
           </span>
 <div className="d-flex align-items-center gap-2">
-  <button 
-    type="button" 
-    className="onb-init-btn-ghost" 
-    onClick={() => setActiveStage(Math.max(1, activeStage - 1))}
+  <button
+    type="button"
+    className="onb-init-btn-ghost"
+    disabled={
+      (activeStage === 1 && s1Saving) ||
+      (activeStage === 3 && s1Saving) ||
+      (activeStage === 4 && s4Saving)
+    }
+    onClick={() => { void goToStage(activeStage - 1); }}
   >
     <i className="ri-arrow-left-s-line" /> Previous
   </button>
@@ -4259,6 +4314,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       // "Profile: 17% complete" even after walking through every step.
       if (activeStage === 2 || activeStage === 5) {
         setNextLoading(true);
+        // Flush any typed-but-unblurred Previous-Employment rows before
+        // we advance — same fix as the Previous / sidebar navigation.
+        if (activeStage === 2) {
+          await stage2Ref.current?.flush();
+        }
         await bumpMacroStage(activeStage);
         setNextLoading(false);
       }
@@ -4279,24 +4339,58 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
     )}
   </button>
 ) : (
-  <button
-    type="button"
-    className="onb-init-btn-complete"
-    disabled={nextLoading}
-    style={nextLoading ? { opacity: 0.85, cursor: 'progress' } : undefined}
-    onClick={() => { if (!nextLoading) setShowCompleteConfirm(true); }}
-  >
-    {nextLoading ? (
-      <>
-        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" style={{ width: '0.8rem', height: '0.8rem' }} />
-        Completing...
-      </>
-    ) : (
-      <>
-        <i className="ri-checkbox-circle-line" /> Complete Onboarding
-      </>
-    )}
-  </button>
+  (() => {
+    // Gate on the same per-stage flags the sidebar uses to render
+    // "Completed". If any of Stage 1–5 is still Pending / In Progress
+    // (typically Stage 2 because required docs are missing), block the
+    // completion modal and tell the HR which stage(s) to finish first.
+    const pending: string[] = [];
+    if (!stage1IsDone) pending.push('Onboarding Setup');
+    if (!stage2IsDone) pending.push('Document Management');
+    if (!stage3IsDone) pending.push('Provisioning & Asset Setup');
+    if (!stage4IsDone) pending.push('Payroll & Finance');
+    if (!stage5IsDone) pending.push('Policies & Agreements');
+    const blocked = pending.length > 0;
+    return (
+      <button
+        type="button"
+        className="onb-init-btn-complete"
+        disabled={nextLoading || blocked}
+        style={
+          nextLoading
+            ? { opacity: 0.85, cursor: 'progress' }
+            : (blocked ? { opacity: 0.55, cursor: 'not-allowed' } : undefined)
+        }
+        title={
+          blocked
+            ? `Cannot complete — finish: ${pending.join(', ')}`
+            : undefined
+        }
+        onClick={() => {
+          if (nextLoading) return;
+          if (blocked) {
+            toast.error(
+              'Cannot complete onboarding',
+              `Finish the pending stage${pending.length > 1 ? 's' : ''} first: ${pending.join(', ')}.`
+            );
+            return;
+          }
+          setShowCompleteConfirm(true);
+        }}
+      >
+        {nextLoading ? (
+          <>
+            <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" style={{ width: '0.8rem', height: '0.8rem' }} />
+            Completing...
+          </>
+        ) : (
+          <>
+            <i className={blocked ? 'ri-lock-line' : 'ri-checkbox-circle-line'} /> Complete Onboarding
+          </>
+        )}
+      </button>
+    );
+  })()
 )}
 </div>
         </div>
@@ -4557,13 +4651,20 @@ const _serverStatusToUi = (s: string): DocStatus => {
  *  Set form for O(1) membership checks. */
 const DOC_ACCEPTED_MIME = new Set<string>(DOC_ACCEPTED_MIMES);
 
-function Stage2Documents({ emp, onDocsChanged }: {
+/** Imperative API the parent calls before navigating away from Stage 2.
+ *  flush() persists any company rows the user typed into but never blurred
+ *  out of — without this, clicking Next or a sidebar stage chip with focus
+ *  still inside Company Name silently dropped the row. */
+export interface Stage2DocumentsHandle {
+  flush: () => Promise<void>;
+}
+const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   emp: OnboardRow;
   /** Fires whenever the document list changes (after upload / replace).
    *  The parent modal uses it to update Stage 2's side-rail progress
    *  without doing its own duplicate fetch. */
   onDocsChanged?: (rows: { document_key: string; status: string }[]) => void;
-}) {
+}>(({ emp, onDocsChanged }, ref) => {
   const toast = useToast();
 
   // ── Previous Employment Companies — backed by /api/employees/{id}/previous-employments
@@ -4645,6 +4746,12 @@ function Stage2Documents({ emp, onDocsChanged }: {
 
   const addCompany = () => setPrevCompanies(prev => [...prev, newDraft()]);
 
+  // Keep an always-fresh snapshot of prevCompanies so the imperative
+  // flush() below sees the latest typed-but-not-blurred values even
+  // when the parent calls it from outside React's render cycle.
+  const prevCompaniesRef = useRef<PrevCompanyRow[]>([]);
+  useEffect(() => { prevCompaniesRef.current = prevCompanies; }, [prevCompanies]);
+
   /** PATCH/POST a single company row to the server. Called onBlur from
    *  every input so the user never has to click "Save" — typing alone
    *  persists once company_name is non-empty. Returns the canonical
@@ -4707,6 +4814,23 @@ function Stage2Documents({ emp, onDocsChanged }: {
       updateCompany(key, { _busy: false });
     }
   };
+
+  /** Flush every typed-but-unsaved company row to the backend. Called by
+   *  the parent before navigating away from Stage 2 — onBlur alone isn't
+   *  enough because (a) the user may click Next while a field still has
+   *  focus, (b) date pickers blur synchronously but the persist is a
+   *  microtask, and (c) any in-flight POST needs to finish so the next
+   *  hydrate sees the new row. We persist rows that have a non-empty
+   *  company_name; empty drafts are intentionally ignored. */
+  useImperativeHandle(ref, () => ({
+    flush: async () => {
+      const rows = prevCompaniesRef.current;
+      const work = rows
+        .filter(c => c.company_name.trim())
+        .map(c => persistCompany(c._localKey));
+      await Promise.all(work);
+    },
+  }), [emp?.dbId]);
 
   /** Upload a document for a previous-employment row. Auto-persists the
    *  company first if it's an unsaved draft — otherwise users who type a
@@ -5138,20 +5262,6 @@ function Stage2Documents({ emp, onDocsChanged }: {
           </div>
         )}
 
-        {/* ── Prompt — shown before the user has picked Yes or No */}
-        {hasExperience === null && prevCompanies.length === 0 && (
-          <div
-            className="onb-doc-bgv-banner"
-            style={{ margin: '12px 14px', alignItems: 'flex-start' }}
-          >
-            <i className="ri-information-line" style={{ fontSize: 14, marginTop: 1 }} />
-            <span>
-              Pick <strong>Yes</strong> to record one or more previous employers,
-              or <strong>No</strong> if this is the employee's first job.
-            </span>
-          </div>
-        )}
-
         {/* Experience form (companies + docs) — rendered only when the
             user has explicitly answered Yes. */}
         {hasExperience === 'yes' && prevCompanies.map((c, idx) => {
@@ -5411,7 +5521,8 @@ function Stage2Documents({ emp, onDocsChanged }: {
       />
     </>
   );
-}
+});
+Stage2Documents.displayName = 'Stage2Documents';
 
 // ── Stage 3 — Provisioning & Asset Setup ────────────────────────────────────
 /** Stage 3 — Provisioning. Reads/writes the SAME `s1` state as the
@@ -6312,43 +6423,15 @@ function Stage6Verify({
           <h6 className="onb-ver-section-title">HR Final Action</h6>
         </div>
         <div style={{ padding: '14px 16px' }}>
-          {isActivated ? (
-            // ── Post-activation state. Buttons replaced with a clear
-            // success card so the HR can see the action is done and
-            // can't accidentally re-fire the activate PUT.
-            <div
-              className="onb-ver-action-banner"
-              style={{
-                background: '#ecfdf3',
-                borderColor: '#bbf7d0',
-                color: '#108548',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              <i className="ri-checkbox-circle-fill" style={{ fontSize: 22, color: '#10b981' }} />
-              <span>
-                <b>Employee activated.</b> {emp.name} now has full system access and the reporting manager has been notified. Onboarding is complete — you can close this wizard.
-              </span>
+          {isActivated ? null : (
+            <div className="onb-ver-action-buttons">
+              <button type="button" className="onb-ver-flag-btn" onClick={() => setFlagOpen(true)}>
+                <i className="ri-error-warning-line" style={{ fontSize: 16 }} /> Flag Issue
+              </button>
+              <button type="button" className="onb-ver-activate-btn" onClick={() => setActivateOpen(true)}>
+                <i className="ri-checkbox-circle-line" style={{ fontSize: 16 }} /> Activate Employee
+              </button>
             </div>
-          ) : (
-            <>
-              <div className="onb-ver-action-banner">
-                <i className="ri-information-line" style={{ marginTop: 1 }} />
-                <span>
-                  Clicking <b style={{ color: '#108548' }}>Activate Employee</b> will mark onboarding as <b>Completed</b>, notify the Reporting Manager, and grant full system access. Use <b style={{ color: '#b1401d' }}>Flag Issue</b> to raise a concern and block activation.
-                </span>
-              </div>
-              <div className="onb-ver-action-buttons">
-                <button type="button" className="onb-ver-flag-btn" onClick={() => setFlagOpen(true)}>
-                  <i className="ri-error-warning-line" style={{ fontSize: 16 }} /> Flag Issue
-                </button>
-                <button type="button" className="onb-ver-activate-btn" onClick={() => setActivateOpen(true)}>
-                  <i className="ri-checkbox-circle-line" style={{ fontSize: 16 }} /> Activate Employee
-                </button>
-              </div>
-            </>
           )}
         </div>
       </div>
