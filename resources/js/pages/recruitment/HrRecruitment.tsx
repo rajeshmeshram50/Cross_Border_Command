@@ -624,9 +624,14 @@ export default function HrRecruitment() {
                 >
                   <i className="ri-file-add-line" />Raise Hiring Request
                 </button>
+                {/* Tertiary CTA in the header trio — emerald gradient
+                    pairs with purple (Create) + blue (Raise). The old
+                    ghost outline read as disabled next to the two
+                    coloured buttons; teal makes the action feel
+                    equally prominent and works in dark mode. */}
                 <button
                   type="button"
-                  className="rec-btn-ghost"
+                  className="rec-btn-teal"
                   onClick={() => setRequestsOpen(true)}
                 >
                   <i className="ri-eye-line" />View Hiring Requests
@@ -2862,7 +2867,7 @@ function CancelConfirmModal({
     <Modal isOpen={!!target} toggle={onClose} centered size="md" backdrop="static" keyboard={false}
       contentClassName="border-0 rec-cancel-modal"
     >
-      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 18, overflow: 'hidden' }}>
+      <ModalBody className="p-0">
         {target && (
           <>
             {/* Header — colour swaps to green when the user selects Complete
@@ -2915,7 +2920,7 @@ function CancelConfirmModal({
 
               {/* Impact warning — distinct copy per action so the user
                   understands what each option actually does. */}
-              <div className="rec-cancel-impact" style={isComplete ? { background: '#ecfdf5', color: '#065f46', borderColor: '#a7f3d0' } : undefined}>
+              <div className={`rec-cancel-impact${isComplete ? ' rec-cancel-impact--complete' : ''}`}>
                 <i className={isComplete ? 'ri-information-line' : 'ri-alert-line'} />
                 <div>
                   {isComplete ? (

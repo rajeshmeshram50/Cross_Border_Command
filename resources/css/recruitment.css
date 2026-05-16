@@ -829,6 +829,54 @@
     inset 0 -1px 0 rgba(0,0,0,0.08);
 }
 .rec-btn-soft:active { transform: translateY(0); filter: brightness(0.98); }
+
+/* Tertiary CTA — emerald / teal gradient. Sits next to the purple
+   primary and blue secondary in the page header so the three header
+   buttons form a coordinated trio. Same gloss + shadow recipe as the
+   other two; lift + brightness bump on hover. */
+.rec-btn-teal {
+  padding: 6px 18px; height: 36px; border-radius: 10px;
+  font-size: 12.5px; font-weight: 700; color: #fff;
+  border: 0;
+  background: linear-gradient(135deg, #10b981 0%, #0d9488 60%, #047857 100%);
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+  display: inline-flex; align-items: center; gap: 7px;
+  box-shadow:
+    0 6px 16px rgba(13,148,136,0.38),
+    0 2px 4px rgba(5,150,105,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.28),
+    inset 0 -1px 0 rgba(0,0,0,0.08);
+  letter-spacing: 0.01em;
+}
+.rec-btn-teal:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow:
+    0 10px 22px rgba(13,148,136,0.46),
+    0 3px 6px rgba(5,150,105,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.34),
+    inset 0 -1px 0 rgba(0,0,0,0.08);
+}
+.rec-btn-teal:active { transform: translateY(0); filter: brightness(0.98); }
+[data-bs-theme="dark"] .rec-btn-teal,
+[data-layout-mode="dark"] .rec-btn-teal {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 60%, #059669 100%);
+  box-shadow:
+    0 6px 16px rgba(16,185,129,0.45),
+    0 2px 4px rgba(16,185,129,0.30),
+    inset 0 1px 0 rgba(255,255,255,0.20),
+    inset 0 -1px 0 rgba(0,0,0,0.12);
+}
+[data-bs-theme="dark"] .rec-btn-teal:hover,
+[data-layout-mode="dark"] .rec-btn-teal:hover {
+  filter: brightness(1.08);
+  box-shadow:
+    0 10px 24px rgba(16,185,129,0.55),
+    0 3px 6px rgba(16,185,129,0.32),
+    inset 0 1px 0 rgba(255,255,255,0.24),
+    inset 0 -1px 0 rgba(0,0,0,0.12);
+}
 .rec-close-btn { width: 32px; height: 32px; border-radius: 8px; background: rgba(255,255,255,0.18); border: none; color: #fff; transition: background .15s ease; display: inline-flex; align-items: center; justify-content: center; }
 .rec-close-btn:hover { background: rgba(255,255,255,0.30); }
 .rec-close-btn i { font-size: 17px !important; }
@@ -1971,13 +2019,11 @@
 .rec-cancel-modal {
   border-radius: 18px !important;
   overflow: hidden;
-  background: var(--vz-card-bg, #ffffff);
   box-shadow:
     0 30px 60px rgba(15,23,42,0.30),
     0 12px 24px rgba(15,23,42,0.18);
 }
 .rec-cancel-modal .modal-body {
-  background: var(--vz-card-bg, #ffffff);
   padding: 0;
   border-radius: 18px;
   overflow: hidden;
@@ -2250,6 +2296,153 @@
 }
 .rec-cancel-confirm:active { transform: translateY(0); filter: brightness(0.98); }
 .rec-cancel-confirm i { font-size: 14px; }
+
+/* ── Dark-mode polish ─────────────────────────────────────────────────
+   The Mark Recruitment Completed / Cancel Recruitment popups carry
+   over several light-mode panels (summary card, select toggle, textarea,
+   footer) that rendered white inside the dark modal shell. The block
+   below re-asserts every one of those surfaces with `!important` so
+   no source-order or specificity surprise can leak the light gradient
+   back through. Both `data-bs-theme="dark"` and `data-layout-mode="dark"`
+   are covered to match every theme-attribute switch in the app. */
+[data-bs-theme="dark"] .rec-cancel-modal,
+[data-layout-mode="dark"] .rec-cancel-modal,
+[data-bs-theme="dark"] .rec-cancel-modal .modal-body,
+[data-layout-mode="dark"] .rec-cancel-modal .modal-body,
+[data-bs-theme="dark"] .rec-cancel-body,
+[data-layout-mode="dark"] .rec-cancel-body {
+  color: var(--vz-body-color);
+}
+[data-bs-theme="dark"] .rec-cancel-summary,
+[data-layout-mode="dark"] .rec-cancel-summary {
+  background: var(--vz-card-bg) !important;
+  border-color: var(--vz-border-color) !important;
+}
+[data-bs-theme="dark"] .rec-cancel-select .master-select-toggle,
+[data-layout-mode="dark"] .rec-cancel-select .master-select-toggle,
+[data-bs-theme="dark"] .rec-cancel-textarea,
+[data-layout-mode="dark"] .rec-cancel-textarea {
+  background: var(--vz-card-bg) !important;
+  border-color: var(--vz-border-color) !important;
+  color: var(--vz-body-color) !important;
+  box-shadow: none !important;
+}
+[data-bs-theme="dark"] .rec-cancel-textarea::placeholder,
+[data-layout-mode="dark"] .rec-cancel-textarea::placeholder {
+  color: var(--vz-secondary-color);
+  opacity: 0.65;
+}
+[data-bs-theme="dark"] .rec-cancel-footer,
+[data-layout-mode="dark"] .rec-cancel-footer {
+  background: var(--vz-card-bg) !important;
+  border-top-color: var(--vz-border-color) !important;
+}
+[data-bs-theme="dark"] .rec-cancel-label,
+[data-layout-mode="dark"] .rec-cancel-label {
+  color: rgba(255,255,255,0.85) !important;
+}
+[data-bs-theme="dark"] .rec-cancel-label .opt,
+[data-layout-mode="dark"] .rec-cancel-label .opt {
+  color: var(--vz-secondary-color);
+}
+
+/* Impact warning — the light-mode amber gradient screamed against the
+   dark card. Force a flat translucent amber tile with calmer copy
+   colour, and override the inner heading + icon so all three colour
+   layers (background, text, icon) read consistently in dark mode. */
+[data-bs-theme="dark"] .rec-cancel-impact,
+[data-layout-mode="dark"] .rec-cancel-impact {
+  background: rgba(245,158,11,0.12) !important;
+  border-color: rgba(245,158,11,0.35) !important;
+  color: #fcd34d !important;
+}
+[data-bs-theme="dark"] .rec-cancel-impact strong,
+[data-layout-mode="dark"] .rec-cancel-impact strong { color: #fbbf24 !important; }
+[data-bs-theme="dark"] .rec-cancel-impact i,
+[data-layout-mode="dark"] .rec-cancel-impact i { color: #fbbf24 !important; }
+
+/* Complete variant — swap the amber palette for a green one so the
+   "Mark Recruitment Completed" popup reads as a happy-path action.
+   Mirrors the green gradient on the modal header + confirm button. */
+.rec-cancel-impact--complete {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+.rec-cancel-impact--complete i { color: #059669; }
+.rec-cancel-impact--complete strong { color: #047857; }
+[data-bs-theme="dark"] .rec-cancel-impact--complete,
+[data-layout-mode="dark"] .rec-cancel-impact--complete {
+  background: rgba(16,185,129,0.12) !important;
+  border-color: rgba(16,185,129,0.35) !important;
+  color: #6ee7b7 !important;
+}
+[data-bs-theme="dark"] .rec-cancel-impact--complete strong,
+[data-layout-mode="dark"] .rec-cancel-impact--complete strong { color: #34d399 !important; }
+[data-bs-theme="dark"] .rec-cancel-impact--complete i,
+[data-layout-mode="dark"] .rec-cancel-impact--complete i { color: #34d399 !important; }
+
+/* Summary card — make the REC-### pill, title and meta line all read
+   distinctly against the slightly-tinted dark card. The .rec-id-pill
+   utility comes from elsewhere and falls back to a light purple in
+   dark mode without these overrides. */
+[data-bs-theme="dark"] .rec-cancel-summary .rec-id-pill,
+[data-layout-mode="dark"] .rec-cancel-summary .rec-id-pill {
+  background: rgba(124,92,252,0.18) !important;
+  color: #c4b5fd !important;
+  border: 1px solid rgba(124,92,252,0.35) !important;
+}
+[data-bs-theme="dark"] .rec-cancel-summary-title,
+[data-layout-mode="dark"] .rec-cancel-summary-title {
+  color: #f8fafc !important;
+}
+[data-bs-theme="dark"] .rec-cancel-summary-meta,
+[data-layout-mode="dark"] .rec-cancel-summary-meta {
+  color: rgba(255,255,255,0.72) !important;
+}
+[data-bs-theme="dark"] .rec-cancel-summary-meta strong,
+[data-layout-mode="dark"] .rec-cancel-summary-meta strong {
+  color: rgba(255,255,255,0.92) !important;
+}
+[data-bs-theme="dark"] .rec-cancel-summary-meta .dot,
+[data-layout-mode="dark"] .rec-cancel-summary-meta .dot {
+  color: rgba(255,255,255,0.30) !important;
+}
+
+/* Confirm-button shadow softens in dark mode — the bright halo from
+   light mode was scorching against the dark card. Neutral dark shadow
+   works for both the orange (Cancel) and green (Complete) gradients. */
+[data-bs-theme="dark"] .rec-cancel-confirm,
+[data-layout-mode="dark"] .rec-cancel-confirm {
+  box-shadow:
+    0 6px 16px rgba(0,0,0,0.45),
+    0 2px 4px rgba(0,0,0,0.30),
+    inset 0 1px 0 rgba(255,255,255,0.18),
+    inset 0 -1px 0 rgba(0,0,0,0.20) !important;
+}
+[data-bs-theme="dark"] .rec-cancel-confirm:hover,
+[data-layout-mode="dark"] .rec-cancel-confirm:hover {
+  box-shadow:
+    0 10px 22px rgba(0,0,0,0.55),
+    0 3px 6px rgba(0,0,0,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.22),
+    inset 0 -1px 0 rgba(0,0,0,0.20) !important;
+}
+
+/* The "Keep Active" ghost button needs a proper dark surface too —
+   it shows up inside both popups and previously stayed white. Matches
+   the input/textarea surface so the whole popup reads as one dark
+   plane (mirrors the Raise Hiring Request dark mode). */
+[data-bs-theme="dark"] .rec-cancel-footer .rec-btn-ghost,
+[data-layout-mode="dark"] .rec-cancel-footer .rec-btn-ghost {
+  background: var(--vz-card-bg) !important;
+  border-color: var(--vz-border-color) !important;
+  color: var(--vz-body-color) !important;
+}
+[data-bs-theme="dark"] .rec-cancel-footer .rec-btn-ghost:hover,
+[data-layout-mode="dark"] .rec-cancel-footer .rec-btn-ghost:hover {
+  background: rgba(255,255,255,0.06) !important;
+}
 
 /* ---------------------------------------------------------------------
    12. Candidate Management page — refined header, recruitment context
