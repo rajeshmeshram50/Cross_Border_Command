@@ -3991,9 +3991,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
         <div className="ep-reg-header">
           <h5>Request Attendance Regularization</h5>
-          <button type="button" className="ep-reg-x" onClick={() => setRegOpen(false)} aria-label="Close">
-            <i className="ri-close-line" style={{ fontSize: 16 }} />
-          </button>
+          {/* No top-right X — footer has Cancel; one dismiss path. */}
         </div>
 
         <div style={{ padding: '20px 22px', overflowY: 'auto', flex: '1 1 auto' }}>

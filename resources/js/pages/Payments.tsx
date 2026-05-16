@@ -740,14 +740,7 @@ export default function Payments() {
           <span className="pmt-reg-hero-pill">
             <i className="ri-circle-fill" />New Payment
           </span>
-          <button
-            type="button"
-            className="pmt-reg-hero-close"
-            onClick={() => { setAddModal(false); resetPaymentForm(); }}
-            aria-label="Close"
-          >
-            <i className="ri-close-line" />
-          </button>
+          {/* No top-right X — footer has Cancel; one dismiss path. */}
         </div>
 
         <Form onSubmit={handleAdd} className="d-flex flex-column flex-grow-1 overflow-hidden pmt-reg-form">

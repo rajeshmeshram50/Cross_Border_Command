@@ -1766,35 +1766,7 @@ function MasterPageInner({
                  `Fill in the details to register a new ${singular.toLowerCase()}`}
               </small>
             </div>
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
-              aria-label="Close"
-              style={{
-                width: 30, height: 30,
-                borderRadius: '50%',
-                background: 'rgba(255,255,255,0.18)',
-                border: '1px solid rgba(255,255,255,0.30)',
-                color: '#fff',
-                cursor: 'pointer',
-                transition: 'background 0.18s ease, transform 0.18s ease',
-                padding: 0,
-                lineHeight: 1,
-              }}
-              onMouseEnter={(e) => {
-                const el = e.currentTarget as HTMLButtonElement;
-                el.style.background = 'rgba(255,255,255,0.32)';
-                el.style.transform = 'rotate(90deg)';
-              }}
-              onMouseLeave={(e) => {
-                const el = e.currentTarget as HTMLButtonElement;
-                el.style.background = 'rgba(255,255,255,0.18)';
-                el.style.transform = 'rotate(0deg)';
-              }}
-            >
-              <i className="ri-close-line" style={{ fontSize: 16, lineHeight: 1 }} />
-            </button>
+            {/* No top-right X — footer has Cancel; one dismiss path. */}
           </div>
         </div>
         <Form onSubmit={handleSave} noValidate>
