@@ -714,7 +714,7 @@ export default function HrRecruitment() {
                     </div>
                     
                   </div>
-                  <div className="rec-list-scroll">
+                  <div className="p-2 rec-list-scroll">
                   <table className="rec-list-table align-middle table-nowrap mb-0">
                     <thead>
                       <tr>

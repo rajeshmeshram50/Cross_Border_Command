@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row, Modal, ModalBody, Input } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import '../../../css/recruitment.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,6 +31,11 @@ interface EmployeeRow {
   designation: string;
   primaryRole: string;
   ancillaryRole: string;
+  /** Full list of ancillary role names (multi-select on the employee).
+   *  Hydrated from `ancillary_roles_resolved` on the API row. Optional
+   *  so the local seed array below doesn't need to be touched; the
+   *  table cell falls back to `[ancillaryRole]`. */
+  ancillaryRoles?: string[];
   managerName: string;
   managerInitials: string;
   managerAccent: string;
@@ -358,7 +364,7 @@ export default function HrExitManagement() {
                   
                   </div>
 
-                  <div className="rec-list-scroll">
+                  <div className="p-2 rec-list-scroll">
                     <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                       <thead>
                         <tr>
@@ -408,7 +414,15 @@ export default function HrExitManagement() {
                               <td className="fs-13">{e.department}</td>
                               <td className="fs-13">{e.designation}</td>
                               <td><span className="exit-role-chip exit-role-chip--primary">{e.primaryRole}</span></td>
-                              <td><span className="exit-role-chip exit-role-chip--ancillary">{e.ancillaryRole}</span></td>
+                              <td>
+                                <AncillaryRolesChip
+                                  names={
+                                    (e.ancillaryRoles && e.ancillaryRoles.length > 0)
+                                      ? e.ancillaryRoles
+                                      : (e.ancillaryRole ? [e.ancillaryRole] : [])
+                                  }
+                                />
+                              </td>
                               <td>
                                 <div className="d-flex align-items-center gap-2">
                                   <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -2530,6 +2544,9 @@ function apiToExitRow(e: any): EmployeeRow {
     designation: e.designation?.name || '—',
     primaryRole:   e.primary_role?.name   || '—',
     ancillaryRole: e.ancillary_role?.name || '',
+    ancillaryRoles: (Array.isArray(e.ancillary_roles_resolved) && e.ancillary_roles_resolved.length > 0)
+      ? e.ancillary_roles_resolved.map((r: any) => r.name)
+      : (e.ancillary_role?.name ? [e.ancillary_role.name] : []),
     managerName:     mgrName,
     managerInitials: _exitInitials(mgrName),
     managerAccent:   _exitAccent(mgrName || 'manager'),

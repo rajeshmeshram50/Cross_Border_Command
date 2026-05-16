@@ -15,6 +15,7 @@ import HeaderFooterPanel, {
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
@@ -84,6 +85,11 @@ interface OnboardRow {
   designation: string;
   primaryRole: string;
   ancillaryRole: string;
+  /** Full list of ancillary role names (multi-select on the employee).
+   *  Hydrated from `ancillary_roles_resolved` on the API row. Optional so
+   *  the legacy seed arrays below (kept only as a typing reference) don't
+   *  need to be updated; the table cell falls back to `[ancillaryRole]`. */
+  ancillaryRoles?: string[];
   managerName: string;
   managerInitials: string;
   managerAccent: string;
@@ -188,6 +194,9 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     designation: e.designation?.name || '—',
     primaryRole: e.primary_role?.name || '—',
     ancillaryRole: e.ancillary_role?.name || '',
+    ancillaryRoles: (Array.isArray(e.ancillary_roles_resolved) && e.ancillary_roles_resolved.length > 0)
+      ? e.ancillary_roles_resolved.map((r: any) => r.name)
+      : (e.ancillary_role?.name ? [e.ancillary_role.name] : []),
     managerName: mgrName,
     managerInitials: _initials(mgrName),
     managerAccent: _accent(mgrName || 'manager'),
@@ -800,9 +809,13 @@ export default function HrEmployeeOnboarding() {
                               <span className="onb-role-pill">{r.primaryRole}</span>
                             </td>
                             <td>
-                              {r.ancillaryRole ? (
-                                <span className="onb-role-pill">{r.ancillaryRole}</span>
-                              ) : <span className="text-muted">—</span>}
+                              <AncillaryRolesChip
+                                names={
+                                  (r.ancillaryRoles && r.ancillaryRoles.length > 0)
+                                    ? r.ancillaryRoles
+                                    : (r.ancillaryRole ? [r.ancillaryRole] : [])
+                                }
+                              />
                             </td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
