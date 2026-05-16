@@ -1393,13 +1393,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const photo = employee?.photoUrl || null;
+    // Prefer the freshly-fetched empDetail.photo_url over the lightweight
+    // employee prop passed via navigation state — the prop can be stale if
+    // the user uploaded a new photo elsewhere (HR Employees / Onboarding)
+    // since opening this profile.
+    const photo = empDetail?.photo_url || employee?.photoUrl || null;
     const resolved = photo ? resolveFileUrl(photo) : null;
     setProfilePhotoPreview(prev => (profilePhotoFile ? prev : resolved));
-  }, [employee?.photoUrl, profilePhotoFile]);
+  }, [empDetail?.photo_url, employee?.photoUrl, profilePhotoFile]);
 
   const restoreSavedProfilePhoto = () => {
-    const saved = employee?.photoUrl || null;
+    const saved = empDetail?.photo_url || employee?.photoUrl || null;
     setProfilePhotoPreview(saved ? resolveFileUrl(saved) : null);
   };
 
@@ -1466,6 +1470,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       });
       const nextUrl = res?.data?.document?.url;
       setProfilePhotoPreview(nextUrl ? resolveFileUrl(nextUrl) : profilePhotoPreview);
+      // Mirror the new URL into empDetail so the avatar source stays in
+      // sync without waiting for the next /employees/{id} refetch.
+      if (nextUrl) {
+        setEmpDetail((prev: any) => prev ? { ...prev, photo_url: nextUrl } : prev);
+      }
       setProfilePhotoFile(null);
       toast.success('Photo updated', 'Profile picture has been changed.');
     } catch (err: any) {
@@ -1475,7 +1484,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
   };
 
-  const profilePhotoSrc = profilePhotoPreview || (employee?.photoUrl ? resolveFileUrl(employee.photoUrl) : null);
+  const profilePhotoSrc =
+    profilePhotoPreview
+    || (empDetail?.photo_url ? resolveFileUrl(empDetail.photo_url) : null)
+    || (employee?.photoUrl   ? resolveFileUrl(employee.photoUrl)   : null);
   // "Is this the current user's own profile?" — first try numeric id match,
   // fall back to the linked Employee.id. We don't have the current user's
   // emp_code in /me, so when the URL is a code we trust the backend's later
@@ -1596,19 +1608,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
   };
 
-  // Live counts for the Evidence Vault hero KPIs.
-  const allVaultDocs = [
-    ...VAULT_EMPLOYEE.flatMap(s => s.docs.map(d => ({ status: d.status }))),
-    ...VAULT_ORG.flatMap(s => s.docs.map(d => ({ status: d.status }))),
-  ];
+  // Live counts for the Evidence Vault hero KPIs and tab badges. Used to
+  // be derived from the hardcoded VAULT_EMPLOYEE / VAULT_ORG mock arrays
+  // (which never matched the actual rows shown in the body); now read
+  // directly from the same `uploadedDocs` + `signedDocs` arrays the
+  // tables render, so the header always agrees with the body.
+  const verifiedUploadedCount = uploadedDocs.filter(d => d.status === 'verified').length;
+  const pendingUploadedCount  = uploadedDocs.filter(d => d.status !== 'verified').length;
+  const signedCompletedCount  = signedDocs.filter(d => String(d.status).toLowerCase() === 'completed').length;
+  const employeeDocCount       = uploadedDocs.length;
+  const organizationalDocCount = signedDocs.length;
   const vaultCounts = {
-    total:    allVaultDocs.length,
-    verified: allVaultDocs.filter(d => d.status === 'Verified').length,
-    pending:  allVaultDocs.filter(d => d.status === 'Pending').length,
-    signed:   allVaultDocs.filter(d => d.status === 'Signed' || d.status === 'Sent').length,
+    total:    employeeDocCount + organizationalDocCount,
+    verified: verifiedUploadedCount,
+    pending:  pendingUploadedCount,
+    signed:   signedCompletedCount,
   };
-  const employeeDocCount      = VAULT_EMPLOYEE.reduce((n, s) => n + s.docs.length, 0);
-  const organizationalDocCount = VAULT_ORG.reduce((n, s) => n + s.docs.length, 0);
 
   const TABS: { key: TabKey; label: string; icon: string; color: string }[] = [
     { key: 'profile',    label: 'Profile Details', icon: 'ri-user-line',                color: 'linear-gradient(135deg,#6366f1,#8b5cf6)' },
@@ -2271,10 +2286,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <Row className="g-4">
                 <Col>
                   <div className="ep-field-label">Employee Number</div>
-                  <span className=" fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 10 }}>{employeeId}</span>
+                  <span className=" fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 10 }}>{empDetail?.emp_code || employeeId}</span>
                 </Col>
-                <Col><div className="ep-field-label">Joining Date</div><div className="ep-field-value " style={{ fontSize: 11 }}>29-Apr-2026</div></Col>
-                <Col><div className="ep-field-label">Job Title (Primary)</div><div className="ep-field-value">{employee?.designation || '—'}</div></Col>
+                <Col><div className="ep-field-label">Joining Date</div><div className="ep-field-value " style={{ fontSize: 11 }}>{fmtDate(empDetail?.date_of_joining)}</div></Col>
+                <Col><div className="ep-field-label">Job Title (Primary)</div><div className="ep-field-value">{empDetail?.designation?.name || employee?.designation || '—'}</div></Col>
                 <Col>
                   <div className="ep-field-label">Job Title (Secondary)</div>
                   {ancillaryList.length > 0 ? (
@@ -2297,9 +2312,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <div className="ep-field-value text-muted fw-normal">—</div>
                   )}
                 </Col>
-                <Col><div className="ep-field-label">Employment Status</div><div className="ep-field-value">{employee?.enabled === false ? 'Disabled' : 'active'}</div></Col>
-                <Col><div className="ep-field-label">Worker Type</div><div className="ep-field-value">Full-time</div></Col>
-                <Col><div className="ep-field-label">Time Type</div><div className="ep-field-value">Full Time</div></Col>
+                <Col><div className="ep-field-label">Employment Status</div><div className="ep-field-value">{empDetail?.status || (employee?.enabled === false ? 'Disabled' : 'Active')}</div></Col>
+                <Col><div className="ep-field-label">Worker Type</div><div className="ep-field-value">{empDetail?.worker_type || empDetail?.work_type || '—'}</div></Col>
+                <Col><div className="ep-field-label">Time Type</div><div className="ep-field-value">{empDetail?.time_type || empDetail?.work_type || '—'}</div></Col>
               </Row>
             </div>
           </div>
@@ -2320,10 +2335,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
-                <Col md={3}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">Inorbvict Healthcare India Pvt. Ltd.</div></Col>
-                <Col md={3}><div className="ep-field-label">Department</div><div className="ep-field-value">{employee?.department || '—'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Location</div><div className="ep-field-value">Pune, Maharashtra</div></Col>
-                <Col md={3}><div className="ep-field-label">Reporting Manager</div><div className="ep-field-value">{employee?.manager || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">{empDetail?.legal_entity?.entity_name || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Department</div><div className="ep-field-value">{empDetail?.department?.name || employee?.department || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Location</div><div className="ep-field-value">{empDetail?.location || '—'}</div></Col>
+                <Col md={3}>
+                  <div className="ep-field-label">Reporting Manager</div>
+                  <div className="ep-field-value">{(() => {
+                    const m = empDetail?.reporting_manager;
+                    if (!m) return employee?.manager || '—';
+                    return m.display_name || [m.first_name, m.middle_name, m.last_name].filter(Boolean).join(' ') || '—';
+                  })()}</div>
+                </Col>
               </Row>
             </div>
           </div>
@@ -2390,10 +2412,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <div className="px-3 py-3">
                   <Row className="g-3">
-                    <Col xs={6}><div className="ep-field-label">Probation Policy</div><div className="ep-field-value">Default Probation Policy</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Probation Duration</div><div className="ep-field-value">3 Months</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Notice Period</div><div className="ep-field-value">2 Months</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Contract Status</div><div className="ep-field-value">Permanent</div></Col>
+                    <Col xs={6}><div className="ep-field-label">Probation Policy</div><div className="ep-field-value">{empDetail?.probation_policy || '—'}</div></Col>
+                    <Col xs={6}><div className="ep-field-label">Probation Duration</div><div className="ep-field-value">{empDetail?.probation_months ? `${empDetail.probation_months} Months` : '—'}</div></Col>
+                    <Col xs={6}><div className="ep-field-label">Notice Period</div><div className="ep-field-value">{empDetail?.notice_period || (empDetail?.notice_period_days ? `${empDetail.notice_period_days} Days` : '—')}</div></Col>
+                    <Col xs={6}><div className="ep-field-label">Contract Status</div><div className="ep-field-value">{empDetail?.contract_status || empDetail?.work_type || '—'}</div></Col>
                   </Row>
                 </div>
               </div>
@@ -2445,23 +2467,42 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             <div className="px-3 py-3">
               <Row className="g-3">
-                <Col md={3}><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">Yes</div></Col>
-                <Col md={3}>
-                  <div className="ep-field-label">Laptop Asset ID</div>
-                  <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 9 }}>LAP-0042</span>
-                </Col>
-                <Col md={3}><div className="ep-field-label">Laptop Type</div><div className="ep-field-value">Dell Latitude 5510</div></Col>
-                <Col md={3}><div className="ep-field-label">Mobile Device</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
+                {(() => {
+                  const laptop = empDetail?.laptop_asset;
+                  const mobile = empDetail?.mobile_asset;
+                  // `other_assets_resolved` is an accessor on the Employee
+                  // model that joins the selected master_asset rows. Falls
+                  // back to the raw id array if the accessor wasn't loaded.
+                  const otherAssets: Array<{ asset_name?: string; code?: string }> =
+                    Array.isArray(empDetail?.other_assets_resolved)
+                      ? empDetail.other_assets_resolved
+                      : [];
+                  const otherSummary = otherAssets.length > 0
+                    ? otherAssets.map(a => a.asset_name || a.code).filter(Boolean).join(', ')
+                    : '—';
+                  return (
+                    <>
+                      <Col md={3}><div className="ep-field-label">Laptop Assigned</div><div className="ep-field-value">{empDetail?.laptop_assigned || (laptop ? 'Yes' : 'No')}</div></Col>
+                      <Col md={3}>
+                        <div className="ep-field-label">Laptop Asset ID</div>
+                        {laptop ? (
+                          <span className="font-monospace fw-semibold" style={{ background: 'rgba(99,102,241,0.10)', color: '#4338ca', padding: '4px 12px', borderRadius: 8, fontSize: 9 }}>{laptop.code || laptop.asset_number || `LAP-${laptop.id}`}</span>
+                        ) : <div className="ep-field-value text-muted fw-normal">—</div>}
+                      </Col>
+                      <Col md={3}><div className="ep-field-label">Laptop Type</div><div className="ep-field-value">{laptop?.asset_name || '—'}</div></Col>
+                      <Col md={3}>
+                        <div className="ep-field-label">Mobile Device</div>
+                        {mobile ? (
+                          <div className="ep-field-value">{mobile.asset_name || mobile.code || '—'}</div>
+                        ) : <div className="ep-field-value text-muted fw-normal">—</div>}
+                      </Col>
 
-                <Col md={3}><div className="ep-field-label">Monitor</div><div className="ep-field-value">24" Dell Monitor</div></Col>
-                <Col md={3}><div className="ep-field-label">Keyboard</div><div className="ep-field-value">Logitech K380</div></Col>
-                <Col md={3}><div className="ep-field-label">Mouse</div><div className="ep-field-value">Logitech MX</div></Col>
-                <Col md={3}><div className="ep-field-label">Headset</div><div className="ep-field-value text-muted fw-normal">—</div></Col>
-
-                <Col md={3}><div className="ep-field-label">Other Assets</div><div className="ep-field-value">Access Card, Desk</div></Col>
-                <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">17-May-2022</div></Col>
-                <Col md={3}><div className="ep-field-label">Acknowledgment</div><div className="ep-field-value">Signed</div></Col>
-                <Col md={3}><div className="ep-field-label">Return Required</div><div className="ep-field-value">No</div></Col>
+                      <Col md={6}><div className="ep-field-label">Other Assets</div><div className="ep-field-value">{otherSummary}</div></Col>
+                      <Col md={3}><div className="ep-field-label">Asset Issued Date</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.asset_issued_date)}</div></Col>
+                      <Col md={3}><div className="ep-field-label">Return Required</div><div className="ep-field-value">{empDetail?.return_required || '—'}</div></Col>
+                    </>
+                  );
+                })()}
               </Row>
             </div>
           </div>
@@ -3095,82 +3136,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
           )}
 
-          {/* Organizational Documents sub-tab */}
-          {vaultTab === 'organizational' && VAULT_ORG.map(section => (
-            <div
-              className="ep-section-card-flat ep-section-card mb-3"
-              style={{ borderTop: `3px solid ${section.iconFg}` }}
-              key={section.title}
-            >
-              <div
-                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2"
-                style={{
-                  borderBottom: `1px solid color-mix(in srgb, ${section.iconFg} 18%, transparent)`,
-                  background: `linear-gradient(135deg, color-mix(in srgb, ${section.iconFg} 14%, transparent) 0%, color-mix(in srgb, ${section.iconFg} 4%, transparent) 60%, color-mix(in srgb, ${section.iconFg} 1%, transparent) 100%)`,
-                }}
-              >
-                <div className="d-flex align-items-center gap-2">
-                  <span className="ep-section-icon" style={{ background: `color-mix(in srgb, ${section.iconFg} 18%, transparent)`, color: section.iconFg }}>
-                    <i className={section.icon} />
-                  </span>
-                  <div>
-                    <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>{section.title}</h6>
-                    <small className="text-muted" style={{ fontSize: 11 }}>{section.subtitle}</small>
-                  </div>
-                </div>
-                <div className="text-end">
-                  <h4 className="mb-0 fw-bold" style={{ color: section.iconFg, fontSize: 22, lineHeight: 1 }}>{section.docs.length}</h4>
-                  <small className="text-muted text-uppercase" style={{ fontSize: 9.5, letterSpacing: '0.06em', fontWeight: 700 }}>Documents</small>
-                </div>
-              </div>
-              <div className="px-3 pb-3 pt-2">
-                <div className="table-responsive border rounded ep-att-scroll-wrap">
-                  <table className="table align-middle table-nowrap ep-att-table mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        {['SR', 'Document Name', 'Type', 'Effective Date', 'Valid Until', 'Attachment', 'Status'].map(h => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {section.docs.map((doc, idx) => {
-                        const st = VAULT_STATUS_TONE[doc.status];
-                        const typeTone = doc.type === 'AGREEMENT'
-                          ? { bg: '#d6f4e3', fg: '#108548' }
-                          : { bg: '#dceefe', fg: '#0c63b0' };
-                        return (
-                          <tr key={`${section.title}-${doc.name}`}>
-                            <td className="text-muted">{idx + 1}</td>
-                            <td className="fw-semibold">{doc.name}</td>
-                            <td>
-                              <span className="d-inline-flex align-items-center fw-semibold text-uppercase" style={{ fontSize: 9.5, padding: '3px 9px', borderRadius: 999, background: typeTone.bg, color: typeTone.fg, letterSpacing: '0.04em' }}>
-                                {doc.type}
-                              </span>
-                            </td>
-                            <td className="font-monospace">{doc.effectiveDate || <span className="text-muted">—</span>}</td>
-                            <td className="font-monospace">{doc.validUntil || <span className="text-muted">—</span>}</td>
-                            <td>
-                              {doc.attachment
-                                ? <a href="#" onClick={e => { e.preventDefault(); toast.info('Downloading attachment', `${doc.attachment} is being prepared…`); }} className="d-inline-flex align-items-center gap-1 text-decoration-none" style={{ background: 'rgba(16,185,129,0.10)', color: '#0a8a78', padding: '3px 9px', borderRadius: 999, fontSize: 11, fontWeight: 600, border: '1px solid rgba(16,185,129,0.25)' }}>
-                                    <i className="ri-file-text-line" /> {doc.attachment}
-                                  </a>
-                                : <span className="text-muted">—</span>}
-                            </td>
-                            <td>
-                              <span className="d-inline-flex align-items-center gap-1 fw-semibold text-uppercase" style={{ fontSize: 9.5, padding: '3px 9px', borderRadius: 999, background: st.bg, color: st.fg, letterSpacing: '0.04em' }}>
-                                <span style={{ width: 5, height: 5, borderRadius: '50%', background: st.dot }} /> {doc.status}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          ))}
         </>
       )}
 
@@ -5269,10 +5234,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               </button>
             </div>
             {pwErrors.password && <small className="text-danger d-block mt-1" style={{ fontSize: 11 }}>{pwErrors.password}</small>}
-            {/* Strength meter — coloured bar + label that grade the password
-                from Weak → Strong as rules are satisfied. */}
-            {pwNew && (
-              <div className="mt-2">
+            {/* Strength meter + rule checklist. The bar + label only show
+                once the user starts typing (no point grading an empty
+                field), but the checklist below stays visible upfront so
+                users see exactly what a "strong" password needs — same
+                pattern as the Reset Password / Forgot Password flows. */}
+            <div className="mt-2">
+              {pwNew && (
                 <div className="d-flex align-items-center gap-2 mb-1">
                   <div style={{ flex: 1, height: 6, background: 'var(--vz-secondary-bg)', borderRadius: 999, overflow: 'hidden' }}>
                     <div style={{
@@ -5286,20 +5254,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     {pwStrength.text}
                   </span>
                 </div>
-                {/* Rule checklist — each item turns green ✓ once satisfied. */}
-                <ul className="list-unstyled mb-0 mt-1" style={{ fontSize: 11 }}>
-                  {PW_RULES.map(rule => {
-                    const passed = !validatePwRules(pwNew).includes(rule);
-                    return (
-                      <li key={rule} className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}>
-                        <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
-                        {rule}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
+              )}
+              <ul className="list-unstyled mb-0 mt-1" style={{ fontSize: 11 }}>
+                {PW_RULES.map(rule => {
+                  const passed = !!pwNew && !validatePwRules(pwNew).includes(rule);
+                  return (
+                    <li key={rule} className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}>
+                      <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
+                      {rule}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </div>
 
           {/* Confirm New Password */}
