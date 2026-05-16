@@ -826,6 +826,44 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
 
+  // Full employee record from /employees/{id} — drives the Personal /
+  // Contact / Address sections so every field reflects what the admin
+  // actually saved (was previously hardcoded with sample data).
+  const [empDetail, setEmpDetail] = useState<any>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const empCode = String(employeeId || '').trim();
+    if (!empCode) return;
+    // The route uses emp_code (e.g. EMP-001) but the API show endpoint
+    // expects the numeric id. Resolve via the search index first, then
+    // fetch the full record.
+    (async () => {
+      try {
+        let dbId: number | undefined = profileEmpIdNum ?? undefined;
+        if (!dbId) {
+          const list = await api.get('/employees', { params: { search: empCode } });
+          const rows = Array.isArray(list.data) ? list.data : [];
+          const match = rows.find((r: any) => String(r.emp_code || r.id) === empCode) || rows[0];
+          dbId = match?.id;
+        }
+        if (!dbId) return;
+        const r = await api.get(`/employees/${dbId}`);
+        if (!cancelled) setEmpDetail(r.data || null);
+      } catch {
+        // Non-fatal — the page still renders the props-passed lightweight row.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [employeeId]);
+
+  // Helper — formats a date string like "1985-11-02" → "02-Nov-1985".
+  const fmtDate = (raw: any): string => {
+    if (!raw) return '—';
+    const d = new Date(String(raw));
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
+  };
+
   // ── Signed Documents — final, fully-signed copies for this employee.
   // Fetched once when the Vault tab is opened. The route accepts either
   // the numeric employee id or the EMP-### code (the slug the profile
@@ -946,6 +984,36 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [pwShow, setPwShow]         = useState<{ cur: boolean; nw: boolean; cf: boolean }>({ cur: false, nw: false, cf: false });
   const [pwErrors, setPwErrors]     = useState<Record<string, string>>({});
 
+  // Password strength rules — matched against the New Password value to
+  // drive both the inline checklist and the colored strength bar. Same
+  // ruleset used by Profile.tsx / ClientForm.tsx so the experience is
+  // consistent across every password input in the app.
+  const PW_RULES = [
+    'At least 8 characters',
+    'One uppercase letter',
+    'One lowercase letter',
+    'One number',
+  ] as const;
+  const validatePwRules = (pw: string): string[] => {
+    const failed: string[] = [];
+    if (pw.length < 8)        failed.push('At least 8 characters');
+    if (!/[A-Z]/.test(pw))    failed.push('One uppercase letter');
+    if (!/[a-z]/.test(pw))    failed.push('One lowercase letter');
+    if (!/[0-9]/.test(pw))    failed.push('One number');
+    return failed;
+  };
+  // Bonus rule for visual strength only — not required, but bumps the
+  // bar to 5/5 and labels it "Strong" so users have a target to aim at.
+  const pwHasSymbol = (pw: string) => /[^A-Za-z0-9]/.test(pw);
+  const pwStrength = (() => {
+    if (!pwNew) return { level: 0, text: '', barColor: '', barTextClass: '' };
+    const passed = 4 - validatePwRules(pwNew).length + (pwHasSymbol(pwNew) ? 1 : 0);
+    const labels = ['', 'Weak', 'Weak', 'Fair', 'Good', 'Strong'];
+    const colors = ['', '#ef4444', '#ef4444', '#f97316', '#eab308', '#10b981'];
+    const text   = ['', 'text-danger', 'text-danger', 'text-warning', 'text-warning', 'text-success'];
+    return { level: passed, text: labels[passed] || 'Strong', barColor: colors[passed] || '#10b981', barTextClass: text[passed] || 'text-success' };
+  })();
+
   const resetPwForm = () => {
     setPwCurrent(''); setPwNew(''); setPwConfirm('');
     setPwShow({ cur: false, nw: false, cf: false });
@@ -956,9 +1024,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // Client-side guards first so the user sees mistakes without a round-trip.
     const errs: Record<string, string> = {};
     if (!pwCurrent) errs.current_password = 'Current password is required';
-    if (!pwNew) errs.password = 'New password is required';
-    else if (pwNew.length < 8) errs.password = 'Password must be at least 8 characters';
-    if (pwNew !== pwConfirm) errs.password_confirmation = 'Passwords do not match';
+    if (!pwNew) {
+      errs.password = 'New password is required';
+    } else {
+      const failed = validatePwRules(pwNew);
+      if (failed.length) errs.password = failed.join(', ');
+      else if (pwNew === pwCurrent) errs.password = 'New password must differ from the current one';
+    }
+    if (!pwConfirm) errs.password_confirmation = 'Please re-enter the new password';
+    else if (pwNew !== pwConfirm) errs.password_confirmation = 'Passwords do not match';
     if (Object.keys(errs).length > 0) { setPwErrors(errs); return; }
 
     setPwSaving(true);
@@ -1804,13 +1878,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       </Col>
       <Col lg={9} md={8}>
         <Row className="g-4">
-          <Col md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ')[0] || 'Aarav'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">Rajendra</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{(employee?.name || 'Aarav Kale').split(' ').slice(1).join(' ') || 'Kale'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{employee?.name || 'Aarav Kale'}</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">02-Nov-1985</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">Male</div></Col>
-          <Col md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">Indian</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">First Name</div><div className="ep-field-value">{empDetail?.first_name || (employee?.name || '').split(' ')[0] || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Middle Name</div><div className="ep-field-value">{empDetail?.middle_name || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Last Name</div><div className="ep-field-value">{empDetail?.last_name || (employee?.name || '').split(' ').slice(1).join(' ') || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Display Name</div><div className="ep-field-value">{empDetail?.display_name || employee?.name || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.date_of_birth)}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Gender</div><div className="ep-field-value">{empDetail?.gender || '—'}</div></Col>
+          <Col md={4} sm={6}><div className="ep-field-label">Nationality</div><div className="ep-field-value">{empDetail?.nationality_country?.name || '—'}</div></Col>
         </Row>
       </Col>
     </Row>
@@ -1833,10 +1907,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
-                <Col md={3}><div className="ep-field-label">Work Email</div><div className="ep-field-value">{employee?.email || 'aarav.kale@enterprise.com'}</div></Col>
-                <Col md={3}><div className="ep-field-label">Mobile</div><div className="ep-field-value font-monospace">+91 9635203533</div></Col>
-                <Col md={3}><div className="ep-field-label">Work Country</div><div className="ep-field-value">India</div></Col>
-                <Col md={3}><div className="ep-field-label">Reporting Manager</div><div className="ep-field-value">{employee?.manager || 'Deepa Kulkarni'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Work Email</div><div className="ep-field-value">{empDetail?.email || employee?.email || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Mobile</div><div className="ep-field-value font-monospace">{empDetail?.mobile || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Work Country</div><div className="ep-field-value">{empDetail?.work_country?.name || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Reporting Manager</div><div className="ep-field-value">{(() => {
+                  const mgr = empDetail?.reporting_manager;
+                  if (mgr) {
+                    return mgr.display_name
+                      || [mgr.first_name, mgr.middle_name, mgr.last_name].filter(Boolean).join(' ')
+                      || '—';
+                  }
+                  return employee?.manager || '—';
+                })()}</div></Col>
               </Row>
             </div>
           </div>
@@ -1864,11 +1946,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <span className="dot" style={{ background: '#0ab39c' }} /> Current Address
                   </div>
                   <Row className="g-3">
-                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">Office No. 821, Solitaire Hub, Balewadi</div></Col>
-                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">Pune</div></Col>
-                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">Maharashtra</div></Col>
-                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">India</div></Col>
-                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">411045</div></Col>
+                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">{[empDetail?.address_line1, empDetail?.address_line2].filter(Boolean).join(', ') || '—'}</div></Col>
+                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">{empDetail?.city || '—'}</div></Col>
+                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">{empDetail?.state?.name || '—'}</div></Col>
+                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">{empDetail?.country?.name || '—'}</div></Col>
+                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">{empDetail?.pincode || '—'}</div></Col>
                   </Row>
                 </Col>
                 <Col md={6}>
@@ -1876,11 +1958,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <span className="dot" style={{ background: '#0ab39c' }} /> Permanent Address
                   </div>
                   <Row className="g-3">
-                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">Plot No. 14, Sector 3, Vimaan Nagar Rd</div></Col>
-                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">Pune</div></Col>
-                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">Maharashtra</div></Col>
-                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">India</div></Col>
-                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">411014</div></Col>
+                    <Col><div className="ep-field-label">Address</div><div className="ep-field-value">{[empDetail?.perm_address_line1, empDetail?.perm_address_line2].filter(Boolean).join(', ') || '—'}</div></Col>
+                    <Col><div className="ep-field-label">City</div><div className="ep-field-value">{empDetail?.perm_city || '—'}</div></Col>
+                    <Col><div className="ep-field-label">State</div><div className="ep-field-value">{empDetail?.perm_state?.name || '—'}</div></Col>
+                    <Col><div className="ep-field-label">Country</div><div className="ep-field-value">{empDetail?.perm_country?.name || '—'}</div></Col>
+                    <Col><div className="ep-field-label">Pincode</div><div className="ep-field-value font-monospace">{empDetail?.perm_pincode || '—'}</div></Col>
                   </Row>
                 </Col>
               </Row>
@@ -5095,16 +5177,36 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           enforces the min:8 + no-reuse-of-last-3 policy and emails a
           confirmation via PasswordChangedMail. */}
       <EpModal open={pwOpen} onClose={() => { if (!pwSaving) { setPwOpen(false); resetPwForm(); } }} size="sm">
-        <div className="d-flex align-items-center justify-content-between px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+        {/* Header — gradient banner so the dialog reads as a distinct
+            "Security" surface, not just a plain card. */}
+        <div
+          className="d-flex align-items-center justify-content-between px-3 py-3"
+          style={{
+            background: 'linear-gradient(135deg, rgba(244,63,94,0.10) 0%, rgba(244,63,94,0.02) 100%)',
+            borderBottom: '1px solid rgba(244,63,94,0.18)',
+          }}
+        >
           <div className="d-flex align-items-center gap-2">
-            <span className="ep-section-icon" style={{ background: 'rgba(244,63,94,0.18)', color: '#be123c' }}>
-              <i className="ri-lock-password-line" />
+            <span
+              className="d-inline-flex align-items-center justify-content-center rounded-3"
+              style={{
+                width: 38, height: 38,
+                background: 'linear-gradient(135deg, #f43f5e, #fb7185)',
+                color: '#fff',
+                boxShadow: '0 6px 16px rgba(244,63,94,0.35)',
+              }}
+            >
+              <i className="ri-lock-password-line" style={{ fontSize: 18 }} />
             </span>
-            <h6 className="mb-0 fw-bold">Change Password</h6>
+            <div>
+              <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Change Password</h6>
+              <small className="text-muted" style={{ fontSize: 11 }}>Pick a strong, unique password</small>
+            </div>
           </div>
           <button
             type="button"
-            className="btn btn-light btn-sm"
+            className="btn btn-light btn-sm rounded-circle d-inline-flex align-items-center justify-content-center"
+            style={{ width: 30, height: 30 }}
             onClick={() => { if (!pwSaving) { setPwOpen(false); resetPwForm(); } }}
             disabled={pwSaving}
             aria-label="Close"
@@ -5113,6 +5215,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </button>
         </div>
         <div className="px-3 py-3">
+          {/* Current Password */}
           <div className="mb-3">
             <label className="emp-label fw-semibold" style={{ fontSize: 12 }}>Current Password<span className="text-danger">*</span></label>
             <div className="position-relative">
@@ -5124,7 +5227,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 placeholder="Enter your current password"
                 autoComplete="current-password"
                 disabled={pwSaving}
-                style={{ paddingRight: 38 }}
+                style={{ paddingRight: 38, borderRadius: 10 }}
               />
               <button
                 type="button"
@@ -5137,9 +5240,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className={pwShow.cur ? 'ri-eye-off-line' : 'ri-eye-line'} />
               </button>
             </div>
-            {pwErrors.current_password && <small className="text-danger">{pwErrors.current_password}</small>}
+            {pwErrors.current_password && <small className="text-danger d-block mt-1" style={{ fontSize: 11 }}>{pwErrors.current_password}</small>}
           </div>
 
+          {/* New Password */}
           <div className="mb-3">
             <label className="emp-label fw-semibold" style={{ fontSize: 12 }}>New Password<span className="text-danger">*</span></label>
             <div className="position-relative">
@@ -5148,10 +5252,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 className={`form-control${pwErrors.password ? ' is-invalid' : ''}`}
                 value={pwNew}
                 onChange={e => { setPwNew(e.target.value); if (pwErrors.password) setPwErrors(p => ({ ...p, password: '' })); }}
-                placeholder="At least 8 characters"
+                placeholder="Minimum 8 characters"
                 autoComplete="new-password"
                 disabled={pwSaving}
-                style={{ paddingRight: 38 }}
+                style={{ paddingRight: 38, borderRadius: 10 }}
               />
               <button
                 type="button"
@@ -5164,9 +5268,41 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className={pwShow.nw ? 'ri-eye-off-line' : 'ri-eye-line'} />
               </button>
             </div>
-            {pwErrors.password && <small className="text-danger">{pwErrors.password}</small>}
+            {pwErrors.password && <small className="text-danger d-block mt-1" style={{ fontSize: 11 }}>{pwErrors.password}</small>}
+            {/* Strength meter — coloured bar + label that grade the password
+                from Weak → Strong as rules are satisfied. */}
+            {pwNew && (
+              <div className="mt-2">
+                <div className="d-flex align-items-center gap-2 mb-1">
+                  <div style={{ flex: 1, height: 6, background: 'var(--vz-secondary-bg)', borderRadius: 999, overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${(pwStrength.level / 5) * 100}%`,
+                      height: '100%',
+                      background: pwStrength.barColor,
+                      transition: 'width .25s ease, background .25s ease',
+                    }} />
+                  </div>
+                  <span className={`fw-bold ${pwStrength.barTextClass}`} style={{ fontSize: 11, minWidth: 44, textAlign: 'right' }}>
+                    {pwStrength.text}
+                  </span>
+                </div>
+                {/* Rule checklist — each item turns green ✓ once satisfied. */}
+                <ul className="list-unstyled mb-0 mt-1" style={{ fontSize: 11 }}>
+                  {PW_RULES.map(rule => {
+                    const passed = !validatePwRules(pwNew).includes(rule);
+                    return (
+                      <li key={rule} className={`d-inline-flex align-items-center gap-1 me-3 ${passed ? 'text-success fw-semibold' : 'text-muted'}`}>
+                        <i className={passed ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} style={{ fontSize: 12 }} />
+                        {rule}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
           </div>
 
+          {/* Confirm New Password */}
           <div className="mb-2">
             <label className="emp-label fw-semibold" style={{ fontSize: 12 }}>Confirm New Password<span className="text-danger">*</span></label>
             <div className="position-relative">
@@ -5178,7 +5314,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 placeholder="Re-enter the new password"
                 autoComplete="new-password"
                 disabled={pwSaving}
-                style={{ paddingRight: 38 }}
+                style={{ paddingRight: 38, borderRadius: 10 }}
                 onKeyDown={e => { if (e.key === 'Enter' && !pwSaving) handleChangePassword(); }}
               />
               <button
@@ -5192,16 +5328,69 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <i className={pwShow.cf ? 'ri-eye-off-line' : 'ri-eye-line'} />
               </button>
             </div>
-            {pwErrors.password_confirmation && <small className="text-danger">{pwErrors.password_confirmation}</small>}
+            {pwErrors.password_confirmation && <small className="text-danger d-block mt-1" style={{ fontSize: 11 }}>{pwErrors.password_confirmation}</small>}
+            {/* Live match indicator — keeps users from racing each other to
+                Submit before realising they typo'd the confirmation. */}
+            {pwConfirm && (
+              <div className="mt-2 d-inline-flex align-items-center gap-1" style={{ fontSize: 11 }}>
+                {pwNew === pwConfirm ? (
+                  <span className="text-success d-inline-flex align-items-center gap-1 fw-semibold">
+                    <i className="ri-checkbox-circle-fill" style={{ fontSize: 12 }} /> Passwords match
+                  </span>
+                ) : (
+                  <span className="text-danger d-inline-flex align-items-center gap-1 fw-semibold">
+                    <i className="ri-close-circle-fill" style={{ fontSize: 12 }} /> Passwords do not match
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
-        <div className="d-flex justify-content-end gap-2 px-3 py-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-          <Button color="light" size="sm" onClick={() => { setPwOpen(false); resetPwForm(); }} disabled={pwSaving}>
+        <div
+          className="d-flex justify-content-end gap-2 px-3 py-3"
+          style={{ borderTop: '1px solid var(--vz-border-color)', background: 'var(--vz-secondary-bg)' }}
+        >
+          <button
+            type="button"
+            className="btn fw-semibold rounded-pill"
+            onClick={() => { setPwOpen(false); resetPwForm(); }}
+            disabled={pwSaving}
+            style={{
+              padding: '7px 18px', fontSize: 13,
+              background: '#fff', color: '#374151',
+              border: '1px solid #e5e7eb',
+              opacity: pwSaving ? 0.6 : 1,
+              cursor: pwSaving ? 'not-allowed' : 'pointer',
+            }}
+          >
             Cancel
-          </Button>
-          <Button color="danger" size="sm" onClick={handleChangePassword} disabled={pwSaving}>
-            {pwSaving ? (<><span className="spinner-border spinner-border-sm me-2" /> Updating…</>) : 'Update Password'}
-          </Button>
+          </button>
+          <button
+            type="button"
+            className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold rounded-pill"
+            onClick={handleChangePassword}
+            disabled={pwSaving}
+            style={{
+              padding: '7px 18px', fontSize: 13, minWidth: 150,
+              color: '#fff', border: 'none',
+              background: 'linear-gradient(135deg, #f43f5e, #fb7185)',
+              boxShadow: '0 6px 16px rgba(244,63,94,0.35)',
+              opacity: pwSaving ? 0.85 : 1,
+              cursor: pwSaving ? 'wait' : 'pointer',
+            }}
+          >
+            {pwSaving ? (
+              <>
+                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                Updating…
+              </>
+            ) : (
+              <>
+                <i className="ri-shield-check-line" style={{ fontSize: 14 }} />
+                Update Password
+              </>
+            )}
+          </button>
         </div>
       </EpModal>
 

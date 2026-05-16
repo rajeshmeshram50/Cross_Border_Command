@@ -1849,15 +1849,7 @@ function MasterPageInner({
             })}
           </ModalBody>
           <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-            {/* "Fields marked * are required" hint on the left */}
-            <span className="d-inline-flex align-items-center gap-1 text-muted" style={{ fontSize: 12 }}>
-              {!viewOnly && (
-                <>
-                  <i className="ri-information-line" style={{ fontSize: 13, color: '#6691e7' }} />
-                  Fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required
-                </>
-              )}
-            </span>
+            <span />
             {/* Action buttons on the right */}
             <div className="d-flex align-items-center gap-2">
               <button type="button" className="master-modal-cancel" onClick={() => setModalOpen(false)}>

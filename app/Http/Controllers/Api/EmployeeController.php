@@ -43,6 +43,10 @@ class EmployeeController extends Controller
         'nationalityCountry:id,name',
         'country:id,name',
         'state:id,name,country_id',
+        // Permanent-address pair so EmployeeProfile.tsx can show both
+        // current and permanent country/state names without extra calls.
+        'permCountry:id,name',
+        'permState:id,name,country_id',
         'reportingManager:id,first_name,middle_name,last_name,display_name,emp_code',
         'laptopAsset:id,asset_name,code,asset_number',
         'mobileAsset:id,asset_name,code,asset_number',
@@ -928,6 +932,7 @@ class EmployeeController extends Controller
             'ancillary_role_id'    => 'nullable|integer',
             'ancillary_role_ids'   => 'nullable|array',
             'ancillary_role_ids.*' => 'integer',
+            'work_type' => 'nullable|string|max:50',
             'reporting_manager_id' => 'nullable|integer',
             'date_of_joining' => 'nullable|date',
 

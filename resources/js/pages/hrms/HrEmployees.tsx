@@ -10,6 +10,12 @@ import ComingSoonShell from '../../components/ComingSoonShell';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { Navigation, Autoplay } from 'swiper/modules';
+// @ts-ignore
+import 'swiper/css';
+// @ts-ignore
+import 'swiper/css/navigation';
 // Borrow the polished pill-button styles used by the recruitment / hiring
 // request modal so the Add Employee wizard footer matches the same design
 // language (gradient primary CTA + soft outlined secondary).
@@ -276,19 +282,24 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
           ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
           : '')
       || '—',
-    // Profile % spans all six onboarding macro stages. Stage 1 is split
-    // across its 4 internal wizard steps; stages 2-6 each contribute one
-    // sixth on completion (osc bumps to N as the admin clicks Next Stage
-    // out of stage N). Brand-new row = 0%, Stage 1 wizard step 2 = 8%,
-    // Stage 1 done = 17%, Stage 4 done = 67%, Stage 6 done = 100%.
+    // Profile % is weighted so the Add Employee wizard (Stage 1 — Basic,
+    // Job, Work, Compensation) counts for 40% of the bar; the five remaining
+    // onboarding macro stages share the other 60% (12% each). Previously
+    // each macro stage was treated equally (1/6 = 17%) which made admins
+    // who'd filled the entire 4-step Add wizard see only 17% complete,
+    // even though they'd captured the bulk of the HR record. Curve:
+    //   wizard step 1 done = 10%, step 2 = 20%, step 3 = 30%, step 4 = 40%
+    //   stage 2 = 52%, stage 3 = 64%, stage 4 = 76%, stage 5 = 88%, stage 6 = 100%
     profile: ((): number => {
+      const STAGE1_WEIGHT = 0.40;
+      const OTHER_WEIGHT  = 0.60 / 5; // 5 remaining macro stages
       const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
       const macro = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
-      const stage1 = macro >= 1 ? 1 : step / 4;
-      const others = (macro >= 2 ? 1 : 0) + (macro >= 3 ? 1 : 0)
-                   + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
-                   + (macro >= 6 ? 1 : 0);
-      return Math.round(((stage1 + others) / 6) * 100);
+      const stage1Pct = macro >= 1 ? STAGE1_WEIGHT : STAGE1_WEIGHT * (step / 4);
+      const othersDone = (macro >= 2 ? 1 : 0) + (macro >= 3 ? 1 : 0)
+                       + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
+                       + (macro >= 6 ? 1 : 0);
+      return Math.round((stage1Pct + othersDone * OTHER_WEIGHT) * 100);
     })(),
     // Onboarding pill: Completed once macro stage hits 6, In Progress
     // while the admin is partway through, Pending if nothing started.
@@ -409,26 +420,12 @@ export default function HrEmployees() {
   // — if the user scrolled to scrollLeft=3000 and then leaves, the resumed
   // animation pushes the track past its end and the user sees a blank gap.
   // Resetting scrollLeft on leave keeps the animation in a valid range.
-  const kpiStripRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = kpiStripRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY === 0) return;
-      if (el.scrollWidth <= el.clientWidth) return;
-      e.preventDefault();
-      el.scrollLeft += e.deltaY;
-    };
-    const onLeave = () => {
-      el.scrollTo({ left: 0, behavior: 'smooth' });
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    el.addEventListener('mouseleave', onLeave);
-    return () => {
-      el.removeEventListener('wheel', onWheel);
-      el.removeEventListener('mouseleave', onLeave);
-    };
-  }, []);
+  // Swiper nav refs — wired in onBeforeInit / onSwiper to mirror what
+  // PlanSelection.tsx does (the next-button is rendered AFTER the Swiper
+  // so its ref isn't ready during onBeforeInit; the setTimeout re-bind
+  // guarantees both refs are attached before nav is initialised).
+  const kpiPrevRef = useRef<HTMLButtonElement>(null);
+  const kpiNextRef = useRef<HTMLButtonElement>(null);
 
   // ── Server-backed state ─────────────────────────────────────────────
   // employees:  raw API rows + a UI-shaped projection. We keep the raw
@@ -505,8 +502,12 @@ export default function HrEmployees() {
       api.get('/master/designations').then(r => setMDesignations(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/roles').then(r => setMRoles(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/legal_entities').then(r => setMLegalEntities(Array.isArray(r.data) ? r.data : [])),
-      api.get('/master/countries').then(r => setMCountries(Array.isArray(r.data) ? r.data : [])),
-      api.get('/master/states').then(r => setMStates(Array.isArray(r.data) ? r.data : [])),
+      api.get('/master/countries').then(r => setMCountries(
+        Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []
+      )),
+      api.get('/master/states').then(r => setMStates(
+        Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []
+      )),
     ]);
   }, []);
   useEffect(() => {
@@ -755,12 +756,12 @@ export default function HrEmployees() {
   const [eDesignation, setEDesignation]          = useState('');
   const [ePrimaryRole, setEPrimaryRole]          = useState('');
   const [eAncillaryRole, setEAncillaryRole]      = useState<string[]>([]);
-  const [eWorkType, setEWorkType]                = useState('Full Time');
+  const [eWorkType, setEWorkType]                = useState('');
   const [eLegalEntity, setELegalEntity]          = useState('');
   const [eLocation, setELocation]                = useState('');
   const [eReportingMgr, setEReportingMgr]        = useState('');
-  const [eProbationPolicy, setEProbationPolicy]  = useState('Default Probation Policy');
-  const [eNoticePeriod, setENoticePeriod]        = useState('Default Notice Period');
+  const [eProbationPolicy, setEProbationPolicy]  = useState('');
+  const [eNoticePeriod, setENoticePeriod]        = useState('');
   // Custom values that appear below their dropdowns when "Set Custom…" is picked.
   const [eCustomProbation, setECustomProbation]  = useState('');
   const [eCustomNotice, setECustomNotice]        = useState('');
@@ -775,24 +776,24 @@ export default function HrEmployees() {
     leavePlansApi.list()
       .then(plans => {
         setLeavePlanOptions(plans.map(p => ({ value: String(p.id), label: p.plan_name })));
-        // Auto-select the default plan for the branch when creating a new
-        // employee. Doesn't override an existing selection (edit mode).
-        setELeavePlan(prev => {
-          if (prev) return prev;
-          const def = plans.find(p => p.is_default);
-          return def ? String(def.id) : (plans[0] ? String(plans[0].id) : '');
-        });
+        // No auto-selection — admin picks the plan explicitly. Previously
+        // we pre-filled the branch's default plan, but QA flagged that as
+        // silently choosing a value the user didn't actively select.
       })
       .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
   }, []);
-  const [eHolidayList, setEHolidayList]          = useState('Holiday Calendar');
+  // Step-3 dropdowns all start empty — the admin must explicitly pick a
+  // value instead of having silent defaults pre-selected (which used to
+  // result in admins accidentally saving "General Shift" / "Manual" etc.
+  // without realising they hadn't actually chosen).
+  const [eHolidayList, setEHolidayList]          = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
-  const [eShift, setEShift]                      = useState('General Shift');
-  const [eWeeklyOff, setEWeeklyOff]              = useState('Week Off Policy');
+  const [eShift, setEShift]                      = useState('');
+  const [eWeeklyOff, setEWeeklyOff]              = useState('');
   const [eAttendanceNumber, setEAttendanceNumber]= useState('');
-  const [eTimeTracking, setETimeTracking]        = useState('Manual');
-  const [ePenalizationPolicy, setEPenalizationPolicy] = useState('Tracking Policy');
-  const [eOvertime, setEOvertime]                = useState('Not applicable');
+  const [eTimeTracking, setETimeTracking]        = useState('');
+  const [ePenalizationPolicy, setEPenalizationPolicy] = useState('');
+  const [eOvertime, setEOvertime]                = useState('');
   const [eExpensePolicy, setEExpensePolicy]      = useState('');
   const [eLaptopAssigned, setELaptopAssigned]    = useState('No');
   const [eLaptopAssetId, setELaptopAssetId]      = useState('');
@@ -822,6 +823,16 @@ export default function HrEmployees() {
   // by the bigger Stage 2 onboarding modal.
   type ServerDoc = { id: number; document_key: string; original_name: string | null; status: string; url: string | null };
   const [eExistingDocs, setEExistingDocs] = useState<Record<string, ServerDoc>>({});
+  // Ref mirror of eExistingDocs. The Step-3 validator (and any caller that
+  // runs in an async handler) reads from this ref so it ALWAYS sees the
+  // latest server-doc map regardless of when the validator's closure was
+  // created. Without the ref, the user could see a green "Uploaded" tile
+  // (state has hydrated) yet still hit "Aadhar Card upload is required"
+  // because handleSaveEmployee captured the validator from an earlier
+  // render where eExistingDocs was still {} (e.g. clicked Save quickly
+  // after opening Edit, before the GET /documents response landed).
+  const eExistingDocsRef = useRef<Record<string, ServerDoc>>({});
+  useEffect(() => { eExistingDocsRef.current = eExistingDocs; }, [eExistingDocs]);
   const [eDocBusy, setEDocBusy]           = useState<Record<string, boolean>>({});
 
   // Assign Assets modal (opened by the per-row Workstation icon).
@@ -968,44 +979,54 @@ export default function HrEmployees() {
     next: boolean;          // the state the user is asking to switch to
     commit: () => void;     // callback into the ToggleSwitch's local setter
   } | null>(null);
+  // Tracks whether the enable/disable network call is mid-flight so the
+  // confirm button can show a spinner + disable Cancel until it settles.
+  const [toggling, setToggling] = useState(false);
 
   const requestToggle = (employee: EmployeeRow, next: boolean, commit: () => void) => {
     setTogglePending({ employee, next, commit });
   };
-  const cancelToggle  = () => setTogglePending(null);
+  const cancelToggle  = () => { if (!toggling) setTogglePending(null); };
   const confirmToggle = async () => {
     const pending = togglePending;
-    if (!pending) return;
+    if (!pending || toggling) return;
     const dbId = (pending.employee as any)._dbId as number | undefined;
-    if (pending.next === false) {
-      // Disable = soft-delete on the server (employee + linked user).
-      if (dbId) await handleDeleteEmployee(dbId, pending.employee.name);
-    } else {
-      // Enable = restore the row + flip status back to Active +
-      // re-enable the paired login user. PATCH /employees/{id}/restore.
-      if (dbId) {
-        try {
-          await api.patch(`/employees/${dbId}/restore`);
-          toast.success('Employee enabled', `${pending.employee.name} can sign in again.`);
-          await reloadEmployees();
-        } catch (err: any) {
-          toast.error('Could not enable employee', err?.response?.data?.message || err?.message || 'Try again');
-          setTogglePending(null);
-          return;  // bail before commit so the row's local toggle stays disabled
+    setToggling(true);
+    try {
+      if (pending.next === false) {
+        // Disable = soft-delete on the server (employee + linked user).
+        if (dbId) await handleDeleteEmployee(dbId, pending.employee.name);
+      } else {
+        // Enable = restore the row + flip status back to Active +
+        // re-enable the paired login user. PATCH /employees/{id}/restore.
+        if (dbId) {
+          try {
+            await api.patch(`/employees/${dbId}/restore`);
+            toast.success('Employee enabled', `${pending.employee.name} can sign in again.`);
+            await reloadEmployees();
+          } catch (err: any) {
+            toast.error('Could not enable employee', err?.response?.data?.message || err?.message || 'Try again');
+            setTogglePending(null);
+            return;  // bail before commit so the row's local toggle stays disabled
+          }
         }
       }
+      pending.commit();
+      setTogglePending(null);
+    } finally {
+      setToggling(false);
     }
-    pending.commit();
-    setTogglePending(null);
   };
   // Step 4 — Compensation
   const [eEnablePayroll, setEEnablePayroll]      = useState(true);
-  const [ePayGroup, setEPayGroup]                = useState('Default pay group');
+  // Step-4 dropdowns also start empty — admin picks pay group / salary
+  // frequency / structure / tax regime explicitly.
+  const [ePayGroup, setEPayGroup]                = useState('');
   const [eAnnualSalary, setEAnnualSalary]        = useState('');
-  const [eSalaryFreq, setESalaryFreq]            = useState('Per annum');
+  const [eSalaryFreq, setESalaryFreq]            = useState('');
   const [eSalaryFrom, setESalaryFrom]            = useState('');
-  const [eSalaryStructure, setESalaryStructure]  = useState('Range Based');
-  const [eTaxRegime, setETaxRegime]              = useState('New Regime (115BAC)');
+  const [eSalaryStructure, setESalaryStructure]  = useState('');
+  const [eTaxRegime, setETaxRegime]              = useState('');
   const [eBonusInAnnual, setEBonusInAnnual]      = useState(false);
   const [ePfEligible, setEPfEligible]            = useState(false);
   const [eDetailedBreakup, setEDetailedBreakup]  = useState(false);
@@ -1024,24 +1045,29 @@ export default function HrEmployees() {
     setEPermAddr1(''); setEPermAddr2(''); setEPermCity(''); setEPermState(''); setEPermCountry(''); setEPermPin('');
     // Step 2
     setEJoinDate(''); setEDept(''); setEDesignation('');
-    setEPrimaryRole(''); setEAncillaryRole([]); setEWorkType('Full Time');
+    // Empty defaults — these dropdowns must be picked explicitly by the
+    // admin on Add Employee instead of being silently pre-selected.
+    setEPrimaryRole(''); setEAncillaryRole([]); setEWorkType('');
     setELegalEntity(''); setELocation(''); setEReportingMgr('');
-    setEProbationPolicy('Default Probation Policy'); setENoticePeriod('Default Notice Period');
+    setEProbationPolicy(''); setENoticePeriod('');
     setECustomProbation(''); setECustomNotice('');
-    // Step 3
-    setELeavePlan('Leave Policy'); setEHolidayList('Holiday Calendar');
-    setEAttendanceTracking(true); setEShift('General Shift');
-    setEWeeklyOff('Week Off Policy'); setEAttendanceNumber('');
-    setETimeTracking('Manual'); setEPenalizationPolicy('Tracking Policy');
-    setEOvertime('Not applicable'); setEExpensePolicy('');
+    // Step 3 — all dropdowns reset to empty so admin must pick on every
+    // new employee (no silent defaults). Toggles + Yes/No flags keep
+    // sensible defaults (Attendance ON, no laptop, etc).
+    setELeavePlan(''); setEHolidayList('');
+    setEAttendanceTracking(true); setEShift('');
+    setEWeeklyOff(''); setEAttendanceNumber('');
+    setETimeTracking(''); setEPenalizationPolicy('');
+    setEOvertime(''); setEExpensePolicy('');
     setELaptopAssigned('No'); setELaptopAssetId(''); setEMobileDevice(''); setEOtherAssets('');
     setELaptopMasterAssetId(''); setEMobileAssigned('No'); setEMobileMasterAssetId(''); setEOtherMasterAssetIds([]);
     setEAadharFile(null); setEPanFile(null); setEPhotoFile(null);
     setEExistingDocs({}); setEDocBusy({});
-    // Step 4
-    setEEnablePayroll(true); setEPayGroup('Default pay group');
-    setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
-    setESalaryStructure('Range Based'); setETaxRegime('New Regime (115BAC)');
+    // Step 4 — dropdowns reset to empty too; toggles keep their defaults
+    // (Payroll ON, bonus/PF/breakup OFF until explicitly enabled).
+    setEEnablePayroll(true); setEPayGroup('');
+    setEAnnualSalary(''); setESalaryFreq(''); setESalaryFrom('');
+    setESalaryStructure(''); setETaxRegime('');
     setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(false);
     setEErrors({});
   };
@@ -1284,11 +1310,17 @@ export default function HrEmployees() {
           ? raw.ancillary_role_ids.map(String)
           : (raw.ancillary_role_id ? [String(raw.ancillary_role_id)] : [])
       );
+      setEWorkType(raw.work_type || '');
       setELegalEntity(raw.legal_entity_id ? String(raw.legal_entity_id) : '');
       setELocation(raw.location || '');
       setEReportingMgr(raw.reporting_manager_id ? `employee:${raw.reporting_manager_id}` : '');
-      setEProbationPolicy(raw.probation_policy || 'Default Probation Policy');
-      setENoticePeriod(raw.notice_period || 'Default Notice Period');
+      // Edit hydration — show whatever the admin actually saved. Earlier
+      // code special-cased the old "Default Probation Policy" / "Default
+      // Notice Period" placeholder strings and cleared them, but that
+      // wiped legitimate saves too. Trust the data; admins can re-pick if
+      // they want.
+      setEProbationPolicy(raw.probation_policy || '');
+      setENoticePeriod(raw.notice_period || '');
 
       // Permanent address
       setEPermAddr1(raw.perm_address_line1 || '');
@@ -1305,7 +1337,7 @@ export default function HrEmployees() {
         && String(raw.perm_country_id ?? '') === String(raw.country_id ?? '')
       );
 
-      // Step 3 — Work Details
+      // Step 3 — Work Details. Plain hydration — load whatever was saved.
       if (raw.leave_plan !== undefined && raw.leave_plan !== null) setELeavePlan(raw.leave_plan);
       if (raw.holiday_list !== undefined && raw.holiday_list !== null) setEHolidayList(raw.holiday_list);
       if (raw.attendance_tracking !== undefined && raw.attendance_tracking !== null) setEAttendanceTracking(!!raw.attendance_tracking);
@@ -1330,7 +1362,7 @@ export default function HrEmployees() {
         ? raw.other_master_asset_ids.map((n: any) => String(n))
         : []);
 
-      // Step 4 — Compensation
+      // Step 4 — Compensation. Plain hydration — load whatever was saved.
       if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
       if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
       if (raw.annual_salary !== undefined && raw.annual_salary !== null) setEAnnualSalary(String(raw.annual_salary));
@@ -1472,14 +1504,18 @@ export default function HrEmployees() {
   // Step 3 — Documents section requires Aadhar + PAN. A document counts
   // as supplied if EITHER (a) the admin just picked a file in this
   // session (eAadharFile / ePanFile) OR (b) a prior upload already lives
-  // on the server (eExistingDocs.aadhaar / .pan). The Passport-size photo
-  // is intentionally optional.
+  // on the server. The server-doc lookup reads from `eExistingDocsRef`
+  // (not state) so the validator always sees the latest hydrated map even
+  // when called inside an async handler that captured an earlier closure
+  // — fixed the "Aadhar Card upload is required" false positive on edit.
+  // The Passport-size photo is intentionally optional.
   const validateStep3 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
-    if (!eAadharFile && !eExistingDocs['aadhaar']) {
+    const existing = eExistingDocsRef.current;
+    if (!eAadharFile && !existing['aadhaar']) {
       e.doc_aadhaar = 'Aadhar Card upload is required';
     }
-    if (!ePanFile && !eExistingDocs['pan']) {
+    if (!ePanFile && !existing['pan']) {
       e.doc_pan = 'PAN Card upload is required';
     }
     // Pairing rule: if the user opted into a laptop/mobile assignment they
@@ -1492,7 +1528,7 @@ export default function HrEmployees() {
       e.mobile_master_asset_id = 'Mobile Device is required';
     }
     return e;
-  }, [eAadharFile, ePanFile, eExistingDocs, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId]);
+  }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId]);
 
   // Step 4 — Compensation. Salary is mandatory whenever payroll is enabled
   // for the employee (the default). The "Enable payroll" toggle is the
@@ -1574,6 +1610,7 @@ export default function HrEmployees() {
       // Send the full multi-select array. Backend mirrors the first item
       // into the legacy ancillary_role_id column for SQL/report compat.
       ancillary_role_ids: eAncillaryRole.map(v => Number(v)).filter(n => Number.isFinite(n)),
+      work_type: eWorkType || null,
       legal_entity_id: intOrNull(eLegalEntity),
       location:        eLocation || null,
       reporting_manager_id: (() => {
@@ -1628,12 +1665,11 @@ export default function HrEmployees() {
     };
   };
 
-  /** Persist the wizard's current state. First save creates the row +
-   *  switches the modal to "edit" mode silently so subsequent step PATCHes
-   *  hit the same id. Returns true on success, false otherwise. */
-  const persistCurrentStep = async (stepCompleted: number): Promise<boolean> => {
-    if (saving) return false;
-    setSaving(true);
+  /** Inner save — does the actual PUT/POST without managing the saving
+   *  state flag. Callers are responsible for wrapping in setSaving(true/false).
+   *  Extracted so handleNextStep can flip the loading state BEFORE the
+   *  mobile-uniqueness pre-check, not after. */
+  const persistCurrentStepInner = async (stepCompleted: number): Promise<boolean> => {
     try {
       const payload = buildEmployeePayload(stepCompleted);
       // Read the ID from the ref instead of state — the ref is updated
@@ -1690,12 +1726,27 @@ export default function HrEmployees() {
       const msg = err?.response?.data?.message || err?.message || 'Save failed';
       toast.error('Could not save', String(msg));
       return false;
+    }
+  };
+
+  /** Persist the wizard's current state. First save creates the row +
+   *  switches the modal to "edit" mode silently so subsequent step PATCHes
+   *  hit the same id. Returns true on success, false otherwise.
+   *
+   *  Manages the `saving` flag itself — used by callers (e.g. partial-save
+   *  on close) that don't need to wrap multiple awaits in one loading state. */
+  const persistCurrentStep = async (stepCompleted: number): Promise<boolean> => {
+    if (saving) return false;
+    setSaving(true);
+    try {
+      return await persistCurrentStepInner(stepCompleted);
     } finally {
       setSaving(false);
     }
   };
 
   const handleNextStep = async () => {
+    if (saving) return; // guard against double-clicks while a step is in flight
     const errs = empStep === 1 ? validateStep1()
                : empStep === 2 ? validateStep2()
                : empStep === 3 ? validateStep3()
@@ -1709,28 +1760,40 @@ export default function HrEmployees() {
       );
       return;
     }
-    // Belt-and-suspenders mobile uniqueness check on step 1 — covers the
-    // edge case where the user types/pastes a duplicate and hits Next
-    // without ever blurring the field. Without this, the duplicate only
-    // surfaces after a full save round-trip.
-    if (empStep === 1) {
-      const mobileOk = await checkMobileUnique(eMobile);
-      if (!mobileOk) {
-        toast.error('Duplicate mobile number', 'This mobile is already in use by another employee.');
-        return;
+    // Flip the loading state IMMEDIATELY so the Next button + stepper
+    // shimmer light up the moment the user clicks — previously the state
+    // only flipped after the mobile-uniqueness check completed (~300ms),
+    // which made the button look unresponsive.
+    setSaving(true);
+    try {
+      // Belt-and-suspenders mobile uniqueness check on step 1 — covers the
+      // edge case where the user types/pastes a duplicate and hits Next
+      // without ever blurring the field. Without this, the duplicate only
+      // surfaces after a full save round-trip.
+      if (empStep === 1) {
+        const mobileOk = await checkMobileUnique(eMobile);
+        if (!mobileOk) {
+          toast.error('Duplicate mobile number', 'This mobile is already in use by another employee.');
+          return;
+        }
       }
+      // Persist this step BEFORE advancing so the row exists in the
+      // disabled list even if the user closes the tab on step 2/3.
+      // We've already flipped saving=true, so persistCurrentStep's own
+      // `if (saving) return false` guard is satisfied via a different
+      // path — call its inner work without re-entering it.
+      const ok = await persistCurrentStepInner(empStep);
+      if (!ok) return;
+      setEErrors({});
+      toast.success(`Step ${empStep} saved`, `Progress saved — you can resume later.`);
+      setEmpStep((s) => {
+        const next = (s + 1) as 1 | 2 | 3 | 4;
+        setEmpMaxStep((m) => (next > m ? next : m));
+        return next;
+      });
+    } finally {
+      setSaving(false);
     }
-    // Persist this step BEFORE advancing so the row exists in the
-    // disabled list even if the user closes the tab on step 2/3.
-    const ok = await persistCurrentStep(empStep);
-    if (!ok) return;
-    setEErrors({});
-    toast.success(`Step ${empStep} saved`, `Progress saved — you can resume later.`);
-    setEmpStep((s) => {
-      const next = (s + 1) as 1 | 2 | 3 | 4;
-      setEmpMaxStep((m) => (next > m ? next : m));
-      return next;
-    });
   };
 
   const handleSaveEmployee = async () => {
@@ -1984,6 +2047,19 @@ export default function HrEmployees() {
       <style>{`
         .hr-employees-surface { background: #ffffff; }
         [data-bs-theme="dark"] .hr-employees-surface { background: #1c2531; }
+
+        /* Unify table typography — every cell + header reads at the same
+           13px size so the table looks like a single grid (matches the
+           Clients / Branches lists). */
+        .hr-employees-surface .table thead th,
+        .hr-employees-surface .table tbody td {
+          font-size: 13px;
+          vertical-align: middle;
+        }
+        .hr-employees-surface .table thead th {
+          font-weight: 600;
+          letter-spacing: 0.01em;
+        }
         /* KPI strip — auto-scrolling marquee. The viewport is .hr-emp-kpi-grid
            (overflow hidden, no scrollbar). The .hr-emp-kpi-track inside it
            contains the cards rendered TWICE and animates from 0 → -50%
@@ -1998,8 +2074,8 @@ export default function HrEmployees() {
            component converts vertical wheel into horizontal scroll). */
         /* Outer wrapper holds the side-gutter prev/next arrow buttons
            (same affordance as the Plans page swiper). The arrows sit
-           absolutely-positioned at the left/right edges and call
-           kpiStripRef.scrollBy() to step the viewport one card width. */
+           absolutely-positioned at the left/right edges and are wired to
+           Swiper's navigation module via kpiPrevRef / kpiNextRef. */
         .hr-emp-kpi-outer {
           position: relative;
           padding: 0 48px;
@@ -2049,14 +2125,18 @@ export default function HrEmployees() {
 
         .hr-emp-kpi-grid {
           position: relative;
-          overflow-x: hidden;
+          /* scrollLeft-based auto-scroll runs all the time — overflow-x:auto
+             so arrow buttons + wheel + drag also work naturally without
+             fighting the animation. */
+          overflow-x: auto;
           padding: 8px 0 14px;
           mask-image: linear-gradient(90deg, transparent 0%, #000 1.5%, #000 98.5%, transparent 100%);
           -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 1.5%, #000 98.5%, transparent 100%);
           scrollbar-width: none;
+          scroll-behavior: smooth;
         }
         .hr-emp-kpi-grid::-webkit-scrollbar { display: none; }
-        .hr-emp-kpi-grid:hover { overflow-x: auto; cursor: grab; }
+        .hr-emp-kpi-grid:hover { cursor: grab; }
         .hr-emp-kpi-grid:active { cursor: grabbing; }
         .hr-emp-kpi-grid::after {
           content: '';
@@ -2075,24 +2155,13 @@ export default function HrEmployees() {
             rgba(28,37,49,0) 70%,
             rgba(28,37,49,0.65) 100%);
         }
-        /* Steps timing — the strip "ticks" one card at a time and holds it
-           at the centre briefly before sliding to the next. 20 steps =
-           10 cards × 2 (duplicate set), ~1.8s pause per card. */
+        /* Track is just a flex row — auto-scroll is now driven by JS
+           (requestAnimationFrame on scrollLeft) so arrow buttons, wheel,
+           and drag all work naturally without fighting a CSS transform. */
         .hr-emp-kpi-track {
           display: flex;
           gap: 14px;
           width: max-content;
-          animation: hr-emp-kpi-marquee 36s steps(20, end) infinite;
-        }
-        .hr-emp-kpi-grid:hover .hr-emp-kpi-track {
-          animation-play-state: paused;
-        }
-        @keyframes hr-emp-kpi-marquee {
-          from { transform: translateX(0); }
-          to   { transform: translateX(calc(-50% - 7px)); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .hr-emp-kpi-track { animation: none; }
         }
         .hr-emp-kpi-card {
           flex: 0 0 250px;
@@ -2117,9 +2186,65 @@ export default function HrEmployees() {
           overflow: hidden;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card {
+          /* Brighten the surface a touch so the cards sit above the page
+             background rather than blending into it. */
+          background: #232f40 !important;
+          border-color: rgba(255,255,255,0.10) !important;
           box-shadow:
             0 8px 20px -4px rgba(0, 0, 0, 0.55),
             0 2px 6px rgba(0, 0, 0, 0.35) !important;
+        }
+        /* Inline styles on the JSX set these to var(--vz-secondary-color)
+           and var(--vz-heading-color) — which are barely visible on the
+           dark KPI surface. Override with !important so the label reads
+           clearly and the value stays high-contrast white. */
+        [data-bs-theme="dark"] .hr-emp-kpi-label {
+          color: #cbd5e1 !important;
+        }
+        [data-bs-theme="dark"] .hr-emp-kpi-value {
+          color: #f8fafc !important;
+        }
+        [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
+          background: #2a374b !important;
+          border-color: rgba(124, 92, 252, 0.55) !important;
+        }
+        /* Page-level text legibility in dark mode — the page subtitle and
+           any other text-muted body copy under this surface default to a
+           gray that disappears against the dark page background. Brighten
+           it scoped to this page so we do not change text-muted globally. */
+        [data-bs-theme="dark"] .hr-employees-surface .text-muted,
+        [data-bs-theme="dark"] .hr-employees-surface .text-secondary {
+          color: #94a3b8 !important;
+        }
+        /* Table row chrome in dark mode — give the rows a subtle alternating
+           tint plus a clear hover state so the eye can track across columns.
+           Without this every row sits on the same flat dark surface and the
+           table reads as one big slab. */
+        [data-bs-theme="dark"] .hr-employees-surface .table tbody tr:nth-child(odd) > * {
+          background: rgba(255,255,255,0.015);
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .table tbody tr:hover > * {
+          background: rgba(124,92,252,0.10) !important;
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .table thead th {
+          color: #e2e8f0;
+          background: #1c2531;
+          border-bottom-color: rgba(255,255,255,0.10);
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .table tbody td {
+          border-bottom-color: rgba(255,255,255,0.06);
+        }
+        /* Action-button icons — the ActionBtn JSX uses inline var(--vz-secondary-color)
+           which is too dim against the dark cell. Bump to a brighter slate. */
+        [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label] i {
+          color: #cbd5e1;
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label] {
+          background: rgba(255,255,255,0.05) !important;
+          border-color: rgba(255,255,255,0.12) !important;
+        }
+        [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label]:hover {
+          background: rgba(124,92,252,0.18) !important;
         }
         .hr-emp-kpi-card:hover {
           transform: translateY(-4px);
@@ -2267,59 +2392,94 @@ export default function HrEmployees() {
                 with smooth behavior. Auto-marquee animation continues as
                 before — the buttons just give the user explicit control
                 if they don't want to wait for the strip to cycle around. */}
+            {/* KPI strip — same Swiper-based carousel pattern as the
+                Plans page (PlanSelection.tsx). Autoplay at 2s loop, pause
+                on hover, manual nav arrows that don't fight the autoplay. */}
             <div className="hr-emp-kpi-outer mb-3">
               <button
+                ref={kpiPrevRef}
                 type="button"
                 aria-label="Scroll left"
                 className="hr-emp-kpi-nav hr-emp-kpi-nav-prev"
-                onClick={() => kpiStripRef.current?.scrollBy({ left: -280, behavior: 'smooth' })}
               >
                 <i className="ri-arrow-left-s-line"></i>
               </button>
               <button
+                ref={kpiNextRef}
                 type="button"
                 aria-label="Scroll right"
                 className="hr-emp-kpi-nav hr-emp-kpi-nav-next"
-                onClick={() => kpiStripRef.current?.scrollBy({ left: 280, behavior: 'smooth' })}
               >
                 <i className="ri-arrow-right-s-line"></i>
               </button>
-            <div ref={kpiStripRef} className="hr-emp-kpi-grid">
-              <div className="hr-emp-kpi-track">
-                {[...KPI_CARDS, ...KPI_CARDS].map((k, idx) => (
-                  <div
-                    key={`${k.key}-${idx}`}
-                    aria-hidden={idx >= KPI_CARDS.length}
-                    className="hr-employees-surface hr-emp-kpi-card"
-                    style={{
-                      borderRadius: 14,
-                      border: '1px solid var(--vz-border-color)',
-                      padding: '16px 18px',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      height: '100%',
-                    }}
-                  >
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                      <div className="min-w-0">
-                        <p className="hr-emp-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                          {k.label}
-                        </p>
-                        <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                          {loadingEmployees
-                            ? <Shimmer height={26} width={64} />
-                            : <AnimatedNumber value={(counts as any)[k.key]} />}
-                        </h3>
-                      </div>
-                      <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                        <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+              <Swiper
+                modules={[Navigation, Autoplay]}
+                onBeforeInit={swiper => {
+                  if (typeof swiper.params.navigation === 'object' && swiper.params.navigation) {
+                    (swiper.params.navigation as any).prevEl = kpiPrevRef.current;
+                    (swiper.params.navigation as any).nextEl = kpiNextRef.current;
+                  }
+                }}
+                onSwiper={swiper => {
+                  // Re-bind nav after refs settle (next button renders after
+                  // the Swiper, so its ref isn't ready in onBeforeInit).
+                  setTimeout(() => {
+                    if (typeof swiper.params.navigation === 'object' && swiper.params.navigation) {
+                      (swiper.params.navigation as any).prevEl = kpiPrevRef.current;
+                      (swiper.params.navigation as any).nextEl = kpiNextRef.current;
+                    }
+                    if (swiper.navigation) {
+                      swiper.navigation.destroy();
+                      swiper.navigation.init();
+                      swiper.navigation.update();
+                    }
+                    if (swiper.autoplay && !swiper.autoplay.running) {
+                      swiper.autoplay.start();
+                    }
+                  }, 0);
+                }}
+                navigation={{ prevEl: kpiPrevRef.current, nextEl: kpiNextRef.current }}
+                loop={KPI_CARDS.length > 1}
+                autoplay={{ delay: 2000, disableOnInteraction: false, pauseOnMouseEnter: true }}
+                speed={500}
+                slidesPerView="auto"
+                spaceBetween={14}
+                grabCursor
+                className="hr-emp-kpi-swiper"
+              >
+                {KPI_CARDS.map(k => (
+                  <SwiperSlide key={k.key} style={{ width: 250 }}>
+                    <div
+                      className="hr-employees-surface hr-emp-kpi-card"
+                      style={{
+                        borderRadius: 14,
+                        border: '1px solid var(--vz-border-color)',
+                        padding: '16px 18px',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        height: '100%',
+                      }}
+                    >
+                      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
+                        <div className="min-w-0">
+                          <p className="hr-emp-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
+                            {k.label}
+                          </p>
+                          <h3 className="hr-emp-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
+                            {loadingEmployees
+                              ? <Shimmer height={26} width={64} />
+                              : <AnimatedNumber value={(counts as any)[k.key]} />}
+                          </h3>
+                        </div>
+                        <div className="hr-emp-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
+                          <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </SwiperSlide>
                 ))}
-              </div>
-            </div>
+              </Swiper>
             </div>
 
             {/* ── Tabs (Active / Disabled) ── */}
@@ -2395,21 +2555,11 @@ export default function HrEmployees() {
                 </div>
               </Col>
               <Col md={6} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
-                  <div style={{ minWidth: 130 }}>
-                    <MasterSelect
-                      value={statusFilter}
-                      onChange={(v) => setStatusFilter((v as 'Active' | 'Disabled' | 'All') || 'Active')}
-                      options={[
-                        { value: 'Active',   label: 'Active' },
-                        { value: 'Disabled', label: 'Disabled' },
-                        { value: 'All',      label: 'All' },
-                      ]}
-                      placeholder="Status"
-                    />
-                  </div>
-                </div>
+                {/* Status filter intentionally removed — the Active /
+                    Disabled tabs above the search row already provide the
+                    same filter, so keeping a dropdown here was redundant.
+                    The `statusFilter` state still exists so the tab clicks
+                    can keep the underlying filter in sync. */}
                 <div className="d-flex align-items-center gap-2">
                   <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
                   <div style={{ minWidth: 170 }}>
@@ -2489,16 +2639,21 @@ export default function HrEmployees() {
                                     {e.initials}
                                   </div>
                                 )}
-                                <div className="min-w-0">
-                                  <div className="fw-semibold fs-13">{e.name}</div>
-                                  <a
-                                    href={`mailto:${e.email}`}
-                                    className="text-muted text-decoration-none d-inline-flex align-items-center gap-1"
-                                    style={{ fontSize: 11.5 }}
-                                  >
-                                    <i className="ri-mail-line" style={{ fontSize: 12 }} />
-                                    <span>{e.email}</span>
-                                  </a>
+                                <div className="min-w-0" style={{ maxWidth: 220 }}>
+                                  <Tooltip label={e.name}>
+                                    <div className="fw-semibold fs-13 text-truncate">{e.name}</div>
+                                  </Tooltip>
+                                  <Tooltip label={e.email}>
+                                    <a
+                                      href={`mailto:${e.email}`}
+                                      onClick={ev => ev.stopPropagation()}
+                                      className="text-muted text-decoration-none d-inline-flex align-items-center gap-1 fs-13 w-100"
+                                      style={{ minWidth: 0 }}
+                                    >
+                                      <i className="ri-mail-line fs-13 flex-shrink-0" />
+                                      <span className="text-truncate" style={{ minWidth: 0 }}>{e.email}</span>
+                                    </a>
+                                  </Tooltip>
                                 </div>
                               </div>
                             </td>
@@ -2517,8 +2672,16 @@ export default function HrEmployees() {
                                 {e.id}
                               </span>
                             </td>
-                            <td className="fs-13">{e.department}</td>
-                            <td className="fs-13">{e.designation}</td>
+                            <td className="fs-13" style={{ maxWidth: 160 }}>
+                              <Tooltip label={e.department || '—'}>
+                                <div className="text-truncate">{e.department}</div>
+                              </Tooltip>
+                            </td>
+                            <td className="fs-13" style={{ maxWidth: 180 }}>
+                              <Tooltip label={e.designation || '—'}>
+                                <div className="text-truncate">{e.designation}</div>
+                              </Tooltip>
+                            </td>
                             <td>
                               <span
                                 className="d-inline-flex align-items-center fw-semibold"
@@ -2536,7 +2699,11 @@ export default function HrEmployees() {
                             <td>
                               <AncillaryRolesChip names={e.ancillaryRoles} />
                             </td>
-                            <td className="fs-13">{e.manager}</td>
+                            <td className="fs-13" style={{ maxWidth: 180 }}>
+                              <Tooltip label={e.manager || '—'}>
+                                <div className="text-truncate">{e.manager}</div>
+                              </Tooltip>
+                            </td>
                             <td>
                               {(() => {
                                 // Tier-based colour pair (dark → light). Bar uses a horizontal
@@ -3172,6 +3339,7 @@ export default function HrEmployees() {
                   <button
                     type="button"
                     onClick={cancelToggle}
+                    disabled={toggling}
                     aria-label="Close"
                     className="btn p-0 d-inline-flex align-items-center justify-content-center"
                     style={{
@@ -3180,6 +3348,8 @@ export default function HrEmployees() {
                       background: 'rgba(255,255,255,0.65)',
                       border: '1px solid rgba(0,0,0,0.06)',
                       color: '#374151',
+                      opacity: toggling ? 0.5 : 1,
+                      cursor: toggling ? 'not-allowed' : 'pointer',
                     }}
                   >
                     <i className="ri-close-line" style={{ fontSize: 17 }} />
@@ -3320,6 +3490,7 @@ export default function HrEmployees() {
                   <button
                     type="button"
                     onClick={cancelToggle}
+                    disabled={toggling}
                     className="btn fw-semibold rounded-pill flex-grow-1"
                     style={{
                       fontSize: 13.5,
@@ -3327,6 +3498,8 @@ export default function HrEmployees() {
                       color: '#374151',
                       border: '1px solid #e5e7eb',
                       padding: '10px 18px',
+                      opacity: toggling ? 0.6 : 1,
+                      cursor: toggling ? 'not-allowed' : 'pointer',
                     }}
                   >
                     Cancel
@@ -3335,6 +3508,7 @@ export default function HrEmployees() {
                     type="button"
                     onClick={confirmToggle}
                     autoFocus
+                    disabled={toggling}
                     className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold rounded-pill flex-grow-1"
                     style={{
                       fontSize: 13.5,
@@ -3343,10 +3517,21 @@ export default function HrEmployees() {
                       background: tone.ctaBg,
                       boxShadow: tone.ctaShadow,
                       padding: '10px 18px',
+                      opacity: toggling ? 0.85 : 1,
+                      cursor: toggling ? 'wait' : 'pointer',
                     }}
                   >
-                    <i className={tone.ctaIcon} style={{ fontSize: 16 }} />
-                    {tone.ctaLabel}
+                    {toggling ? (
+                      <>
+                        <i className="ri-loader-4-line emp-spin" style={{ fontSize: 16 }} />
+                        {enabling ? 'Enabling…' : 'Disabling…'}
+                      </>
+                    ) : (
+                      <>
+                        <i className={tone.ctaIcon} style={{ fontSize: 16 }} />
+                        {tone.ctaLabel}
+                      </>
+                    )}
                   </button>
                 </div>
               </>
@@ -3428,14 +3613,36 @@ export default function HrEmployees() {
               inset 0 1px 0 rgba(255,255,255,0.35),
               inset 0 -1px 0 rgba(0,0,0,0.08) !important;
           }
-          .emp-modal-wide .rec-btn-ghost:hover {
-            border-color: #a78bfa !important;
+          /* Back button — same purple family as the Next CTA so the two
+             read as a matched pair. White background with purple border +
+             purple text by default, deeper purple on hover. */
+          .emp-modal-wide .rec-btn-ghost {
+            background: #ffffff !important;
+            border: 1px solid #d6c9ff !important;
             color: #5a3fd1 !important;
+          }
+          .emp-modal-wide .rec-btn-ghost:hover {
+            background: #f5f1ff !important;
+            border-color: #a78bfa !important;
+            color: #4c3fb1 !important;
+          }
+          [data-bs-theme="dark"] .emp-modal-wide .rec-btn-ghost {
+            background: rgba(124,92,252,0.10) !important;
+            border-color: rgba(124,92,252,0.35) !important;
+            color: #c4b5fd !important;
+          }
+          [data-bs-theme="dark"] .emp-modal-wide .rec-btn-ghost:hover {
+            background: rgba(124,92,252,0.18) !important;
+            border-color: rgba(124,92,252,0.55) !important;
           }
           .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
           .emp-input::placeholder { color: #9ca3af; }
           .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
-          .emp-input.is-readonly { background: #f5f1ff; border-color: #d6c9ff; color: #5a3fd1; font-weight: 600; }
+          /* Read-only auto-generated fields (Display Name, Employee ID,
+             Location) keep the same background and border as regular inputs
+             so the form reads as one uniform grid. Only cursor: not-allowed
+             signals that the field is not editable. */
+          .emp-input.is-readonly { background: #fff; border-color: #e5e7eb; color: #1f2937; font-weight: 500; cursor: not-allowed; }
           .emp-input.is-invalid { border-color: #f06548; box-shadow: 0 0 0 3px rgba(240,101,72,0.12); }
           .emp-err { display: block; color: #c43d20; font-size: 11px; font-weight: 500; margin-top: 4px; }
           [data-bs-theme="dark"] .emp-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
@@ -3471,6 +3678,47 @@ export default function HrEmployees() {
           .emp-stepper-label.is-done { color: #0ab39c; }
           .emp-stepper-line { flex: 1; height: 2px; background: #e5e7eb; margin: 0 6px; align-self: flex-start; margin-top: 16px; transition: background .2s ease; }
           .emp-stepper-line.is-done { background: #0ab39c; }
+
+          /* Shimmer overlay used on the stepper while saving / hydrating —
+             the entire bar gets a soft moving sheen so the user sees that
+             the form is doing work (the Next button alone can feel slow). */
+          @keyframes emp-stepper-shimmer {
+            0%   { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+          }
+          .emp-stepper-bar.is-loading .emp-stepper-circle:not(.is-active):not(.is-done),
+          .emp-stepper-bar.is-loading .emp-stepper-line:not(.is-done) {
+            background: linear-gradient(90deg, #eef2f7 0%, #f8f9fc 50%, #eef2f7 100%);
+            background-size: 200% 100%;
+            animation: emp-stepper-shimmer 1.2s linear infinite;
+          }
+          .emp-stepper-bar.is-loading .emp-stepper-circle.is-active {
+            animation: emp-stepper-pulse 1s ease-in-out infinite;
+          }
+          .emp-stepper-bar.is-loading .emp-stepper-label.is-active::after {
+            content: '';
+            display: inline-block;
+            width: 10px; height: 10px;
+            border: 2px solid rgba(124,92,252,0.30);
+            border-top-color: #7c5cfc;
+            border-radius: 50%;
+            margin-left: 6px;
+            vertical-align: middle;
+            animation: emp-stepper-spin 0.7s linear infinite;
+          }
+          @keyframes emp-stepper-pulse {
+            0%, 100% { box-shadow: 0 4px 12px rgba(124,92,252,0.30); transform: scale(1); }
+            50%      { box-shadow: 0 6px 20px rgba(124,92,252,0.55); transform: scale(1.06); }
+          }
+          @keyframes emp-stepper-spin {
+            to { transform: rotate(360deg); }
+          }
+          [data-bs-theme="dark"] .emp-stepper-bar.is-loading .emp-stepper-circle:not(.is-active):not(.is-done),
+          [data-bs-theme="dark"] .emp-stepper-bar.is-loading .emp-stepper-line:not(.is-done) {
+            background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.04) 100%);
+            background-size: 200% 100%;
+            animation: emp-stepper-shimmer 1.2s linear infinite;
+          }
           /* Make the stepper item itself act as a click target so the user can
              jump between steps. The button is unstyled — child .emp-stepper-circle
              and .emp-stepper-label keep all visual responsibility. */
@@ -3513,7 +3761,7 @@ export default function HrEmployees() {
           [data-bs-theme="dark"] .emp-stepper-label.is-active { color: #c4b5fd; }
           [data-bs-theme="dark"] .emp-stepper-line { background: rgba(255,255,255,0.10); }
           [data-bs-theme="dark"] .emp-stepper-btn:hover .emp-stepper-circle:not(.is-active):not(.is-done) { background: rgba(124,92,252,0.18); border-color: rgba(124,92,252,0.45); color: #c4b5fd; }
-          [data-bs-theme="dark"] .emp-input.is-readonly { background: rgba(124,92,252,0.14); border-color: rgba(124,92,252,0.35); color: #c4b5fd; }
+          [data-bs-theme="dark"] .emp-input.is-readonly { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
           .emp-footer-bar { background: #fff; border-top: 1px solid var(--vz-border-color); }
           [data-bs-theme="dark"] .emp-footer-bar { background: var(--vz-card-bg); border-top-color: var(--vz-border-color); }
           .emp-ghost-btn { background: #fff; color: var(--vz-secondary-color); border: 1px solid var(--vz-border-color); }
@@ -3565,14 +3813,9 @@ export default function HrEmployees() {
                   <i className="ri-user-3-line" style={{ fontSize: 20 }} />
                 </div>
                 <div>
-                  <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 17, letterSpacing: '-0.01em' }}>
+                  <h5 className="fw-bold mb-0 text-white" style={{ fontSize: 17, letterSpacing: '-0.01em' }}>
                     {empMode === 'edit' ? 'Edit Employee' : 'Add Employee'}
                   </h5>
-                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
-                    {empMode === 'edit'
-                      ? `Update details for ${empEditingName || 'this employee'}`
-                      : 'Create a new employee record'}
-                  </div>
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-shrink-0">
@@ -3606,8 +3849,10 @@ export default function HrEmployees() {
             </div>
           </div>
 
-          {/* Stepper */}
-          <div className="emp-stepper-bar" style={{ padding: '16px 28px', borderBottom: '1px solid var(--vz-border-color)' }}>
+          {/* Stepper — flips to `is-loading` while a step save is in
+              flight so the entire bar shimmers + the active circle pulses
+              and grows a spinner next to its label. */}
+          <div className={`emp-stepper-bar${saving ? ' is-loading' : ''}`} style={{ padding: '16px 28px', borderBottom: '1px solid var(--vz-border-color)' }}>
             <div className="d-flex align-items-start">
               {[
                 { n: 1, label: 'Basic Details' },
@@ -3991,7 +4236,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Work Type<span className="req">*</span></label>
-                      <MasterSelect value={eWorkType} onChange={setEWorkType} options={WORK_TYPE_OPTIONS} />
+                      <MasterSelect value={eWorkType} onChange={setEWorkType} options={WORK_TYPE_OPTIONS} placeholder="Select work type" />
                     </Col>
                   </Row>
                 </div>
@@ -4052,7 +4297,7 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={6}>
                       <label className="emp-label">Probation Policy<span className="req">*</span></label>
-                      <MasterSelect value={eProbationPolicy} onChange={(v) => { setEProbationPolicy(v); clearEErr('probation_policy'); }} options={PROBATION_POLICY_OPTIONS} invalid={!!eErrors.probation_policy} />
+                      <MasterSelect value={eProbationPolicy} onChange={(v) => { setEProbationPolicy(v); clearEErr('probation_policy'); }} options={PROBATION_POLICY_OPTIONS} placeholder="Select probation policy" invalid={!!eErrors.probation_policy} />
                       {eProbationPolicy === CUSTOM_PROBATION_VALUE && (
                         <input
                           className={`emp-input mt-2${eErrors.probation_policy ? ' is-invalid' : ''}`}
@@ -4067,7 +4312,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Notice Period<span className="req">*</span></label>
-                      <MasterSelect value={eNoticePeriod} onChange={(v) => { setENoticePeriod(v); clearEErr('notice_period'); }} options={NOTICE_PERIOD_OPTIONS} invalid={!!eErrors.notice_period} />
+                      <MasterSelect value={eNoticePeriod} onChange={(v) => { setENoticePeriod(v); clearEErr('notice_period'); }} options={NOTICE_PERIOD_OPTIONS} placeholder="Select notice period" invalid={!!eErrors.notice_period} />
                       {eNoticePeriod === CUSTOM_NOTICE_VALUE && (
                         <input
                           className={`emp-input mt-2${eErrors.notice_period ? ' is-invalid' : ''}`}
@@ -4099,7 +4344,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Holiday List<span className="req">*</span></label>
-                      <MasterSelect value={eHolidayList} onChange={setEHolidayList} options={HOLIDAY_LIST_OPTIONS} />
+                      <MasterSelect value={eHolidayList} onChange={setEHolidayList} options={HOLIDAY_LIST_OPTIONS} placeholder="Select holiday list" />
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Attendance Tracking</label>
@@ -4137,11 +4382,11 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Shift<span className="req">*</span></label>
-                      <MasterSelect value={eShift} onChange={setEShift} options={SHIFT_OPTIONS} />
+                      <MasterSelect value={eShift} onChange={setEShift} options={SHIFT_OPTIONS} placeholder="Select shift" />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Weekly Off<span className="req">*</span></label>
-                      <MasterSelect value={eWeeklyOff} onChange={setEWeeklyOff} options={WEEKLY_OFF_OPTIONS} />
+                      <MasterSelect value={eWeeklyOff} onChange={setEWeeklyOff} options={WEEKLY_OFF_OPTIONS} placeholder="Select weekly off" />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Attendance Number</label>
@@ -4149,15 +4394,15 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Time Tracking Policy<span className="req">*</span></label>
-                      <MasterSelect value={eTimeTracking} onChange={setETimeTracking} options={TIME_TRACKING_OPTIONS} />
+                      <MasterSelect value={eTimeTracking} onChange={setETimeTracking} options={TIME_TRACKING_OPTIONS} placeholder="Select time tracking" />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Penalization Policy<span className="req">*</span></label>
-                      <MasterSelect value={ePenalizationPolicy} onChange={setEPenalizationPolicy} options={PENALIZATION_OPTIONS} />
+                      <MasterSelect value={ePenalizationPolicy} onChange={setEPenalizationPolicy} options={PENALIZATION_OPTIONS} placeholder="Select penalization policy" />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Overtime</label>
-                      <MasterSelect value={eOvertime} onChange={setEOvertime} options={OVERTIME_OPTIONS} />
+                      <MasterSelect value={eOvertime} onChange={setEOvertime} options={OVERTIME_OPTIONS} placeholder="Select overtime policy" />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Expense Policy<span className="req">*</span></label>
@@ -4430,7 +4675,7 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={4}>
                       <label className="emp-label">Pay Group</label>
-                      <MasterSelect value={ePayGroup} onChange={setEPayGroup} options={PAY_GROUP_OPTIONS} />
+                      <MasterSelect value={ePayGroup} onChange={setEPayGroup} options={PAY_GROUP_OPTIONS} placeholder="Select pay group" />
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Annual Salary{eEnablePayroll && <span className="req">*</span>}</label>
@@ -4444,7 +4689,7 @@ export default function HrEmployees() {
                           style={{ flex: 1 }}
                         />
                         <div style={{ width: 130, flexShrink: 0 }}>
-                          <MasterSelect value={eSalaryFreq} onChange={(v) => { setESalaryFreq(v); clearEErr('salary_frequency'); }} options={SALARY_FREQUENCY_OPTIONS} invalid={!!eErrors.salary_frequency} />
+                          <MasterSelect value={eSalaryFreq} onChange={(v) => { setESalaryFreq(v); clearEErr('salary_frequency'); }} options={SALARY_FREQUENCY_OPTIONS} placeholder="Select frequency" invalid={!!eErrors.salary_frequency} />
                         </div>
                       </div>
                       {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
@@ -4457,11 +4702,11 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Salary Structure Type</label>
-                      <MasterSelect value={eSalaryStructure} onChange={setESalaryStructure} options={SALARY_STRUCTURE_OPTIONS} />
+                      <MasterSelect value={eSalaryStructure} onChange={setESalaryStructure} options={SALARY_STRUCTURE_OPTIONS} placeholder="Select salary structure" />
                     </Col>
                     <Col md={6}>
                       <label className="emp-label">Tax Regime</label>
-                      <MasterSelect value={eTaxRegime} onChange={setETaxRegime} options={TAX_REGIME_OPTIONS} />
+                      <MasterSelect value={eTaxRegime} onChange={setETaxRegime} options={TAX_REGIME_OPTIONS} placeholder="Select tax regime" />
                     </Col>
                   </Row>
                 </div>
@@ -4881,10 +5126,7 @@ export default function HrEmployees() {
             className="d-flex align-items-center justify-content-between gap-2 flex-wrap"
             style={{ padding: '14px 24px 18px', borderTop: '1px solid var(--vz-border-color)' }}
           >
-            <span className="d-inline-flex align-items-center gap-1 text-muted" style={{ fontSize: 12.5 }}>
-              <i className="ri-information-line" style={{ fontSize: 14 }} />
-              Fields marked <span style={{ color: '#f06548', fontWeight: 700, margin: '0 2px' }}>*</span> are required
-            </span>
+            <span />
             <div className="d-flex align-items-center gap-2">
               <Button onClick={closeAssign} className="master-modal-cancel d-inline-flex align-items-center gap-1">
                 <i className="ri-close-line" style={{ fontSize: 15 }} /> Cancel

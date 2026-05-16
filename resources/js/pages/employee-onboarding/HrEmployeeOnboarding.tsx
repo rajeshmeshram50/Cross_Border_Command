@@ -15,6 +15,7 @@ import HeaderFooterPanel, {
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import './HrEmployeeOnboarding.css';
 
 // ── Onboarding form option lists (used by MasterSelect dropdowns) ─────────────
@@ -45,78 +46,23 @@ const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
 const ONB_PF_DEDUCT    = OPT('Employee + Employer', 'Employee only');
 const ONB_BLOOD_GROUP  = OPT('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-');
 
-// ── Evidence Vault — mock document catalogue (mirrors HrEmployees) ──────────
-type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Signed' | 'Sent' | 'Not Generated';
-interface VaultDoc {
-  id: string;
-  name: string;
-  desc: string;
-  icon: string;
-  tint: string;
-  fg: string;
-  category?: string;
-  status: VaultStatus;
-}
-interface VaultSection { title: string; docs: VaultDoc[] }
+// ── Evidence Vault — status → Bootstrap badge color ──────────────────────────
+// The vault's Employee tab is populated entirely from /employees/{id}/documents
+// at runtime (catalogue lookup happens client-side against STAGE2_CATEGORIES
+// further down). The Org tab is sourced from /hr-document-templates/match
+// + signature runs. Both render the status pill with the same
+// `bg-{color}-subtle text-{color}` Bootstrap classes the Clients table uses
+// for its Status column.
+type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Rejected' | 'Signed' | 'Sent' | 'Not Generated';
 
-const VAULT_EMPLOYEE_DOCS: VaultSection[] = [
-  {
-    title: 'Identity Documents',
-    docs: [
-      { id: 'aadhaar', name: 'Aadhaar Card',  desc: 'Government issued 12-digit unique identity', icon: 'ri-id-card-line',     tint: '#dceefe', fg: '#0c63b0', category: 'Identity', status: 'Verified' },
-      { id: 'pan',     name: 'PAN Card',      desc: 'Permanent Account Number for taxation',      icon: 'ri-bank-card-line',   tint: '#fdf3d6', fg: '#a06f00', category: 'Identity', status: 'Verified' },
-      { id: 'p_photo', name: 'Passport Photo',desc: 'Recent passport-size photograph',            icon: 'ri-image-line',       tint: '#fdd9ea', fg: '#a02960', category: 'Identity', status: 'Verified' },
-      { id: 'p_copy',  name: 'Passport Copy', desc: 'Govt issued travel document (if applicable)',icon: 'ri-passport-line',    tint: '#dceefe', fg: '#0c63b0', category: 'Identity', status: 'Verified' },
-    ],
-  },
-  {
-    title: 'Address Proof',
-    docs: [
-      { id: 'cur_addr',  name: 'Current Address Proof',   desc: 'Utility bill or bank statement (last 3 months)', icon: 'ri-home-4-line',  tint: '#fde8c4', fg: '#a4661c', category: 'Address', status: 'Verified' },
-      { id: 'perm_addr', name: 'Permanent Address Proof', desc: 'Aadhaar / Voter ID — permanent address proof',   icon: 'ri-map-pin-line', tint: '#d6f4e3', fg: '#108548', category: 'Address', status: 'Verified' },
-    ],
-  },
-  {
-    title: 'Education Documents',
-    docs: [
-      { id: 'edu_10',  name: '10th Marksheet',     desc: 'Secondary school certification',         icon: 'ri-graduation-cap-line', tint: '#d6f4e3', fg: '#108548', category: 'Education', status: 'Verified' },
-      { id: 'edu_12',  name: '12th Marksheet',     desc: 'Higher secondary certification',         icon: 'ri-graduation-cap-line', tint: '#d6f4e3', fg: '#108548', category: 'Education', status: 'Verified' },
-      { id: 'edu_deg', name: 'Graduation Degree',  desc: "Bachelor's degree certificate",          icon: 'ri-medal-2-line',        tint: '#fdf3d6', fg: '#a06f00', category: 'Education', status: 'Verified' },
-      { id: 'edu_pg',  name: 'Post Graduation',    desc: "Master's or postgraduate diploma",       icon: 'ri-award-line',          tint: '#dceefe', fg: '#0c63b0', category: 'Education', status: 'Verified' },
-    ],
-  },
-  {
-    title: 'Employment History',
-    docs: [
-      { id: 'rel_letter', name: 'Relieving Letter',  desc: 'Final relieving from previous employer', icon: 'ri-mail-send-line',           tint: '#fde8c4', fg: '#a4661c', category: 'Employment', status: 'Verified' },
-      { id: 'exp_cert',   name: 'Experience Letter', desc: 'Past employment experience certificate', icon: 'ri-briefcase-line',           tint: '#d3f0ee', fg: '#0a716a', category: 'Employment', status: 'Verified' },
-      { id: 'pay_slip',   name: 'Last 3 Pay Slips',  desc: 'Most recent salary slips for reference', icon: 'ri-money-dollar-circle-line', tint: '#d6f4e3', fg: '#108548', category: 'Employment', status: 'Verified' },
-    ],
-  },
-];
-
-const VAULT_ORG_DOCS: VaultSection[] = [
-  {
-    title: 'Signed Company Documents',
-    docs: [
-      { id: 'nda',       name: 'NDA',                          desc: 'Non-Disclosure Agreement — active during and post tenure',  icon: 'ri-lock-line',         tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
-      { id: 'emp_agree', name: 'Employment Agreement',         desc: 'Appointment letter & employment terms and conditions',      icon: 'ri-file-list-3-line',  tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
-      { id: 'coc',       name: 'Code of Conduct Policy',       desc: 'Acknowledgement of company ethical standards and behavior', icon: 'ri-book-2-line',       tint: '#fde8c4', fg: '#a4661c', status: 'Signed' },
-      { id: 'it_sec',    name: 'IT Security & Acceptable Use', desc: 'IT asset usage, data access, and acceptable use policy',    icon: 'ri-computer-line',     tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
-      { id: 'leave_pol', name: 'Leave & Attendance Policy',    desc: 'Leave entitlements, attendance rules, and WFH policy',      icon: 'ri-calendar-2-line',   tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
-      { id: 'conf',      name: 'Confidentiality Agreement',    desc: 'Confidential business information protection agreement',    icon: 'ri-shield-check-line', tint: '#dceefe', fg: '#0c63b0', status: 'Signed' },
-      { id: 'gratuity',  name: 'Gratuity & Benefit Policy',    desc: 'Gratuity eligibility, PF, and other employee benefit terms',icon: 'ri-gift-line',         tint: '#fde8c4', fg: '#a4661c', status: 'Sent' },
-    ],
-  },
-];
-
-const VAULT_STATUS_TONE: Record<VaultStatus, { bg: string; fg: string; dot: string }> = {
-  'Verified':      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
-  'Uploaded':      { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Pending':       { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  'Signed':        { bg: '#ece6ff', fg: '#5b3fd1', dot: '#7c5cfc' },
-  'Sent':          { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Not Generated': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
+const VAULT_STATUS_COLOR: Record<VaultStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
+  'Verified':      'success',
+  'Uploaded':      'info',
+  'Pending':       'warning',
+  'Rejected':      'danger',
+  'Signed':        'primary',
+  'Sent':          'info',
+  'Not Generated': 'secondary',
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -134,11 +80,22 @@ interface OnboardRow {
   name: string;
   initials: string;
   accent: string;
+  /** Public URL of the employee's passport-size photo (document_key='photo').
+   *  Comes from the Employee model's `photo_url` accessor — same source the
+   *  HR Employees table uses, so the avatar stays in sync between the two
+   *  pages. Optional because legacy seed rows and freshly-created employees
+   *  without a photo render the initials gradient avatar instead. */
+  photoUrl?: string | null;
   joinDate: string;
   department: string;
   designation: string;
   primaryRole: string;
   ancillaryRole: string;
+  /** Full list of ancillary role names (multi-select on the employee).
+   *  Hydrated from `ancillary_roles_resolved` on the API row. Optional so
+   *  the legacy seed arrays below (kept only as a typing reference) don't
+   *  need to be updated; the table cell falls back to `[ancillaryRole]`. */
+  ancillaryRoles?: string[];
   managerName: string;
   managerInitials: string;
   managerAccent: string;
@@ -182,6 +139,40 @@ const _todayIso = (): string => {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+/**
+ * Validate the employee's office / work email. Returns a human-readable
+ * error string when invalid, or an empty string when the email is OK.
+ * Checks (in order): required, whitespace, single @, local + domain parts
+ * present, TLD ≥ 2 chars, no consecutive dots, sensible length (RFC 5321
+ * caps the local part at 64 and the full address at 254). Used by both
+ * the Stage-3 Next handler (gate) and the input's `onChange` so the user
+ * sees inline feedback as they type.
+ */
+const validateOfficialEmail = (raw: string | null | undefined): string => {
+  const email = String(raw ?? '').trim();
+  if (!email) return 'Official email is required.';
+  if (/\s/.test(email)) return 'Email cannot contain spaces.';
+  if (email.length > 254) return 'Email is too long (max 254 characters).';
+  const at = email.indexOf('@');
+  if (at < 0 || at !== email.lastIndexOf('@')) return 'Email must contain exactly one "@" symbol.';
+  const local  = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  if (!local)  return 'Add the part before "@" (e.g. firstname.lastname).';
+  if (!domain) return 'Add the part after "@" (e.g. company.com).';
+  if (local.length > 64) return 'The part before "@" is too long (max 64 characters).';
+  if (local.startsWith('.') || local.endsWith('.')) return 'Email cannot start or end with a dot.';
+  if (/\.\./.test(email)) return 'Email cannot contain two dots in a row.';
+  if (!domain.includes('.')) return 'Domain must include a dot (e.g. company.com).';
+  const tld = domain.split('.').pop() || '';
+  if (tld.length < 2) return 'Domain ending must be at least 2 characters (e.g. .com, .in).';
+  // Final shape check. Restricted to printable ASCII commonly accepted by
+  // SMTP gateways; intentionally stricter than RFC 5322 so we don't admit
+  // exotic local parts that downstream systems (notifications, SSO) reject.
+  const SHAPE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  if (!SHAPE.test(email)) return 'Enter a valid email like firstname.lastname@company.com.';
+  return '';
 };
 
 /** Server-enforced cap for ANY uploaded document. Drives both the
@@ -238,11 +229,15 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     name,
     initials: _initials(name),
     accent,
+    photoUrl: (e as any).photo_url || null,
     joinDate: _formatDate(e.date_of_joining),
     department: e.department?.name || '—',
     designation: e.designation?.name || '—',
     primaryRole: e.primary_role?.name || '—',
     ancillaryRole: e.ancillary_role?.name || '',
+    ancillaryRoles: (Array.isArray(e.ancillary_roles_resolved) && e.ancillary_roles_resolved.length > 0)
+      ? e.ancillary_roles_resolved.map((r: any) => r.name)
+      : (e.ancillary_role?.name ? [e.ancillary_role.name] : []),
     managerName: mgrName,
     managerInitials: _initials(mgrName),
     managerAccent: _accent(mgrName || 'manager'),
@@ -296,14 +291,17 @@ const _COMPLETED_LEGACY: OnboardRow[] = [
   { id: 'OB-096', empId: 'EMP-2395', name: 'Omkar Thakur',    initials: 'OT', accent: '#f06548', joinDate: 'Mar 20, 2026', department: 'Operations',  designation: 'Warehouse Supervisor',   primaryRole: 'Warehouse In-charge',   ancillaryRole: 'GRN Coordinator',      managerName: 'Vivek Iyer',     managerInitials: 'VI', managerAccent: '#0c63b0', profile: 100, status: 'Completed' },
 ];
 
-// Stat tones & header gradients
-const STATUS_TONES: Record<OnboardStatus, { bg: string; fg: string; dot: string }> = {
-  'Document Pending': { bg: '#fdf3d6', fg: '#a06f00', dot: '#f59e0b' },
-  'In Progress':      { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'IT Setup':         { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Not Started':      { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
-  'Orientation':      { bg: '#d3f0ee', fg: '#0a716a', dot: '#0ab39c' },
-  'Completed':        { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
+// OnboardStatus → Bootstrap badge color. Matches the recruitment area's
+// status pill pattern (Clients-style `bg-{color}-subtle text-{color}`)
+// so the Status column on the onboarding table reads in the same design
+// system as Hiring Requests, Candidates, and the Evidence Vault.
+const ONBOARD_STATUS_COLOR: Record<OnboardStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
+  'Document Pending': 'warning',
+  'In Progress':      'info',
+  'IT Setup':         'info',
+  'Not Started':      'secondary',
+  'Orientation':      'primary',
+  'Completed':        'success',
 };
 
 // Animated count-up number (mirrors AdminDashboard's AnimatedNumber)
@@ -789,9 +787,7 @@ export default function HrEmployeeOnboarding() {
                   />
                 </div>
               </div>
-              <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                {filtered.length} results
-              </div>
+            
             </Col>
           </Row>
 
@@ -799,7 +795,7 @@ export default function HrEmployeeOnboarding() {
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th scope="col" className="ps-3" style={{ width: 60 }}>Sr. No.</th>
+                        <th scope="col" className="ps-3" style={{ width: 60 }}>Sr No</th>
                         <th scope="col">Employee</th>
                         <th scope="col">Emp ID</th>
                         <th scope="col">Department</th>
@@ -823,22 +819,31 @@ export default function HrEmployeeOnboarding() {
                           </td>
                         </tr>
                       ) : visible.map((r, idx) => {
-                        const tone = STATUS_TONES[r.status];
+                        const statusColor = ONBOARD_STATUS_COLOR[r.status];
                         return (
                           <tr key={r.id}>
                             <td className="ps-3 fw-semibold text-muted">{sliceFrom + idx + 1}</td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
-                                <div
-                                  className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                  style={{
-                                    width: 34, height: 34, fontSize: 12,
-                                    background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
-                                    boxShadow: `0 2px 6px ${r.accent}40`,
-                                  }}
-                                >
-                                  {r.initials}
-                                </div>
+                                {r.photoUrl ? (
+                                  <img
+                                    src={r.photoUrl}
+                                    alt={r.name}
+                                    className="rounded-circle flex-shrink-0"
+                                    style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+                                  />
+                                ) : (
+                                  <div
+                                    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                                    style={{
+                                      width: 34, height: 34, fontSize: 12,
+                                      background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
+                                      boxShadow: `0 2px 6px ${r.accent}40`,
+                                    }}
+                                  >
+                                    {r.initials}
+                                  </div>
+                                )}
                                 <div className="min-w-0">
                                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{r.name}</div>
                                   <div className="text-muted" style={{ fontSize: 11.5 }}>{r.joinDate}</div>
@@ -854,9 +859,13 @@ export default function HrEmployeeOnboarding() {
                               <span className="onb-role-pill">{r.primaryRole}</span>
                             </td>
                             <td>
-                              {r.ancillaryRole ? (
-                                <span className="onb-role-pill">{r.ancillaryRole}</span>
-                              ) : <span className="text-muted">—</span>}
+                              <AncillaryRolesChip
+                                names={
+                                  (r.ancillaryRoles && r.ancillaryRoles.length > 0)
+                                    ? r.ancillaryRoles
+                                    : (r.ancillaryRole ? [r.ancillaryRole] : [])
+                                }
+                              />
                             </td>
                             <td>
                               <div className="d-flex align-items-center gap-2">
@@ -937,12 +946,7 @@ export default function HrEmployeeOnboarding() {
                               })()}
                             </td>
                             <td>
-                              <span
-                                className="onb-pill"
-                                data-status={r.status}
-                                style={{ background: tone.bg, color: tone.fg }}
-                              >
-                                <span className="d" style={{ background: tone.dot }} />
+                              <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                                 {r.status}
                               </span>
                             </td>
@@ -1272,19 +1276,6 @@ function VaultModal({
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId]);
 
-  const allDocs = VAULT_EMPLOYEE_DOCS.flatMap(s => s.docs);
-  const counts = {
-    total:    allDocs.length + orgTemplates.length,
-    verified: allDocs.filter(d => d.status === 'Verified').length,
-    signed:   allDocs.filter(d => d.status === 'Signed' || d.status === 'Sent').length + orgTemplates.filter(t => t.status === 'Active').length,
-    pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length,
-    notGen:   allDocs.filter(d => d.status === 'Not Generated').length,
-  };
-  const empCount = VAULT_EMPLOYEE_DOCS.flatMap(s => s.docs).length;
-  const orgCount = orgTemplates.length;
-  const completion = counts.total ? Math.round(((counts.verified + counts.signed) / counts.total) * 100) : 0;
-  const sections = tab === 'employee' ? VAULT_EMPLOYEE_DOCS : [];  // org tab renders from orgTemplates below
-
   // ── In-modal preview state ────────────────────────────────────────────────
   // Click "View" → fetch resolved HTML + header/footer JSON, render inside
   // the same fixed-height page-style chrome the template editor uses.
@@ -1366,6 +1357,152 @@ function VaultModal({
     }
     return m;
   }, [runs]);
+
+  // ── Employee Documents — live from /employees/{id}/documents ─────────────
+  // The Vault used to render a hardcoded VAULT_EMPLOYEE_DOCS catalogue. Now
+  // we pull the actual uploads for THIS employee and group them back into
+  // the same Identity / Address / Education / Bank sections by looking each
+  // document_key up in STAGE2_CATEGORIES. `prev_<companyId>_<docId>` keys
+  // become a Previous Employment section (company_name comes from
+  // /previous-employments). Unknown keys fall into "Other Documents" with
+  // the file's original_name so nothing the user uploaded ever disappears
+  // from the archive.
+  type EmpDocApi = {
+    id: number;
+    document_key: string;
+    status: 'pending' | 'uploaded' | 'verified' | 'rejected';
+    original_name: string | null;
+    mime_type: string | null;
+    size_bytes: number | null;
+    uploaded_at: string | null;
+    url: string | null;
+  };
+  type EmpDocLive = {
+    key: string;
+    name: string;
+    desc: string;
+    icon: string;
+    tint: string;
+    fg: string;
+    category: string;
+    status: VaultStatus;
+    url: string | null;
+  };
+  const [empDocs, setEmpDocs] = useState<EmpDocApi[]>([]);
+  const [prevCompanies, setPrevCompanies] = useState<{ id: number; company_name: string }[]>([]);
+
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) { setEmpDocs([]); setPrevCompanies([]); return; }
+    let cancelled = false;
+    Promise.all([
+      api.get(`/employees/${emp.dbId}/documents`).catch(() => ({ data: [] })),
+      api.get(`/employees/${emp.dbId}/previous-employments`).catch(() => ({ data: [] })),
+    ]).then(([docRes, prevRes]) => {
+      if (cancelled) return;
+      setEmpDocs(Array.isArray(docRes.data) ? docRes.data : []);
+      setPrevCompanies(Array.isArray(prevRes.data) ? prevRes.data : []);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, emp?.dbId]);
+
+  const serverStatusToVault = (s: string): VaultStatus => {
+    switch (s) {
+      case 'verified': return 'Verified';
+      case 'uploaded': return 'Uploaded';
+      case 'rejected': return 'Rejected';
+      default:         return 'Pending';
+    }
+  };
+
+  const employeeSections = useMemo(() => {
+    if (empDocs.length === 0) return [] as { title: string; docs: EmpDocLive[] }[];
+    const byKey = new Map(empDocs.map(d => [d.document_key, d]));
+    const used  = new Set<string>();
+    const out: { title: string; docs: EmpDocLive[] }[] = [];
+
+    for (const cat of STAGE2_CATEGORIES) {
+      const docs: EmpDocLive[] = [];
+      for (const d of cat.docs) {
+        const u = byKey.get(d.id);
+        if (!u) continue;
+        used.add(d.id);
+        docs.push({
+          key: d.id,
+          name: d.name,
+          desc: u.original_name || d.sub,
+          icon: cat.icon,
+          tint: cat.tint,
+          fg:   cat.fg,
+          category: cat.title.replace(/ Documents?$/, '').replace(/ Proof$/, ''),
+          status: serverStatusToVault(u.status),
+          url: u.url,
+        });
+      }
+      if (docs.length) out.push({ title: cat.title, docs });
+    }
+
+    const prevDocs: EmpDocLive[] = [];
+    for (const u of empDocs) {
+      const m = u.document_key.match(/^prev_(\d+)_(.+)$/);
+      if (!m) continue;
+      used.add(u.document_key);
+      const companyId = Number(m[1]);
+      const docId     = m[2];
+      const company   = prevCompanies.find(c => c.id === companyId);
+      const docDef    = STAGE2_COMPANY_DOCS.find(x => x.id === docId);
+      prevDocs.push({
+        key: u.document_key,
+        name: docDef?.name || u.original_name || u.document_key,
+        desc: company ? `${company.company_name}${u.original_name ? ` · ${u.original_name}` : ''}` : (u.original_name || ''),
+        icon: 'ri-briefcase-line',
+        tint: '#fde8c4',
+        fg:   '#a4661c',
+        category: 'Employment',
+        status: serverStatusToVault(u.status),
+        url: u.url,
+      });
+    }
+    if (prevDocs.length) out.push({ title: 'Previous Employment', docs: prevDocs });
+
+    const other: EmpDocLive[] = [];
+    for (const u of empDocs) {
+      if (used.has(u.document_key)) continue;
+      other.push({
+        key: u.document_key,
+        name: u.original_name || u.document_key,
+        desc: u.document_key,
+        icon: 'ri-file-line',
+        tint: '#eef2f6',
+        fg:   '#5b6478',
+        category: 'Other',
+        status: serverStatusToVault(u.status),
+        url: u.url,
+      });
+    }
+    if (other.length) out.push({ title: 'Other Documents', docs: other });
+
+    return out;
+  }, [empDocs, prevCompanies]);
+
+  // Org tab now shows only templates whose signing workflow is Completed —
+  // matches "whatever he sign" semantics for the vault as an archive.
+  const signedTemplates = useMemo(
+    () => orgTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed'),
+    [orgTemplates, runByTemplateId],
+  );
+
+  const allDocs = employeeSections.flatMap(s => s.docs);
+  const counts = {
+    total:    allDocs.length + signedTemplates.length,
+    verified: allDocs.filter(d => d.status === 'Verified').length,
+    signed:   signedTemplates.length,
+    pending:  allDocs.filter(d => d.status === 'Pending' || d.status === 'Uploaded').length,
+    notGen:   0,
+  };
+  const empCount = allDocs.length;
+  const orgCount = signedTemplates.length;
+  const completion = counts.total ? Math.round(((counts.verified + counts.signed) / counts.total) * 100) : 0;
+  const sections = tab === 'employee' ? employeeSections : [];  // org tab renders from signedTemplates below
 
   // 3-dot menu state (which row is open)
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
@@ -1697,9 +1834,10 @@ function VaultModal({
                   </div>
                   <div>
                     {section.docs.map(doc => {
-                      const dt = VAULT_STATUS_TONE[doc.status];
+                      const statusColor = VAULT_STATUS_COLOR[doc.status];
+                      const hasFile = !!doc.url;
                       return (
-                        <div key={doc.id} className="vault-doc-row flex-wrap">
+                        <div key={doc.key} className="vault-doc-row flex-wrap">
                           <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
                             <i className={doc.icon} />
                           </div>
@@ -1715,16 +1853,28 @@ function VaultModal({
                               {doc.category}
                             </span>
                           )}
-                          <span className="vault-status-pill" style={{ background: dt.bg, color: dt.fg }}>
-                            <span className="vault-status-dot" style={{ background: dt.dot }} />
+                          <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                             {doc.status}
                           </span>
-                          <button type="button" className="vault-action-view">
+                          <a
+                            href={hasFile ? doc.url! : undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="vault-action-view"
+                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', textDecoration: 'none' }}
+                            title={hasFile ? 'Open in a new tab' : 'No file available'}
+                          >
                             <i className="ri-eye-line" /> View
-                          </button>
-                          <button type="button" className="vault-action-download">
+                          </a>
+                          <a
+                            href={hasFile ? doc.url! : undefined}
+                            download
+                            className="vault-action-download"
+                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', textDecoration: 'none' }}
+                            title={hasFile ? 'Download original upload' : 'No file available'}
+                          >
                             <i className="ri-download-2-line" /> Download
-                          </button>
+                          </a>
                         </div>
                       );
                     })}
@@ -1757,13 +1907,13 @@ function VaultModal({
                       <div className="fw-bold" style={{ fontSize: 14 }}>Signed Company Documents</div>
                       <div className="text-muted" style={{ fontSize: 11.5 }}>
                         {orgLoading ? 'Loading matching templates…'
-                          : orgTemplates.length === 0 ? 'No templates configured for this department × level.'
-                          : `${orgTemplates.length} template${orgTemplates.length === 1 ? '' : 's'} ready to generate`}
+                          : signedTemplates.length === 0 ? 'No documents have been signed by this employee yet.'
+                          : `${signedTemplates.length} signed document${signedTemplates.length === 1 ? '' : 's'}`}
                       </div>
                     </div>
                     <span className="d-inline-flex align-items-center"
                       style={{ padding: '4px 12px', borderRadius: 999, background: '#f5f0ff', color: '#5a3fd1', fontSize: 11.5, fontWeight: 600 }}>
-                      {orgTemplates.length} docs
+                      {signedTemplates.length} docs
                     </span>
                   </div>
 
@@ -1774,35 +1924,34 @@ function VaultModal({
                     </div>
                   )}
 
-                  {!orgLoading && orgTemplates.length === 0 && (
+                  {!orgLoading && signedTemplates.length === 0 && (
                     <div style={{ padding: 22, textAlign: 'center', color: '#6b7280', background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: 10 }}>
                       <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
                       <div style={{ fontSize: 13 }}>
-                        No templates match this employee's department + designation level yet.<br />
-                        Create a template under HR &gt; Document &amp; Evidence &gt; Document Templates.
+                        Nothing has been signed yet. Documents will appear here as
+                        their signing workflow reaches <strong>Completed</strong>.
                       </div>
                     </div>
                   )}
 
                   <div>
-                    {orgTemplates.map(tpl => {
-                      const tone = tpl.status === 'Active'
-                        ? VAULT_STATUS_TONE['Signed']
-                        : tpl.status === 'Draft'
-                          ? VAULT_STATUS_TONE['Pending']
-                          : VAULT_STATUS_TONE['Not Generated'];
+                    {signedTemplates.map(tpl => {
+                      const tplStatusColor: 'primary' | 'warning' | 'secondary' =
+                        tpl.status === 'Active' ? 'primary'
+                        : tpl.status === 'Draft' ? 'warning'
+                        : 'secondary';
                       const canGenerate = tpl.status === 'Active' && !!emp?.dbId;
                       const run = runByTemplateId.get(tpl.id) || null;
                       const currentSigner = run?.signers?.[run.current_index] || null;
                       const isMyTurn = !!(run && currentSigner
                         && (run.status === 'Pending' || run.status === 'In Progress')
                         && currentSigner.user_id === currentUserId);
-                      const runStatusTone =
-                        run?.status === 'Completed' ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
-                        : run?.status === 'Rejected' ? { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' }
-                        : run?.status === 'Cancelled' ? { bg: '#e5e7eb', fg: '#374151', dot: '#6b7280' }
-                        : run?.status === 'In Progress' ? { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' }
-                        : run ? { bg: '#dbeafe', fg: '#1d4ed8', dot: '#3b82f6' }
+                      const runStatusColor: 'success' | 'danger' | 'secondary' | 'warning' | 'info' | null =
+                        run?.status === 'Completed' ? 'success'
+                        : run?.status === 'Rejected' ? 'danger'
+                        : run?.status === 'Cancelled' ? 'secondary'
+                        : run?.status === 'In Progress' ? 'warning'
+                        : run ? 'info'
                         : null;
                       return (
                         <div key={tpl.id} className="vault-doc-row flex-wrap" style={{ position: 'relative' }}>
@@ -1813,8 +1962,8 @@ function VaultModal({
                             <div className="vault-doc-name">
                               {tpl.name || '(unnamed template)'}{' '}
                               <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>{tpl.code}</span>
-                              {run && runStatusTone && (
-                                <span style={{ marginLeft: 8, padding: '1px 8px', borderRadius: 999, background: runStatusTone.bg, color: runStatusTone.fg, fontSize: 11, fontWeight: 700 }}>
+                              {run && runStatusColor && (
+                                <span className={`badge rounded-pill bg-${runStatusColor}-subtle text-${runStatusColor} fw-semibold ms-2`} style={{ fontSize: 11, padding: '3px 9px' }}>
                                   <i className="ri-flow-chart" style={{ fontSize: 11, marginRight: 3 }} />{run.status}
                                 </span>
                               )}
@@ -1826,8 +1975,7 @@ function VaultModal({
                               )}
                             </div>
                           </div>
-                          <span className="vault-status-pill" style={{ background: tone.bg, color: tone.fg }}>
-                            <span className="vault-status-dot" style={{ background: tone.dot }} />
+                          <span className={`badge rounded-pill bg-${tplStatusColor}-subtle text-${tplStatusColor} fw-semibold px-3 py-2 fs-13`}>
                             {tpl.status}
                           </span>
                           <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}
@@ -2504,7 +2652,10 @@ function InitiateOnboardingModal({
     if (!isOpen) return;
     let cancelled = false;
     Promise.allSettled([
-      api.get('/master/countries').then(r => { if (!cancelled) setMCountries(Array.isArray(r.data) ? r.data : []); }),
+      api.get('/master/countries').then(r => {
+        if (cancelled) return;
+        setMCountries(Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []);
+      }),
       api.get('/master/departments').then(r => { if (!cancelled) setMDepts(Array.isArray(r.data) ? r.data : []); }),
       api.get('/master/designations').then(r => { if (!cancelled) setMDesignations(Array.isArray(r.data) ? r.data : []); }),
       api.get('/master/roles').then(r => { if (!cancelled) setMRoles(Array.isArray(r.data) ? r.data : []); }),
@@ -2628,10 +2779,11 @@ useEffect(() => {
     // Next Stage the parent reloads /employees, which gives us a fresh
     // emp.raw reference and re-fires this effect. If we leave email blank
     // here the user's typed value disappears the moment they navigate
-    // away and back. official_email stays blank intentionally — it's a
-    // system-generated field set elsewhere, not user input on this form.
+    // away and back. Official email mirrors the work email by default —
+    // they're the same address — but stays editable on Stage 3 so HR can
+    // override it if the company issues a separate alias.
     email:       String(x.email ?? ''),
-    official_email: '',
+    official_email: String(x.official_email ?? x.email ?? ''),
     mobile:      String(x.mobile ?? ''),
 
     department_id:    x.department_id    ? String(x.department_id)    : '',
@@ -3240,50 +3392,48 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
   // stage's % so finished stages don't visually regress when the user
   // navigates back. e.g. macro=4 → Stages 1-4 always show ≥ 100%.
   const macroCompleted = Number(emp?.raw?.onboarding_stage_completed ?? 0);
-  // Stage 6 ties to whether the employee has been activated. Activation
-  // bumps both status and macro stage to 6, so any of those signals is
-  // enough to flip the sidebar to Completed.
-  const stage6Done = macroCompleted >= 6 || String(emp?.raw?.status ?? '').toLowerCase() === 'active';
+  // Per-stage completion flags, computed once and reused both for the
+  // sidebar pills below AND for the Stage-6 gate. Each stage's "done"
+  // mixes its live readiness signal with the server's macro watermark
+  // (so finished stages don't visually regress before re-hydration). The
+  // exception is Stage 2, which requires BOTH all docs uploaded AND the
+  // macro watermark to have moved past 2 — see comment on the original
+  // change for why the OR was a false positive.
+  const stage1IsDone = stage1Done || macroCompleted >= 1;
+  const stage2IsDone = stage2Done && macroCompleted >= 2;
+  const stage3IsDone = stage3Done || macroCompleted >= 3;
+  const stage4IsDone = stage4Done || macroCompleted >= 4;
+  const stage5IsDone = macroCompleted >= 5;
+  // Stage 6 represents the HR final-approval / activation step. Used to
+  // flip Completed the moment the activate API returned, even when
+  // earlier stages were still Pending (the screenshot bug). Now we
+  // additionally require every prior stage to be done — activation by
+  // itself is no longer enough to mark the wizard as Completed.
+  const allPriorStagesDone =
+    stage1IsDone && stage2IsDone && stage3IsDone && stage4IsDone && stage5IsDone;
+  const isActivated =
+    macroCompleted >= 6 || String(emp?.raw?.status ?? '').toLowerCase() === 'active';
+  const stage6Done = isActivated && allPriorStagesDone;
 
   const stagesView = ONB_STAGES.map(s => {
     let status: StageStatus, progress: number;
     if (s.num === 1) {
-      // Anchored to real wizard state — completion can't roll back.
-      // Trust the server's macro watermark too so a finished stage 1
-      // doesn't flip back to "In Progress" before the wizard state
-      // re-hydrates on remount.
-      const done = stage1Done || macroCompleted >= 1;
-      progress = done ? 100 : stage1Pct;
-      status   = done ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
+      progress = stage1IsDone ? 100 : stage1Pct;
+      status   = stage1IsDone ? 'Completed' : (wizardStep > 0 || stage1Pct > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 2) {
-      // Same trust-the-server-floor rule: if the backend has stamped
-      // macroCompleted >= 2, the stage is done even before this session's
-      // local upload state has loaded. Without this, the sidebar shows
-      // "Pending" on initial render and only flips to "Completed" once
-      // you click the stage and trigger its data fetch.
-      const done = stage2Done || macroCompleted >= 2;
-      progress = done ? 100 : stage2Pct;
-      status   = done ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
+      progress = stage2IsDone ? 100 : stage2Pct;
+      status   = stage2IsDone ? 'Completed' : (stage2Uploaded > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 3) {
-      // Live from the four provisioning tasks — moves as soon as the
-      // user assigns a laptop / mobile / asset / biometric. Server
-      // floor wins for the same reason as Stage 2.
-      const done = stage3Done || macroCompleted >= 3;
-      progress = done ? 100 : stage3Pct;
-      status   = done ? 'Completed' : (stage3TasksDone > 0 ? 'In Progress' : 'Pending');
+      progress = stage3IsDone ? 100 : stage3Pct;
+      status   = stage3IsDone ? 'Completed' : (stage3TasksDone > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 4) {
-      // Anchored to live Stage 4 readiness checks + persisted stamp.
-      // Server floor still applies — guards against lazy-load races.
-      const done = stage4Done || macroCompleted >= 4;
-      progress = done ? 100 : stage4Pct;
-      status   = done ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
+      progress = stage4IsDone ? 100 : stage4Pct;
+      status   = stage4IsDone ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 5) {
-      // No real signing state yet — use server macro watermark as the
-      // only completion signal. Otherwise mark In Progress only while
-      // the user is actively on this stage.
-      const done = macroCompleted >= 5;
-      progress = done ? 100 : (activeStage === 5 ? 35 : 0);
-      status   = done ? 'Completed' : (activeStage === 5 ? 'In Progress' : 'Pending');
+      // No live signing state yet — only the server macro watermark
+      // confirms completion. Otherwise In Progress while on the stage.
+      progress = stage5IsDone ? 100 : (activeStage === 5 ? 35 : 0);
+      status   = stage5IsDone ? 'Completed' : (activeStage === 5 ? 'In Progress' : 'Pending');
     } else if (s.num === 6) {
       progress = stage6Done ? 100 : (activeStage === 6 ? 35 : 0);
       status   = stage6Done ? 'Completed' : (activeStage === 6 ? 'In Progress' : 'Pending');
@@ -3414,6 +3564,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
                 emp={emp}
                 s1={s1}
                 setS1={setS1}
+                s1Errors={s1Errors}
+                setS1Errors={setS1Errors}
                 laptopAssets={laptopAssets}
                 mobileAssets={mobileAssets}
                 otherAssets={otherAssets}
@@ -3429,7 +3581,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
               />
             )}
             {activeStage === 5 && <Stage5Policies />}
-            {activeStage === 6 && <Stage6Verify emp={emp} onActivated={onSaved} />}
+            {activeStage === 6 && <Stage6Verify emp={emp} stagesView={stagesView} onActivated={onSaved} />}
 
             {activeStage === 1 && (
             <>
@@ -3534,8 +3686,23 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
     placeholder="name@enterprise.com"
     value={s1.email}
     onChange={e => {
-      setS1(p => ({ ...p, email: e.target.value }));
-      setS1Errors(p => ({ ...p, email: '' }));
+      const next = e.target.value;
+      setS1(p => {
+        // Auto-mirror Work Email → Official Email (Stage 3) for as long
+        // as the HR hasn't manually overridden the official one. The
+        // "still mirroring" heuristic: official is empty OR equal to the
+        // previous work email. Once the HR types a different value into
+        // the Stage-3 field, the two diverge and changing Work Email
+        // here no longer touches Official Email.
+        const stillMirrored =
+          !p.official_email || p.official_email === p.email;
+        return {
+          ...p,
+          email: next,
+          official_email: stillMirrored ? next : p.official_email,
+        };
+      });
+      setS1Errors(p => ({ ...p, email: '', official_email: '' }));
     }}
   />
   {s1Errors.email && <div className="onb-error-msg">{s1Errors.email}</div>}
@@ -4059,6 +4226,19 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       // the PUT payload identical (so the existing validator on the
       // backend handles everything correctly).
       if (activeStage === 3) {
+        // Official email is mandatory on Stage 3 — it's what the rest
+        // of the platform (notifications, account provisioning, signing
+        // flows) uses to reach the employee. Validate before saving so
+        // the user gets immediate feedback instead of a backend error.
+        const emailErr = validateOfficialEmail(s1.official_email);
+        if (emailErr) {
+          toast.error('Official email — fix this first', emailErr);
+          setS1Errors(p => ({ ...p, official_email: emailErr }));
+          const el = document.getElementById('field-official-email') as HTMLInputElement | null;
+          el?.focus();
+          el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          return;
+        }
         setNextLoading(true);
         // skipValidate=true — we don't want to re-run Stage 1's required-
         // field checks here; the user is on Stage 3 and might be editing
@@ -5240,11 +5420,13 @@ function Stage2Documents({ emp, onDocsChanged }: {
  *  are the only persisted FK columns). Saving Stage 3 reuses
  *  `saveStage1(false)` from the modal scope. */
 function Stage3Provisioning({
-  emp, s1, setS1, laptopAssets, mobileAssets, otherAssets,
+  emp, s1, setS1, s1Errors, setS1Errors, laptopAssets, mobileAssets, otherAssets,
 }: {
   emp: OnboardRow;
   s1: any;
   setS1: React.Dispatch<React.SetStateAction<any>>;
+  s1Errors: Record<string, string>;
+  setS1Errors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   laptopAssets: { value: string; label: string }[];
   mobileAssets: { value: string; label: string }[];
   otherAssets:  { value: string; label: string }[];
@@ -5269,6 +5451,20 @@ function Stage3Provisioning({
     <span className="auto" style={{ background: '#d6f4e3', color: '#108548' }}>EDITABLE</span>
   );
 
+  // Lazy fallback: if HR landed on Stage 3 with an empty official_email
+  // but Stage 1's Work Email IS filled (legacy rows or freshly-loaded
+  // employee where the API column was never populated), backfill it
+  // once on mount so the user doesn't have to re-type the same address.
+  // The Stage-1 onChange auto-mirrors going forward; this just covers
+  // the case where Stage 1 was completed BEFORE the auto-mirror was
+  // wired up.
+  useEffect(() => {
+    if (!s1.official_email && s1.email) {
+      setS1((p: any) => ({ ...p, official_email: p.email }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <>
       {/* Per-stage progress banner removed — sidebar already shows this. */}
@@ -5285,13 +5481,32 @@ function Stage3Provisioning({
   <label className="onb-init-label">
     Official Email Address <span className="req">*</span>
   </label>
-  <input 
+  <input
     id="field-official-email"
-    className="onb-init-input is-required" 
-    placeholder="firstname.lastname@company.com" 
-    value={s1.official_email} 
-    onChange={e => setS1((p: any) => ({ ...p, official_email: e.target.value }))}
+    type="email"
+    autoComplete="email"
+    inputMode="email"
+    spellCheck={false}
+    maxLength={254}
+    className={`onb-init-input is-required${s1Errors.official_email ? ' is-invalid' : ''}`}
+    placeholder="firstname.lastname@company.com"
+    value={s1.official_email}
+    onChange={e => {
+      // Strip whitespace as the user types — pasted emails often
+      // arrive with stray spaces and the SMTP gateway rejects them.
+      const v = e.target.value.replace(/\s/g, '');
+      setS1((p: any) => ({ ...p, official_email: v }));
+      // Inline re-validate so the red border / message disappears
+      // the moment the input becomes valid.
+      setS1Errors(p => ({ ...p, official_email: v ? validateOfficialEmail(v) : '' }));
+    }}
+    onBlur={e => {
+      setS1Errors(p => ({ ...p, official_email: validateOfficialEmail(e.target.value) }));
+    }}
   />
+  {s1Errors.official_email && (
+    <div className="onb-error-msg">{s1Errors.official_email}</div>
+  )}
 </Col>
             <Col md={6}>
               <label className="onb-init-label">Employee Code {autoLabel}</label>
@@ -5980,7 +6195,17 @@ function ActivateEmployeeModal({
   );
 }
 
-function Stage6Verify({ emp, onActivated }: { emp: OnboardRow; onActivated?: () => void }) {
+function Stage6Verify({
+  emp, stagesView, onActivated,
+}: {
+  emp: OnboardRow;
+  /** Live per-stage status computed in the parent. Stage 6 reads
+   *  `status === 'Completed'` for each row to decide Verified vs Pending,
+   *  so the summary updates the moment the user advances/finishes any
+   *  earlier stage — no hardcoded `verified: true` anymore. */
+  stagesView: { num: number; status: 'Completed' | 'In Progress' | 'Pending' }[];
+  onActivated?: () => void;
+}) {
   const [flagOpen, setFlagOpen] = useState(false);
   const [activateOpen, setActivateOpen] = useState(false);
   // Local flag flipped the instant the activate API succeeds — gives us
@@ -5995,20 +6220,33 @@ function Stage6Verify({ emp, onActivated }: { emp: OnboardRow; onActivated?: () 
   // again and re-fire the same PUT — annoying at best, error-prone at
   // worst. We swap the action area for a "completed" card so the user
   // can see the result and move on.
+  // `isActivated` still drives the action banner / button toggle below
+  // (activation is irreversible — once it happened, we acknowledge it
+  // even if earlier stages slipped through). But the HR Final Approval
+  // row's "Verified" pill is now gated by a stricter check: the employee
+  // must have been activated AND every prior stage must be Completed in
+  // `stagesView`. Without that, a user could activate while stages 2–5
+  // were still Pending and the wizard would mis-report Onboarding as
+  // 6/6 Verified — see screenshot bug.
   const isActivated =
     justActivated
     || String(emp?.raw?.status ?? '').toLowerCase() === 'active'
     || Number(emp?.raw?.onboarding_stage_completed ?? 0) >= 6;
+  const isStageDone = (num: number): boolean =>
+    !!stagesView.find(s => s.num === num && s.status === 'Completed');
+  const allPriorStagesDone =
+    isStageDone(1) && isStageDone(2) && isStageDone(3) && isStageDone(4) && isStageDone(5);
+  const hrFinalVerified = isActivated && allPriorStagesDone;
   const stageRows: { num: number; name: string; sub: string; icon: string; cls: string; verified: boolean }[] = [
-    { num: 1, name: 'Employee Onboarding Setup',     sub: 'Basic details, job info & compensation · Stage 1', icon: 'ri-user-line',          cls: 's1', verified: true  },
-    { num: 2, name: 'Document Management',           sub: 'Identity, education & employment docs · Stage 2',  icon: 'ri-file-list-3-line',  cls: 's2', verified: true  },
-    { num: 3, name: 'Provisioning & Asset Setup',    sub: 'Email, systems, devices & access · Stage 3',       icon: 'ri-computer-line',     cls: 's3', verified: true  },
-    { num: 4, name: 'Payroll & Finance Setup',       sub: 'Bank, PAN, PF/ESIC & salary structure · Stage 4',  icon: 'ri-money-dollar-circle-line', cls: 's4', verified: true },
-    { num: 5, name: 'Policies & Agreements',         sub: 'NDA, employment agreement & signing · Stage 5',    icon: 'ri-shield-check-line', cls: 's5', verified: true  },
-    { num: 6, name: 'HR Final Approval',             sub: 'HR sign-off & verification',                       icon: 'ri-user-star-line',    cls: 's6', verified: false },
+    { num: 1, name: 'Employee Onboarding Setup',     sub: 'Basic details, job info & compensation · Stage 1', icon: 'ri-user-line',                cls: 's1', verified: isStageDone(1) },
+    { num: 2, name: 'Document Management',           sub: 'Identity, education & employment docs · Stage 2',  icon: 'ri-file-list-3-line',         cls: 's2', verified: isStageDone(2) },
+    { num: 3, name: 'Provisioning & Asset Setup',    sub: 'Email, systems, devices & access · Stage 3',       icon: 'ri-computer-line',            cls: 's3', verified: isStageDone(3) },
+    { num: 4, name: 'Payroll & Finance Setup',       sub: 'Bank, PAN, PF/ESIC & salary structure · Stage 4',  icon: 'ri-money-dollar-circle-line', cls: 's4', verified: isStageDone(4) },
+    { num: 5, name: 'Policies & Agreements',         sub: 'NDA, employment agreement & signing · Stage 5',    icon: 'ri-shield-check-line',        cls: 's5', verified: isStageDone(5) },
+    { num: 6, name: 'HR Final Approval',             sub: 'HR sign-off & verification',                       icon: 'ri-user-star-line',           cls: 's6', verified: hrFinalVerified },
   ];
   const verifiedCount = stageRows.filter(s => s.verified).length;
-  const readyPct = Math.round((verifiedCount === stageRows.length ? 100 : 0));
+  const readyPct = Math.round((verifiedCount / stageRows.length) * 100);
 
   return (
     <>

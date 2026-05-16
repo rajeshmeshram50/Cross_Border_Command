@@ -235,10 +235,26 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
 
   return (
     <div className="plans-surface">
-      {/* All cp-current-pill styles now live in resources/css/plans-card.css —
-          inline <style> injection was causing extra style-recalc work on
-          every parent re-render and the cp-sweep infinite animation was
-          competing with the swiper for paint cycles. */}
+      {/* Pulse animation for the Super-Admin-suggested plan card — the amber
+          ring softly grows and fades on a 2s loop so the eye is drawn to it
+          even while the carousel cycles through other plans. */}
+      <style>{`
+        @keyframes plan-suggest-pulse {
+          0%   { box-shadow: 0 0 0 0 rgba(245,158,11,0.55), 0 0 0 0 rgba(245,158,11,0.30); }
+          70%  { box-shadow: 0 0 0 10px rgba(245,158,11,0.00), 0 0 0 20px rgba(245,158,11,0.00); }
+          100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.00), 0 0 0 0 rgba(245,158,11,0.00); }
+        }
+        .plan-card-v2.is-suggested {
+          animation: plan-suggest-pulse 2.2s ease-out infinite;
+        }
+        @keyframes plan-suggest-badge-bob {
+          0%, 100% { transform: translateY(0); }
+          50%      { transform: translateY(-2px); }
+        }
+        .plan-card-v2.is-suggested .plan-badge-pill {
+          animation: plan-suggest-badge-bob 1.6s ease-in-out infinite;
+        }
+      `}</style>
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-0">
         <div className="d-flex align-items-center gap-2 flex-shrink-1 min-w-0">
           <div
@@ -402,12 +418,29 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
                   swiper.navigation.init();
                   swiper.navigation.update();
                 }
+                // Kick autoplay explicitly — sometimes Swiper's autoplay
+                // doesn't start on its own when combined with loop +
+                // centeredSlides + initialSlide. Force a start here.
+                if (swiper.autoplay && !swiper.autoplay.running) {
+                  swiper.autoplay.start();
+                }
               }, 0);
             }}
             navigation={{ prevEl: prevRef.current, nextEl: nextRef.current }}
             pagination={{ clickable: true, dynamicBullets: true }}
             loop={plans.length > 1}
-            autoplay={{ delay: 3500, disableOnInteraction: true, pauseOnMouseEnter: true }}
+            // Open the carousel centered on the Super-Admin-suggested plan
+            // when one is set. Falls back to slide 0 otherwise.
+            initialSlide={(() => {
+              const sid = user?.plan?.suggested_plan_id;
+              if (!sid) return 0;
+              const idx = plans.findIndex(p => p.id === sid);
+              return idx >= 0 ? idx : 0;
+            })()}
+            // disableOnInteraction: false so autoplay resumes after a user
+            // click/swipe — otherwise a single nav-button press would stop
+            // the carousel permanently.
+            autoplay={{ delay: 2000, disableOnInteraction: false, pauseOnMouseEnter: true }}
             speed={450}
             /* Centered-slides focus mode — active card scales up to crisp 1.0
                (no transform = pixel-perfect HD text) and side cards shrink. */
@@ -421,6 +454,12 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
           {plans.map(p => {
             const price = getPrice(p, billingCycle);
             const isCurrent = hasPlan && user?.plan?.plan_name?.toLowerCase() === p.name.toLowerCase();
+            // Plan suggested by the Super Admin (from the Client form). We
+            // ALWAYS highlight the recommended plan — even if the client
+            // technically has it as their current/assigned plan — so the
+            // visual call-to-action stays loud until they actually pay.
+            const suggestedPlanId = user?.plan?.suggested_plan_id ?? null;
+            const isSuggested = suggestedPlanId === p.id;
             const periodShort = billingCycle === 'month' ? 'mo' : billingCycle === 'quarter' ? 'qtr' : 'yr';
             const stats = [
               { l: 'Branches', v: (p.max_branches  ?? '∞') as string | number, ic: 'ri-git-branch-line'   },
@@ -431,20 +470,48 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
             return (
               <SwiperSlide key={p.id}>
                 <Card
-                  className={`w-100 mb-0 position-relative d-flex flex-column plan-card-animated plan-card-v2 ${p.is_featured ? 'is-featured' : ''}`}
+                  className={`w-100 mb-0 position-relative d-flex flex-column plan-card-animated plan-card-v2 ${p.is_featured ? 'is-featured' : ''} ${isSuggested ? 'is-suggested' : ''}`}
                   style={{
                     height: 560,
                     borderRadius: 20,
                     padding: '22px 22px 18px',
                     overflow: 'hidden',
                     textAlign: 'center',
+                    ...(isSuggested ? {
+                      // Crisp suggestion highlight — amber border only.
+                      // The shadow that was here added a blur halo and made
+                      // the card look hazy; relying on the border + pill is
+                      // enough to call attention without softening the edge.
+                      border: '2.5px solid #f59e0b',
+                    } : {}),
                   }}
                 >
                   {/* ── Header: Title + Price + Subtitle ── */}
                   <div className="text-center">
-                    <div className="d-flex align-items-center justify-content-center gap-2 mb-2">
+                    <div className="d-flex align-items-center justify-content-center gap-2 mb-2 flex-wrap">
                       <h4 className="plan-title mb-0">{p.name}</h4>
-                      {(isCurrent || p.is_featured) && (
+                      {/* "Suggested" pill rides INLINE with the title, same
+                          slot as the "Most Popular" / "Active" pill so the
+                          title stays visible and the layout doesn't shift. */}
+                      {isSuggested && (
+                        <span
+                          className="plan-badge-pill"
+                          style={{
+                            background: 'linear-gradient(135deg, #f59e0b, #fbbf24)',
+                            color: '#fff',
+                            borderColor: 'transparent',
+                            boxShadow: '0 4px 12px rgba(245,158,11,0.55)',
+                            letterSpacing: '0.08em',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          <i className="ri-sparkling-2-fill" style={{ fontSize: 11 }} />
+                          Suggested
+                        </span>
+                      )}
+                      {!isSuggested && (isCurrent || p.is_featured) && (
                         <span className="plan-badge-pill" style={isCurrent ? { background: 'rgba(10,179,156,0.18)', color: '#0ab39c', borderColor: 'rgba(10,179,156,0.40)' } : undefined}>
                           {isCurrent ? '● Active' : (p.badge || 'Popular')}
                         </span>

@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row, Modal, ModalBody, Input } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import '../../../css/recruitment.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,10 +27,20 @@ interface EmployeeRow {
   name: string;
   initials: string;
   accent: string;
+  /** Public URL of the employee's passport-size photo (document_key='photo').
+   *  Same `photo_url` accessor the HR Employees + Onboarding tables read,
+   *  so the avatar stays in sync across all three pages. Optional — falls
+   *  back to the initials gradient avatar when null. */
+  photoUrl?: string | null;
   department: string;
   designation: string;
   primaryRole: string;
   ancillaryRole: string;
+  /** Full list of ancillary role names (multi-select on the employee).
+   *  Hydrated from `ancillary_roles_resolved` on the API row. Optional
+   *  so the local seed array below doesn't need to be touched; the
+   *  table cell falls back to `[ancillaryRole]`. */
+  ancillaryRoles?: string[];
   managerName: string;
   managerInitials: string;
   managerAccent: string;
@@ -355,17 +366,14 @@ export default function HrExitManagement() {
                         placeholder="All"
                       />
                     </div>
-                    <span className="cand-result-chip ms-auto">
-                      <i className="ri-filter-3-line" />
-                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
-                    </span>
+                  
                   </div>
 
-                  <div className="rec-list-scroll">
+                  <div className="p-2 rec-list-scroll">
                     <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                       <thead>
                         <tr>
-                          <th className="ps-3 text-center" style={{ width: 56 }}>#</th>
+                          <th className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
                           <th>Employee</th>
                           <th>Emp ID</th>
                           <th>Department</th>
@@ -395,10 +403,19 @@ export default function HrExitManagement() {
                               <td className="ps-3 text-center fs-13 hr-exit-srno">{sliceFrom + idx + 1}</td>
                               <td>
                                 <div className="d-flex align-items-center gap-2">
-                                  <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                    style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}>
-                                    {e.initials}
-                                  </div>
+                                  {e.photoUrl ? (
+                                    <img
+                                      src={e.photoUrl}
+                                      alt={e.name}
+                                      className="rounded-circle flex-shrink-0"
+                                      style={{ width: 26, height: 26, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+                                    />
+                                  ) : (
+                                    <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                                      style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}>
+                                      {e.initials}
+                                    </div>
+                                  )}
                                   <div className="d-flex flex-column" style={{ lineHeight: 1.15 }}>
                                     <span className="fw-bold fs-13">{e.name}</span>
                                     <span className="text-muted" style={{ fontSize: 10.5, fontWeight: 500 }}>
@@ -411,7 +428,15 @@ export default function HrExitManagement() {
                               <td className="fs-13">{e.department}</td>
                               <td className="fs-13">{e.designation}</td>
                               <td><span className="exit-role-chip exit-role-chip--primary">{e.primaryRole}</span></td>
-                              <td><span className="exit-role-chip exit-role-chip--ancillary">{e.ancillaryRole}</span></td>
+                              <td>
+                                <AncillaryRolesChip
+                                  names={
+                                    (e.ancillaryRoles && e.ancillaryRoles.length > 0)
+                                      ? e.ancillaryRoles
+                                      : (e.ancillaryRole ? [e.ancillaryRole] : [])
+                                  }
+                                />
+                              </td>
                               <td>
                                 <div className="d-flex align-items-center gap-2">
                                   <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
@@ -1089,11 +1114,24 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
    *  Stage handler can gate the advance on a clean save. */
   const saveStage1 = async (): Promise<boolean> => {
     if (!employee || stage1Saving) return false;
+    // Date-in-the-past guard runs BEFORE we flip the loading flag — no
+    // network round-trip needed and the toast fires immediately. Used to
+    // return false silently here, so clicking "Next Stage" with a past
+    // Notice Date / Last Working Day did nothing visible to the user
+    // (the field-level red text was easy to miss).
+    if (noticeDateInvalid || lwdInvalid) {
+      toast.error(
+        'Fix the highlighted dates',
+        noticeDateInvalid && lwdInvalid
+          ? 'Notice Date and Last Working Day must both be in the future.'
+          : noticeDateInvalid
+            ? 'Notice Date must be in the future.'
+            : 'Last Working Day must be in the future.',
+      );
+      return false;
+    }
     setStage1Saving(true);
     try {
-      // Block the save when either date isn't strictly in the future —
-      // the same rule the field-level invalid banners surface to the user.
-      if (noticeDateInvalid || lwdInvalid) return false;
       await api.put(`/employees/${employee.id}/exit`, {
         exit_type:            exitType || null,
         // initiated_by + other_reason were removed from the form; we no
@@ -1108,7 +1146,22 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
         replacement_required: replacementNeeded || null,
       });
       return true;
-    } catch {
+    } catch (err: any) {
+      // Surface 422 field errors and any server message instead of
+      // swallowing — without this the Next Stage button looked dead
+      // when the backend rejected the PUT (missing field, permission,
+      // network blip, etc.).
+      const fieldErrors = err?.response?.data?.errors;
+      const firstFieldErr =
+        fieldErrors && typeof fieldErrors === 'object'
+          ? (Array.isArray(Object.values(fieldErrors)[0])
+              ? (Object.values(fieldErrors)[0] as string[])[0]
+              : String(Object.values(fieldErrors)[0]))
+          : null;
+      toast.error(
+        'Could not save exit details',
+        firstFieldErr || err?.response?.data?.message || err?.message || 'Please try again.',
+      );
       return false;
     } finally {
       setStage1Saving(false);
@@ -1218,6 +1271,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                         value={reasonForExit}
                         onChange={setReasonForExit}
                         placeholder="Describe the reason for exit"
+                        maxLength={60}
                       />
                     </EpField>
                   </Col>
@@ -1928,7 +1982,7 @@ function EpField({ label, children }: { label: string; children: React.ReactNode
     </div>
   );
 }
-function EpInput({ value, onChange, type = 'text', disabled = false, placeholder, min, max }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; min?: string; max?: string }) {
+function EpInput({ value, onChange, type = 'text', disabled = false, placeholder, min, max, maxLength }: { value: string; onChange: (v: string) => void; type?: string; disabled?: boolean; placeholder?: string; min?: string; max?: string; maxLength?: number }) {
   if (type === 'date') {
     return (
       <MasterDatePicker
@@ -1941,7 +1995,7 @@ function EpInput({ value, onChange, type = 'text', disabled = false, placeholder
       />
     );
   }
-  return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} min={min} max={max} onChange={e => onChange(e.target.value)} />;
+  return <input type={type} className="ep-input" value={value} disabled={disabled} placeholder={placeholder} min={min} max={max} maxLength={maxLength} onChange={e => onChange(e.target.value)} />;
 }
 function EpSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: string[] }) {
   // Render via MasterSelect so the modal dropdowns match the look + dark-mode
@@ -2529,10 +2583,14 @@ function apiToExitRow(e: any): EmployeeRow {
     name,
     initials:   _exitInitials(name),
     accent:     _exitAccent(name),
+    photoUrl:   (e as any).photo_url || null,
     department: e.department?.name   || '—',
     designation: e.designation?.name || '—',
     primaryRole:   e.primary_role?.name   || '—',
     ancillaryRole: e.ancillary_role?.name || '',
+    ancillaryRoles: (Array.isArray(e.ancillary_roles_resolved) && e.ancillary_roles_resolved.length > 0)
+      ? e.ancillary_roles_resolved.map((r: any) => r.name)
+      : (e.ancillary_role?.name ? [e.ancillary_role.name] : []),
     managerName:     mgrName,
     managerInitials: _exitInitials(mgrName),
     managerAccent:   _exitAccent(mgrName || 'manager'),

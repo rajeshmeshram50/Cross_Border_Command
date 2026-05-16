@@ -311,6 +311,19 @@ class CandidateController extends Controller
      */
     private function authenticateFromQueryToken(Request $request): void
     {
+        // Bearer header first — the SPA's CV download chip pulls the blob via
+        // axios so it can show a spinner, and axios attaches the sanctum
+        // token as `Authorization: Bearer …`. The route lives outside the
+        // sanctum middleware group (so plain <a href> downloads also work),
+        // which means nothing else will resolve the bearer for us here.
+        if (!$request->user() && $request->bearerToken()) {
+            $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
+            if ($token) {
+                $request->setUserResolver(fn () => $token->tokenable);
+            }
+        }
+        // Fall back to ?token=<sanctum> for plain anchor-click downloads
+        // that can't set an Authorization header.
         if (!$request->user() && $request->query('token')) {
             $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->query('token'));
             if ($token) {

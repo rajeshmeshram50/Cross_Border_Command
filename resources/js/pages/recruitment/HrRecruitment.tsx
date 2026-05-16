@@ -270,13 +270,17 @@ const EMPLOY_TYPE_TONES: Record<EmployType, { bg: string; fg: string }> = {
   Internship:   { bg: '#fce7f3', fg: '#be185d' },
 };
 
-const REQUEST_STATUS_TONES: Record<RequestStatus, { bg: string; fg: string; dot: string }> = {
-  Approved:      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
-  'Under Review':{ bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  Submitted:     { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Sent Back':   { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  Draft:         { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
-  Rejected:      { bg: '#fdd9d6', fg: '#b1401d', dot: '#f06548' },
+// Status → Bootstrap badge color. Used to render the Status pill with the
+// same `badge rounded-pill bg-{color}-subtle text-{color}` classes the
+// Clients table uses, so every status badge across the recruitment area
+// reads as one design system.
+const REQUEST_STATUS_COLOR: Record<RequestStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
+  Approved:       'success',
+  'Under Review': 'info',
+  Submitted:      'info',
+  'Sent Back':    'warning',
+  Draft:          'secondary',
+  Rejected:       'danger',
 };
 
 const REQUEST_URGENCY_TONES: Record<RequestUrgency, { bg: string; fg: string }> = {
@@ -298,24 +302,20 @@ const KPI_CARDS = [
 ] as const;
 
 // ── Filter option lists ────────────────────────────────────────────────────
-const DEPARTMENT_FILTER_OPTIONS = [
-  { value: 'All',         label: 'All' },
-  { value: 'Engineering', label: 'Engineering' },
-  { value: 'Design',      label: 'Design' },
-  { value: 'Sales',       label: 'Sales' },
-  { value: 'HR',          label: 'HR' },
-  { value: 'Finance',     label: 'Finance' },
-  { value: 'Marketing',   label: 'Marketing' },
-  { value: 'Operations',  label: 'Operations' },
-  { value: 'Mobile',      label: 'Mobile' },
-  { value: 'Product',     label: 'Product' },
-];
+// Department options used to be a hardcoded list which silently broke
+// for any tenant whose dept names didn't match (e.g. "Export-Import",
+// "Logistics"). The filter dropdown is now derived from the actual
+// recruitments list at render time — see `deptFilterOptions` below.
+// Priority + Job Type stay hardcoded because they're closed enums.
+// Priority filter — kept in lockstep with the Create Recruitment form
+// (which exposes High / Medium / Low only). 'Critical' used to be in
+// this list but the form never produces it, so the filter dropdown had
+// a permanent dead option.
 const PRIORITY_FILTER_OPTIONS = [
-  { value: 'All',      label: 'All' },
-  { value: 'Low',      label: 'Low' },
-  { value: 'Medium',   label: 'Medium' },
-  { value: 'High',     label: 'High' },
-  { value: 'Critical', label: 'Critical' },
+  { value: 'All',    label: 'All' },
+  { value: 'High',   label: 'High' },
+  { value: 'Medium', label: 'Medium' },
+  { value: 'Low',    label: 'Low' },
 ];
 const JOB_TYPE_FILTER_OPTIONS = [
   { value: 'All',         label: 'All' },
@@ -484,8 +484,12 @@ export default function HrRecruitment() {
   // Filtered rows
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
+    const df = deptFilter.trim().toLowerCase();
     return recruitments.filter(r => r.status === tab)
-      .filter(r => deptFilter === 'All' || r.department === deptFilter)
+      // Case- and whitespace-tolerant dept compare — guards against
+      // a tenant with trailing spaces / capitalisation drift between
+      // the master row and what's stored on the recruitment.
+      .filter(r => df === 'all' || String(r.department || '').trim().toLowerCase() === df)
       .filter(r => priorityFilter === 'All' || r.priority === priorityFilter)
       .filter(r => jobTypeFilter === 'All' || r.employmentType === jobTypeFilter)
       .filter(r => {
@@ -501,6 +505,37 @@ export default function HrRecruitment() {
       });
   }, [recruitments, tab, q, deptFilter, priorityFilter, jobTypeFilter]);
 
+  // Department dropdown options — pulled from the Departments master so
+  // every dept (including those without recruitments yet) appears in the
+  // filter. We still merge in any dept names that exist on recruitment
+  // rows so legacy / orphaned values stay reachable even if the master
+  // row was renamed or removed. Sorted; "All" sits at the top.
+  const [masterDepts, setMasterDepts] = useState<string[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/master/departments')
+      .then(({ data }) => {
+        if (cancelled) return;
+        const rows: any[] = Array.isArray(data) ? data : [];
+        const names = rows
+          .filter((r: any) => !r.status || String(r.status).toLowerCase() === 'active')
+          .map((r: any) => String(r.name || '').trim())
+          .filter(Boolean);
+        setMasterDepts(names);
+      })
+      .catch(() => { if (!cancelled) setMasterDepts([]); });
+    return () => { cancelled = true; };
+  }, []);
+  const deptFilterOptions = useMemo(() => {
+    const fromMaster = masterDepts;
+    const fromRows   = recruitments
+      .map(r => (r.department || '').trim())
+      .filter(d => d && d !== '—');
+    const names = Array.from(new Set([...fromMaster, ...fromRows]))
+      .sort((a, b) => a.localeCompare(b));
+    return [{ value: 'All', label: 'All' }, ...names.map(n => ({ value: n, label: n }))];
+  }, [masterDepts, recruitments]);
+
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
   const sliceFrom = (safePage - 1) * pageSize;
@@ -513,6 +548,10 @@ export default function HrRecruitment() {
   const [raiseOpen, setRaiseOpen]                   = useState(false);
   const [requestsOpen, setRequestsOpen]             = useState(false);
   const [cancelTarget, setCancelTarget]             = useState<RecruitmentRow | null>(null);
+  // Which path the user clicked into the close modal with — drives the
+  // pre-selected tab inside CancelConfirmModal. Reset alongside the
+  // target so a stale value can't carry over between rows.
+  const [cancelInitialAction, setCancelInitialAction] = useState<'cancel' | 'complete'>('cancel');
   const [candidatesTarget, setCandidatesTarget]     = useState<RecruitmentRow | null>(null);
   // Bumped after a Raise Hiring Request submit so the list modal refetches
   // the next time it's opened (or while it's already open).
@@ -589,9 +628,14 @@ export default function HrRecruitment() {
                 >
                   <i className="ri-file-add-line" />Raise Hiring Request
                 </button>
+                {/* Tertiary CTA in the header trio — emerald gradient
+                    pairs with purple (Create) + blue (Raise). The old
+                    ghost outline read as disabled next to the two
+                    coloured buttons; teal makes the action feel
+                    equally prominent and works in dark mode. */}
                 <button
                   type="button"
-                  className="rec-btn-ghost"
+                  className="rec-btn-teal"
                   onClick={() => setRequestsOpen(true)}
                 >
                   <i className="ri-eye-line" />View Hiring Requests
@@ -658,26 +702,23 @@ export default function HrRecruitment() {
                     </div>
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Department</span>
                     <div style={{ minWidth: 150 }}>
-                      <MasterSelect value={deptFilter} onChange={setDeptFilter} options={DEPARTMENT_FILTER_OPTIONS} placeholder="All" />
+                      <MasterSelect value={deptFilter} onChange={setDeptFilter} options={deptFilterOptions} placeholder="All" />
                     </div>
                     <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Priority</span>
                     <div style={{ minWidth: 130 }}>
                       <MasterSelect value={priorityFilter} onChange={setPriorityFilter} options={PRIORITY_FILTER_OPTIONS} placeholder="All" />
                     </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Job Type</span>
+                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>work Type</span>
                     <div style={{ minWidth: 140 }}>
                       <MasterSelect value={jobTypeFilter} onChange={setJobTypeFilter} options={JOB_TYPE_FILTER_OPTIONS} placeholder="All" />
                     </div>
-                    <span className="cand-result-chip ms-auto">
-                      <i className="ri-filter-3-line" />
-                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
-                    </span>
+                    
                   </div>
-                  <div className="rec-list-scroll">
+                  <div className="p-2 rec-list-scroll">
                   <table className="rec-list-table align-middle table-nowrap mb-0">
                     <thead>
                       <tr>
-                        <th scope="col" className="ps-3 text-center" style={{ width: 50 }}>SR.</th>
+                        <th scope="col" className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
                         <th scope="col" style={{ width: 90 }}>REC ID</th>
                         <th scope="col">Job Title</th>
                         <th scope="col" style={{ width: 110 }}>Department</th>
@@ -762,19 +803,35 @@ export default function HrRecruitment() {
                                   color="primary"
                                   onClick={() => navigate(`/hr/recruitment/${r.id}/candidates`)}
                                 />
+                                {/* Two distinct close-out actions —
+                                    Complete (green check) for the
+                                    happy-path "all openings filled",
+                                    Cancel (red forbid) for the
+                                    destructive path. Both open the same
+                                    CancelConfirmModal but pre-select
+                                    the matching tab so the user lands
+                                    on the right path immediately. */}
                                 <ActionBtn
-                                  // Same icon now opens a Cancel/Complete chooser.
-                                  // Disabled only once the recruitment reaches a
-                                  // terminal state (Cancelled or Completed).
                                   title={
                                     r.status === 'Cancelled' ? 'Already Cancelled'
                                     : r.status === 'Completed' ? 'Already Completed'
-                                    : 'Cancel or Mark Completed'
+                                    : 'Mark Recruitment Completed'
                                   }
-                                  icon="ri-close-circle-line"
+                                  icon="ri-checkbox-circle-line"
+                                  color="success"
+                                  disabled={r.status === 'Cancelled' || r.status === 'Completed'}
+                                  onClick={() => { setCancelInitialAction('complete'); setCancelTarget(r); }}
+                                />
+                                <ActionBtn
+                                  title={
+                                    r.status === 'Cancelled' ? 'Already Cancelled'
+                                    : r.status === 'Completed' ? 'Already Completed'
+                                    : 'Cancel Recruitment'
+                                  }
+                                  icon="ri-forbid-2-line"
                                   color="danger"
                                   disabled={r.status === 'Cancelled' || r.status === 'Completed'}
-                                  onClick={() => setCancelTarget(r)}
+                                  onClick={() => { setCancelInitialAction('cancel'); setCancelTarget(r); }}
                                 />
                               </div>
                             </td>
@@ -885,6 +942,7 @@ export default function HrRecruitment() {
 
       <CancelConfirmModal
         target={cancelTarget}
+        initialAction={cancelInitialAction}
         onClose={() => setCancelTarget(null)}
         onConfirm={async (action, reason, notes) => {
           if (!cancelTarget) return;
@@ -1704,7 +1762,7 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
                 </tr>
               ) : visible.map(r => {
                 const u = REQUEST_URGENCY_TONES[r.urgency];
-                const s = REQUEST_STATUS_TONES[r.status];
+                const statusColor = REQUEST_STATUS_COLOR[r.status];
                 return (
                   <tr key={r.id}>
                     <td className="ps-4"><span className="rec-id-pill">{r.code || r.id}</span></td>
@@ -1737,8 +1795,7 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
                     <td className="fs-13">{r.requestType}</td>
                     <td><span className="rec-pill" style={{ background: u.bg, color: u.fg }}>{r.urgency}</span></td>
                     <td>
-                      <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: s.bg, color: s.fg }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot }} />
+                      <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                         {r.status}
                       </span>
                     </td>
@@ -1844,7 +1901,7 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
   // raise form one-to-one.
   const raw = r._raw || {};
   const u = REQUEST_URGENCY_TONES[r.urgency];
-  const s = REQUEST_STATUS_TONES[r.status];
+  const statusColor = REQUEST_STATUS_COLOR[r.status];
   const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div className="rec-view-field">
       <div className="rec-view-label">{label}</div>
@@ -1888,9 +1945,6 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
                 </div>
               </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
-              <i className="ri-close-line" style={{ fontSize: 17 }} />
-            </button>
           </div>
         </div>
 
@@ -1937,8 +1991,7 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
           <div className="rec-view-card">
             <div className="rec-view-grid">
               <Field label="Status" value={
-                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: s.bg, color: s.fg }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot }} />
+                <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                   {r.status}
                 </span>
               } />
@@ -2021,8 +2074,11 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   const [jobDescription, setJobDescription]   = useState('');
   const [requirements, setRequirements]       = useState('');
   const [ctcRange, setCtcRange]               = useState('');
-  const [postOnPortal, setPostOnPortal]       = useState(true);
-  const [notifyTeamLeads, setNotifyTeamLeads] = useState(true);
+  // Defaults flipped to off — admins were complaining the toggles
+  // came pre-checked, which made the form look stuck in "yes to
+  // everything" mode. They opt in explicitly now.
+  const [postOnPortal, setPostOnPortal]       = useState(false);
+  const [notifyTeamLeads, setNotifyTeamLeads] = useState(false);
   const [enableReferralBonus, setEnableReferralBonus] = useState(false);
 
   // ── Master dropdown options — values are master IDs (stringified) so the
@@ -2090,17 +2146,17 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
             .sort((a, b) => a.label.localeCompare(b.label)),
         );
 
-        // ── Employees → Hiring Manager + Assigned HR dropdowns. Show the
-        // employee's display_name and EMP-### so a recruiter can pick the
-        // right person even when two share a name.
+        // ── Employees → Hiring Manager + Assigned HR dropdowns. Show
+        // the employee's display_name plus their designation (no EMP-###
+        // code — the id is meaningless to the recruiter picking from
+        // the list, and it crowded the label).
         const empOpts = empRows
           .map(e => {
             const name = e.display_name
               || [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')
               || `Employee #${e.id}`;
             const desig = e?.designation?.name ? ` — ${e.designation.name}` : '';
-            const code  = e.emp_code ? ` (${e.emp_code})` : '';
-            return { value: String(e.id), label: `${name}${desig}${code}` };
+            return { value: String(e.id), label: `${name}${desig}` };
           })
           .sort((a, b) => a.label.localeCompare(b.label));
         setEmployeeOptions(empOpts);
@@ -2193,7 +2249,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       // doesn't.
       const reqParts = [hr.required_skills, hr.required_qualification].filter(Boolean);
       setRequirements(reqParts.join('\n'));
-      setPostOnPortal(true); setNotifyTeamLeads(true); setEnableReferralBonus(false);
+      setPostOnPortal(false); setNotifyTeamLeads(false); setEnableReferralBonus(false);
       setErrors({});
     } else {
       setJobTitle(''); setDepartmentId(''); setDesignationId(''); setPrimaryRoleId('');
@@ -2201,7 +2257,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setOpenings('1'); setExperience(''); setWorkMode('Hybrid'); setPriority('Medium');
       setHiringManagerId(''); setAssignedHrId(''); setStartDate(''); setDeadline('');
       setJobDescription(''); setRequirements('');
-      setPostOnPortal(true); setNotifyTeamLeads(true); setEnableReferralBonus(false);
+      setPostOnPortal(false); setNotifyTeamLeads(false); setEnableReferralBonus(false);
       setErrors({});
     }
   }, [isOpen, editingId, prefillFromHr]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -2216,12 +2272,58 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (!designationId)          e.designation     = 'Designation is required';
     if (!primaryRoleId)          e.primaryRole     = 'Primary role is required';
     if (!employmentType)         e.employmentType  = 'Employment type is required';
-    if (!openings.trim() || Number(openings) <= 0) e.openings = 'Openings must be at least 1';
+    // Openings — required + positive integer + within the DB cap (9999).
+    // The backend's plain "must be an integer" message used to leak when
+    // a JS-stringified very-large number was coerced to a float; catch
+    // each case here with a clear, actionable explanation.
+    const openingsTrim = openings.trim();
+    if (!openingsTrim) {
+      e.openings = 'No. of openings is required';
+    } else {
+      const n = Number(openingsTrim);
+      if (!Number.isFinite(n)) {
+        e.openings = 'Enter a valid number';
+      } else if (!Number.isInteger(n) || /[^0-9]/.test(openingsTrim)) {
+        e.openings = 'Openings must be a whole number (no decimals or symbols)';
+      } else if (n < 1) {
+        e.openings = 'Openings must be at least 1';
+      } else if (n > 9999) {
+        e.openings = 'Openings cannot exceed 9,999 — split this requisition if you need more';
+      }
+    }
+    // CTC range — optional free text but the column tops out at 50
+    // chars and the salary range itself shouldn't exceed 9999.99 LPA
+    // per opening. Pull every numeric token out and bounds-check it
+    // so "1000000-2000000" type pastes get a clear inline error
+    // instead of a silent 422 from the server.
+    const ctc = ctcRange.trim();
+    if (ctc) {
+      if (ctc.length > 50) {
+        e.ctcRange = 'CTC range cannot exceed 50 characters';
+      } else {
+        const nums = ctc.match(/\d+(?:\.\d+)?/g) || [];
+        if (nums.some(num => Number(num) > 9999.99)) {
+          e.ctcRange = 'CTC values cannot exceed 9,999.99 LPA';
+        }
+      }
+    }
     if (!priority)               e.priority        = 'Priority is required';
     if (!hiringManagerId)        e.hiringManager   = 'Hiring manager is required';
     if (!assignedHrId)           e.assignedHr      = 'Assigned HR is required';
     if (!startDate)              e.startDate       = 'Start date is required';
     if (!deadline)               e.deadline        = 'TAT/Deadline is required';
+    // ISO yyyy-mm-dd values compare lexicographically — no Date()
+    // ceremony needed. Start date can't be in the past, and the
+    // deadline can't be before the start date. Both checks run only
+    // when the respective fields are non-empty so the "required"
+    // errors above stay the primary message.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (startDate && startDate < todayIso) {
+      e.startDate = 'Start date cannot be in the past';
+    }
+    if (deadline && startDate && deadline < startDate) {
+      e.deadline = 'TAT/Deadline cannot be before the start date';
+    }
     return e;
   };
 
@@ -2231,7 +2333,17 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
-      toast.error('Please complete required fields', `${Object.keys(errs).length} field${Object.keys(errs).length === 1 ? '' : 's'} need attention.`);
+      // Surface the first error verbatim in the toast so the user
+      // sees the actual constraint (e.g. "Openings cannot exceed
+      // 9,999") instead of a generic count. Falls back to the count
+      // when more than one field is wrong.
+      const keys = Object.keys(errs);
+      const firstMsg = errs[keys[0] as keyof CreateErrors] as string | undefined;
+      const heading  = 'Please fix the highlighted fields';
+      const body = keys.length === 1
+        ? (firstMsg || 'One field needs attention.')
+        : `${firstMsg || ''}${firstMsg ? ' ' : ''}(${keys.length - 1} more ${keys.length === 2 ? 'field needs' : 'fields need'} attention.)`;
+      toast.error(heading, body);
       return;
     }
 
@@ -2277,7 +2389,9 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       // convert into the UI shape so the parent list updates without a refetch.
       onSaved(apiToRow(data));
     } catch (err: any) {
-      // Surface any per-field validation errors back into the form.
+      // Surface any per-field validation errors back into the form,
+      // rewriting the Laravel-default phrasing for openings / ctc so
+      // a runaway number doesn't read as "must be an integer".
       if (err?.response?.status === 422 && err?.response?.data?.errors) {
         const serverErrs = err.response.data.errors as Record<string, string | string[]>;
         const mapped: Record<string, string> = {};
@@ -2286,15 +2400,33 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
           department_id: 'department', designation_id: 'designation', primary_role_id: 'primaryRole',
           hiring_manager_id: 'hiringManager', assigned_hr_id: 'assignedHr',
           start_date: 'startDate', deadline: 'deadline', work_mode: 'workMode',
+          openings: 'openings', ctc_range: 'ctcRange',
         };
+        // Friendlier wording for the two fields that historically
+        // surfaced Laravel's terse defaults.
+        const rewrite = (col: string, msg: string): string => {
+          const lower = msg.toLowerCase();
+          if (col === 'openings') {
+            if (lower.includes('integer'))             return 'Openings must be a whole number (no decimals or symbols).';
+            if (lower.includes('max') || lower.includes('not be greater')) return 'Openings cannot exceed 9,999 — split this requisition if you need more.';
+            if (lower.includes('min') || lower.includes('at least'))       return 'Openings must be at least 1.';
+          }
+          if (col === 'ctc_range' && (lower.includes('max') || lower.includes('characters')))
+            return 'CTC range cannot exceed 50 characters.';
+          return msg;
+        };
+        let firstMsg = '';
         for (const k of Object.keys(serverErrs)) {
           const v = serverErrs[k];
-          mapped[fieldMap[k] || k] = Array.isArray(v) ? String(v[0]) : String(v);
+          const raw = Array.isArray(v) ? String(v[0]) : String(v);
+          const pretty = rewrite(k, raw);
+          mapped[fieldMap[k] || k] = pretty;
+          if (!firstMsg) firstMsg = pretty;
         }
         setErrors(mapped);
-        toast.error('Validation failed', 'Please fix the highlighted fields.');
+        toast.error('Please fix the highlighted fields', firstMsg || 'Some inputs need attention.');
       } else {
-        toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
+        toast.error('Could not save', err?.response?.data?.message?.split('\n')[0] || 'Please try again.');
       }
     } finally {
       setSaving(false);
@@ -2443,9 +2575,15 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
               </Col>
               <Col md={4}>
                 <label className="rec-form-label"><i className="ri-team-line" />No. of Openings<span className="req">*</span></label>
+                {/* min/max + step=1 also gate the spinner buttons so
+                    the picker can't crawl past 9999 without the user
+                    typing or pasting a runaway value. The validator
+                    catches typed/pasted overruns. */}
                 <input
                   type="number"
                   min={1}
+                  max={9999}
+                  step={1}
                   className={`rec-input${errors.openings ? ' is-invalid' : ''}`}
                   value={openings}
                   onChange={e => { setOpenings(e.target.value); clear('openings'); }}
@@ -2478,11 +2616,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 <label className="rec-form-label"><i className="ri-money-rupee-circle-line" />CTC Range (LPA)</label>
                 <input
                   type="text"
-                  className="rec-input"
+                  maxLength={50}
+                  className={`rec-input${errors.ctcRange ? ' is-invalid' : ''}`}
                   placeholder="e.g. 8-12"
                   value={ctcRange}
-                  onChange={e => setCtcRange(e.target.value)}
+                  onChange={e => { setCtcRange(e.target.value); clear('ctcRange'); }}
                 />
+                {errors.ctcRange && <div className="rec-error"><i className="ri-error-warning-line" />{errors.ctcRange}</div>}
               </Col>
               <Col xs={12}>
                 <label className="rec-form-label"><i className="ri-flag-line" />Priority<span className="req">*</span></label>
@@ -2543,21 +2683,29 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
               </Col>
               <Col md={3}>
                 <label className="rec-form-label"><i className="ri-calendar-line" />Start Date<span className="req">*</span></label>
+                {/* Picker can't open on a day before today; the inline
+                    error in validate() catches values that bypass the
+                    picker (paste, devtools, etc.). */}
                 <MasterDatePicker
                   value={startDate}
-                  onChange={(v) => { setStartDate(v); clear('startDate'); }}
+                  onChange={(v) => { setStartDate(v); clear('startDate'); clear('deadline'); }}
                   placeholder="dd-mm-yyyy"
                   invalid={!!errors.startDate}
+                  minDate={new Date().toISOString().slice(0, 10)}
                 />
                 {errors.startDate && <div className="rec-error"><i className="ri-error-warning-line" />{errors.startDate}</div>}
               </Col>
               <Col md={3}>
                 <label className="rec-form-label"><i className="ri-calendar-event-line" />TAT / Deadline<span className="req">*</span></label>
+                {/* Deadline picker floor = start date (or today as a
+                    fallback when start hasn't been picked yet) so the
+                    user can't choose a deadline before the kickoff. */}
                 <MasterDatePicker
                   value={deadline}
                   onChange={(v) => { setDeadline(v); clear('deadline'); }}
                   placeholder="dd-mm-yyyy"
                   invalid={!!errors.deadline}
+                  minDate={startDate || new Date().toISOString().slice(0, 10)}
                 />
                 {errors.deadline && <div className="rec-error"><i className="ri-error-warning-line" />{errors.deadline}</div>}
               </Col>
@@ -2598,37 +2746,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
           </div>
           {/* /rec-form-card */}
 
-          {/* Toggle row — 3 inline checkbox preferences */}
-          <div className="rec-toggle-row">
-            <label className="rec-toggle">
-              <input
-                type="checkbox"
-                checked={postOnPortal}
-                onChange={e => setPostOnPortal(e.target.checked)}
-              />
-              <i className="ri-global-line" />
-              <span>Post on careers portal</span>
-            </label>
-            <label className="rec-toggle">
-              <input
-                type="checkbox"
-                checked={notifyTeamLeads}
-                onChange={e => setNotifyTeamLeads(e.target.checked)}
-              />
-              <i className="ri-notification-3-line" />
-              <span>Notify team leads</span>
-            </label>
-            <label className="rec-toggle">
-              <input
-                type="checkbox"
-                checked={enableReferralBonus}
-                onChange={e => setEnableReferralBonus(e.target.checked)}
-              />
-              <i className="ri-star-line" />
-              <span>Enable referral bonus</span>
-            </label>
-          </div>
-        </div>
+               </div>
 
         {/* Footer */}
         <div className="rec-form-footer">
@@ -2674,10 +2792,14 @@ const CANCEL_REASONS = [
 type StatusAction = 'cancel' | 'complete';
 
 function CancelConfirmModal({
-  target, candidateCount, onClose, onConfirm,
+  target, candidateCount, initialAction, onClose, onConfirm,
 }: {
   target: RecruitmentRow | null;
   candidateCount?: number;
+  /** Pre-selects the action chooser based on which row-button was
+   *  clicked. The user can still flip between Cancel / Complete once
+   *  the modal is open. */
+  initialAction?: StatusAction;
   onClose: () => void;
   // Returns the chosen action so the parent can flip the status to either
   // 'Cancelled' or 'Completed'. The reason field is only meaningful for
@@ -2689,11 +2811,12 @@ function CancelConfirmModal({
   const [notes, setNotes]     = useState<string>('');
   const [reasonErr, setReasonErr] = useState<boolean>(false);
 
-  // Reset form whenever a new target is selected / modal closes. Default
-  // to 'cancel' since the trigger is the existing × icon on the row.
+  // Reset form whenever a new target is selected / modal closes. The
+  // pre-selected action comes from whichever button the user clicked
+  // on the row (Complete / Cancel) so they land on the right tab.
   useEffect(() => {
-    if (target) { setAction('cancel'); setReason(''); setNotes(''); setReasonErr(false); }
-  }, [target]);
+    if (target) { setAction(initialAction || 'cancel'); setReason(''); setNotes(''); setReasonErr(false); }
+  }, [target, initialAction]);
 
   const handleConfirm = () => {
     if (action === 'cancel' && !reason) { setReasonErr(true); return; }
@@ -2710,7 +2833,7 @@ function CancelConfirmModal({
     <Modal isOpen={!!target} toggle={onClose} centered size="md" backdrop="static" keyboard={false}
       contentClassName="border-0 rec-cancel-modal"
     >
-      <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)', borderRadius: 18, overflow: 'hidden' }}>
+      <ModalBody className="p-0">
         {target && (
           <>
             {/* Header — colour swaps to green when the user selects Complete
@@ -2740,42 +2863,11 @@ function CancelConfirmModal({
 
             {/* Body */}
             <div className="rec-cancel-body">
-              {/* Action picker — two pill buttons. Sits at the top so the
-                  rest of the body re-renders to match the chosen path
-                  (e.g. the cancellation reason hides when Complete is on). */}
-              <div className="rec-cancel-field">
-                <label className="rec-cancel-label">Action<span className="req">*</span></label>
-                <div className="d-flex gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => setAction('cancel')}
-                    className="flex-fill"
-                    style={{
-                      padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-                      border: action === 'cancel' ? '1px solid #f06548' : '1px solid #e5e7eb',
-                      background: action === 'cancel' ? '#fff5f3' : '#fff',
-                      color: action === 'cancel' ? '#b1401d' : '#475569',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    }}
-                  >
-                    <i className="ri-forbid-2-line" />Cancel Recruitment
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAction('complete')}
-                    className="flex-fill"
-                    style={{
-                      padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600,
-                      border: action === 'complete' ? '1px solid #10b981' : '1px solid #e5e7eb',
-                      background: action === 'complete' ? '#ecfdf5' : '#fff',
-                      color: action === 'complete' ? '#047857' : '#475569',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                    }}
-                  >
-                    <i className="ri-checkbox-circle-line" />Mark as Completed
-                  </button>
-                </div>
-              </div>
+              {/* Action picker was retired — the row now has two
+                  separate buttons (Complete / Cancel), each entering
+                  this modal with `initialAction` pre-selected. Showing
+                  the picker again here just duplicated the choice the
+                  user had already made. */}
 
               {/* Recruitment summary card */}
               <div className="rec-cancel-summary">
@@ -2794,7 +2886,7 @@ function CancelConfirmModal({
 
               {/* Impact warning — distinct copy per action so the user
                   understands what each option actually does. */}
-              <div className="rec-cancel-impact" style={isComplete ? { background: '#ecfdf5', color: '#065f46', borderColor: '#a7f3d0' } : undefined}>
+              <div className={`rec-cancel-impact${isComplete ? ' rec-cancel-impact--complete' : ''}`}>
                 <i className={isComplete ? 'ri-information-line' : 'ri-alert-line'} />
                 <div>
                   {isComplete ? (

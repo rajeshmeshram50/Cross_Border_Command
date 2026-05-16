@@ -75,15 +75,20 @@ function formatDate(raw: any): string {
   return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-const STATUS_TONES: Record<CandidateStatus, { bg: string; fg: string; dot: string }> = {
-  'Applied':         { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' },
-  'Shortlisted':     { bg: '#e0f2fe', fg: '#1d4ed8', dot: '#3b82f6' },
-  'In Interview':    { bg: '#ddd6fe', fg: '#5b21b6', dot: '#7c3aed' },
-  'Final Interview': { bg: '#ede9fe', fg: '#5b3fd1', dot: '#7c5cfc' },
-  'Selected':        { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' },
-  'Offered':         { bg: '#d1fae5', fg: '#047857', dot: '#10b981' },
-  'Rejected':        { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' },
-  'On Hold':         { bg: '#f3f4f6', fg: '#4b5563', dot: '#9ca3af' },
+// Each candidate status maps to one of Bootstrap's badge colors so the
+// pill renders with the same `bg-{color}-subtle text-{color}` classes the
+// Clients table uses for its Status column. Two statuses can legally share
+// a color (Selected + Offered both `success`, In Interview + Final
+// Interview both `primary`) — the label text keeps them readable.
+const CANDIDATE_STATUS_COLOR: Record<CandidateStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
+  'Applied':         'warning',
+  'Shortlisted':     'info',
+  'In Interview':    'info',
+  'Final Interview': 'primary',
+  'Selected':        'success',
+  'Offered':         'success',
+  'Rejected':        'danger',
+  'On Hold':         'secondary',
 };
 
 export default function HrCandidates() {
@@ -140,22 +145,32 @@ export default function HrCandidates() {
     const rejected = candidates.filter(c => c.status === 'Rejected').length;
     const offered = candidates.filter(c => c.status === 'Offered').length;
     // "Active" = anyone still in the pipeline (everything except Selected /
-    // Offered / Rejected). Drives the first tab's badge so newly-added
-    // Applied / Shortlisted / On Hold rows show up immediately.
+    // Offered / Rejected). Drives the "Active Candidates" tab's badge so
+    // newly-added Applied / Shortlisted / On Hold rows show up immediately.
     const active = candidates.filter(c =>
       c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected'
     ).length;
-    return { total: t, applied, inInterview, selected, rejected, offered, active };
+    // "Final" = ONLY candidates whose status is Final Interview. The tab
+    // label is "Final Round Selected" so it must literally mean that —
+    // used to be `active` which (correctly) showed Applied rows too, but
+    // that contradicted the label and surprised users.
+    const finalRound = candidates.filter(c => c.status === 'Final Interview').length;
+    return { total: t, applied, inInterview, selected, rejected, offered, active, finalRound };
   }, [candidates]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return candidates
       .filter(c => {
-        // The "final" tab covers the whole active pipeline, not just the
-        // final interview round — otherwise Applied / Shortlisted / On Hold
-        // candidates have nowhere to land.
-        if (tab === 'final')    return c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected';
+        // "all" → entire active pipeline (Applied / Shortlisted / In
+        //   Interview / On Hold / Final Interview). Everything except
+        //   the terminal states.
+        // "final" → ONLY candidates whose status is Final Interview. The
+        //   tab label is "Final Round Selected" so it must literally mean
+        //   that; otherwise an Applied row leaks into Final Round which
+        //   confused users.
+        if (tab === 'all')      return c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected';
+        if (tab === 'final')    return c.status === 'Final Interview';
         if (tab === 'selected') return c.status === 'Selected' || c.status === 'Offered';
         if (tab === 'rejected') return c.status === 'Rejected';
         return true;
@@ -280,7 +295,23 @@ export default function HrCandidates() {
                   </div>
                   <div className="cand-rec-pills">
                     {recruitment.priority && (
-                      <span className="rec-pill" style={{ background: '#ffe4e1', color: '#b91c1c' }}>
+                      <span
+                        className="rec-pill"
+                        style={{
+                          // Same per-priority palette as the Priority field
+                          // pill further down — used to be a hardcoded red
+                          // here, which looked wrong for Medium/Low and
+                          // disagreed with the field-level pill below.
+                          background:
+                            recruitment.priority === 'High'   ? '#ffe4e1' :
+                            recruitment.priority === 'Medium' ? '#fef3c7' :
+                                                                '#dbeafe',
+                          color:
+                            recruitment.priority === 'High'   ? '#b91c1c' :
+                            recruitment.priority === 'Medium' ? '#92400e' :
+                                                                '#1d4ed8',
+                        }}
+                      >
                         <i className="ri-alarm-warning-line" style={{ fontSize: 11, marginRight: 3 }} />
                         {recruitment.priority}
                       </span>
@@ -363,7 +394,7 @@ export default function HrCandidates() {
             <div className="mb-2">
               <div className="rec-tab-track">
                 {([
-                  { key: 'final' as const,    label: 'Final Round Selected', count: totals.active,                    icon: 'ri-user-search-line',     variant: 'in-progress' },
+                  { key: 'final' as const,    label: 'Final Round Selected', count: totals.finalRound,                icon: 'ri-user-search-line',     variant: 'in-progress' },
                   { key: 'selected' as const, label: 'Selected Candidates',  count: totals.selected + totals.offered, icon: 'ri-checkbox-circle-line', variant: 'completed' },
                   { key: 'rejected' as const, label: 'Rejected Candidates',  count: totals.rejected,                  icon: 'ri-close-circle-line',    variant: 'cancelled' },
                 ]).map(t => (
@@ -403,11 +434,11 @@ export default function HrCandidates() {
                       {filtered.length} result{filtered.length === 1 ? '' : 's'}
                     </span>
                   </div>
-                  <div className="rec-list-scroll">
+                  <div className="p-2 rec-list-scroll">
                   <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                     <thead>
                       <tr>
-                        <th className="ps-3 text-center" style={{ width: 56 }}>SR</th>
+                        <th className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
                         <th>Candidate</th>
                         <th>Email</th>
                         <th>Mobile</th>
@@ -432,7 +463,7 @@ export default function HrCandidates() {
                           </td>
                         </tr>
                       ) : visible.map((c, idx) => {
-                        const tone = STATUS_TONES[c.status];
+                        const statusColor = CANDIDATE_STATUS_COLOR[c.status];
                         return (
                           <tr key={c.id}>
                             <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
@@ -460,8 +491,7 @@ export default function HrCandidates() {
                               />
                             </td>
                             <td>
-                              <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: tone.bg, color: tone.fg }}>
-                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
+                              <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                                 {c.status}
                               </span>
                             </td>
@@ -657,13 +687,20 @@ export default function HrCandidates() {
       <CandidateConfirmModal
         target={confirming}
         onClose={() => setConfirming(null)}
-        onConfirm={(reasonOrNote: string) => {
+        onConfirm={async (reasonOrNote: string) => {
           if (!confirming) return;
           const next: CandidateStatus = confirming.mode === 'select' ? 'Selected' : 'Rejected';
           // Forward the reason/notes so the backend can stash them in
           // rejection_reason + status_notes for the audit trail.
-          handleStatusUpdate(confirming.row, next, reasonOrNote);
-          setConfirming(null);
+          // Await so the modal can keep its spinner up until the API
+          // call finishes, then close ONLY on success — failures keep
+          // the modal open so the user can retry.
+          try {
+            await handleStatusUpdate(confirming.row, next, reasonOrNote);
+            setConfirming(null);
+          } catch {
+            // Error toast is surfaced inside handleStatusUpdate.
+          }
         }}
       />
     </>
@@ -678,13 +715,31 @@ function ExportCandidatesModal({
   totalCount: number;
   filteredCount: number;
   onClose: () => void;
-  onExport: (scope: 'all' | 'view') => void;
+  // Now returns the parent's Promise so the modal can show a spinner
+  // for the duration of the download and only auto-close when the
+  // file has actually streamed back successfully.
+  onExport: (scope: 'all' | 'view') => Promise<void> | void;
 }) {
-  const [scope, setScope] = useState<'all' | 'view'>('all');
+  const [scope, setScope]         = useState<'all' | 'view'>('all');
+  const [exporting, setExporting] = useState(false);
 
   // Reset to "all" each time the modal opens so a previous "view-only" choice
-  // doesn't carry over silently.
-  useEffect(() => { if (open) setScope('all'); }, [open]);
+  // doesn't carry over silently. Also clear the in-flight flag.
+  useEffect(() => { if (open) { setScope('all'); setExporting(false); } }, [open]);
+
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      // Parent awaits the API call; we just gate the button until
+      // the promise resolves. The parent already closes the modal
+      // on success, but if it forgets we'll still flip the flag off
+      // here so the user can click Close manually.
+      await onExport(scope);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" contentClassName="border-0 cand-export-modal">
@@ -698,9 +753,6 @@ function ExportCandidatesModal({
             <h5 className="mb-0">Export Candidates</h5>
             <div className="cand-export-head-sub">Download candidate data as an Excel file</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-export-close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
@@ -751,9 +803,18 @@ function ExportCandidatesModal({
 
         {/* Footer */}
         <div className="cand-export-footer">
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>Close</button>
-          <button type="button" className="cand-export-submit" onClick={() => onExport(scope)}>
-            <i className="ri-download-line" />Export Candidates
+          <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={exporting}>Close</button>
+          <button
+            type="button"
+            className="cand-export-submit"
+            onClick={handleExport}
+            disabled={exporting}
+            style={{ opacity: exporting ? 0.75 : 1 }}
+          >
+            {exporting
+              ? <Spinner size="sm" style={{ width: 14, height: 14, marginRight: 6 }} />
+              : <i className="ri-download-line" />}
+            {exporting ? 'Exporting…' : 'Export Candidates'}
           </button>
         </div>
       </ModalBody>
@@ -829,7 +890,76 @@ function ImportCandidatesModal({
     : [];
 
   return (
-    <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" contentClassName="border-0 cand-import-modal">
+    <Modal isOpen={open} toggle={onClose} centered size="md" backdrop="static" modalClassName="cand-form-clientstyle" contentClassName="border-0 cand-import-modal">
+      {/* Reuse the candidate-form aesthetic for inputs + dropdowns
+          (Client form recipe — 38px height, 10px radius, 13px font,
+          sentence-case labels). Same overrides as CandidateFormModal
+          so the two modals look like a single design system. */}
+      <style>{`
+        .cand-form-clientstyle .rec-form-label,
+        .cand-form-clientstyle .cand-import-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          text-transform: none;
+          margin-bottom: 5px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          line-height: 1.2;
+          background: none;
+          -webkit-background-clip: initial;
+          background-clip: initial;
+          -webkit-text-fill-color: var(--vz-body-color);
+          color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .cand-form-clientstyle .rec-form-label,
+        [data-bs-theme="dark"] .cand-form-clientstyle .cand-import-label,
+        [data-layout-mode="dark"] .cand-form-clientstyle .rec-form-label,
+        [data-layout-mode="dark"] .cand-form-clientstyle .cand-import-label {
+          color: var(--vz-body-color);
+          -webkit-text-fill-color: var(--vz-body-color);
+          background: none;
+        }
+        .cand-form-clientstyle .rec-form-label i,
+        .cand-form-clientstyle .cand-import-label i {
+          color: var(--vz-secondary-color);
+          -webkit-text-fill-color: var(--vz-secondary-color);
+          font-size: 13px;
+        }
+        .cand-form-clientstyle .rec-input,
+        .cand-form-clientstyle .cand-import-input,
+        .cand-form-clientstyle .master-select-wrap .master-select-toggle,
+        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle {
+          height: 38px;
+          padding: 7px 11px;
+          font-size: 13px;
+          border-radius: 10px;
+          background: var(--vz-card-bg);
+          color: var(--vz-body-color);
+          border: 1px solid var(--vz-border-color);
+          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+        }
+        .cand-form-clientstyle .rec-input::placeholder,
+        .cand-form-clientstyle .cand-import-input::placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.65;
+        }
+        .cand-form-clientstyle .rec-input:hover:not(:disabled),
+        .cand-form-clientstyle .cand-import-input:hover:not(:disabled),
+        .cand-form-clientstyle .master-select-wrap .master-select-toggle:hover:not(:disabled),
+        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle:hover:not(:disabled) {
+          border-color: rgba(99,102,241,0.55);
+          box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+        }
+        .cand-form-clientstyle .rec-input:focus,
+        .cand-form-clientstyle .cand-import-input:focus,
+        .cand-form-clientstyle .master-select-wrap.show .master-select-toggle {
+          outline: none;
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+        }
+      `}</style>
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         {/* Header */}
         <div className="cand-import-head">
@@ -840,9 +970,6 @@ function ImportCandidatesModal({
             <h5 className="mb-0">Import Candidates</h5>
             <div className="cand-import-head-sub">Upload an Excel or CSV file to bulk-add candidates</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-import-close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
@@ -851,17 +978,12 @@ function ImportCandidatesModal({
             <label className="cand-import-label">
               Link Imported Candidates to Recruitment<span className="req">*</span>
             </label>
-            <select
-              className="cand-import-select"
+            <MasterSelect
               value={linkedCode}
-              onChange={e => setLinkedCode(e.target.value)}
-            >
-              {recruitmentOptions.length === 0 ? (
-                <option value="">— Select —</option>
-              ) : recruitmentOptions.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+              onChange={setLinkedCode}
+              options={recruitmentOptions}
+              placeholder="— Select —"
+            />
             <div className="cand-import-help">
               If a row contains a "Recruitment ID" column, that value overrides this default.
             </div>
@@ -918,6 +1040,11 @@ function ImportCandidatesModal({
 // ─── Sample Import Format modal ──────────────────────────────────────────────
 function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
+  // Loader state for the Download button — spins while the blob is in
+  // flight; the modal auto-closes once the file hits the disk so the
+  // user doesn't have to click Close after each download.
+  const [downloading, setDownloading] = useState(false);
+  useEffect(() => { if (!open) setDownloading(false); }, [open]);
 
   // Display-only preview shown inside the modal — the actual file the user
   // downloads is generated by the backend (`GET /candidates/sample`) so
@@ -931,11 +1058,17 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
   ];
 
   const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
     try {
       const res = await api.get('/candidates/sample', { responseType: 'blob' });
       triggerBlobDownload(res.data, 'candidates_sample.csv');
+      toast.success('Sample downloaded', 'Open it in Excel / Sheets to fill in candidate rows.');
+      onClose();
     } catch (err: any) {
       toast.error('Could not download sample', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -951,9 +1084,6 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
             <h5 className="mb-0">Sample Import Format</h5>
             <div className="cand-sample-head-sub">Download an Excel template to bulk-upload candidates</div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-sample-close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Body */}
@@ -989,9 +1119,18 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
 
         {/* Footer */}
         <div className="cand-sample-footer">
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>Close</button>
-          <button type="button" className="cand-sample-download" onClick={handleDownload}>
-            <i className="ri-download-line" />Download Sample
+          <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={downloading}>Close</button>
+          <button
+            type="button"
+            className="cand-sample-download"
+            onClick={handleDownload}
+            disabled={downloading}
+            style={{ opacity: downloading ? 0.75 : 1 }}
+          >
+            {downloading
+              ? <Spinner size="sm" style={{ width: 14, height: 14, marginRight: 6 }} />
+              : <i className="ri-download-line" />}
+            {downloading ? 'Downloading…' : 'Download Sample'}
           </button>
         </div>
       </ModalBody>
@@ -1020,19 +1159,57 @@ function CvCell({
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
-  // Already-uploaded → render the green download chip. The cv_url points
-  // at the Laravel route /api/candidates/{id}/cv (works regardless of
-  // Apache's DocumentRoot); we append the sanctum token here so a plain
-  // anchor click can authenticate without an Authorization header.
+  // Already-uploaded → render the green download chip. We swap the
+  // anchor for a button that pulls the blob via axios (so the request
+  // carries the sanctum bearer header instead of relying on a `?token=`
+  // URL param) and shows an inline spinner until the file is in hand.
+  // Without the explicit loader the user sometimes clicked twice
+  // because the network round-trip felt invisible.
   if (candidate.cv_url) {
-    const token = localStorage.getItem('cbc_token') || '';
-    const sep   = candidate.cv_url.includes('?') ? '&' : '?';
-    const href  = `${candidate.cv_url}${sep}token=${encodeURIComponent(token)}`;
+    const handleDownload = async () => {
+      if (downloading) return;
+      setDownloading(true);
+      try {
+        const resp = await api.get(`/candidates/${candidate.id}/cv`, { responseType: 'blob' });
+        const blob = resp.data as Blob;
+        // Try to honour the server's Content-Disposition filename;
+        // fall back to `<candidate>-cv.<ext>` so the saved file is
+        // identifiable.
+        const cd: string = String(resp.headers?.['content-disposition'] || '');
+        const m  = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
+        const fallbackExt = (blob.type === 'application/pdf') ? 'pdf'
+          : (blob.type === 'application/msword') ? 'doc'
+          : (blob.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') ? 'docx'
+          : 'pdf';
+        const filename = m?.[1]
+          || `${(candidate.name || 'candidate').replace(/\s+/g, '-')}-cv.${fallbackExt}`;
+        triggerBlobDownload(blob, filename);
+      } catch (err: any) {
+        toast.error('Could not download CV', err?.response?.data?.message || 'Please try again.');
+      } finally {
+        setDownloading(false);
+      }
+    };
     return (
-      <a href={href} target="_blank" rel="noreferrer" className="cand-cv-chip" download>
-        <i className="ri-download-line" /><span>CV</span>
-      </a>
+      <button
+        type="button"
+        onClick={handleDownload}
+        className="cand-cv-chip"
+        disabled={downloading}
+        title={downloading ? 'Downloading…' : 'Download CV'}
+        style={{
+          cursor: downloading ? 'progress' : 'pointer',
+          opacity: downloading ? 0.75 : 1,
+          border: 'none',
+        }}
+      >
+        {downloading
+          ? <Spinner size="sm" style={{ width: 12, height: 12, marginRight: 2 }} />
+          : <i className="ri-download-line" />}
+        <span>{downloading ? 'Downloading…' : 'CV'}</span>
+      </button>
     );
   }
 
@@ -1126,7 +1303,7 @@ function CandidateFormModal({
   const [expectedSalary, setExpectedSalary]   = useState('');
   const [noticePeriod, setNoticePeriod]       = useState('Immediate');
   const [source, setSource]                   = useState('');
-  const [status, setStatus]                   = useState<CandidateStatus>('Applied');
+  const [status, setStatus]                   = useState<CandidateStatus>('Final Interview');
   const [cvFile, setCvFile]                   = useState<File | null>(null);
   const [errors, setErrors]                   = useState<Record<string, string>>({});
   const [saving, setSaving]                   = useState(false);
@@ -1178,7 +1355,7 @@ function CandidateFormModal({
       setName(''); setEmail(''); setMobile(''); setAddress(''); setQualification('');
       setExperience('0'); setTransport(''); setDistance('');
       setCurrentSalary(''); setExpectedSalary(''); setNoticePeriod('Immediate');
-      setSource(''); setStatus('Applied');
+      setSource(''); setStatus('Final Interview');
     }
     setCvFile(null);
     setErrors({});
@@ -1198,22 +1375,37 @@ function CandidateFormModal({
 
     if (!recruitmentId) errs.recruitment_id = 'Recruitment is required';
 
-    if (email.trim()) {
+    if (!email.trim()) {
+      errs.email = 'Email is required';
+    } else {
       const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRe.test(email.trim())) errs.email = 'Enter a valid email address';
     }
 
-    if (mobile.trim()) {
+    if (!mobile.trim()) {
+      errs.mobile = 'Mobile number is required';
+    } else {
       // 10–15 digits, optional leading + and country code spaces.
       const mobileRe = /^\+?[\d\s\-]{10,18}$/;
       if (!mobileRe.test(mobile.trim())) errs.mobile = 'Enter a valid mobile number (10–15 digits)';
     }
 
-    const expNum = Number(experience);
-    if (experience !== '' && (!Number.isFinite(expNum) || expNum < 0)) errs.experience_years = 'Experience cannot be negative';
-    else if (expNum > 50) errs.experience_years = 'Experience cannot exceed 50 years';
+    if (!qualification.trim()) {
+      errs.qualification = 'Qualification is required';
+    }
 
-    if (distance.trim()) {
+    const expNum = Number(experience);
+    if (experience.trim() === '') {
+      errs.experience_years = 'Experience is required';
+    } else if (!Number.isFinite(expNum) || expNum < 0) {
+      errs.experience_years = 'Experience cannot be negative';
+    } else if (expNum > 50) {
+      errs.experience_years = 'Experience cannot exceed 50 years';
+    }
+
+    if (!distance.trim()) {
+      errs.distance_km = 'Distance is required';
+    } else {
       const dNum = Number(distance);
       if (!Number.isFinite(dNum) || dNum < 0) errs.distance_km = 'Distance cannot be negative';
       else if (dNum > 9999) errs.distance_km = 'Distance cannot exceed 9999 KM';
@@ -1292,7 +1484,79 @@ function CandidateFormModal({
   };
 
   return (
-    <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" modalClassName="rec-form-modal" contentClassName="rec-form-content border-0">
+    <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" modalClassName="rec-form-modal cand-form-clientstyle" contentClassName="rec-form-content border-0">
+      {/* Adopt the Client form's field aesthetic — sentence-case label
+          @11.5px / 600, 38px input with 10px radius / 13px text — by
+          overriding the candidate-form's recruitment-themed defaults
+          under this single scope. Keeps the rest of the recruitment
+          modals (Create Recruitment, etc.) untouched. */}
+      <style>{`
+        .cand-form-clientstyle .rec-form-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          letter-spacing: 0.01em;
+          text-transform: none;
+          margin-bottom: 5px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          line-height: 1.2;
+          background: none;
+          -webkit-background-clip: initial;
+          background-clip: initial;
+          -webkit-text-fill-color: var(--vz-body-color);
+          color: var(--vz-body-color);
+        }
+        [data-bs-theme="dark"] .cand-form-clientstyle .rec-form-label,
+        [data-layout-mode="dark"] .cand-form-clientstyle .rec-form-label {
+          color: var(--vz-body-color);
+          -webkit-text-fill-color: var(--vz-body-color);
+          background: none;
+        }
+        .cand-form-clientstyle .rec-form-label i {
+          color: var(--vz-secondary-color);
+          -webkit-text-fill-color: var(--vz-secondary-color);
+          font-size: 13px;
+        }
+        .cand-form-clientstyle .rec-input,
+        .cand-form-clientstyle .master-select-wrap .master-select-toggle,
+        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle {
+          height: 38px;
+          padding: 7px 11px;
+          font-size: 13px;
+          border-radius: 10px;
+          background: var(--vz-card-bg);
+          color: var(--vz-body-color);
+          border: 1px solid var(--vz-border-color);
+          box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+        }
+        .cand-form-clientstyle textarea.rec-input,
+        .cand-form-clientstyle .rec-input.rec-textarea {
+          height: auto;
+          min-height: 64px;
+          resize: vertical;
+        }
+        .cand-form-clientstyle .rec-input::placeholder {
+          color: var(--vz-secondary-color);
+          opacity: 0.65;
+        }
+        .cand-form-clientstyle .rec-input:hover:not(:disabled),
+        .cand-form-clientstyle .master-select-wrap .master-select-toggle:hover:not(:disabled),
+        .cand-form-clientstyle .master-datepicker-wrap .master-datepicker-toggle:hover:not(:disabled) {
+          border-color: rgba(99,102,241,0.55);
+          box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+        }
+        .cand-form-clientstyle .rec-input:focus,
+        .cand-form-clientstyle .master-select-wrap.show .master-select-toggle {
+          outline: none;
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+        }
+        /* Field row spacing matches the client form's tighter Row(g-2)
+           cadence — section padding pulled in so columns aren't pushed
+           right by the legacy purple sidebar. */
+        .cand-form-clientstyle .rec-form-section > .row { padding-left: 0; }
+      `}</style>
       <ModalBody className="p-0">
         <div className="rec-form-header">
           <div className="d-flex align-items-center justify-content-between gap-3">
@@ -1305,19 +1569,11 @@ function CandidateFormModal({
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>{editing ? 'Update applicant profile' : 'Register a new applicant profile in the pipeline'}</div>
               </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn">
-              <i className="ri-close-line" />
-            </button>
           </div>
         </div>
 
         <div className="rec-form-body">
-          {/* Linked Recruitment readout */}
-          <div className="cand-linked-recruitment mb-2">
-            <span className="cand-linked-icon"><i className="ri-link" /></span>
-            <span className="cand-linked-label">Linked Recruitment</span>
-            <span className="cand-linked-value">{recruitment ? `${recruitment.code} — ${recruitment.jobTitle}` : '—'}</span>
-          </div>
+         
 
           <div className="rec-form-card">
             {/* Section 1: Candidate Basic Details */}
@@ -1333,12 +1589,12 @@ function CandidateFormModal({
                   {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
                 </Col>
                 <Col md={4}>
-                  <label className="rec-form-label">Email</label>
+                  <label className="rec-form-label">Email<span className="req">*</span></label>
                   <input type="email" className={`rec-input${errors.email ? ' is-invalid' : ''}`} placeholder="name@email.com" value={email} onChange={e => setEmail(e.target.value)} />
                   {errors.email && <div className="rec-error"><i className="ri-error-warning-line" />{errors.email}</div>}
                 </Col>
                 <Col md={4}>
-                  <label className="rec-form-label">Mobile Number</label>
+                  <label className="rec-form-label">Mobile Number<span className="req">*</span></label>
                   <input type="text" className={`rec-input${errors.mobile ? ' is-invalid' : ''}`} placeholder="+91 9XXXXXXXXX" value={mobile} onChange={e => setMobile(e.target.value)} />
                   {errors.mobile && <div className="rec-error"><i className="ri-error-warning-line" />{errors.mobile}</div>}
                 </Col>
@@ -1347,11 +1603,12 @@ function CandidateFormModal({
                   <input type="text" className="rec-input" placeholder="Full residential address" value={address} onChange={e => setAddress(e.target.value)} />
                 </Col>
                 <Col md={6}>
-                  <label className="rec-form-label">Qualification</label>
-                  <input type="text" className="rec-input" placeholder="e.g. B.Tech Computer Science" value={qualification} onChange={e => setQualification(e.target.value)} />
+                  <label className="rec-form-label">Qualification<span className="req">*</span></label>
+                  <input type="text" className={`rec-input${errors.qualification ? ' is-invalid' : ''}`} placeholder="e.g. B.Tech Computer Science" value={qualification} onChange={e => setQualification(e.target.value)} />
+                  {errors.qualification && <div className="rec-error"><i className="ri-error-warning-line" />{errors.qualification}</div>}
                 </Col>
                 <Col md={4}>
-                  <label className="rec-form-label">Experience (Years)</label>
+                  <label className="rec-form-label">Experience (Years)<span className="req">*</span></label>
                   <input type="number" min={0} step={0.5} className={`rec-input${errors.experience_years ? ' is-invalid' : ''}`} value={experience} onChange={e => setExperience(e.target.value)} />
                   {errors.experience_years && <div className="rec-error"><i className="ri-error-warning-line" />{errors.experience_years}</div>}
                 </Col>
@@ -1360,7 +1617,7 @@ function CandidateFormModal({
                   <MasterSelect value={transport} onChange={setTransport} options={TRANSPORT_MODES.map(m => ({ value: m, label: m }))} placeholder="— Select —" />
                 </Col>
                 <Col md={4}>
-                  <label className="rec-form-label">Distance (KM)</label>
+                  <label className="rec-form-label">Distance (KM)<span className="req">*</span></label>
                   <input type="number" min={0} step={0.1} className={`rec-input${errors.distance_km ? ' is-invalid' : ''}`} placeholder="e.g. 12" value={distance} onChange={e => setDistance(e.target.value)} />
                   {errors.distance_km && <div className="rec-error"><i className="ri-error-warning-line" />{errors.distance_km}</div>}
                 </Col>
@@ -1431,7 +1688,6 @@ function CandidateFormModal({
                     <span className="cand-step cand-step-4">4</span>
                     <p className="rec-form-section-title">Attachment Details</p>
                   </div>
-                  <label className="rec-form-label">Upload CV{!editing && <span className="req">*</span>}</label>
                   <label className="cand-cv-drop" style={errors.cv ? { borderColor: '#f06548' } : undefined}>
                     <input type="file" accept=".pdf,.doc,.docx" onChange={e => setCvFile(e.target.files?.[0] ?? null)} style={{ display: 'none' }} />
                     <i className="ri-attachment-2" />
@@ -1450,7 +1706,25 @@ function CandidateFormModal({
                     <p className="rec-form-section-title">Recruitment Status</p>
                   </div>
                   <label className="rec-form-label">Candidate Status<span className="req">*</span></label>
-                  <MasterSelect value={status} onChange={(v) => setStatus(v as CandidateStatus)} options={STATUSES.map(s => ({ value: s, label: s }))} placeholder="— Select —" />
+                  {/* The form only exposes the two lifecycle states a
+                      recruiter actually picks on create / edit:
+                      Final Round Selected (shortlist through interviews —
+                      stored as the existing "Final Interview" enum so
+                      historical rows keep working) and Selected (offer
+                      extended). Other states (Rejected, On Hold, Offered,
+                      etc.) still exist in the type union and continue to
+                      be set programmatically by the Confirm Selection /
+                      Reject modal — they're just not user-selectable
+                      from this dropdown. */}
+                  <MasterSelect
+                    value={status}
+                    onChange={(v) => setStatus(v as CandidateStatus)}
+                    options={[
+                      { value: 'Final Interview', label: 'Final Round Selected' },
+                      { value: 'Selected',        label: 'Selected' },
+                    ]}
+                    placeholder="— Select —"
+                  />
                   {errors.status && <div className="rec-error"><i className="ri-error-warning-line" />{errors.status}</div>}
                 </div>
               </Col>
@@ -1491,30 +1765,78 @@ function CandidateConfirmModal({
 }: {
   target: { row: CandidateRow; mode: 'select' | 'reject' } | null;
   onClose: () => void;
-  onConfirm: (reasonOrNote: string) => void;
+  // Returns a Promise so the modal can spin the confirm button until
+  // the parent's status update finishes (and close cleanly on success).
+  onConfirm: (reasonOrNote: string) => Promise<void> | void;
 }) {
   const [notes, setNotes] = useState('');
   const [reason, setReason] = useState('');
   const [reasonErr, setReasonErr] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Reset form whenever a new candidate / mode is targeted.
   useEffect(() => {
-    if (target) { setNotes(''); setReason(''); setReasonErr(false); }
+    if (target) { setNotes(''); setReason(''); setReasonErr(false); setSubmitting(false); }
   }, [target]);
 
   if (!target) return null;
   const { row, mode } = target;
   const isReject = mode === 'reject';
-  const stage = STATUS_TONES[row.status];
+  const stageColor = CANDIDATE_STATUS_COLOR[row.status];
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    if (submitting) return;
     if (isReject && !reason) { setReasonErr(true); return; }
     const payload = isReject ? [reason, notes].filter(Boolean).join(' — ') : notes;
-    onConfirm(payload);
+    setSubmitting(true);
+    try {
+      await onConfirm(payload);
+      // Parent closes the modal on success; if it doesn't (e.g. an
+      // error is thrown), we flip the flag back so the button is
+      // clickable again.
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <Modal isOpen={!!target} toggle={onClose} centered size="md" backdrop="static" contentClassName={`border-0 cand-confirm-modal cand-confirm-modal--${isReject ? 'reject' : 'select'}`}>
+    <Modal isOpen={!!target} toggle={submitting ? undefined : onClose} centered size="md" backdrop="static" contentClassName={`border-0 cand-confirm-modal cand-confirm-modal--${isReject ? 'reject' : 'select'}`}>
+      {/* While the status update is in flight we paint a soft shimmer
+          over the candidate summary card so the user can tell the
+          modal is "working", and we disable every input + button.
+          Keyframes scoped via a <style> block so the effect only kicks
+          in inside this modal. */}
+      <style>{`
+        @keyframes cand-cf-shimmer {
+          0%   { background-position: -120% 0; }
+          100% { background-position: 220% 0; }
+        }
+        .cand-confirm-modal .cand-confirm-summary.is-loading {
+          position: relative;
+          overflow: hidden;
+          pointer-events: none;
+        }
+        .cand-confirm-modal .cand-confirm-summary.is-loading::after {
+          content: '';
+          position: absolute; inset: 0;
+          background: linear-gradient(90deg,
+            rgba(255,255,255,0) 0%,
+            rgba(255,255,255,0.45) 50%,
+            rgba(255,255,255,0) 100%);
+          background-size: 50% 100%;
+          background-repeat: no-repeat;
+          animation: cand-cf-shimmer 1.4s linear infinite;
+        }
+        [data-bs-theme="dark"] .cand-confirm-modal .cand-confirm-summary.is-loading::after,
+        [data-layout-mode="dark"] .cand-confirm-modal .cand-confirm-summary.is-loading::after {
+          background: linear-gradient(90deg,
+            rgba(255,255,255,0) 0%,
+            rgba(255,255,255,0.10) 50%,
+            rgba(255,255,255,0) 100%);
+          background-size: 50% 100%;
+          background-repeat: no-repeat;
+        }
+      `}</style>
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         {/* Header */}
         <div className="cand-confirm-head">
@@ -1529,7 +1851,7 @@ function CandidateConfirmModal({
                 : 'This will mark the candidate as Selected'}
             </div>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-confirm-close">
+          <button type="button" onClick={onClose} aria-label="Close" className="cand-confirm-close" disabled={submitting}>
             <i className="ri-close-line" />
           </button>
         </div>
@@ -1537,7 +1859,7 @@ function CandidateConfirmModal({
         {/* Body */}
         <div className="cand-confirm-body">
           {/* Candidate summary card */}
-          <div className="cand-confirm-summary">
+          <div className={`cand-confirm-summary${submitting ? ' is-loading' : ''}`}>
             <div
               className="cand-confirm-avatar"
               style={{ background: `linear-gradient(135deg, ${row.accent}, ${row.accent}cc)` }}
@@ -1558,7 +1880,7 @@ function CandidateConfirmModal({
             </div>
             <div className="cand-confirm-stage">
               <div className="cand-confirm-stage-label">Current Stage</div>
-              <span className="rec-pill" style={{ background: stage.bg, color: stage.fg }}>{row.status}</span>
+              <span className={`badge rounded-pill bg-${stageColor}-subtle text-${stageColor} fw-semibold px-3 py-2 fs-13`}>{row.status}</span>
             </div>
           </div>
 
@@ -1567,16 +1889,14 @@ function CandidateConfirmModal({
               <label className="cand-confirm-label">
                 Reason for Rejection<span className="req">*</span>
               </label>
-              <select
-                className={`cand-confirm-select${reasonErr ? ' is-invalid' : ''}`}
+              <MasterSelect
                 value={reason}
-                onChange={e => { setReason(e.target.value); if (e.target.value) setReasonErr(false); }}
-              >
-                <option value="">— Select a reason —</option>
-                {REJECTION_REASONS.map(r => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
+                onChange={v => { setReason(v); if (v) setReasonErr(false); }}
+                options={REJECTION_REASONS}
+                placeholder="— Select a reason —"
+                disabled={submitting}
+                invalid={reasonErr}
+              />
               {reasonErr && (
                 <div className="cand-confirm-error">
                   <i className="ri-error-warning-line" />Please select a reason before confirming
@@ -1595,16 +1915,27 @@ function CandidateConfirmModal({
               placeholder="Add context for the audit trail"
               value={notes}
               onChange={e => setNotes(e.target.value)}
+              disabled={submitting}
             />
           </div>
         </div>
 
         {/* Footer */}
         <div className="cand-confirm-footer">
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className="cand-confirm-submit" onClick={handleConfirm}>
-            <i className={isReject ? 'ri-close-line' : 'ri-check-line'} />
-            {isReject ? 'Confirm Rejection' : 'Confirm Selection'}
+          <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button
+            type="button"
+            className="cand-confirm-submit"
+            onClick={handleConfirm}
+            disabled={submitting}
+            style={{ opacity: submitting ? 0.75 : 1 }}
+          >
+            {submitting
+              ? <Spinner size="sm" style={{ width: 14, height: 14, marginRight: 6 }} />
+              : <i className={isReject ? 'ri-close-line' : 'ri-check-line'} />}
+            {submitting
+              ? (isReject ? 'Rejecting…' : 'Selecting…')
+              : (isReject ? 'Confirm Rejection' : 'Confirm Selection')}
           </button>
         </div>
       </ModalBody>

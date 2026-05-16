@@ -102,7 +102,14 @@ const HorizontalLayout = (props : any) => {
             menuItems.push(value);
         }
     });
-    menuItems.push({ id: 'more', label: 'More', icon: 'ri-briefcase-2-line', link: "/#", stateVariables: isMoreMenu, subItems: splitMenuItems, click: function (e : any) { e.preventDefault(); setIsMoreMenu(!isMoreMenu); }, });
+    // Only show the "More" menu when there ARE overflow items to surface —
+    // super_admin has many top-level entries that genuinely spill past the
+    // splitContainer threshold; branch_user / client_admin / employee see a
+    // shorter menu where splitMenuItems is empty, and we used to render an
+    // empty "More" anyway.
+    if (splitMenuItems.length > 0) {
+        menuItems.push({ id: 'more', label: 'More', icon: 'ri-briefcase-2-line', link: "/#", stateVariables: isMoreMenu, subItems: splitMenuItems, click: function (e : any) { e.preventDefault(); setIsMoreMenu(!isMoreMenu); }, });
+    }
 
     const path = props.router.location.pathname;
 

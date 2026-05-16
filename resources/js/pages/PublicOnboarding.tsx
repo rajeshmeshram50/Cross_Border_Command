@@ -117,8 +117,10 @@ export default function PublicOnboarding() {
         const data = r.data;
         const inv: InvitePreview = data.invite;
         setInvite(inv);
-        setCountries(data.masters?.countries ?? []);
-        setStates(data.masters?.states ?? []);
+        // Countries/states sorted A→Z so dropdowns read alphabetically.
+        const byName = (a: MasterOption, b: MasterOption) => a.name.localeCompare(b.name);
+        setCountries([...(data.masters?.countries ?? [])].sort(byName));
+        setStates([...(data.masters?.states ?? [])].sort(byName));
         setDepartments(data.masters?.departments ?? []);
         setDesignations(data.masters?.designations ?? []);
         setRoles(data.masters?.roles ?? []);

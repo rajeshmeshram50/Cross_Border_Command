@@ -236,10 +236,6 @@ export default function CustomFieldModal(props: {
               </div>
             </div>
 
-            <div className="cfm-info" style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '8px 12px', borderRadius: 8, fontSize: 12, color: '#5b21b6', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <i className="ri-information-line" />
-              Fields marked <span style={req}>*</span> are required.
-            </div>
           </div>
 
           {/* Footer */}

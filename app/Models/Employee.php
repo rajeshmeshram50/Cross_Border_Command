@@ -37,6 +37,7 @@ class Employee extends Model
         'legal_entity_id', 'location',
         'department_id', 'designation_id',
         'primary_role_id', 'ancillary_role_id', 'ancillary_role_ids',
+        'work_type',
         'reporting_manager_id', 'date_of_joining',
 
         'probation_policy', 'probation_months',
@@ -245,6 +246,19 @@ class Employee extends Model
     public function state(): BelongsTo
     {
         return $this->belongsTo(States::class, 'state_id');
+    }
+
+    // Permanent-address relations — column pair mirrors the current-address
+    // country_id / state_id so the profile view can render both blocks
+    // without an extra round-trip per row.
+    public function permCountry(): BelongsTo
+    {
+        return $this->belongsTo(Countries::class, 'perm_country_id');
+    }
+
+    public function permState(): BelongsTo
+    {
+        return $this->belongsTo(States::class, 'perm_state_id');
     }
 
     public function legalEntity(): BelongsTo
