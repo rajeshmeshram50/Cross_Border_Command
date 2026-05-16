@@ -223,7 +223,7 @@ export default function Branches({ onNavigate }: Props) {
       accessorKey: 'code',
       cell: (info: any) => info.row.original.code
         ? <span className="fw-medium text-primary font-monospace fs-13">{info.row.original.code}</span>
-        : <span className="text-muted">—</span>,
+        : <span className="text-muted fs-13">—</span>,
     },
     {
       header: 'Type',
@@ -249,7 +249,7 @@ export default function Branches({ onNavigate }: Props) {
         const b: Branch = info.row.original;
         return b.contact_person
           ? <span className="fw-semibold fs-13" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{b.contact_person}</span>
-          : <span className="text-muted">—</span>;
+          : <span className="text-muted fs-13">—</span>;
       },
     },
     {
@@ -257,17 +257,18 @@ export default function Branches({ onNavigate }: Props) {
       accessorKey: 'email',
       cell: (info: any) => {
         const b: Branch = info.row.original;
-        if (!b.email) return <span className="text-muted">—</span>;
+        if (!b.email) return <span className="text-muted fs-13">—</span>;
         return (
-          <a
-            href={`mailto:${b.email}`}
-            className="d-inline-flex align-items-center gap-1 text-decoration-none"
-            style={{ fontSize: 12.5, color: 'var(--vz-body-color)', maxWidth: '100%' }}
-            title={b.email}
-          >
-            <i className="ri-mail-line flex-shrink-0" style={{ fontSize: 14, color: '#7c5cfc' }} />
-            <span className="text-truncate" style={{ minWidth: 0 }}>{b.email}</span>
-          </a>
+          <Tooltip label={b.email}>
+            <a
+              href={`mailto:${b.email}`}
+              className="d-inline-flex align-items-center gap-1 text-decoration-none fs-13"
+              style={{ color: 'var(--vz-body-color)', maxWidth: '100%' }}
+            >
+              <i className="ri-mail-line flex-shrink-0 fs-13" style={{ color: '#7c5cfc' }} />
+              <span className="text-truncate" style={{ minWidth: 0 }}>{b.email}</span>
+            </a>
+          </Tooltip>
         );
       },
     },
@@ -276,17 +277,18 @@ export default function Branches({ onNavigate }: Props) {
       accessorKey: 'phone',
       cell: (info: any) => {
         const b: Branch = info.row.original;
-        if (!b.phone) return <span className="text-muted">—</span>;
+        if (!b.phone) return <span className="text-muted fs-13">—</span>;
         return (
-          <a
-            href={`tel:${b.phone}`}
-            className="d-inline-flex align-items-center gap-1 text-decoration-none"
-            style={{ fontSize: 12.5, color: 'var(--vz-body-color)' }}
-            title={b.phone}
-          >
-            <i className="ri-phone-line flex-shrink-0" style={{ fontSize: 14, color: '#0ab39c' }} />
-            <span className="font-monospace">{b.phone}</span>
-          </a>
+          <Tooltip label={b.phone}>
+            <a
+              href={`tel:${b.phone}`}
+              className="d-inline-flex align-items-center gap-1 text-decoration-none fs-13"
+              style={{ color: 'var(--vz-body-color)' }}
+            >
+              <i className="ri-phone-line flex-shrink-0 fs-13" style={{ color: '#0ab39c' }} />
+              <span className="font-monospace">{b.phone}</span>
+            </a>
+          </Tooltip>
         );
       },
     },
@@ -296,7 +298,7 @@ export default function Branches({ onNavigate }: Props) {
       cell: (info: any) => {
         const b: Branch = info.row.original;
         const loc = [b.city, b.state].filter(Boolean).join(', ');
-        return loc ? <span className="fs-13">{loc}</span> : <span className="text-muted">—</span>;
+        return loc ? <span className="fs-13">{loc}</span> : <span className="text-muted fs-13">—</span>;
       },
     },
     {
@@ -355,6 +357,19 @@ export default function Branches({ onNavigate }: Props) {
       <style>{`
         .branches-surface { background: #ffffff; }
         [data-bs-theme="dark"] .branches-surface { background: #1c2531; }
+
+        /* Unify table typography — every cell + header reads at the same
+           13px size so the table looks like a single grid (matches the
+           Clients list). */
+        .branches-surface .table thead th,
+        .branches-surface .table tbody td {
+          font-size: 13px;
+          vertical-align: middle;
+        }
+        .branches-surface .table thead th {
+          font-weight: 600;
+          letter-spacing: 0.01em;
+        }
 
         /* KPI cards — haptic hover lift, identical feel to the Clients /
            Payments / Branch-dashboard KPIs so every list page feels alive

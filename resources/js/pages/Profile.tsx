@@ -866,7 +866,10 @@ export default function Profile() {
   if (isSuperAdmin) {
     row1LeftCard = accountInfoCard;
     row2LeftCard = platformAccessCard;
-  } else if (hasPlan) {
+  } else if (hasPlan && !isBranchUser && !isEmployee) {
+    // Subscription card is for client_admin (who manages the plan) only.
+    // Branch users and employees never see the subscription block — they
+    // can't act on it anyway.
     row1LeftCard = subscriptionCard;
     row2LeftCard = accountInfoCard;
   } else {
@@ -1021,7 +1024,10 @@ export default function Profile() {
                     <h6 className="text-white mb-0 fw-bold lh-1">Active</h6>
                   </div>
                 </div>
-                {plan && plan.has_plan && plan.plan_name && (
+                {/* Plan pill is hidden for branch_user and employee — only
+                    super_admin / client_admin (who actually manage the
+                    subscription) see plan info on their own profile. */}
+                {plan && plan.has_plan && plan.plan_name && !isBranchUser && !isEmployee && (
                   <div
                     className="text-center px-3 py-2 d-flex flex-column justify-content-center"
                     style={{
