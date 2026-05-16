@@ -2750,37 +2750,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
           </div>
           {/* /rec-form-card */}
 
-          {/* Toggle row — 3 inline checkbox preferences */}
-          <div className="rec-toggle-row">
-            <label className="rec-toggle">
-              <input
-                type="checkbox"
-                checked={postOnPortal}
-                onChange={e => setPostOnPortal(e.target.checked)}
-              />
-              <i className="ri-global-line" />
-              <span>Post on careers portal</span>
-            </label>
-            <label className="rec-toggle">
-              <input
-                type="checkbox"
-                checked={notifyTeamLeads}
-                onChange={e => setNotifyTeamLeads(e.target.checked)}
-              />
-              <i className="ri-notification-3-line" />
-              <span>Notify team leads</span>
-            </label>
-            <label className="rec-toggle">
-              <input
-                type="checkbox"
-                checked={enableReferralBonus}
-                onChange={e => setEnableReferralBonus(e.target.checked)}
-              />
-              <i className="ri-star-line" />
-              <span>Enable referral bonus</span>
-            </label>
-          </div>
-        </div>
+               </div>
 
         {/* Footer */}
         <div className="rec-form-footer">
