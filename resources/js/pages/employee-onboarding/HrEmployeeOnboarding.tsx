@@ -45,21 +45,23 @@ const ONB_ACCOUNT_TYPE = OPT('Salary', 'Savings', 'Current');
 const ONB_PF_DEDUCT    = OPT('Employee + Employer', 'Employee only');
 const ONB_BLOOD_GROUP  = OPT('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-');
 
-// ── Evidence Vault — status tone palette ────────────────────────────────────
+// ── Evidence Vault — status → Bootstrap badge color ──────────────────────────
 // The vault's Employee tab is populated entirely from /employees/{id}/documents
 // at runtime (catalogue lookup happens client-side against STAGE2_CATEGORIES
 // further down). The Org tab is sourced from /hr-document-templates/match
-// + signature runs. Both still share this tone map for the status pill.
+// + signature runs. Both render the status pill with the same
+// `bg-{color}-subtle text-{color}` Bootstrap classes the Clients table uses
+// for its Status column.
 type VaultStatus = 'Verified' | 'Uploaded' | 'Pending' | 'Rejected' | 'Signed' | 'Sent' | 'Not Generated';
 
-const VAULT_STATUS_TONE: Record<VaultStatus, { bg: string; fg: string; dot: string }> = {
-  'Verified':      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
-  'Uploaded':      { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Pending':       { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  'Rejected':      { bg: '#fdd9d6', fg: '#b1401d', dot: '#f06548' },
-  'Signed':        { bg: '#ece6ff', fg: '#5b3fd1', dot: '#7c5cfc' },
-  'Sent':          { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Not Generated': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
+const VAULT_STATUS_COLOR: Record<VaultStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
+  'Verified':      'success',
+  'Uploaded':      'info',
+  'Pending':       'warning',
+  'Rejected':      'danger',
+  'Signed':        'primary',
+  'Sent':          'info',
+  'Not Generated': 'secondary',
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -239,14 +241,17 @@ const _COMPLETED_LEGACY: OnboardRow[] = [
   { id: 'OB-096', empId: 'EMP-2395', name: 'Omkar Thakur',    initials: 'OT', accent: '#f06548', joinDate: 'Mar 20, 2026', department: 'Operations',  designation: 'Warehouse Supervisor',   primaryRole: 'Warehouse In-charge',   ancillaryRole: 'GRN Coordinator',      managerName: 'Vivek Iyer',     managerInitials: 'VI', managerAccent: '#0c63b0', profile: 100, status: 'Completed' },
 ];
 
-// Stat tones & header gradients
-const STATUS_TONES: Record<OnboardStatus, { bg: string; fg: string; dot: string }> = {
-  'Document Pending': { bg: '#fdf3d6', fg: '#a06f00', dot: '#f59e0b' },
-  'In Progress':      { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'IT Setup':         { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Not Started':      { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
-  'Orientation':      { bg: '#d3f0ee', fg: '#0a716a', dot: '#0ab39c' },
-  'Completed':        { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
+// OnboardStatus → Bootstrap badge color. Matches the recruitment area's
+// status pill pattern (Clients-style `bg-{color}-subtle text-{color}`)
+// so the Status column on the onboarding table reads in the same design
+// system as Hiring Requests, Candidates, and the Evidence Vault.
+const ONBOARD_STATUS_COLOR: Record<OnboardStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
+  'Document Pending': 'warning',
+  'In Progress':      'info',
+  'IT Setup':         'info',
+  'Not Started':      'secondary',
+  'Orientation':      'primary',
+  'Completed':        'success',
 };
 
 // Animated count-up number (mirrors AdminDashboard's AnimatedNumber)
@@ -764,7 +769,7 @@ export default function HrEmployeeOnboarding() {
                           </td>
                         </tr>
                       ) : visible.map((r, idx) => {
-                        const tone = STATUS_TONES[r.status];
+                        const statusColor = ONBOARD_STATUS_COLOR[r.status];
                         return (
                           <tr key={r.id}>
                             <td className="ps-3 fw-semibold text-muted">{sliceFrom + idx + 1}</td>
@@ -878,12 +883,7 @@ export default function HrEmployeeOnboarding() {
                               })()}
                             </td>
                             <td>
-                              <span
-                                className="onb-pill"
-                                data-status={r.status}
-                                style={{ background: tone.bg, color: tone.fg }}
-                              >
-                                <span className="d" style={{ background: tone.dot }} />
+                              <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                                 {r.status}
                               </span>
                             </td>
@@ -1771,7 +1771,7 @@ function VaultModal({
                   </div>
                   <div>
                     {section.docs.map(doc => {
-                      const dt = VAULT_STATUS_TONE[doc.status];
+                      const statusColor = VAULT_STATUS_COLOR[doc.status];
                       const hasFile = !!doc.url;
                       return (
                         <div key={doc.key} className="vault-doc-row flex-wrap">
@@ -1790,8 +1790,7 @@ function VaultModal({
                               {doc.category}
                             </span>
                           )}
-                          <span className="vault-status-pill" style={{ background: dt.bg, color: dt.fg }}>
-                            <span className="vault-status-dot" style={{ background: dt.dot }} />
+                          <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                             {doc.status}
                           </span>
                           <a
@@ -1874,23 +1873,22 @@ function VaultModal({
 
                   <div>
                     {signedTemplates.map(tpl => {
-                      const tone = tpl.status === 'Active'
-                        ? VAULT_STATUS_TONE['Signed']
-                        : tpl.status === 'Draft'
-                          ? VAULT_STATUS_TONE['Pending']
-                          : VAULT_STATUS_TONE['Not Generated'];
+                      const tplStatusColor: 'primary' | 'warning' | 'secondary' =
+                        tpl.status === 'Active' ? 'primary'
+                        : tpl.status === 'Draft' ? 'warning'
+                        : 'secondary';
                       const canGenerate = tpl.status === 'Active' && !!emp?.dbId;
                       const run = runByTemplateId.get(tpl.id) || null;
                       const currentSigner = run?.signers?.[run.current_index] || null;
                       const isMyTurn = !!(run && currentSigner
                         && (run.status === 'Pending' || run.status === 'In Progress')
                         && currentSigner.user_id === currentUserId);
-                      const runStatusTone =
-                        run?.status === 'Completed' ? { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' }
-                        : run?.status === 'Rejected' ? { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' }
-                        : run?.status === 'Cancelled' ? { bg: '#e5e7eb', fg: '#374151', dot: '#6b7280' }
-                        : run?.status === 'In Progress' ? { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' }
-                        : run ? { bg: '#dbeafe', fg: '#1d4ed8', dot: '#3b82f6' }
+                      const runStatusColor: 'success' | 'danger' | 'secondary' | 'warning' | 'info' | null =
+                        run?.status === 'Completed' ? 'success'
+                        : run?.status === 'Rejected' ? 'danger'
+                        : run?.status === 'Cancelled' ? 'secondary'
+                        : run?.status === 'In Progress' ? 'warning'
+                        : run ? 'info'
                         : null;
                       return (
                         <div key={tpl.id} className="vault-doc-row flex-wrap" style={{ position: 'relative' }}>
@@ -1901,8 +1899,8 @@ function VaultModal({
                             <div className="vault-doc-name">
                               {tpl.name || '(unnamed template)'}{' '}
                               <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#a16207', background: '#fef3c7', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>{tpl.code}</span>
-                              {run && runStatusTone && (
-                                <span style={{ marginLeft: 8, padding: '1px 8px', borderRadius: 999, background: runStatusTone.bg, color: runStatusTone.fg, fontSize: 11, fontWeight: 700 }}>
+                              {run && runStatusColor && (
+                                <span className={`badge rounded-pill bg-${runStatusColor}-subtle text-${runStatusColor} fw-semibold ms-2`} style={{ fontSize: 11, padding: '3px 9px' }}>
                                   <i className="ri-flow-chart" style={{ fontSize: 11, marginRight: 3 }} />{run.status}
                                 </span>
                               )}
@@ -1914,8 +1912,7 @@ function VaultModal({
                               )}
                             </div>
                           </div>
-                          <span className="vault-status-pill" style={{ background: tone.bg, color: tone.fg }}>
-                            <span className="vault-status-dot" style={{ background: tone.dot }} />
+                          <span className={`badge rounded-pill bg-${tplStatusColor}-subtle text-${tplStatusColor} fw-semibold px-3 py-2 fs-13`}>
                             {tpl.status}
                           </span>
                           <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}

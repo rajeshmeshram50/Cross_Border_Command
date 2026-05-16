@@ -270,13 +270,17 @@ const EMPLOY_TYPE_TONES: Record<EmployType, { bg: string; fg: string }> = {
   Internship:   { bg: '#fce7f3', fg: '#be185d' },
 };
 
-const REQUEST_STATUS_TONES: Record<RequestStatus, { bg: string; fg: string; dot: string }> = {
-  Approved:      { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
-  'Under Review':{ bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  Submitted:     { bg: '#dceefe', fg: '#0c63b0', dot: '#3b82f6' },
-  'Sent Back':   { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  Draft:         { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
-  Rejected:      { bg: '#fdd9d6', fg: '#b1401d', dot: '#f06548' },
+// Status → Bootstrap badge color. Used to render the Status pill with the
+// same `badge rounded-pill bg-{color}-subtle text-{color}` classes the
+// Clients table uses, so every status badge across the recruitment area
+// reads as one design system.
+const REQUEST_STATUS_COLOR: Record<RequestStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
+  Approved:       'success',
+  'Under Review': 'info',
+  Submitted:      'info',
+  'Sent Back':    'warning',
+  Draft:          'secondary',
+  Rejected:       'danger',
 };
 
 const REQUEST_URGENCY_TONES: Record<RequestUrgency, { bg: string; fg: string }> = {
@@ -1758,7 +1762,7 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
                 </tr>
               ) : visible.map(r => {
                 const u = REQUEST_URGENCY_TONES[r.urgency];
-                const s = REQUEST_STATUS_TONES[r.status];
+                const statusColor = REQUEST_STATUS_COLOR[r.status];
                 return (
                   <tr key={r.id}>
                     <td className="ps-4"><span className="rec-id-pill">{r.code || r.id}</span></td>
@@ -1791,8 +1795,7 @@ function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitm
                     <td className="fs-13">{r.requestType}</td>
                     <td><span className="rec-pill" style={{ background: u.bg, color: u.fg }}>{r.urgency}</span></td>
                     <td>
-                      <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: s.bg, color: s.fg }}>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot }} />
+                      <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                         {r.status}
                       </span>
                     </td>
@@ -1898,7 +1901,7 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
   // raise form one-to-one.
   const raw = r._raw || {};
   const u = REQUEST_URGENCY_TONES[r.urgency];
-  const s = REQUEST_STATUS_TONES[r.status];
+  const statusColor = REQUEST_STATUS_COLOR[r.status];
   const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div className="rec-view-field">
       <div className="rec-view-label">{label}</div>
@@ -1991,8 +1994,7 @@ function ViewHiringRequestModal({ request, onClose }: { request: HiringRequestRo
           <div className="rec-view-card">
             <div className="rec-view-grid">
               <Field label="Status" value={
-                <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: s.bg, color: s.fg }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot }} />
+                <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                   {r.status}
                 </span>
               } />

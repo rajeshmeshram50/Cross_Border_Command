@@ -75,19 +75,20 @@ function formatDate(raw: any): string {
   return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-// Softer pastel palette — mirrors REQUEST_STATUS_TONES in HrRecruitment so
-// the candidate status pill reads in the same visual family as the
-// hiring-request status pill (same rec-pill class, same dot, same tone
-// family). Distinct hue per pipeline stage so the column still scans.
-const STATUS_TONES: Record<CandidateStatus, { bg: string; fg: string; }> = {
-  'Applied':         { bg: '#fde8c4', fg: '#a4661c' },
-  'Shortlisted':     { bg: '#dceefe', fg: '#0c63b0' },
-  'In Interview':    { bg: '#e3dbfa', fg: '#5b3fd1' },
-  'Final Interview': { bg: '#f0e2fa', fg: '#7c2bb5' },
-  'Selected':        { bg: '#d6f4e3', fg: '#108548'},
-  'Offered':         { bg: '#d1f5f1', fg: '#0d7a72' },
-  'Rejected':        { bg: '#fdd9d6', fg: '#b1401d'},
-  'On Hold':         { bg: '#eef2f6', fg: '#5b6478'},
+// Each candidate status maps to one of Bootstrap's badge colors so the
+// pill renders with the same `bg-{color}-subtle text-{color}` classes the
+// Clients table uses for its Status column. Two statuses can legally share
+// a color (Selected + Offered both `success`, In Interview + Final
+// Interview both `primary`) — the label text keeps them readable.
+const CANDIDATE_STATUS_COLOR: Record<CandidateStatus, 'success' | 'danger' | 'warning' | 'info' | 'primary' | 'secondary'> = {
+  'Applied':         'warning',
+  'Shortlisted':     'info',
+  'In Interview':    'info',
+  'Final Interview': 'primary',
+  'Selected':        'success',
+  'Offered':         'success',
+  'Rejected':        'danger',
+  'On Hold':         'secondary',
 };
 
 export default function HrCandidates() {
@@ -436,7 +437,7 @@ export default function HrCandidates() {
                           </td>
                         </tr>
                       ) : visible.map((c, idx) => {
-                        const tone = STATUS_TONES[c.status];
+                        const statusColor = CANDIDATE_STATUS_COLOR[c.status];
                         return (
                           <tr key={c.id}>
                             <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
@@ -464,8 +465,7 @@ export default function HrCandidates() {
                               />
                             </td>
                             <td>
-                              <span className="rec-pill d-inline-flex align-items-center gap-1" style={{ background: tone.bg, color: tone.fg }}>
-                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
+                              <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
                                 {c.status}
                               </span>
                             </td>
@@ -1754,7 +1754,7 @@ function CandidateConfirmModal({
   if (!target) return null;
   const { row, mode } = target;
   const isReject = mode === 'reject';
-  const stage = STATUS_TONES[row.status];
+  const stageColor = CANDIDATE_STATUS_COLOR[row.status];
 
   const handleConfirm = async () => {
     if (submitting) return;
@@ -1852,7 +1852,7 @@ function CandidateConfirmModal({
             </div>
             <div className="cand-confirm-stage">
               <div className="cand-confirm-stage-label">Current Stage</div>
-              <span className="rec-pill" style={{ background: stage.bg, color: stage.fg }}>{row.status}</span>
+              <span className={`badge rounded-pill bg-${stageColor}-subtle text-${stageColor} fw-semibold px-3 py-2 fs-13`}>{row.status}</span>
             </div>
           </div>
 
