@@ -38,6 +38,13 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
   const [paymentModal, setPaymentModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'net_banking'>('upi');
   const [processing, setProcessing] = useState(false);
+  // Re-entrancy guard for the Pay handler. `processing` is a state flag
+  // that updates async — a fast double-click can fire handlePay() twice
+  // before React commits the first setProcessing(true), which sends two
+  // /subscription/create-order POSTs and (on a Free plan) creates two
+  // activation rows. This ref flips synchronously inside the handler so
+  // the second invocation bails before any network call.
+  const paySubmittingRef = useRef(false);
   const [paymentStep, setPaymentStep] = useState<'select' | 'processing' | 'success'>('select');
   const [txnResult, setTxnResult] = useState<any>(null);
 
@@ -133,6 +140,12 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
 
   const handlePay = async () => {
     if (!selectedPlan) return;
+    // Synchronous bail — must come BEFORE the await so a second click
+    // that lands while the first is still in flight short-circuits
+    // immediately. setProcessing(true) on its own isn't enough because
+    // state updates are deferred until React commits.
+    if (paySubmittingRef.current) return;
+    paySubmittingRef.current = true;
     setProcessing(true);
 
     let orderRes;
@@ -146,6 +159,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
     } catch (err: any) {
       toast.error('Could not start payment', err.response?.data?.message || 'Something went wrong');
       setProcessing(false);
+      paySubmittingRef.current = false;
       return;
     }
 
@@ -154,6 +168,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
       setTxnResult(orderRes.data);
       setPaymentStep('success');
       setProcessing(false);
+      paySubmittingRef.current = false;
       toast.success('Plan Activated', `${selectedPlan.name} plan activated!`);
       return;
     }
@@ -162,6 +177,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
     if (!Razorpay) {
       toast.error('Payment unavailable', 'Razorpay checkout failed to load');
       setProcessing(false);
+      paySubmittingRef.current = false;
       return;
     }
 
@@ -195,6 +211,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
           setPaymentStep('select');
         } finally {
           setProcessing(false);
+          paySubmittingRef.current = false;
         }
       },
       modal: {
@@ -206,6 +223,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
             reason: 'user_cancelled',
           }).catch(() => { /* best-effort, ignore */ });
           setProcessing(false);
+          paySubmittingRef.current = false;
           setPaymentStep('select');
           toast.error('Payment Cancelled', 'You closed the payment window');
         },
@@ -219,6 +237,7 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
       }).catch(() => { /* best-effort, ignore */ });
       toast.error('Payment Failed', resp.error?.description || 'Try a different payment method');
       setProcessing(false);
+      paySubmittingRef.current = false;
       setPaymentStep('select');
     });
 
@@ -956,9 +975,12 @@ export default function PlanSelection({ onSuccess }: { onSuccess: () => void }) 
             <Button
               className="pay-btn-pay rounded-pill pay-primary-btn px-4 text-white"
               onClick={handlePay}
+              disabled={processing}
+              style={processing ? { opacity: 0.75, cursor: 'not-allowed' } : undefined}
             >
-              <i className="ri-secure-payment-line me-1" />
-              Pay ₹{grandTotal.toLocaleString()}
+              {processing
+                ? (<><Spinner size="sm" className="me-2" /> Processing…</>)
+                : (<><i className="ri-secure-payment-line me-1" />Pay ₹{grandTotal.toLocaleString()}</>)}
             </Button>
           </ModalFooter>
         )}
