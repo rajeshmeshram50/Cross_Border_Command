@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Button, Spinner, Input } from 'reactstrap';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
@@ -26,6 +27,7 @@ interface ClientStats {
 const AVATAR_COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
 
 export default function Clients({ onNavigate }: Props) {
+  const navigate = useNavigate();
   const toast = useToast();
   const [clients, setClients] = useState<Client[]>([]);
   const [searchInput, setSearchInput] = useState('');
@@ -286,7 +288,7 @@ export default function Clients({ onNavigate }: Props) {
       },
     },
     {
-      header: 'Status',
+      header: 'Org. Status',
       accessorKey: 'status',
       cell: (info: any) => {
         const isActive = info.row.original.status === 'active';
@@ -427,7 +429,9 @@ export default function Clients({ onNavigate }: Props) {
             <h4 className="mb-sm-0">Clients</h4>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Admin</a></li>
+                <li className="breadcrumb-item">
+                  <a href="#" onClick={(e) => { e.preventDefault(); navigate('/dashboard'); }}>Admin</a>
+                </li>
                 <li className="breadcrumb-item active">Clients</li>
               </ol>
             </div>

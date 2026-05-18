@@ -312,7 +312,7 @@ export default function Branches({ onNavigate }: Props) {
       ),
     },
     {
-      header: 'Status',
+      header: 'Org. Status',
       accessorKey: 'status',
       cell: (info: any) => {
         const isActive = info.row.original.status === 'active';

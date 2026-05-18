@@ -309,10 +309,10 @@ export default function MasterDashboard() {
             <p className="text-muted fs-12 mb-0 mt-1">{totals.total} masters across {groups.length} categories</p>
           </div>
         </div>
-        <ol className="breadcrumb m-0 fs-12">
-          <li className="breadcrumb-item"><a href="#">Master Data</a></li>
-          <li className="breadcrumb-item active">Overview</li>
-        </ol>
+        {/* Breadcrumb intentionally omitted on the Master overview —
+            it's the top of the master hierarchy ("Master Data > Overview"
+            was a tautology), the back button on the left already gives
+            the user a one-click escape route. */}
       </div>
 
       {/* ── KPI Stat Cards ── */}

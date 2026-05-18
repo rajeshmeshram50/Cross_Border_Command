@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Spinner, Alert } from 'reactstrap';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -20,6 +21,7 @@ interface Props {
 const HIDDEN_SLUGS = new Set(['clients', 'plans', 'payments', 'settings', 'permissions', 'master.organization_types']);
 
 export default function ClientPermissions({ clientId, clientName, onBack }: Props) {
+  const navigate = useNavigate();
   const toast = useToast();
   const [adminUser, setAdminUser] = useState<any>(null);
   const [modules, setModules] = useState<PermModule[]>([]);
@@ -98,10 +100,9 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
             </div>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Clients</a></li>
-                {displayClientName && (
-                  <li className="breadcrumb-item"><a href="#">{displayClientName}</a></li>
-                )}
+                <li className="breadcrumb-item">
+                  <a href="#" onClick={(e) => { e.preventDefault(); navigate('/clients'); }}>Client</a>
+                </li>
                 <li className="breadcrumb-item active">Permissions</li>
               </ol>
             </div>
