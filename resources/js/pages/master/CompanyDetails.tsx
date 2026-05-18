@@ -195,38 +195,56 @@ export default function CompanyDetailsMaster() {
 
   return (
     <>
-      {/* Page header bar: back + title on left, Add on right */}
+      {/* Page header bar: title on left, Back + Add cluster on right —
+          uses the unified "Back to Master list" pill that every other
+          master now ships, so the action cluster stays visually
+          consistent across the master family. */}
       <Row className="align-items-center mb-3">
         <Col>
-          <div className="d-flex align-items-center gap-2">
-            <button
-              className="btn btn-soft-primary btn-icon rounded-circle"
-              style={{ width: 36, height: 36 }}
-              onClick={() => navigate('/master')}
-              title="Back to master"
-            >
-              <i className="ri-arrow-left-line fs-16"></i>
-            </button>
-            <div>
-              <h4 className="mb-0 fw-bold d-flex align-items-center gap-2">
-                <span className="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary" style={{ width: 36, height: 36 }}>
-                  <i className="ri-building-4-line fs-18"></i>
-                </span>
-                Company Details
-              </h4>
-              <p className="text-muted mb-0 fs-13 ms-5 ps-2">Legal identity, GSTIN, PAN, IEC — used on every export document</p>
-            </div>
+          <div>
+            <h4 className="mb-0 fw-bold d-flex align-items-center gap-2">
+              <span className="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary" style={{ width: 36, height: 36 }}>
+                <i className="ri-building-4-line fs-18"></i>
+              </span>
+              Company Details
+            </h4>
+            <p className="text-muted mb-0 fs-13 ms-5 ps-2">Legal identity, GSTIN, PAN, IEC — used on every export document</p>
           </div>
         </Col>
         <Col xs="auto">
-          <Button
-            color="primary"
-            className="btn-label waves-effect waves-light rounded-pill"
-            onClick={openAdd}
-          >
-            <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-            Add Company
-          </Button>
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => navigate('/master')}
+              title="Back to Master list"
+              className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
+              style={{
+                height: 38,
+                padding: '0 18px',
+                background: 'color-mix(in srgb, #405189 8%, #ffffff)',
+                color: '#405189',
+                border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.18s ease',
+                whiteSpace: 'nowrap',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
+            >
+              <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
+              Back to Master list
+            </button>
+            <Button
+              color="primary"
+              className="btn-label waves-effect waves-light rounded-pill"
+              onClick={openAdd}
+            >
+              <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+              Add Company
+            </Button>
+          </div>
         </Col>
       </Row>
 

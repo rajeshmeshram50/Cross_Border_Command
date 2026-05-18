@@ -72,34 +72,50 @@ export default function MasterPlaceholder() {
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <div className="d-flex align-items-center gap-2">
+            <div>
+              <h4 className="mb-sm-0 d-flex align-items-center gap-2">
+                <i className={`${resolve(leafIcon)} text-primary`}></i>
+                {leafLabel}
+              </h4>
+              <div className="text-muted mt-1 fs-12 d-flex align-items-center gap-1">
+                <i className={resolve(groupIcon)} style={{ fontSize: 11 }}></i>
+                <span>{groupLabel}</span>
+              </div>
+            </div>
+            <div className="d-flex align-items-center gap-3 flex-wrap">
+              {/* Unified "Back to Master list" pill — same design as
+                  every other master surface (Departments / Legal Entities
+                  / Designations / Roles / KPIs / Assets). */}
               <button
                 type="button"
                 onClick={() => navigate('/master')}
-                aria-label="Back to Master"
-                title="Back to Master"
-                className="btn btn-soft-primary btn-icon rounded-circle"
-                style={{ width: 36, height: 36 }}
+                title="Back to Master list"
+                className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
+                style={{
+                  height: 38,
+                  padding: '0 18px',
+                  background: 'color-mix(in srgb, #405189 8%, #ffffff)',
+                  color: '#405189',
+                  border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background 0.18s ease',
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
               >
-                <i className="ri-arrow-left-line fs-16" />
+                <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
+                Back to Master list
               </button>
-              <div>
-                <h4 className="mb-sm-0 d-flex align-items-center gap-2">
-                  <i className={`${resolve(leafIcon)} text-primary`}></i>
-                  {leafLabel}
-                </h4>
-                <div className="text-muted mt-1 fs-12 d-flex align-items-center gap-1">
-                  <i className={resolve(groupIcon)} style={{ fontSize: 11 }}></i>
-                  <span>{groupLabel}</span>
-                </div>
+              <div className="page-title-right">
+                <ol className="breadcrumb m-0">
+                  <li className="breadcrumb-item"><a href="#" onClick={(e) => { e.preventDefault(); navigate('/master'); }}>Master</a></li>
+                  {groupLabel && <li className="breadcrumb-item">{groupLabel}</li>}
+                  <li className="breadcrumb-item active">{leafLabel}</li>
+                </ol>
               </div>
-            </div>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#" onClick={(e) => { e.preventDefault(); navigate('/master'); }}>Master</a></li>
-                {groupLabel && <li className="breadcrumb-item">{groupLabel}</li>}
-                <li className="breadcrumb-item active">{leafLabel}</li>
-              </ol>
             </div>
           </div>
         </Col>
