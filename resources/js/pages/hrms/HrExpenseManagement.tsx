@@ -5,6 +5,7 @@ import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import ExpenseClaimsTable, { type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
+import AdvanceRequestsTable, { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 
 
@@ -119,6 +120,14 @@ export default function HrExpenseManagement() {
 
   const [rows, setRows] = useState<ExpenseClaimRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // Sibling state for the Advance Requests tab. `module` flips the main
+  // table between expense claims and advance requests; advance rows have
+  // their own loading flag so the two fetches don't collide. The status
+  // tabs (All / Pending / Approved / Rejected) drive both lists via the
+  // shared `filter` state.
+  const [advanceRows, setAdvanceRows] = useState<AdvanceRequestRow[]>([]);
+  const [advanceLoading, setAdvanceLoading] = useState(false);
+  const [module, setModule] = useState<'expense' | 'advance'>('expense');
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
   // Category + department dropdowns sit inside the filter strip below the
@@ -177,8 +186,23 @@ export default function HrExpenseManagement() {
     }
   };
 
+  const refreshAdvances = async () => {
+    setAdvanceLoading(true);
+    try {
+      const res = await api.get('/advance-requests', { params: { scope: 'all' } });
+      setAdvanceRows(Array.isArray(res.data) ? res.data : []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Could not load advance requests.';
+      toast.error('Load failed', msg);
+      setAdvanceRows([]);
+    } finally {
+      setAdvanceLoading(false);
+    }
+  };
+
   useEffect(() => {
     refresh();
+    refreshAdvances();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -197,11 +221,33 @@ export default function HrExpenseManagement() {
     }
   };
 
+  const onActAdvance = async (
+    advanceId: number,
+    action: 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject',
+    comment?: string,
+  ) => {
+    try {
+      await api.post(`/advance-requests/${advanceId}/${action}`, comment ? { comment } : {});
+      toast.success('Updated', 'Advance status updated');
+      await refreshAdvances();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Action failed.';
+      toast.error('Action failed', msg);
+    }
+  };
+
   // Apply the date filter first — KPI counts and the table rows both read
   // off this windowed source so the summary stays in sync with what's shown.
   const dateFilteredRows = useMemo(
     () => rows.filter(r => withinDateFilter(r.expense_date, dateFilter)),
     [rows, dateFilter],
+  );
+  // Advance sibling: date-filter on requested_date so the same dropdown
+  // narrows both lists. The status-tab counts above the table switch to
+  // these counts when `module === 'advance'`.
+  const dateFilteredAdvances = useMemo(
+    () => advanceRows.filter(a => withinDateFilter(a.requested_date, dateFilter)),
+    [advanceRows, dateFilter],
   );
 
   const counts = {
@@ -209,6 +255,12 @@ export default function HrExpenseManagement() {
     pending:  dateFilteredRows.filter(r => r.status === 'pending').length,
     approved: dateFilteredRows.filter(r => r.status === 'approved').length,
     rejected: dateFilteredRows.filter(r => r.status === 'rejected').length,
+  };
+  const advanceCounts = {
+    all:      dateFilteredAdvances.length,
+    pending:  dateFilteredAdvances.filter(a => a.status === 'pending').length,
+    approved: dateFilteredAdvances.filter(a => a.status === 'approved').length,
+    rejected: dateFilteredAdvances.filter(a => a.status === 'rejected').length,
   };
   const totalAmount = dateFilteredRows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
   const approvedAmount = dateFilteredRows
@@ -363,6 +415,21 @@ export default function HrExpenseManagement() {
     }
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
   }, [departments, dateFilteredRows]);
+
+  // Advance list filter — status tab + free-text search on top of the date
+  // window. Category/Department filters don't apply (advances aren't tied
+  // to expense categories or departments), so they're skipped here.
+  const filteredAdvances = dateFilteredAdvances.filter(a => {
+    if (filter !== 'all' && a.status !== filter) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      return [
+        a.advance_no, a.employee_name, a.employee_code,
+        a.advance_type, a.advance_type_other, a.reason,
+      ].some(v => (v || '').toString().toLowerCase().includes(q));
+    }
+    return true;
+  });
 
   // Apply status tab + category + department + free-text search on top of
   // the date window. Each filter is independent — clearing any one back to
@@ -826,10 +893,71 @@ export default function HrExpenseManagement() {
         {/* ── Main card with status tabs + filter row + table ── */}
         <Card className="border-0" style={{ borderRadius: 14 }}>
           <CardBody>
+            {/* Module switcher — flips the status tabs + table between
+                Expense Claims and Advance Requests. Sits inside the same
+                pill bar style as the status tabs below so the two rows
+                read as a stacked toggle. Counts come from the date-windowed
+                source (so they react to the All Dates dropdown). */}
+            <Row className="g-2 align-items-center mb-3">
+              <Col xs={12}>
+                <div
+                  className="d-inline-flex"
+                  style={{
+                    background: 'var(--vz-secondary-bg)',
+                    border: '1px solid var(--vz-border-color)',
+                    borderRadius: 10,
+                    padding: 4,
+                    gap: 4,
+                  }}
+                >
+                  {[
+                    { key: 'expense' as const, label: 'Expense Claims',   total: counts.all,         icon: 'ri-file-list-3-line',        accent: '#7c5cfc', shadow: 'rgba(124,92,252,0.25)' },
+                    { key: 'advance' as const, label: 'Advance Requests', total: advanceCounts.all,  icon: 'ri-money-dollar-circle-line', accent: '#4338ca', shadow: 'rgba(67,56,202,0.25)'  },
+                  ].map(m => {
+                    const on = module === m.key;
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => {
+                          setModule(m.key);
+                          setFilter('all');
+                        }}
+                        className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
+                        style={{
+                          borderRadius: 8,
+                          padding: '8px 18px',
+                          fontSize: 13,
+                          background: on ? `linear-gradient(135deg,${m.accent},#a78bfa)` : 'transparent',
+                          color: on ? '#fff' : 'var(--vz-secondary-color)',
+                          border: 'none',
+                          boxShadow: on ? `0 4px 12px ${m.shadow}` : 'none',
+                        }}
+                      >
+                        <i className={m.icon} style={{ fontSize: 14 }} />
+                        {m.label}
+                        <span
+                          className="badge rounded-pill"
+                          style={{
+                            fontSize: 11,
+                            background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
+                            color: on ? '#fff' : 'var(--vz-secondary-color)',
+                          }}
+                        >
+                          {m.total}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Col>
+            </Row>
+
             {/* Status tabs — pill-style, mirrors the Active/Disabled tabs on
                 the HrEmployees page. Active tab gets the violet gradient with
                 white text + count chip; inactive tabs sit transparent with
-                muted text inside the same rounded gray bar. */}
+                muted text inside the same rounded gray bar. Counts switch to
+                the advance source when the module pill is on Advance. */}
             <Row className="g-2 align-items-center mb-3">
               <Col xs={12}>
                 <div
@@ -842,12 +970,16 @@ export default function HrExpenseManagement() {
                     gap: 4,
                   }}
                 >
-                  {[
-                    { key: 'all'      as StatusFilter, label: 'All Claims',     count: counts.all,      icon: 'ri-stack-line'             },
-                    { key: 'pending'  as StatusFilter, label: 'Pending Review', count: counts.pending,  icon: 'ri-time-line'              },
-                    { key: 'approved' as StatusFilter, label: 'Approved',       count: counts.approved, icon: 'ri-checkbox-circle-line'   },
-                    { key: 'rejected' as StatusFilter, label: 'Rejected',       count: counts.rejected, icon: 'ri-close-circle-line'      },
-                  ].map(t => {
+                  {(() => {
+                    const c = module === 'advance' ? advanceCounts : counts;
+                    const allLabel = module === 'advance' ? 'All Advances' : 'All Claims';
+                    return [
+                      { key: 'all'      as StatusFilter, label: allLabel,         count: c.all,      icon: 'ri-stack-line'             },
+                      { key: 'pending'  as StatusFilter, label: 'Pending Review', count: c.pending,  icon: 'ri-time-line'              },
+                      { key: 'approved' as StatusFilter, label: 'Approved',       count: c.approved, icon: 'ri-checkbox-circle-line'   },
+                      { key: 'rejected' as StatusFilter, label: 'Rejected',       count: c.rejected, icon: 'ri-close-circle-line'      },
+                    ];
+                  })().map(t => {
                     const on = filter === t.key;
                     return (
                       <button
@@ -901,50 +1033,73 @@ export default function HrExpenseManagement() {
                 </div>
               </Col>
               <Col md={6} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Category</span>
-                  <div style={{ minWidth: 170 }}>
-                    <MasterSelect
-                      value={categoryFilter}
-                      onChange={(v) => setCategoryFilter(v || 'all')}
-                      options={[
-                        { value: 'all', label: 'All Categories' },
-                        ...categoryOptions.map(c => ({ value: c, label: c })),
-                      ]}
-                      placeholder="All Categories"
-                    />
-                  </div>
-                </div>
-                <div className="d-flex align-items-center gap-2">
-                  <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-                  <div style={{ minWidth: 170 }}>
-                    <MasterSelect
-                      value={departmentFilter}
-                      onChange={(v) => setDepartmentFilter(v || 'all')}
-                      options={[
-                        { value: 'all', label: 'All Depts' },
-                        ...departmentOptions.map(d => ({ value: d, label: d })),
-                      ]}
-                      placeholder="All Depts"
-                    />
-                  </div>
-                </div>
+                {/* Category + Department dropdowns only apply to expense
+                    claims; advances aren't tied to either, so the filter
+                    chips are hidden when the Advance Requests module is
+                    active to keep the toolbar honest. */}
+                {module === 'expense' && (
+                  <>
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Category</span>
+                      <div style={{ minWidth: 170 }}>
+                        <MasterSelect
+                          value={categoryFilter}
+                          onChange={(v) => setCategoryFilter(v || 'all')}
+                          options={[
+                            { value: 'all', label: 'All Categories' },
+                            ...categoryOptions.map(c => ({ value: c, label: c })),
+                          ]}
+                          placeholder="All Categories"
+                        />
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
+                      <div style={{ minWidth: 170 }}>
+                        <MasterSelect
+                          value={departmentFilter}
+                          onChange={(v) => setDepartmentFilter(v || 'all')}
+                          options={[
+                            { value: 'all', label: 'All Depts' },
+                            ...departmentOptions.map(d => ({ value: d, label: d })),
+                          ]}
+                          placeholder="All Depts"
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
               </Col>
             </Row>
 
             <div>
-            <ExpenseClaimsTable
-              rows={filtered}
-              loading={loading}
-              mode="hr"
-              canHrApprove={canHrApprove}
-              currentEmployeeId={user?.employee_id ?? null}
-              onAct={onAct}
-            />
+            {module === 'advance' ? (
+              <AdvanceRequestsTable
+                rows={filteredAdvances}
+                loading={advanceLoading}
+                mode="hr"
+                canHrApprove={canHrApprove}
+                currentEmployeeId={user?.employee_id ?? null}
+                onAct={onActAdvance}
+              />
+            ) : (
+              <ExpenseClaimsTable
+                rows={filtered}
+                loading={loading}
+                mode="hr"
+                canHrApprove={canHrApprove}
+                currentEmployeeId={user?.employee_id ?? null}
+                onAct={onAct}
+              />
+            )}
 
             <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 pt-2 border-top">
               <small className="text-muted">
-                Showing <strong className="text-body">{filtered.length}</strong> of <strong className="text-body">{dateFilteredRows.length}</strong> claims
+                {module === 'advance' ? (
+                  <>Showing <strong className="text-body">{filteredAdvances.length}</strong> of <strong className="text-body">{dateFilteredAdvances.length}</strong> advance{dateFilteredAdvances.length === 1 ? '' : 's'}</>
+                ) : (
+                  <>Showing <strong className="text-body">{filtered.length}</strong> of <strong className="text-body">{dateFilteredRows.length}</strong> claim{dateFilteredRows.length === 1 ? '' : 's'}</>
+                )}
                 {dateFilter !== 'all' && <> · <strong className="text-body">{DATE_FILTER_LABELS[dateFilter]}</strong></>}
               </small>
               <small className="text-muted d-inline-flex align-items-center gap-1">

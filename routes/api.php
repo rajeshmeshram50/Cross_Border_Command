@@ -191,6 +191,18 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/expense-claims/{id}/hr-approve',          [ExpenseClaimController::class, 'hrApprove']);
     Route::post  ('/expense-claims/{id}/hr-reject',           [ExpenseClaimController::class, 'hrReject']);
 
+    // Advance Requests — same two-stage manager → HR/Finance flow as
+    // expense-claims, only the form payload differs (advance type,
+    // recovery schedule, monthly EMI, reason). Scope is selected via
+    // ?scope=mine|team|all on the index endpoint.
+    Route::get   ('/advance-requests',                          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'index']);
+    Route::post  ('/advance-requests',                          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'store']);
+    Route::get   ('/advance-requests/{id}',                     [\App\Http\Controllers\Api\AdvanceRequestController::class, 'show']);
+    Route::post  ('/advance-requests/{id}/manager-approve',     [\App\Http\Controllers\Api\AdvanceRequestController::class, 'managerApprove']);
+    Route::post  ('/advance-requests/{id}/manager-reject',      [\App\Http\Controllers\Api\AdvanceRequestController::class, 'managerReject']);
+    Route::post  ('/advance-requests/{id}/hr-approve',          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'hrApprove']);
+    Route::post  ('/advance-requests/{id}/hr-reject',           [\App\Http\Controllers\Api\AdvanceRequestController::class, 'hrReject']);
+
     // Broadcast Centre announcements — company-wide announcements with
     // audience targeting, scheduling and acknowledgement tracking. Stats /
     // next-code declared BEFORE apiResource so they aren't captured as ids.
@@ -396,5 +408,10 @@ Route::get('/candidates/{candidate}/cv', [CandidateController::class, 'downloadC
 // so file links resolve regardless of whether Apache points at public/.
 Route::get('/expense-claims/{id}/attachments/{index}', [ExpenseClaimController::class, 'downloadAttachment'])
     ->name('expense-claims.attachment');
+
+// Advance-request attachment download — same query-token pattern so the
+// frontend can drop a plain <a target="_blank"> link on each attachment.
+Route::get('/advance-requests/{id}/attachments/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'downloadAttachment'])
+    ->name('advance-requests.attachment');
 
 Route::apiResource('dummy-items', DummyItemController::class);

@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useSettings } from '../contexts/SettingsContext';
 import Tooltip from '../components/ui/Tooltip';
+import { ShimmerSettings } from '../components/ui/Shimmer';
 
 /* ──────────────────────────────────────────────────────────────────
  * Section-shape types — mirror SettingsController::RULES on the API.
@@ -244,7 +245,9 @@ export default function Settings() {
   };
 
   if (loading) {
-    return <div className="d-flex align-items-center justify-content-center" style={{ minHeight: 400 }}><i className="ri-loader-4-line" style={{ fontSize: 28, color: '#7c5cfc', animation: 'spin 1s linear infinite' }} /></div>;
+    // Layout-matched shimmer (hero + 280px sidebar + content card grid) —
+    // reads as the real page filling in rather than a generic spinner.
+    return <div style={{ padding: 16 }}><ShimmerSettings /></div>;
   }
 
   return (

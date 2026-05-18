@@ -3,39 +3,41 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AdvanceRequest;
 use App\Models\Branch;
 use App\Models\Employee;
-use App\Models\ExpenseClaim;
 use App\Models\Module;
 use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\Rule;
 
 /**
- * Two-stage approval workflow controller for employee expense claims.
+ * Two-stage approval workflow controller for employee Advance Requests
+ * (Travel / Salary / Medical / Other recoverable payouts).
+ *
+ * Mirrors ExpenseClaimController one-to-one — same scope rules (mine /
+ * team / all), same tenant gate, same numbering pattern (ADV-0001), same
+ * manager → HR/Finance verdict pair. Only the form payload differs
+ * (advance type, recovery schedule, monthly EMI, reason).
  *
  * Endpoints (registered in routes/api.php under auth:sanctum):
- *   GET    /api/expense-claims?scope=mine|team|all  — list (role-scoped)
- *   POST   /api/expense-claims                      — create (employee submits)
- *   GET    /api/expense-claims/{id}                 — show (with audit fields)
- *   POST   /api/expense-claims/{id}/manager-approve — manager approves
- *   POST   /api/expense-claims/{id}/manager-reject  — manager rejects
- *   POST   /api/expense-claims/{id}/hr-approve      — HR/Finance approves
- *   POST   /api/expense-claims/{id}/hr-reject       — HR/Finance rejects
+ *   GET    /api/advance-requests?scope=mine|team|all
+ *   POST   /api/advance-requests
+ *   GET    /api/advance-requests/{id}
+ *   POST   /api/advance-requests/{id}/manager-approve
+ *   POST   /api/advance-requests/{id}/manager-reject
+ *   POST   /api/advance-requests/{id}/hr-approve
+ *   POST   /api/advance-requests/{id}/hr-reject
  *
- * Scoping rules per scope:
- *   mine — claims where employee_id = current user's Employee.id
- *   team — claims where manager_id   = current user's Employee.id
- *   all  — every claim under tenant scope (admin / HR view)
- *
- * The overall `status` is rolled up from the two stage statuses so list
- * filters stay simple (pending / approved / rejected).
+ * Attachment streaming lives at /api/advance-requests/{id}/attachments/{i}
+ * outside the sanctum group (query-token auth) so plain <a target="_blank">
+ * clicks work — same pattern as expense-claim attachments and candidate CVs.
  */
-class ExpenseClaimController extends Controller
+class AdvanceRequestController extends Controller
 {
-    private const STATUSES = ['pending', 'approved', 'rejected'];
+    private const STATUSES         = ['pending', 'approved', 'rejected'];
+    private const ADVANCE_TYPES    = ['Travel Advance', 'Salary Advance', 'Medical Advance', 'Other'];
+    private const RECOVERY_MODES   = ['emi', 'lumpsum', 'bimonthly'];
 
     /* ============================================================ */
     /*  LIST                                                        */
@@ -43,51 +45,41 @@ class ExpenseClaimController extends Controller
 
     public function index(Request $request)
     {
-        $user = $request->user();
+        $user  = $request->user();
         $scope = $request->query('scope', 'mine');
         if (!in_array($scope, ['mine', 'team', 'all'], true)) {
             $scope = 'mine';
         }
 
-        // Frontend sometimes sends the EMP- code in the employee_id query
-        // (because that's what's in the URL). Resolve to a numeric id up
-        // front so downstream filters work uniformly.
         $employeeIdFilter = $this->resolveEmployeeId(
             $request->query('employee_id'),
             $request->query('employee_code')
         );
 
-        $q = ExpenseClaim::query()
+        $q = AdvanceRequest::query()
             ->with([
                 'employee:id,first_name,middle_name,last_name,display_name,emp_code,reporting_manager_id,department_id',
                 'employee.department:id,name',
                 'manager:id,first_name,middle_name,last_name,display_name,emp_code',
-                'category:id,name,code',
                 'creator:id,name,user_type',
                 'hrUser:id,name,user_type',
             ])
             ->orderByDesc('id');
 
-        // Tenant gate (mirrors MasterController::applyScope rules).
         $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
 
         if ($scope === 'mine') {
-            // EmployeeProfile passes the profile owner's id explicitly so HR /
-            // super-admin viewing someone else's profile sees that employee's
-            // claims. When no override is supplied, fall back to the current
-            // user's own Employee.id.
             $targetEmployeeId = $employeeIdFilter ?: $this->currentEmployeeId($user);
             $q->where('employee_id', $targetEmployeeId ?? -1);
         } elseif ($scope === 'team') {
-            // Team scope rules:
-            //   - super_admin / client_admin / branch_user → no extra filter;
-            //     tenant scope already restricts the rows they may see, and
-            //     they should be able to view every claim inside that scope
-            //     from the My Team surface.
+            // Team scope rules (mirrors ExpenseClaimController):
+            //   - super_admin / client_admin / branch_user → no extra
+            //     employee filter; the tenant scope already restricts what
+            //     they can see and they should be able to view the whole
+            //     team workload from the My Team surface.
             //   - employee / client_user acting as a manager → all rows
-            //     filed by their *transitive* downstream (direct reports +
-            //     reports-of-reports, recursively) so a senior manager
-            //     sees the whole sub-tree, not just the first hop.
+            //     filed by their transitive downstream (direct + indirect
+            //     reports), not just the first hop.
             if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
                 // no-op — tenant scope is the only filter.
             } else {
@@ -96,8 +88,6 @@ class ExpenseClaimController extends Controller
                 $q->whereIn('employee_id', $teamIds ?: [-1]);
             }
         } else {
-            // scope=all — for HR/admin views. No additional filter beyond
-            // tenant scope. Frontend gates the menu by permission.
             $this->guardHrPermission($user, 'can_view');
             if ($employeeIdFilter) {
                 $q->where('employee_id', $employeeIdFilter);
@@ -120,10 +110,6 @@ class ExpenseClaimController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        // Resolve the target employee from one of three inputs (in order):
-        //   1. numeric `employee_id` from the request
-        //   2. string `employee_code` (EMP-001 style — what the SPA URL carries)
-        //   3. the current user's linked Employee row
         $employeeId = $this->resolveEmployeeId(
             $request->input('employee_id'),
             $request->input('employee_code')
@@ -139,31 +125,38 @@ class ExpenseClaimController extends Controller
         // Anyone but super_admin can only file under their own Employee record.
         if ($user->user_type !== 'super_admin'
             && $employee->user_id !== $user->id) {
-            abort(403, 'You can only file claims for your own employee record.');
+            abort(403, 'You can only file advance requests for your own employee record.');
         }
 
         $data = $request->validate([
-            'category_id'    => ['nullable', 'integer'],
-            'currency'       => ['nullable', 'string', 'max:8'],
-            'project'        => ['nullable', 'string', 'max:64'],
-            'payment_method' => ['nullable', 'string', 'max:64'],
-            'title'          => ['required', 'string', 'max:255'],
-            // Cap at 9,999,999,999,999.99 — well inside the decimal(18,2)
-            // column on `expense_claims.amount` so a paste of "9999..."
-            // is rejected by the validator with a clean 422 instead of
-            // overflowing the database and surfacing as a 500.
-            'amount'         => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
-            'expense_date'   => ['required', 'date'],
-            'vendor'         => ['nullable', 'string', 'max:255'],
-            'purpose'        => ['nullable', 'string'],
+            'advance_type'        => ['required', 'string', 'in:' . implode(',', self::ADVANCE_TYPES)],
+            // Only meaningful when advance_type='Other'. The frontend already
+            // gates the input but the backend accepts any string up to 255
+            // chars when present.
+            'advance_type_other'  => ['nullable', 'string', 'max:255'],
+            // Cap at 9,999,999,999,999.99 to fit inside the decimal(18,2)
+            // column — matches the expense-claim guard so the SPA's input
+            // sanitiser (12 whole digits + 2 fraction) can't overflow it.
+            'amount'              => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
+            'requested_date'      => ['required', 'date'],
+            'recovery_start'      => ['required', 'date', 'after_or_equal:requested_date'],
+            'recovery_mode'       => ['required', 'string', 'in:' . implode(',', self::RECOVERY_MODES)],
+            // Months + monthly EMI only required when mode='emi'. The
+            // validator below promotes them to required-when conditionally.
+            'recovery_months'     => ['nullable', 'integer', 'min:1', 'max:120'],
+            'monthly_emi'         => ['nullable', 'numeric', 'min:0', 'max:9999999999999.99'],
+            'reason'              => ['required', 'string', 'max:2000'],
         ]);
 
-        // File attachments — accepted as multipart `files[]`. Each file is
-        // stored on the public disk; the saved row carries an array of
-        // {name, size, path, url} entries so the frontend can list them.
-        // Files are stored with name/size/path only — the public URL is
-        // built per-request at serialize() time so it always points at the
-        // Laravel route (which streams the file with query-token auth).
+        if ($data['recovery_mode'] === 'emi' && empty($data['recovery_months'])) {
+            abort(422, 'Number of months is required when recovery mode is EMI.');
+        }
+        if ($data['advance_type'] === 'Other' && empty($data['advance_type_other'])) {
+            abort(422, 'Please specify the advance type when "Other" is selected.');
+        }
+
+        // File attachments — same pattern as expense_claims, stored on the
+        // public disk under advance_requests/{employeeId}.
         $attachments = [];
         if ($request->hasFile('files')) {
             $files = $request->file('files');
@@ -172,7 +165,7 @@ class ExpenseClaimController extends Controller
                 if (!$f) continue;
                 $name = $f->getClientOriginalName();
                 $size = $f->getSize();
-                $path = $f->store('expense_claims/' . $employeeId, 'public');
+                $path = $f->store('advance_requests/' . $employeeId, 'public');
                 $attachments[] = [
                     'name' => $name,
                     'size' => $size,
@@ -181,56 +174,42 @@ class ExpenseClaimController extends Controller
             }
         }
 
-        $categoryName = null;
-        if (!empty($data['category_id'])) {
-            $cat = \App\Models\Masters\ExpenseCategories::find($data['category_id']);
-            $categoryName = $cat?->name;
-        }
-
-        // When the employee has no reporting manager assigned, auto-clear
-        // the manager-approval stage at create time so the claim flows
-        // straight to whoever holds HR / Finance approval rights. The
-        // audit log surfaces this with an explicit "no manager" note so
-        // it doesn't look like a phantom approval.
+        // Auto-clear the manager stage when no reporting manager is assigned
+        // — same behaviour as expense-claim so the audit log surfaces an
+        // explicit "no manager" note instead of looking like a phantom
+        // approval.
         $hasManager      = !empty($employee->reporting_manager_id);
         $managerStatus   = $hasManager ? 'pending'  : 'approved';
         $managerActedAt  = $hasManager ? null       : now();
         $managerComment  = $hasManager ? null       : 'Auto-approved · no reporting manager assigned';
 
-        // Wrap claim_no allocation + insert in a single transaction so the
-        // lockForUpdate inside nextClaimNo() actually holds: two concurrent
-        // submitters in the same tenant must not race to compute the same
-        // EXP-#### sequence (would silently produce duplicate claim_no
-        // values, breaking the audit trail and any later "find by claim_no"
-        // lookup).
-        $row = DB::transaction(function () use ($employee, $data, $attachments, $categoryName, $managerStatus, $managerActedAt, $managerComment, $user) {
-            return ExpenseClaim::create([
-                'client_id'        => $employee->client_id,
-                'branch_id'        => $employee->branch_id,
-                'claim_no'         => $this->nextClaimNo($employee->client_id, $employee->branch_id),
-                'employee_id'      => $employee->id,
-                'manager_id'       => $employee->reporting_manager_id,
-                'category_id'      => $data['category_id'] ?? null,
-                'category_name'    => $categoryName,
-                'currency'         => $data['currency'] ?? 'INR',
-                'project'          => $data['project'] ?? null,
-                'payment_method'   => $data['payment_method'] ?? null,
-                'title'            => $data['title'],
-                'amount'           => $data['amount'],
-                'expense_date'     => $data['expense_date'],
-                'vendor'           => $data['vendor'] ?? null,
-                'purpose'          => $data['purpose'] ?? null,
-                'attachments'      => $attachments ?: null,
-                'status'           => 'pending',
-                'manager_status'   => $managerStatus,
-                'manager_acted_at' => $managerActedAt,
-                'manager_comment'  => $managerComment,
-                'hr_status'        => 'pending',
-                'created_by'       => $user->id,
+        $row = DB::transaction(function () use ($employee, $data, $attachments, $managerStatus, $managerActedAt, $managerComment, $user) {
+            return AdvanceRequest::create([
+                'client_id'         => $employee->client_id,
+                'branch_id'         => $employee->branch_id,
+                'advance_no'        => $this->nextAdvanceNo($employee->client_id, $employee->branch_id),
+                'employee_id'       => $employee->id,
+                'manager_id'        => $employee->reporting_manager_id,
+                'advance_type'      => $data['advance_type'],
+                'advance_type_other'=> $data['advance_type'] === 'Other' ? ($data['advance_type_other'] ?? null) : null,
+                'amount'            => $data['amount'],
+                'requested_date'    => $data['requested_date'],
+                'recovery_start'    => $data['recovery_start'],
+                'recovery_mode'     => $data['recovery_mode'],
+                'recovery_months'   => $data['recovery_mode'] === 'emi' ? ($data['recovery_months'] ?? null) : null,
+                'monthly_emi'       => $data['recovery_mode'] === 'emi' ? ($data['monthly_emi']     ?? null) : null,
+                'reason'            => $data['reason'],
+                'attachments'       => $attachments ?: null,
+                'status'            => 'pending',
+                'manager_status'    => $managerStatus,
+                'manager_acted_at'  => $managerActedAt,
+                'manager_comment'   => $managerComment,
+                'hr_status'         => 'pending',
+                'created_by'        => $user->id,
             ]);
         });
 
-        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
         return response()->json($this->serialize($row), 201);
     }
 
@@ -241,24 +220,22 @@ class ExpenseClaimController extends Controller
     public function show(Request $request, $id)
     {
         $user = $request->user();
-        $row = ExpenseClaim::with(['employee', 'manager', 'category', 'creator', 'hrUser'])
+        $row = AdvanceRequest::with(['employee', 'manager', 'creator', 'hrUser'])
             ->findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         return response()->json($this->serialize($row));
     }
 
     /**
-     * Stream one attachment for the given claim by its index in the
-     * attachments array. Auth via query token (?token=<sanctum>) so plain
-     * <a target="_blank"> clicks work — same pattern as CandidateController::downloadCv,
-     * which sidesteps the storage symlink + Apache DocumentRoot mismatch
-     * that causes /storage/... to 404 in some local setups.
+     * Stream one attachment by its index in the attachments array.
+     * Query-token auth so plain <a target="_blank"> works — mirrors the
+     * expense-claim attachment endpoint exactly.
      */
     public function downloadAttachment(Request $request, $id, $index)
     {
         $this->authenticateFromQueryToken($request);
 
-        $row = ExpenseClaim::findOrFail($id);
+        $row = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $request->user());
 
         $idx = (int) $index;
@@ -275,11 +252,6 @@ class ExpenseClaimController extends Controller
         return $disk->response($path, $filename);
     }
 
-    /**
-     * Resolve the request user from `?token=<sanctum>` so direct browser
-     * link-clicks work without sending an Authorization header. Mirrors
-     * CandidateController::authenticateFromQueryToken.
-     */
     private function authenticateFromQueryToken(Request $request): void
     {
         if (!$request->user() && $request->query('token')) {
@@ -312,16 +284,15 @@ class ExpenseClaimController extends Controller
     private function managerAct(Request $request, $id, string $verdict)
     {
         $user = $request->user();
-        $row = ExpenseClaim::findOrFail($id);
+        $row = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
 
         $myEmployeeId = $this->currentEmployeeId($user);
-        // Only the assigned manager (or super_admin) may act.
         if ($user->user_type !== 'super_admin' && $row->manager_id !== $myEmployeeId) {
-            abort(403, 'You are not the assigned reporting manager for this claim.');
+            abort(403, 'You are not the assigned reporting manager for this advance request.');
         }
         if ($row->manager_status !== 'pending') {
-            abort(409, 'This claim has already been actioned by the manager.');
+            abort(409, 'This advance request has already been actioned by the manager.');
         }
 
         $data = $request->validate([
@@ -331,13 +302,12 @@ class ExpenseClaimController extends Controller
         $row->manager_status   = $verdict;
         $row->manager_acted_at = now();
         $row->manager_comment  = $data['comment'] ?? null;
-        // Rejection at the manager stage closes the claim.
         if ($verdict === 'rejected') {
             $row->status = 'rejected';
         }
         $row->save();
 
-        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
         return response()->json($this->serialize($row));
     }
 
@@ -358,15 +328,15 @@ class ExpenseClaimController extends Controller
     private function hrAct(Request $request, $id, string $verdict)
     {
         $user = $request->user();
-        $row = ExpenseClaim::findOrFail($id);
+        $row = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         $this->guardHrPermission($user, 'can_approve');
 
         if ($verdict === 'approved' && $row->manager_status !== 'approved') {
-            abort(409, 'Manager must approve this claim before HR / Finance can approve it.');
+            abort(409, 'Manager must approve this advance request before HR / Finance can approve it.');
         }
         if ($row->hr_status !== 'pending') {
-            abort(409, 'This claim has already been actioned by HR / Finance.');
+            abort(409, 'This advance request has already been actioned by HR / Finance.');
         }
 
         $data = $request->validate([
@@ -377,10 +347,10 @@ class ExpenseClaimController extends Controller
         $row->hr_user_id  = $user->id;
         $row->hr_acted_at = now();
         $row->hr_comment  = $data['comment'] ?? null;
-        $row->status      = $verdict; // hr stage is the final word
+        $row->status      = $verdict;
         $row->save();
 
-        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
         return response()->json($this->serialize($row));
     }
 
@@ -388,11 +358,6 @@ class ExpenseClaimController extends Controller
     /*  HELPERS                                                     */
     /* ============================================================ */
 
-    /**
-     * Map the authenticated User to their Employee row via Employee.user_id.
-     * Returns null when the user isn't linked to an employee record (e.g.
-     * super_admin, client_admin without a personal Employee profile).
-     */
     private function currentEmployeeId($user): ?int
     {
         if (!$user) return null;
@@ -401,13 +366,10 @@ class ExpenseClaimController extends Controller
 
     /**
      * Build the transitive set of employee ids that report (directly or
-     * indirectly) to the given root manager. Returns an empty array when
-     * the root is null. The root itself is NOT included — managers don't
-     * own their own claims in the "team" view (those live under My Mine).
-     *
-     * Iterative BFS over `reporting_manager_id` keeps it portable across
-     * MySQL / SQLite and avoids dialect-specific recursive CTEs. The chain
-     * is usually 2-4 levels deep, so a handful of round-trips is fine.
+     * indirectly) to the given root manager. Empty when the root is null.
+     * The root itself is excluded — managers don't own their own rows in
+     * the "team" view. Iterative BFS over reporting_manager_id keeps it
+     * portable across DB engines.
      */
     private function downstreamEmployeeIds(?int $rootEmployeeId): array
     {
@@ -426,21 +388,12 @@ class ExpenseClaimController extends Controller
         return $all;
     }
 
-    /**
-     * Accept either a numeric Employee.id, a string EMP- code, or both, and
-     * return the resolved numeric id (or null when neither resolves). The
-     * frontend often only knows the EMP- code from the URL slug, so the
-     * controller takes responsibility for the lookup.
-     */
     private function resolveEmployeeId($idInput, $codeInput): ?int
     {
-        // Numeric path — accept ints and all-digit strings.
         if ($idInput !== null && $idInput !== '') {
             if (is_numeric($idInput)) {
                 return (int) $idInput;
             }
-            // Some callers send the EMP- code in employee_id by mistake;
-            // accept it transparently rather than error out.
             $codeInput = $codeInput ?: $idInput;
         }
         if ($codeInput) {
@@ -451,21 +404,18 @@ class ExpenseClaimController extends Controller
     }
 
     /**
-     * Walk up the parent_id chain on `modules` looking for `master.expense_category`.
-     * Used as a sanity check; the actual gate is the per-user permissions row.
+     * Permission gate for HR/Finance actions. Same lookup ExpenseClaim uses
+     * — checks the `hr.expense` module since the advance flow shares HR's
+     * approval surface. If the module isn't seeded, falls back to "any
+     * admin-tier user can approve" so a fresh install isn't gated out.
      */
     private function guardHrPermission($user, string $perm): void
     {
         if (!$user) abort(401, 'Authentication required');
         if ($user->user_type === 'super_admin') return;
 
-        // Use the existing hr.expense module slug if present; otherwise allow
-        // any client-admin / branch-user (they're already past tenant scope).
         $moduleId = Module::where('slug', 'hr.expense')->value('id');
         if (!$moduleId) {
-            // Fall back to "is this an admin-tier user?" — keeps the feature
-            // usable on installs where the hr.expense module hasn't been
-            // seeded into the modules table yet.
             if (in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true)) {
                 return;
             }
@@ -480,7 +430,7 @@ class ExpenseClaimController extends Controller
         }
     }
 
-    private function ensureTenantAccess(ExpenseClaim $row, $user): void
+    private function ensureTenantAccess(AdvanceRequest $row, $user): void
     {
         if (!$user) abort(401);
         if ($user->user_type === 'super_admin') return;
@@ -493,9 +443,6 @@ class ExpenseClaimController extends Controller
         }
 
         if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
-            // Same rules as MasterController::applyScope — branch users see
-            // their own branch + main-branch shared rows; main-branch users
-            // see all branches under the client.
             if ($row->client_id !== null && $row->client_id !== $user->client_id) {
                 abort(403, 'Out of tenant scope.');
             }
@@ -506,8 +453,6 @@ class ExpenseClaimController extends Controller
                     ->value('id');
                 $allowed = $row->branch_id === $user->branch_id
                     || ($mainBranchId && $row->branch_id === $mainBranchId);
-                // Owner / assigned manager always have access regardless of
-                // branch (e.g. claims created by the user themselves).
                 $myEmployeeId = $this->currentEmployeeId($user);
                 if (!$allowed
                     && $row->employee_id !== $myEmployeeId
@@ -575,7 +520,6 @@ class ExpenseClaimController extends Controller
         $q->whereRaw('1 = 0');
     }
 
-    /** BranchSwitcher narrowing — see RecruitmentController for full notes. */
     private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
     {
         if ($branchFilter === null) return;
@@ -587,38 +531,35 @@ class ExpenseClaimController extends Controller
     }
 
     /**
-     * Generate the next EXP-### sequence per (client_id, branch_id) tuple so
-     * each tenant gets its own numbering independently.
-     *
-     * IMPORTANT: must be called from within a DB::transaction(...) — the
-     * lockForUpdate() row-lock is only held until the surrounding
-     * transaction commits. Without a transaction, two concurrent submitters
-     * in the same tenant would both compute the same next number, producing
-     * duplicate claim_no values. Caller in store() wraps the allocate+create
-     * pair in DB::transaction() for exactly this reason.
+     * Generate the next ADV-#### sequence per (client_id, branch_id). MUST
+     * run inside DB::transaction so the lockForUpdate holds — store()
+     * wraps the allocate+create pair for exactly this reason. Without the
+     * transaction, two concurrent submitters in the same tenant would race
+     * and produce duplicate advance_no values.
      */
-    private function nextClaimNo(?int $clientId, ?int $branchId): string
+    private function nextAdvanceNo(?int $clientId, ?int $branchId): string
     {
-        $q = ExpenseClaim::query()->lockForUpdate();
+        $q = AdvanceRequest::query()->lockForUpdate();
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
         $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
 
-        $codes = $q->pluck('claim_no');
+        $codes = $q->pluck('advance_no');
         $max = 0;
         foreach ($codes as $c) {
-            if (preg_match('/^EXP-(\d+)$/i', (string) $c, $m)) {
+            if (preg_match('/^ADV-(\d+)$/i', (string) $c, $m)) {
                 $n = (int) $m[1];
                 if ($n > $max) $max = $n;
             }
         }
-        return 'EXP-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        return 'ADV-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
     }
 
     /**
-     * Shape a row for the API response. Flattens employee/manager/category
-     * names so the frontend can render the table without nested dereferences.
+     * Shape one row for the API. Flattens employee/manager names + maps
+     * attachments to download URLs, matching the expense_claims serializer
+     * so the SPA can reuse the same audit-log / attachment widgets.
      */
-    private function serialize(ExpenseClaim $row): array
+    private function serialize(AdvanceRequest $row): array
     {
         $employee = $row->employee;
         $manager  = $row->manager;
@@ -631,48 +572,43 @@ class ExpenseClaimController extends Controller
                 ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')))
             : null;
         return [
-            'id'              => $row->id,
-            'claim_no'        => $row->claim_no,
-            'employee_id'     => $row->employee_id,
-            'employee_name'   => $employeeName,
-            'employee_code'   => $employee?->emp_code,
-            'department_id'   => $employee?->department_id,
-            'department_name' => $employee?->department?->name,
-            'manager_id'      => $row->manager_id,
-            'manager_name'    => $managerName,
-            'category_id'     => $row->category_id,
-            'category_name'   => $row->category?->name ?? $row->category_name,
-            'currency'        => $row->currency,
-            'project'         => $row->project,
-            'payment_method'  => $row->payment_method,
-            'title'           => $row->title,
-            'amount'          => (float) $row->amount,
-            'expense_date'    => optional($row->expense_date)->format('Y-m-d'),
-            'vendor'          => $row->vendor,
-            'purpose'         => $row->purpose,
-            'attachments'     => collect($row->attachments ?? [])->values()->map(function ($a, $i) use ($row) {
-                // The download URL points at the Laravel route which streams
-                // the file via query-token auth. The browser-side anchor
-                // appends `?token=<sanctum>` before opening, identical to
-                // the candidate CV pattern.
+            'id'                 => $row->id,
+            'advance_no'         => $row->advance_no,
+            'employee_id'        => $row->employee_id,
+            'employee_name'      => $employeeName,
+            'employee_code'      => $employee?->emp_code,
+            'department_id'      => $employee?->department_id,
+            'department_name'    => $employee?->department?->name,
+            'manager_id'         => $row->manager_id,
+            'manager_name'       => $managerName,
+            'advance_type'       => $row->advance_type,
+            'advance_type_other' => $row->advance_type_other,
+            'amount'             => (float) $row->amount,
+            'requested_date'     => optional($row->requested_date)->format('Y-m-d'),
+            'recovery_start'     => optional($row->recovery_start)->format('Y-m-d'),
+            'recovery_mode'      => $row->recovery_mode,
+            'recovery_months'    => $row->recovery_months,
+            'monthly_emi'        => $row->monthly_emi !== null ? (float) $row->monthly_emi : null,
+            'reason'             => $row->reason,
+            'attachments'        => collect($row->attachments ?? [])->values()->map(function ($a, $i) use ($row) {
                 return [
                     'name' => $a['name'] ?? null,
                     'size' => $a['size'] ?? null,
-                    'url'  => url("/api/expense-claims/{$row->id}/attachments/{$i}"),
+                    'url'  => url("/api/advance-requests/{$row->id}/attachments/{$i}"),
                 ];
             })->all(),
-            'status'          => $row->status,
-            'manager_status'  => $row->manager_status,
-            'manager_acted_at'=> optional($row->manager_acted_at)->toIso8601String(),
-            'manager_comment' => $row->manager_comment,
-            'hr_status'       => $row->hr_status,
-            'hr_user_id'      => $row->hr_user_id,
-            'hr_user_name'    => $row->hrUser?->name,
-            'hr_acted_at'     => optional($row->hr_acted_at)->toIso8601String(),
-            'hr_comment'      => $row->hr_comment,
-            'created_by'      => $row->created_by,
-            'creator_name'    => $row->creator?->name,
-            'created_at'      => optional($row->created_at)->toIso8601String(),
+            'status'             => $row->status,
+            'manager_status'     => $row->manager_status,
+            'manager_acted_at'   => optional($row->manager_acted_at)->toIso8601String(),
+            'manager_comment'    => $row->manager_comment,
+            'hr_status'          => $row->hr_status,
+            'hr_user_id'         => $row->hr_user_id,
+            'hr_user_name'       => $row->hrUser?->name,
+            'hr_acted_at'        => optional($row->hr_acted_at)->toIso8601String(),
+            'hr_comment'         => $row->hr_comment,
+            'created_by'         => $row->created_by,
+            'creator_name'       => $row->creator?->name,
+            'created_at'         => optional($row->created_at)->toIso8601String(),
         ];
     }
 }

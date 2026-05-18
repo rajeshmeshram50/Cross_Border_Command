@@ -11,6 +11,7 @@ import HeaderFooterPanel, {
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import ExpenseClaimsTable from '../../components/ExpenseClaimsTable';
+import AdvanceRequestsTable, { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import './EmployeeProfile.css';
 import ImageCropperModal from '../../components/ui/ImageCropperModal';
@@ -1276,6 +1277,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     vendor: string;
     purpose: string;
     saved: boolean;       // marked true once "Save & Add Another" / "Submit" runs on this draft
+    // Each draft owns its own attachment list. Used to live in a single
+    // top-level `claimFiles` state, which meant "Save & Add Another"
+    // carried Claim 1's receipts into Claim 2 — the user saw the same
+    // attachments on every draft and had no way to upload distinct ones.
+    files: File[];
   };
   const blankDraft = (): ClaimDraft => ({
     employee: employeeId,
@@ -1293,6 +1299,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     vendor: '',
     purpose: '',
     saved: false,
+    files: [],
   });
   const [claimDrafts, setClaimDrafts] = useState<ClaimDraft[]>([blankDraft()]);
   const [activeClaimIdx, setActiveClaimIdx] = useState(0);
@@ -1310,7 +1317,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         const raw = localStorage.getItem(claimDraftKey);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) restored = parsed as ClaimDraft[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // File objects can't survive JSON serialisation, so any
+            // attachments the user staged before "Save Draft" are lost.
+            // Force `files: []` on every restored draft so we don't end
+            // up with `undefined` (which would crash the file list map).
+            restored = (parsed as ClaimDraft[]).map(p => ({ ...p, files: [] }));
+          }
         }
       } catch { /* ignore — fall through to a blank draft */ }
       setClaimDrafts(restored || [blankDraft()]);
@@ -1319,13 +1332,37 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimOpen]);
 
-  // Save Draft handler — persists the current claimDrafts array to local
-  // storage so the user can close the modal and resume later. Doesn't hit
-  // the backend (the row is created on actual Submit).
+  // Save Draft handler — persists either the expense `claimDrafts` array
+  // or the advance form fields, depending on which mode the modal is in.
+  // Doesn't hit the backend (rows are created only on actual Submit).
+  // File objects are stripped before serialising since browsers can't
+  // round-trip File through JSON — attachments must be re-staged on resume.
   const handleSaveDraft = () => {
     try {
-      localStorage.setItem(claimDraftKey, JSON.stringify(claimDrafts));
-      toast.success('Draft saved', 'Your in-progress claim will be here when you re-open the form.');
+      if (claimMode === 'advance') {
+        const payload = {
+          advType, advTypeOther, advAmount,
+          advRequestedDate, advRecoveryStart,
+          advRecoveryMode, advMonths, advMonthlyEmi, advReason,
+        };
+        localStorage.setItem(advanceDraftKey, JSON.stringify(payload));
+        toast.success(
+          'Draft saved',
+          advFiles.length > 0
+            ? `Form fields saved — you'll need to re-attach ${advFiles.length} file${advFiles.length === 1 ? '' : 's'} on resume.`
+            : 'Your in-progress advance request will be here when you re-open the form.',
+        );
+      } else {
+        const serialisable = claimDrafts.map(d => ({ ...d, files: [] }));
+        localStorage.setItem(claimDraftKey, JSON.stringify(serialisable));
+        const stagedFiles = claimDrafts.reduce((n, d) => n + (d.files?.length || 0), 0);
+        toast.success(
+          'Draft saved',
+          stagedFiles > 0
+            ? `Form fields saved — you'll need to re-attach ${stagedFiles} file${stagedFiles === 1 ? '' : 's'} on resume.`
+            : 'Your in-progress claim will be here when you re-open the form.',
+        );
+      }
     } catch {
       toast.error('Could not save draft', 'Browser storage is full or blocked.');
     }
@@ -1383,7 +1420,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Validator for the Advance Request form. Same toast-summary +
   // per-field map pattern the expense draft validator uses, so both
   // forms surface mistakes identically (red border + inline message).
-  const submitAdvanceRequest = () => {
+  const submitAdvanceRequest = async () => {
+    // Re-entrancy guard — shares the same flag the expense flow uses so
+    // a fast double-click on Submit Advance Request can't fire two POSTs
+    // and create duplicate rows.
+    if (claimSubmitting) return;
     const errs: Record<string, string> = {};
     const summary: string[] = [];
     const amt = Number(String(advAmount).replace(/[^\d.]/g, ''));
@@ -1398,6 +1439,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
     if (!advRequestedDate)     { errs.requested = 'Requested date is required';   summary.push('Requested date is required'); }
     if (!advRecoveryStart)     { errs.recovery_start = 'Recovery start date is required'; summary.push('Recovery start date is required'); }
+    // Today (local, YYYY-MM-DD) — lexicographic compare works because the
+    // MasterDatePicker emits ISO date strings, so today/past detection is
+    // a plain string compare. Both dates must be today or later; recovery
+    // additionally must be on/after the requested date.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (advRequestedDate && advRequestedDate < todayIso) {
+      errs.requested = 'Requested date cannot be in the past';
+      summary.push('Requested date cannot be in the past');
+    }
+    if (advRecoveryStart && advRecoveryStart < todayIso) {
+      errs.recovery_start = 'Recovery start cannot be in the past';
+      summary.push('Recovery start cannot be in the past');
+    }
+    // Server enforces after_or_equal:requested_date too, but catch it
+    // client-side so the user gets immediate feedback instead of a 422.
+    if (advRequestedDate && advRecoveryStart && advRecoveryStart < advRequestedDate) {
+      errs.recovery_start = 'Recovery start must be on or after requested date';
+      summary.push('Recovery start must be on or after requested date');
+    }
     if (!advRecoveryMode)      { errs.recovery_mode = 'Recovery mode is required'; summary.push('Recovery mode is required'); }
     if (advRecoveryMode === 'emi') {
       const months = Number(advMonths);
@@ -1412,11 +1472,68 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       toast.error('Fix the highlighted issues', summary.slice(0, 3).join('. '));
       return;
     }
-    // No backend endpoint yet — surface a placeholder success toast and
-    // close. When the API is wired, replace this with the POST + refresh
-    // pattern the expense flow uses.
-    toast.success('Advance request submitted', 'Sent for manager + finance approval.');
-    setClaimOpen(false);
+    setClaimSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append('advance_type', advType);
+      if (advType === 'Other') fd.append('advance_type_other', advTypeOther.trim());
+      fd.append('amount', String(amt));
+      fd.append('requested_date', advRequestedDate);
+      fd.append('recovery_start', advRecoveryStart);
+      fd.append('recovery_mode', advRecoveryMode);
+      if (advRecoveryMode === 'emi') {
+        fd.append('recovery_months', String(Number(advMonths)));
+        if (advMonthlyEmi) {
+          const emi = Number(String(advMonthlyEmi).replace(/[^\d.]/g, ''));
+          if (Number.isFinite(emi) && emi > 0) fd.append('monthly_emi', String(emi));
+        }
+      }
+      fd.append('reason', advReason.trim());
+      // Profile owner — same routing logic as expense-claim store(). The
+      // backend resolves either numeric id or EMP- code, and gates the
+      // "you can only file under yourself" rule for non-super-admins.
+      if (profileEmpIdNum !== null) {
+        fd.append('employee_id', String(profileEmpIdNum));
+      } else if (profileEmpCode) {
+        fd.append('employee_code', profileEmpCode);
+      }
+      for (const f of advFiles) fd.append('files[]', f);
+
+      await api.post('/advance-requests', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success('Advance request submitted', 'Sent for manager + finance approval.');
+      // Clear any saved draft so re-opening the modal starts fresh
+      // instead of reviving the just-submitted payload.
+      try { localStorage.removeItem(advanceDraftKey); } catch { /* swallow */ }
+      setClaimOpen(false);
+      // Refresh the list table so the new row appears immediately. Wrapped
+      // in try/catch so a stale-fetch failure doesn't surface a second
+      // error toast right after the success one.
+      try { await refreshAdvances(); } catch { /* swallow */ }
+    } catch (err: any) {
+      // Same surface-the-best-message pattern submitAllDrafts uses —
+      // 422 field errors first, then top-level message, then a status
+      // hint as fallback.
+      const fieldErrors = err?.response?.data?.errors;
+      let msg = '';
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const first = Object.values(fieldErrors)[0];
+        msg = Array.isArray(first) ? String(first[0]) : String(first);
+      }
+      if (!msg) msg = err?.response?.data?.message || '';
+      const status = err?.response?.status;
+      if (!msg) {
+        msg = status === 500
+          ? 'The server rejected the request. Check the amount fits 12 digits and try again.'
+          : status === 413
+            ? 'One or more attachments are too large to upload.'
+            : 'Could not submit the advance request. Please try again.';
+      }
+      toast.error('Submit failed', msg);
+    } finally {
+      setClaimSubmitting(false);
+    }
   };
 
   // Advance request fields
@@ -1448,17 +1565,57 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   useEffect(() => {
     if (claimOpen) setAdvEmiTouched(false);
   }, [claimOpen]);
-  // Multi-file attachments — separate buckets for expense receipts vs advance
-  // supporting docs so the two flows don't bleed into each other.
-  const [claimFiles, setClaimFiles] = useState<File[]>([]);
+  // Expense receipts now live per-draft (`draft.files`) so each claim
+  // owns its own attachments. The `claimFiles` / `setClaimFiles`
+  // aliases below preserve the existing JSX bindings while reading and
+  // writing the active draft's bucket. Advance docs stay top-level
+  // since the advance form is a single record, not a list.
+  const claimFiles = draft.files;
+  const setClaimFiles = (next: File[] | ((prev: File[]) => File[])) => {
+    setClaimDrafts(d => d.map((x, i) => {
+      if (i !== activeClaimIdx) return x;
+      const nextFiles = typeof next === 'function' ? (next as (prev: File[]) => File[])(x.files) : next;
+      return { ...x, files: nextFiles };
+    }));
+  };
   const [advFiles, setAdvFiles] = useState<File[]>([]);
-  // Reset attachments + custom advance-type field every time the modal opens.
+  // localStorage key for the advance-mode Save Draft. Kept separate from
+  // the expense draft key so flipping modules doesn't clobber the other
+  // form's saved fields. Scoped per employee like the expense draft.
+  const advanceDraftKey = `cbc.advance.draft.${employeeId || 'me'}`;
+  // Reset attachments + custom advance-type field every time the modal
+  // opens — then, if a saved advance draft exists in localStorage, hydrate
+  // every advance field from it. File objects don't round-trip JSON so
+  // attachments must be re-staged on resume (same trade-off as the
+  // expense Save Draft flow).
   useEffect(() => {
     if (claimOpen) {
-      setClaimFiles([]);
       setAdvFiles([]);
       setAdvTypeOther('');
+      try {
+        const raw = localStorage.getItem(advanceDraftKey);
+        if (raw) {
+          const d = JSON.parse(raw) as Partial<{
+            advType: string; advTypeOther: string; advAmount: string;
+            advRequestedDate: string; advRecoveryStart: string;
+            advRecoveryMode: string; advMonths: string; advMonthlyEmi: string;
+            advReason: string;
+          }>;
+          if (d && typeof d === 'object') {
+            if (typeof d.advType            === 'string') setAdvType(d.advType);
+            if (typeof d.advTypeOther       === 'string') setAdvTypeOther(d.advTypeOther);
+            if (typeof d.advAmount          === 'string') setAdvAmount(d.advAmount);
+            if (typeof d.advRequestedDate   === 'string') setAdvRequestedDate(d.advRequestedDate);
+            if (typeof d.advRecoveryStart   === 'string') setAdvRecoveryStart(d.advRecoveryStart);
+            if (typeof d.advRecoveryMode    === 'string') setAdvRecoveryMode(d.advRecoveryMode);
+            if (typeof d.advMonths          === 'string') setAdvMonths(d.advMonths);
+            if (typeof d.advMonthlyEmi      === 'string') setAdvMonthlyEmi(d.advMonthlyEmi);
+            if (typeof d.advReason          === 'string') setAdvReason(d.advReason);
+          }
+        }
+      } catch { /* ignore — leave defaults in place */ }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimOpen]);
 
   // ── Expense Claims — API-backed list ──────────────────────────────────
@@ -1664,6 +1821,66 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, profileEmpIdNum, isOwnProfile]);
 
+  // ── Advance Requests — same shape as the expense-claim lists above.
+  // `apiAdvances` = the profile owner's advances (mine scope, optionally
+  // filtered to a specific employee). `teamAdvances` = pending requests
+  // routed to the current user as the assigned reporting manager.
+  const [apiAdvances, setApiAdvances]   = useState<AdvanceRequestRow[]>([]);
+  const [teamAdvances, setTeamAdvances] = useState<AdvanceRequestRow[]>([]);
+  const [loadingAdvances, setLoadingAdvances] = useState(false);
+  // Top-level switcher: 'expense' (default) or 'advance'. The two surfaces
+  // share the Expense Details tab so HR / employee can flip between
+  // expense-claim and advance-request rows without leaving the page.
+  const [expenseModuleTab, setExpenseModuleTab] = useState<'expense' | 'advance'>('expense');
+  // Mine / Team sub-pill — same semantics as the expense version. When the
+  // user is viewing their own profile and is also a reporting manager,
+  // they can switch between their own advances and pending team requests.
+  const [advanceSubTab, setAdvanceSubTab] = useState<'mine' | 'team'>('mine');
+
+  const refreshAdvances = async () => {
+    if (tab !== 'expense' || !profileEmpCode) return;
+    setLoadingAdvances(true);
+    try {
+      const mineRes = await api.get('/advance-requests', {
+        params: {
+          scope: 'mine',
+          ...(profileEmpIdNum !== null
+            ? { employee_id: profileEmpIdNum }
+            : { employee_code: profileEmpCode }),
+        },
+      });
+      setApiAdvances(Array.isArray(mineRes.data) ? mineRes.data : []);
+      const teamRes = await api.get('/advance-requests', { params: { scope: 'team' } });
+      setTeamAdvances(Array.isArray(teamRes.data) ? teamRes.data : []);
+    } catch {
+      setApiAdvances([]);
+      setTeamAdvances([]);
+    } finally {
+      setLoadingAdvances(false);
+    }
+  };
+  useEffect(() => {
+    refreshAdvances();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, profileEmpIdNum, isOwnProfile]);
+
+  /** Dispatcher for inline Approve / Reject buttons on advance-request
+   *  rows. Same shape as `actOnClaim`, just a different REST collection. */
+  const actOnAdvance = async (
+    advanceId: number,
+    action: 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject',
+    comment?: string,
+  ) => {
+    try {
+      await api.post(`/advance-requests/${advanceId}/${action}`, comment ? { comment } : {});
+      toast.success('Updated', 'Advance request status updated');
+      await refreshAdvances();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Action failed.';
+      toast.error('Action failed', msg);
+    }
+  };
+
   // POST every draft as multipart/form-data so the optional attachments[]
   // upload alongside. On success, clear drafts, close modal, refresh list.
   //
@@ -1759,7 +1976,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         } else if (profileEmpCode) {
           fd.append('employee_code', profileEmpCode);
         }
-        for (const f of claimFiles) fd.append('files[]', f);
+        // Use THIS draft's own attachments — earlier the loop reused the
+        // active-draft's files for every claim, so every backend row got
+        // an identical copy of whichever attachment list was showing.
+        for (const f of (d.files || [])) fd.append('files[]', f);
         await api.post('/expense-claims', fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
@@ -1869,6 +2089,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const filteredExpenses: ApiClaim[] = expenseFilter === 'all'
     ? activeClaimsSource
     : activeClaimsSource.filter(c => c.status === expenseFilter);
+
+  // Mirror counts/filtering for the Advance Requests tab so the same set
+  // of filter pills (All/Approved/Rejected/Pending) drives the advance
+  // table. `activeAdvancesSource` follows the My/Team sub-tab selection
+  // the same way `activeClaimsSource` does for expenses.
+  const activeAdvancesSource: AdvanceRequestRow[] =
+    advanceSubTab === 'team' ? teamAdvances : apiAdvances;
+  const advanceCounts = {
+    all:      activeAdvancesSource.length,
+    approved: activeAdvancesSource.filter(a => a.status === 'approved').length,
+    rejected: activeAdvancesSource.filter(a => a.status === 'rejected').length,
+    pending:  activeAdvancesSource.filter(a => a.status === 'pending').length,
+  };
+  const filteredAdvances: AdvanceRequestRow[] = expenseFilter === 'all'
+    ? activeAdvancesSource
+    : activeAdvancesSource.filter(a => a.status === expenseFilter);
 
   return (
     <>
@@ -3916,61 +4152,148 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </span>
                 </Col>
                 <Col className="min-w-0">
-                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>Expense Overview</p>
+                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>
+                    {expenseModuleTab === 'advance' ? 'Advance Overview' : 'Expense Overview'}
+                  </p>
                   <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
-                    Total Claimed: <span style={{ color: '#bce8ff' }}>₹{totalClaimed.toLocaleString('en-IN')}</span>
+                    {expenseModuleTab === 'advance' ? 'Total Requested' : 'Total Claimed'}:{' '}
+                    <span style={{ color: '#bce8ff' }}>
+                      ₹{(expenseModuleTab === 'advance'
+                          ? activeAdvancesSource.reduce((s, a) => s + Number(a.amount || 0), 0)
+                          : totalClaimed
+                        ).toLocaleString('en-IN')}
+                    </span>
                   </div>
-                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>{expenseCounts.all} claims · {expenseCounts.approved} approved · {expenseCounts.pending} pending</small>
+                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>
+                    {expenseModuleTab === 'advance'
+                      ? `${advanceCounts.all} advances · ${advanceCounts.approved} approved · ${advanceCounts.pending} pending`
+                      : `${expenseCounts.all} claims · ${expenseCounts.approved} approved · ${expenseCounts.pending} pending`}
+                  </small>
                 </Col>
                 <Col xs="12" lg="auto">
                   <div className="d-flex gap-1 flex-wrap justify-content-lg-end">
-                    {[
-                      { label: 'Total',    value: expenseCounts.all,      color: '#fff' },
-                      { label: 'Approved', value: expenseCounts.approved, color: '#86efac' },
-                      { label: 'Pending',  value: expenseCounts.pending,  color: '#fcd34d' },
-                      { label: 'Rejected', value: expenseCounts.rejected, color: '#fca5a5' },
-                    ].map(c => (
-                      <div
-                        key={c.label}
-                        className="text-center"
-                        style={{
-                          background: 'rgba(255,255,255,0.10)',
-                          border: '1px solid rgba(255,255,255,0.18)',
-                          borderRadius: 9,
-                          padding: '4px 10px',
-                          minWidth: 72,
-                        }}
-                      >
-                        <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
-                        <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
-                      </div>
-                    ))}
+                    {(() => {
+                      // Counts switch with the active module so the KPI strip
+                      // reflects whatever the user is currently viewing
+                      // (expense claims vs advance requests).
+                      const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
+                      return [
+                        { key: 'all'      as ExpenseFilter, label: 'Total',    value: c.all,      color: '#fff'    },
+                        { key: 'approved' as ExpenseFilter, label: 'Approved', value: c.approved, color: '#86efac' },
+                        { key: 'pending'  as ExpenseFilter, label: 'Pending',  value: c.pending,  color: '#fcd34d' },
+                        { key: 'rejected' as ExpenseFilter, label: 'Rejected', value: c.rejected, color: '#fca5a5' },
+                      ];
+                    })().map(c => {
+                      // Tiles double as filter toggles — clicking "Approved"
+                      // narrows the table to approved rows; clicking the
+                      // already-active tile (or Total) restores All.
+                      const on = expenseFilter === c.key;
+                      return (
+                        <button
+                          key={c.label}
+                          type="button"
+                          onClick={() => setExpenseFilter(on && c.key !== 'all' ? 'all' : c.key)}
+                          className="text-center border-0"
+                          style={{
+                            background: on ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.10)',
+                            outline: on ? '1px solid rgba(255,255,255,0.45)' : '1px solid rgba(255,255,255,0.18)',
+                            borderRadius: 9,
+                            padding: '4px 10px',
+                            minWidth: 72,
+                            cursor: 'pointer',
+                            transition: 'background .15s ease',
+                          }}
+                        >
+                          <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
+                          <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </Col>
               </Row>
             </div>
           </Card>
 
-          {/* Expense Claims */}
+          {/* Expense / Advance module switcher — sits between the hero
+              overview and the section card so the user can flip between
+              Expense Claims and Advance Requests without leaving the
+              Expense Details tab. */}
+          <Row className="g-2 mb-3">
+            <Col xs={12}>
+              <div
+                className="d-flex"
+                style={{
+                  background: 'var(--vz-secondary-bg)',
+                  border: '1px solid var(--vz-border-color)',
+                  borderRadius: 9,
+                  padding: 3,
+                  gap: 3,
+                }}
+              >
+                {[
+                  { key: 'expense' as const, label: 'Expense Claims',    icon: 'ri-file-list-3-line',         activeBg: 'linear-gradient(135deg,#a855f7,#c084fc)', shadow: 'rgba(168,85,247,0.22)' },
+                  { key: 'advance' as const, label: 'Advance Requests',  icon: 'ri-money-dollar-circle-line', activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
+                ].map(t => {
+                  const on = expenseModuleTab === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => setExpenseModuleTab(t.key)}
+                      className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
+                      style={{
+                        borderRadius: 7,
+                        padding: '5px 12px',
+                        fontSize: 11.5,
+                        background: on ? t.activeBg : 'transparent',
+                        color: on ? '#fff' : 'var(--vz-secondary-color)',
+                        border: 'none',
+                        boxShadow: on ? `0 3px 8px ${t.shadow}` : 'none',
+                      }}
+                    >
+                      <i className={t.icon} style={{ fontSize: 12 }} />
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Col>
+          </Row>
+
+          {/* Section card — header copy + counts swap based on the
+              active module so the rest of the layout (search, Export,
+              Raise New Claim, table) stays consistent. */}
           <div
             className="ep-section-card-flat ep-section-card mb-3"
-            style={{ borderTop: '3px solid #a855f7' }}
+            style={{ borderTop: expenseModuleTab === 'expense' ? '3px solid #a855f7' : '3px solid #4338ca' }}
           >
             <div
               className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap"
               style={{
-                borderBottom: '1px solid rgba(168,85,247,0.18)',
-                background: 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)',
+                borderBottom: expenseModuleTab === 'expense'
+                  ? '1px solid rgba(168,85,247,0.18)'
+                  : '1px solid rgba(67,56,202,0.18)',
+                background: expenseModuleTab === 'expense'
+                  ? 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)'
+                  : 'linear-gradient(135deg, rgba(67,56,202,0.14) 0%, rgba(67,56,202,0.04) 60%, rgba(67,56,202,0.01) 100%)',
               }}
             >
               <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon" style={{ background: 'rgba(168,85,247,0.18)', color: '#7c3aed' }}>
-                  <i className="ri-file-list-3-line" />
+                <span className="ep-section-icon" style={{
+                  background: expenseModuleTab === 'expense' ? 'rgba(168,85,247,0.18)' : 'rgba(67,56,202,0.18)',
+                  color: expenseModuleTab === 'expense' ? '#7c3aed' : '#4338ca',
+                }}>
+                  <i className={expenseModuleTab === 'expense' ? 'ri-file-list-3-line' : 'ri-money-dollar-circle-line'} />
                 </span>
                 <div>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Expense Claims</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>
+                    {expenseModuleTab === 'expense' ? 'Expense Claims' : 'Advance Requests'}
+                  </h6>
                   <small className="text-muted" style={{ fontSize: 11 }}>
-                    {expenseCounts.all} total · {expenseCounts.approved} approved · {expenseCounts.pending} pending
+                    {expenseModuleTab === 'expense'
+                      ? `${expenseCounts.all} total · ${expenseCounts.approved} approved · ${expenseCounts.pending} pending`
+                      : `${apiAdvances.length} total · ${apiAdvances.filter(a => a.status === 'approved').length} approved · ${apiAdvances.filter(a => a.status === 'pending').length} pending`}
                   </small>
                 </div>
               </div>
@@ -3979,18 +4302,36 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <input type="text" className="form-control form-control-sm" placeholder="Search…" style={{ fontSize: 12, height: 30 }} />
                   <i className="ri-search-line search-icon" style={{ fontSize: 12 }} />
                 </div>
+                {/* Export — text was hardcoded `#374151` which disappeared
+                    against the dark card in dark mode. Theme variable now
+                    drives both modes, with a small accent-tinted hover. */}
                 <button
                   type="button"
                   className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
                   style={{
                     background: 'var(--vz-card-bg)',
-                    color: '#374151',
+                    color: 'var(--vz-body-color)',
                     border: '1px solid var(--vz-border-color)',
                     fontSize: 11.5, padding: '4px 12px',
+                    transition: 'background .15s ease, border-color .15s ease, color .15s ease',
+                  }}
+                  onMouseEnter={e => {
+                    const t = e.currentTarget;
+                    t.style.background = 'rgba(168,85,247,0.10)';
+                    t.style.borderColor = 'rgba(168,85,247,0.45)';
+                    t.style.color = '#7c3aed';
+                  }}
+                  onMouseLeave={e => {
+                    const t = e.currentTarget;
+                    t.style.background = 'var(--vz-card-bg)';
+                    t.style.borderColor = 'var(--vz-border-color)';
+                    t.style.color = 'var(--vz-body-color)';
                   }}
                 >
                   <i className="ri-download-2-line" /> Export
                 </button>
+                {/* Raise New Claim — inline styles can't carry :hover, so
+                    we drive the brightening + lift via mouse handlers. */}
                 <button
                   type="button"
                   className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
@@ -4000,10 +4341,28 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     border: 'none',
                     boxShadow: '0 4px 10px rgba(249,115,22,0.28)',
                     fontSize: 11.5, padding: '4px 12px',
+                    transition: 'transform .15s ease, box-shadow .15s ease, filter .15s ease',
                   }}
-                  onClick={() => { setClaimMode('expense'); setClaimOpen(true); }}
+                  onMouseEnter={e => {
+                    const t = e.currentTarget;
+                    t.style.transform = 'translateY(-1px)';
+                    t.style.boxShadow = '0 6px 14px rgba(249,115,22,0.45)';
+                    t.style.filter = 'brightness(1.06)';
+                  }}
+                  onMouseLeave={e => {
+                    const t = e.currentTarget;
+                    t.style.transform = 'translateY(0)';
+                    t.style.boxShadow = '0 4px 10px rgba(249,115,22,0.28)';
+                    t.style.filter = 'none';
+                  }}
+                  onClick={() => {
+                    // Open the unified modal in the right mode based on
+                    // which list is currently visible.
+                    setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
+                    setClaimOpen(true);
+                  }}
                 >
-                  <i className="ri-add-line" /> Raise New Claim
+                  <i className="ri-add-line" /> {expenseModuleTab === 'advance' ? 'New Advance Request' : 'Raise New Claim'}
                 </button>
               </div>
             </div>
@@ -4011,22 +4370,41 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               {/* My / Team sub-tabs — only render when the current user is
                   viewing their own profile AND has a team (i.e. is someone's
                   reporting manager). For everyone else the table behaves as
-                  a single-list view (the user's own claims). */}
-              {isOwnProfile && teamClaims.length > 0 && (
+                  a single-list view (the user's own claims/advances). The
+                  labels, counts and active-state mirror whichever module
+                  (Expense Claims vs Advance Requests) is currently open. */}
+              {/* Visible whenever the user is a manager in *either* module —
+                  approved/rejected rows stay in teamClaims/teamAdvances
+                  (backend returns every row where manager_id = current user
+                  regardless of status), so this toggle keeps the historic
+                  track visible after the manager has acted. */}
+              {isOwnProfile && (teamClaims.length > 0 || teamAdvances.length > 0) && (
                 <div className="d-flex gap-1 mb-3" style={{
                   background: 'var(--vz-secondary-bg)', padding: 4, borderRadius: 10,
                   border: '1px solid var(--vz-border-color)', width: 'fit-content',
                 }}>
-                  {[
-                    { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line',   count: apiClaims.length },
-                    { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line',   count: teamClaims.length },
-                  ].map(t => {
-                    const on = expenseSubTab === t.key;
+                  {(expenseModuleTab === 'advance'
+                    ? [
+                        { key: 'mine' as const, label: 'My Advances',   icon: 'ri-user-line', count: apiAdvances.length },
+                        { key: 'team' as const, label: 'Team Advances', icon: 'ri-team-line', count: teamAdvances.length },
+                      ]
+                    : [
+                        { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line', count: apiClaims.length },
+                        { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line', count: teamClaims.length },
+                      ]
+                  ).map(t => {
+                    const currentSub = expenseModuleTab === 'advance' ? advanceSubTab : expenseSubTab;
+                    const on = currentSub === t.key;
+                    const activeAccent = expenseModuleTab === 'advance' ? '#4338ca' : '#7c3aed';
+                    const activeWash   = expenseModuleTab === 'advance' ? 'rgba(67,56,202,0.12)' : 'rgba(124,58,237,0.12)';
                     return (
                       <button
                         key={t.key}
                         type="button"
-                        onClick={() => setExpenseSubTab(t.key)}
+                        onClick={() => {
+                          if (expenseModuleTab === 'advance') setAdvanceSubTab(t.key);
+                          else                                setExpenseSubTab(t.key);
+                        }}
                         className="d-inline-flex align-items-center gap-2 fw-semibold"
                         style={{
                           fontSize: 12,
@@ -4034,7 +4412,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           borderRadius: 8,
                           border: 'none',
                           background: on ? 'var(--vz-card-bg)' : 'transparent',
-                          color: on ? '#7c3aed' : 'var(--vz-secondary-color)',
+                          color: on ? activeAccent : 'var(--vz-secondary-color)',
                           boxShadow: on ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
                           cursor: 'pointer',
                         }}
@@ -4045,8 +4423,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           className="d-inline-flex align-items-center justify-content-center rounded-pill"
                           style={{
                             minWidth: 18, height: 16, padding: '0 6px',
-                            background: on ? 'rgba(124,58,237,0.12)' : 'var(--vz-secondary-bg)',
-                            color: on ? '#7c3aed' : 'var(--vz-secondary-color)',
+                            background: on ? activeWash : 'var(--vz-secondary-bg)',
+                            color: on ? activeAccent : 'var(--vz-secondary-color)',
                             fontSize: 10, fontWeight: 700,
                           }}
                         >
@@ -4059,14 +4437,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               )}
 
               {/* Filter pills — active = solid filled with colored shadow for
-                  strong visibility; inactive = subtle white with border. */}
+                  strong visibility; inactive = subtle white with border. When
+                  the Advance Requests module is active the same pills drive
+                  filtering against `advanceCounts` instead of `expenseCounts`. */}
               <div className="d-flex gap-2 flex-wrap mb-3">
-                {[
-                  { key: 'all'      as ExpenseFilter, label: 'All',      count: expenseCounts.all,      active: '#6366f1', shadow: 'rgba(99,102,241,0.32)' },
-                  { key: 'approved' as ExpenseFilter, label: 'Approved', count: expenseCounts.approved, active: '#10b981', shadow: 'rgba(16,185,129,0.32)' },
-                  { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: expenseCounts.rejected, active: '#ef4444', shadow: 'rgba(239,68,68,0.32)'  },
-                  { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: expenseCounts.pending,  active: '#f59e0b', shadow: 'rgba(245,158,11,0.32)' },
-                ].map(f => {
+                {(() => {
+                  const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
+                  return [
+                    { key: 'all'      as ExpenseFilter, label: 'All',      count: c.all,      active: '#6366f1', shadow: 'rgba(99,102,241,0.32)' },
+                    { key: 'approved' as ExpenseFilter, label: 'Approved', count: c.approved, active: '#10b981', shadow: 'rgba(16,185,129,0.32)' },
+                    { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: c.rejected, active: '#ef4444', shadow: 'rgba(239,68,68,0.32)'  },
+                    { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: c.pending,  active: '#f59e0b', shadow: 'rgba(245,158,11,0.32)' },
+                  ];
+                })().map(f => {
                   const on = expenseFilter === f.key;
                   return (
                     <button
@@ -4102,25 +4485,44 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 })}
               </div>
 
-              {/* Claims table — API-backed. Status pill replaces the old
-                  Payment Action column; the 3-dot Action menu opens the audit
-                  log popover (Created → Manager → HR/Finance). When viewing
-                  Team Expenses as the assigned manager, inline Approve/Reject
-                  buttons appear next to the menu. */}
-              <ExpenseClaimsTable
-                rows={filteredExpenses}
-                loading={loadingClaims}
-                accent={accent}
-                fallbackInitials={initials}
-                fallbackName={employee?.name || employeeId}
-                mode={expenseSubTab === 'team' ? 'team' : 'mine'}
-                currentEmployeeId={authUser?.employee_id ?? null}
-                onAct={actOnClaim}
-              />
+              {/* Claims / Advances table — API-backed. Status pill replaces
+                  the old Payment Action column; the 3-dot Action menu opens
+                  the audit log popover (Created → Manager → HR/Finance).
+                  When viewing Team rows as the assigned manager, inline
+                  Approve/Reject buttons appear next to the menu. The
+                  AdvanceRequestsTable mirror is rendered when the user
+                  switches the module pill to "Advance Requests". */}
+              {expenseModuleTab === 'advance' ? (
+                <AdvanceRequestsTable
+                  rows={filteredAdvances}
+                  loading={loadingAdvances}
+                  accent={accent}
+                  fallbackInitials={initials}
+                  fallbackName={employee?.name || employeeId}
+                  mode={advanceSubTab === 'team' ? 'team' : 'mine'}
+                  currentEmployeeId={authUser?.employee_id ?? null}
+                  onAct={actOnAdvance}
+                />
+              ) : (
+                <ExpenseClaimsTable
+                  rows={filteredExpenses}
+                  loading={loadingClaims}
+                  accent={accent}
+                  fallbackInitials={initials}
+                  fallbackName={employee?.name || employeeId}
+                  mode={expenseSubTab === 'team' ? 'team' : 'mine'}
+                  currentEmployeeId={authUser?.employee_id ?? null}
+                  onAct={actOnClaim}
+                />
+              )}
 
               <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 pt-2 border-top">
                 <small className="text-muted">
-                  Showing <strong className="text-body">{filteredExpenses.length}</strong> claim{filteredExpenses.length === 1 ? '' : 's'}
+                  {expenseModuleTab === 'advance' ? (
+                    <>Showing <strong className="text-body">{filteredAdvances.length}</strong> advance{filteredAdvances.length === 1 ? '' : 's'}</>
+                  ) : (
+                    <>Showing <strong className="text-body">{filteredExpenses.length}</strong> claim{filteredExpenses.length === 1 ? '' : 's'}</>
+                  )}
                 </small>
                 <small className="text-muted d-inline-flex align-items-center gap-1">
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
@@ -4933,28 +5335,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
           </div>
 
-          {/* Mode tabs + flow hint */}
-          <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-2">
-            <div className="ep-claim-tabs">
-              <button
-                type="button"
-                className={`ep-claim-tab${claimMode === 'expense' ? ' is-active' : ''}`}
-                onClick={() => setClaimMode('expense')}
-              >
-                <i className="ri-file-text-line" /> Expense Claim
-              </button>
-              <button
-                type="button"
-                className={`ep-claim-tab${claimMode === 'advance' ? ' is-active' : ''}`}
-                onClick={() => setClaimMode('advance')}
-              >
-                <i className="ri-money-dollar-circle-line" /> Advance Request
-              </button>
-            </div>
+          {/* Flow hint — mode is already chosen by the outer Expense /
+              Advance module pill (which decides which form opens), so the
+              in-modal tab row was redundant and has been removed. */}
+          <div className="d-flex align-items-center justify-content-end flex-wrap gap-2 mt-2">
             <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>
               {claimMode === 'expense'
-                ? <>Expense → <strong>Reimbursement</strong> &nbsp;|&nbsp; Advance → Payroll Recovery</>
-                : <>Advance → <strong>Payroll Recovery</strong> &nbsp;|&nbsp; Expense → Reimbursement</>}
+                ? <>Expense → <strong>Reimbursement</strong></>
+                : <>Advance → <strong>Payroll Recovery</strong></>}
             </small>
           </div>
         </div>
@@ -5313,6 +5701,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={advRequestedDate}
                       onChange={(v) => { setAdvRequestedDate(v); clearAdvErr('requested'); }}
                       invalid={!!advErrors.requested}
+                      minDate={new Date().toISOString().slice(0, 10)}
                     />
                     {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
                   </Col>
@@ -5322,6 +5711,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={advRecoveryStart}
                       onChange={(v) => { setAdvRecoveryStart(v); clearAdvErr('recovery_start'); }}
                       invalid={!!advErrors.recovery_start}
+                      minDate={advRequestedDate || new Date().toISOString().slice(0, 10)}
                     />
                     {advErrors.recovery_start && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.recovery_start}</div>}
                   </Col>

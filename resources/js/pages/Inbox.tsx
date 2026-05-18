@@ -4,7 +4,7 @@ import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
-import { ShimmerTableRows } from '../components/ui/Shimmer';
+import { ShimmerTableRows, Shimmer } from '../components/ui/Shimmer';
 import SignaturePad from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -353,9 +353,29 @@ export default function Inbox() {
               </div>
 
               {leaveLoading ? (
-                <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>
-                  <i className="ri-loader-4-line ri-spin" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
-                  Loading…
+                <div>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={`leave-shim-${i}`} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                      <div className="d-flex align-items-start gap-3 flex-wrap">
+                        <Shimmer width={38} height={38} radius={999} />
+                        <div style={{ flex: '1 1 320px', minWidth: 240, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div className="d-flex align-items-center gap-2">
+                            <Shimmer width={140} height={13} />
+                            <Shimmer width={80} height={11} />
+                          </div>
+                          <div className="d-flex align-items-center gap-2">
+                            <Shimmer width={60} height={18} radius={6} />
+                            <Shimmer width={180} height={11} />
+                          </div>
+                          <Shimmer height={32} radius={6} />
+                        </div>
+                        <div className="d-flex flex-column gap-2" style={{ minWidth: 140 }}>
+                          <Shimmer height={32} radius={8} />
+                          <Shimmer height={32} radius={8} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : leaveRows.length === 0 ? (
                 <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
@@ -478,9 +498,30 @@ export default function Inbox() {
               </div>
 
               {expenseLoading ? (
-                <div style={{ padding: 24, textAlign: 'center', color: '#9ca3af' }}>
-                  <i className="ri-loader-4-line ri-spin" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
-                  Loading…
+                <div>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={`exp-shim-${i}`} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                      <div className="d-flex align-items-start gap-3 flex-wrap">
+                        <Shimmer width={38} height={38} radius={999} />
+                        <div style={{ flex: '1 1 320px', minWidth: 240, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div className="d-flex align-items-center gap-2">
+                            <Shimmer width={140} height={13} />
+                            <Shimmer width={90} height={11} />
+                          </div>
+                          <div className="d-flex align-items-center gap-2">
+                            <Shimmer width={70} height={18} radius={6} />
+                            <Shimmer width={100} height={11} />
+                            <Shimmer width={80} height={11} />
+                          </div>
+                          <Shimmer height={32} radius={6} />
+                        </div>
+                        <div className="d-flex flex-column gap-2" style={{ minWidth: 140 }}>
+                          <Shimmer height={32} radius={8} />
+                          <Shimmer height={32} radius={8} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : expenseRows.length === 0 ? (
                 <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>

@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
+import Tooltip from '../components/ui/Tooltip';
 import SignaturePad from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -472,14 +473,14 @@ function ApprovalsPanel({
           { label: 'Leave Approvals',   value: counts.leave,              icon: 'ri-calendar-2-line',    gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
         ].map(k => (
           <div key={k.label} className="col-md-3 col-sm-6">
-            <div className="myteam-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
+            <div className="myteam-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden', cursor: 'default' }}>
               <div style={{ height: 4, background: k.gradient }} />
-              <div className="d-flex align-items-center justify-content-between" style={{ padding: '10px 14px' }}>
+              <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
                 <div>
-                  <div className="myteam-kpi-num" style={{ fontSize: 22, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
-                  <div className="myteam-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
+                  <div className="myteam-kpi-num" style={{ fontSize: 24, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
+                  <div className="myteam-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.05, textTransform: 'uppercase', marginTop: 6 }}>{k.label}</div>
                 </div>
-                <span style={{ width: 36, height: 36, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span className="myteam-kpi-icon" style={{ width: 40, height: 40, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
                   <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
                 </span>
               </div>
@@ -553,22 +554,27 @@ function ApprovalsPanel({
                       <td>
                         <div className="d-flex gap-1 flex-wrap">
                           {r.module === 'document_signature' && (
-                            <button type="button" onClick={() => onView(r)}
-                              title="Preview the document before taking action"
-                              className="myteam-view-btn"
-                              style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                              <i className="ri-eye-line me-1" />View
-                            </button>
+                            <Tooltip label="Preview the document before taking action">
+                              <button type="button" onClick={() => onView(r)}
+                                aria-label="Preview document"
+                                className="myteam-view-btn"
+                                style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                                <i className="ri-eye-line me-1" />View
+                              </button>
+                            </Tooltip>
                           )}
                           {/* Neutral "Review" trigger — opens the decision
                               dialog where the user can add a remark and
                               choose Approve or Reject. Action verb sits in
                               the ACTION column so it's still discoverable. */}
-                          <button type="button" onClick={() => onAct(r)}
-                            style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                            <i className="ri-checkbox-circle-line me-1" />
-                            Review &amp; Decide
-                          </button>
+                          <Tooltip label="Open the decision dialog to Approve or Reject">
+                            <button type="button" onClick={() => onAct(r)}
+                              aria-label="Review and decide"
+                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                              <i className="ri-checkbox-circle-line me-1" />
+                              Review &amp; Decide
+                            </button>
+                          </Tooltip>
                         </div>
                       </td>
                     </tr>
@@ -862,6 +868,73 @@ const inputLabelStyle: React.CSSProperties = {
 function MyTeamDarkStyles() {
   return (
     <style>{`
+      /* ── KPI card polish — mirrors the .hr-emp-kpi-card pattern on the
+         HR Employees page so both pages feel like the same product:
+         soft elevation in rest, a 4px translateY lift + richer shadow
+         + violet border + icon scale on hover. Tile-level transition
+         covers transform, shadow and border to keep the motion buttery. */
+      .myteam-page .myteam-kpi-tile {
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        box-shadow:
+          0 6px 16px -4px rgba(15, 23, 42, 0.10),
+          0 2px 4px rgba(15, 23, 42, 0.06);
+        background-image: linear-gradient(180deg, rgba(124,92,252,0.04) 0%, rgba(124,92,252,0) 60%);
+      }
+      .myteam-page .myteam-kpi-tile:hover {
+        transform: translateY(-4px);
+        box-shadow:
+          0 16px 32px -8px rgba(15, 23, 42, 0.18),
+          0 4px 10px rgba(124, 92, 252, 0.10);
+        border-color: rgba(124, 92, 252, 0.45) !important;
+      }
+      .myteam-page .myteam-kpi-icon {
+        transition: transform .18s ease, box-shadow .18s ease;
+      }
+      .myteam-page .myteam-kpi-tile:hover .myteam-kpi-icon {
+        transform: scale(1.06);
+        box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+      }
+
+      /* ── Table polish — align with HrEmployees / Branches tables:
+         consistent 12.5–13px body font, snug header (10.5px,
+         uppercase, 0.05em letter-spacing), generous 12px vertical
+         row padding so chips/avatars breathe, and a hover row tint
+         that matches the violet brand wash. */
+      .myteam-page .myteam-table tbody td {
+        padding: 12px 12px;
+        font-size: 12.75px;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--vz-border-color, #f3f4f6);
+      }
+      .myteam-page .myteam-table tbody tr {
+        transition: background .15s ease;
+      }
+      .myteam-page .myteam-table tbody tr:hover td {
+        background: rgba(124,92,252,0.04);
+      }
+      .myteam-page .myteam-thead th,
+      .myteam-page .myteam-thead-green th {
+        padding: 11px 12px !important;
+        font-size: 10.5px !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.05em !important;
+        text-transform: uppercase;
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-table tbody tr:hover td {
+        background: rgba(124,92,252,0.10);
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-kpi-tile {
+        background-image: linear-gradient(180deg, rgba(124,92,252,0.10) 0%, rgba(124,92,252,0) 70%);
+        box-shadow:
+          0 8px 20px -4px rgba(0, 0, 0, 0.55),
+          0 2px 6px rgba(0, 0, 0, 0.35);
+      }
+      [data-bs-theme="dark"] .myteam-page .myteam-kpi-tile:hover {
+        box-shadow:
+          0 18px 36px -8px rgba(0, 0, 0, 0.65),
+          0 4px 12px rgba(124, 92, 252, 0.25);
+      }
+
       [data-bs-theme="dark"] .myteam-page .myteam-header-icon {
         background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.25)) !important;
       }
