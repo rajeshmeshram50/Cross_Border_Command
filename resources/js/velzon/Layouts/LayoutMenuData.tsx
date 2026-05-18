@@ -90,12 +90,28 @@ const hrLeafLink = (leafId: string): string => {
 // Sales Matrix leaves — wire each id to its real React page as it ships.
 // Anything not listed falls back to /sales (which routes to /dashboard for
 // now since /sales itself isn't built yet).
+//
+// Note: leaf IDs come from SALES_GROUPS in constants.ts. "sales.workplace"
+// is the "My Workplace" sidebar entry and renders the Lead Worksheet page
+// (the centerpiece port of the prototype's `lwPage`).
 const salesLeafLink = (leafId: string): string => {
   switch (leafId) {
-    case "sales.customers":       return "/sales/customers";
-    case "sales.consignee":       return "/sales/consignee";
-    case "sales.lead_ack_master": return "/sales/lead-ack-master";
-    default:                      return "/sales";
+    case "sales.customers":           return "/sales/customers";
+    case "sales.consignee":           return "/sales/consignee";
+    case "sales.lead_ack_master":     return "/sales/lead-ack-master";
+    case "sales.workplace":           return "/sales/lead-worksheet";
+    case "sales.analytics":           return "/sales/analytics";
+    case "sales.productivity_tracker": return "/sales/todo";
+    case "sales.quotation_vs_pi":     return "/sales/qpi";
+    case "sales.diagnosis":           return "/sales/diagnosis";
+    case "sales.resolution_center":   return "/sales/resolution-center";
+    case "sales.performance":         return "/sales/performance";
+    case "sales.lead_distribution":   return "/sales/lead-distribution";
+    case "sales.lead_detail":         return "/sales/lead-detail";
+    case "sales.enquiries":           return "/sales/enquiries";
+    case "sales.leads_details":       return "/sales/leads-details";
+    // sales.p2p_summary has no React page yet — falls through to /sales.
+    default:                          return "/sales";
   }
 };
 
