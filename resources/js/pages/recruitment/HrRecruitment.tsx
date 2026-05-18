@@ -2616,7 +2616,37 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   className={`rec-input${errors.ctcRange ? ' is-invalid' : ''}`}
                   placeholder="e.g. 8-12"
                   value={ctcRange}
-                  onChange={e => { setCtcRange(e.target.value); clear('ctcRange'); }}
+                  // Live-validate as the user types so a too-large value
+                  // surfaces inline + via toast immediately, instead of
+                  // waiting for submit. Field is denominated in LPA, so
+                  // a value > 9,999.99 is almost certainly the user
+                  // pasting raw rupees by mistake.
+                  onChange={e => {
+                    const v = e.target.value;
+                    setCtcRange(v);
+                    const trimmed = v.trim();
+                    if (!trimmed) { clear('ctcRange'); return; }
+                    if (trimmed.length > 50) {
+                      setErrors(prev => ({ ...prev, ctcRange: 'CTC range cannot exceed 50 characters' }));
+                      return;
+                    }
+                    const nums = trimmed.match(/\d+(?:\.\d+)?/g) || [];
+                    const bad  = nums.find(n => Number(n) > 9999.99);
+                    if (bad) {
+                      setErrors(prev => ({
+                        ...prev,
+                        ctcRange: `${Number(bad).toLocaleString('en-IN')} exceeds the 9,999.99 LPA cap — values are in lakhs per annum`,
+                      }));
+                      // One-shot toast — only when there wasn't already an
+                      // error on this field, otherwise the user gets
+                      // spammed on every keystroke.
+                      if (!errors.ctcRange) {
+                        toast.error('CTC out of range', 'Values are in LPA. The cap is 9,999.99 — looks like raw rupees were entered.');
+                      }
+                      return;
+                    }
+                    clear('ctcRange');
+                  }}
                 />
                 {errors.ctcRange && <div className="rec-error"><i className="ri-error-warning-line" />{errors.ctcRange}</div>}
               </Col>
