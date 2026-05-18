@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AdvanceRequest;
 use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\ExpenseClaim;
@@ -242,6 +243,160 @@ class MyTeamController extends Controller
             ];
         }
         return $out;
+    }
+
+    /**
+     * "My Updates" — FYI notifications about the user's OWN expense
+     * claims and advance requests that have been actioned (approved or
+     * rejected at either manager or HR stage). Read-only, so each item
+     * is shaped with `action: 'View'` and no stage/approve-reject
+     * payload; the inbox just shows the line and a "View" deep-link.
+     *
+     * The endpoint returns at most 30 days of history so the list stays
+     * manageable; the inbox can paginate locally.
+     */
+    public function myUpdates(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        if (!$myEmployeeId) {
+            return response()->json(['updates' => []]);
+        }
+
+        $since = now()->subDays(30);
+        $out = [];
+
+        // Expense claims: include rows where either the manager or the HR
+        // stage has acted (status changed away from "pending"). Pure
+        // "still pending" rows are filtered out — those belong on the
+        // submitter's My/Team list in the profile, not the inbox.
+        $claims = ExpenseClaim::query()
+            ->with([
+                'category:id,name',
+                'manager:id,display_name,first_name,last_name',
+                'hrUser:id,name',
+            ])
+            ->where('employee_id', $myEmployeeId)
+            ->where(function ($w) {
+                $w->whereIn('manager_status', ['approved', 'rejected'])
+                  ->orWhereIn('hr_status', ['approved', 'rejected']);
+            })
+            ->where(function ($w) use ($since) {
+                $w->where('manager_acted_at', '>=', $since)
+                  ->orWhere('hr_acted_at', '>=', $since);
+            })
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get();
+
+        foreach ($claims as $row) {
+            // Pick the most recent stage action so the inbox card surfaces
+            // the freshest decision (HR overrides manager when both have
+            // acted on the same row).
+            $stage = null;
+            $actedAt = null;
+            $actorName = null;
+            $verdict = null;
+            $comment = null;
+            if ($row->hr_status !== 'pending' && $row->hr_acted_at) {
+                $stage = 'hr';
+                $actedAt = $row->hr_acted_at;
+                $actorName = $row->hrUser?->name;
+                $verdict = $row->hr_status;
+                $comment = $row->hr_comment;
+            } elseif ($row->manager_status !== 'pending' && $row->manager_acted_at) {
+                $stage = 'manager';
+                $actedAt = $row->manager_acted_at;
+                $mgr = $row->manager;
+                $actorName = $mgr
+                    ? ($mgr->display_name ?: trim(($mgr->first_name ?? '') . ' ' . ($mgr->last_name ?? '')))
+                    : null;
+                $verdict = $row->manager_status;
+                $comment = $row->manager_comment;
+            }
+            if (!$stage) continue;
+
+            $out[] = [
+                'module'      => 'expense',
+                'id'          => $row->id,
+                'code'        => $row->claim_no,
+                'title'       => $row->title ?: 'Expense Claim',
+                'amount'      => (float) $row->amount,
+                'currency'    => $row->currency,
+                'category'    => $row->category?->name ?? $row->category_name,
+                'stage'       => $stage,                 // 'manager' | 'hr'
+                'verdict'     => $verdict,               // 'approved' | 'rejected'
+                'actor_name'  => $actorName,
+                'comment'     => $comment,
+                'acted_at'    => $actedAt,
+                'final'       => $row->status !== 'pending',
+            ];
+        }
+
+        // Advance requests: same shape, mirrors the expense pattern.
+        $advances = AdvanceRequest::query()
+            ->with([
+                'manager:id,display_name,first_name,last_name',
+                'hrUser:id,name',
+            ])
+            ->where('employee_id', $myEmployeeId)
+            ->where(function ($w) {
+                $w->whereIn('manager_status', ['approved', 'rejected'])
+                  ->orWhereIn('hr_status', ['approved', 'rejected']);
+            })
+            ->where(function ($w) use ($since) {
+                $w->where('manager_acted_at', '>=', $since)
+                  ->orWhere('hr_acted_at', '>=', $since);
+            })
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get();
+
+        foreach ($advances as $row) {
+            $stage = null; $actedAt = null; $actorName = null; $verdict = null; $comment = null;
+            if ($row->hr_status !== 'pending' && $row->hr_acted_at) {
+                $stage = 'hr';
+                $actedAt = $row->hr_acted_at;
+                $actorName = $row->hrUser?->name;
+                $verdict = $row->hr_status;
+                $comment = $row->hr_comment;
+            } elseif ($row->manager_status !== 'pending' && $row->manager_acted_at) {
+                $stage = 'manager';
+                $actedAt = $row->manager_acted_at;
+                $mgr = $row->manager;
+                $actorName = $mgr
+                    ? ($mgr->display_name ?: trim(($mgr->first_name ?? '') . ' ' . ($mgr->last_name ?? '')))
+                    : null;
+                $verdict = $row->manager_status;
+                $comment = $row->manager_comment;
+            }
+            if (!$stage) continue;
+
+            $out[] = [
+                'module'      => 'advance',
+                'id'          => $row->id,
+                'code'        => $row->advance_no,
+                'title'       => $row->advance_type
+                    ? ('Advance · ' . $row->advance_type . ($row->advance_type_other ? ' · ' . $row->advance_type_other : ''))
+                    : 'Advance Request',
+                'amount'      => (float) $row->amount,
+                'currency'    => 'INR',
+                'category'    => $row->advance_type,
+                'stage'       => $stage,
+                'verdict'     => $verdict,
+                'actor_name'  => $actorName,
+                'comment'     => $comment,
+                'acted_at'    => $actedAt,
+                'final'       => $row->status !== 'pending',
+            ];
+        }
+
+        // Sort by acted_at desc so the freshest decision shows on top.
+        usort($out, fn ($a, $b) => strcmp((string) $b['acted_at'], (string) $a['acted_at']));
+
+        return response()->json(['updates' => $out]);
     }
 
     /**

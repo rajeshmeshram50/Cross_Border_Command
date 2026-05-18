@@ -89,6 +89,35 @@ export default function Inbox() {
   const [expenseActing, setExpenseActing] = useState<{ id: number; verdict: 'approve' | 'reject' } | null>(null);
   const [expenseComment, setExpenseComment] = useState<Record<number, string>>({});
 
+  // Personal claim/advance updates — FYI notifications for claims THIS
+  // user filed that managers or HR have just acted on. Read-only; no
+  // approve/reject buttons. Sourced from /api/my-team/my-updates.
+  type MyUpdate = {
+    module: 'expense' | 'advance';
+    id: number;
+    code: string | null;
+    title: string;
+    amount: number;
+    currency: string | null;
+    category: string | null;
+    stage: 'manager' | 'hr';
+    verdict: 'approved' | 'rejected';
+    actor_name: string | null;
+    comment: string | null;
+    acted_at: string | null;
+    final: boolean;
+  };
+  const [myUpdates, setMyUpdates] = useState<MyUpdate[]>([]);
+  const [myUpdatesLoading, setMyUpdatesLoading] = useState(true);
+
+  // Page cursors (4 entries per page). One cursor per section so a
+  // scroll-heavy inbox stays manageable without affecting the others.
+  const PAGE_SIZE = 4;
+  const [leavePage,    setLeavePage]    = useState(0);
+  const [expensePage,  setExpensePage]  = useState(0);
+  const [updatesPage,  setUpdatesPage]  = useState(0);
+  const [docsPage,     setDocsPage]     = useState(0);
+
   // View modal (read-only preview)
   const [viewRun, setViewRun] = useState<SignatureRun | null>(null);
 
@@ -158,6 +187,70 @@ export default function Inbox() {
     }
   };
   useEffect(() => { loadExpenses(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Pull FYI notifications about THIS user's own claims (manager/HR has
+  // approved or rejected). Distinct from the approvals list — no action
+  // buttons, just a status line + actor + comment.
+  const loadMyUpdates = async () => {
+    setMyUpdatesLoading(true);
+    try {
+      const { data } = await api.get('/my-team/my-updates');
+      setMyUpdates(Array.isArray(data?.updates) ? data.updates : []);
+    } catch (err: any) {
+      console.warn('[Inbox] my-updates load failed', err);
+      setMyUpdates([]);
+    } finally {
+      setMyUpdatesLoading(false);
+    }
+  };
+  useEffect(() => { loadMyUpdates(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Helper: slice an array for the current page. PAGE_SIZE controls how
+  // many rows are shown per section before the user has to page forward.
+  const paginate = <T,>(arr: T[], page: number): T[] => arr.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  // Tiny pager rendered at the bottom of each section when the list has
+  // more than PAGE_SIZE entries. Keeps the inbox compact without dropping
+  // any rows from view.
+  const Pager = ({ total, page, onChange }: { total: number; page: number; onChange: (n: number) => void }) => {
+    if (total <= PAGE_SIZE) return null;
+    const pages = Math.ceil(total / PAGE_SIZE);
+    const safePage = Math.max(0, Math.min(page, pages - 1));
+    return (
+      <div className="d-flex align-items-center justify-content-between gap-2" style={{ padding: '10px 18px', borderTop: '1px solid #f3f4f6' }}>
+        <small style={{ color: '#6b7280', fontSize: 11.5 }}>
+          Page {safePage + 1} of {pages} · {total} total
+        </small>
+        <div className="d-flex gap-1">
+          <button
+            type="button"
+            onClick={() => onChange(Math.max(0, safePage - 1))}
+            disabled={safePage === 0}
+            style={{
+              border: '1px solid #e5e7eb', background: '#fff',
+              padding: '4px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+              color: safePage === 0 ? '#cbd5e1' : '#374151',
+              cursor: safePage === 0 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <i className="ri-arrow-left-s-line" /> Prev
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange(Math.min(pages - 1, safePage + 1))}
+            disabled={safePage >= pages - 1}
+            style={{
+              border: '1px solid #e5e7eb', background: '#fff',
+              padding: '4px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 600,
+              color: safePage >= pages - 1 ? '#cbd5e1' : '#374151',
+              cursor: safePage >= pages - 1 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Next <i className="ri-arrow-right-s-line" />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   const actOnExpense = async (row: ExpenseApprovalRow, verdict: 'approve' | 'reject') => {
     const comment = (expenseComment[row.id] || '').trim();
@@ -320,9 +413,9 @@ export default function Inbox() {
               </div>
               <span style={{ padding: '6px 14px', borderRadius: 999, background: 'linear-gradient(135deg,#f7b84b,#fbc763)', color: '#fff', fontWeight: 700, fontSize: 13 }}>
                 <i className="ri-mail-unread-line me-1" />
-                {loading || leaveLoading || expenseLoading
+                {loading || leaveLoading || expenseLoading || myUpdatesLoading
                   ? '…'
-                  : `${rows.length + leaveRows.length + expenseRows.length} pending`}
+                  : `${rows.length + leaveRows.length + expenseRows.length} pending${myUpdates.length ? ` · ${myUpdates.length} update${myUpdates.length === 1 ? '' : 's'}` : ''}`}
               </span>
             </CardBody>
           </Card>
@@ -385,7 +478,7 @@ export default function Inbox() {
                 </div>
               ) : (
                 <div>
-                  {leaveRows.map((r) => {
+                  {paginate(leaveRows, leavePage).map((r) => {
                     const emp = r.employee;
                     const empName = emp
                       ? (emp.display_name?.trim() || `${emp.first_name} ${emp.last_name ?? ''}`.trim())
@@ -470,6 +563,7 @@ export default function Inbox() {
                   })}
                 </div>
               )}
+              <Pager total={leaveRows.length} page={leavePage} onChange={setLeavePage} />
             </CardBody>
           </Card>
 
@@ -531,7 +625,7 @@ export default function Inbox() {
                 </div>
               ) : (
                 <div>
-                  {expenseRows.map((r) => {
+                  {paginate(expenseRows, expensePage).map((r) => {
                     const empName = r.raw.employee_name || r.subject_name || '—';
                     const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
                     const acting = expenseActing?.id === r.id;
@@ -625,6 +719,122 @@ export default function Inbox() {
                   })}
                 </div>
               )}
+              <Pager total={expenseRows.length} page={expensePage} onChange={setExpensePage} />
+            </CardBody>
+          </Card>
+
+          {/* Personal claim/advance updates ─ FYI notifications for the
+              current user about their own filings that a manager or HR
+              just acted on. Read-only — no approve / reject controls.
+              Source: /api/my-team/my-updates (last 30 days, max 50). */}
+          <Card className="mb-3" style={{ borderRadius: 12 }}>
+            <CardBody style={{ padding: 0 }}>
+              <div className="d-flex align-items-center justify-content-between"
+                   style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                <div className="d-flex align-items-center gap-2">
+                  <span style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#dbeafe,#bfdbfe)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <i className="ri-notification-3-line" style={{ fontSize: 16, color: '#1d4ed8' }} />
+                  </span>
+                  <div>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Your Claim Updates</h6>
+                    <div className="text-muted" style={{ fontSize: 11.5 }}>
+                      Expense claims and advance requests you filed — recent manager / HR decisions.
+                    </div>
+                  </div>
+                </div>
+                <span style={{ padding: '4px 10px', borderRadius: 999, background: '#dbeafe', color: '#1d4ed8', fontWeight: 700, fontSize: 11.5 }}>
+                  {myUpdatesLoading ? '…' : `${myUpdates.length}`}
+                </span>
+              </div>
+
+              {myUpdatesLoading ? (
+                <div>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={`upd-shim-${i}`} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                      <div className="d-flex align-items-start gap-3 flex-wrap">
+                        <Shimmer width={38} height={38} radius={999} />
+                        <div style={{ flex: '1 1 320px', minWidth: 240, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <Shimmer width={160} height={13} />
+                          <Shimmer width={220} height={11} />
+                          <Shimmer width={140} height={11} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : myUpdates.length === 0 ? (
+                <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
+                  <i className="ri-mail-check-line" style={{ fontSize: 30, display: 'block', marginBottom: 6 }} />
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>No recent updates</div>
+                  <div style={{ fontSize: 11.5 }}>Manager or HR decisions on your filings will appear here.</div>
+                </div>
+              ) : (
+                <div>
+                  {paginate(myUpdates, updatesPage).map((u) => {
+                    const isApproved = u.verdict === 'approved';
+                    const stageLabel = u.stage === 'hr' ? 'HR / Finance' : 'Reporting Manager';
+                    const moduleLabel = u.module === 'advance' ? 'Advance' : 'Expense';
+                    const tone = isApproved
+                      ? { bg: '#d1fae5', fg: '#047857', ring: '#a7f3d0', icon: 'ri-checkbox-circle-line' }
+                      : { bg: '#fee2e2', fg: '#b91c1c', ring: '#fecaca', icon: 'ri-close-circle-line' };
+                    const fmtTime = (iso: string | null) => {
+                      if (!iso) return '—';
+                      const d = new Date(iso);
+                      if (isNaN(d.getTime())) return iso;
+                      return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                    };
+                    return (
+                      <div key={`${u.module}-${u.id}-${u.stage}`} style={{ padding: '14px 18px', borderBottom: '1px solid #f3f4f6' }}>
+                        <div className="d-flex align-items-start gap-3 flex-wrap">
+                          <span className="rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                            style={{ width: 38, height: 38, background: tone.bg, color: tone.fg, border: `1px solid ${tone.ring}` }}>
+                            <i className={tone.icon} style={{ fontSize: 18 }} />
+                          </span>
+                          <div style={{ flex: '1 1 320px', minWidth: 240 }}>
+                            <div className="d-flex align-items-center gap-2 flex-wrap">
+                              <strong style={{ fontSize: 13.5 }}>
+                                {u.code ? `${u.code} · ` : ''}{u.title}
+                              </strong>
+                              <span style={{
+                                padding: '2px 8px', borderRadius: 6,
+                                background: tone.bg, color: tone.fg,
+                                fontWeight: 700, fontSize: 10.5,
+                                textTransform: 'uppercase', letterSpacing: '0.04em',
+                              }}>
+                                {moduleLabel} · {isApproved ? 'Approved' : 'Rejected'}
+                              </span>
+                              {!u.final && (
+                                <span style={{
+                                  padding: '2px 8px', borderRadius: 6,
+                                  background: '#fef3c7', color: '#92400e',
+                                  fontWeight: 700, fontSize: 10.5,
+                                  textTransform: 'uppercase', letterSpacing: '0.04em',
+                                }}>
+                                  Awaiting next stage
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1" style={{ fontSize: 12.5, color: '#374151' }}>
+                              <strong style={{ color: tone.fg }}>{stageLabel}</strong>
+                              {u.actor_name ? ` (${u.actor_name})` : ''} {isApproved ? 'approved' : 'rejected'} your {u.module === 'advance' ? 'advance request' : 'claim'}
+                              {u.amount ? <> for <strong>₹{Number(u.amount).toLocaleString('en-IN')}</strong></> : null}.
+                            </div>
+                            {u.comment && (
+                              <div className="mt-1 text-muted" style={{ fontSize: 12 }}>
+                                <i className="ri-double-quotes-l me-1" />{u.comment}
+                              </div>
+                            )}
+                            <small className="text-muted d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: 11 }}>
+                              <i className="ri-time-line" /> {fmtTime(u.acted_at)}
+                            </small>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <Pager total={myUpdates.length} page={updatesPage} onChange={setUpdatesPage} />
             </CardBody>
           </Card>
 
@@ -654,7 +864,7 @@ export default function Inbox() {
                         <div style={{ fontSize: 12 }}>You're all caught up. Anything sent to you will land here.</div>
                       </td></tr>
                     ) : (
-                      rows.map((r, i) => {
+                      paginate(rows, docsPage).map((r, i) => {
                         const current = r.signers[r.current_index];
                         const empName = r.employee?.display_name
                           || `${r.employee?.first_name || ''} ${r.employee?.last_name || ''}`.trim()
@@ -707,6 +917,7 @@ export default function Inbox() {
                   </tbody>
                 </table>
               </div>
+              <Pager total={rows.length} page={docsPage} onChange={setDocsPage} />
             </CardBody>
           </Card>
         </div>
