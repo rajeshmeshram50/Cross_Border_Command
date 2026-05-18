@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Col, Row, Input, Spinner } from 'reactstrap';
 import api from '../../api';
 
@@ -16,6 +17,7 @@ const typeIconMap: Record<string, string> = {
 };
 
 export default function ClientBranches({ clientId, clientName, onBack }: Props) {
+  const navigate = useNavigate();
   const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchInput, setSearchInput] = useState('');
@@ -96,9 +98,10 @@ export default function ClientBranches({ clientId, clientName, onBack }: Props) 
             </h4>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Clients</a></li>
-                <li className="breadcrumb-item"><a href="#">{clientName}</a></li>
-                <li className="breadcrumb-item active">Branches</li>
+                <li className="breadcrumb-item">
+                  <a href="#" onClick={(e) => { e.preventDefault(); navigate('/clients'); }}>Client</a>
+                </li>
+                <li className="breadcrumb-item active">{clientName || 'Branches'}</li>
               </ol>
             </div>
           </div>

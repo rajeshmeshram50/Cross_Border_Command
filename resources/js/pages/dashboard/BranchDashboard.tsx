@@ -5,7 +5,6 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import api from '../../api';
-import { useAuth } from '../../contexts/AuthContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCompact } from '../../utils/formatNumber';
@@ -129,8 +128,7 @@ const cardHeaderStyle: React.CSSProperties = {
 };
 
 export default function BranchDashboard() {
-  const { user } = useAuth();
-  const { isMainBranchUser, selectedBranchId, selectedBranch } = useBranchSwitcher();
+  const { isMainBranchUser, selectedBranchId } = useBranchSwitcher();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const ct = useChartTheme();
@@ -156,7 +154,6 @@ export default function BranchDashboard() {
   if (!data) return null;
 
   const { counts, plan, recent_payments, payment_trend, can_view_payments, employees: emp } = data;
-  const displayName = selectedBranch?.name || (isMainBranchUser ? user?.client_name : user?.branch_name);
   const successRate = counts.total_payments > 0
     ? Math.round((counts.success_payments / counts.total_payments) * 100) : 0;
 
@@ -330,10 +327,8 @@ export default function BranchDashboard() {
                 {isMainBranchUser && !selectedBranchId ? 'All branches overview' : 'Branch operations summary'}
               </p>
             </div>
-            <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
-              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{displayName}</a></li>
-              <li className="breadcrumb-item active">{isMainBranchUser && !selectedBranchId ? 'All Branches' : 'Overview'}</li>
-            </ol>
+            {/* No breadcrumb on the dashboard — the page title already
+                tells the user where they are. */}
           </div>
         </Col>
       </Row>

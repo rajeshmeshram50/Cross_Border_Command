@@ -226,9 +226,13 @@ export default function Payments() {
 
   const columns = useMemo(() => [
     {
-      header: '#',
+      // Center both the header and the cell — serial numbers read best
+      // centered above each other so the eye doesn't have to track left
+      // edges of variable-width digits.
+      header: () => <div className="text-center">#</div>,
+      header: 'Sr No',
       accessorKey: 'index',
-      cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
+      cell: (info: any) => <div className="text-center"><span className="text-muted fs-13">{info.row.index + 1}</span></div>,
     },
     {
       header: 'Invoice',
@@ -254,21 +258,29 @@ export default function Payments() {
         : <span className="text-muted">—</span>,
     },
     {
-      header: 'Method',
+      // Method is a chip — centered so the pill sits balanced under
+      // the header label instead of hugging the left edge.
+      header: () => <div className="text-center">Method</div>,
       accessorKey: 'method',
       cell: (info: any) => (
-        <Badge className="fw-medium pmt-method-badge">
-          {methodLabels[info.row.original.method] || info.row.original.method}
-        </Badge>
+        <div className="text-center">
+          <Badge className="fw-medium pmt-method-badge">
+            {methodLabels[info.row.original.method] || info.row.original.method}
+          </Badge>
+        </div>
       ),
     },
     {
-      header: 'Amount',
+      // Right-align numeric currency so the rupee figures line up at the
+      // decimal — easier to scan magnitudes down the column.
+      header: () => <div className="text-end">Amount</div>,
       accessorKey: 'total',
       cell: (info: any) => (
-        <span className="text-success fw-semibold fs-13">
-          ₹{parseFloat(info.row.original.total).toLocaleString()}
-        </span>
+        <div className="text-end">
+          <span className="text-success fw-semibold fs-13 font-monospace">
+            ₹{parseFloat(info.row.original.total).toLocaleString()}
+          </span>
+        </div>
       ),
     },
     {
@@ -282,16 +294,20 @@ export default function Payments() {
       },
     },
     {
-      header: 'Status',
+      // Centered — pills look better visually balanced against a centered
+      // header label than left-hugging the column edge.
+      header: () => <div className="text-center">Status</div>,
       accessorKey: 'status',
       cell: (info: any) => {
         const raw = String(info.row.original.status || 'pending');
         const cfg = statusCfg[raw] || statusCfg.pending;
         const label = raw.charAt(0).toUpperCase() + raw.slice(1);
         return (
-          <span className={`badge rounded-pill bg-${cfg.bsColor}-subtle text-${cfg.bsColor} fw-semibold px-3 py-2`}>
-            {label}
-          </span>
+          <div className="text-center">
+            <span className={`badge rounded-pill bg-${cfg.bsColor}-subtle text-${cfg.bsColor} fw-semibold px-3 py-2`}>
+              {label}
+            </span>
+          </div>
         );
       },
     },

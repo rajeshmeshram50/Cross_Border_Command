@@ -26,7 +26,11 @@
   --color-sidebar-text: #8896B2;
 }
 
-@custom-variant dark (&:where([data-theme="dark"] *));
+/* Tailwind dark-variant — fires under either the legacy [data-theme]
+   attribute or velzon's [data-bs-theme] attribute that the rest of the
+   app uses (set by the theme-customizer toggle). Without the velzon
+   selector, `dark:` Tailwind classes never activated on theme switch. */
+@custom-variant dark (&:where([data-theme="dark"] *, [data-bs-theme="dark"] *));
 
 [data-theme="dark"] {
   --color-bg: #090E1A;

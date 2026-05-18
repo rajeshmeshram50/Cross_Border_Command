@@ -396,7 +396,7 @@ function EmployeesPanel({
           <table className="table align-middle mb-0 myteam-table" style={{ fontSize: 13 }}>
             <thead className="myteam-thead" style={{ background: '#f5f3ff' }}>
               <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-                <th style={{ padding: '10px 12px', width: 40 }}>#</th>
+                <th style={{ padding: '10px 12px', width: 44 }}>Sr No</th>
                 <th>Employee</th>
                 <th>Code</th>
                 <th>Designation</th>
@@ -495,7 +495,7 @@ function ApprovalsPanel({
             <table className="table align-middle mb-0 myteam-table" style={{ fontSize: 13 }}>
               <thead className="myteam-thead-green" style={{ background: '#f0fdf4' }}>
                 <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-                  <th style={{ padding: '10px 12px', width: 40 }}>#</th>
+                  <th style={{ padding: '10px 12px', width: 44 }}>Sr No</th>
                   <th>Module</th>
                   <th>Document / Request</th>
                   <th>Subject</th>

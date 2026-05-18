@@ -1,4 +1,5 @@
  import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Col, Row } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
@@ -197,6 +198,7 @@ const STATUS_TONE_CLASS: Record<'red' | 'amber' | 'green' | 'blue', string> = {
 
 export default function HrCalculationMaster() {
   const toast = useToast();
+  const navigate = useNavigate();
   const [section, setSection] = useState<SectionKey>('pt');
 
   // Editable rule state — seeded from the PT_RULES / LEAVE_RULES /
@@ -255,6 +257,21 @@ export default function HrCalculationMaster() {
               Keeps the page visually consistent with the rest of HR. */}
           <div className="onb-hero-card mb-3">
             <div className="d-flex align-items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/master'); }}
+                aria-label="Back"
+                title="Back"
+                className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                style={{
+                  width: 38, height: 38,
+                  background: 'rgba(255,255,255,0.78)',
+                  border: '1px solid rgba(124,92,252,0.22)',
+                  color: '#5a3fd1', cursor: 'pointer',
+                }}
+              >
+                <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
+              </button>
               <span
                 className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
                 style={{

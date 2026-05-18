@@ -239,10 +239,9 @@ export default function AdminDashboard() {
               <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0 }}>Dashboard</h4>
               <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>Welcome back! Here's what's happening today.</p>
             </div>
-            <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
-              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>IGC</a></li>
-              <li className="breadcrumb-item active">Dashboard</li>
-            </ol>
+            {/* No breadcrumb on the dashboard — the page title already
+                tells the user where they are, and the trail "IGC › Dashboard"
+                was redundant noise. */}
           </div>
         </Col>
       </Row>
@@ -473,7 +472,13 @@ export default function AdminDashboard() {
                     borderRadius: 10, padding: '6px 12px', border: `1px solid ${COLORS[i % COLORS.length]}30`,
                   }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS[i % COLORS.length], flexShrink: 0 }} />
-                    <span style={{ fontSize: 11, color: '#495057', textTransform: 'capitalize', fontWeight: 600 }}>
+                    {/* Use a theme variable instead of a hardcoded slate so
+                        the label stays readable in dark mode. The pill
+                        background is only a 12-alpha tint of the role
+                        colour, which becomes near-invisible on a dark
+                        page — dark slate text on a dark background read
+                        as faded. var(--vz-body-color) flips correctly. */}
+                    <span style={{ fontSize: 11, color: 'var(--vz-body-color)', textTransform: 'capitalize', fontWeight: 600 }}>
                       {type.replace(/_/g, ' ')}
                     </span>
                     <span style={{ fontSize: 13, fontWeight: 800, color: COLORS[i % COLORS.length] }}>{count as number}</span>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\Employee;
 use App\Models\User;
 use App\Support\Settings;
 use Illuminate\Http\Request;
@@ -439,6 +440,14 @@ class BranchController extends Controller
                 && $branch->status === 'active'
                 && $request->input('status') !== 'active';
 
+            // Reverse transition — when an admin flips an inactive branch
+            // back to active we need to restore the users / employees
+            // we soft-deleted during the deactivation cascade. Otherwise
+            // the branch returns "live" but with zero people in it.
+            $statusBecomingActive = $request->filled('status')
+                && $branch->status !== 'active'
+                && $request->input('status') === 'active';
+
             $branch->update($request->only([
                 'name', 'code', 'email', 'phone', 'website', 'contact_person',
                 'branch_type', 'industry', 'description',
@@ -463,6 +472,22 @@ class BranchController extends Controller
 
             if ($statusBecomingInactive) {
                 $this->revokeAllUserTokensForBranch($branch->id);
+                // Mirror the deactivation cascade so newly-disabled
+                // branches don't leave their users / employees alive in
+                // an inactive container.
+                User::where('branch_id', $branch->id)->delete();
+                Employee::where('branch_id', $branch->id)->delete();
+            }
+
+            if ($statusBecomingActive) {
+                // Bring back the people who were soft-deleted when the
+                // branch was deactivated. We can't tell apart "deleted
+                // because the branch was deactivated" from "deleted for
+                // their own reasons", so the restore is conservative:
+                // only rows whose deleted_at falls within the branch's
+                // current inactive window are restored.
+                User::withTrashed()->where('branch_id', $branch->id)->restore();
+                Employee::withTrashed()->where('branch_id', $branch->id)->restore();
             }
 
             // Update branch user if provided
@@ -559,14 +584,30 @@ class BranchController extends Controller
             return response()->json(['message' => 'Cannot delete the main branch. Set another branch as main first.'], 422);
         }
 
+        // "Delete" is now a soft *deactivate* — the branch row stays so
+        // that historical records (employees, payroll, audit logs) keep
+        // pointing at a real branch and the admin can re-enable later.
+        // Concretely:
+        //   - branch.status -> 'inactive' (still visible in the list,
+        //     just badged Inactive)
+        //   - login users on the branch are soft-deleted + tokens
+        //     revoked so they can't sign back in
+        //   - employees on the branch are soft-deleted so they land
+        //     in the Disabled Employees tab instead of the Active one
+        //
+        // We deliberately do NOT soft-delete the branch itself; the
+        // previous behaviour orphaned the employees (they kept their
+        // branch_id pointing at a now-trashed branch) which is what
+        // surfaced them under a freshly-created replacement branch.
         DB::transaction(function () use ($branch) {
-            // Revoke any live tokens for users in this branch before soft-deleting
             $this->revokeAllUserTokensForBranch($branch->id);
-            $branch->users()->delete();
-            $branch->delete();
+            $branch->users()->delete();              // soft-delete (User uses SoftDeletes)
+            Employee::where('branch_id', $branch->id)->delete(); // soft-delete employees
+            $branch->status = 'inactive';
+            $branch->save();
         });
 
-        return response()->json(['message' => 'Branch deleted successfully']);
+        return response()->json(['message' => 'Branch deactivated successfully']);
     }
 
    

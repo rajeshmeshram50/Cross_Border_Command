@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
-import { useAuth } from '../../contexts/AuthContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCompact } from '../../utils/formatNumber';
@@ -128,7 +127,6 @@ const cardHeaderStyle: React.CSSProperties = {
 };
 
 export default function ClientDashboard() {
-  const { user } = useAuth();
   const { selectedBranchId } = useBranchSwitcher();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -365,10 +363,8 @@ export default function ClientDashboard() {
                 );
               })()}
             </div>
-            <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
-              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{user?.client_name}</a></li>
-              <li className="breadcrumb-item active">Overview</li>
-            </ol>
+            {/* No breadcrumb on the dashboard — the page title already
+                tells the user where they are. */}
           </div>
         </Col>
       </Row>

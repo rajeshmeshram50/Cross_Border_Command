@@ -349,6 +349,61 @@
         .vault-action-view { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: #fff; color: #374151; border: 1px solid #e5e7eb; transition: border-color .15s ease, color .15s ease; }
         .vault-action-view:hover { color: #5a3fd1; border-color: #c4b5fd; }
         .vault-action-download { display: inline-flex; align-items: center; gap: 5px; padding: 7px 14px; border-radius: 999px; font-size: 12.5px; font-weight: 600; background: linear-gradient(135deg,#7c5cfc,#a78bfa); color: #fff; border: none; box-shadow: 0 4px 10px rgba(124,92,252,0.25); }
+
+        /* ─── Organizational tab — match-context strip, doc-count pill,
+             loading + empty states. Tied to theme vars so dark mode picks
+             up the correct surfaces instead of flashing the light hex
+             values that used to sit inline. ─── */
+        .vault-match-strip {
+          padding: 10px 14px;
+          background: #eef2ff;
+          border: 1px solid #c7d2fe;
+          border-radius: 10px;
+        }
+        .vault-match-icon  { color: #4338ca; }
+        .vault-match-title { color: #4338ca; }
+        .vault-match-text  { color: #374151; }
+        .vault-match-chip {
+          background: #ffffff;
+          padding: 1px 8px;
+          border-radius: 6px;
+          font-weight: 700;
+          color: #1f2937;
+          border: 1px solid #e5e7eb;
+        }
+        .vault-doc-count {
+          background: #f5f0ff;
+          color: #5a3fd1;
+        }
+        .vault-org-loading { color: #6b7280; }
+        .vault-org-empty {
+          color: #6b7280;
+          background: #f9fafb;
+          border: 1px dashed #e5e7eb;
+        }
+
+        [data-bs-theme="dark"] .vault-match-strip {
+          background: rgba(99,102,241,0.14);
+          border-color: rgba(124,92,252,0.40);
+        }
+        [data-bs-theme="dark"] .vault-match-icon,
+        [data-bs-theme="dark"] .vault-match-title { color: #c4b5fd; }
+        [data-bs-theme="dark"] .vault-match-text  { color: rgba(255,255,255,0.78); }
+        [data-bs-theme="dark"] .vault-match-chip {
+          background: rgba(255,255,255,0.10);
+          color: #ffffff;
+          border-color: rgba(255,255,255,0.18);
+        }
+        [data-bs-theme="dark"] .vault-doc-count {
+          background: rgba(124,92,252,0.22);
+          color: #d8b4fe;
+        }
+        [data-bs-theme="dark"] .vault-org-loading { color: rgba(255,255,255,0.65); }
+        [data-bs-theme="dark"] .vault-org-empty {
+          background: rgba(255,255,255,0.04);
+          border-color: rgba(255,255,255,0.14);
+          color: rgba(255,255,255,0.65);
+        }
         .vault-action-download:hover { box-shadow: 0 6px 14px rgba(124,92,252,0.35); }
 
 /* ── Block 4: Initiate Onboarding wizard (stages 1-6, modals, footer) ── */

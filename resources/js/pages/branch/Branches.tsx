@@ -172,7 +172,7 @@ export default function Branches({ onNavigate }: Props) {
   // ── Table columns ──
   const columns = useMemo(() => [
     {
-      header: '#',
+      header: 'Sr No',
       accessorKey: '__idx',
       cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
     },
@@ -312,7 +312,7 @@ export default function Branches({ onNavigate }: Props) {
       ),
     },
     {
-      header: 'Status',
+      header: 'Org. Status',
       accessorKey: 'status',
       cell: (info: any) => {
         const isActive = info.row.original.status === 'active';

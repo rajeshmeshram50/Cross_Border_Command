@@ -82,12 +82,40 @@ export default function MasterPlaceholder() {
                 <span>{groupLabel}</span>
               </div>
             </div>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#" onClick={(e) => { e.preventDefault(); navigate('/master'); }}>Master</a></li>
-                {groupLabel && <li className="breadcrumb-item">{groupLabel}</li>}
-                <li className="breadcrumb-item active">{leafLabel}</li>
-              </ol>
+            <div className="d-flex align-items-center gap-3 flex-wrap">
+              {/* Unified "Back to Master list" pill — same design as
+                  every other master surface (Departments / Legal Entities
+                  / Designations / Roles / KPIs / Assets). */}
+              <button
+                type="button"
+                onClick={() => navigate('/master')}
+                title="Back to Master list"
+                className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
+                style={{
+                  height: 38,
+                  padding: '0 18px',
+                  background: 'color-mix(in srgb, #405189 8%, #ffffff)',
+                  color: '#405189',
+                  border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background 0.18s ease',
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
+              >
+                <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
+                Back to Master list
+              </button>
+              <div className="page-title-right">
+                <ol className="breadcrumb m-0">
+                  <li className="breadcrumb-item"><a href="#" onClick={(e) => { e.preventDefault(); navigate('/master'); }}>Master</a></li>
+                  {groupLabel && <li className="breadcrumb-item">{groupLabel}</li>}
+                  <li className="breadcrumb-item active">{leafLabel}</li>
+                </ol>
+              </div>
             </div>
           </div>
         </Col>

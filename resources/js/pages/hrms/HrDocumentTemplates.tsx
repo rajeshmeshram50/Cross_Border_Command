@@ -315,7 +315,7 @@ export default function HrDocumentTemplates() {
                 <table className="table align-middle mb-0 dtm-table" style={{ fontSize: 13 }}>
                   <thead className="dtm-thead" style={{ background: '#f5f3ff' }}>
                     <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-                      <th style={{ padding: '10px 12px', width: 40 }}>#</th>
+                      <th style={{ padding: '10px 12px', width: 44 }}>Sr No</th>
                       <th>Code</th>
                       <th>Template Name</th>
                       <th>Version</th>

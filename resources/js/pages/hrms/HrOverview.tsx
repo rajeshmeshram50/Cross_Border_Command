@@ -8,6 +8,7 @@ import {
 import api from '../../api';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
+import { useChartTheme } from '../../hooks/useChartTheme';
 
 /* ───────────────────────────────────────────────────────────────────────────
  *  HRMS Overview — live dashboard at /hr/overview.
@@ -99,29 +100,16 @@ interface KpiProps {
 function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
   return (
     <div
-      className="dashboard-kpi-card"
+      className="hr-ov-kpi-card"
       style={{
         borderRadius: 16,
         padding: '18px 18px 14px',
-        boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
+        boxShadow: '0 6px 16px -4px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.06)',
         border: '1px solid var(--vz-border-color)',
         background: 'var(--vz-card-bg)',
         position: 'relative',
         overflow: 'hidden',
         height: '100%',
-        transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
-      }}
-      onMouseEnter={e => {
-        const el = e.currentTarget as HTMLDivElement;
-        el.style.transform = 'translateY(-3px)';
-        el.style.boxShadow = '0 12px 28px rgba(64,81,137,0.14)';
-        el.style.borderColor = 'rgba(102,145,231,0.45)';
-      }}
-      onMouseLeave={e => {
-        const el = e.currentTarget as HTMLDivElement;
-        el.style.transform = 'translateY(0)';
-        el.style.boxShadow = '0 2px 20px rgba(0,0,0,0.06)';
-        el.style.borderColor = 'var(--vz-border-color)';
       }}
     >
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: gradient }} />
@@ -138,7 +126,7 @@ function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
           </h3>
           {hint && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--vz-secondary-color)' }}>{hint}</div>}
         </div>
-        <div style={{
+        <div className="hr-ov-kpi-icon" style={{
           width: 40, height: 40, borderRadius: 12,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: gradient, flexShrink: 0,
@@ -147,6 +135,41 @@ function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* Shared hover treatment for HR Overview KPI cards — same recipe as
+   hr-emp-kpi-card / admin-kpi-card / myteam-kpi-tile so the product
+   feels coherent: 4px translateY lift, deeper violet shadow, violet
+   border tint, and a 1.06x scale on the gradient icon tile. */
+function HrOverviewKpiStyles() {
+  return (
+    <style>{`
+      .hr-ov-kpi-card {
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+      }
+      .hr-ov-kpi-card:hover {
+        transform: translateY(-4px);
+        box-shadow:
+          0 16px 32px -8px rgba(15, 23, 42, 0.18),
+          0 4px 10px rgba(124, 92, 252, 0.10);
+        border-color: rgba(124, 92, 252, 0.45) !important;
+      }
+      [data-bs-theme="dark"] .hr-ov-kpi-card:hover,
+      [data-layout-mode="dark"] .hr-ov-kpi-card:hover {
+        box-shadow:
+          0 18px 36px -8px rgba(0, 0, 0, 0.65),
+          0 4px 12px rgba(124, 92, 252, 0.25);
+        border-color: rgba(124, 92, 252, 0.55) !important;
+      }
+      .hr-ov-kpi-icon {
+        transition: transform .18s ease, box-shadow .18s ease;
+      }
+      .hr-ov-kpi-card:hover .hr-ov-kpi-icon {
+        transform: scale(1.06);
+        box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+      }
+    `}</style>
   );
 }
 
@@ -176,11 +199,26 @@ const cardStyle: React.CSSProperties = {
   marginBottom: 0,
   height: '100%',
 };
+// Card header rhythm — matches Admin / Branch dashboards (16px 20px
+// padding, 15px / 11px font pair) so every dashboard card reads as
+// part of the same product.
 const cardHeaderStyle: React.CSSProperties = {
   background: 'var(--vz-card-bg)',
   borderBottom: '1px solid var(--vz-border-color)',
-  padding: '14px 18px',
+  padding: '16px 20px',
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+};
+const cardTitleStyle: React.CSSProperties = {
+  fontWeight: 700,
+  fontSize: 15,
+  color: 'var(--vz-heading-color, var(--vz-body-color))',
+  margin: 0,
+};
+const cardSubStyle: React.CSSProperties = {
+  margin: 0,
+  marginTop: 2,
+  fontSize: 11,
+  color: 'var(--vz-secondary-color)',
 };
 
 function fmtDate(s: string | null): string {
@@ -198,6 +236,10 @@ export default function HrOverview() {
   const [data, setData]     = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState<string | null>(null);
+  // Theme-aware grid + axis palette, same hook the other dashboards
+  // use so a flip between light / dark mode keeps the chart readable
+  // without harsh white grid lines on the dark card.
+  const ct = useChartTheme();
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -286,11 +328,14 @@ export default function HrOverview() {
 
   return (
     <div className="p-3 p-md-4">
-      {/* Page header */}
-      <div className="d-flex flex-wrap align-items-center justify-content-between mb-3 gap-2">
+      <HrOverviewKpiStyles />
+      {/* Page header — same typography rhythm as AdminDashboard /
+          BranchDashboard so flipping between dashboards doesn't feel
+          like a different app: h4 at 20/800, sub at 12. */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 12px', gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <h4 className="mb-1 fw-bold" style={{ letterSpacing: '-0.01em' }}>HRMS Overview</h4>
-          <p className="mb-0 text-muted" style={{ fontSize: 13 }}>
+          <h4 style={{ fontWeight: 800, fontSize: 20, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, letterSpacing: '-0.01em' }}>HRMS Overview</h4>
+          <p style={{ margin: 0, fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
             Live headcount, hiring, onboarding and exit signals — all in one place.
           </p>
         </div>
@@ -406,8 +451,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Headcount by Department</h6>
-                <small className="text-muted">Top {Math.min(departmentChart.length, 8)} departments</small>
+                <h5 style={cardTitleStyle}>Headcount by Department</h5>
+                <p style={cardSubStyle}>Top {Math.min(departmentChart.length, 8)} departments</p>
               </div>
               <i className="ri-building-line" style={{ fontSize: 18, color: '#405189' }} />
             </div>
@@ -417,9 +462,9 @@ export default function HrOverview() {
               ) : (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={departmentChart} layout="vertical" margin={{ top: 8, right: 30, left: 10, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--vz-border-color)" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--vz-secondary-color)' }} allowDecimals={false} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11.5, fill: 'var(--vz-body-color)' }} width={120} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: ct.axisTickMuted }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11.5, fill: ct.axisTick }} width={120} />
                     <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(64,81,137,0.06)' }} />
                     <Bar dataKey="count" radius={[0, 8, 8, 0]}>
                       {departmentChart.map((_, i) => (
@@ -437,8 +482,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Gender Split</h6>
-                <small className="text-muted">Across active employees</small>
+                <h5 style={cardTitleStyle}>Gender Split</h5>
+                <p style={cardSubStyle}>Across active employees</p>
               </div>
               <i className="ri-user-2-line" style={{ fontSize: 18, color: '#e83e8c' }} />
             </div>
@@ -455,7 +500,11 @@ export default function HrOverview() {
                         nameKey="gender"
                         innerRadius={55}
                         outerRadius={85}
-                        paddingAngle={2}
+                        // No padding gap + no stroke so the slices meet
+                        // cleanly with no white seam — matches the
+                        // donut treatment on Admin / Branch dashboards.
+                        paddingAngle={0}
+                        stroke="none"
                       >
                         {data.by_gender.map((g, i) => (
                           <Cell key={i} fill={GENDER_COLORS[g.gender] || PALETTE[i % PALETTE.length]} />
@@ -482,8 +531,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Joining Trend</h6>
-                <small className="text-muted">Last 12 months</small>
+                <h5 style={cardTitleStyle}>Joining Trend</h5>
+                <p style={cardSubStyle}>Last 12 months</p>
               </div>
               <i className="ri-user-follow-line" style={{ fontSize: 18, color: '#0ab39c' }} />
             </div>
@@ -491,16 +540,30 @@ export default function HrOverview() {
               <ResponsiveContainer width="100%" height={240}>
                 <AreaChart data={data.joining_trend} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
                   <defs>
+                    {/* 3-stop fill + glow filter, same recipe as the
+                       polished area charts on Admin / Branch dashboards
+                       so the curve lifts off the canvas instead of
+                       sitting flat. */}
                     <linearGradient id="joinGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%"   stopColor="#0ab39c" stopOpacity={0.36} />
+                      <stop offset="0%"   stopColor="#0ab39c" stopOpacity={0.45} />
+                      <stop offset="55%"  stopColor="#0ab39c" stopOpacity={0.15} />
                       <stop offset="100%" stopColor="#0ab39c" stopOpacity={0} />
                     </linearGradient>
+                    <filter id="joinGlow" x="-10%" y="-30%" width="120%" height="160%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
+                      <feFlood floodColor="#0ab39c" floodOpacity="0.35" result="flood" />
+                      <feComposite in="flood" in2="blur" operator="in" result="glow" />
+                      <feMerge>
+                        <feMergeNode in="glow" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--vz-border-color)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10.5, fill: 'var(--vz-secondary-color)' }} />
-                  <YAxis tick={{ fontSize: 10.5, fill: 'var(--vz-secondary-color)' }} allowDecimals={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10.5, fill: ct.axisTickMuted }} />
+                  <YAxis tick={{ fontSize: 10.5, fill: ct.axisTickMuted }} allowDecimals={false} />
                   <Tooltip content={<ChartTooltip />} />
-                  <Area type="monotone" dataKey="count" name="Joinings" stroke="#0ab39c" strokeWidth={2.5} fill="url(#joinGrad)" />
+                  <Area type="monotone" dataKey="count" name="Joinings" stroke="#0ab39c" strokeWidth={2.75} fill="url(#joinGrad)" filter="url(#joinGlow)" dot={{ r: 4, fill: '#0ab39c', strokeWidth: 2, stroke: ct.dotStroke }} activeDot={{ r: 6, fill: '#0ab39c' }} />
                 </AreaChart>
               </ResponsiveContainer>
             </CardBody>
@@ -511,19 +574,30 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Exit Trend</h6>
-                <small className="text-muted">Last 12 months</small>
+                <h5 style={cardTitleStyle}>Exit Trend</h5>
+                <p style={cardSubStyle}>Last 12 months</p>
               </div>
               <i className="ri-logout-box-line" style={{ fontSize: 18, color: '#f06548' }} />
             </div>
             <CardBody style={{ padding: 12 }}>
               <ResponsiveContainer width="100%" height={240}>
                 <LineChart data={data.exit_trend} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--vz-border-color)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10.5, fill: 'var(--vz-secondary-color)' }} />
-                  <YAxis tick={{ fontSize: 10.5, fill: 'var(--vz-secondary-color)' }} allowDecimals={false} />
+                  <defs>
+                    <filter id="exitGlow" x="-10%" y="-30%" width="120%" height="160%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
+                      <feFlood floodColor="#f06548" floodOpacity="0.30" result="flood" />
+                      <feComposite in="flood" in2="blur" operator="in" result="glow" />
+                      <feMerge>
+                        <feMergeNode in="glow" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10.5, fill: ct.axisTickMuted }} />
+                  <YAxis tick={{ fontSize: 10.5, fill: ct.axisTickMuted }} allowDecimals={false} />
                   <Tooltip content={<ChartTooltip />} />
-                  <Line type="monotone" dataKey="count" name="Exits" stroke="#f06548" strokeWidth={2.5} dot={{ r: 3, fill: '#f06548' }} />
+                  <Line type="monotone" dataKey="count" name="Exits" stroke="#f06548" strokeWidth={2.75} filter="url(#exitGlow)" dot={{ r: 4, fill: '#f06548', strokeWidth: 2, stroke: ct.dotStroke }} activeDot={{ r: 6, fill: '#f06548' }} />
                 </LineChart>
               </ResponsiveContainer>
             </CardBody>
@@ -537,8 +611,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Recruitment Status</h6>
-                <small className="text-muted">All requisitions</small>
+                <h5 style={cardTitleStyle}>Recruitment Status</h5>
+                <p style={cardSubStyle}>All requisitions</p>
               </div>
               <i className="ri-search-line" style={{ fontSize: 18, color: '#299cdb' }} />
             </div>
@@ -551,8 +625,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Expense Claims</h6>
-                <small className="text-muted">By approval state</small>
+                <h5 style={cardTitleStyle}>Expense Claims</h5>
+                <p style={cardSubStyle}>By approval state</p>
               </div>
               <i className="ri-bill-line" style={{ fontSize: 18, color: '#f7b84b' }} />
             </div>
@@ -569,8 +643,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Department Turnover</h6>
-                <small className="text-muted">Exits last 12 months ÷ current headcount</small>
+                <h5 style={cardTitleStyle}>Department Turnover</h5>
+                <p style={cardSubStyle}>Exits last 12 months ÷ current headcount</p>
               </div>
               <i className="ri-fire-line" style={{ fontSize: 18, color: '#f06548' }} />
             </div>
@@ -584,8 +658,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Probation Snapshot</h6>
-                <small className="text-muted">Current vs completed</small>
+                <h5 style={cardTitleStyle}>Probation Snapshot</h5>
+                <p style={cardSubStyle}>Current vs completed</p>
               </div>
               <i className="ri-time-line" style={{ fontSize: 18, color: '#f7b84b' }} />
             </div>
@@ -599,8 +673,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Top Expense Categories</h6>
-                <small className="text-muted">By total amount</small>
+                <h5 style={cardTitleStyle}>Top Expense Categories</h5>
+                <p style={cardSubStyle}>By total amount</p>
               </div>
               <i className="ri-wallet-3-line" style={{ fontSize: 18, color: '#0ab39c' }} />
             </div>
@@ -617,8 +691,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Recent Joiners</h6>
-                <small className="text-muted">Last 5 employees</small>
+                <h5 style={cardTitleStyle}>Recent Joiners</h5>
+                <p style={cardSubStyle}>Last 5 employees</p>
               </div>
               <i className="ri-user-add-line" style={{ fontSize: 18, color: '#0ab39c' }} />
             </div>
@@ -660,8 +734,8 @@ export default function HrOverview() {
           <Card style={cardStyle}>
             <div style={cardHeaderStyle}>
               <div>
-                <h6 className="mb-0 fw-bold">Upcoming Joiners</h6>
-                <small className="text-muted">Next 5 expected starts</small>
+                <h5 style={cardTitleStyle}>Upcoming Joiners</h5>
+                <p style={cardSubStyle}>Next 5 expected starts</p>
               </div>
               <i className="ri-calendar-event-line" style={{ fontSize: 18, color: '#7c5cfc' }} />
             </div>
@@ -725,7 +799,8 @@ function StatusBreakdown({ rows }: { rows: Array<{ status: string; count: number
               nameKey="status"
               innerRadius={45}
               outerRadius={75}
-              paddingAngle={2}
+              paddingAngle={0}
+              stroke="none"
             >
               {items.map((it, i) => <Cell key={i} fill={it.color} />)}
             </Pie>
@@ -782,17 +857,19 @@ function DepartmentTurnover({ rows }: { rows: OverviewData['department_turnover'
   }
   const top = rows.slice(0, 8);
   const colorFor = (pct: number) => pct >= 10 ? '#f06548' : pct >= 5 ? '#f7b84b' : '#0ab39c';
+  // Same chart palette as the parent so light/dark mode matches.
+  const ct = useChartTheme();
   return (
     <ResponsiveContainer width="100%" height={300}>
       <BarChart data={top} layout="vertical" margin={{ top: 8, right: 40, left: 10, bottom: 8 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--vz-border-color)" horizontal={false} />
+        <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} horizontal={false} />
         <XAxis
           type="number"
-          tick={{ fontSize: 11, fill: 'var(--vz-secondary-color)' }}
+          tick={{ fontSize: 11, fill: ct.axisTickMuted }}
           tickFormatter={(v: number) => `${v}%`}
           domain={[0, (max: number) => Math.max(10, Math.ceil(max * 1.1))]}
         />
-        <YAxis type="category" dataKey="name" tick={{ fontSize: 11.5, fill: 'var(--vz-body-color)' }} width={120} />
+        <YAxis type="category" dataKey="name" tick={{ fontSize: 11.5, fill: ct.axisTick }} width={120} />
         <Tooltip
           cursor={{ fill: 'rgba(240,101,72,0.06)' }}
           content={({ active, payload }: any) => {

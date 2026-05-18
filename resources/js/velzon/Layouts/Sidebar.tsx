@@ -3,8 +3,13 @@ import { Link } from "react-router-dom";
 import SimpleBar from "simplebar-react";
 //import logo
 import logoSm from "../assets/images/chotu-logo.png";
-import logoDark from "../assets/images/logo-dark.png";
-import logoLight from "../assets/images/igc-logo.png";
+// Single bundled fallback for the expanded-sidebar brand — used when the
+// tenant hasn't uploaded a logo. Previously we shipped two different
+// images (logo-dark.png = velzon mark, igc-logo.png = IGC mark) and
+// rendered them in the .logo-dark vs .logo-light slots, which made the
+// sidebar logo silently change every time the user flipped Sidebar Color
+// between Light / Dark / Gradient. One file = one brand on every theme.
+import brandFallback from "../assets/images/igc-logo.png";
 
 //Import Components
 import VerticalLayout from "./VerticalLayouts";
@@ -24,8 +29,12 @@ const Sidebar = ({ layoutType } : any) => {
   const rawTenantLogo = user?.branch_logo || user?.client_logo || null;
   const tenantLogo = rawTenantLogo ? resolveFileUrl(rawTenantLogo) : null;
   const smallLogo = tenantLogo || logoSm;
-  const largeLogoDark = tenantLogo || logoDark;
-  const largeLogoLight = tenantLogo || logoLight;
+  // Both sidebar-color variants now resolve to the SAME image so the
+  // brand stays consistent whether the sidebar is Light, Dark, or
+  // Gradient. When the tenant has uploaded a logo it wins on both;
+  // otherwise the single bundled fallback shows on both.
+  const largeLogoDark = tenantLogo || brandFallback;
+  const largeLogoLight = tenantLogo || brandFallback;
 
   useEffect(() => {
     var verticalOverlay = document.getElementsByClassName("vertical-overlay");
@@ -51,21 +60,27 @@ const Sidebar = ({ layoutType } : any) => {
     <React.Fragment>
       <div className="app-menu navbar-menu">
         <div className="navbar-brand-box">
+          {/* Two link blocks — Velzon shows .logo-dark on light sidebars
+              and .logo-light on dark / gradient sidebars. Heights MUST
+              match between the pair so the brand renders at the same
+              visual size regardless of sidebar color (the previous
+              30/35 vs 55/53 split made the same tenant logo look like a
+              completely different image when you flipped the colour). */}
           <Link to="/" className="logo logo-dark">
-            <span className="logo-sm mb-2">
-              <img src={smallLogo} alt="" style={{ height: '35px', width: 'auto', objectFit: 'contain' }} />
+            <span className="logo-sm">
+              <img src={smallLogo} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
             </span>
             <span className="logo-lg">
-              <img src={largeLogoDark} alt="" style={{ height: '30px', width: 'auto', objectFit: 'contain' }} />
+              <img src={largeLogoDark} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
             </span>
           </Link>
 
           <Link to="/" className="logo logo-light">
-            <span className="logo-sm ">
-              <img src={smallLogo} alt="" style={{ height: '53px', width: 'auto', objectFit: 'contain' }} />
+            <span className="logo-sm">
+              <img src={smallLogo} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
             </span>
             <span className="logo-lg">
-              <img src={largeLogoLight} alt="" style={{ height: '55px', width: 'auto', objectFit: 'contain' }} />
+              <img src={largeLogoLight} alt="" style={{ height: '50px', width: 'auto', objectFit: 'contain' }} />
             </span>
           </Link>
           <button

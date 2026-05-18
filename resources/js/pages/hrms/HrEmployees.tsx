@@ -1554,6 +1554,11 @@ export default function HrEmployees() {
     const amt = Number(eAnnualSalary);
     if (eAnnualSalary === '' || !Number.isFinite(amt) || amt <= 0) {
       e.annual_salary = 'Annual salary is required';
+    } else if (amt > 999999999999.99) {
+      // Cap matches the DB column type (decimal(14, 2)). Without this
+      // guard the wizard used to submit numbers that overflowed the
+      // column and surfaced as a generic 500.
+      e.annual_salary = 'Annual salary must be ≤ 999,999,999,999.99';
     }
     if (!eSalaryFreq) {
       e.salary_frequency = 'Salary frequency is required';
@@ -3221,6 +3226,66 @@ export default function HrEmployees() {
       >
         <style>{`
           .toggle-confirm-content { border-radius: 20px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
+          /* Dark-mode override pass. Inline styles inside this modal hard-
+             code light colors so the cream / mint header would sit on top
+             of a dark body in dark mode — visually broken. These rules
+             swap the inner surfaces to translucent washes over #222831
+             so the popup reads coherently end-to-end. !important is
+             needed because the source styles are inline. */
+          [data-bs-theme="dark"] .toggle-confirm-content { background: #222831 !important; }
+          [data-bs-theme="dark"] .toggle-confirm-header {
+            background: linear-gradient(135deg, rgba(245,158,11,0.20) 0%, rgba(245,158,11,0.10) 100%) !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-header.is-enable {
+            background: linear-gradient(135deg, rgba(10,179,156,0.20) 0%, rgba(10,179,156,0.08) 100%) !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-title    { color: rgba(255,255,255,0.95) !important; }
+          [data-bs-theme="dark"] .toggle-confirm-subtitle { color: rgba(255,255,255,0.68) !important; }
+          [data-bs-theme="dark"] .toggle-confirm-x {
+            background: rgba(255,255,255,0.10) !important;
+            border-color: rgba(255,255,255,0.15) !important;
+            color: rgba(255,255,255,0.85) !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-emp-card {
+            background: rgba(255,255,255,0.04) !important;
+            border-color: rgba(255,255,255,0.12) !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-emp-name { color: rgba(255,255,255,0.95) !important; }
+          [data-bs-theme="dark"] .toggle-confirm-emp-sub  { color: rgba(255,255,255,0.62) !important; }
+          [data-bs-theme="dark"] .toggle-confirm-id-pill {
+            background: rgba(124,92,252,0.22) !important;
+            color: #d8b4fe !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-pill-inactive {
+            background: rgba(255,255,255,0.08) !important;
+            color: rgba(255,255,255,0.65) !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-pill-active-green {
+            background: rgba(16,185,129,0.20) !important;
+            color: #6ee7b7 !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-pill-active-amber {
+            background: rgba(245,158,11,0.22) !important;
+            color: #fcd34d !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-banner {
+            background: rgba(245,158,11,0.12) !important;
+            border-color: rgba(245,158,11,0.30) !important;
+            color: #fcd34d !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-banner.is-enable {
+            background: rgba(10,179,156,0.12) !important;
+            border-color: rgba(10,179,156,0.30) !important;
+            color: #6ee7b7 !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-cancel-btn {
+            background: rgba(255,255,255,0.06) !important;
+            color: rgba(255,255,255,0.85) !important;
+            border-color: rgba(255,255,255,0.14) !important;
+          }
+          [data-bs-theme="dark"] .toggle-confirm-cancel-btn:hover {
+            background: rgba(255,255,255,0.10) !important;
+          }
         `}</style>
         <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
           {(() => {
@@ -3268,6 +3333,7 @@ export default function HrEmployees() {
               <>
                 {/* Tinted header band with the action icon and close button */}
                 <div
+                  className={`toggle-confirm-header${enabling ? ' is-enable' : ''}`}
                   style={{
                     background: tone.headerGrad,
                     padding: '24px 24px 36px',
@@ -3279,7 +3345,7 @@ export default function HrEmployees() {
                     onClick={cancelToggle}
                     disabled={toggling}
                     aria-label="Close"
-                    className="btn p-0 d-inline-flex align-items-center justify-content-center"
+                    className="btn p-0 d-inline-flex align-items-center justify-content-center toggle-confirm-x"
                     style={{
                       position: 'absolute', top: 14, right: 14,
                       width: 30, height: 30, borderRadius: 10,
@@ -3303,10 +3369,10 @@ export default function HrEmployees() {
                     >
                       <i className={tone.iconGlyph} style={{ color: '#fff', fontSize: 30 }} />
                     </div>
-                    <h5 className="fw-bold mb-1 mt-3" style={{ fontSize: 18, letterSpacing: '-0.01em', color: '#1f2937' }}>
+                    <h5 className="fw-bold mb-1 mt-3 toggle-confirm-title" style={{ fontSize: 18, letterSpacing: '-0.01em', color: '#1f2937' }}>
                       {tone.title}
                     </h5>
-                    <div className="text-muted" style={{ fontSize: 13 }}>
+                    <div className="text-muted toggle-confirm-subtitle" style={{ fontSize: 13 }}>
                       {tone.subtitle}
                     </div>
                   </div>
@@ -3317,7 +3383,7 @@ export default function HrEmployees() {
                     position:relative (set for the X button) creates its own context. */}
                 <div style={{ padding: '0 24px', marginTop: -22, position: 'relative', zIndex: 2 }}>
                   <div
-                    className="d-flex align-items-center gap-3"
+                    className="d-flex align-items-center gap-3 toggle-confirm-emp-card"
                     style={{
                       background: '#fff',
                       border: '1px solid #eef0f4',
@@ -3337,13 +3403,13 @@ export default function HrEmployees() {
                       {emp.initials}
                     </div>
                     <div className="min-w-0 flex-grow-1">
-                      <div className="fw-bold text-truncate" style={{ fontSize: 14 }}>{emp.name}</div>
-                      <div className="text-muted text-truncate" style={{ fontSize: 12 }}>
+                      <div className="fw-bold text-truncate toggle-confirm-emp-name" style={{ fontSize: 14 }}>{emp.name}</div>
+                      <div className="text-muted text-truncate toggle-confirm-emp-sub" style={{ fontSize: 12 }}>
                         {emp.designation} · {emp.department}
                       </div>
                     </div>
                     <span
-                      className="d-inline-flex align-items-center fw-semibold font-monospace flex-shrink-0"
+                      className="d-inline-flex align-items-center fw-semibold font-monospace flex-shrink-0 toggle-confirm-id-pill"
                       style={{
                         fontSize: 11,
                         padding: '4px 10px',
@@ -3361,7 +3427,7 @@ export default function HrEmployees() {
                 {/* State transition strip (Active → Disabled visual) */}
                 <div className="d-flex align-items-center justify-content-center gap-2" style={{ padding: '18px 24px 4px' }}>
                   <span
-                    className="d-inline-flex align-items-center fw-semibold"
+                    className={`d-inline-flex align-items-center fw-semibold ${enabling ? 'toggle-confirm-pill-inactive' : 'toggle-confirm-pill-active-green'}`}
                     style={{
                       fontSize: 11.5,
                       padding: '5px 12px',
@@ -3381,7 +3447,7 @@ export default function HrEmployees() {
                   </span>
                   <i className="ri-arrow-right-line" style={{ color: '#9ca3af', fontSize: 18 }} />
                   <span
-                    className="d-inline-flex align-items-center fw-semibold"
+                    className={`d-inline-flex align-items-center fw-semibold ${enabling ? 'toggle-confirm-pill-active-green' : 'toggle-confirm-pill-active-amber'}`}
                     style={{
                       fontSize: 11.5,
                       padding: '5px 12px',
@@ -3404,7 +3470,7 @@ export default function HrEmployees() {
                 {/* Info banner explaining the consequence */}
                 <div style={{ padding: '14px 24px 0' }}>
                   <div
-                    className="d-flex align-items-start gap-2"
+                    className={`d-flex align-items-start gap-2 toggle-confirm-banner${enabling ? ' is-enable' : ''}`}
                     style={{
                       background: tone.bannerBg,
                       border: `1px solid ${tone.bannerBd}`,
@@ -3429,7 +3495,7 @@ export default function HrEmployees() {
                     type="button"
                     onClick={cancelToggle}
                     disabled={toggling}
-                    className="btn fw-semibold rounded-pill flex-grow-1"
+                    className="btn fw-semibold rounded-pill flex-grow-1 toggle-confirm-cancel-btn"
                     style={{
                       fontSize: 13.5,
                       background: '#fff',
@@ -4661,7 +4727,27 @@ export default function HrEmployees() {
                           type="number"
                           placeholder="Enter amount"
                           value={eAnnualSalary}
-                          onChange={e => { setEAnnualSalary(e.target.value); clearEErr('annual_salary'); }}
+                          // Hard caps:
+                          //   - max  = 999,999,999,999.99 (decimal(14,2))
+                          //   - step = 0.01 (1 paisa)
+                          //   - 12 integer digits + 2 decimals enforced
+                          //     by a regex so the field never carries a
+                          //     value the backend would reject as overflow.
+                          max={999999999999.99}
+                          step="0.01"
+                          inputMode="decimal"
+                          onChange={e => {
+                            const raw = e.target.value;
+                            // Allow blank so the user can clear the field.
+                            if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
+                            // Reject anything that doesn't look like a
+                            // bounded decimal (up to 12 integer digits,
+                            // optional 2 decimals). Silently ignore the
+                            // bad keystroke instead of mutating state.
+                            if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
+                            setEAnnualSalary(raw);
+                            clearEErr('annual_salary');
+                          }}
                           style={{ flex: 1 }}
                         />
                         <div style={{ width: 130, flexShrink: 0 }}>
