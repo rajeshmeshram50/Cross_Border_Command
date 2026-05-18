@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList } from 'recharts';
 import api from '../../api';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
@@ -428,7 +428,15 @@ export default function ClientDashboard() {
             </div>
             <CardBody style={{ padding: '12px 16px 8px' }}>
               <ResponsiveContainer width="100%" height={260}>
-                <AreaChart data={payment_trend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                {/* AreaChart with type="linear" instead of "monotone" —
+                   monotone smooths a single non-zero value into a
+                   misleading "growth ramp" curve. Linear draws straight
+                   segments between data points, so a flat ₹0 baseline
+                   that suddenly jumps to ₹12K in May looks like an
+                   honest sharp spike (which it is) instead of gradual
+                   growth that never happened. Dots + value labels make
+                   each month's actual amount readable at a glance. */}
+                <AreaChart data={payment_trend} margin={{ top: 18, right: 18, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="clientRevGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%"   stopColor="#0ab39c" stopOpacity={0.45} />
@@ -449,7 +457,30 @@ export default function ClientDashboard() {
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: ct.axisTickMuted, fontWeight: 600 }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: ct.axisTickMuted }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
                   <Tooltip content={<ChartTooltip prefix="₹" />} cursor={{ stroke: 'rgba(10,179,156,0.4)', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                  <Area type="monotone" dataKey="amount" stroke="#0ab39c" strokeWidth={2.75} fill="url(#clientRevGrad)" filter="url(#clientRevGlow)" dot={{ r: 4, fill: '#0ab39c', strokeWidth: 2, stroke: ct.dotStroke }} activeDot={{ r: 6, fill: '#0ab39c' }} />
+                  <Area
+                    type="monotone"
+                    dataKey="amount"
+                    stroke="#0ab39c"
+                    strokeWidth={2.75}
+                    fill="url(#clientRevGrad)"
+                    filter="url(#clientRevGlow)"
+                    dot={{ r: 4, fill: '#0ab39c', strokeWidth: 2, stroke: ct.dotStroke }}
+                    activeDot={{ r: 6, fill: '#0ab39c' }}
+                  >
+                    <LabelList
+                      dataKey="amount"
+                      position="top"
+                      // Suppress labels on ₹0 months so the X-axis baseline
+                      // doesn't get cluttered with five "₹0" tags. Only
+                      // months with an actual payment get a label.
+                      formatter={(label) => {
+                        const v = Number(label ?? 0);
+                        if (!Number.isFinite(v) || v <= 0) return '';
+                        return `₹${v >= 1000 ? `${(v / 1000).toFixed(1)}K` : v.toFixed(0)}`;
+                      }}
+                      style={{ fontSize: 10.5, fontWeight: 700, fill: '#0ab39c' }}
+                    />
+                  </Area>
                 </AreaChart>
               </ResponsiveContainer>
             </CardBody>
