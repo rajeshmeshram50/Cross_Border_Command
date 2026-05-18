@@ -220,7 +220,7 @@ export default function OrganizationTypes() {
                   <Table className="align-middle table-nowrap mb-0">
                     <thead className="table-light">
                       <tr>
-                        <th style={{ width: 60 }}>#</th>
+                        <th style={{ width: 60 }}>Sr No</th>
                         <th style={{ width: 70 }}>Icon</th>
                         <th>Name</th>
                         <th>Slug</th>

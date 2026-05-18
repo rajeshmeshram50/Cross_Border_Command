@@ -125,7 +125,7 @@ export default function CompanyDetailsMaster() {
 
   const columns = useMemo(() => [
     {
-      header: '#',
+      header: 'Sr No',
       accessorKey: 'index',
       enableSorting: false,
       cell: (info: any) => <span className="fw-semibold text-muted">{info.row.index + 1}</span>,

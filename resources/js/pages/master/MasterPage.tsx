@@ -985,7 +985,7 @@ function MasterPageInner({
   const columns = useMemo(() => {
     const cols: any[] = [
       {
-        header: '#',
+        header: 'Sr No',
         accessorKey: '__index',
         cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
       },

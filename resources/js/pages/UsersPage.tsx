@@ -138,7 +138,7 @@ export default function UsersPage({ branchId, branchName, onBack }: Props) {
             <table className="table align-middle table-nowrap mb-0">
               <thead className="table-light">
                 <tr>
-                  <th className="ps-3" style={{ width: 50 }}>#</th>
+                  <th className="ps-3" style={{ width: 60 }}>Sr No</th>
                   <th>Name</th>
                   <th>Email</th>
                   <th>Role</th>
