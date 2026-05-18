@@ -1895,15 +1895,14 @@ function VaultModal({
                 <div style={{ paddingTop: 16 }}>
                   {/* Match context banner — surfaces WHY each template is here */}
                   {orgMeta && (
-                    <div className="d-flex align-items-center gap-2 flex-wrap mb-3"
-                      style={{ padding: '10px 14px', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 10 }}>
-                      <i className="ri-magic-line" style={{ color: '#4338ca' }} />
-                      <strong style={{ fontSize: 12.5, color: '#4338ca' }}>Matched Templates</strong>
-                      <span style={{ fontSize: 12, color: '#374151' }}>
+                    <div className="vault-match-strip d-flex align-items-center gap-2 flex-wrap mb-3">
+                      <i className="ri-magic-line vault-match-icon" />
+                      <strong className="vault-match-title" style={{ fontSize: 12.5 }}>Matched Templates</strong>
+                      <span className="vault-match-text" style={{ fontSize: 12 }}>
                         Department <strong>{orgMeta.department_name || '—'}</strong> → Category{' '}
-                        <span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{orgMeta.employee_category}</span>
+                        <span className="vault-match-chip">{orgMeta.employee_category}</span>
                         {orgMeta.role_type && (
-                          <>{' '}· Level{' '}<span style={{ background: '#fff', padding: '1px 8px', borderRadius: 6, fontWeight: 700 }}>{orgMeta.role_type}</span></>
+                          <>{' '}· Level{' '}<span className="vault-match-chip">{orgMeta.role_type}</span></>
                         )}
                       </span>
                     </div>
@@ -1918,21 +1917,21 @@ function VaultModal({
                           : `${signedTemplates.length} signed document${signedTemplates.length === 1 ? '' : 's'}`}
                       </div>
                     </div>
-                    <span className="d-inline-flex align-items-center"
-                      style={{ padding: '4px 12px', borderRadius: 999, background: '#f5f0ff', color: '#5a3fd1', fontSize: 11.5, fontWeight: 600 }}>
+                    <span className="vault-doc-count d-inline-flex align-items-center"
+                      style={{ padding: '4px 12px', borderRadius: 999, fontSize: 11.5, fontWeight: 600 }}>
                       {signedTemplates.length} docs
                     </span>
                   </div>
 
                   {orgLoading && (
-                    <div style={{ padding: 18, textAlign: 'center', color: '#6b7280', fontSize: 12.5 }}>
+                    <div className="vault-org-loading" style={{ padding: 18, textAlign: 'center', fontSize: 12.5 }}>
                       <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
                       Looking up matching templates…
                     </div>
                   )}
 
                   {!orgLoading && signedTemplates.length === 0 && (
-                    <div style={{ padding: 22, textAlign: 'center', color: '#6b7280', background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: 10 }}>
+                    <div className="vault-org-empty" style={{ padding: 22, textAlign: 'center', borderRadius: 10 }}>
                       <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
                       <div style={{ fontSize: 13 }}>
                         Nothing has been signed yet. Documents will appear here as
