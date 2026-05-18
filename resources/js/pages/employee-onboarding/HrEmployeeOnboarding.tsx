@@ -2664,7 +2664,15 @@ function InitiateOnboardingModal({
           ...((r?.data?.employees   ?? []) as any[]),
           ...((r?.data?.login_users ?? []) as any[]),
         ];
-        setManagerOpts(merged.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })));
+        // Strip the row currently being onboarded out of the manager
+        // list — an employee can never report to themselves. Matches
+        // by kind+id so we don't accidentally remove a login_user
+        // that happens to share a numeric id with this employee.
+        const selfId = emp?.dbId ?? null;
+        const filtered = selfId
+          ? merged.filter(m => !(m.kind === 'employee' && Number(m.id) === Number(selfId)))
+          : merged;
+        setManagerOpts(filtered.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })));
       }).catch(() => { if (!cancelled) setManagerOpts([]); }),
       api.get('/leave-plans').then(r => {
         if (cancelled) return;

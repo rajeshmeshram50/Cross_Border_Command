@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import api from '../api';
 import { useAuth } from './AuthContext';
+import { resolveFileUrl } from '../utils/resolveFileUrl';
 
 /* ──────────────────────────────────────────────────────────────────
  * Platform-wide Settings context.
@@ -140,7 +141,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const path = settings.appearance.favicon_path;
     if (!path) return;
-    const url = `/storage/${path}`;
+    // Use the shared resolver instead of hand-rolled `/storage/${path}`.
+    // The previous approach broke when:
+    //   - the path was already a full URL (CDN / Azure) — got prefixed
+    //     with /storage/ and produced /storage/https:... → 404
+    //   - the path already began with "storage/" — turned into
+    //     /storage/storage/... → 404
+    //   - the SPA was deployed under a base path different from API
+    //     origin — the leading slash anchored to the wrong host
+    const url = resolveFileUrl(path);
+    if (!url) return;
     let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null;
     if (!link) {
       link = document.createElement('link');

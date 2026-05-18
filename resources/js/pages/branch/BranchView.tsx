@@ -265,19 +265,8 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
                   <h3 className="text-white mb-0 fw-bold lh-1">{branch.users_count ?? 0}</h3>
                   <p className="fs-12 mb-0 mt-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em' }}>Users</p>
                 </div>
-                <div
-                  className="text-center px-3 py-2"
-                  style={{
-                    background: 'rgba(255,255,255,0.12)',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: 14,
-                    backdropFilter: 'blur(6px)',
-                    minWidth: 92,
-                  }}
-                >
-                  <h3 className="text-white mb-0 fw-bold lh-1">{branch.departments_count ?? 0}</h3>
-                  <p className="fs-12 mb-0 mt-1 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.8)', letterSpacing: '0.05em' }}>Departments</p>
-                </div>
+                {/* Departments stat tile removed per request — the
+                    branch hero now shows only the Users count. */}
               </div>
             </Col>
           </Row>
