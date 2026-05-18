@@ -175,19 +175,29 @@ export default function Settings() {
 
   const currentTab = TABS.find(t => t.id === tab)!;
 
-  // Initial load — every section in one round-trip
+  // Initial load — every section in one round-trip.
+  // We race the API against an 800ms floor so the shimmer is visible
+  // long enough to register as a real loading state. Without the floor
+  // the API returns in ~40-80ms locally and the shimmer flashes by so
+  // fast it looks like a glitch. The floor only kicks in when the API
+  // is faster than it; slow responses still resolve when they arrive.
   useEffect(() => {
-    api.get('/settings').then(res => {
+    const minDelay = new Promise(r => setTimeout(r, 800));
+    const fetchSettings = api.get('/settings').then(res => {
       const merged: AllSettings = { ...EMPTY_SETTINGS };
       for (const k of Object.keys(EMPTY_SETTINGS) as (keyof AllSettings)[]) {
         if (res.data[k] && typeof res.data[k] === 'object') {
           (merged as any)[k] = { ...(EMPTY_SETTINGS as any)[k], ...res.data[k] };
         }
       }
-      setData(merged);
-    }).catch(err => {
-      toast.error('Settings', err.response?.data?.message || 'Failed to load settings');
-    }).finally(() => setLoading(false));
+      return merged;
+    });
+    Promise.all([fetchSettings, minDelay])
+      .then(([merged]) => setData(merged as AllSettings))
+      .catch(err => {
+        toast.error('Settings', err.response?.data?.message || 'Failed to load settings');
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   // Tiny helper for shallow-merging into one section's state
