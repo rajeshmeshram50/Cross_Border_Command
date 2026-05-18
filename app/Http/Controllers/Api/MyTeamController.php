@@ -506,7 +506,14 @@ class MyTeamController extends Controller
         }
 
         if ($user->user_type === 'employee') {
-            $myEmpId = $user->employee_id;
+            // Resolve via Employee.user_id — `users.employee_id` is the
+            // back-pointer we don't always populate during onboarding, so
+            // relying on it dropped the My Team list to empty even when
+            // the employee genuinely has direct reports. The dashboard's
+            // `team_peers` query uses this same lookup, which is why the
+            // dashboard rendered the team correctly while this surface
+            // didn't.
+            $myEmpId = Employee::where('user_id', $user->id)->value('id');
             if (!$myEmpId) { $q->whereRaw('1=0'); return; }
             $q->where('reporting_manager_id', $myEmpId);
             return;
