@@ -950,7 +950,15 @@ class EmployeeController extends Controller
         $isFinalStep   = (int) $request->input('wizard_step_completed', 0) >= 4;
         $payrollOn     = (bool) $request->input('enable_payroll', true);
         $requireSalary = $isFinalStep && $payrollOn;
-        $salaryRule    = $requireSalary ? ['required', 'numeric', 'min:0.01'] : ['nullable', 'numeric', 'min:0'];
+        // Column type is decimal(14, 2) — anything beyond 999,999,999,999.99
+        // overflows the DB and used to surface as a generic 500. Cap the
+        // input here so the validator returns a clean 422 with a usable
+        // message ("must be less than…") instead of swallowing an SQL
+        // overflow exception.
+        $salaryMax     = 999999999999.99; // decimal(14, 2)
+        $salaryRule    = $requireSalary
+            ? ['required', 'numeric', 'min:0.01', "max:{$salaryMax}"]
+            : ['nullable',  'numeric', 'min:0',    "max:{$salaryMax}"];
         $salaryFreqRule = $requireSalary ? ['required', 'string', 'max:30']   : ['nullable', 'string', 'max:30'];
         $salaryFromRule = $requireSalary ? ['required', 'date']               : ['nullable', 'date'];
 
