@@ -473,7 +473,13 @@ export default function AdminDashboard() {
                     borderRadius: 10, padding: '6px 12px', border: `1px solid ${COLORS[i % COLORS.length]}30`,
                   }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS[i % COLORS.length], flexShrink: 0 }} />
-                    <span style={{ fontSize: 11, color: '#495057', textTransform: 'capitalize', fontWeight: 600 }}>
+                    {/* Use a theme variable instead of a hardcoded slate so
+                        the label stays readable in dark mode. The pill
+                        background is only a 12-alpha tint of the role
+                        colour, which becomes near-invisible on a dark
+                        page — dark slate text on a dark background read
+                        as faded. var(--vz-body-color) flips correctly. */}
+                    <span style={{ fontSize: 11, color: 'var(--vz-body-color)', textTransform: 'capitalize', fontWeight: 600 }}>
                       {type.replace(/_/g, ' ')}
                     </span>
                     <span style={{ fontSize: 13, fontWeight: 800, color: COLORS[i % COLORS.length] }}>{count as number}</span>
