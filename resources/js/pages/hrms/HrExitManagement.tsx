@@ -1260,13 +1260,11 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
 
           {/* Content */}
           <section className="ep-content">
-            <div className="ep-stage-banner">
-              <span className="ep-stage-banner-icon"><i className={current.icon} /></span>
-              <div>
-                <div className="ep-stage-banner-title">{current.title}</div>
-                <div className="ep-stage-banner-sub">{current.sub}</div>
-              </div>
-            </div>
+            {/* Per-stage violet banner removed — the stepper rail on the
+                left + the footer ("Stage N of M — title") already tell
+                the user which stage they're on, so the gradient bar at
+                the top of every stage was redundant and ate vertical
+                space inside the modal. */}
 
             {/* ── STAGE 1 — Exit Initiation & Approval ── */}
             {stage === 1 && (
