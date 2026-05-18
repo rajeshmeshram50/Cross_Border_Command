@@ -4,6 +4,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/mast
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
+import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,6 +76,10 @@ interface ChecklistStage {
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HrExitManagement() {
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  // Loading flag for the initial GET /employees call. Drives the KPI
+  // tile + table shimmer so the user gets a visible placeholder instead
+  // of zero counts and an empty table during the first roundtrip.
+  const [listLoading, setListLoading] = useState(true);
   const [tab, setTab]             = useState<'active' | 'in-progress' | 'exited'>('active');
   const [search, setSearch]       = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
@@ -96,10 +101,19 @@ export default function HrExitManagement() {
     api.get('/employees')
       .then(({ data }) => {
         if (cancelled) return;
-        const list = Array.isArray(data) ? data : [];
+        // Exit Management only handles employees that have actually
+        // finished onboarding (all 6 macro stages). Anyone still in the
+        // wizard isn't a candidate for the exit flow yet — they belong
+        // on the Onboarding page. KPIs, tabs, search and the table all
+        // derive from `employees`, so filtering here keeps every count
+        // and bucket honest in one place.
+        const list = (Array.isArray(data) ? data : []).filter(
+          e => Number((e as any)?.onboarding_stage_completed ?? 0) >= 6
+        );
         setEmployees(list.map(apiToExitRow));
       })
-      .catch(() => { if (!cancelled) setEmployees([]); });
+      .catch(() => { if (!cancelled) setEmployees([]); })
+      .finally(() => { if (!cancelled) setListLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -303,7 +317,9 @@ export default function HrExitManagement() {
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
-                      <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
+                      {listLoading
+                        ? <Shimmer height={28} width={56} style={{ marginTop: 4 }} />
+                        : <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>}
                     </div>
                     <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                       <i className={k.icon} />
@@ -387,7 +403,9 @@ export default function HrExitManagement() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filtered.length === 0 ? (
+                        {listLoading ? (
+                          <ShimmerTableRows rows={6} cols={11} keyPrefix="exit-shim" />
+                        ) : filtered.length === 0 ? (
                           <tr>
                             <td colSpan={11} className="text-center py-5 text-muted">
                               <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -826,6 +844,11 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const [businessImpact, setBusinessImpact] = useState('Low');
   const [replacementNeeded, setReplacementNeeded] = useState('Yes — Immediate');
   const [stage1Saving, setStage1Saving] = useState(false);
+  // Brief "advancing" flag for stages 2+ where Next Stage doesn't hit the
+  // network but still benefits from a visual ack so the user doesn't
+  // double-click. Cleared in the requestAnimationFrame callback after
+  // the stage flip lands.
+  const [advancingStage, setAdvancingStage] = useState(false);
 
   // Date guards — Notice Date and Last Working Day must be strictly in
   // the future. ISO yyyy-mm-dd compares lexicographically so a string
@@ -1741,22 +1764,38 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
             )}
             {isLastStage ? (
               <button type="button" className="ep-btn ep-btn--complete" onClick={closeAll}><i className="ri-check-double-line" />Complete Exit</button>
-            ) : (
-              <button
-                type="button"
-                className="ep-btn ep-btn--next"
-                disabled={stage === 1 && stage1Saving}
-                onClick={async () => {
-                  if (stage === 1) {
-                    const ok = await saveStage1();
-                    if (!ok) return;
-                  }
-                  advance();
-                }}
-              >
-                Next Stage<i className="ri-arrow-right-s-line" />
-              </button>
-            )}
+            ) : (() => {
+              // Loader gating: stage 1 has an API round-trip (saveStage1),
+              // other stages just advance the local stepper but we still
+              // show a brief spinner so the click feels acknowledged.
+              const busy = stage === 1 ? stage1Saving : advancingStage;
+              return (
+                <button
+                  type="button"
+                  className="ep-btn ep-btn--next"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (stage === 1) {
+                      const ok = await saveStage1();
+                      if (!ok) return;
+                      advance();
+                      return;
+                    }
+                    setAdvancingStage(true);
+                    // Yield to the browser so the disabled / spinner state
+                    // paints before the synchronous advance() flips the stage.
+                    requestAnimationFrame(() => {
+                      advance();
+                      setAdvancingStage(false);
+                    });
+                  }}
+                >
+                  {busy
+                    ? <><i className="ri-loader-4-line ri-spin" /> Advancing…</>
+                    : <>Next Stage<i className="ri-arrow-right-s-line" /></>}
+                </button>
+              );
+            })()}
           </div>
         </div>
       </ModalBody>

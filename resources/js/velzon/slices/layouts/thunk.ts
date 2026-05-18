@@ -13,6 +13,14 @@ import {
     changeSidebarVisibilityAction
 } from './reducer';
 
+// All Theme-Customizer choices live under these localStorage keys so a
+// refresh re-hydrates the exact layout the user picked. The companion
+// reads happen in reducer.ts (initialState) and the synchronous DOM
+// seeding in app.tsx. Keep the keys in sync between all three files.
+const persist = (key: string, value: unknown) => {
+    try { window.localStorage.setItem(key, String(value)); } catch { /* private mode */ }
+};
+
 /**
  * Changes the layout type
  * @param {*} param0
@@ -28,6 +36,7 @@ export const changeLayout = (layout : any) => async (dispatch : any) => {
             changeHTMLAttribute("data-layout-style", "default");
         }
         changeHTMLAttribute("data-layout", layout);
+        persist('cbc-layout', layout);
         dispatch(changeLayoutAction(layout));
     } catch (error) { }
 };
@@ -39,6 +48,7 @@ export const changeLayout = (layout : any) => async (dispatch : any) => {
 export const changeLayoutMode = (layoutMode : any) => async (dispatch : any) => {
     try {
         changeHTMLAttribute("data-bs-theme", layoutMode);
+        persist('cbc-layout-mode', layoutMode);
         dispatch(changeLayoutModeAction(layoutMode));
     } catch (error) { }
 };
@@ -50,6 +60,7 @@ export const changeLayoutMode = (layoutMode : any) => async (dispatch : any) => 
 export const changeSidebarTheme = (theme : any) => async (dispatch : any) => {
     try {
         changeHTMLAttribute("data-sidebar", theme);
+        persist('cbc-sidebar-theme', theme);
         dispatch(changeSidebarThemeAction(theme));
     } catch (error) {
         // console.log(error);
@@ -67,6 +78,7 @@ export const changeLayoutWidth = (layoutWidth : any) => async (dispatch : any) =
         } else {
             changeHTMLAttribute("data-layout-width", "boxed");
         }
+        persist('cbc-layout-width', layoutWidth);
         dispatch(changeLayoutWidthAction(layoutWidth));
     } catch (error) {
         return error;
@@ -80,6 +92,7 @@ export const changeLayoutWidth = (layoutWidth : any) => async (dispatch : any) =
 export const changeLayoutPosition = (layoutposition : any) => async (dispatch : any) => {
     try {
         changeHTMLAttribute("data-layout-position", layoutposition);
+        persist('cbc-layout-position', layoutposition);
         dispatch(changeLayoutPositionAction(layoutposition));
     } catch (error) {
         // console.log(error);
@@ -93,6 +106,7 @@ export const changeLayoutPosition = (layoutposition : any) => async (dispatch : 
 export const changeTopbarTheme = (topbarTheme : any) => async (dispatch : any) => {
     try {
         changeHTMLAttribute("data-topbar", topbarTheme);
+        persist('cbc-topbar-theme', topbarTheme);
         dispatch(changeTopbarThemeAction(topbarTheme));
 
     } catch (error) {
@@ -107,6 +121,7 @@ export const changeTopbarTheme = (topbarTheme : any) => async (dispatch : any) =
 export const changeSidebarImageType = (leftsidebarImagetype : any) => async (dispatch : any) => {
     try {
         changeHTMLAttribute("data-sidebar-image", leftsidebarImagetype);
+        persist('cbc-sidebar-image', leftsidebarImagetype);
         dispatch(changeSidebarImageTypeAction(leftsidebarImagetype));
     } catch (error) {
         // console.log(error);
@@ -148,6 +163,7 @@ export const changeLeftsidebarSizeType = (leftsidebarSizetype : any) => async (d
             default:
                 changeHTMLAttribute("data-sidebar-size", "lg");
         }
+        persist('cbc-sidebar-size', leftsidebarSizetype);
         dispatch(changeLeftsidebarSizeTypeAction(leftsidebarSizetype));
 
     } catch (error) {
@@ -162,6 +178,7 @@ export const changeLeftsidebarSizeType = (leftsidebarSizetype : any) => async (d
 export const changeLeftsidebarViewType = (leftsidebarViewtype : any) => async (dispatch : any) => {
     try {
         changeHTMLAttribute("data-layout-style", leftsidebarViewtype);
+        persist('cbc-sidebar-view', leftsidebarViewtype);
         dispatch(changeLeftsidebarViewTypeAction(leftsidebarViewtype));
     } catch (error) {
         // console.log(error);

@@ -510,38 +510,129 @@ export function ShimmerPermissions() {
 }
 
 /* ── Dashboard ──────────────────────────────────────────────────────── */
+/**
+ * Mirrors the live Admin / Branch / Client dashboards:
+ *   1. Page title row (heading + breadcrumb)
+ *   2. 6 KPI cards in a row — each with the 3px colored top strip, a
+ *      label, a value, and a 42x42 icon tile (matches .admin-kpi-card)
+ *   3. Hero chart (2/3) + side donut (1/3)
+ *   4. Card header strip on every chart card so the page resolves into
+ *      the real layout instead of suddenly rearranging.
+ *   5. 3-column secondary row (matches "Client Growth / Org Types /
+ *      Payment Health" trio)
+ *   6. Two-up list row (matches recent-payments / top-clients pair)
+ *
+ * Same fidelity approach as ShimmerSettings — the placeholder reads
+ * as the real page "filling in", not a generic spinner soup.
+ */
+function DashboardKpiCard() {
+  return (
+    <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+      <Shimmer height={3} radius={0} />
+      <div style={{ padding: '18px 18px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ flex: 1, ...stack(10) }}>
+          <Shimmer height={10} width="70%" />
+          <Shimmer height={24} width="55%" />
+          <Shimmer height={14} width="80%" radius={6} />
+        </div>
+        <Shimmer width={42} height={42} radius={12} />
+      </div>
+    </div>
+  );
+}
+
+function DashboardChartCard({ height = 280 }: { height?: number }) {
+  return (
+    <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
+      {/* Card header — title + sub + optional action button */}
+      <div style={{
+        padding: '14px 18px',
+        borderBottom: '1px solid var(--shim-border, #e5e7eb)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      }}>
+        <div style={stack(8)}>
+          <Shimmer height={15} width={140} />
+          <Shimmer height={11} width={180} />
+        </div>
+        <Shimmer width={70} height={28} radius={8} />
+      </div>
+      {/* Chart canvas — full block at the requested height */}
+      <div style={{ padding: 16 }}>
+        <Shimmer height={height - 70} radius={10} />
+      </div>
+    </div>
+  );
+}
+
+function DashboardDonutCard() {
+  return (
+    <div style={{ ...card, padding: 0, overflow: 'hidden', height: '100%' }}>
+      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--shim-border, #e5e7eb)', ...stack(8) }}>
+        <Shimmer height={15} width={140} />
+        <Shimmer height={11} width={120} />
+      </div>
+      <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+        {/* Donut placeholder — ring shape via outer + inner shimmer */}
+        <div style={{ position: 'relative', width: 160, height: 160 }}>
+          <Shimmer width={160} height={160} radius={999} />
+          <div style={{
+            position: 'absolute', top: 40, left: 40, width: 80, height: 80,
+            borderRadius: 999,
+            background: 'var(--shim-card-bg, #fff)',
+          }} />
+        </div>
+        {/* Legend chips */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {[0, 1, 2, 3].map(i => <Shimmer key={i} width={60} height={14} radius={6} />)}
+        </div>
+        {/* Bottom total */}
+        <div style={{ ...stack(6), alignItems: 'center', marginTop: 4 }}>
+          <Shimmer width={50} height={22} />
+          <Shimmer width={80} height={10} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ShimmerDashboard() {
   return (
-    <div style={stack(20)}>
+    <div style={stack(16)}>
+      {/* Page title row — heading on the left, breadcrumb on the right */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={stack(8)}>
-          <Shimmer height={26} width={192} />
-          <Shimmer height={14} width={256} />
+          <Shimmer height={22} width={140} />
+          <Shimmer height={13} width={260} />
         </div>
-        <Shimmer width={64} height={32} radius={12} />
+        <Shimmer width={110} height={14} />
       </div>
-      <ShimmerStatCards count={6} />
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 18 }}>
-        <ShimmerChart />
-        <div style={stack(14)}>
-          {[1, 2].map(i => (
-            <div key={i} style={{ ...card, padding: 20, ...row, gap: 16 }}>
-              <Shimmer width={72} height={72} radius={999} />
-              <div style={stack(8)}>
-                <Shimmer width={112} height={14} />
-                <Shimmer width={80} height={12} />
-              </div>
-            </div>
-          ))}
-          <Shimmer height={96} radius={16} />
-        </div>
+
+      {/* KPI strip — 6 cards across, wrap to 3-2 / 1 at narrower widths */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: 14,
+      }}>
+        {Array.from({ length: 6 }).map((_, i) => <DashboardKpiCard key={i} />)}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18 }}>
-        <ShimmerChart />
-        <ShimmerChart />
-        <ShimmerList count={3} />
+
+      {/* Hero row — wide chart card + donut card on the right */}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+        <DashboardChartCard height={320} />
+        <DashboardDonutCard />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+
+      {/* Secondary row — three smaller chart cards (Client Growth /
+          Org Types / Payment Health on Admin; Joining Trend / Status /
+          Gender on Branch). */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+        <DashboardChartCard height={240} />
+        <DashboardChartCard height={240} />
+        <DashboardChartCard height={240} />
+      </div>
+
+      {/* Tail row — two list cards (Recent Payments / Top Clients) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <ShimmerList count={5} />
         <ShimmerList count={5} />
       </div>
