@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { resolveFileUrl } from '../utils/resolveFileUrl';
 import Tooltip from '../components/ui/Tooltip';
 import { ShimmerSettings } from '../components/ui/Shimmer';
 
@@ -531,7 +532,7 @@ export default function Settings() {
                         <input ref={fileLogoRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f) uploadAsset('logo', f); e.target.value = ''; }} />
                         <div className="rounded-2 p-3 text-center" style={{ border: `2px dashed ${currentTab.color}55`, background: currentTab.color + '08', cursor: isSuper ? 'pointer' : 'not-allowed' }} onClick={() => isSuper && fileLogoRef.current?.click()}>
                           {data.appearance.logo_path
-                            ? <img src={`/storage/${data.appearance.logo_path}`} alt="logo" style={{ maxHeight: 60, maxWidth: '100%', objectFit: 'contain' }} />
+                            ? <img src={resolveFileUrl(data.appearance.logo_path)} alt="logo" style={{ maxHeight: 60, maxWidth: '100%', objectFit: 'contain' }} />
                             : <><i className="ri-upload-cloud-2-line" style={{ fontSize: 28, color: currentTab.color }} /><p className="mb-0 fw-semibold mt-1" style={{ fontSize: 12, color: currentTab.color }}>Click to upload logo</p><p className="text-muted mb-0" style={{ fontSize: 10.5 }}>PNG, JPG, SVG, WEBP · Max 2MB</p></>}
                         </div>
                       </Col>
@@ -540,7 +541,7 @@ export default function Settings() {
                         <input ref={fileFavRef} type="file" accept="image/png,image/x-icon,image/svg+xml,image/webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f) uploadAsset('favicon', f); e.target.value = ''; }} />
                         <div className="rounded-2 p-3 text-center" style={{ border: `2px dashed ${currentTab.color}55`, background: currentTab.color + '08', cursor: isSuper ? 'pointer' : 'not-allowed' }} onClick={() => isSuper && fileFavRef.current?.click()}>
                           {data.appearance.favicon_path
-                            ? <img src={`/storage/${data.appearance.favicon_path}`} alt="favicon" style={{ maxHeight: 48, maxWidth: '100%', objectFit: 'contain' }} />
+                            ? <img src={resolveFileUrl(data.appearance.favicon_path)} alt="favicon" style={{ maxHeight: 48, maxWidth: '100%', objectFit: 'contain' }} />
                             : <><i className="ri-upload-cloud-2-line" style={{ fontSize: 28, color: currentTab.color }} /><p className="mb-0 fw-semibold mt-1" style={{ fontSize: 12, color: currentTab.color }}>Click to upload favicon</p><p className="text-muted mb-0" style={{ fontSize: 10.5 }}>ICO, PNG, SVG · Max 2MB</p></>}
                         </div>
                       </Col>

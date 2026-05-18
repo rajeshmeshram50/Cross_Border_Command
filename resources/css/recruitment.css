@@ -5098,7 +5098,54 @@
   color: var(--vz-secondary-color);
   border-color: #e5e7eb;
 }
-.ep-btn--ghost:hover { background: #f9fafb; }
+.ep-btn--ghost:hover {
+  background: #f5f3ff;
+  color: #5a3fd1;
+  border-color: rgba(124, 92, 252, 0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(124, 92, 252, 0.18), 0 2px 4px rgba(15, 23, 42, 0.06);
+}
+.ep-btn--ghost:hover i { color: #5a3fd1; }
+.ep-btn--ghost:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(124, 92, 252, 0.12);
+}
+.ep-btn--ghost:focus-visible {
+  border-color: #7c5cfc;
+  box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.25), 0 4px 10px rgba(124, 92, 252, 0.18);
+}
+.ep-btn--ghost:disabled,
+.ep-btn--ghost[disabled] {
+  background: #f8fafc;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+.ep-btn--ghost:disabled:hover,
+.ep-btn--ghost[disabled]:hover {
+  background: #f8fafc;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  transform: none;
+  box-shadow: none;
+}
+/* Dark-mode tuning — the ghost button needs to read against a dark
+   panel without flashing white on hover. Use translucent violet wash
+   over the existing surface. */
+[data-bs-theme="dark"] .ep-btn--ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.78);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+[data-bs-theme="dark"] .ep-btn--ghost:hover {
+  background: rgba(124, 92, 252, 0.18);
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.55);
+  box-shadow: 0 6px 14px rgba(124, 92, 252, 0.30), 0 2px 4px rgba(0, 0, 0, 0.30);
+}
+[data-bs-theme="dark"] .ep-btn--ghost:hover i { color: #c4b5fd; }
 .ep-btn--reject {
   background: #fef2f2;
   color: #b91c1c;

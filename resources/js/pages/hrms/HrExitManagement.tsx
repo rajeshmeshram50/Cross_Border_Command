@@ -1112,12 +1112,28 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
   const completed = Object.values(stageStatus).filter(s => s === 'Completed').length;
   const progressPct = Math.round((completed / EXIT_STAGES.length) * 100);
 
+  // Move forward without auto-completing the current stage. The
+  // previous implementation flipped every stage to 'Completed' on Next,
+  // which made the progress ring read 100% as soon as the user clicked
+  // through the wizard — even with empty forms. Each stage now keeps
+  // its prior status (most likely 'In Progress'); callers that have
+  // genuinely finished their stage (e.g. `saveStage1` after a clean
+  // save) mark the status to 'Completed' explicitly before calling
+  // advance().
   const advance = () => {
-    setStageStatus(prev => ({ ...prev, [stage]: 'Completed' }));
     if (stage < EXIT_STAGES.length) {
       setStage(stage + 1);
-      setStageStatus(prev => ({ ...prev, [stage + 1]: 'In Progress' }));
+      setStageStatus(prev => ({
+        ...prev,
+        [stage + 1]: prev[stage + 1] === 'Completed' ? 'Completed' : 'In Progress',
+      }));
     }
+  };
+  /** Mark the *current* stage as completed. Callers must invoke this
+   *  themselves once they've successfully persisted whatever data the
+   *  stage owns (e.g. saveStage1 → markStageCompleted(1) → advance()). */
+  const markStageCompleted = (n: number) => {
+    setStageStatus(prev => ({ ...prev, [n]: 'Completed' }));
   };
   const goBack = () => {
     if (stage > 1) {
@@ -1126,7 +1142,12 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
     }
   };
   const closeAll = () => {
-    setStageStatus(prev => ({ ...prev, [stage]: 'Completed' }));
+    // "Complete Exit" on the final stage marks that stage as done. If
+    // earlier stages were skipped without saving, they stay In Progress
+    // (or Pending) so the progress ring accurately reflects which
+    // stages still need data — no more "100% done" on a half-filled
+    // wizard.
+    markStageCompleted(stage);
     onClose();
   };
 
@@ -1134,6 +1155,25 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
    *  Stage handler can gate the advance on a clean save. */
   const saveStage1 = async (): Promise<boolean> => {
     if (!employee || stage1Saving) return false;
+    // Required-field guard — all four are marked with a red * on the
+    // form, so we mirror that here before any network call. Empty
+    // strings previously sailed through and the PUT silently saved a
+    // row with NULL columns, leaving the wizard in a "looks completed"
+    // state without actual data.
+    const missing: string[] = [];
+    if (!exitType.trim())               missing.push('Exit Type');
+    if (!reasonForExit.trim())          missing.push('Reason for Exit');
+    if (!noticeDate)                    missing.push('Notice Date');
+    if (!lwd)                           missing.push('Last Working Day');
+    if (missing.length) {
+      toast.error(
+        'Fill the required fields',
+        missing.length === 1
+          ? `${missing[0]} is required.`
+          : `${missing.slice(0, -1).join(', ')} and ${missing.slice(-1)} are required.`,
+      );
+      return false;
+    }
     // Date-in-the-past guard runs BEFORE we flip the loading flag — no
     // network round-trip needed and the toast fires immediately. Used to
     // return false silently here, so clicking "Next Stage" with a past
@@ -1272,7 +1312,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                 <div className="ep-section-label">Exit Details</div>
                 <Row className="g-2 mb-2">
                   <Col md={6}>
-                    <EpField label="Exit Type">
+                    <EpField label="Exit Type" required>
                       <EpSelect
                         value={exitType}
                         onChange={setExitType}
@@ -1281,7 +1321,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label="Reason for Exit">
+                    <EpField label="Reason for Exit" required>
                       {/* Free-text now (was a dropdown). HR rarely fits a
                           real-world reason into a fixed enum, so the form
                           asks them to type whatever's accurate. */}
@@ -1294,7 +1334,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label="Notice Date">
+                    <EpField label="Notice Date" required>
                       <EpInput
                         type="date"
                         value={noticeDate}
@@ -1312,7 +1352,7 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label="Last Working Day">
+                    <EpField label="Last Working Day" required>
                       <EpInput
                         type="date"
                         value={lwd}
@@ -1773,6 +1813,11 @@ function ExitProcessModal({ employee, onClose }: { employee: EmployeeRow | null;
                     if (stage === 1) {
                       const ok = await saveStage1();
                       if (!ok) return;
+                      // saveStage1 just persisted real data — only NOW
+                      // is stage 1 genuinely complete. Without this the
+                      // progress ring stayed at 0% even after a clean
+                      // save (since advance() no longer auto-marks).
+                      markStageCompleted(1);
                       advance();
                       return;
                     }
@@ -2008,10 +2053,18 @@ function describeArc(cx: number, cy: number, r: number, startAngle: number, endA
 }
 
 // ─── Tiny presentational helpers used inside the Exit Process modal ─────────
-function EpField({ label, children }: { label: string; children: React.ReactNode }) {
+function EpField({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="ep-field">
-      <div className="ep-field-label">{label}</div>
+      <div className="ep-field-label">
+        {label}
+        {required && (
+          <span
+            aria-hidden="true"
+            style={{ color: '#dc2626', marginLeft: 3, fontWeight: 700 }}
+          >*</span>
+        )}
+      </div>
       {children}
     </div>
   );
