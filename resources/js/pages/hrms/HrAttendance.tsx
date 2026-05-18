@@ -141,6 +141,13 @@ interface PunchEvent {
   worked?: string;
   breakAfter?: string;
   note?: string;
+  /** Geo-fix recorded at punch time. Sent by the SPA on
+   *  /attendance/face/clock-in & clock-out. Optional — missing punches and
+   *  legacy records won't have it. `place` is reverse-geocoded server-side
+   *  (or by the mobile app) for human-readable display. */
+  lat?: number | null;
+  lng?: number | null;
+  place?: string | null;
 }
 
 interface CorrectionRequest {
@@ -237,34 +244,42 @@ const statusForDate = (empId: number, iso: string): DayStatus | null => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Dummy data builder — wire to `GET /api/attendance/daily?date=YYYY-MM-DD` later
 // ─────────────────────────────────────────────────────────────────────────────
+// Fixed office locations so timeline punches show realistic coordinates.
+// Replace with real lat/lng/place from the punches table once geo capture is
+// rolled out to every employee.
+const OFFICE_BIOMETRIC = { lat: 18.5908, lng: 73.7378, place: 'Hinjewadi Phase 1, Pune' };
+const OFFICE_DESK_WEB  = { lat: 18.5912, lng: 73.7388, place: 'Hinjewadi Phase 1, Pune' };
+const FIELD_CLIENT     = { lat: 18.5641, lng: 73.7765, place: 'Baner Office, Pune' };
+const HOME_WFH         = { lat: 18.5288, lng: 73.8746, place: 'Koregaon Park, Pune' };
+
 const buildPunches = (kind: 'normal' | 'late' | 'missing-out' | 'missing-in' | 'partial'): PunchEvent[] => {
   if (kind === 'late') return [
-    { time: '09:32 AM', type: 'in',      label: 'Check In',  source: 'BIOMETRIC' },
-    { time: '01:14 PM', type: 'out',     label: 'Lunch Out', source: 'BIOMETRIC', worked: '3h 42m' },
-    { time: '02:06 PM', type: 'in',      label: 'Lunch In',  source: 'BIOMETRIC', breakAfter: '52m' },
+    { time: '09:32 AM', type: 'in',      label: 'Check In',  source: 'BIOMETRIC', ...OFFICE_BIOMETRIC },
+    { time: '01:14 PM', type: 'out',     label: 'Lunch Out', source: 'BIOMETRIC', worked: '3h 42m', ...OFFICE_BIOMETRIC },
+    { time: '02:06 PM', type: 'in',      label: 'Lunch In',  source: 'BIOMETRIC', breakAfter: '52m', ...OFFICE_BIOMETRIC },
     { time: '—',         type: 'missing', label: 'Check Out',source: 'BIOMETRIC', note: 'Check Out — Missing punch' },
   ];
   if (kind === 'missing-out') return [
-    { time: '09:00 AM', type: 'in',      label: 'Check In', source: 'BIOMETRIC' },
+    { time: '09:00 AM', type: 'in',      label: 'Check In', source: 'BIOMETRIC', ...OFFICE_BIOMETRIC },
     { time: '—',         type: 'missing', label: 'Check Out',source: 'BIOMETRIC', note: 'Check Out — Missing punch' },
   ];
   if (kind === 'missing-in') return [
     { time: '—',         type: 'missing', label: 'Check In', source: 'BIOMETRIC', note: 'Check In — Missing punch' },
   ];
   if (kind === 'partial') return [
-    { time: '09:05 AM', type: 'in',  label: 'Check In',  source: 'BIOMETRIC' },
-    { time: '12:30 PM', type: 'out', label: 'Check Out', source: 'BIOMETRIC', worked: '3h 25m' },
+    { time: '09:05 AM', type: 'in',  label: 'Check In',  source: 'BIOMETRIC', ...OFFICE_BIOMETRIC },
+    { time: '12:30 PM', type: 'out', label: 'Check Out', source: 'BIOMETRIC', worked: '3h 25m', ...OFFICE_BIOMETRIC },
   ];
   // "Normal" — a richer mock that exercises the horizontal timeline UI:
-  // Check In → Step Out → Step In → Lunch Out → Lunch In → Meeting → Back
+  // Check In → Step Out (field visit) → Step In → Lunch → Meeting (off-site)
   return [
-    { time: '08:02 AM', type: 'in',  label: 'Check In',  source: 'BIOMETRIC' },
-    { time: '10:15 AM', type: 'out', label: 'Step Out',  source: 'WEB' },
-    { time: '10:42 AM', type: 'in',  label: 'Step In',   source: 'WEB',       breakAfter: '27m' },
-    { time: '12:30 PM', type: 'out', label: 'Lunch Out', source: 'BIOMETRIC', worked: '3h 48m' },
-    { time: '01:14 PM', type: 'in',  label: 'Lunch In',  source: 'BIOMETRIC', breakAfter: '44m' },
-    { time: '02:48 PM', type: 'out', label: 'Meeting',   source: 'MOBILE' },
-    { time: '04:05 PM', type: 'in',  label: 'Back',      source: 'MOBILE',    breakAfter: '1h 17m' },
+    { time: '08:02 AM', type: 'in',  label: 'Check In',  source: 'BIOMETRIC',                            ...OFFICE_BIOMETRIC },
+    { time: '10:15 AM', type: 'out', label: 'Step Out',  source: 'WEB',                                  ...FIELD_CLIENT },
+    { time: '10:42 AM', type: 'in',  label: 'Step In',   source: 'WEB',       breakAfter: '27m',         ...OFFICE_DESK_WEB },
+    { time: '12:30 PM', type: 'out', label: 'Lunch Out', source: 'BIOMETRIC', worked: '3h 48m',          ...OFFICE_BIOMETRIC },
+    { time: '01:14 PM', type: 'in',  label: 'Lunch In',  source: 'BIOMETRIC', breakAfter: '44m',         ...OFFICE_BIOMETRIC },
+    { time: '02:48 PM', type: 'out', label: 'Meeting',   source: 'MOBILE',                               ...FIELD_CLIENT },
+    { time: '04:05 PM', type: 'in',  label: 'Back',      source: 'MOBILE',    breakAfter: '1h 17m',      ...HOME_WFH },
   ];
 };
 
@@ -868,12 +883,45 @@ function TodayRecordCard({
           <div className="att-tile">
             <div className="att-tile-label"><i className="ri-login-circle-line" />FIRST IN</div>
             <div className="att-tile-value">{renderTime(employee.firstIn)}</div>
+            {(() => {
+              const firstInPunch = employee.punches.find(p => p.type === 'in' && p.lat != null && p.lng != null);
+              if (!firstInPunch || firstInPunch.lat == null || firstInPunch.lng == null) return null;
+              return (
+                <a
+                  href={`https://www.google.com/maps?q=${firstInPunch.lat},${firstInPunch.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="att-tile-geo"
+                  title={`${firstInPunch.lat.toFixed(5)}, ${firstInPunch.lng.toFixed(5)} — open on map`}
+                >
+                  <i className="ri-map-pin-2-line" />
+                  <span>{firstInPunch.place || `${firstInPunch.lat.toFixed(3)}, ${firstInPunch.lng.toFixed(3)}`}</span>
+                </a>
+              );
+            })()}
           </div>
           <div className="att-tile">
             <div className="att-tile-label"><i className="ri-logout-circle-r-line" />LAST OUT</div>
             <div className="att-tile-value">
               {employee.lastOut === null ? <span className="att-in-progress">In Progress</span> : renderTime(employee.lastOut)}
             </div>
+            {(() => {
+              const outPunches = employee.punches.filter(p => p.type === 'out' && p.lat != null && p.lng != null);
+              const lastOutPunch = outPunches[outPunches.length - 1];
+              if (!lastOutPunch || lastOutPunch.lat == null || lastOutPunch.lng == null) return null;
+              return (
+                <a
+                  href={`https://www.google.com/maps?q=${lastOutPunch.lat},${lastOutPunch.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="att-tile-geo"
+                  title={`${lastOutPunch.lat.toFixed(5)}, ${lastOutPunch.lng.toFixed(5)} — open on map`}
+                >
+                  <i className="ri-map-pin-2-line" />
+                  <span>{lastOutPunch.place || `${lastOutPunch.lat.toFixed(3)}, ${lastOutPunch.lng.toFixed(3)}`}</span>
+                </a>
+              );
+            })()}
           </div>
         </div>
 
@@ -941,6 +989,18 @@ function PunchTimelineCard({ employee }: { employee: AttendanceEmployee }) {
                     <div className={`att-h-label ${isMissing ? 'is-missing' : ''}`}>{label}</div>
                     {!isMissing && <span className={`att-h-source att-h-source--${p.source.toLowerCase()}`}>{p.source}</span>}
                     {isMissing && <span className="att-h-source att-h-source--missing">MISSING</span>}
+                    {!isMissing && p.lat != null && p.lng != null && (
+                      <a
+                        href={`https://www.google.com/maps?q=${p.lat},${p.lng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="att-h-geo"
+                        title={`${p.place || 'Open on map'} · ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`}
+                      >
+                        <i className="ri-map-pin-2-line" />
+                        <span className="att-h-geo-place">{p.place || `${p.lat.toFixed(3)}, ${p.lng.toFixed(3)}`}</span>
+                      </a>
+                    )}
                   </div>
                 );
               })}

@@ -7125,6 +7125,58 @@
 [data-bs-theme="dark"] .att-h-source--manual    { background: rgba(245,158,11,0.20); color: #fcd34d; }
 [data-bs-theme="dark"] .att-h-source--missing   { background: rgba(239,68,68,0.20); color: #fca5a5; }
 
+/* Punch geo chip — clickable, opens Google Maps in a new tab. Lives on each
+   timeline punch and on the First In / Last Out tiles. */
+.att-h-geo {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 10px; font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  background: rgba(16,185,129,0.12);
+  color: #047857;
+  border: 1px solid rgba(16,185,129,0.35);
+  border-radius: 999px;
+  text-decoration: none;
+  max-width: 130px;
+  white-space: nowrap; overflow: hidden;
+}
+.att-h-geo:hover { background: rgba(16,185,129,0.22); color: #065f46; }
+.att-h-geo i { font-size: 11px; flex-shrink: 0; }
+.att-h-geo-place {
+  overflow: hidden; text-overflow: ellipsis;
+  font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+}
+[data-bs-theme="dark"] .att-h-geo {
+  background: rgba(16,185,129,0.18);
+  color: #6ee7b7;
+  border-color: rgba(16,185,129,0.45);
+}
+[data-bs-theme="dark"] .att-h-geo:hover { background: rgba(16,185,129,0.30); color: #a7f3d0; }
+
+.att-tile-geo {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  font-size: 11px; font-weight: 700;
+  background: rgba(16,185,129,0.10);
+  color: #047857;
+  border: 1px solid rgba(16,185,129,0.30);
+  border-radius: 999px;
+  text-decoration: none;
+  max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.att-tile-geo:hover { background: rgba(16,185,129,0.20); color: #065f46; }
+.att-tile-geo i { font-size: 13px; flex-shrink: 0; }
+[data-bs-theme="dark"] .att-tile-geo {
+  background: rgba(16,185,129,0.18);
+  color: #6ee7b7;
+  border-color: rgba(16,185,129,0.45);
+}
+[data-bs-theme="dark"] .att-tile-geo:hover { background: rgba(16,185,129,0.30); color: #a7f3d0; }
+
 /* ════════════════════════════════════════════════════════════════════════
    Logs table redesign (cleaner, column-rich, paginated)
    ════════════════════════════════════════════════════════════════════════ */

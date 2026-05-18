@@ -20,6 +20,7 @@ import {
   type MasterConfig,
 } from './masterConfigs';
 import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles } from './masterFormKit';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import '../../../css/master.css';
 
 export default function MasterPage() {
@@ -546,6 +547,17 @@ function MasterPageInner({
         continue;
       }
       if (!raw) continue;
+      // Future-only date guard — kicks in for fields like Warranty
+      // Expiry where a backdated value doesn't make sense. Lexical
+      // YYYY-MM-DD compare is fine because that's what the picker
+      // emits and what we store on the row.
+      if (f.t === 'date' && f.futureOnly) {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        if (raw < todayIso) {
+          errs[f.n] = `${f.l} must be a future date`;
+          continue;
+        }
+      }
       if (f.t === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
         errs[f.n] = 'Please enter a valid email address';
       } else if (f.t === 'number' && isNaN(Number(raw))) {
@@ -644,12 +656,61 @@ function MasterPageInner({
     setSaving(true);
     try {
       const base = masterEndpoint(cfg);
+
+      // Collect actual File uploads from the form. When at least one
+      // file is selected, switch the request to multipart/form-data so
+      // the backend can read it via $request->file(...). Previously
+      // file fields were skipped entirely from the JSON payload, which
+      // meant invoices / warranty cards uploaded against an asset
+      // never reached the server — they were gone the moment the user
+      // hit Save and the form re-opened with empty file inputs.
+      const filesToUpload: { name: string; file: File }[] = [];
+      for (const f of cfg.fields) {
+        if (f.t !== 'file' || !f.n) continue;
+        const v = fd.get(f.n);
+        if (v instanceof File && v.size > 0) {
+          filesToUpload.push({ name: f.n, file: v });
+        }
+      }
+
+      // Build the request body. Without files, keep posting JSON so
+      // existing masters that don't carry uploads aren't disturbed.
+      let body: any = payload;
+      let headers: any = undefined;
+      if (filesToUpload.length > 0) {
+        const out = new FormData();
+        for (const k of Object.keys(payload)) {
+          const v = (payload as Record<string, any>)[k];
+          if (v === null || v === undefined) {
+            // Laravel treats a missing key as null; explicit empty
+            // string is closer to the intent ("clear this column").
+            out.append(k, '');
+          } else if (Array.isArray(v) || (typeof v === 'object' && !(v instanceof File))) {
+            out.append(k, JSON.stringify(v));
+          } else {
+            out.append(k, String(v));
+          }
+        }
+        for (const { name, file } of filesToUpload) {
+          out.append(name, file);
+        }
+        // Laravel only honors PATCH/PUT methods in multipart bodies
+        // when the verb is spoofed via _method, so we POST + spoof on
+        // the update path.
+        if (editingId != null) out.append('_method', 'PUT');
+        body = out;
+        headers = { 'Content-Type': 'multipart/form-data' };
+      }
+
       if (editingId != null) {
-        const { data } = await api.put(`${base}/${editingId}`, payload);
+        const url = `${base}/${editingId}`;
+        const { data } = filesToUpload.length > 0
+          ? await api.post(url, body, { headers })  // _method=PUT spoof for multipart
+          : await api.put(url, body);
         setRecords(prev => prev.map(r => r.id === editingId ? data : r));
         toast.success('Updated', `${cfg.titleSingular || cfg.title} updated successfully`);
       } else {
-        const { data } = await api.post(base, payload);
+        const { data } = await api.post(base, body, headers ? { headers } : undefined);
         setRecords(prev => [data, ...prev]);
         toast.success('Created', `${cfg.titleSingular || cfg.title} created successfully`);
       }
@@ -3623,18 +3684,44 @@ function renderField(
       />
     );
   } else if (f.t === 'file') {
-    // Custom-styled file picker — replaces the native browser input. Actual
-    // upload to backend storage is not wired yet; the picker is purely UI for
-    // now (submit skips files).
-    // The HTML `required` attribute is only set on CREATE — on EDIT the existing
-    // file already lives on the server, so the native browser validation must
-    // not block submit when the user hasn't re-selected a file.
+    // The `required` attribute is only set on CREATE — on EDIT the
+    // existing file already lives on the server, so native browser
+    // validation must not block submit when the user hasn't picked
+    // a new file. Backend convention: column ending in `_path` holds
+    // the stored disk path. We surface a "View" link for it so the
+    // user can confirm what's already attached before replacing.
     const isEdit = !!editing;
     const hintParts: string[] = [];
     if (f.accept) hintParts.push(f.accept);
     if (f.maxMb) hintParts.push(`Max ${f.maxMb}MB`);
+    const existingPath: string | null = editing
+      ? (editing[`${f.n}_path`] || editing[f.n] || null)
+      : null;
+    const existingUrl = existingPath ? resolveFileUrl(existingPath) : '';
+    const existingName = existingPath ? String(existingPath).split('/').pop() : '';
     input = (
       <>
+        {existingUrl && (
+          <a
+            href={existingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="d-inline-flex align-items-center gap-1 mb-2 text-decoration-none"
+            style={{
+              fontSize: 12, fontWeight: 600,
+              padding: '5px 10px', borderRadius: 8,
+              background: 'rgba(10,179,156,0.10)', color: '#0a8a78',
+              border: '1px solid rgba(10,179,156,0.30)',
+            }}
+            title={`View existing file (${existingName})`}
+          >
+            <i className="ri-attachment-line" />
+            <span style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {existingName || 'View existing file'}
+            </span>
+            <i className="ri-external-link-line" style={{ fontSize: 11 }} />
+          </a>
+        )}
         <MasterFileInput
           name={f.n}
           accept={f.accept}
@@ -3644,7 +3731,10 @@ function renderField(
           onChange={() => onFieldChange()}
         />
         {hintParts.length > 0 && (
-          <small className="master-file-hint">{hintParts.join(' · ')}</small>
+          <small className="master-file-hint">
+            {hintParts.join(' · ')}
+            {existingUrl && ' · upload a new file to replace the one above'}
+          </small>
         )}
       </>
     );

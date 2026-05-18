@@ -33,6 +33,7 @@ const iconMap: Record<string, string> = {
   Users: "ri-team-line",
   CalendarCheck: "ri-calendar-check-line",
   TrendingUp: "ri-line-chart-line",
+  Package: "ri-box-3-line",
 };
 
 const resolveIcon = (name?: string) => (name && iconMap[name]) || "ri-circle-line";
@@ -51,6 +52,7 @@ const slugToPath = (slug: string): string => {
     case "profile":     return "/profile";
     case "master":      return "/master";
     case "hr":          return "/hr";
+    case "products":    return "/products";
     default:            return `/${slug}`;
   }
 };
@@ -138,7 +140,7 @@ const Navdata = () => {
   const perms = user?.permissions || {};
   // clock-in is added to defaults so it surfaces even when the user has
   // zero module permissions — every employee can clock themselves in.
-  const defaultSlugs = ["dashboard", "profile", "my-plan", "clock-in"];
+  const defaultSlugs = ["dashboard", "profile", "my-plan", "clock-in", "products"];
   const roleOnlySlugs = ["clients", "plans", "payments", "settings", "permissions"];
 
   const hasAnyMasterView = () => {

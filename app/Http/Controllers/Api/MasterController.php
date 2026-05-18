@@ -265,6 +265,15 @@ class MasterController extends Controller
         $data['client_id'] = $clientId;
         $data['branch_id'] = $branchId;
 
+        // Persist any uploaded files (Asset master ships invoice_file +
+        // warranty_card_file). Convention: a file field arriving as
+        // `foo_file` is stored under `master/{slug}/{kind}` and the
+        // resulting disk path is written to the matching `foo_file_path`
+        // column on the model. The original `foo_file` key is removed
+        // from the payload so the mass-assignment doesn't try to set
+        // a non-existent column.
+        $data = $this->absorbUploads($request, $modelClass, $slug, $data);
+
         $row = $modelClass::create($data);
 
         // Sync any embedded sublist payloads (e.g. legal_entities → banks).
@@ -325,6 +334,11 @@ class MasterController extends Controller
         if ($slug === 'asset_categories' && !empty($row->is_system)) {
             unset($data['name']);
         }
+
+        // Same file-upload absorbtion as store(). For update, we also
+        // clean up the previously-stored file when a new one is being
+        // uploaded so we don't accumulate orphans on disk.
+        $data = $this->absorbUploads($request, $modelClass, $slug, $data, $row);
 
         $row->update($data);
 
@@ -538,6 +552,61 @@ class MasterController extends Controller
      * contract simple: the form posts everything in one JSON payload, the
      * controller fans it out to the correct child tables transactionally.
      */
+    /**
+     * Pull any uploaded files off the request, stash them on the
+     * public disk, and rewrite the data array so the `_path` column on
+     * the model receives the resulting disk-relative path.
+     *
+     * Convention: a request key ending in `_file` (e.g. `invoice_file`)
+     * maps to a column ending in `_file_path` (e.g. `invoice_file_path`)
+     * on the same model. We only operate on keys the model actually
+     * supports — anything else is ignored, so non-asset masters that
+     * don't ship file fields are unaffected.
+     *
+     * On update, the previously-saved file is best-effort deleted from
+     * disk before the new path overwrites the column.
+     */
+    private function absorbUploads(Request $request, string $modelClass, string $slug, array $data, $row = null): array
+    {
+        $files = $request->allFiles();
+        if (empty($files)) return $data;
+
+        $fillable = (new $modelClass())->getFillable();
+
+        foreach ($files as $key => $file) {
+            if (!is_string($key)) continue;
+            // Resolve the target column. Most file fields ship `*_file`
+            // → `*_file_path`. Fall back to the key itself in case a
+            // master uses a path-style name directly.
+            $targetCol = str_ends_with($key, '_file_path')
+                ? $key
+                : (str_ends_with($key, '_file') ? $key . '_path' : $key);
+
+            if (!in_array($targetCol, $fillable, true)) continue;
+
+            // Single-file fields arrive as UploadedFile, multi-file as
+            // an array — handle both shapes defensively.
+            $uploaded = is_array($file) ? ($file[0] ?? null) : $file;
+            if (!$uploaded) continue;
+
+            // Drop the stale file from disk on update before the new
+            // path takes its place. Wrapped in try/catch — a missing
+            // file mustn't block the save.
+            if ($row && !empty($row->{$targetCol})) {
+                try { \Illuminate\Support\Facades\Storage::disk('public')->delete($row->{$targetCol}); } catch (\Throwable $e) {}
+            }
+
+            $path = $uploaded->store("master/{$slug}", 'public');
+            $data[$targetCol] = $path;
+
+            // Make sure the raw `*_file` key isn't accidentally mass-
+            // assigned (would crash on a missing column).
+            unset($data[$key]);
+        }
+
+        return $data;
+    }
+
     private function syncSublists(Request $request, string $slug, $parent): void
     {
         // legal_entities → banks

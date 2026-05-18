@@ -566,6 +566,19 @@ class EmployeeController extends Controller
         // by the admin themselves. Delete still preserves the guard since
         // it's destructive.
 
+        // Block any mutation on a disabled (soft-deleted) employee. The
+        // row is still resolvable via withTrashed() so the admin can
+        // restore it, but business-data updates — especially the
+        // onboarding wizard's PUTs — must not proceed against a
+        // disabled record. Otherwise an admin could advance an account
+        // that can't even sign in. Restore the employee first, then
+        // edit.
+        if ($row->trashed()) {
+            return response()->json([
+                'message' => 'This employee is disabled — restore them from the HR Employees page before editing or continuing onboarding.',
+            ], 422);
+        }
+
         $data = $this->validatePayload($request, $row->id);
         $data = $this->mirrorAncillaryRoles($data);
         $this->assertAssetsNotDoubleBooked($data, $row->id);

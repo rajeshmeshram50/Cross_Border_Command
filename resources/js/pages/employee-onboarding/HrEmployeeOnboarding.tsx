@@ -533,7 +533,16 @@ export default function HrEmployeeOnboarding() {
   const reloadApiRows = () => {
     api.get('/employees')
       .then(r => {
-        const list = Array.isArray(r.data) ? r.data : [];
+        // Drop soft-deleted (disabled) employees. The /employees endpoint
+        // returns trashed rows by default so the HR Employees "Disabled"
+        // tab can render them — but the Onboarding page is strictly a
+        // forward-motion surface, so showing a disabled employee here
+        // led to the admin clicking "Initiate Onboarding" on an account
+        // that can't even sign in. Filter at the boundary so every
+        // downstream guard (button visibility, stats, vault counts) is
+        // automatically correct.
+        const list = (Array.isArray(r.data) ? r.data : [])
+          .filter((e: any) => !e?.deleted_at);
         setApiRows(list.map(apiToOnboardRow));
       })
       .catch(() => setApiRows([]))

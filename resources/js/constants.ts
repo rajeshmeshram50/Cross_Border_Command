@@ -322,6 +322,12 @@ export const MENU_ITEMS: MenuItem[] = [
     groups: SALES_GROUPS,
   },
 
+  // Products catalog — branch + employee only. Amazon/Flipkart-style card
+  // grid with a 6-step Add Product wizard. No permission flag yet so the
+  // entry surfaces purely on user_type (handled in LayoutMenuData via the
+  // defaultSlugs allow-list).
+  { id: 'products', icon: 'Package', label: 'Products', roles: ['branch_user', 'employee'] },
+
   // Face-driven attendance — only employees punch in. The signed-in admin /
   // branch user has no Employee row to clock in for; surfaced ONLY to the
   // employee role so admins don't see a dead-end menu entry.
