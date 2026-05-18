@@ -1383,7 +1383,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Validator for the Advance Request form. Same toast-summary +
   // per-field map pattern the expense draft validator uses, so both
   // forms surface mistakes identically (red border + inline message).
-  const submitAdvanceRequest = () => {
+  const submitAdvanceRequest = async () => {
+    // Re-entrancy guard — shares the same flag the expense flow uses so
+    // a fast double-click on Submit Advance Request can't fire two POSTs
+    // and create duplicate rows.
+    if (claimSubmitting) return;
     const errs: Record<string, string> = {};
     const summary: string[] = [];
     const amt = Number(String(advAmount).replace(/[^\d.]/g, ''));
@@ -1398,6 +1402,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
     if (!advRequestedDate)     { errs.requested = 'Requested date is required';   summary.push('Requested date is required'); }
     if (!advRecoveryStart)     { errs.recovery_start = 'Recovery start date is required'; summary.push('Recovery start date is required'); }
+    // Server enforces after_or_equal:requested_date too, but catch it
+    // client-side so the user gets immediate feedback instead of a 422.
+    if (advRequestedDate && advRecoveryStart && advRecoveryStart < advRequestedDate) {
+      errs.recovery_start = 'Recovery start must be on or after requested date';
+      summary.push('Recovery start must be on or after requested date');
+    }
     if (!advRecoveryMode)      { errs.recovery_mode = 'Recovery mode is required'; summary.push('Recovery mode is required'); }
     if (advRecoveryMode === 'emi') {
       const months = Number(advMonths);
@@ -1412,11 +1422,61 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       toast.error('Fix the highlighted issues', summary.slice(0, 3).join('. '));
       return;
     }
-    // No backend endpoint yet — surface a placeholder success toast and
-    // close. When the API is wired, replace this with the POST + refresh
-    // pattern the expense flow uses.
-    toast.success('Advance request submitted', 'Sent for manager + finance approval.');
-    setClaimOpen(false);
+    setClaimSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append('advance_type', advType);
+      if (advType === 'Other') fd.append('advance_type_other', advTypeOther.trim());
+      fd.append('amount', String(amt));
+      fd.append('requested_date', advRequestedDate);
+      fd.append('recovery_start', advRecoveryStart);
+      fd.append('recovery_mode', advRecoveryMode);
+      if (advRecoveryMode === 'emi') {
+        fd.append('recovery_months', String(Number(advMonths)));
+        if (advMonthlyEmi) {
+          const emi = Number(String(advMonthlyEmi).replace(/[^\d.]/g, ''));
+          if (Number.isFinite(emi) && emi > 0) fd.append('monthly_emi', String(emi));
+        }
+      }
+      fd.append('reason', advReason.trim());
+      // Profile owner — same routing logic as expense-claim store(). The
+      // backend resolves either numeric id or EMP- code, and gates the
+      // "you can only file under yourself" rule for non-super-admins.
+      if (profileEmpIdNum !== null) {
+        fd.append('employee_id', String(profileEmpIdNum));
+      } else if (profileEmpCode) {
+        fd.append('employee_code', profileEmpCode);
+      }
+      for (const f of advFiles) fd.append('files[]', f);
+
+      await api.post('/advance-requests', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success('Advance request submitted', 'Sent for manager + finance approval.');
+      setClaimOpen(false);
+    } catch (err: any) {
+      // Same surface-the-best-message pattern submitAllDrafts uses —
+      // 422 field errors first, then top-level message, then a status
+      // hint as fallback.
+      const fieldErrors = err?.response?.data?.errors;
+      let msg = '';
+      if (fieldErrors && typeof fieldErrors === 'object') {
+        const first = Object.values(fieldErrors)[0];
+        msg = Array.isArray(first) ? String(first[0]) : String(first);
+      }
+      if (!msg) msg = err?.response?.data?.message || '';
+      const status = err?.response?.status;
+      if (!msg) {
+        msg = status === 500
+          ? 'The server rejected the request. Check the amount fits 12 digits and try again.'
+          : status === 413
+            ? 'One or more attachments are too large to upload.'
+            : 'Could not submit the advance request. Please try again.';
+      }
+      toast.error('Submit failed', msg);
+    } finally {
+      setClaimSubmitting(false);
+    }
   };
 
   // Advance request fields
@@ -3979,18 +4039,36 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <input type="text" className="form-control form-control-sm" placeholder="Search…" style={{ fontSize: 12, height: 30 }} />
                   <i className="ri-search-line search-icon" style={{ fontSize: 12 }} />
                 </div>
+                {/* Export — text was hardcoded `#374151` which disappeared
+                    against the dark card in dark mode. Theme variable now
+                    drives both modes, with a small accent-tinted hover. */}
                 <button
                   type="button"
                   className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
                   style={{
                     background: 'var(--vz-card-bg)',
-                    color: '#374151',
+                    color: 'var(--vz-body-color)',
                     border: '1px solid var(--vz-border-color)',
                     fontSize: 11.5, padding: '4px 12px',
+                    transition: 'background .15s ease, border-color .15s ease, color .15s ease',
+                  }}
+                  onMouseEnter={e => {
+                    const t = e.currentTarget;
+                    t.style.background = 'rgba(168,85,247,0.10)';
+                    t.style.borderColor = 'rgba(168,85,247,0.45)';
+                    t.style.color = '#7c3aed';
+                  }}
+                  onMouseLeave={e => {
+                    const t = e.currentTarget;
+                    t.style.background = 'var(--vz-card-bg)';
+                    t.style.borderColor = 'var(--vz-border-color)';
+                    t.style.color = 'var(--vz-body-color)';
                   }}
                 >
                   <i className="ri-download-2-line" /> Export
                 </button>
+                {/* Raise New Claim — inline styles can't carry :hover, so
+                    we drive the brightening + lift via mouse handlers. */}
                 <button
                   type="button"
                   className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
@@ -4000,6 +4078,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     border: 'none',
                     boxShadow: '0 4px 10px rgba(249,115,22,0.28)',
                     fontSize: 11.5, padding: '4px 12px',
+                    transition: 'transform .15s ease, box-shadow .15s ease, filter .15s ease',
+                  }}
+                  onMouseEnter={e => {
+                    const t = e.currentTarget;
+                    t.style.transform = 'translateY(-1px)';
+                    t.style.boxShadow = '0 6px 14px rgba(249,115,22,0.45)';
+                    t.style.filter = 'brightness(1.06)';
+                  }}
+                  onMouseLeave={e => {
+                    const t = e.currentTarget;
+                    t.style.transform = 'translateY(0)';
+                    t.style.boxShadow = '0 4px 10px rgba(249,115,22,0.28)';
+                    t.style.filter = 'none';
                   }}
                   onClick={() => { setClaimMode('expense'); setClaimOpen(true); }}
                 >

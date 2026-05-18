@@ -1,0 +1,577 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\AdvanceRequest;
+use App\Models\Branch;
+use App\Models\Employee;
+use App\Models\Module;
+use App\Models\Permission;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Two-stage approval workflow controller for employee Advance Requests
+ * (Travel / Salary / Medical / Other recoverable payouts).
+ *
+ * Mirrors ExpenseClaimController one-to-one — same scope rules (mine /
+ * team / all), same tenant gate, same numbering pattern (ADV-0001), same
+ * manager → HR/Finance verdict pair. Only the form payload differs
+ * (advance type, recovery schedule, monthly EMI, reason).
+ *
+ * Endpoints (registered in routes/api.php under auth:sanctum):
+ *   GET    /api/advance-requests?scope=mine|team|all
+ *   POST   /api/advance-requests
+ *   GET    /api/advance-requests/{id}
+ *   POST   /api/advance-requests/{id}/manager-approve
+ *   POST   /api/advance-requests/{id}/manager-reject
+ *   POST   /api/advance-requests/{id}/hr-approve
+ *   POST   /api/advance-requests/{id}/hr-reject
+ *
+ * Attachment streaming lives at /api/advance-requests/{id}/attachments/{i}
+ * outside the sanctum group (query-token auth) so plain <a target="_blank">
+ * clicks work — same pattern as expense-claim attachments and candidate CVs.
+ */
+class AdvanceRequestController extends Controller
+{
+    private const STATUSES         = ['pending', 'approved', 'rejected'];
+    private const ADVANCE_TYPES    = ['Travel Advance', 'Salary Advance', 'Medical Advance', 'Other'];
+    private const RECOVERY_MODES   = ['emi', 'lumpsum', 'bimonthly'];
+
+    /* ============================================================ */
+    /*  LIST                                                        */
+    /* ============================================================ */
+
+    public function index(Request $request)
+    {
+        $user  = $request->user();
+        $scope = $request->query('scope', 'mine');
+        if (!in_array($scope, ['mine', 'team', 'all'], true)) {
+            $scope = 'mine';
+        }
+
+        $employeeIdFilter = $this->resolveEmployeeId(
+            $request->query('employee_id'),
+            $request->query('employee_code')
+        );
+
+        $q = AdvanceRequest::query()
+            ->with([
+                'employee:id,first_name,middle_name,last_name,display_name,emp_code,reporting_manager_id,department_id',
+                'employee.department:id,name',
+                'manager:id,first_name,middle_name,last_name,display_name,emp_code',
+                'creator:id,name,user_type',
+                'hrUser:id,name,user_type',
+            ])
+            ->orderByDesc('id');
+
+        $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
+
+        if ($scope === 'mine') {
+            $targetEmployeeId = $employeeIdFilter ?: $this->currentEmployeeId($user);
+            $q->where('employee_id', $targetEmployeeId ?? -1);
+        } elseif ($scope === 'team') {
+            $myEmployeeId = $this->currentEmployeeId($user);
+            $q->where('manager_id', $myEmployeeId ?? -1);
+        } else {
+            $this->guardHrPermission($user, 'can_view');
+            if ($employeeIdFilter) {
+                $q->where('employee_id', $employeeIdFilter);
+            }
+        }
+
+        if ($status = $request->query('status')) {
+            if (in_array($status, self::STATUSES, true)) {
+                $q->where('status', $status);
+            }
+        }
+
+        return response()->json($q->get()->map(fn ($r) => $this->serialize($r)));
+    }
+
+    /* ============================================================ */
+    /*  STORE                                                       */
+    /* ============================================================ */
+
+    public function store(Request $request)
+    {
+        $user = $request->user();
+        $employeeId = $this->resolveEmployeeId(
+            $request->input('employee_id'),
+            $request->input('employee_code')
+        ) ?: $this->currentEmployeeId($user);
+
+        if (!$employeeId) {
+            abort(422, 'No linked Employee record found for the current user.');
+        }
+        $employee = Employee::find($employeeId);
+        if (!$employee) {
+            abort(404, 'Employee not found.');
+        }
+        // Anyone but super_admin can only file under their own Employee record.
+        if ($user->user_type !== 'super_admin'
+            && $employee->user_id !== $user->id) {
+            abort(403, 'You can only file advance requests for your own employee record.');
+        }
+
+        $data = $request->validate([
+            'advance_type'        => ['required', 'string', 'in:' . implode(',', self::ADVANCE_TYPES)],
+            // Only meaningful when advance_type='Other'. The frontend already
+            // gates the input but the backend accepts any string up to 255
+            // chars when present.
+            'advance_type_other'  => ['nullable', 'string', 'max:255'],
+            // Cap at 9,999,999,999,999.99 to fit inside the decimal(18,2)
+            // column — matches the expense-claim guard so the SPA's input
+            // sanitiser (12 whole digits + 2 fraction) can't overflow it.
+            'amount'              => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
+            'requested_date'      => ['required', 'date'],
+            'recovery_start'      => ['required', 'date', 'after_or_equal:requested_date'],
+            'recovery_mode'       => ['required', 'string', 'in:' . implode(',', self::RECOVERY_MODES)],
+            // Months + monthly EMI only required when mode='emi'. The
+            // validator below promotes them to required-when conditionally.
+            'recovery_months'     => ['nullable', 'integer', 'min:1', 'max:120'],
+            'monthly_emi'         => ['nullable', 'numeric', 'min:0', 'max:9999999999999.99'],
+            'reason'              => ['required', 'string', 'max:2000'],
+        ]);
+
+        if ($data['recovery_mode'] === 'emi' && empty($data['recovery_months'])) {
+            abort(422, 'Number of months is required when recovery mode is EMI.');
+        }
+        if ($data['advance_type'] === 'Other' && empty($data['advance_type_other'])) {
+            abort(422, 'Please specify the advance type when "Other" is selected.');
+        }
+
+        // File attachments — same pattern as expense_claims, stored on the
+        // public disk under advance_requests/{employeeId}.
+        $attachments = [];
+        if ($request->hasFile('files')) {
+            $files = $request->file('files');
+            $files = is_array($files) ? $files : [$files];
+            foreach ($files as $f) {
+                if (!$f) continue;
+                $name = $f->getClientOriginalName();
+                $size = $f->getSize();
+                $path = $f->store('advance_requests/' . $employeeId, 'public');
+                $attachments[] = [
+                    'name' => $name,
+                    'size' => $size,
+                    'path' => $path,
+                ];
+            }
+        }
+
+        // Auto-clear the manager stage when no reporting manager is assigned
+        // — same behaviour as expense-claim so the audit log surfaces an
+        // explicit "no manager" note instead of looking like a phantom
+        // approval.
+        $hasManager      = !empty($employee->reporting_manager_id);
+        $managerStatus   = $hasManager ? 'pending'  : 'approved';
+        $managerActedAt  = $hasManager ? null       : now();
+        $managerComment  = $hasManager ? null       : 'Auto-approved · no reporting manager assigned';
+
+        $row = DB::transaction(function () use ($employee, $data, $attachments, $managerStatus, $managerActedAt, $managerComment, $user) {
+            return AdvanceRequest::create([
+                'client_id'         => $employee->client_id,
+                'branch_id'         => $employee->branch_id,
+                'advance_no'        => $this->nextAdvanceNo($employee->client_id, $employee->branch_id),
+                'employee_id'       => $employee->id,
+                'manager_id'        => $employee->reporting_manager_id,
+                'advance_type'      => $data['advance_type'],
+                'advance_type_other'=> $data['advance_type'] === 'Other' ? ($data['advance_type_other'] ?? null) : null,
+                'amount'            => $data['amount'],
+                'requested_date'    => $data['requested_date'],
+                'recovery_start'    => $data['recovery_start'],
+                'recovery_mode'     => $data['recovery_mode'],
+                'recovery_months'   => $data['recovery_mode'] === 'emi' ? ($data['recovery_months'] ?? null) : null,
+                'monthly_emi'       => $data['recovery_mode'] === 'emi' ? ($data['monthly_emi']     ?? null) : null,
+                'reason'            => $data['reason'],
+                'attachments'       => $attachments ?: null,
+                'status'            => 'pending',
+                'manager_status'    => $managerStatus,
+                'manager_acted_at'  => $managerActedAt,
+                'manager_comment'   => $managerComment,
+                'hr_status'         => 'pending',
+                'created_by'        => $user->id,
+            ]);
+        });
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json($this->serialize($row), 201);
+    }
+
+    /* ============================================================ */
+    /*  SHOW                                                        */
+    /* ============================================================ */
+
+    public function show(Request $request, $id)
+    {
+        $user = $request->user();
+        $row = AdvanceRequest::with(['employee', 'manager', 'creator', 'hrUser'])
+            ->findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        return response()->json($this->serialize($row));
+    }
+
+    /**
+     * Stream one attachment by its index in the attachments array.
+     * Query-token auth so plain <a target="_blank"> works — mirrors the
+     * expense-claim attachment endpoint exactly.
+     */
+    public function downloadAttachment(Request $request, $id, $index)
+    {
+        $this->authenticateFromQueryToken($request);
+
+        $row = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $request->user());
+
+        $idx = (int) $index;
+        $atts = $row->attachments ?? [];
+        if (!isset($atts[$idx]) || empty($atts[$idx]['path'])) {
+            abort(404, 'Attachment not found.');
+        }
+        $path = $atts[$idx]['path'];
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($path)) {
+            abort(404, 'Attachment file is missing on the server.');
+        }
+        $filename = $atts[$idx]['name'] ?? basename($path);
+        return $disk->response($path, $filename);
+    }
+
+    private function authenticateFromQueryToken(Request $request): void
+    {
+        if (!$request->user() && $request->query('token')) {
+            $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->query('token'));
+            if ($token) {
+                $request->setUserResolver(fn () => $token->tokenable);
+            } else {
+                abort(401, 'Invalid token');
+            }
+        }
+        if (!$request->user()) {
+            abort(401, 'Unauthorized');
+        }
+    }
+
+    /* ============================================================ */
+    /*  MANAGER ACTIONS                                             */
+    /* ============================================================ */
+
+    public function managerApprove(Request $request, $id)
+    {
+        return $this->managerAct($request, $id, 'approved');
+    }
+
+    public function managerReject(Request $request, $id)
+    {
+        return $this->managerAct($request, $id, 'rejected');
+    }
+
+    private function managerAct(Request $request, $id, string $verdict)
+    {
+        $user = $request->user();
+        $row = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+
+        $myEmployeeId = $this->currentEmployeeId($user);
+        if ($user->user_type !== 'super_admin' && $row->manager_id !== $myEmployeeId) {
+            abort(403, 'You are not the assigned reporting manager for this advance request.');
+        }
+        if ($row->manager_status !== 'pending') {
+            abort(409, 'This advance request has already been actioned by the manager.');
+        }
+
+        $data = $request->validate([
+            'comment' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $row->manager_status   = $verdict;
+        $row->manager_acted_at = now();
+        $row->manager_comment  = $data['comment'] ?? null;
+        if ($verdict === 'rejected') {
+            $row->status = 'rejected';
+        }
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json($this->serialize($row));
+    }
+
+    /* ============================================================ */
+    /*  HR / FINANCE ACTIONS                                        */
+    /* ============================================================ */
+
+    public function hrApprove(Request $request, $id)
+    {
+        return $this->hrAct($request, $id, 'approved');
+    }
+
+    public function hrReject(Request $request, $id)
+    {
+        return $this->hrAct($request, $id, 'rejected');
+    }
+
+    private function hrAct(Request $request, $id, string $verdict)
+    {
+        $user = $request->user();
+        $row = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if ($verdict === 'approved' && $row->manager_status !== 'approved') {
+            abort(409, 'Manager must approve this advance request before HR / Finance can approve it.');
+        }
+        if ($row->hr_status !== 'pending') {
+            abort(409, 'This advance request has already been actioned by HR / Finance.');
+        }
+
+        $data = $request->validate([
+            'comment' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $row->hr_status   = $verdict;
+        $row->hr_user_id  = $user->id;
+        $row->hr_acted_at = now();
+        $row->hr_comment  = $data['comment'] ?? null;
+        $row->status      = $verdict;
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json($this->serialize($row));
+    }
+
+    /* ============================================================ */
+    /*  HELPERS                                                     */
+    /* ============================================================ */
+
+    private function currentEmployeeId($user): ?int
+    {
+        if (!$user) return null;
+        return Employee::where('user_id', $user->id)->value('id');
+    }
+
+    private function resolveEmployeeId($idInput, $codeInput): ?int
+    {
+        if ($idInput !== null && $idInput !== '') {
+            if (is_numeric($idInput)) {
+                return (int) $idInput;
+            }
+            $codeInput = $codeInput ?: $idInput;
+        }
+        if ($codeInput) {
+            $found = Employee::where('emp_code', $codeInput)->value('id');
+            if ($found) return (int) $found;
+        }
+        return null;
+    }
+
+    /**
+     * Permission gate for HR/Finance actions. Same lookup ExpenseClaim uses
+     * — checks the `hr.expense` module since the advance flow shares HR's
+     * approval surface. If the module isn't seeded, falls back to "any
+     * admin-tier user can approve" so a fresh install isn't gated out.
+     */
+    private function guardHrPermission($user, string $perm): void
+    {
+        if (!$user) abort(401, 'Authentication required');
+        if ($user->user_type === 'super_admin') return;
+
+        $moduleId = Module::where('slug', 'hr.expense')->value('id');
+        if (!$moduleId) {
+            if (in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true)) {
+                return;
+            }
+            abort(403, 'HR module not registered.');
+        }
+        $hasPerm = Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where($perm, true)
+            ->exists();
+        if (!$hasPerm) {
+            abort(403, "You do not have permission to perform this action ({$perm}).");
+        }
+    }
+
+    private function ensureTenantAccess(AdvanceRequest $row, $user): void
+    {
+        if (!$user) abort(401);
+        if ($user->user_type === 'super_admin') return;
+
+        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
+            if ($row->client_id !== null && $row->client_id !== $user->client_id) {
+                abort(403, 'Out of tenant scope.');
+            }
+            return;
+        }
+
+        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+            if ($row->client_id !== null && $row->client_id !== $user->client_id) {
+                abort(403, 'Out of tenant scope.');
+            }
+            $isMain = $user->branch?->is_main ?? false;
+            if (!$isMain && $row->branch_id !== null) {
+                $mainBranchId = Branch::where('client_id', $user->client_id)
+                    ->where('is_main', true)
+                    ->value('id');
+                $allowed = $row->branch_id === $user->branch_id
+                    || ($mainBranchId && $row->branch_id === $mainBranchId);
+                $myEmployeeId = $this->currentEmployeeId($user);
+                if (!$allowed
+                    && $row->employee_id !== $myEmployeeId
+                    && $row->manager_id !== $myEmployeeId) {
+                    abort(403, 'Out of tenant scope.');
+                }
+            }
+        }
+    }
+
+    private function applyTenantScope($q, $user, ?int $branchFilter = null): void
+    {
+        if (!$user) return;
+        if ($user->user_type === 'super_admin') {
+            if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
+            return;
+        }
+
+        if (in_array($user->user_type, ['client_admin', 'client_user'], true)) {
+            $q->where(function ($w) use ($user) {
+                $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
+            });
+            $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+            return;
+        }
+
+        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+            $clientId = $user->client_id;
+            $branchId = $user->branch_id;
+            $isMain   = $user->branch?->is_main ?? false;
+
+            if ($isMain) {
+                $q->where(function ($w) use ($clientId) {
+                    $w->whereNull('client_id')->orWhere('client_id', $clientId);
+                });
+                $this->applySwitcherBranchFilter($q, $user, $branchFilter);
+                return;
+            }
+
+            $mainBranchId = Branch::where('client_id', $clientId)
+                ->where('is_main', true)
+                ->value('id');
+            $myEmployeeId = $this->currentEmployeeId($user);
+
+            $q->where(function ($w) use ($clientId, $branchId, $mainBranchId, $myEmployeeId) {
+                $w->whereNull('client_id')
+                  ->orWhere(function ($ww) use ($clientId, $branchId, $mainBranchId, $myEmployeeId) {
+                      $ww->where('client_id', $clientId)
+                         ->where(function ($wb) use ($branchId, $mainBranchId, $myEmployeeId) {
+                             $wb->whereNull('branch_id')
+                                ->orWhere('branch_id', $branchId);
+                             if ($mainBranchId) {
+                                 $wb->orWhere('branch_id', $mainBranchId);
+                             }
+                             if ($myEmployeeId) {
+                                 $wb->orWhere('employee_id', $myEmployeeId)
+                                    ->orWhere('manager_id', $myEmployeeId);
+                             }
+                         });
+                  });
+            });
+            return;
+        }
+
+        $q->whereRaw('1 = 0');
+    }
+
+    private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
+    {
+        if ($branchFilter === null) return;
+        $belongsToClient = Branch::where('id', $branchFilter)
+            ->where('client_id', $user->client_id)
+            ->exists();
+        if (!$belongsToClient) return;
+        $q->where('branch_id', $branchFilter);
+    }
+
+    /**
+     * Generate the next ADV-#### sequence per (client_id, branch_id). MUST
+     * run inside DB::transaction so the lockForUpdate holds — store()
+     * wraps the allocate+create pair for exactly this reason. Without the
+     * transaction, two concurrent submitters in the same tenant would race
+     * and produce duplicate advance_no values.
+     */
+    private function nextAdvanceNo(?int $clientId, ?int $branchId): string
+    {
+        $q = AdvanceRequest::query()->lockForUpdate();
+        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+
+        $codes = $q->pluck('advance_no');
+        $max = 0;
+        foreach ($codes as $c) {
+            if (preg_match('/^ADV-(\d+)$/i', (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $max) $max = $n;
+            }
+        }
+        return 'ADV-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Shape one row for the API. Flattens employee/manager names + maps
+     * attachments to download URLs, matching the expense_claims serializer
+     * so the SPA can reuse the same audit-log / attachment widgets.
+     */
+    private function serialize(AdvanceRequest $row): array
+    {
+        $employee = $row->employee;
+        $manager  = $row->manager;
+        $employeeName = $employee
+            ? ($employee->display_name
+                ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')))
+            : null;
+        $managerName = $manager
+            ? ($manager->display_name
+                ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')))
+            : null;
+        return [
+            'id'                 => $row->id,
+            'advance_no'         => $row->advance_no,
+            'employee_id'        => $row->employee_id,
+            'employee_name'      => $employeeName,
+            'employee_code'      => $employee?->emp_code,
+            'department_id'      => $employee?->department_id,
+            'department_name'    => $employee?->department?->name,
+            'manager_id'         => $row->manager_id,
+            'manager_name'       => $managerName,
+            'advance_type'       => $row->advance_type,
+            'advance_type_other' => $row->advance_type_other,
+            'amount'             => (float) $row->amount,
+            'requested_date'     => optional($row->requested_date)->format('Y-m-d'),
+            'recovery_start'     => optional($row->recovery_start)->format('Y-m-d'),
+            'recovery_mode'      => $row->recovery_mode,
+            'recovery_months'    => $row->recovery_months,
+            'monthly_emi'        => $row->monthly_emi !== null ? (float) $row->monthly_emi : null,
+            'reason'             => $row->reason,
+            'attachments'        => collect($row->attachments ?? [])->values()->map(function ($a, $i) use ($row) {
+                return [
+                    'name' => $a['name'] ?? null,
+                    'size' => $a['size'] ?? null,
+                    'url'  => url("/api/advance-requests/{$row->id}/attachments/{$i}"),
+                ];
+            })->all(),
+            'status'             => $row->status,
+            'manager_status'     => $row->manager_status,
+            'manager_acted_at'   => optional($row->manager_acted_at)->toIso8601String(),
+            'manager_comment'    => $row->manager_comment,
+            'hr_status'          => $row->hr_status,
+            'hr_user_id'         => $row->hr_user_id,
+            'hr_user_name'       => $row->hrUser?->name,
+            'hr_acted_at'        => optional($row->hr_acted_at)->toIso8601String(),
+            'hr_comment'         => $row->hr_comment,
+            'created_by'         => $row->created_by,
+            'creator_name'       => $row->creator?->name,
+            'created_at'         => optional($row->created_at)->toIso8601String(),
+        ];
+    }
+}
