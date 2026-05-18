@@ -2406,10 +2406,6 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
         {/* Header */}
         <div className="onb-checklist-header">
-          <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
-            <i className="ri-close-line" style={{ fontSize: 14 }} />
-          </button>
-
           <div className="onb-cl-titlewrap">
             <span className="onb-cl-icon">
               <i className="ri-checkbox-line" style={{ fontSize: 22 }} />

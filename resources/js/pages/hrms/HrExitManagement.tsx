@@ -725,9 +725,6 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
               </div>
             </div>
           </div>
-          <button type="button" className="ecl-close" onClick={onClose} aria-label="Close">
-            <i className="ri-close-line" />
-          </button>
         </div>
 
         {/* Info bar */}
