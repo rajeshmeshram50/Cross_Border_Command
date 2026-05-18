@@ -737,6 +737,12 @@ export default function HrEmployees() {
   // typing in First/Last Name auto-fills it as "First Last".
   const [eDisplayNameTouched, setEDisplayNameTouched] = useState(false);
   const [eActualName, setEActualName]     = useState('');
+  // True once the form has been hydrated from an existing employee row.
+  // While locked, the legal "Actual Name" stays pinned to the saved value
+  // — typing into first/middle/last only moves the Display Name preview.
+  // For a fresh Add (locked=false), Actual Name mirrors Display Name so
+  // both fields show the same composed value until the row is saved.
+  const [eActualNameLocked, setEActualNameLocked] = useState(false);
   const [eGender, setEGender]             = useState('');
   const [eDob, setEDob]                   = useState('');
   const [eNationality, setENationality]   = useState('');
@@ -1052,7 +1058,7 @@ export default function HrEmployees() {
     setEmpMaxStep(1);
     setEWorkCountry('');
     setEFirstName(''); setEMiddleName(''); setELastName('');
-    setEDisplayName(''); setEDisplayNameTouched(false); setEActualName('');
+    setEDisplayName(''); setEDisplayNameTouched(false); setEActualName(''); setEActualNameLocked(false);
     setEGender(''); setEDob(''); setENationality('');
     setEWorkEmail(''); setEMobile('');
     setEEmpId(''); setEStatus('Active');
@@ -1297,9 +1303,16 @@ export default function HrEmployees() {
       setEFirstName(raw.first_name || '');
       setEMiddleName(raw.middle_name || '');
       setELastName(raw.last_name || '');
+      // Display Name continues to live-update from first/middle/last
+      // (eDisplayNameTouched stays false). The legal "Actual Name", in
+      // contrast, locks to whatever the server has saved — editing the
+      // name fields after this point should move only the Display Name.
       setEDisplayName(raw.display_name || row.name);
-      setEDisplayNameTouched(true);
-      setEActualName(raw.display_name || row.name);
+      setEDisplayNameTouched(false);
+      const savedActual = [raw.first_name, raw.middle_name, raw.last_name]
+        .filter(Boolean).join(' ').trim() || raw.display_name || row.name;
+      setEActualName(savedActual);
+      setEActualNameLocked(true);
       setEWorkEmail(raw.email || '');
       setEMobile(raw.mobile || '');
       setEEmpId(raw.emp_code || '');
@@ -4027,9 +4040,15 @@ export default function HrEmployees() {
                         onChange={e => {
                           const v = e.target.value;
                           setEFirstName(v);
-                          if (!eDisplayNameTouched) setEDisplayName(`${v} ${eMiddleName} ${eLastName}`.replace(/\s+/g,' ').trim());
+                          const composed = `${v} ${eMiddleName} ${eLastName}`.replace(/\s+/g,' ').trim();
+                          if (!eDisplayNameTouched) setEDisplayName(composed);
+                          // Actual Name only mirrors the live composition
+                          // while the row is unsaved (create flow). Once
+                          // locked from an edit-hydration it stays put.
+                          if (!eActualNameLocked) setEActualName(composed);
                           clearEErr('first_name');
                           clearEErr('display_name');
+                          clearEErr('actual_name');
                         }}
                       />
                       {eErrors.first_name && <small className="emp-err">{eErrors.first_name}</small>}
@@ -4039,7 +4058,9 @@ export default function HrEmployees() {
                       <input className="emp-input" type="text" placeholder="Middle name (optional)" value={eMiddleName} onChange={e => {
                         const v = e.target.value;
                         setEMiddleName(v);
-                        if (!eDisplayNameTouched) setEDisplayName(`${eFirstName} ${v} ${eLastName}`.replace(/\s+/g,' ').trim());
+                        const composed = `${eFirstName} ${v} ${eLastName}`.replace(/\s+/g,' ').trim();
+                        if (!eDisplayNameTouched) setEDisplayName(composed);
+                        if (!eActualNameLocked) setEActualName(composed);
                       }} />
                     </Col>
                     <Col md={4}>
@@ -4052,9 +4073,12 @@ export default function HrEmployees() {
                         onChange={e => {
                           const v = e.target.value;
                           setELastName(v);
-                          if (!eDisplayNameTouched) setEDisplayName(`${eFirstName} ${eMiddleName} ${v}`.replace(/\s+/g,' ').trim());
+                          const composed = `${eFirstName} ${eMiddleName} ${v}`.replace(/\s+/g,' ').trim();
+                          if (!eDisplayNameTouched) setEDisplayName(composed);
+                          if (!eActualNameLocked) setEActualName(composed);
                           clearEErr('last_name');
                           clearEErr('display_name');
+                          clearEErr('actual_name');
                         }}
                       />
                       {eErrors.last_name && <small className="emp-err">{eErrors.last_name}</small>}
@@ -4075,13 +4099,17 @@ export default function HrEmployees() {
                       {eErrors.display_name && <small className="emp-err">{eErrors.display_name}</small>}
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Employee Actual Name<span className="req">*</span></label>
+                      <label className="emp-label">
+                        Employee Actual Name<span className="req">*</span>
+                        <span className="hint">{eActualNameLocked ? '(locked)' : '(auto-generated)'}</span>
+                      </label>
                       <input
-                        className={`emp-input${eErrors.actual_name ? ' is-invalid' : ''}`}
+                        className={`emp-input is-readonly${eErrors.actual_name ? ' is-invalid' : ''}`}
                         type="text"
-                        placeholder="Full legal name as per records"
+                        placeholder="Auto-filled from First / Middle / Last name"
                         value={eActualName}
-                        onChange={e => { setEActualName(e.target.value); clearEErr('actual_name'); }}
+                        readOnly
+                        tabIndex={-1}
                       />
                       {eErrors.actual_name && <small className="emp-err">{eErrors.actual_name}</small>}
                     </Col>

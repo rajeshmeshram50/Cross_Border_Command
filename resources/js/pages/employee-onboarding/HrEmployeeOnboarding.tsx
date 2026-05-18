@@ -2778,6 +2778,12 @@ function InitiateOnboardingModal({
     bonus_in_annual: false, pf_eligible: false, detailed_breakup: false,
   });
 
+  // Snapshot of the name as last persisted on the server. Drives the
+  // read-only "Employee Actual Name" field so the legal name stays
+  // pinned to the saved value while the HR is editing first/middle/last —
+  // only the Display Name preview moves with live input.
+  const [actualNameSnapshot, setActualNameSnapshot] = useState('');
+
   // Hydrate from raw whenever the modal opens or a different employee is loaded.
 // Hydrate from raw whenever the modal opens or a different employee is loaded.
 useEffect(() => {
@@ -2854,6 +2860,13 @@ useEffect(() => {
     pf_eligible:           !!x.pf_eligible,
     detailed_breakup:      !!x.detailed_breakup,
   });
+  // Pin the actual-name display to whatever the server currently has —
+  // typing into first/middle/last after this point only moves the
+  // Display Name preview, not the legal name.
+  setActualNameSnapshot(
+    [x.first_name, x.middle_name, x.last_name]
+      .filter(Boolean).join(' ').trim() || emp.name || ''
+  );
 }, [isOpen, emp?.id, emp?.raw]);
 
   // ── Form validation state ──────────────────────────────────────────
@@ -2903,6 +2916,7 @@ const salaryMax = _shiftYears(1);
 // scroll-to-first-error so the user lands on the topmost missing field
 // in form order rather than alphabetical map order.
 const STAGE1_FIELD_ORDER = [
+  'work_country_id',
   'first_name',
   'last_name',
   'date_of_birth',
@@ -2937,6 +2951,9 @@ const validateStage1 = (): boolean => {
   // Personal Information - Required
   if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
   if (!s1.last_name?.trim()) errors.last_name = 'Last name is required';
+  // Work Country is required — drives tax / compliance / leave defaults
+  // downstream, so we can't let the wizard advance without it.
+  if (!s1.work_country_id?.toString().trim()) errors.work_country_id = 'Work country is required';
   // Date of Birth — required + age 18 sanity check. The picker already
   // hides invalid days, but a user could paste an ISO string into the
   // bound state from hydration, so we re-check here.
@@ -2961,8 +2978,12 @@ const validateStage1 = (): boolean => {
   const mobileDigits = mobile.replace(/\D/g, '');
   if (!mobile) {
     errors.mobile = 'Mobile number is required';
-  } else if (mobileDigits.length < 10 || mobileDigits.length > 15) {
-    errors.mobile = 'Enter a valid mobile number (10–15 digits)';
+  } else if (mobileDigits.length < 6 || mobileDigits.length > 15) {
+    // Match the Add Employee form (HrEmployees.tsx): 6–15 digits covers
+    // every reasonable international format (E.164 max is 15). Anything
+    // saved by Add Employee must pass this validator too, otherwise
+    // existing rows fail re-save in the onboarding wizard.
+    errors.mobile = 'Mobile must be 6–15 digits';
   }
 
   // Joining date — optional but bounded (no 1990 entries, no 2050 entries).
@@ -3643,9 +3664,19 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Employee Details</p>
                 <Row className="g-3">
-                  <Col md={4}>
-                    <label className="onb-init-label">Work Country</label>
-                    <MasterSelect options={countryOpts} placeholder="Select country" value={s1.work_country_id} onChange={(v) => setS1(p => ({ ...p, work_country_id: v }))} />
+                  <Col md={4} data-field="work_country_id">
+                    <label className="onb-init-label">Work Country <span className="req">*</span></label>
+                    <MasterSelect
+                      options={countryOpts}
+                      placeholder="Select country"
+                      value={s1.work_country_id}
+                      invalid={!!s1Errors.work_country_id}
+                      onChange={(v) => {
+                        setS1(p => ({ ...p, work_country_id: v }));
+                        setS1Errors(p => ({ ...p, work_country_id: '' }));
+                      }}
+                    />
+                    {s1Errors.work_country_id && <div className="onb-error-msg">{s1Errors.work_country_id}</div>}
                   </Col>
 <Col md={4} data-field="first_name">
   <label className="onb-init-label">
@@ -3686,8 +3717,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
                     <input className="onb-init-input is-autofilled" readOnly value={[s1.first_name, s1.middle_name, s1.last_name].filter(Boolean).join(' ').trim() || emp.name} />
                   </Col>
                   <Col md={4}>
-                    <label className="onb-init-label">Employee Actual Name <span className="auto">AUTO</span></label>
-                    <input className="onb-init-input is-autofilled" readOnly value={[s1.first_name, s1.middle_name, s1.last_name].filter(Boolean).join(' ').trim() || emp.name} />
+                    <label className="onb-init-label">Employee Actual Name <span className="auto">LOCKED</span></label>
+                    <input className="onb-init-input is-autofilled" readOnly value={actualNameSnapshot || emp.name} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Gender</label>
@@ -4311,6 +4342,17 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false): Promise<
       // but the backend stayed stuck at macro=1, so the user saw
       // "Profile: 17% complete" even after walking through every step.
       if (activeStage === 2 || activeStage === 5) {
+        // Stage 2 — Yes/No on previous employment is mandatory. We
+        // gate the advance here (not in flush) so the user gets a
+        // clear "pick one" prompt + red highlight on the radio group
+        // instead of silently progressing on a half-answered form.
+        if (activeStage === 2 && !stage2Ref.current?.validate()) {
+          toast.error(
+            'Previous employment — required',
+            'Select Yes or No before moving to the next stage.',
+          );
+          return;
+        }
         setNextLoading(true);
         // Flush any typed-but-unblurred Previous-Employment rows before
         // we advance — same fix as the Previous / sidebar navigation.
@@ -4648,6 +4690,10 @@ const DOC_ACCEPTED_MIME = new Set<string>(DOC_ACCEPTED_MIMES);
  *  still inside Company Name silently dropped the row. */
 export interface Stage2DocumentsHandle {
   flush: () => Promise<void>;
+  /** Returns true if Stage 2 is ready to advance. Currently gates on
+   *  the Yes/No previous-experience answer being explicitly chosen —
+   *  null means the HR hasn't picked yet and shouldn't move forward. */
+  validate: () => boolean;
 }
 const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   emp: OnboardRow;
@@ -4691,6 +4737,10 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   // us saved companies we auto-set this to 'yes' so reopening the modal
   // doesn't ask the question again.
   const [hasExperience, setHasExperience] = useState<'yes' | 'no' | null>(null);
+  // Flipped on by validate() when the parent tries to advance with no
+  // Yes/No answer picked. Cleared the moment the HR makes a choice so
+  // the red ring doesn't persist after they fix it.
+  const [hasExperienceError, setHasExperienceError] = useState(false);
 
   // Hydrate from server every time this stage mounts for this employee.
   // The wizard unmounts the stage when the user navigates forward and
@@ -4821,7 +4871,21 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         .map(c => persistCompany(c._localKey));
       await Promise.all(work);
     },
-  }), [emp?.dbId]);
+    validate: () => {
+      if (hasExperience === null) {
+        setHasExperienceError(true);
+        // Bring the radio group into view so the HR can see what's
+        // blocking the next-stage advance instead of guessing why
+        // nothing happened.
+        setTimeout(() => {
+          const el = document.getElementById('onb-has-experience');
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 50);
+        return false;
+      }
+      return true;
+    },
+  }), [emp?.dbId, hasExperience]);
 
   /** Upload a document for a previous-employment row. Auto-persists the
    *  company first if it's an unsaved draft — otherwise users who type a
@@ -5179,16 +5243,17 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
             Drives whether the experience form renders or the section
             collapses into a fresher confirmation. The two-button radio
             mirrors patterns already used elsewhere in the wizard. */}
-        <div style={{ padding: '14px 14px 0' }}>
+        <div id="onb-has-experience" style={{ padding: '14px 14px 0' }}>
           <p className="onb-init-subgroup" style={{ marginBottom: 8 }}>
-            Has the employee worked anywhere before?
+            Has the employee worked anywhere before? <span className="req">*</span>
           </p>
-          <div className="d-flex gap-2 flex-wrap" role="radiogroup" aria-label="Has previous experience">
+          <div className="d-flex gap-2 flex-wrap" role="radiogroup" aria-label="Has previous experience" aria-required="true" aria-invalid={hasExperienceError}>
             {([
               { v: 'yes' as const, label: 'Yes — they have prior experience', icon: 'ri-briefcase-line' },
               { v: 'no'  as const, label: 'No — this is their first job',     icon: 'ri-graduation-cap-line' },
             ]).map(opt => {
               const active = hasExperience === opt.v;
+              const errored = hasExperienceError && !active;
               return (
                 <button
                   key={opt.v}
@@ -5197,6 +5262,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                   aria-checked={active}
                   onClick={() => {
                     setHasExperience(opt.v);
+                    setHasExperienceError(false);
                     // Picking "Yes" with an empty list — pre-seed a draft
                     // row so the user has somewhere to type immediately.
                     if (opt.v === 'yes' && prevCompanies.length === 0) {
@@ -5210,8 +5276,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     gap: 10,
                     padding: '10px 14px',
                     borderRadius: 10,
-                    border: `1.5px solid ${active ? '#7c3aed' : 'var(--vz-border-color)'}`,
-                    background: active ? 'rgba(124,58,237,0.08)' : 'var(--vz-card-bg)',
+                    border: `1.5px solid ${active ? '#7c3aed' : errored ? '#ef4444' : 'var(--vz-border-color)'}`,
+                    background: active ? 'rgba(124,58,237,0.08)' : errored ? 'rgba(239,68,68,0.04)' : 'var(--vz-card-bg)',
                     color: active ? '#5a3fd1' : 'var(--vz-body-color)',
                     fontSize: 13,
                     fontWeight: 600,
@@ -5237,6 +5303,23 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
               );
             })}
           </div>
+          {hasExperienceError && (
+            <div
+              role="alert"
+              style={{
+                marginTop: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#dc2626',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <i className="ri-error-warning-line" style={{ fontSize: 14 }} />
+              Please select Yes or No to continue.
+            </div>
+          )}
         </div>
 
         {/* ── Fresher confirmation banner — shown when user picked "No" */}
