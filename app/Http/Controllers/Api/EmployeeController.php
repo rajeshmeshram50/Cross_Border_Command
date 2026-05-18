@@ -147,7 +147,22 @@ class EmployeeController extends Controller
         // Same scope rules as the employee list — employees see managers in
         // their own tenant, super_admins see everything. Honour the active
         // BranchSwitcher selection so the manager picker matches the table.
-        $eq = Employee::query()->whereNotNull('id');
+        //
+        // Additional gates to keep the dropdown trustworthy:
+        //   - status === 'Active' — Inactive / Resigned / Terminated /
+        //     Notice Period people shouldn't be picked as a new hire's
+        //     reporting manager. Soft-deleted rows are already excluded
+        //     by Eloquent's default scope on Employee (no withTrashed).
+        //   - onboarding_stage_completed >= 6 — half-onboarded employees
+        //     don't have the org-side context (department, designation,
+        //     reporting line of their own) settled yet, so listing them
+        //     as a manager would propagate stale data through the new
+        //     hire's record. Mirrors the "fully onboarded" gate used by
+        //     Exit Management.
+        $eq = Employee::query()
+            ->whereNotNull('id')
+            ->where('status', 'Active')
+            ->where('onboarding_stage_completed', '>=', 6);
         $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
         $employees = $eq
             ->select(['id', 'emp_code', 'display_name', 'first_name', 'last_name'])
@@ -932,11 +947,28 @@ class EmployeeController extends Controller
         // are cleaned up on first edit.
         $this->stripDanglingAssetRefs($request);
 
+        // Normalize email to lowercase up-front so the rest of the flow
+        // (uniqueness check, User row, login email) all see the same
+        // canonical value. Without this, "John@Example.com" and
+        // "john@example.com" would create two distinct user rows and
+        // the user could end up unable to log in because the bcrypt
+        // hash was attached to one case while the login form was
+        // sending the other. The mb_strtolower form handles emoji /
+        // unicode locals correctly.
+        if ($request->filled('email')) {
+            $request->merge(['email' => mb_strtolower(trim($request->input('email')))]);
+        }
+
         // Email rules: required + unique on store; nullable + still-unique on
         // update so partial step-3/step-4 PATCHes don't fail validation.
+        // The uniqueness check now compares LOWER(email) to dodge the
+        // case-sensitive collation some MySQL builds use by default —
+        // a tenant on case-sensitive collation could otherwise register
+        // multiple users with mixed-case versions of the same address.
         $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
         $emailRule[] = Rule::unique('users', 'email')
             ->whereNull('deleted_at')
+            ->where(fn ($q) => $q->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
             ->ignore($ignoreUserId);
 
         // Step 4 (Compensation) is the wizard's terminal save — salary fields

@@ -103,6 +103,7 @@ const salesLeafLink = (leafId: string): string => {
     case "sales.analytics":           return "/sales/analytics";
     case "sales.productivity_tracker": return "/sales/todo";
     case "sales.quotation_vs_pi":     return "/sales/qpi";
+    case "sales.p2p_summary":         return "/sales/p2p-summary";
     case "sales.diagnosis":           return "/sales/diagnosis";
     case "sales.resolution_center":   return "/sales/resolution-center";
     case "sales.performance":         return "/sales/performance";
@@ -110,7 +111,6 @@ const salesLeafLink = (leafId: string): string => {
     case "sales.lead_detail":         return "/sales/lead-detail";
     case "sales.enquiries":           return "/sales/enquiries";
     case "sales.leads_details":       return "/sales/leads-details";
-    // sales.p2p_summary has no React page yet — falls through to /sales.
     default:                          return "/sales";
   }
 };
