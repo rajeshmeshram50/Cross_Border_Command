@@ -101,7 +101,15 @@ export default function HrExitManagement() {
     api.get('/employees')
       .then(({ data }) => {
         if (cancelled) return;
-        const list = Array.isArray(data) ? data : [];
+        // Exit Management only handles employees that have actually
+        // finished onboarding (all 6 macro stages). Anyone still in the
+        // wizard isn't a candidate for the exit flow yet — they belong
+        // on the Onboarding page. KPIs, tabs, search and the table all
+        // derive from `employees`, so filtering here keeps every count
+        // and bucket honest in one place.
+        const list = (Array.isArray(data) ? data : []).filter(
+          e => Number((e as any)?.onboarding_stage_completed ?? 0) >= 6
+        );
         setEmployees(list.map(apiToExitRow));
       })
       .catch(() => { if (!cancelled) setEmployees([]); })
