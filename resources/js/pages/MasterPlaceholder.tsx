@@ -72,14 +72,26 @@ export default function MasterPlaceholder() {
       <Row>
         <Col xs={12}>
           <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <div>
-              <h4 className="mb-sm-0 d-flex align-items-center gap-2">
-                <i className={`${resolve(leafIcon)} text-primary`}></i>
-                {leafLabel}
-              </h4>
-              <div className="text-muted mt-1 fs-12 d-flex align-items-center gap-1">
-                <i className={resolve(groupIcon)} style={{ fontSize: 11 }}></i>
-                <span>{groupLabel}</span>
+            <div className="d-flex align-items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigate('/master')}
+                aria-label="Back to Master"
+                title="Back to Master"
+                className="btn btn-soft-primary btn-icon rounded-circle"
+                style={{ width: 36, height: 36 }}
+              >
+                <i className="ri-arrow-left-line fs-16" />
+              </button>
+              <div>
+                <h4 className="mb-sm-0 d-flex align-items-center gap-2">
+                  <i className={`${resolve(leafIcon)} text-primary`}></i>
+                  {leafLabel}
+                </h4>
+                <div className="text-muted mt-1 fs-12 d-flex align-items-center gap-1">
+                  <i className={resolve(groupIcon)} style={{ fontSize: 11 }}></i>
+                  <span>{groupLabel}</span>
+                </div>
               </div>
             </div>
             <div className="page-title-right">

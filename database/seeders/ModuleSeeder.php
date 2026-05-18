@@ -253,6 +253,9 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Sales Analytics',          'slug' => 'sales.analytics',            'icon' => 'BarChart3',     'description' => 'Sales dashboard, diagnosis & resolution center'],
                 ['name' => 'Productivity Tracker',     'slug' => 'sales.productivity_tracker', 'icon' => 'ClipboardCheck','description' => 'Manage reminders, meetings & to-do activities'],
                 ['name' => 'Procure to Pay (P2P) Summary', 'slug' => 'sales.p2p_summary',      'icon' => 'ShoppingBag',   'description' => 'Track opportunity-wise product sourcing summary'],
+                ['name' => 'Diagnosis',                'slug' => 'sales.diagnosis',            'icon' => 'Stethoscope',   'description' => 'Diagnose sales pipeline issues by branch & rep'],
+                ['name' => 'Resolution Center',        'slug' => 'sales.resolution_center',    'icon' => 'Wrench',        'description' => 'Track and resolve flagged sales blockers'],
+                ['name' => 'Performance',              'slug' => 'sales.performance',          'icon' => 'TrendingUp',    'description' => 'Overview, targets, leaderboard & activity'],
             ],
             'sales.core' => [
                 ['name' => 'Customers',                'slug' => 'sales.customers',     'icon' => 'UserSquare', 'description' => 'Manage customer master records'],
@@ -260,8 +263,12 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Lead Acknowledgement Master', 'slug' => 'sales.lead_ack_master', 'icon' => 'BadgeCheck', 'description' => 'Manage Lead Acknowledgement reasons'],
             ],
             'sales.operations' => [
-                ['name' => 'My Workplace',             'slug' => 'sales.workplace',        'icon' => 'Activity', 'description' => 'Manage active sales opportunities'],
-                ['name' => 'Quotation Vs PI History',  'slug' => 'sales.quotation_vs_pi',  'icon' => 'FileText', 'description' => 'Track quotation & PI conversion history'],
+                ['name' => 'My Workplace',             'slug' => 'sales.workplace',        'icon' => 'Activity',    'description' => 'Manage active sales opportunities'],
+                ['name' => 'Quotation Vs PI History',  'slug' => 'sales.quotation_vs_pi',  'icon' => 'FileText',    'description' => 'Track quotation & PI conversion history'],
+                ['name' => 'Lead Distribution',        'slug' => 'sales.lead_distribution','icon' => 'Share2',      'description' => 'Distribute and reassign opportunity leads'],
+                ['name' => 'Lead Detail',              'slug' => 'sales.lead_detail',      'icon' => 'FileSearch',  'description' => 'Full opportunity detail view'],
+                ['name' => 'Enquiries',                'slug' => 'sales.enquiries',        'icon' => 'Mail',        'description' => 'Inbound enquiries log & triage'],
+                ['name' => 'Leads Details',            'slug' => 'sales.leads_details',    'icon' => 'ListChecks',  'description' => 'Per-salesperson leads drill-down'],
             ],
         ];
 

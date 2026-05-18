@@ -58,6 +58,7 @@ export default function FaceLoginModal({ open, onClose, initialEmail = '', onSub
 
   return createPortal(
     <div
+      className="cbc-face-login-overlay"
       style={{
         position: 'fixed', inset: 0, zIndex: 5000,
         background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)',
@@ -65,23 +66,92 @@ export default function FaceLoginModal({ open, onClose, initialEmail = '', onSub
       }}
       onClick={() => { if (!working) onClose(); }}
     >
+      <style>{`
+        /* The login page lives outside the main shell so the dark-theme
+           data-attribute on <html> doesn't always cascade into the body
+           portal — which is why this modal used to render pure white in
+           dark mode. Anchor everything to .cbc-face-login-card and let
+           [data-bs-theme="dark"] override surfaces, borders, inputs and
+           buttons so the modal matches the dark login surface. */
+        .cbc-face-login-card {
+          background: #ffffff;
+          color: #1f2937;
+        }
+        .cbc-face-login-head,
+        .cbc-face-login-foot {
+          border-color: #e5e7eb;
+        }
+        .cbc-face-login-card .form-control {
+          background: #ffffff;
+          color: #1f2937;
+          border-color: #d1d5db;
+        }
+        .cbc-face-login-card .text-muted { color: #6b7280 !important; }
+        .cbc-face-login-x {
+          background: #f3f4f6;
+          color: #374151;
+          border: 1px solid #e5e7eb;
+        }
+
+        [data-bs-theme="dark"] .cbc-face-login-card {
+          background: #222831 !important;
+          color: rgba(255,255,255,0.92) !important;
+        }
+        [data-bs-theme="dark"] .cbc-face-login-head,
+        [data-bs-theme="dark"] .cbc-face-login-foot {
+          border-color: rgba(255,255,255,0.10) !important;
+        }
+        [data-bs-theme="dark"] .cbc-face-login-card h6 {
+          color: rgba(255,255,255,0.95) !important;
+        }
+        [data-bs-theme="dark"] .cbc-face-login-card label {
+          color: rgba(255,255,255,0.78) !important;
+        }
+        [data-bs-theme="dark"] .cbc-face-login-card .form-control {
+          background: rgba(255,255,255,0.04) !important;
+          color: rgba(255,255,255,0.92) !important;
+          border-color: rgba(255,255,255,0.16) !important;
+        }
+        [data-bs-theme="dark"] .cbc-face-login-card .form-control::placeholder {
+          color: rgba(255,255,255,0.40) !important;
+        }
+        [data-bs-theme="dark"] .cbc-face-login-card .text-muted {
+          color: rgba(255,255,255,0.55) !important;
+        }
+        [data-bs-theme="dark"] .cbc-face-login-x {
+          background: rgba(255,255,255,0.08) !important;
+          color: rgba(255,255,255,0.85) !important;
+          border-color: rgba(255,255,255,0.14) !important;
+        }
+        /* Cancel button (color="light") is normally a bright wash —
+           in dark mode we want a subdued translucent surface. */
+        [data-bs-theme="dark"] .cbc-face-login-card .btn-light {
+          background: rgba(255,255,255,0.08) !important;
+          color: rgba(255,255,255,0.85) !important;
+          border-color: rgba(255,255,255,0.14) !important;
+        }
+        [data-bs-theme="dark"] .cbc-face-login-card .btn-light:hover {
+          background: rgba(255,255,255,0.14) !important;
+        }
+      `}</style>
       <div
+        className="cbc-face-login-card"
         onClick={e => e.stopPropagation()}
         style={{
-          background: 'var(--vz-card-bg, #fff)', borderRadius: 16,
-          boxShadow: '0 24px 60px rgba(0,0,0,0.30)',
+          borderRadius: 16,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
           width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 32px)',
           overflow: 'hidden', display: 'flex', flexDirection: 'column',
         }}
       >
-        <div className="d-flex align-items-center justify-content-between px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+        <div className="cbc-face-login-head d-flex align-items-center justify-content-between px-3 py-3" style={{ borderBottom: '1px solid' }}>
           <div className="d-flex align-items-center gap-2">
-            <span style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(99,102,241,0.18)', color: '#4338ca', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(99,102,241,0.18)', color: '#a78bfa', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <i className="ri-user-smile-line" />
             </span>
             <h6 className="mb-0 fw-bold">Sign in with Face</h6>
           </div>
-          <button type="button" className="btn btn-light btn-sm" onClick={onClose} disabled={working} aria-label="Close">
+          <button type="button" className="btn btn-sm cbc-face-login-x" onClick={onClose} disabled={working} aria-label="Close">
             <i className="ri-close-line" />
           </button>
         </div>
@@ -108,7 +178,7 @@ export default function FaceLoginModal({ open, onClose, initialEmail = '', onSub
               <img
                 src={result.previewDataUrl}
                 alt="Face preview"
-                style={{ width: 180, height: 135, objectFit: 'cover', borderRadius: 12, border: '1px solid var(--vz-border-color)' }}
+                style={{ width: 180, height: 135, objectFit: 'cover', borderRadius: 12, border: '1px solid var(--vz-border-color, rgba(255,255,255,0.16))' }}
               />
               <div>
                 <div style={{ fontSize: 13 }}>
@@ -131,7 +201,7 @@ export default function FaceLoginModal({ open, onClose, initialEmail = '', onSub
           )}
         </div>
 
-        <div className="d-flex justify-content-end gap-2 px-3 py-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+        <div className="cbc-face-login-foot d-flex justify-content-end gap-2 px-3 py-3" style={{ borderTop: '1px solid' }}>
           <Button color="light" size="sm" onClick={onClose} disabled={working}>Cancel</Button>
           <Button color="primary" size="sm" onClick={handleSubmit} disabled={!result || !email || working}>
             {working

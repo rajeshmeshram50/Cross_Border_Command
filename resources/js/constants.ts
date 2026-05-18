@@ -234,6 +234,9 @@ export const SALES_GROUPS: MenuGroup[] = [
       { id: 'sales.analytics',            icon: 'BarChart3',      label: 'Sales Analytics' },
       { id: 'sales.productivity_tracker', icon: 'ClipboardCheck', label: 'Productivity Tracker' },
       { id: 'sales.p2p_summary',          icon: 'ShoppingBag',    label: 'Procure to Pay (P2P) Summary' },
+      { id: 'sales.diagnosis',            icon: 'Stethoscope',    label: 'Diagnosis' },
+      { id: 'sales.resolution_center',    icon: 'Wrench',         label: 'Resolution Center' },
+      { id: 'sales.performance',          icon: 'TrendingUp',     label: 'Performance' },
     ],
   },
   {
@@ -251,8 +254,12 @@ export const SALES_GROUPS: MenuGroup[] = [
     label: 'Sales Matrix Operations',
     icon: 'Activity',
     children: [
-      { id: 'sales.workplace',       icon: 'Activity', label: 'My Workplace' },
-      { id: 'sales.quotation_vs_pi', icon: 'FileText', label: 'Quotation Vs PI History' },
+      { id: 'sales.workplace',         icon: 'Activity',    label: 'My Workplace' },
+      { id: 'sales.quotation_vs_pi',   icon: 'FileText',    label: 'Quotation Vs PI History' },
+      { id: 'sales.lead_distribution', icon: 'Share2',      label: 'Lead Distribution' },
+      { id: 'sales.lead_detail',       icon: 'FileSearch',  label: 'Lead Detail' },
+      { id: 'sales.enquiries',         icon: 'Mail',        label: 'Enquiries' },
+      { id: 'sales.leads_details',     icon: 'ListChecks',  label: 'Leads Details' },
     ],
   },
 ];

@@ -287,9 +287,27 @@ export default function MasterDashboard() {
     <div>
       {/* ── Page Header ── */}
       <div className="page-title-box d-sm-flex align-items-center justify-content-between mb-4">
-        <div>
-          <h4 className="mb-0">Master Control Center</h4>
-          <p className="text-muted fs-12 mb-0 mt-1">{totals.total} masters across {groups.length} categories</p>
+        <div className="d-flex align-items-center gap-2">
+          {/* Back button — uses history.back() when there's a prior
+              entry, otherwise lands on /dashboard so a direct-link
+              visit still has somewhere coherent to go. */}
+          <button
+            type="button"
+            onClick={() => {
+              if (window.history.length > 1) navigate(-1);
+              else                            navigate('/dashboard');
+            }}
+            aria-label="Back"
+            className="btn btn-soft-secondary btn-icon rounded-circle"
+            style={{ width: 36, height: 36 }}
+            title="Back"
+          >
+            <i className="ri-arrow-left-line fs-16" />
+          </button>
+          <div>
+            <h4 className="mb-0">Master Control Center</h4>
+            <p className="text-muted fs-12 mb-0 mt-1">{totals.total} masters across {groups.length} categories</p>
+          </div>
         </div>
         <ol className="breadcrumb m-0 fs-12">
           <li className="breadcrumb-item"><a href="#">Master Data</a></li>

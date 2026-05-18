@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -50,6 +51,7 @@ const COLUMN_HEADERS: Record<OppType, string> = {
 
 export default function SalesLeadAckMaster() {
   const toast = useToast();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perm = user?.permissions?.['sales.lead_ack_master'];
@@ -246,6 +248,22 @@ export default function SalesLeadAckMaster() {
       <div className="lam-header">
         <span className="lam-header-glow1" />
         <span className="lam-header-glow2" />
+        <button
+          type="button"
+          onClick={() => { if (window.history.length > 1) navigate(-1); else navigate('/sales'); }}
+          aria-label="Back"
+          title="Back"
+          style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: 'rgba(255,255,255,0.18)',
+            border: '1px solid rgba(255,255,255,0.30)',
+            color: '#fff', cursor: 'pointer',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            marginRight: 6,
+          }}
+        >
+          <i className="ri-arrow-left-line" style={{ fontSize: 17 }} />
+        </button>
         <div className="lam-header-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.3">
             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />

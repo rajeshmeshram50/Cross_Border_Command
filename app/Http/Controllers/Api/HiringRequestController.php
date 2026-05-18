@@ -126,11 +126,15 @@ class HiringRequestController extends Controller
             $row = HiringRequest::create($payload);
             $row->load(self::WITH);
 
-            // Notify the creator's reporting manager. Best-effort: a missing
-            // employee/manager link or an SMTP failure must not roll back
-            // the request itself. Gated by the master Settings → emailNotif
-            // toggle (no per-category toggle today; matches password mails).
-            $this->notifyManager($row, $auth);
+            // Notify the creator's reporting manager — but only when the
+            // request is actually being SUBMITTED to HR. Save-as-Draft
+            // rows shouldn't email anyone (the requester is still
+            // working on it). Best-effort beyond the gate: a missing
+            // employee/manager link or an SMTP failure must not roll
+            // back the request itself.
+            if ($row->status === 'Submitted') {
+                $this->notifyManager($row, $auth);
+            }
 
             return response()->json($row, 201);
         });
@@ -204,7 +208,15 @@ class HiringRequestController extends Controller
         // updated itself.
         $this->guardDuplicate($data, $row->client_id, $row->branch_id, $row->id);
 
+        // Capture the pre-update status so we can detect a Draft → Submitted
+        // transition and fire the manager-notification email exactly once
+        // (no spam on later edits of an already-submitted request).
+        $previousStatus = $row->status;
         $row->update($data);
+
+        if ($previousStatus !== 'Submitted' && $row->status === 'Submitted') {
+            $this->notifyManager($row->fresh(), $request->user());
+        }
 
         $row->load(self::WITH);
         return response()->json($row);

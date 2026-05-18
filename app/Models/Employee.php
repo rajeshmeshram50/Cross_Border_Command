@@ -84,7 +84,7 @@ class Employee extends Model
      *  `photo_url` resolves the passport-size photo uploaded as an
      *  EmployeeDocument with document_key='photo' — eager-load
      *  `photoDocument` to avoid N+1 on list endpoints. */
-    protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved', 'photo_url', 'face_registered'];
+    protected $appends = ['other_assets_resolved', 'ancillary_roles_resolved', 'photo_url', 'face_registered', 'encrypted_id'];
 
     /** Never ship the raw 128-d descriptor on list/detail responses.
      *  It's biometric data, ~1.5 KB per row, and the only legitimate
@@ -168,6 +168,36 @@ class Employee extends Model
         return $this->face_registered_at !== null
             && is_array($this->face_descriptor)
             && count($this->face_descriptor) > 0;
+    }
+
+    /**
+     * Opaque, URL-safe handle the SPA puts into employee profile links so
+     * the real emp_code / DB id isn't visible (or tweakable) in the
+     * address bar. Wraps the numeric primary key in Laravel's symmetric
+     * Crypt::encryptString — each call produces a fresh ciphertext but
+     * decryption always recovers the same integer. The show() route
+     * accepts both this token and a plain numeric id, so legacy
+     * bookmarks keep working.
+     *
+     * Note: encryption alone is obfuscation, NOT authorisation —
+     * EmployeeController::resolveRow still enforces tenant scope via
+     * applyScope, so cross-tenant token guessing returns 404 even when
+     * the ciphertext is well-formed.
+     */
+    public function getEncryptedIdAttribute(): ?string
+    {
+        if (!$this->id) return null;
+        try {
+            $enc = \Illuminate\Support\Facades\Crypt::encryptString((string) $this->id);
+            // Laravel's Crypt output is base64 with `+`, `/`, `=` which
+            // break route slugs ("/" is a path separator, "+" decodes to
+            // space, "=" trails awkwardly). Swap to URL-safe alphabet —
+            // strtr is symmetric so the resolver just inverts the map
+            // before Crypt::decryptString.
+            return rtrim(strtr($enc, '+/', '-_'), '=');
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     public function getPhotoUrlAttribute(): ?string

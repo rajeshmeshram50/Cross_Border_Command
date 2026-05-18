@@ -91,8 +91,42 @@ class EmployeeController extends Controller
     public function show(Request $request, $id)
     {
         $this->authorize($request, 'can_view');
-        $row = $this->resolveRow($request, (int) $id);
+        $row = $this->resolveRow($request, $this->resolveIdParam($id));
         return response()->json($row);
+    }
+
+    /**
+     * Accept either a plain numeric id (legacy / internal usage) or the
+     * encrypted token surfaced by `Employee::encrypted_id` (used by SPA
+     * URLs so /hr/employees/EMP-001/profile becomes a non-guessable
+     * blob). Falls back to a 404 instead of leaking decryption errors —
+     * any malformed token reads as "no such employee" downstream once
+     * resolveRow runs findOrFail.
+     */
+    private function resolveIdParam($id): int
+    {
+        if (is_numeric($id)) return (int) $id;
+        $raw = (string) $id;
+        if ($raw === '') return 0;
+
+        // Encrypted token path — Employee::encrypted_id ships a URL-safe
+        // version (+ → -, / → _, padding stripped). Reverse those swaps
+        // before handing off to Crypt::decryptString.
+        $normalised = strtr($raw, '-_', '+/');
+        $pad = strlen($normalised) % 4;
+        if ($pad) $normalised .= str_repeat('=', 4 - $pad);
+        try {
+            $decoded = \Illuminate\Support\Facades\Crypt::decryptString($normalised);
+            if (is_numeric($decoded)) return (int) $decoded;
+        } catch (\Throwable $e) {
+            // not an encrypted token — fall through.
+        }
+
+        // Legacy URL fallback: callers (and bookmarks) sometimes still
+        // pass the plain emp_code (e.g. EMP-001). Resolve that to a
+        // numeric id; tenant scope is enforced downstream by resolveRow.
+        $byEmpCode = Employee::where('emp_code', $raw)->value('id');
+        return (int) ($byEmpCode ?? 0);
     }
 
     /**

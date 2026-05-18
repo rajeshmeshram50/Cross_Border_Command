@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,6 +46,7 @@ export default function Inbox() {
   const { user } = useAuth();
   const toast = useToast();
   const confirmDialog = useConfirm();
+  const navigate = useNavigate();
 
   const [rows, setRows] = useState<SignatureRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -401,6 +403,30 @@ export default function Inbox() {
           <Card className="mb-3" style={{ borderRadius: 14 }}>
             <CardBody className="d-flex align-items-center justify-content-between flex-wrap gap-3">
               <div className="d-flex align-items-center gap-3">
+                {/* Back button — uses history.back() when there's prior
+                    navigation in the stack, otherwise falls back to the
+                    dashboard so a direct-link visit still has somewhere
+                    to land. */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.history.length > 1) navigate(-1);
+                    else                            navigate('/dashboard');
+                  }}
+                  aria-label="Back"
+                  className="inbox-back-btn d-inline-flex align-items-center justify-content-center"
+                  style={{
+                    width: 38, height: 38, borderRadius: 10,
+                    background: 'var(--vz-card-bg)',
+                    border: '1px solid var(--vz-border-color)',
+                    color: 'var(--vz-body-color)', cursor: 'pointer',
+                    transition: 'background .15s ease, transform .15s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--vz-secondary-bg)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--vz-card-bg)'; }}
+                >
+                  <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
+                </button>
                 <span className="inbox-header-icon" style={{ width: 44, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#fef3c7,#fde68a)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                   <i className="ri-inbox-line" style={{ fontSize: 22, color: '#a16207' }} />
                 </span>
