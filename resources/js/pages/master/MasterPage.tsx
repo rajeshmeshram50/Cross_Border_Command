@@ -1386,6 +1386,7 @@ function MasterPageInner({
         [data-layout-mode="dark"] .mp-creator-sub { color: rgba(255,255,255,0.55) !important; }
       `}</style>
 
+
       {/* Page title — designations gets the rich [icon|title+subtitle][Add] strip;
           departments is rendered headerless (goes straight into KPI/table);
           all other masters keep the original [back][title][breadcrumb] layout. */}
@@ -1512,7 +1513,18 @@ function MasterPageInner({
 
       {/* "What you are doing here" — hidden on designations & roles since the
           rich title strip already carries the subtitle context. */}
-      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && <WhatYouDoHere cfg={cfg} onAdd={openAdd} canAdd={caps.add} />}
+      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && (
+        <WhatYouDoHere
+          cfg={cfg}
+          onAdd={openAdd}
+          canAdd={caps.add}
+          // Departments uses a collapsed header card that hosts the only
+          // Add button on the page, so the Back-to-Master pill belongs
+          // here too — pairs the two actions as a single right-side
+          // cluster matching Legal Entities' header layout.
+          onBack={cfg.slug === 'departments' ? () => navigate('/master') : undefined}
+        />
+      )}
 
       {/* KPI strip — only when the master config opts in via `kpis` */}
       {cfg.kpis && cfg.kpis.length > 0 && (
@@ -2618,7 +2630,7 @@ const STEP_PALETTES: { grad: string; tint: string; border: string; accent: strin
   { grad: 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)', tint: 'linear-gradient(135deg, rgba(240,101,72,0.08), rgba(255,158,124,0.04))', border: 'rgba(240,101,72,0.22)', accent: '#f06548' },
 ];
 
-function WhatYouDoHere({ cfg, onAdd, canAdd }: { cfg: MasterConfig; onAdd?: () => void; canAdd?: boolean }) {
+function WhatYouDoHere({ cfg, onAdd, canAdd, onBack }: { cfg: MasterConfig; onAdd?: () => void; canAdd?: boolean; onBack?: () => void }) {
   const steps = cfg.wtd || [];
   const singular = cfg.titleSingular || cfg.title;
   const [open, setOpen] = useState(false);
@@ -2663,20 +2675,50 @@ function WhatYouDoHere({ cfg, onAdd, canAdd }: { cfg: MasterConfig; onAdd?: () =
           style={{ background: 'transparent' }}
         >
           {heading}
-          {canAdd && onAdd && (
-            <Button
-              className="btn-label waves-effect waves-light rounded-pill border-0"
-              onClick={onAdd}
-              style={{
-                background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-                color: '#fff',
-                boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
-              }}
-            >
-              <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-              Add {singular}
-            </Button>
-          )}
+          <div className="d-flex align-items-center gap-2 flex-wrap">
+            {/* "Back to Master list" pill sits immediately before Add so
+                the action cluster matches the Legal Entities header
+                layout (back action + primary CTA on the right). */}
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                title="Back to Master list"
+                className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
+                style={{
+                  height: 38,
+                  padding: '0 18px',
+                  background: 'color-mix(in srgb, #405189 8%, #ffffff)',
+                  color: '#405189',
+                  border: '1px solid color-mix(in srgb, #405189 22%, transparent)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'background 0.18s ease',
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 14%, #ffffff)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #405189 8%, #ffffff)'; }}
+              >
+                <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
+                Back to Master list
+              </button>
+            )}
+            {canAdd && onAdd && (
+              <Button
+                className="btn-label waves-effect waves-light rounded-pill border-0"
+                onClick={onAdd}
+                style={{
+                  background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
+                  color: '#fff',
+                  boxShadow: '0 4px 10px rgba(64,81,137,0.25)',
+                }}
+              >
+                <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                Add {singular}
+              </Button>
+            )}
+          </div>
         </div>
       </Card>
     );
