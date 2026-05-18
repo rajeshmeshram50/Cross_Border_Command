@@ -1332,22 +1332,37 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimOpen]);
 
-  // Save Draft handler — persists the current claimDrafts array to local
-  // storage so the user can close the modal and resume later. Doesn't hit
-  // the backend (the row is created on actual Submit). File objects are
-  // stripped before serialising since browsers can't round-trip a
-  // File through JSON — attachments must be re-attached on restore.
+  // Save Draft handler — persists either the expense `claimDrafts` array
+  // or the advance form fields, depending on which mode the modal is in.
+  // Doesn't hit the backend (rows are created only on actual Submit).
+  // File objects are stripped before serialising since browsers can't
+  // round-trip File through JSON — attachments must be re-staged on resume.
   const handleSaveDraft = () => {
     try {
-      const serialisable = claimDrafts.map(d => ({ ...d, files: [] }));
-      localStorage.setItem(claimDraftKey, JSON.stringify(serialisable));
-      const stagedFiles = claimDrafts.reduce((n, d) => n + (d.files?.length || 0), 0);
-      toast.success(
-        'Draft saved',
-        stagedFiles > 0
-          ? `Form fields saved — you'll need to re-attach ${stagedFiles} file${stagedFiles === 1 ? '' : 's'} on resume.`
-          : 'Your in-progress claim will be here when you re-open the form.',
-      );
+      if (claimMode === 'advance') {
+        const payload = {
+          advType, advTypeOther, advAmount,
+          advRequestedDate, advRecoveryStart,
+          advRecoveryMode, advMonths, advMonthlyEmi, advReason,
+        };
+        localStorage.setItem(advanceDraftKey, JSON.stringify(payload));
+        toast.success(
+          'Draft saved',
+          advFiles.length > 0
+            ? `Form fields saved — you'll need to re-attach ${advFiles.length} file${advFiles.length === 1 ? '' : 's'} on resume.`
+            : 'Your in-progress advance request will be here when you re-open the form.',
+        );
+      } else {
+        const serialisable = claimDrafts.map(d => ({ ...d, files: [] }));
+        localStorage.setItem(claimDraftKey, JSON.stringify(serialisable));
+        const stagedFiles = claimDrafts.reduce((n, d) => n + (d.files?.length || 0), 0);
+        toast.success(
+          'Draft saved',
+          stagedFiles > 0
+            ? `Form fields saved — you'll need to re-attach ${stagedFiles} file${stagedFiles === 1 ? '' : 's'} on resume.`
+            : 'Your in-progress claim will be here when you re-open the form.',
+        );
+      }
     } catch {
       toast.error('Could not save draft', 'Browser storage is full or blocked.');
     }
@@ -1424,6 +1439,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }
     if (!advRequestedDate)     { errs.requested = 'Requested date is required';   summary.push('Requested date is required'); }
     if (!advRecoveryStart)     { errs.recovery_start = 'Recovery start date is required'; summary.push('Recovery start date is required'); }
+    // Today (local, YYYY-MM-DD) — lexicographic compare works because the
+    // MasterDatePicker emits ISO date strings, so today/past detection is
+    // a plain string compare. Both dates must be today or later; recovery
+    // additionally must be on/after the requested date.
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (advRequestedDate && advRequestedDate < todayIso) {
+      errs.requested = 'Requested date cannot be in the past';
+      summary.push('Requested date cannot be in the past');
+    }
+    if (advRecoveryStart && advRecoveryStart < todayIso) {
+      errs.recovery_start = 'Recovery start cannot be in the past';
+      summary.push('Recovery start cannot be in the past');
+    }
     // Server enforces after_or_equal:requested_date too, but catch it
     // client-side so the user gets immediate feedback instead of a 422.
     if (advRequestedDate && advRecoveryStart && advRecoveryStart < advRequestedDate) {
@@ -1475,6 +1503,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       toast.success('Advance request submitted', 'Sent for manager + finance approval.');
+      // Clear any saved draft so re-opening the modal starts fresh
+      // instead of reviving the just-submitted payload.
+      try { localStorage.removeItem(advanceDraftKey); } catch { /* swallow */ }
       setClaimOpen(false);
       // Refresh the list table so the new row appears immediately. Wrapped
       // in try/catch so a stale-fetch failure doesn't surface a second
@@ -1548,12 +1579,43 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     }));
   };
   const [advFiles, setAdvFiles] = useState<File[]>([]);
-  // Reset attachments + custom advance-type field every time the modal opens.
+  // localStorage key for the advance-mode Save Draft. Kept separate from
+  // the expense draft key so flipping modules doesn't clobber the other
+  // form's saved fields. Scoped per employee like the expense draft.
+  const advanceDraftKey = `cbc.advance.draft.${employeeId || 'me'}`;
+  // Reset attachments + custom advance-type field every time the modal
+  // opens — then, if a saved advance draft exists in localStorage, hydrate
+  // every advance field from it. File objects don't round-trip JSON so
+  // attachments must be re-staged on resume (same trade-off as the
+  // expense Save Draft flow).
   useEffect(() => {
     if (claimOpen) {
       setAdvFiles([]);
       setAdvTypeOther('');
+      try {
+        const raw = localStorage.getItem(advanceDraftKey);
+        if (raw) {
+          const d = JSON.parse(raw) as Partial<{
+            advType: string; advTypeOther: string; advAmount: string;
+            advRequestedDate: string; advRecoveryStart: string;
+            advRecoveryMode: string; advMonths: string; advMonthlyEmi: string;
+            advReason: string;
+          }>;
+          if (d && typeof d === 'object') {
+            if (typeof d.advType            === 'string') setAdvType(d.advType);
+            if (typeof d.advTypeOther       === 'string') setAdvTypeOther(d.advTypeOther);
+            if (typeof d.advAmount          === 'string') setAdvAmount(d.advAmount);
+            if (typeof d.advRequestedDate   === 'string') setAdvRequestedDate(d.advRequestedDate);
+            if (typeof d.advRecoveryStart   === 'string') setAdvRecoveryStart(d.advRecoveryStart);
+            if (typeof d.advRecoveryMode    === 'string') setAdvRecoveryMode(d.advRecoveryMode);
+            if (typeof d.advMonths          === 'string') setAdvMonths(d.advMonths);
+            if (typeof d.advMonthlyEmi      === 'string') setAdvMonthlyEmi(d.advMonthlyEmi);
+            if (typeof d.advReason          === 'string') setAdvReason(d.advReason);
+          }
+        }
+      } catch { /* ignore — leave defaults in place */ }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimOpen]);
 
   // ── Expense Claims — API-backed list ──────────────────────────────────
@@ -4090,35 +4152,63 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </span>
                 </Col>
                 <Col className="min-w-0">
-                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>Expense Overview</p>
+                  <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.06em', fontSize: 9.5 }}>
+                    {expenseModuleTab === 'advance' ? 'Advance Overview' : 'Expense Overview'}
+                  </p>
                   <div className="text-white" style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>
-                    Total Claimed: <span style={{ color: '#bce8ff' }}>₹{totalClaimed.toLocaleString('en-IN')}</span>
+                    {expenseModuleTab === 'advance' ? 'Total Requested' : 'Total Claimed'}:{' '}
+                    <span style={{ color: '#bce8ff' }}>
+                      ₹{(expenseModuleTab === 'advance'
+                          ? activeAdvancesSource.reduce((s, a) => s + Number(a.amount || 0), 0)
+                          : totalClaimed
+                        ).toLocaleString('en-IN')}
+                    </span>
                   </div>
-                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>{expenseCounts.all} claims · {expenseCounts.approved} approved · {expenseCounts.pending} pending</small>
+                  <small style={{ color: 'rgba(255,255,255,0.70)', fontSize: 10.5 }}>
+                    {expenseModuleTab === 'advance'
+                      ? `${advanceCounts.all} advances · ${advanceCounts.approved} approved · ${advanceCounts.pending} pending`
+                      : `${expenseCounts.all} claims · ${expenseCounts.approved} approved · ${expenseCounts.pending} pending`}
+                  </small>
                 </Col>
                 <Col xs="12" lg="auto">
                   <div className="d-flex gap-1 flex-wrap justify-content-lg-end">
-                    {[
-                      { label: 'Total',    value: expenseCounts.all,      color: '#fff' },
-                      { label: 'Approved', value: expenseCounts.approved, color: '#86efac' },
-                      { label: 'Pending',  value: expenseCounts.pending,  color: '#fcd34d' },
-                      { label: 'Rejected', value: expenseCounts.rejected, color: '#fca5a5' },
-                    ].map(c => (
-                      <div
-                        key={c.label}
-                        className="text-center"
-                        style={{
-                          background: 'rgba(255,255,255,0.10)',
-                          border: '1px solid rgba(255,255,255,0.18)',
-                          borderRadius: 9,
-                          padding: '4px 10px',
-                          minWidth: 72,
-                        }}
-                      >
-                        <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
-                        <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
-                      </div>
-                    ))}
+                    {(() => {
+                      // Counts switch with the active module so the KPI strip
+                      // reflects whatever the user is currently viewing
+                      // (expense claims vs advance requests).
+                      const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
+                      return [
+                        { key: 'all'      as ExpenseFilter, label: 'Total',    value: c.all,      color: '#fff'    },
+                        { key: 'approved' as ExpenseFilter, label: 'Approved', value: c.approved, color: '#86efac' },
+                        { key: 'pending'  as ExpenseFilter, label: 'Pending',  value: c.pending,  color: '#fcd34d' },
+                        { key: 'rejected' as ExpenseFilter, label: 'Rejected', value: c.rejected, color: '#fca5a5' },
+                      ];
+                    })().map(c => {
+                      // Tiles double as filter toggles — clicking "Approved"
+                      // narrows the table to approved rows; clicking the
+                      // already-active tile (or Total) restores All.
+                      const on = expenseFilter === c.key;
+                      return (
+                        <button
+                          key={c.label}
+                          type="button"
+                          onClick={() => setExpenseFilter(on && c.key !== 'all' ? 'all' : c.key)}
+                          className="text-center border-0"
+                          style={{
+                            background: on ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.10)',
+                            outline: on ? '1px solid rgba(255,255,255,0.45)' : '1px solid rgba(255,255,255,0.18)',
+                            borderRadius: 9,
+                            padding: '4px 10px',
+                            minWidth: 72,
+                            cursor: 'pointer',
+                            transition: 'background .15s ease',
+                          }}
+                        >
+                          <p className="mb-0 text-uppercase fw-semibold" style={{ color: 'rgba(255,255,255,0.72)', letterSpacing: '0.05em', fontSize: 8.5 }}>{c.label}</p>
+                          <div className="fw-bold lh-1" style={{ color: c.color, fontSize: 13 }}>{c.value}</div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </Col>
               </Row>
@@ -4283,10 +4373,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   a single-list view (the user's own claims/advances). The
                   labels, counts and active-state mirror whichever module
                   (Expense Claims vs Advance Requests) is currently open. */}
-              {isOwnProfile && (
-                (expenseModuleTab === 'expense' && teamClaims.length > 0) ||
-                (expenseModuleTab === 'advance' && teamAdvances.length > 0)
-              ) && (
+              {/* Visible whenever the user is a manager in *either* module —
+                  approved/rejected rows stay in teamClaims/teamAdvances
+                  (backend returns every row where manager_id = current user
+                  regardless of status), so this toggle keeps the historic
+                  track visible after the manager has acted. */}
+              {isOwnProfile && (teamClaims.length > 0 || teamAdvances.length > 0) && (
                 <div className="d-flex gap-1 mb-3" style={{
                   background: 'var(--vz-secondary-bg)', padding: 4, borderRadius: 10,
                   border: '1px solid var(--vz-border-color)', width: 'fit-content',
@@ -5609,6 +5701,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={advRequestedDate}
                       onChange={(v) => { setAdvRequestedDate(v); clearAdvErr('requested'); }}
                       invalid={!!advErrors.requested}
+                      minDate={new Date().toISOString().slice(0, 10)}
                     />
                     {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
                   </Col>
@@ -5618,6 +5711,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       value={advRecoveryStart}
                       onChange={(v) => { setAdvRecoveryStart(v); clearAdvErr('recovery_start'); }}
                       invalid={!!advErrors.recovery_start}
+                      minDate={advRequestedDate || new Date().toISOString().slice(0, 10)}
                     />
                     {advErrors.recovery_start && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.recovery_start}</div>}
                   </Col>

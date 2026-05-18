@@ -79,8 +79,22 @@ class ExpenseClaimController extends Controller
             $targetEmployeeId = $employeeIdFilter ?: $this->currentEmployeeId($user);
             $q->where('employee_id', $targetEmployeeId ?? -1);
         } elseif ($scope === 'team') {
-            $myEmployeeId = $this->currentEmployeeId($user);
-            $q->where('manager_id', $myEmployeeId ?? -1);
+            // Team scope rules:
+            //   - super_admin / client_admin / branch_user → no extra filter;
+            //     tenant scope already restricts the rows they may see, and
+            //     they should be able to view every claim inside that scope
+            //     from the My Team surface.
+            //   - employee / client_user acting as a manager → all rows
+            //     filed by their *transitive* downstream (direct reports +
+            //     reports-of-reports, recursively) so a senior manager
+            //     sees the whole sub-tree, not just the first hop.
+            if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
+                // no-op — tenant scope is the only filter.
+            } else {
+                $myEmployeeId = $this->currentEmployeeId($user);
+                $teamIds = $this->downstreamEmployeeIds($myEmployeeId);
+                $q->whereIn('employee_id', $teamIds ?: [-1]);
+            }
         } else {
             // scope=all — for HR/admin views. No additional filter beyond
             // tenant scope. Frontend gates the menu by permission.
@@ -383,6 +397,33 @@ class ExpenseClaimController extends Controller
     {
         if (!$user) return null;
         return Employee::where('user_id', $user->id)->value('id');
+    }
+
+    /**
+     * Build the transitive set of employee ids that report (directly or
+     * indirectly) to the given root manager. Returns an empty array when
+     * the root is null. The root itself is NOT included — managers don't
+     * own their own claims in the "team" view (those live under My Mine).
+     *
+     * Iterative BFS over `reporting_manager_id` keeps it portable across
+     * MySQL / SQLite and avoids dialect-specific recursive CTEs. The chain
+     * is usually 2-4 levels deep, so a handful of round-trips is fine.
+     */
+    private function downstreamEmployeeIds(?int $rootEmployeeId): array
+    {
+        if (!$rootEmployeeId) return [];
+        $all = [];
+        $frontier = [$rootEmployeeId];
+        while (!empty($frontier)) {
+            $children = Employee::whereIn('reporting_manager_id', $frontier)
+                ->pluck('id')->all();
+            $children = array_map('intval', $children);
+            $new = array_values(array_diff($children, $all, [$rootEmployeeId]));
+            if (empty($new)) break;
+            $all = array_merge($all, $new);
+            $frontier = $new;
+        }
+        return $all;
     }
 
     /**
