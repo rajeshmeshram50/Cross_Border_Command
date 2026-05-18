@@ -149,6 +149,7 @@ interface OverviewData {
   compensation: { annual_salary: number | null; salary_frequency: string | null; salary_structure: string | null; tax_regime: string | null; effective_from: string | null } | null;
   recent_expenses: Array<{ id: number; claim_no: string; title: string; category: string; amount: number; currency: string; expense_date: string | null; status: string }>;
   pending_approvals: Array<{ id: number; claim_no: string; title: string; category: string; amount: number; currency: string; filed_by: string | null; emp_code: string | null; created_at: string | null }>;
+  team_kind: 'reports' | 'peers' | 'department' | 'none';
   team_peers: Array<{ id: number; emp_code: string; display_name: string; photo_url: string | null; designation_name: string | null }>;
   announcements: Array<{ id: number; title: string; snippet: string; created_at: string | null }>;
   upcoming_events: Array<{ employee_id: number; name: string; kind: 'birthday' | 'anniversary'; on: string; years: number | null }>;
@@ -254,6 +255,9 @@ export default function EmployeeDashboard() {
           compensation: raw?.compensation ?? null,
           recent_expenses:   arr(raw.recent_expenses),
           pending_approvals: arr(raw.pending_approvals),
+          team_kind:         (raw?.team_kind === 'reports' || raw?.team_kind === 'peers' || raw?.team_kind === 'department')
+                              ? raw.team_kind
+                              : 'none',
           team_peers:        arr(raw.team_peers),
           announcements:     arr(raw.announcements),
           upcoming_events:   arr(raw.upcoming_events),
@@ -283,7 +287,7 @@ export default function EmployeeDashboard() {
   }
   if (!data) return null;
 
-  const { me, kpis, compensation, recent_expenses, pending_approvals, team_peers, announcements, upcoming_events, onboarding } = data;
+  const { me, kpis, compensation, recent_expenses, pending_approvals, team_kind, team_peers, announcements, upcoming_events, onboarding } = data;
   const firstName = (me.display_name || '').split(/\s+/)[0] || 'there';
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -678,13 +682,22 @@ export default function EmployeeDashboard() {
         </Col>
       </Row>
 
-      {/* ── My Team (department peers) ──────────────────────────────────── */}
-      {team_peers.length > 0 && (
+      {/* ── My Team — title and subtitle adapt to which cohort the
+           backend picked: direct reports for managers, sibling reports
+           for ICs, falling back to department peers only at the top of
+           the tree. Keeps the card honest about who's listed. */}
+      {team_peers.length > 0 && (() => {
+        const teamMeta = team_kind === 'reports'
+          ? { title: 'My Team', subtitle: `Your direct reports · ${kpis.team_size} member${kpis.team_size === 1 ? '' : 's'}` }
+          : team_kind === 'peers'
+          ? { title: 'My Team', subtitle: `Peers under ${me.manager_name || 'your manager'} · ${kpis.team_size} member${kpis.team_size === 1 ? '' : 's'}` }
+          : { title: 'My Team', subtitle: `${me.department_name || 'Department'} · ${kpis.team_size} member${kpis.team_size === 1 ? '' : 's'}` };
+        return (
         <Card style={cardStyle}>
           <div style={cardHeaderStyle}>
             <div>
-              <h6 className="mb-0 fw-bold">My Team</h6>
-              <small className="text-muted">{me.department_name || 'Department'} · {kpis.team_size} member{kpis.team_size === 1 ? '' : 's'}</small>
+              <h6 className="mb-0 fw-bold">{teamMeta.title}</h6>
+              <small className="text-muted">{teamMeta.subtitle}</small>
             </div>
             <i className="ri-team-line" style={{ fontSize: 18, color: '#405189' }} />
           </div>
@@ -712,7 +725,8 @@ export default function EmployeeDashboard() {
             </Row>
           </CardBody>
         </Card>
-      )}
+        );
+      })()}
     </div>
   );
 }

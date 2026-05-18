@@ -242,6 +242,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // signatures only; expense / leave plug in later).
     Route::get ('/my-team/employees',                    [MyTeamController::class, 'employees']);
     Route::get ('/my-team/approvals',                    [MyTeamController::class, 'approvals']);
+    Route::get ('/my-team/my-updates',                   [MyTeamController::class, 'myUpdates']);
 
     Route::get ('/hr-document-signatures/inbox',        [HrDocumentSignatureController::class, 'inbox']);
     Route::post('/hr-document-signatures/{id}/action',  [HrDocumentSignatureController::class, 'action']);
