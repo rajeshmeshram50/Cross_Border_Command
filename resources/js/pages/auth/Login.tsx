@@ -271,17 +271,91 @@ export default function Login({ onForgotPassword }: LoginProps) {
 
         <div ref={googleBtnRef} className="w-full flex justify-center min-h-[44px]" />
 
-        {/* Face-based sign-in. Hidden behind a tertiary button so users who
-            haven't enrolled (the default) aren't distracted by it. Backend
-            still demands an email so the descriptor compare is scoped to
-            ONE enrolled user — there's no "any face wins" attack surface. */}
+        {/* Face-based sign-in. Visually distinct from the email + Google
+            paths so it reads as the "premium" option — gradient pill with
+            a pulsing scanner-style face icon, brand-coloured glow shadow,
+            and a lift on hover. Backend still demands an email so the
+            descriptor compare is scoped to ONE enrolled user — there's
+            no "any face wins" attack surface. */}
         <button
           type="button"
           onClick={() => setFaceOpen(true)}
-          className="w-full mt-2 h-10 rounded-full text-[13px] font-semibold border border-primary/25 text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2"
+          className="cbc-face-btn w-full mt-2 h-12 rounded-full text-[13.5px] font-bold text-white flex items-center justify-center gap-3"
         >
-          <i className="ri-user-smile-line" /> Sign in with Face
+          <span className="cbc-face-icon">
+            <i className="ri-user-smile-line" />
+            <span className="cbc-face-pulse" />
+          </span>
+          Sign in with Face
         </button>
+        <style>{`
+          .cbc-face-btn {
+            position: relative;
+            border: 0;
+            background: linear-gradient(135deg,
+              #0ea5e9 0%,
+              #6366f1 35%,
+              #a855f7 65%,
+              #ec4899 100%);
+            background-size: 200% 200%;
+            background-position: 0% 50%;
+            box-shadow:
+              0 12px 28px rgba(99,102,241,0.32),
+              0 4px 10px rgba(168,85,247,0.20),
+              inset 0 1px 0 rgba(255,255,255,0.25);
+            letter-spacing: 0.01em;
+            transition: transform 220ms ease, box-shadow 220ms ease, background-position 600ms ease;
+            overflow: hidden;
+          }
+          .cbc-face-btn::before {
+            /* Soft moving sheen so the button feels alive without being noisy. */
+            content: '';
+            position: absolute;
+            top: 0; left: -60%;
+            width: 50%; height: 100%;
+            background: linear-gradient(120deg,
+              transparent 0%,
+              rgba(255,255,255,0.22) 50%,
+              transparent 100%);
+            transform: skewX(-20deg);
+            transition: left 700ms ease;
+          }
+          .cbc-face-btn:hover {
+            transform: translateY(-1px) scale(1.01);
+            background-position: 100% 50%;
+            box-shadow:
+              0 16px 36px rgba(99,102,241,0.42),
+              0 6px 14px rgba(236,72,153,0.28),
+              inset 0 1px 0 rgba(255,255,255,0.30);
+          }
+          .cbc-face-btn:hover::before { left: 130%; }
+          .cbc-face-btn:active { transform: translateY(0) scale(0.99); }
+
+          .cbc-face-icon {
+            position: relative;
+            width: 28px; height: 28px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.18);
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 15px;
+            color: #ffffff;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.40);
+          }
+          .cbc-face-pulse {
+            position: absolute;
+            inset: -4px;
+            border-radius: 999px;
+            border: 2px solid rgba(255,255,255,0.55);
+            opacity: 0;
+            animation: cbcFacePulse 1.8s ease-out infinite;
+            pointer-events: none;
+          }
+          @keyframes cbcFacePulse {
+            0%   { transform: scale(0.85); opacity: 0.85; }
+            70%  { transform: scale(1.35); opacity: 0;    }
+            100% { transform: scale(1.35); opacity: 0;    }
+          }
+        `}</style>
       </div>
 
       <FaceLoginModal
