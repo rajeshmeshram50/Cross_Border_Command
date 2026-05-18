@@ -273,6 +273,88 @@ export default function Settings() {
         .settings-tab-btn.active::before { content: ''; position: absolute; left: 0; top: 15%; bottom: 15%; width: 3px; border-radius: 3px; background: var(--accent-col-strong, #405189); box-shadow: 0 0 8px var(--accent-col-strong, #405189); }
         .settings-pane { animation: settings-fade-up .25s ease; }
         .toggle-row-hover:last-child { border-bottom: none !important; }
+
+        /* ─── Form-control polish — mirrors the ClientForm (.cf-wrap)
+              styling so inputs / selects / textarea / dropdowns share a
+              single 38px-tall, 10px-corner indigo-focus look across both
+              surfaces. Without this the Settings inputs rendered as
+              default reactstrap controls (31px, 4px corners, no focus
+              halo) which felt visually inconsistent with the rest of
+              the admin area. */
+        .settings-form .form-control,
+        .settings-form .form-select,
+        .settings-form .dropdown-toggle.btn-light,
+        .settings-form .input-group-sm > .form-control,
+        .settings-form .input-group-sm > .input-group-text,
+        .settings-form .input-group > .input-group-text {
+          height: 38px;
+          min-height: 38px;
+          padding-top: 7px;
+          padding-bottom: 7px;
+          font-size: 13px;
+          line-height: 1.4;
+          border-radius: 10px;
+          border: 1px solid var(--vz-border-color);
+          background: var(--vz-card-bg);
+          transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+        }
+        .settings-form textarea.form-control {
+          height: auto;
+          min-height: 56px;
+          border-radius: 10px;
+          padding-top: 9px;
+        }
+        .settings-form .input-group > .input-group-text:first-child {
+          border-top-left-radius: 10px;
+          border-bottom-left-radius: 10px;
+        }
+        .settings-form .input-group > .form-control:last-child {
+          border-top-right-radius: 10px;
+          border-bottom-right-radius: 10px;
+        }
+        .settings-form .form-control:hover,
+        .settings-form .form-select:hover,
+        .settings-form .dropdown-toggle.btn-light:hover {
+          border-color: rgba(99,102,241,0.45);
+        }
+        .settings-form .form-control:focus,
+        .settings-form .form-select:focus,
+        .settings-form .dropdown-toggle.btn-light:focus,
+        .settings-form .show > .dropdown-toggle.btn-light {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+        }
+        .settings-form .form-control.is-invalid,
+        .settings-form .form-control.is-invalid:focus {
+          border-color: #f06548;
+          box-shadow: 0 0 0 3px rgba(240,101,72,0.15);
+        }
+        /* Match the master-form dropdown popup look — same indigo focus
+           ring and 10px corners as the input itself. */
+        .settings-form .master-select-toggle {
+          border: 1px solid var(--vz-border-color) !important;
+          border-radius: 10px !important;
+          height: 38px !important;
+          font-size: 13px !important;
+          background: var(--vz-card-bg) !important;
+        }
+        .settings-form .master-select-toggle:hover:not(:disabled) {
+          border-color: rgba(99,102,241,0.45) !important;
+        }
+        .settings-form .master-select-wrap.show .master-select-toggle {
+          border-color: #6366f1 !important;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.15) !important;
+        }
+        /* Form labels — tighter, weighted to match ClientForm's .cf-label. */
+        .settings-form .form-label,
+        .settings-form label.col-form-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          color: var(--vz-secondary-color);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          margin-bottom: 6px;
+        }
         @media (max-width: 1399.98px) {
           .settings-sidebar-label, .settings-sidebar-header-text, .settings-sidebar-active-arrow { display: none !important; }
           .settings-tab-btn { justify-content: center; padding: 8px; }
@@ -342,7 +424,7 @@ export default function Settings() {
         <Col xxl={9} xl={9} lg={true} md={true} xs={12}>
           <Card className="mb-0" style={{ borderRadius: 14 }}>
             <CardBody className="p-3">
-              <TabContent activeTab={tab}>
+              <TabContent activeTab={tab} className="settings-form">
 
                 {/* GENERAL */}
                 <TabPane tabId="general" className="settings-pane">
