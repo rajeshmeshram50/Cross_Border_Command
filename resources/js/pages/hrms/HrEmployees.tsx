@@ -1554,6 +1554,11 @@ export default function HrEmployees() {
     const amt = Number(eAnnualSalary);
     if (eAnnualSalary === '' || !Number.isFinite(amt) || amt <= 0) {
       e.annual_salary = 'Annual salary is required';
+    } else if (amt > 999999999999.99) {
+      // Cap matches the DB column type (decimal(14, 2)). Without this
+      // guard the wizard used to submit numbers that overflowed the
+      // column and surfaced as a generic 500.
+      e.annual_salary = 'Annual salary must be ≤ 999,999,999,999.99';
     }
     if (!eSalaryFreq) {
       e.salary_frequency = 'Salary frequency is required';
@@ -4722,7 +4727,27 @@ export default function HrEmployees() {
                           type="number"
                           placeholder="Enter amount"
                           value={eAnnualSalary}
-                          onChange={e => { setEAnnualSalary(e.target.value); clearEErr('annual_salary'); }}
+                          // Hard caps:
+                          //   - max  = 999,999,999,999.99 (decimal(14,2))
+                          //   - step = 0.01 (1 paisa)
+                          //   - 12 integer digits + 2 decimals enforced
+                          //     by a regex so the field never carries a
+                          //     value the backend would reject as overflow.
+                          max={999999999999.99}
+                          step="0.01"
+                          inputMode="decimal"
+                          onChange={e => {
+                            const raw = e.target.value;
+                            // Allow blank so the user can clear the field.
+                            if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
+                            // Reject anything that doesn't look like a
+                            // bounded decimal (up to 12 integer digits,
+                            // optional 2 decimals). Silently ignore the
+                            // bad keystroke instead of mutating state.
+                            if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
+                            setEAnnualSalary(raw);
+                            clearEErr('annual_salary');
+                          }}
                           style={{ flex: 1 }}
                         />
                         <div style={{ width: 130, flexShrink: 0 }}>
