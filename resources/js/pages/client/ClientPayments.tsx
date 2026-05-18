@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Col, Row, Spinner } from 'reactstrap';
 import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 import api from '../../api';
@@ -21,7 +22,11 @@ const methodLabels: Record<string, string> = {
   net_banking: 'Net Banking', wallet: 'Wallet', cash: 'Cash', cheque: 'Cheque',
 };
 
-export default function ClientPayments({ clientId, clientName, onBack }: Props) {
+export default function ClientPayments({ clientId, onBack }: Props) {
+  // `clientName` from Props is no longer rendered (breadcrumb chip was
+  // dropped) — destructure left out intentionally to keep the prop type
+  // stable for callers without flagging an unused variable.
+  const navigate = useNavigate();
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -47,13 +52,29 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
 
   const columns = useMemo(() => [
     {
-      header: '#',
+      header: 'Sr No',
       accessorKey: 'index',
       cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
     },
     {
       header: 'Date',
-      accessorKey: 'created_at',
+      id: 'date',
+      // Sort by the SAME value the cell renders so the visible ascending
+      // order matches the user's expectation. Previously the column used
+      // `accessorKey: 'created_at'` while the cell rendered
+      // `payment_date || created_at` — sort and display could diverge,
+      // making the order look random when the user toggled.
+      accessorFn: (row: any) => {
+        const raw = row.payment_date || row.created_at;
+        const t = raw ? new Date(raw).getTime() : 0;
+        return Number.isFinite(t) ? t : 0;
+      },
+      // Numeric (epoch ms) comparator — react-table's "auto" string
+      // sort can pick the wrong direction on ISO strings of different
+      // shapes ("YYYY-MM-DD" vs "YYYY-MM-DD HH:MM:SS"). Forcing the
+      // alphanumeric/datetime sort here guarantees a deterministic
+      // chronological order.
+      sortingFn: 'basic' as any,
       cell: (info: any) => {
         const d = info.row.original.payment_date || info.row.original.created_at;
         return <span className="fs-13">{new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>;
@@ -179,9 +200,19 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
             </h4>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Clients</a></li>
-                <li className="breadcrumb-item"><a href="#">{clientName}</a></li>
-                <li className="breadcrumb-item active">Payments</li>
+                {/* "Clients" jumps back to the list — previously the
+                    anchor pointed at `#` so the link did nothing but add
+                    a hash to the URL. clientName chip is dropped per
+                    request; the trail is now "Client > Payment". */}
+                <li className="breadcrumb-item">
+                  <a
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); navigate('/clients'); }}
+                  >
+                    Client
+                  </a>
+                </li>
+                <li className="breadcrumb-item active">Payment</li>
               </ol>
             </div>
           </div>

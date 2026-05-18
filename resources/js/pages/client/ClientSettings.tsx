@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, CardHeader, Col, Row, Spinner } from 'reactstrap';
 import api from '../../api';
 
@@ -18,6 +19,7 @@ const groupIcons: Record<string, string> = {
 };
 
 export default function ClientSettings({ clientId, clientName, onBack }: Props) {
+  const navigate = useNavigate();
   const [settings, setSettings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -54,8 +56,9 @@ export default function ClientSettings({ clientId, clientName, onBack }: Props) 
             </h4>
             <div className="page-title-right">
               <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item"><a href="#">Clients</a></li>
-                <li className="breadcrumb-item"><a href="#">{clientName}</a></li>
+                <li className="breadcrumb-item">
+                  <a href="#" onClick={(e) => { e.preventDefault(); navigate('/clients'); }}>Client</a>
+                </li>
                 <li className="breadcrumb-item active">Settings</li>
               </ol>
             </div>

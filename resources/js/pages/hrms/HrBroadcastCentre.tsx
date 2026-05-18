@@ -261,7 +261,7 @@ export default function HrBroadcastCentre() {
                     <table className="rec-list-table align-middle table-nowrap mb-0">
                       <thead>
                         <tr>
-                          <th className="ps-3 text-center" style={{ width: 50 }}>#</th>
+                          <th className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
                           <th style={{ width: 100 }}>ANN ID</th>
                           <th>Announcement Title</th>
                           <th style={{ width: 100 }}>Type</th>

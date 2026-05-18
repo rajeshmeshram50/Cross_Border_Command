@@ -230,6 +230,7 @@ export default function Payments() {
       // centered above each other so the eye doesn't have to track left
       // edges of variable-width digits.
       header: () => <div className="text-center">#</div>,
+      header: 'Sr No',
       accessorKey: 'index',
       cell: (info: any) => <div className="text-center"><span className="text-muted fs-13">{info.row.index + 1}</span></div>,
     },
