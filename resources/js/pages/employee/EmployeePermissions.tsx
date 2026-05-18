@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardBody, Button, Spinner, Alert } from 'reactstrap';
 import api from '../../api';
+import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import PermissionMatrix, {
   extractLeafPermissions,
@@ -42,8 +43,15 @@ interface Props {
 
 export default function EmployeePermissions({ employeeId, employee, onBack }: Props) {
   const toast = useToast();
+  const { user: authUser } = useAuth();
+  const isSuperAdmin = authUser?.user_type === 'super_admin';
   const [modules, setModules] = useState<PermModule[]>([]);
   const [matrix, setMatrix] = useState<Record<number, Record<PermKey, boolean>>>({});
+  // Granter's own perms — used to disable checkboxes for flags they can't pass
+  // down. Without this, the UI lets you toggle anything and the save call
+  // surprises you with a 422 from PermissionController:208 ("you cannot grant
+  // a permission that you don't have"). Mirrors Permissions.tsx.
+  const [myPerms, setMyPerms] = useState<Record<string, Record<PermKey, boolean>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -87,6 +95,25 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
           } catch { /* employee may not yet be a real backend user */ }
         }
 
+        // Load granter's own perms for client-side masking. Super_admin
+        // bypasses (grantableBy stays null → all checkboxes enabled).
+        if (authUser && !isSuperAdmin) {
+          try {
+            const meRes = await api.get(`/permissions/user/${authUser.id}`);
+            const grants: Record<string, Record<PermKey, boolean>> = {};
+            (meRes.data?.permissions || []).forEach((p: any) => {
+              if (p.module) {
+                grants[p.module.slug] = {
+                  can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
+                  can_delete: !!p.can_delete, can_export: !!p.can_export,
+                  can_import: !!p.can_import, can_approve: !!p.can_approve,
+                };
+              }
+            });
+            if (!cancelled) setMyPerms(grants);
+          } catch { /* fall through — backend still validates */ }
+        }
+
         if (!cancelled) {
           setModules(mods);
           setMatrix(m);
@@ -96,7 +123,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
       }
     })();
     return () => { cancelled = true; };
-  }, [numericId]);
+  }, [numericId, authUser?.id, isSuperAdmin]);
 
   const handleSave = async () => {
     if (!numericId) {
@@ -105,7 +132,28 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
     }
     setSaving(true);
     try {
-      const permissions = extractLeafPermissions(modules, matrix);
+      // Strip any flag the granter doesn't have themselves. Defence-in-depth
+      // on top of the disabled checkboxes in PermissionMatrix — without this,
+      // legacy matrix state (e.g. a flag that USED to be grantable) would 422
+      // on save. Same pattern as Permissions.tsx:114-137.
+      const raw = extractLeafPermissions(modules, matrix);
+      const moduleSlugById = new Map(modules.map(m => [m.id, m.slug]));
+      const permissions = myPerms === null
+        ? raw
+        : raw.map(p => {
+            const slug = moduleSlugById.get(p.module_id);
+            const grantable = (slug && myPerms[slug]) || ({} as Record<PermKey, boolean>);
+            return {
+              module_id: p.module_id,
+              can_view:    p.can_view    && !!grantable.can_view,
+              can_add:     p.can_add     && !!grantable.can_add,
+              can_edit:    p.can_edit    && !!grantable.can_edit,
+              can_delete:  p.can_delete  && !!grantable.can_delete,
+              can_export:  p.can_export  && !!grantable.can_export,
+              can_import:  p.can_import  && !!grantable.can_import,
+              can_approve: p.can_approve && !!grantable.can_approve,
+            };
+          });
       const res = await api.post(`/permissions/user/${numericId}`, { permissions });
       toast.success('Saved', `${res.data?.saved_count || permissions.length} permissions updated for ${employee?.name || employeeId}`);
     } catch (err: any) {
@@ -360,7 +408,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
           modules={modules}
           matrix={matrix}
           onChange={setMatrix}
-          grantableBy={null}
+          grantableBy={isSuperAdmin ? null : myPerms}
         />
 
         <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">

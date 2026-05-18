@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -70,6 +71,16 @@ const ROWS_PER_PAGE = 10;
 
 export default function SalesCustomers() {
   const toast = useToast();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.user_type === 'super_admin';
+  // Match the Permissions sheet exactly: the row is keyed by the leaf slug
+  // `sales.customers` and exposes can_view/add/edit/delete/etc. as booleans.
+  // Super_admin bypasses (they hold the master grant).
+  const customerPerm = user?.permissions?.['sales.customers'];
+  const canView   = isSuperAdmin || !!customerPerm?.can_view;
+  const canAdd    = isSuperAdmin || !!customerPerm?.can_add;
+  const canEdit   = isSuperAdmin || !!customerPerm?.can_edit;
+
   const [tab, setTab] = useState<'fresh' | 'recurring'>('fresh');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
@@ -113,6 +124,25 @@ export default function SalesCustomers() {
 
   const soon = (label: string) => toast.info(label, 'Coming in next phase');
 
+  // Hard-stop direct URL access for users whose Permissions sheet doesn't
+  // include sales.customers.can_view. The Sidebar already hides the link, but
+  // this catches /sales/customers typed straight into the address bar.
+  if (!canView) {
+    return (
+      <div className="smc-root">
+        <style>{SCOPED_CSS}</style>
+        <div className="smc-cstrip">
+          <div className="smc-cstrip-left">
+            <div>
+              <div className="smc-title">No access</div>
+              <div className="smc-sub">You don't have permission to view Customers. Ask your branch admin to grant <strong>can_view</strong> on Sales Matrix → Customers.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="smc-root">
       <style>{SCOPED_CSS}</style>
@@ -133,11 +163,13 @@ export default function SalesCustomers() {
           </div>
         </div>
         <div className="smc-cstrip-right">
-          <button className="smc-add-btn" onClick={() => { setEditing(null); setAddOpen(true); }}>
-            <span className="smc-add-sheen" />
-            <IconPlus />
-            Add Customer
-          </button>
+          {canAdd && (
+            <button className="smc-add-btn" onClick={() => { setEditing(null); setAddOpen(true); }}>
+              <span className="smc-add-sheen" />
+              <IconPlus />
+              Add Customer
+            </button>
+          )}
         </div>
       </div>
 
@@ -242,7 +274,9 @@ export default function SalesCustomers() {
                     <td className="ta-c"><span className="smc-cons">{c.consignees}</span></td>
                     <td className="ta-c">
                       <div className="smc-actions">
-                        <button title="Edit Customer" className="smc-act smc-act-edit" onClick={() => { setEditing(c); setAddOpen(true); }}><IconEdit /></button>
+                        {canEdit && (
+                          <button title="Edit Customer" className="smc-act smc-act-edit" onClick={() => { setEditing(c); setAddOpen(true); }}><IconEdit /></button>
+                        )}
                         <button title="Map Consignee" className="smc-act smc-act-map"  onClick={() => soon('Map Consignee')}><IconUsersSm /></button>
                         <button title="Customer Evidence Vault" className="smc-act smc-act-vault" onClick={() => soon('Evidence Vault')}><IconFile /></button>
                       </div>

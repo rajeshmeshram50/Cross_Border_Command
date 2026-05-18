@@ -131,15 +131,17 @@ const Navdata = () => {
     );
   };
 
-  // Sales Matrix rollout — surface the menu to branch_user and employee
-  // unconditionally during initial rollout (per product call: leaves don't
-  // have dedicated pages or per-leaf perms wired up yet). Super_admin /
-  // client_admin are already filtered out by the role check on the MENU_ITEMS
-  // entry, so we just need to gate on plan-active here.
+  // Sales Matrix is permission-gated end-to-end: the menu only surfaces if
+  // the user has can_view on at least one sales.* leaf, matching the HR
+  // pattern. Super_admin / client_admin are already filtered out by the role
+  // check on the MENU_ITEMS entry — they hold perm rows only to cascade-grant
+  // downstream, never to navigate into Sales themselves.
   const hasAnySalesView = () => {
     if (isSuperAdmin) return true;
     if (planExpiredOrMissing) return false;
-    return user?.user_type === "branch_user" || user?.user_type === "employee";
+    return Object.keys(perms).some(
+      (slug) => slug.startsWith("sales.") && !!perms[slug]?.can_view
+    );
   };
 
   const hasAnyHrView = () => {
@@ -186,16 +188,19 @@ const Navdata = () => {
   };
 
   // Build the Sales Matrix dropdown (3 levels): Sales Matrix → categories →
-  // leaves. Mirrors buildHrSubItems but skips the perm check on leaves so
-  // branch_user / employee always see the full tree during initial rollout.
+  // leaves. Mirrors buildHrSubItems — leaves the user cannot view are
+  // filtered out, and categories with no remaining leaves are dropped, so the
+  // sidebar tree always reflects what was granted on the Permissions sheet.
   const buildSalesSubItems = () => {
     return SALES_GROUPS
       .map((g) => {
-        const childItems = g.children.map((c) => ({
-          id: c.id,
-          label: c.label,
-          link: salesLeafLink(c.id),
-        }));
+        const childItems = g.children
+          .filter((c) => isSuperAdmin || perms[c.id]?.can_view)
+          .map((c) => ({
+            id: c.id,
+            label: c.label,
+            link: salesLeafLink(c.id),
+          }));
         if (childItems.length === 0) return null;
         return {
           id: g.id,
