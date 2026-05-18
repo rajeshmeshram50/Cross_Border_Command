@@ -621,18 +621,12 @@ export default function HrRecruitment() {
                 >
                   <i className="ri-add-line" />Create Recruitment
                 </button>
-                <button
-                  type="button"
-                  className="rec-btn-soft"
-                  onClick={() => setRaiseOpen(true)}
-                >
-                  <i className="ri-file-add-line" />Raise Hiring Request
-                </button>
-                {/* Tertiary CTA in the header trio — emerald gradient
-                    pairs with purple (Create) + blue (Raise). The old
-                    ghost outline read as disabled next to the two
-                    coloured buttons; teal makes the action feel
-                    equally prominent and works in dark mode. */}
+                {/* "Raise Hiring Request" intentionally removed — managers
+                    raise hires from their own Employee Profile > Hiring
+                    Requests tab, where the requester context (creator,
+                    reporting line, team size) is automatic. HR's side
+                    keeps the View button only, used for review +
+                    converting an existing request into a recruitment. */}
                 <button
                   type="button"
                   className="rec-btn-teal"
@@ -1608,13 +1602,10 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
             </div>
           </div>
           <div className="d-flex align-items-center gap-2">
-            <button
-              type="button"
-              onClick={onRaiseNew}
-              className="rec-req-raise-btn d-inline-flex align-items-center gap-2"
-            >
-              <i className="ri-add-line" />Raise New Request
-            </button>
+            {/* "Raise New Request" intentionally removed — hiring
+                requests can only originate from a manager's own Employee
+                Profile > Hiring Requests tab. HR uses this modal to
+                review + convert to a recruitment. */}
             <button type="button" onClick={onClose} aria-label="Close" className="rec-close-btn d-inline-flex align-items-center justify-content-center">
               <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
@@ -1757,7 +1748,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
                   <td colSpan={11} className="text-center py-5 text-muted">
                     <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
                     {requests.length === 0
-                      ? 'No hiring requests yet — click Raise New Request to add one'
+                      ? 'No hiring requests yet — managers raise these from their Employee Profile > Hiring Requests tab.'
                       : tabRequests.length === 0
                         ? (tab === 'created'
                             ? 'No hiring requests have been promoted into a recruitment yet.'
