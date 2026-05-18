@@ -55,6 +55,10 @@ const ProfileDropdown = () => {
   // /me also returns inbox_count so we can show a numeric badge.
   const inboxCount = typeof user.inbox_count === 'number' ? user.inbox_count : 0;
 
+  // Platform Settings (branding, support email, privacy) is admin-only —
+  // employees just need to do their work, not configure the tenant.
+  const canSeeSettings = user.user_type !== 'employee';
+
   const menuItems: { to: string; icon: string; label: string; grad: string; badge?: number }[] = [
     { to: '/profile',  icon: 'ri-user-3-line',     label: 'Profile',  grad: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' },
     { to: '/inbox',    icon: 'ri-inbox-line',      label: 'Inbox',    grad: 'linear-gradient(135deg, #f59e0b 0%, #f7b84b 100%)', badge: inboxCount },
@@ -64,7 +68,9 @@ const ProfileDropdown = () => {
     ...(canSeeMyPlan
       ? [{ to: '/my-plan',  icon: 'ri-bank-card-line',  label: 'My Plan',  grad: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%)' }]
       : []),
-    { to: '/settings', icon: 'ri-settings-3-line', label: 'Settings', grad: 'linear-gradient(135deg, #f59e0b 0%, #f7b84b 100%)' },
+    ...(canSeeSettings
+      ? [{ to: '/settings', icon: 'ri-settings-3-line', label: 'Settings', grad: 'linear-gradient(135deg, #f59e0b 0%, #f7b84b 100%)' }]
+      : []),
   ];
 
   return (
