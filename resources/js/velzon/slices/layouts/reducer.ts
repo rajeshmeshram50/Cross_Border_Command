@@ -29,10 +29,21 @@ export interface LayoutState {
   sidebarVisibilitytype:  SIDEBAR_VISIBILITY_TYPES.SHOW | SIDEBAR_VISIBILITY_TYPES.HIDDEN;
 }
 
+// Pull the user's last theme choice out of localStorage so a refresh
+// doesn't snap them back to LIGHTMODE. Paired with the localStorage
+// write in thunk.ts:changeLayoutMode and the synchronous attribute
+// seeding in app.tsx (which prevents a flash before React mounts).
+const persistedLayoutMode: 'light' | 'dark' = (() => {
+  try {
+    const v = window.localStorage.getItem('cbc-layout-mode');
+    return v === 'dark' ? 'dark' : 'light';
+  } catch { return 'light'; }
+})();
+
 export const initialState = {
   layoutType: LAYOUT_TYPES.VERTICAL,
   leftSidebarType: LAYOUT_SIDEBAR_TYPES.DARK,
-  layoutModeType: LAYOUT_MODE_TYPES.LIGHTMODE,
+  layoutModeType: persistedLayoutMode === 'dark' ? LAYOUT_MODE_TYPES.DARKMODE : LAYOUT_MODE_TYPES.LIGHTMODE,
   layoutWidthType: LAYOUT_WIDTH_TYPES.FLUID,
   layoutPositionType: LAYOUT_POSITION_TYPES.FIXED,
   topbarThemeType: LAYOUT_TOPBAR_THEME_TYPES.LIGHT,

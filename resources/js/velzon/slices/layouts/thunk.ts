@@ -39,6 +39,11 @@ export const changeLayout = (layout : any) => async (dispatch : any) => {
 export const changeLayoutMode = (layoutMode : any) => async (dispatch : any) => {
     try {
         changeHTMLAttribute("data-bs-theme", layoutMode);
+        // Persist so the choice survives a refresh / new tab. Without this,
+        // Redux re-initialises to LIGHTMODE on every load and the user has
+        // to flip the toggle again. Wrapped in try because private-browsing
+        // modes (Safari) can throw on localStorage writes.
+        try { window.localStorage.setItem('cbc-layout-mode', layoutMode); } catch {}
         dispatch(changeLayoutModeAction(layoutMode));
     } catch (error) { }
 };
