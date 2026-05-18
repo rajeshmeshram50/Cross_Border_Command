@@ -421,6 +421,14 @@ class EmployeeController extends Controller
                 // Catch those before the row is written.
                 $this->guardDuplicate($data, $clientId, null);
 
+                // Enforce the per-branch user cap before we provision a
+                // new User row. Every employee gets a login account
+                // (User::create below) so each new hire consumes one
+                // slot against Branch.max_users. Skipping this check is
+                // why a branch configured for "1 user" could still grow
+                // to N — the cap was stored but never read.
+                $this->assertBranchUserCap($branchId);
+
                 // Provision the login account first — if the email collides we
                 // want the whole txn to roll back before writing the employee row.
                 //
@@ -840,6 +848,39 @@ class EmployeeController extends Controller
         $q = Employee::query()->withTrashed()->with(self::WITH);
         $this->applyScope($q, $request->user());
         return $q->findOrFail($id);
+    }
+
+    /**
+     * Reject employee creation when the target branch has reached its
+     * configured user cap. `Branch.max_users = 0` (the default) is
+     * treated as "unlimited" — only a positive value enforces a limit.
+     *
+     * The count includes ALL user_types parked on the branch (the
+     * inaugural branch_user created with the branch, plus every
+     * employee-tier User created via this controller). Without this
+     * gate, the cap stored on the Branch row was never read and a
+     * branch limited to 1 user could grow without bound.
+     */
+    private function assertBranchUserCap(?int $branchId): void
+    {
+        if (!$branchId) return;
+        $branch = Branch::find($branchId);
+        if (!$branch) return;
+
+        $cap = (int) ($branch->max_users ?? 0);
+        if ($cap <= 0) return; // 0 / null → unlimited
+
+        $current = User::where('branch_id', $branchId)->count();
+        if ($current >= $cap) {
+            throw ValidationException::withMessages([
+                'email' => [
+                    "This branch is configured for at most {$cap} user"
+                    . ($cap === 1 ? '' : 's')
+                    . " and is already at the cap ({$current})."
+                    . ' Raise the limit on the branch first, or remove an existing user.',
+                ],
+            ]);
+        }
     }
 
     /** Block lower-ranked users from editing/deleting rows owned by higher-ranked ones. */
