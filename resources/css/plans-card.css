@@ -30,17 +30,26 @@
   max-width: 100%;
 }
 [data-bs-theme="dark"] .plans-surface {
-  /* Match the Velzon top header bg exactly — falls back to slate dark */
-  background: var(--vz-header-bg, #1a1d23);
+  /* Use the canonical dark card surface (same colour every other dark
+     page in the app uses) instead of var(--vz-header-bg) — that header
+     variable resolves to velzon's bright purple top-bar tint, which
+     made this page look like a glowing purple panel on dark mode. */
+  background: var(--vz-card-bg, #1c2531);
   border-color: rgba(255, 255, 255, 0.06);
 }
 
-/* Swiper layout — breathing space so hover-lift and shadows aren't clipped */
+/* Swiper layout — breathing space so hover-lift and shadows aren't clipped.
+   Swiper defaults to overflow:hidden on its viewport, which clipped the
+   plan-card's hover lift (translateY -6px) AND its expanded shadow so the
+   top of the card looked sliced. Switching to overflow:visible lets the
+   lift breathe; clip-path: inset re-imposes horizontal clipping so
+   off-screen slides still stay hidden on the sides. The vertical inset
+   is generous (-48px) to fit both the 6px lift and the 50px shadow halo. */
 .plans-swiper {
-  padding-top: 24px !important;
-  padding-bottom: 44px !important;
-  /* Prevent horizontal overflow leaking to the page */
-  overflow: hidden;
+  padding-top: 28px !important;
+  padding-bottom: 48px !important;
+  overflow: visible !important;
+  clip-path: inset(-48px 0 -48px 0);
 }
 .plans-swiper-outer {
   position: relative;
@@ -78,8 +87,10 @@
   opacity: 0.88;
   transition: transform .26s cubic-bezier(0.25, 0.8, 0.3, 1), opacity .26s ease-out;
   will-change: transform, opacity;
-  /* Paint isolation — a slide's internal repaints don't invalidate siblings */
-  contain: layout paint style;
+  /* `contain: layout style` (no `paint`) keeps the per-slide layout/style
+     isolation that makes transitions cheap, without the paint clipping
+     that was cropping the hover-lift's top edge inside the slide. */
+  contain: layout style;
 }
 .plans-swiper-center .swiper-slide-active {
   transform: translate3d(0, 0, 0);
