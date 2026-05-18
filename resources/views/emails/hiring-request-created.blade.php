@@ -121,11 +121,6 @@
   </td></tr>
   @endif
 
-  <!-- CTA -->
-  <tr><td style="padding:24px 40px 28px;text-align:center;">
-    <a href="{{ rtrim(config('app.frontend_url'), '/') }}/dashboard" style="display:inline-block;background:linear-gradient(135deg,#4F46E5,#7C3AED);color:#ffffff;font-size:14px;font-weight:700;padding:11px 26px;border-radius:10px;text-decoration:none;letter-spacing:0.2px;">Review Request</a>
-  </td></tr>
-
   <!-- Footer -->
   <tr><td style="background-color:#f8fafc;padding:24px 40px;text-align:center;border-top:1px solid #f0f0f5;">
     <p style="margin:0 0 6px;font-size:12px;color:#94a3b8;line-height:1.6;">
