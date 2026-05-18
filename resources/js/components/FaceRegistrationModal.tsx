@@ -139,7 +139,10 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
         background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto',
       }}
-      onClick={() => { if (step !== 'saving' && step !== 'revoking') onClose(); }}
+      // Backdrop clicks no longer dismiss the modal — the user has to use
+      // the explicit Close/Cancel button (or the × in the header). Stops
+      // an accidental click outside the card from wiping out an in-progress
+      // consent / capture state.
     >
       <div
         // `ep-modal-card` class hooks into the global dark-mode rule in
