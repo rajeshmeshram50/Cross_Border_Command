@@ -1,32 +1,27 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ShimmerTableRows } from './ui/Shimmer';
-// Reuses the polished confirmation-modal CSS classes already shipping with
-// the recruitment / candidate flows (cand-confirm-modal, cand-confirm-head,
-// cand-confirm-body, cand-confirm-footer, etc.).
 import '../../css/recruitment.css';
 
 /**
- * Expense Claims table — single source of truth for the row layout used by
- * both the EmployeeProfile expense tab and the HR Expense Management page.
- * Reads API rows in the shape returned by ExpenseClaimController::serialize().
+ * Advance Requests table — sibling of ExpenseClaimsTable. Shares the same
+ * two-stage approval surface (manager → HR/Finance) but with the advance
+ * payload columns (type, recovery schedule, monthly EMI, reason).
  *
- * Rendering rules:
- *   - The "Status" column shows ONLY the rolled-up status pill (Pending,
- *     Approved, Rejected). Per-stage details live in the audit log.
- *   - The "Action" column is a 3-dot dropdown that opens an audit-log
- *     popover with three rows: Created → Manager → HR/Finance.
+ * Rendering rules mirror ExpenseClaimsTable:
+ *   - Status column = rolled-up status pill only (per-stage details live
+ *     in the audit log popover).
+ *   - Action column = 3-dot button → Created → Manager → HR/Finance audit.
  *   - When `mode === 'team'` AND the current user is the assigned manager
- *     for a row whose manager stage is still pending, inline Approve/Reject
- *     buttons appear next to the dropdown.
- *   - When `mode === 'hr'` AND the current user has HR permission AND the
- *     row's manager stage is approved but HR stage is still pending, inline
+ *     for a pending row, inline Approve/Reject buttons appear.
+ *   - When `mode === 'hr'` AND the user has HR permission AND the row's
+ *     manager stage is approved but HR stage is still pending, inline
  *     HR Approve/Reject buttons appear.
  */
 
-export type ExpenseClaimRow = {
+export type AdvanceRequestRow = {
   id: number;
-  claim_no: string | null;
+  advance_no: string | null;
   employee_id: number;
   employee_name: string | null;
   employee_code: string | null;
@@ -34,16 +29,15 @@ export type ExpenseClaimRow = {
   department_name?: string | null;
   manager_id: number | null;
   manager_name: string | null;
-  category_id: number | null;
-  category_name: string | null;
-  currency: string | null;
-  project: string | null;
-  payment_method: string | null;
-  title: string;
+  advance_type: string;
+  advance_type_other: string | null;
   amount: number;
-  expense_date: string;
-  vendor: string | null;
-  purpose: string | null;
+  requested_date: string;
+  recovery_start: string;
+  recovery_mode: 'emi' | 'lumpsum' | 'bimonthly' | string;
+  recovery_months: number | null;
+  monthly_emi: number | null;
+  reason: string;
   attachments: { name: string; size?: number; url?: string }[];
   status: 'pending' | 'approved' | 'rejected';
   manager_status: 'pending' | 'approved' | 'rejected';
@@ -60,25 +54,28 @@ export type ExpenseClaimRow = {
 type ActionKind = 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject';
 
 type Props = {
-  rows: ExpenseClaimRow[];
+  rows: AdvanceRequestRow[];
   loading?: boolean;
-  /** Used as a fallback initials avatar tile when `employee_name` is null. */
   fallbackName?: string;
   fallbackInitials?: string;
   accent?: string;
   /** 'mine' = no inline approve UI; 'team' = manager approve/reject; 'hr' = HR approve/reject */
   mode?: 'mine' | 'team' | 'hr';
-  /** Auth user employee.id — used to gate inline manager actions to the assigned manager. */
   currentEmployeeId?: number | null;
-  /** Whether the current user has HR/Finance approval permission. */
   canHrApprove?: boolean;
-  onAct?: (claimId: number, action: ActionKind, comment?: string) => Promise<void> | void;
+  onAct?: (id: number, action: ActionKind, comment?: string) => Promise<void> | void;
 };
 
-const STATUS_TONE: Record<ExpenseClaimRow['status'], { bg: string; fg: string; dot: string; label: string }> = {
+const STATUS_TONE: Record<AdvanceRequestRow['status'], { bg: string; fg: string; dot: string; label: string }> = {
   pending:  { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b', label: 'Pending'  },
   approved: { bg: '#d6f4e3', fg: '#108548', dot: '#10b981', label: 'Approved' },
   rejected: { bg: '#fdd9ea', fg: '#a02960', dot: '#ef4444', label: 'Rejected' },
+};
+
+const RECOVERY_LABEL: Record<string, string> = {
+  emi:        'EMI',
+  lumpsum:    'Lump Sum',
+  bimonthly:  'Bi-Monthly',
 };
 
 function fmtDate(iso: string | null | undefined): string {
@@ -101,9 +98,8 @@ function initialsFromName(name: string | null | undefined, fallback?: string): s
   return name.split(' ').filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('') || (fallback || 'EM');
 }
 
-/** Append the sanctum bearer to a download URL so plain anchor clicks work
- *  without sending an Authorization header (Laravel resolves the user via
- *  ?token=… on the expense-claims/{id}/attachments/{idx} route). */
+/** Sanctum bearer in the download URL so plain <a> clicks work on the
+ *  query-token-auth attachment route. */
 function withAuthToken(url: string): string {
   if (!url) return url;
   let token = '';
@@ -113,64 +109,65 @@ function withAuthToken(url: string): string {
   return `${url}${sep}token=${encodeURIComponent(token)}`;
 }
 
-export default function ExpenseClaimsTable({
+export default function AdvanceRequestsTable({
   rows, loading,
-  fallbackName, fallbackInitials, accent = '#7c5cfc',
+  fallbackName, fallbackInitials, accent = '#6366f1',
   mode = 'mine', currentEmployeeId = null, canHrApprove = false,
   onAct,
 }: Props) {
   return (
-    <>
-      <div className="table-responsive border rounded ep-att-scroll-wrap">
-        <table className="table align-middle table-nowrap ep-att-table mb-0">
-          <thead className="table-light">
+    <div className="table-responsive border rounded ep-att-scroll-wrap">
+      <table className="table align-middle table-nowrap ep-att-table mb-0">
+        <thead className="table-light">
+          <tr>
+            <th>Adv ID</th>
+            <th>Employee</th>
+            <th>Advance Type</th>
+            <th>Reason</th>
+            <th>Amount</th>
+            <th>Requested</th>
+            <th>Recovery Start</th>
+            <th>Recovery</th>
+            <th>Monthly EMI</th>
+            <th>Attachments</th>
+            <th>Status</th>
+            <th className="text-center">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? (
+            <ShimmerTableRows rows={5} cols={12} keyPrefix="adv-shim" />
+          ) : rows.length === 0 ? (
             <tr>
-              <th>Exp ID</th>
-              <th>Employee</th>
-              <th>Category</th>
-              <th>Description</th>
-              <th>Expense Date</th>
-              <th>Amount</th>
-              <th>Proof of Payment</th>
-              <th>Status</th>
-              <th className="text-center">Action</th>
+              <td colSpan={12} className="text-center py-5 text-muted">
+                <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                No advance requests to show.
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <ShimmerTableRows rows={5} cols={9} />
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="text-center py-5 text-muted">
-                  <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  No claims to show.
-                </td>
-              </tr>
-            ) : rows.map(c => (
-              <ExpenseClaimRowView
-                key={c.id}
-                claim={c}
-                accent={accent}
-                fallbackName={fallbackName}
-                fallbackInitials={fallbackInitials}
-                mode={mode}
-                currentEmployeeId={currentEmployeeId}
-                canHrApprove={canHrApprove}
-                onAct={onAct}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+          ) : rows.map(r => (
+            <AdvanceRequestRowView
+              key={r.id}
+              row={r}
+              accent={accent}
+              fallbackName={fallbackName}
+              fallbackInitials={fallbackInitials}
+              mode={mode}
+              currentEmployeeId={currentEmployeeId}
+              canHrApprove={canHrApprove}
+              onAct={onAct}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-function ExpenseClaimRowView({
-  claim, accent, fallbackName, fallbackInitials,
+function AdvanceRequestRowView({
+  row, accent, fallbackName, fallbackInitials,
   mode, currentEmployeeId, canHrApprove, onAct,
 }: {
-  claim: ExpenseClaimRow;
+  row: AdvanceRequestRow;
   accent: string;
   fallbackName?: string;
   fallbackInitials?: string;
@@ -179,32 +176,36 @@ function ExpenseClaimRowView({
   canHrApprove: boolean;
   onAct?: Props['onAct'];
 }) {
-  const c = claim;
-  const tone = STATUS_TONE[c.status];
-  const empName = c.employee_name || fallbackName || ('#' + c.employee_id);
-  const empInitials = initialsFromName(c.employee_name, fallbackInitials);
-  const proof = c.attachments?.[0];
+  const r = row;
+  const tone = STATUS_TONE[r.status];
+  const empName = r.employee_name || fallbackName || ('#' + r.employee_id);
+  const empInitials = initialsFromName(r.employee_name, fallbackInitials);
+  const proof = r.attachments?.[0];
+  const typeLabel = r.advance_type === 'Other' && r.advance_type_other
+    ? `Other · ${r.advance_type_other}`
+    : r.advance_type;
+  const recoveryLabel = RECOVERY_LABEL[r.recovery_mode] || r.recovery_mode;
+  const emiSummary = r.recovery_mode === 'emi'
+    ? `₹${Number(r.monthly_emi || 0).toLocaleString('en-IN')}${r.recovery_months ? ` × ${r.recovery_months} mo` : ''}`
+    : '—';
 
   const [menuOpen, setMenuOpen] = useState(false);
-  // Confirmation modal for both approve & reject. The action shape carries
-  // both the verdict and the stage so we can render a contextual title +
-  // submit colour, and so the same dispatcher hits the right backend route.
   type Confirm = { stage: 'manager' | 'hr'; verdict: 'approve' | 'reject' };
   const [confirmAction, setConfirmAction] = useState<Confirm | null>(null);
   const [comment, setComment] = useState('');
 
   const canManagerAct =
     mode === 'team'
-    && c.manager_status === 'pending'
+    && r.manager_status === 'pending'
     && currentEmployeeId !== null
-    && c.manager_id === currentEmployeeId
+    && r.manager_id === currentEmployeeId
     && !!onAct;
 
   const canHrAct =
     mode === 'hr'
     && canHrApprove
-    && c.manager_status === 'approved'
-    && c.hr_status === 'pending'
+    && r.manager_status === 'approved'
+    && r.hr_status === 'pending'
     && !!onAct;
 
   return (
@@ -214,10 +215,10 @@ function ExpenseClaimRowView({
           className="font-monospace fw-semibold"
           style={{
             fontSize: 11, padding: '2px 9px', borderRadius: 999,
-            background: '#ece6ff', color: '#5a3fd1', letterSpacing: '0.02em',
+            background: '#dceefe', color: '#0c63b0', letterSpacing: '0.02em',
           }}
         >
-          {c.claim_no || `#${c.id}`}
+          {r.advance_no || `#${r.id}`}
         </span>
       </td>
       <td>
@@ -234,8 +235,8 @@ function ExpenseClaimRowView({
           </div>
           <div className="d-flex flex-column" style={{ lineHeight: 1.15 }}>
             <span className="fw-semibold">{empName}</span>
-            {c.employee_code && (
-              <small className="text-muted" style={{ fontSize: 10 }}>{c.employee_code}</small>
+            {r.employee_code && (
+              <small className="text-muted" style={{ fontSize: 10 }}>{r.employee_code}</small>
             )}
           </div>
         </div>
@@ -245,16 +246,29 @@ function ExpenseClaimRowView({
           className="d-inline-flex align-items-center gap-1 fw-semibold"
           style={{
             fontSize: 11, padding: '3px 9px', borderRadius: 999,
-            background: '#eef2f6', color: '#5b6478',
+            background: '#ece6ff', color: '#5a3fd1',
           }}
         >
-          <i className="ri-price-tag-3-line" />
-          {c.category_name || '—'}
+          <i className="ri-bank-card-line" />
+          {typeLabel}
         </span>
       </td>
-      <td>{c.title}</td>
-      <td className="text-muted">{fmtDate(c.expense_date)}</td>
-      <td className="fw-bold">₹{Number(c.amount || 0).toLocaleString('en-IN')}</td>
+      <td style={{ maxWidth: 240, whiteSpace: 'normal' }}>{r.reason}</td>
+      <td className="fw-bold">₹{Number(r.amount || 0).toLocaleString('en-IN')}</td>
+      <td className="text-muted">{fmtDate(r.requested_date)}</td>
+      <td className="text-muted">{fmtDate(r.recovery_start)}</td>
+      <td>
+        <span
+          className="d-inline-flex align-items-center fw-semibold"
+          style={{
+            fontSize: 11, padding: '2px 9px', borderRadius: 999,
+            background: '#d3f0ee', color: '#0a716a',
+          }}
+        >
+          {recoveryLabel}
+        </span>
+      </td>
+      <td className="text-muted">{emiSummary}</td>
       <td>
         {proof?.url ? (
           <a
@@ -264,13 +278,13 @@ function ExpenseClaimRowView({
             className="d-inline-flex align-items-center gap-1 text-decoration-none"
             style={{
               fontSize: 11, padding: '3px 9px', borderRadius: 8,
-              background: 'rgba(239,68,68,0.10)', color: '#dc2626',
-              fontWeight: 600, border: '1px solid rgba(239,68,68,0.25)',
+              background: 'rgba(99,102,241,0.10)', color: '#4338ca',
+              fontWeight: 600, border: '1px solid rgba(99,102,241,0.25)',
             }}
           >
             <i className="ri-file-text-line" />
-            {(proof.name || 'receipt').slice(0, 14)}
-            {(c.attachments?.length ?? 0) > 1 && <small className="ms-1 text-muted">+{(c.attachments?.length ?? 0) - 1}</small>}
+            {(proof.name || 'attachment').slice(0, 14)}
+            {(r.attachments?.length ?? 0) > 1 && <small className="ms-1 text-muted">+{(r.attachments?.length ?? 0) - 1}</small>}
           </a>
         ) : (
           <span className="text-muted" style={{ fontSize: 11 }}>—</span>
@@ -350,15 +364,11 @@ function ExpenseClaimRowView({
               </button>
             </>
           )}
-          <AuditLogTrigger
-            open={menuOpen}
-            setOpen={setMenuOpen}
-            claim={c}
-          />
+          <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} row={r} />
         </div>
 
-        <ExpenseConfirmModal
-          target={confirmAction && onAct ? { claim: c, action: confirmAction } : null}
+        <AdvanceConfirmModal
+          target={confirmAction && onAct ? { row: r, action: confirmAction } : null}
           comment={comment}
           setComment={setComment}
           onClose={() => setConfirmAction(null)}
@@ -369,7 +379,7 @@ function ExpenseClaimRowView({
                 confirmAction.stage === 'manager'
                   ? (isApprove ? 'manager-approve' : 'manager-reject')
                   : (isApprove ? 'hr-approve'      : 'hr-reject');
-            await onAct(c.id, action, comment.trim() || undefined);
+            await onAct(r.id, action, comment.trim() || undefined);
             setConfirmAction(null);
           }}
         />
@@ -378,25 +388,18 @@ function ExpenseClaimRowView({
   );
 }
 
-/**
- * 3-dot button + portal-based audit log popover. Renders outside the table
- * so it doesn't fight the `overflow:hidden` table-responsive container, and
- * positions itself to the left of the button so the body of the popover
- * doesn't fall off the right edge of the page.
- */
+/* ── Audit log popover ──────────────────────────────────────────────── */
 function AuditLogTrigger({
-  open, setOpen, claim,
+  open, setOpen, row,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
-  claim: ExpenseClaimRow;
+  row: AdvanceRequestRow;
 }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Recompute the popover position whenever it opens (and on scroll/resize
-  // while open) so it stays anchored to the trigger button.
   useEffect(() => {
     if (!open) { setPos(null); return; }
     const recompute = () => {
@@ -404,9 +407,7 @@ function AuditLogTrigger({
       if (!btn) return;
       const rect = btn.getBoundingClientRect();
       const POP_WIDTH = 340;
-      const POP_HEIGHT = 280; // estimate — popover never grows much beyond this
-      // Prefer below-and-left so the popover body doesn't fall off the right
-      // edge of the page; flip above when there isn't enough room below.
+      const POP_HEIGHT = 280;
       const spaceBelow = window.innerHeight - rect.bottom;
       const top = spaceBelow > POP_HEIGHT
         ? rect.bottom + 6
@@ -426,7 +427,6 @@ function AuditLogTrigger({
     };
   }, [open]);
 
-  // Click-outside to dismiss.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -461,12 +461,6 @@ function AuditLogTrigger({
         <div
           ref={popRef}
           className="ep-audit-popover"
-          // Pulls theme variables (data-bs-theme cascades from <html>) so
-          // the popover follows light/dark mode. Used to hardcode white +
-          // slate text which made the audit log unreadable on a dark page.
-          // The `.ep-audit-popover` class also carries a dark-mode override
-          // (recruitment.css) that forces #222831 for parity with the rest
-          // of the popups when --vz-card-bg doesn't resolve to a dark hex.
           style={{
             position: 'fixed',
             top: pos.top,
@@ -481,7 +475,7 @@ function AuditLogTrigger({
             zIndex: 6500,
           }}
         >
-          <AuditLogPopover claim={claim} />
+          <AuditLogPopover row={row} />
         </div>,
         document.body,
       )}
@@ -489,54 +483,44 @@ function AuditLogTrigger({
   );
 }
 
-/** Three-row timeline: Created → Manager → HR/Finance. */
-function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
-  const c = claim;
-  const stages: {
-    label: string;
-    icon: string;
+function AuditLogPopover({ row }: { row: AdvanceRequestRow }) {
+  const r = row;
+  const stages: Array<{
+    label: string; icon: string;
     state: 'pending' | 'approved' | 'rejected';
     actor: string | null;
+    pendingHint?: string;
     at: string | null;
     comment: string | null;
     isCreated?: boolean;
-    /** Sub-line shown when the stage is still pending (e.g. "Awaiting Jane Doe"). */
-    pendingHint?: string;
-  }[] = [
+  }> = [
     {
-      label: 'Request Created',
-      icon: 'ri-file-add-line',
-      state: 'approved', // creation is always "done"
-      actor: c.creator_name,
-      at: c.created_at,
+      label: 'Created',
+      icon: 'ri-quill-pen-line',
+      state: 'approved',
+      actor: r.creator_name || (r.employee_name ? `By ${r.employee_name}` : null),
+      at: r.created_at,
       comment: null,
       isCreated: true,
     },
     {
-      // Show the assigned reporting manager's name regardless of state — when
-      // pending it tells the employee who they're waiting on; when actioned
-      // it's the same person (manager_name = the manager who approved).
-      // When the employee has no reporting manager, the backend auto-clears
-      // this stage at create time and routes the claim straight to HR — the
-      // sub-line uses the controller's "Auto-approved · …" comment which
-      // makes the bypass explicit in the audit trail.
       label: 'Reporting Manager',
       icon: 'ri-user-star-line',
-      state: c.manager_status,
-      actor: c.manager_name
-        || (c.manager_id ? `Manager #${c.manager_id}` : (c.manager_comment || 'No manager assigned · skipped')),
-      pendingHint: c.manager_name ? `Awaiting ${c.manager_name}` : 'Awaiting manager review',
-      at: c.manager_acted_at,
-      comment: c.manager_comment,
+      state: r.manager_status,
+      actor: r.manager_name
+        || (r.manager_id ? `Manager #${r.manager_id}` : (r.manager_comment || 'No manager assigned · skipped')),
+      pendingHint: r.manager_name ? `Awaiting ${r.manager_name}` : 'Awaiting manager review',
+      at: r.manager_acted_at,
+      comment: r.manager_comment,
     },
     {
       label: 'HR / Finance Manager',
       icon: 'ri-shield-check-line',
-      state: c.hr_status,
-      actor: c.hr_user_name,
+      state: r.hr_status,
+      actor: r.hr_user_name,
       pendingHint: 'Awaiting HR / Finance review',
-      at: c.hr_acted_at,
-      comment: c.hr_comment,
+      at: r.hr_acted_at,
+      comment: r.hr_comment,
     },
   ];
 
@@ -545,11 +529,10 @@ function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
       <div className="fw-bold mb-3" style={{ fontSize: 13, color: 'var(--vz-body-color, #1f2937)' }}>
         Approval Audit Log
         <small className="d-block fw-normal" style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>
-          {c.claim_no} · ₹{Number(c.amount || 0).toLocaleString('en-IN')}
+          {r.advance_no || `#${r.id}`} · ₹{Number(r.amount || 0).toLocaleString('en-IN')}
         </small>
       </div>
       <div style={{ position: 'relative' }}>
-        {/* Vertical guide */}
         <span style={{
           position: 'absolute', left: 13, top: 8, bottom: 8,
           width: 2, background: 'var(--vz-border-color, #e5e7eb)', pointerEvents: 'none',
@@ -615,131 +598,100 @@ function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
   );
 }
 
-/**
- * Approve / Reject confirmation dialog. Mirrors the look of
- * `CandidateConfirmModal` (Reactstrap Modal + cand-confirm-* class set so
- * we get the polished header tile, summary card, and footer styling for
- * free), but specialised for the expense-claim verdict pair.
- */
-function ExpenseConfirmModal({
+/* ── Approve / Reject confirmation modal ────────────────────────────── */
+function AdvanceConfirmModal({
   target, comment, setComment, onClose, onConfirm,
 }: {
-  target: { claim: ExpenseClaimRow; action: { stage: 'manager' | 'hr'; verdict: 'approve' | 'reject' } } | null;
+  target: { row: AdvanceRequestRow; action: { stage: 'manager' | 'hr'; verdict: 'approve' | 'reject' } } | null;
   comment: string;
   setComment: (v: string) => void;
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
   if (!target) return null;
-  const { claim, action } = target;
+  const { row, action } = target;
   const isApprove = action.verdict === 'approve';
   const stageLabel = action.stage === 'manager' ? 'Manager' : 'HR / Finance';
-  const tone = STATUS_TONE[claim.status];
+  const tone = STATUS_TONE[row.status];
 
-  /* Bypass Reactstrap and render the dialog through a manual portal.
-     Reactstrap's Modal applies its z-index after mount which fights with
-     EmployeeProfile's fullscreen overlay (z-index 1080) and the page's
-     other modal classes (2100/5000). A direct portal at z-index 6500
-     guarantees the dialog floats above every page chrome layer. */
   return createPortal(
     <div
       className={`expense-confirm-overlay cand-confirm-modal cand-confirm-modal--${isApprove ? 'select' : 'reject'}`}
       style={{
-        position: 'fixed', inset: 0, zIndex: 6500,
-        background: 'rgba(15,23,42,0.55)',
-        backdropFilter: 'blur(2px)',
+        position: 'fixed', inset: 0, zIndex: 6800,
+        background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16,
       }}
       onClick={onClose}
     >
       <div
-        onClick={e => e.stopPropagation()}
-        className="border-0"
+        className="cand-confirm-card"
         style={{
-          background: '#ffffff', color: '#1f2937',
-          borderRadius: 16, overflow: 'hidden',
-          width: '100%', maxWidth: 560,
-          boxShadow: '0 24px 60px rgba(15,23,42,0.30)',
+          background: 'var(--vz-card-bg, #ffffff)',
+          border: '1px solid var(--vz-border-color)',
+          borderRadius: 14,
+          width: '100%', maxWidth: 460,
+          boxShadow: '0 24px 60px rgba(0,0,0,0.30)',
+          overflow: 'hidden',
         }}
+        onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="cand-confirm-head">
-          <span className="cand-confirm-head-icon">
-            <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
-          </span>
-          <div className="cand-confirm-head-text">
-            <h5 className="mb-0">
-              {isApprove ? `Approve Claim — ${stageLabel}` : `Reject Claim — ${stageLabel}`}
-            </h5>
-            <div className="cand-confirm-head-sub">
-              {isApprove
-                ? (action.stage === 'manager'
-                    ? 'Forwards to HR / Finance for final approval'
-                    : 'Final approval — claim will be marked Approved')
-                : 'Closes the claim — employee will see the rejection in their audit log'}
-            </div>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="cand-confirm-close">
-            <i className="ri-close-line" />
-          </button>
+        <div
+          className="cand-confirm-head"
+          style={{
+            padding: '14px 18px',
+            background: isApprove
+              ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
+              : 'linear-gradient(135deg,#f06548,#ff7a5c)',
+            color: '#fff',
+          }}
+        >
+          <h5 className="mb-0 fw-bold" style={{ fontSize: 14 }}>
+            {isApprove ? `${stageLabel} Approve` : `${stageLabel} Reject`}
+          </h5>
+          <small style={{ fontSize: 11, opacity: 0.92 }}>
+            {row.advance_no || `#${row.id}`} · ₹{Number(row.amount || 0).toLocaleString('en-IN')} · {row.advance_type}
+          </small>
         </div>
-
-        {/* Body */}
-        <div className="cand-confirm-body">
-          {/* Claim summary card */}
-          <div className="cand-confirm-summary">
-            <div
-              className="cand-confirm-avatar"
-              style={{ background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' }}
-            >
-              <i className="ri-file-text-line" style={{ fontSize: 18 }} />
-            </div>
-            <div className="cand-confirm-summary-text">
-              <div className="cand-confirm-name">
-                {claim.title || claim.claim_no || `Claim #${claim.id}`}
-              </div>
-              <div className="cand-confirm-meta">
-                <span className="rec-id-pill">{claim.claim_no || `#${claim.id}`}</span>
-                <span className="dot">·</span>
-                <span>{claim.employee_name || `Employee #${claim.employee_id}`}</span>
-                <span className="dot">·</span>
-                <span className="fw-semibold" style={{ color: '#1f2937' }}>
-                  ₹{Number(claim.amount || 0).toLocaleString('en-IN')}
-                </span>
-              </div>
-            </div>
-            <div className="cand-confirm-stage">
-              <div className="cand-confirm-stage-label">Status</div>
-              <span className="rec-pill" style={{ background: tone.bg, color: tone.fg }}>
-                {tone.label}
-              </span>
-            </div>
+        <div className="cand-confirm-body" style={{ padding: 16 }}>
+          <div className="mb-2" style={{ fontSize: 12 }}>
+            <span className="text-muted">Requested by</span>{' '}
+            <strong>{row.employee_name || `#${row.employee_id}`}</strong>{' '}
+            <span className="text-muted">· {row.reason || '—'}</span>
           </div>
-
-          <div className="cand-confirm-field">
-            <label className="cand-confirm-label">
-              {isApprove ? 'Approval Note' : 'Reason for Rejection'} <span className="opt">(OPTIONAL)</span>
-            </label>
-            <textarea
-              className="cand-confirm-textarea"
-              rows={3}
-              placeholder={isApprove
-                ? 'Add context for the audit trail (e.g. "Approved within policy limit")'
-                : 'Explain why this claim is being rejected'}
-              value={comment}
-              onChange={e => setComment(e.target.value)}
-              autoFocus
-            />
+          <label className="form-label" style={{ fontSize: 11, fontWeight: 600 }}>
+            Comment {isApprove ? '(optional)' : '(recommended)'}
+          </label>
+          <textarea
+            className="form-control"
+            rows={3}
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+            placeholder={isApprove
+              ? 'Add a note for the audit log (optional)…'
+              : 'Tell the requester why this advance was rejected…'}
+          />
+          <div className="mt-2 d-inline-flex align-items-center gap-1" style={{ fontSize: 11 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
+            <span className="text-muted">Current status:</span>
+            <span className="fw-semibold">{tone.label}</span>
           </div>
         </div>
-
-        {/* Footer */}
-        <div className="cand-confirm-footer">
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
-          <button type="button" className="cand-confirm-submit" onClick={onConfirm}>
-            <i className={isApprove ? 'ri-check-line' : 'ri-close-line'} />
-            {isApprove ? 'Confirm Approval' : 'Confirm Rejection'}
+        <div className="cand-confirm-footer d-flex justify-content-end gap-2" style={{ padding: '12px 18px', borderTop: '1px solid var(--vz-border-color)' }}>
+          <button type="button" className="btn btn-light btn-sm" onClick={onClose}>Cancel</button>
+          <button
+            type="button"
+            className="btn btn-sm fw-semibold"
+            style={{
+              background: isApprove
+                ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
+                : 'linear-gradient(135deg,#f06548,#ff7a5c)',
+              color: '#fff', border: 'none',
+            }}
+            onClick={() => { void onConfirm(); }}
+          >
+            <i className={isApprove ? 'ri-check-line me-1' : 'ri-close-line me-1'} />
+            {isApprove ? 'Confirm Approve' : 'Confirm Reject'}
           </button>
         </div>
       </div>

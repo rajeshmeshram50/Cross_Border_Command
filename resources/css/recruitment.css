@@ -8646,3 +8646,38 @@
     color: rgba(255,255,255,0.70);
   }
 }
+
+/* ── Approval Audit Log popover — dark mode override ─────────────────────
+   The Expense Claims and Advance Requests tables render their audit-log
+   popover via a body-portal, so the popover container can end up in a
+   context where --vz-card-bg doesn't resolve to a dark hex. Force the
+   same #222831 surface used by the other popups so the header text,
+   stage labels and the "Approval Audit Log" title are readable. */
+[data-bs-theme="dark"] .ep-audit-popover {
+  background: #222831 !important;
+  border-color: rgba(255,255,255,0.10) !important;
+  color: rgba(255,255,255,0.92) !important;
+}
+[data-bs-theme="dark"] .ep-audit-popover .fw-bold,
+[data-bs-theme="dark"] .ep-audit-popover .fw-semibold {
+  color: rgba(255,255,255,0.96) !important;
+}
+[data-bs-theme="dark"] .ep-audit-popover small {
+  color: rgba(255,255,255,0.65) !important;
+}
+/* Stage badges (CREATED / PENDING / APPROVED / REJECTED) — the light
+   light pastel pills used in the light theme wash out on the #222831
+   surface. Swap to translucent tinted fills with brighter text so each
+   state stays readable. */
+[data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--pending {
+  background: rgba(245,158,11,0.18) !important;
+  color: #fcd34d !important;
+}
+[data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--rejected {
+  background: rgba(239,68,68,0.20) !important;
+  color: #fca5a5 !important;
+}
+[data-bs-theme="dark"] .ep-audit-popover .ep-audit-stage-badge--approved {
+  background: rgba(16,185,129,0.20) !important;
+  color: #6ee7b7 !important;
+}
