@@ -385,16 +385,20 @@ const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { bg: string; fg: stri
 // 11px uppercase label, 26px value. Keep gradients distinct per status so the
 // 10 tiles read at a glance.
 const KPI_CARDS = [
-  { key: 'total',                 label: 'Total Employees',          icon: 'ri-team-line',            gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
-  { key: 'active',                label: 'Active Employees',         icon: 'ri-user-follow-fill',     gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
-  { key: 'disabled',              label: 'Disabled Employees',       icon: 'ri-user-unfollow-fill',   gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
-  { key: 'on_leave',              label: 'On Leave Employees',       icon: 'ri-calendar-event-line',  gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-  { key: 'onboarding_completed',  label: 'Onboarding Completed',     icon: 'ri-medal-fill',           gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)' },
-  { key: 'new_joiners',           label: 'New Joiners',              icon: 'ri-user-add-fill',        gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
-  { key: 'probation_in_progress', label: 'Probation In Progress',    icon: 'ri-shield-flash-line',    gradient: 'linear-gradient(135deg,#0ea5e9,#38bdf8)' },
-  { key: 'probation_completed',   label: 'Probation Completed',      icon: 'ri-shield-check-fill',    gradient: 'linear-gradient(135deg,#10b981,#34d399)' },
-  { key: 'exit_in_progress',      label: 'Exit In Progress',         icon: 'ri-logout-box-r-line',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)' },
-  { key: 'total_exited',          label: 'Total Exited Employees',   icon: 'ri-logout-circle-line',   gradient: 'linear-gradient(135deg,#dc3545,#f06548)' },
+  // `accent` is the dominant brand colour for each card — fed into the
+  // dark-mode `--card-accent` CSS variable so the panel can render its
+  // own tinted glow + accent-coloured shadow (same recipe as the Plan
+  // cards). Light mode ignores it and just uses the gradient strip.
+  { key: 'total',                 label: 'Total Employees',          icon: 'ri-team-line',            gradient: 'linear-gradient(135deg,#405189,#6691e7)', accent: '#6691e7' },
+  { key: 'active',                label: 'Active Employees',         icon: 'ri-user-follow-fill',     gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)', accent: '#0ab39c' },
+  { key: 'disabled',              label: 'Disabled Employees',       icon: 'ri-user-unfollow-fill',   gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)', accent: '#878a99' },
+  { key: 'on_leave',              label: 'On Leave Employees',       icon: 'ri-calendar-event-line',  gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', accent: '#f7b84b' },
+  { key: 'onboarding_completed',  label: 'Onboarding Completed',     icon: 'ri-medal-fill',           gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)', accent: '#299cdb' },
+  { key: 'new_joiners',           label: 'New Joiners',              icon: 'ri-user-add-fill',        gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', accent: '#7c5cfc' },
+  { key: 'probation_in_progress', label: 'Probation In Progress',    icon: 'ri-shield-flash-line',    gradient: 'linear-gradient(135deg,#0ea5e9,#38bdf8)', accent: '#0ea5e9' },
+  { key: 'probation_completed',   label: 'Probation Completed',      icon: 'ri-shield-check-fill',    gradient: 'linear-gradient(135deg,#10b981,#34d399)', accent: '#10b981' },
+  { key: 'exit_in_progress',      label: 'Exit In Progress',         icon: 'ri-logout-box-r-line',    gradient: 'linear-gradient(135deg,#f06548,#f4907b)', accent: '#f06548' },
+  { key: 'total_exited',          label: 'Total Exited Employees',   icon: 'ri-logout-circle-line',   gradient: 'linear-gradient(135deg,#dc3545,#f06548)', accent: '#dc3545' },
 ] as const;
 
 type ExpiryDays = 3 | 7 | 15;
@@ -2220,13 +2224,27 @@ export default function HrEmployees() {
           overflow: hidden;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card {
-          /* Brighten the surface a touch so the cards sit above the page
-             background rather than blending into it. */
-          background: #232f40 !important;
-          border-color: rgba(255,255,255,0.10) !important;
+          /* Same recipe as the Plan cards in dark mode — fresh deep
+             black with a crisp accent-tinted glow. Avoids the smoky
+             "fog" look the previous radial-on-slate produced. The
+             --card-accent variable is set per-card inline so each
+             tile gets its own accent shadow + faint accent wash. */
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 18%),
+            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 14%, transparent) 0%, transparent 38%),
+            #0f1216 !important;
+          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 40%, transparent) !important;
+          color: rgba(255, 255, 255, 0.96);
           box-shadow:
-            0 8px 20px -4px rgba(0, 0, 0, 0.55),
-            0 2px 6px rgba(0, 0, 0, 0.35) !important;
+            inset 0 1px 0 0 rgba(255, 255, 255, 0.10),
+            0 4px 10px rgba(0, 0, 0, 0.50),
+            0 14px 32px -10px color-mix(in srgb, var(--card-accent, #7c5cfc) 45%, transparent) !important;
+        }
+        /* Top ribbon — bump to 4px in dark mode so the accent stripe
+           reads as a clean lit edge against the deep black surface
+           (no drop-shadow filter — that's what made it look hazy). */
+        [data-bs-theme="dark"] .hr-emp-kpi-card > div:first-child {
+          height: 4px !important;
         }
         /* Inline styles on the JSX set these to var(--vz-secondary-color)
            and var(--vz-heading-color) — which are barely visible on the
@@ -2239,8 +2257,14 @@ export default function HrEmployees() {
           color: #f8fafc !important;
         }
         [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
-          background: #2a374b !important;
-          border-color: rgba(124, 92, 252, 0.55) !important;
+          /* Keep the layered black surface — only deepen the accent
+             tint so the panel reads as "leaning in" on hover instead
+             of flipping to a different colour entirely. */
+          background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 18%),
+            linear-gradient(180deg, color-mix(in srgb, var(--card-accent, #7c5cfc) 22%, transparent) 0%, transparent 42%),
+            #0f1216 !important;
+          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 70%, transparent) !important;
         }
         /* Page-level text legibility in dark mode — the page subtitle and
            any other text-muted body copy under this surface default to a
@@ -2267,6 +2291,49 @@ export default function HrEmployees() {
         }
         [data-bs-theme="dark"] .hr-employees-surface .table tbody td {
           border-bottom-color: rgba(255,255,255,0.06);
+        }
+
+        /* ── Row pills — premium dark-mode treatment ──────────────────
+           In light mode the role/onboarding pills use pastel
+           backgrounds that look great. In dark mode those same pastels
+           wash out into a dull grey, so each pill loses identity. The
+           rules below convert every row pill in dark mode to a glassy
+           translucent accent + a bright tinted text — same recipe as
+           the EMP ID badge that already reads as the most premium chip
+           on the row. Inline style props from the JSX are beaten with
+           !important because the JSX sets background and color per row. */
+        [data-bs-theme="dark"] .hr-emp-id-pill {
+          background: rgba(124, 92, 252, 0.22) !important;
+          color: #c4b5fd !important;
+          box-shadow: inset 0 0 0 1px rgba(124, 92, 252, 0.35);
+        }
+        /* Primary role + first ancillary chip — share a unified glassy
+           violet look so the table chips all read as one family with
+           EMP ID. (Per-role colour tinting still happens in light mode
+           via the inline styles; this override only kicks in on dark.) */
+        [data-bs-theme="dark"] .hr-emp-row-pill {
+          background: rgba(124, 92, 252, 0.18) !important;
+          color: #c4b5fd !important;
+          box-shadow: inset 0 0 0 1px rgba(124, 92, 252, 0.28);
+        }
+        /* Onboarding pill keeps its per-status accent in dark mode
+           (Completed = green, In Progress = amber, Pending = grey) but
+           with translucent backgrounds + brighter text instead of the
+           washed-out pastels. data-status drives the colour. */
+        [data-bs-theme="dark"] .hr-emp-onboarding-pill[data-status="Completed"] {
+          background: rgba(16, 185, 129, 0.18) !important;
+          color: #6ee7b7 !important;
+          box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.30);
+        }
+        [data-bs-theme="dark"] .hr-emp-onboarding-pill[data-status="In Progress"] {
+          background: rgba(245, 158, 11, 0.18) !important;
+          color: #fcd34d !important;
+          box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.30);
+        }
+        [data-bs-theme="dark"] .hr-emp-onboarding-pill[data-status="Pending"] {
+          background: rgba(148, 163, 184, 0.18) !important;
+          color: #cbd5e1 !important;
+          box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.30);
         }
         /* Action-button icons — the ActionBtn JSX uses inline var(--vz-secondary-color)
            which is too dim against the dark cell. Bump to a brighter slate. */
@@ -2492,6 +2559,10 @@ export default function HrEmployees() {
                         position: 'relative',
                         overflow: 'hidden',
                         height: '100%',
+                        // Per-card accent — the dark-mode rule below uses
+                        // this variable to mix the tinted shadow + faint
+                        // accent wash on the panel surface.
+                        ['--card-accent' as any]: k.accent,
                       }}
                     >
                       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
@@ -2693,7 +2764,7 @@ export default function HrEmployees() {
                             </td>
                             <td>
                               <span
-                                className="d-inline-flex align-items-center fw-bold font-monospace"
+                                className="d-inline-flex align-items-center fw-bold font-monospace hr-emp-id-pill"
                                 style={{
                                   fontSize: 12,
                                   padding: '4px 10px',
@@ -2718,7 +2789,7 @@ export default function HrEmployees() {
                             </td>
                             <td>
                               <span
-                                className="d-inline-flex align-items-center fw-semibold"
+                                className="d-inline-flex align-items-center fw-semibold hr-emp-row-pill"
                                 style={{
                                   fontSize: 11,
                                   padding: '4px 10px',
@@ -2813,7 +2884,8 @@ export default function HrEmployees() {
                                 const ob = ONBOARDING_TONES[e.onboarding];
                                 return (
                                   <span
-                                    className="rounded-pill fw-semibold d-inline-flex align-items-center gap-1"
+                                    className="rounded-pill fw-semibold d-inline-flex align-items-center gap-1 hr-emp-row-pill hr-emp-onboarding-pill"
+                                    data-status={e.onboarding}
                                     style={{
                                       background: ob.bg,
                                       color: ob.fg,
@@ -5602,7 +5674,7 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
     <>
       <span className="d-inline-flex align-items-center gap-1">
         <span
-          className="d-inline-flex align-items-center fw-semibold"
+          className="d-inline-flex align-items-center fw-semibold hr-emp-row-pill"
           style={{
             fontSize: 11,
             padding: '4px 10px',
