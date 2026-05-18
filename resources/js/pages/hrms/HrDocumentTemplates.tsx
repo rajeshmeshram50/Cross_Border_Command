@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import '../../../css/recruitment.css';
@@ -395,11 +396,13 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primar
   };
   const c = palette[tone];
   return (
-    <button type="button" onClick={onClick} title={title}
-      className={`dtm-act-btn dtm-act-${tone}`}
-      style={{ width: 30, height: 30, borderRadius: 8, border: 0, background: c.bg, color: c.fg, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-      <i className={icon} />
-    </button>
+    <Tooltip label={title}>
+      <button type="button" onClick={onClick} aria-label={title}
+        className={`dtm-act-btn dtm-act-${tone}`}
+        style={{ width: 30, height: 30, borderRadius: 8, border: 0, background: c.bg, color: c.fg, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <i className={icon} />
+      </button>
+    </Tooltip>
   );
 }
 

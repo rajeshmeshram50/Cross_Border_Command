@@ -1,6 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
+<<<<<<< HEAD
 import { useAuth } from '../../contexts/AuthContext';
+=======
+import Tooltip from '../../components/ui/Tooltip';
+>>>>>>> cbde0625864e6e411a1aa9ed113266185ee80e0f
 import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -274,11 +278,23 @@ export default function SalesCustomers() {
                     <td className="ta-c"><span className="smc-cons">{c.consignees}</span></td>
                     <td className="ta-c">
                       <div className="smc-actions">
+<<<<<<< HEAD
                         {canEdit && (
                           <button title="Edit Customer" className="smc-act smc-act-edit" onClick={() => { setEditing(c); setAddOpen(true); }}><IconEdit /></button>
                         )}
                         <button title="Map Consignee" className="smc-act smc-act-map"  onClick={() => soon('Map Consignee')}><IconUsersSm /></button>
                         <button title="Customer Evidence Vault" className="smc-act smc-act-vault" onClick={() => soon('Evidence Vault')}><IconFile /></button>
+=======
+                        <Tooltip label="Edit Customer">
+                          <button aria-label="Edit Customer" className="smc-act smc-act-edit" onClick={() => { setEditing(c); setAddOpen(true); }}><IconEdit /></button>
+                        </Tooltip>
+                        <Tooltip label="Map Consignee">
+                          <button aria-label="Map Consignee" className="smc-act smc-act-map"  onClick={() => soon('Map Consignee')}><IconUsersSm /></button>
+                        </Tooltip>
+                        <Tooltip label="Customer Evidence Vault">
+                          <button aria-label="Customer Evidence Vault" className="smc-act smc-act-vault" onClick={() => soon('Evidence Vault')}><IconFile /></button>
+                        </Tooltip>
+>>>>>>> cbde0625864e6e411a1aa9ed113266185ee80e0f
                       </div>
                     </td>
                   </tr>
