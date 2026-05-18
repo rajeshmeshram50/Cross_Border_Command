@@ -1211,7 +1211,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiri
   };
 
   return (
-    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-form-modal rec-form-modal-navy" contentClassName="rec-form-content border-0" backdrop="static" keyboard={false}>
+    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-form-modal rec-form-modal-navy" backdropClassName="rec-modal-backdrop" contentClassName="rec-form-content border-0" backdrop="static" keyboard={false} zIndex={2100}>
       <ModalBody className="p-0">
         {/* Header — dark navy gradient (matches the Assign Assets reference) */}
         <div className="rec-form-header">
@@ -1592,7 +1592,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateR
   // Recruitment. Bring them back if approve / reject / send-back UI returns.
 
   return (
-    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-req-modal" contentClassName="rec-req-content border-0" backdrop="static" keyboard={false}>
+    <Modal isOpen={isOpen} toggle={onClose} centered modalClassName="rec-req-modal" backdropClassName="rec-modal-backdrop" contentClassName="rec-req-content border-0" backdrop="static" keyboard={false} zIndex={2100}>
       <ModalBody className="p-0">
         {/* Header */}
         <div className="rec-req-header">
