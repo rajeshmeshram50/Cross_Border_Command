@@ -716,7 +716,9 @@ export default function HrAttendance() {
 
                   <div className="att-emplist-meta">
                     <span>{filteredEmployees.length} of {employees.length} employees</span>
-                    <button type="button" className="att-emplist-sort"><i className="ri-arrow-up-down-line" />Sort</button>
+                    {/* Sort button removed per request — no client-side sort
+                        was wired up to it anyway, so this only drops the
+                        non-functional control. */}
                   </div>
 
                   <div className="att-emplist-scroll">

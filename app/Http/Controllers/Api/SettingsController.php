@@ -96,6 +96,22 @@ class SettingsController extends Controller
         foreach (array_keys(self::RULES) as $sec) {
             if (!isset($out[$sec])) $out[$sec] = (object)[];
         }
+
+        // Enrich the appearance section with resolved URLs alongside the
+        // raw disk paths so the SPA doesn't have to guess how
+        // logo_path / favicon_path turn into something a <img src> /
+        // <link rel=icon> can load. file_url() handles cloud disks
+        // (Azure / S3) returning absolute URLs and local disks
+        // returning /storage/... — the frontend was previously
+        // hand-rolling that resolution and breaking on cloud-backed
+        // deployments.
+        if (isset($out['appearance']) && is_array($out['appearance'])) {
+            $logoPath    = $out['appearance']['logo_path']    ?? null;
+            $faviconPath = $out['appearance']['favicon_path'] ?? null;
+            $out['appearance']['logo_url']    = $logoPath    ? file_url($logoPath)    : null;
+            $out['appearance']['favicon_url'] = $faviconPath ? file_url($faviconPath) : null;
+        }
+
         return response()->json($out);
     }
 
@@ -163,6 +179,13 @@ class SettingsController extends Controller
         $merged = array_merge($existing, [$field => $path]);
         PlatformSetting::setSection('appearance', $merged, $request->user()->id);
         Settings::bust();
+
+        // Echo the resolved URLs alongside the raw paths so the
+        // optimistic state-patch on the SPA side (patch('appearance',
+        // res.data.value)) carries everything needed to render the new
+        // asset immediately — no second GET needed.
+        $merged['logo_url']    = !empty($merged['logo_path'])    ? file_url($merged['logo_path'])    : null;
+        $merged['favicon_url'] = !empty($merged['favicon_path']) ? file_url($merged['favicon_path']) : null;
 
         return response()->json([
             'message' => ucfirst($kind) . ' uploaded',

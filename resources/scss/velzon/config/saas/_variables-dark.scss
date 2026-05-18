@@ -122,13 +122,19 @@ $topbar-search-color-dark:                                          $white;
 $page-title-border-dark:                                            none;
 $page-title-box-shadow-dark:                                        0 1px 2px rgba(56,65,74,0.15);
 
-// Topbar - dark
-$dark-header-bg-dark:                                               $primary;
-$dark-header-border-dark:                                           $primary;
+// Topbar - dark.
+// Velzon's default ships these as `$primary` (the brand violet/blue),
+// which made the "Dark" topbar render as a bright purple bar in dark
+// mode — visually clashes with the rest of the slate dark theme. The
+// values below switch to a true dark-slate palette that matches the
+// dashboard / card surfaces, so picking "Topbar: Dark" gives a clean
+// near-black header instead of a coloured one.
+$dark-header-bg-dark:                                               #1c2531;
+$dark-header-border-dark:                                           rgba($white, .06);
 $dark-header-item-color-dark:                                       rgba($white, .85);
-$dark-header-item-bg-dark:                                          #7399e5;
-$dark-header-item-sub-color-dark:                                   rgba($white, .6); 
-$dark-topbar-user-bg-dark:                                          lighten($primary, 3%);
+$dark-header-item-bg-dark:                                          rgba($white, .06);
+$dark-header-item-sub-color-dark:                                   rgba($white, .6);
+$dark-topbar-user-bg-dark:                                          #232f40;
 $dark-topbar-search-bg-dark:                                        rgba($white, .05);
 $dark-topbar-search-color-dark:                                     $white;
 

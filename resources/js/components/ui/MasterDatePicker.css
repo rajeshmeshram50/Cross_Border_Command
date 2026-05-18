@@ -147,29 +147,51 @@
     font-size: 12px;
     color: var(--vz-heading-color, var(--vz-body-color));
   }
-  /* Title button — clickable when drilling up (days → months → years). */
+  /* Title button — clickable when drilling up (days → months → years).
+     Previous styling was too subtle: a transparent box with a tiny
+     chevron meant most users didn't realize "May 2026" / "2026" were
+     clickable. The new style gives the title a soft indigo pill with
+     a clear background tint so the affordance reads as a button at
+     a glance, not a static label. */
   .master-datepicker-title-btn {
     background: transparent;
-    border: none;
-    padding: 4px 8px;
-    border-radius: 6px;
+    border: 1px solid transparent;
+    padding: 5px 12px;
+    border-radius: 999px;
     font-weight: 700;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--vz-heading-color, var(--vz-body-color));
     display: inline-flex;
     align-items: center;
+    gap: 4px;
     cursor: default;
-    transition: background .15s ease, color .15s ease;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
   }
   .master-datepicker-title-btn.is-clickable {
     cursor: pointer;
+    background: rgba(99,102,241,0.08);
+    border-color: rgba(99,102,241,0.18);
+    color: #4f46e5;
   }
   .master-datepicker-title-btn.is-clickable:hover {
-    background: rgba(99,102,241,0.10);
-    color: #6366f1;
+    background: rgba(99,102,241,0.18);
+    border-color: rgba(99,102,241,0.40);
+    color: #4338ca;
+  }
+  [data-bs-theme="dark"] .master-datepicker-title-btn.is-clickable {
+    background: rgba(124,92,252,0.18);
+    border-color: rgba(124,92,252,0.35);
+    color: #c4b5fd;
+  }
+  [data-bs-theme="dark"] .master-datepicker-title-btn.is-clickable:hover {
+    background: rgba(124,92,252,0.28);
+    border-color: rgba(124,92,252,0.55);
+    color: #e9e3ff;
   }
   .master-datepicker-title-btn:disabled {
     cursor: default;
+    background: transparent;
+    border-color: transparent;
   }
   /* Month / year cells — same visual language as the day cells but a touch
      larger (4-col grid instead of 7-col), so labels like "January" or 4-digit
