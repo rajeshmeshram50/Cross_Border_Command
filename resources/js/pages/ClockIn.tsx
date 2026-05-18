@@ -13,6 +13,11 @@ interface AttendancePunch {
   label: string;
   method: 'face' | 'manual' | 'auto';
   match_distance: number | null;
+  // Geo captured at the moment of the punch (sent by SPA on
+  // /attendance/face/clock-in and clock-out). Optional — pre-existing
+  // punches from before geo capture shipped will not have these.
+  lat?: number | null;
+  lng?: number | null;
 }
 
 interface AttendanceRecord {
@@ -61,6 +66,9 @@ const fmtHM    = (secs: number) => {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 };
 
+type GeoStatus = 'idle' | 'requesting' | 'granted' | 'denied' | 'unavailable' | 'timeout';
+type GeoFix = { lat: number; lng: number; accuracy: number; capturedAt: number; address?: string };
+
 export default function ClockIn() {
   const { user } = useAuth();
   const toast = useToast();
@@ -75,6 +83,11 @@ export default function ClockIn() {
   // Pick which label the next punch will carry. Defaults sensibly per
   // direction; the user can override before tapping the camera.
   const [pickedLabel, setPickedLabel] = useState<string>('');
+
+  // Live geolocation captured on mount + refreshed every 30s. Shown to the
+  // employee so they can see EXACTLY what gets stamped on their punch.
+  const [geoStatus, setGeoStatus] = useState<GeoStatus>('idle');
+  const [geoFix, setGeoFix] = useState<GeoFix | null>(null);
 
   const hasLinkedEmployee = !!user?.employee_id;
 
@@ -119,25 +132,82 @@ export default function ClockIn() {
     }
   }, [today?.next_direction, today?.record?.punches_count]);
 
-  const tryGeo = (): Promise<{ lat: number; lng: number } | null> => new Promise(resolve => {
-    if (!navigator.geolocation) return resolve(null);
+  // Probe geolocation and update the visible status. Called on mount and
+  // refreshed periodically so the displayed coords are always current.
+  const refreshGeo = useCallback(() => {
+    if (!navigator.geolocation) { setGeoStatus('unavailable'); return; }
+    setGeoStatus('requesting');
     navigator.geolocation.getCurrentPosition(
-      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => resolve(null),
-      { timeout: 4000, maximumAge: 60_000 },
+      (pos) => {
+        const fix: GeoFix = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? 0,
+          capturedAt: Date.now(),
+        };
+        setGeoFix(fix);
+        setGeoStatus('granted');
+        // Best-effort reverse geocode via BigDataCloud (free, no key).
+        // If it fails or is blocked, we just keep showing raw coords.
+        fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${fix.lat}&longitude=${fix.lng}&localityLanguage=en`)
+          .then(r => r.ok ? r.json() : null)
+          .then((data: any) => {
+            if (!data) return;
+            const parts = [data.locality, data.principalSubdivision, data.countryName].filter(Boolean);
+            const address = parts.join(', ');
+            if (address) setGeoFix(prev => prev && prev.capturedAt === fix.capturedAt ? { ...prev, address } : prev);
+          })
+          .catch(() => {/* silent — coords-only fallback */});
+      },
+      (err) => {
+        if (err.code === err.PERMISSION_DENIED) setGeoStatus('denied');
+        else if (err.code === err.TIMEOUT) setGeoStatus('timeout');
+        else setGeoStatus('unavailable');
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30_000 },
     );
-  });
+  }, []);
+
+  // Kick off location capture on mount and refresh every 30s. Aggressive
+  // refresh means the punch always stamps a fresh-ish fix without having
+  // to wait on getCurrentPosition() at click time.
+  useEffect(() => {
+    refreshGeo();
+    const id = setInterval(refreshGeo, 30_000);
+    return () => clearInterval(id);
+  }, [refreshGeo]);
+
+  // Snapshot of the current best coords for the punch payload. Returns the
+  // cached fix if it's <60s old, otherwise asks the browser one more time
+  // (with a short timeout — the camera capture has already given us a few
+  // seconds, and we don't want to block the punch indefinitely).
+  const captureGeoForPunch = (): Promise<{ lat: number; lng: number } | null> => {
+    if (geoFix && Date.now() - geoFix.capturedAt < 60_000) {
+      return Promise.resolve({ lat: geoFix.lat, lng: geoFix.lng });
+    }
+    return new Promise(resolve => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve(null),
+        { timeout: 4000, maximumAge: 60_000 },
+      );
+    });
+  };
 
   const doPunch = useCallback(async (kind: 'in' | 'out', result: FaceCaptureResult) => {
     setWorking(true);
     try {
-      const coords = await tryGeo();
+      const coords = await captureGeoForPunch();
       const path = kind === 'in' ? '/attendance/face/clock-in' : '/attendance/face/clock-out';
       const body: any = { descriptor: result.descriptor, label: pickedLabel };
       if (coords) { body.lat = coords.lat; body.lng = coords.lng; }
       const r = await api.post(path, body);
+      const locNote = coords
+        ? ` · 📍 ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`
+        : ' · location unavailable';
       toastRef.current.success(`${pickedLabel} recorded`,
-        `Face match distance ${(r.data?.distance ?? 0).toFixed(3)}.`);
+        `Face match distance ${(r.data?.distance ?? 0).toFixed(3)}.${locNote}`);
       await fetchToday();
     } catch (err: any) {
       const data = err?.response?.data;
@@ -152,7 +222,7 @@ export default function ClockIn() {
     } finally {
       setWorking(false);
     }
-  }, [fetchToday, pickedLabel]);
+  }, [fetchToday, pickedLabel, geoFix]);
 
   // All hooks must run on every render in the same order, so compute the
   // derived values BEFORE any early returns below.
@@ -310,6 +380,10 @@ export default function ClockIn() {
                       Matching your face against the enrolled record…
                     </div>
                   )}
+
+                  {/* Live location capture card — shows the employee what
+                      coordinates will be stamped on this punch. */}
+                  <LocationCaptureCard status={geoStatus} fix={geoFix} onRefresh={refreshGeo} />
                 </>
               )}
             </CardBody>
@@ -432,6 +506,27 @@ export default function ClockIn() {
                         >
                           {p.method}
                         </div>
+                        {p.lat != null && p.lng != null && (
+                          <a
+                            href={`https://www.google.com/maps?q=${p.lat},${p.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="d-inline-flex align-items-center gap-1 mt-1"
+                            title={`Open ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)} on Google Maps`}
+                            style={{
+                              fontSize: 10, fontWeight: 700,
+                              padding: '2px 8px', borderRadius: 999,
+                              background: 'rgba(16,185,129,0.12)',
+                              color: '#047857',
+                              border: '1px solid rgba(16,185,129,0.35)',
+                              textDecoration: 'none',
+                              fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                            }}
+                          >
+                            <i className="ri-map-pin-2-line" />
+                            {p.lat.toFixed(3)}, {p.lng.toFixed(3)}
+                          </a>
+                        )}
                       </div>
                     );
                   })}
@@ -448,5 +543,121 @@ export default function ClockIn() {
         onRegistered={fetchToday}
       />
     </>
+  );
+}
+
+/* ─── Live location capture card — sits under the webcam so the employee
+   can see exactly what coordinates will be stamped on their punch. ─── */
+function LocationCaptureCard(props: { status: GeoStatus; fix: GeoFix | null; onRefresh: () => void }) {
+  const { status, fix, onRefresh } = props;
+
+  const palette = (() => {
+    switch (status) {
+      case 'granted':     return { bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.40)', fg: '#047857', icon: 'ri-map-pin-2-line',         dot: '#10b981' };
+      case 'requesting':  return { bg: 'rgba(99,102,241,0.10)', border: 'rgba(99,102,241,0.40)', fg: '#4338ca', icon: 'ri-loader-4-line',          dot: '#6366f1' };
+      case 'denied':      return { bg: 'rgba(244,63,94,0.10)',  border: 'rgba(244,63,94,0.40)',  fg: '#9f1239', icon: 'ri-map-pin-user-line',      dot: '#f43f5e' };
+      case 'unavailable': return { bg: 'rgba(100,116,139,0.10)',border: 'rgba(100,116,139,0.40)',fg: '#475569', icon: 'ri-map-pin-off-line',       dot: '#64748b' };
+      case 'timeout':     return { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.40)', fg: '#a16207', icon: 'ri-time-line',              dot: '#f59e0b' };
+      default:            return { bg: 'rgba(100,116,139,0.10)',border: 'rgba(100,116,139,0.40)',fg: '#475569', icon: 'ri-map-pin-line',           dot: '#64748b' };
+    }
+  })();
+
+  const headline = (() => {
+    switch (status) {
+      case 'granted':     return 'Location captured';
+      case 'requesting':  return 'Capturing location…';
+      case 'denied':      return 'Location permission denied';
+      case 'unavailable': return 'Location not available on this device';
+      case 'timeout':     return 'Location timed out — using last known fix';
+      default:            return 'Location: not started';
+    }
+  })();
+
+  return (
+    <div
+      className="mt-3 p-3 d-flex align-items-center gap-3 flex-wrap"
+      style={{
+        background: palette.bg,
+        border: `1.5px solid ${palette.border}`,
+        borderRadius: 12,
+      }}
+    >
+      <div
+        className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+        style={{
+          width: 40, height: 40, borderRadius: 10,
+          background: palette.dot, color: '#fff', fontSize: 18,
+        }}
+      >
+        <i className={palette.icon} style={status === 'requesting' ? { animation: 'spin 1.2s linear infinite' } : undefined} />
+      </div>
+
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: palette.fg }}>
+          {headline}
+        </div>
+        {fix ? (
+          <>
+            <div
+              className="mt-1"
+              style={{ fontSize: 12, color: '#1e293b', fontWeight: 600, fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}
+            >
+              <i className="ri-focus-3-line me-1" />
+              {fix.lat.toFixed(5)}, {fix.lng.toFixed(5)}
+              {fix.accuracy ? <span style={{ color: '#64748b', fontWeight: 500, marginLeft: 8 }}>±{Math.round(fix.accuracy)}m</span> : null}
+            </div>
+            {fix.address && (
+              <div className="mt-1" style={{ fontSize: 11.5, color: palette.fg, fontWeight: 600 }}>
+                <i className="ri-building-2-line me-1" />
+                {fix.address}
+              </div>
+            )}
+          </>
+        ) : status === 'denied' ? (
+          <div className="mt-1" style={{ fontSize: 11.5, color: '#64748b' }}>
+            Your browser blocked location access. Open the lock icon next to the URL → Site settings → allow Location.
+          </div>
+        ) : status === 'unavailable' ? (
+          <div className="mt-1" style={{ fontSize: 11.5, color: '#64748b' }}>
+            Geolocation isn't supported here. The punch will still record but won't include coordinates.
+          </div>
+        ) : (
+          <div className="mt-1" style={{ fontSize: 11.5, color: '#64748b' }}>
+            Waiting for a GPS / Wi-Fi fix from your device…
+          </div>
+        )}
+      </div>
+
+      <div className="d-flex align-items-center gap-2 flex-shrink-0">
+        {fix && (
+          <a
+            href={`https://www.google.com/maps?q=${fix.lat},${fix.lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-sm btn-light"
+            style={{ fontSize: 11.5, fontWeight: 700 }}
+            title="Open on Google Maps"
+          >
+            <i className="ri-external-link-line me-1" />
+            View on map
+          </a>
+        )}
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={onRefresh}
+          style={{
+            background: palette.dot, color: '#fff',
+            fontSize: 11.5, fontWeight: 700, border: 'none',
+          }}
+          title="Re-capture location"
+        >
+          <i className="ri-refresh-line me-1" />
+          Refresh
+        </button>
+      </div>
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
   );
 }
