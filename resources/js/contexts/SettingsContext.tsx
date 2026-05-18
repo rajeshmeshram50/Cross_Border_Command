@@ -34,6 +34,7 @@ export interface PlatformSettings {
   appearance: {
     primary_color: string; secondary_color: string; dark_default: boolean;
     logo_path: string | null; favicon_path: string | null;
+    logo_url?: string | null; favicon_url?: string | null;
   };
   privacy: {
     encrypt: boolean; actLog: boolean; retention: boolean;
@@ -139,17 +140,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   /* ── DEPENDENCY 2 — favicon ── */
   useEffect(() => {
-    const path = settings.appearance.favicon_path;
-    if (!path) return;
-    // Use the shared resolver instead of hand-rolled `/storage/${path}`.
-    // The previous approach broke when:
-    //   - the path was already a full URL (CDN / Azure) — got prefixed
-    //     with /storage/ and produced /storage/https:... → 404
-    //   - the path already began with "storage/" — turned into
-    //     /storage/storage/... → 404
-    //   - the SPA was deployed under a base path different from API
-    //     origin — the leading slash anchored to the wrong host
-    const url = resolveFileUrl(path);
+    // Prefer the server-resolved `favicon_url` when present — the
+    // backend's file_url() correctly handles cloud-backed disks
+    // (Azure / S3) and returns a fully-qualified absolute URL.
+    // resolveFileUrl is the local fallback for older settings rows
+    // that pre-date the URL-enrichment in SettingsController::index.
+    const url = settings.appearance.favicon_url
+      || (settings.appearance.favicon_path ? resolveFileUrl(settings.appearance.favicon_path) : '');
     if (!url) return;
     let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null;
     if (!link) {
@@ -158,7 +155,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       document.head.appendChild(link);
     }
     link.href = url;
-  }, [settings.appearance.favicon_path]);
+  }, [settings.appearance.favicon_url, settings.appearance.favicon_path]);
 
   /* ── DEPENDENCY 3 — platform default theme colors ──
    *  Apply as CSS root vars. The AuthContext theme effect runs AFTER
