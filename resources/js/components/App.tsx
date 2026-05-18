@@ -46,6 +46,8 @@ import ClientSettings from '../pages/client/ClientSettings';
 import MasterDashboard from '../pages/MasterDashboard';
 import MasterPage from '../pages/master/MasterPage';
 import SalesCustomers from '../pages/sales/SalesCustomers';
+import SalesConsignee from '../pages/sales/SalesConsignee';
+import SalesLeadAckMaster from '../pages/sales/SalesLeadAckMaster';
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
@@ -124,10 +126,12 @@ const getPagePath = (page: string, data?: any): string => {
       // Master leaf slugs come as `master.xxx` — map to `/master/xxx`
       if (page.startsWith('master.')) return `/master/${page.slice('master.'.length)}`;
       if (page === 'master') return '/master';
-      // Sales Matrix leaf slugs come as `sales.xxx` — only `sales.customers`
-      // is currently wired; other sales.* leaves fall through to /dashboard
-      // until their pages are built.
-      if (page === 'sales.customers') return '/sales/customers';
+      // Sales Matrix leaf slugs come as `sales.xxx`. Wired: customers,
+      // consignee, lead_ack_master. Other sales.* leaves fall through to
+      // /dashboard until their pages are built.
+      if (page === 'sales.customers')       return '/sales/customers';
+      if (page === 'sales.consignee')       return '/sales/consignee';
+      if (page === 'sales.lead_ack_master') return '/sales/lead-ack-master';
       return '/dashboard';
   }
 };
@@ -454,6 +458,8 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/master" element={<MasterDashboard />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/sales/customers" element={<SalesCustomers />} />
+              <Route path="/sales/consignee" element={<SalesConsignee />} />
+              <Route path="/sales/lead-ack-master" element={<SalesLeadAckMaster />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/overview" element={<HrOverview />} />
               <Route path="/hr/employees" element={<HrEmployees />} />

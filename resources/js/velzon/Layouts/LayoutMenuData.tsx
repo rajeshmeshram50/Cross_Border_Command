@@ -92,8 +92,10 @@ const hrLeafLink = (leafId: string): string => {
 // now since /sales itself isn't built yet).
 const salesLeafLink = (leafId: string): string => {
   switch (leafId) {
-    case "sales.customers": return "/sales/customers";
-    default:                return "/sales";
+    case "sales.customers":       return "/sales/customers";
+    case "sales.consignee":       return "/sales/consignee";
+    case "sales.lead_ack_master": return "/sales/lead-ack-master";
+    default:                      return "/sales";
   }
 };
 

@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\HrDocumentSignatureController;
 use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrGeneratedDocumentController;
 use App\Http\Controllers\Api\HrOverviewController;
+use App\Http\Controllers\Api\LeadAckReasonController;
 use App\Http\Controllers\Api\LeavePlanController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\MasterController;
@@ -91,6 +92,14 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // when the customers table migration lands.
     Route::apiResource('customers', CustomerController::class)
         ->only(['index', 'show', 'store', 'update', 'destroy']);
+
+    // Sales Matrix → Lead Acknowledgement Master. Three opportunity buckets
+    // (qualified / disqualified / clarity_pending) — controller returns them
+    // grouped so the page loads in one round trip. Tenant-scoped by client_id.
+    Route::get   ('/sales/lead-ack-reasons',       [LeadAckReasonController::class, 'index']);
+    Route::post  ('/sales/lead-ack-reasons',       [LeadAckReasonController::class, 'store']);
+    Route::put   ('/sales/lead-ack-reasons/{id}',  [LeadAckReasonController::class, 'update']);
+    Route::delete('/sales/lead-ack-reasons/{id}',  [LeadAckReasonController::class, 'destroy']);
 
     // Organization Types (master data — super admin manages; all auth users can list)
     Route::apiResource('organization-types', OrganizationTypeController::class)
