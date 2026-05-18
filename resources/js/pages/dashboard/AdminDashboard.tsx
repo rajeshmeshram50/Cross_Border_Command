@@ -7,6 +7,7 @@ import {
 import api from '../../api';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCompact } from '../../utils/formatNumber';
+import { useChartTheme } from '../../hooks/useChartTheme';
 // Reuse the recruitment module's modal styling so the dashboard popups
 // match the Hiring Requests modal exactly (rec-req-* classes).
 import '../../../css/recruitment.css';
@@ -82,7 +83,7 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
   const trendColor = trend === 'up' ? '#0ab39c' : trend === 'down' ? '#f06548' : '#878a99';
   const arrow = trend === 'up' ? 'ri-arrow-up-line' : trend === 'down' ? 'ri-arrow-down-line' : 'ri-subtract-line';
   return (
-    <div className="dashboard-surface" style={{
+    <div className="dashboard-surface admin-kpi-card" style={{
       borderRadius: 16,
       padding: '20px 20px 16px',
       boxShadow: '0 2px 20px rgba(0,0,0,0.06)',
@@ -90,6 +91,7 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
       position: 'relative',
       overflow: 'hidden',
       height: '100%',
+      cursor: 'default',
     }}>
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: 3,
@@ -121,7 +123,7 @@ function KpiCard({ label, value, iconClass, color, gradient, changeText, trend =
             </div>
           )}
         </div>
-        <div style={{
+        <div className="admin-kpi-icon" style={{
           width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: gradient, flexShrink: 0,
         }}>
@@ -156,6 +158,11 @@ export default function AdminDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [openModal, setOpenModal] = useState<DetailModal>(null);
+  // Theme-aware chart palette — grid lines + tick text switch between
+  // the pale wash that suits the white card and the translucent-white
+  // wash that suits the dark surface. Recomputes when the user flips
+  // the toggle (MutationObserver watches data-bs-theme).
+  const ct = useChartTheme();
 
   useEffect(() => {
     api.get('/dashboard/admin-stats').then(res => setData(res.data))
@@ -177,6 +184,35 @@ export default function AdminDashboard() {
         /* Force white card surface in light theme; auto-flip in dark theme */
         .dashboard-surface { background: #ffffff; }
         [data-bs-theme="dark"] .dashboard-surface { background: #1c2531; }
+
+        /* KPI card hover — matches the .hr-emp-kpi-card / .myteam-kpi-tile
+           pattern from HR Employees and My Team so the whole product
+           lifts the same way: 4px translateY, richer violet shadow,
+           violet border tint, and a 1.06x scale on the icon tile. */
+        .admin-kpi-card {
+          transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+        .admin-kpi-card:hover {
+          transform: translateY(-4px);
+          box-shadow:
+            0 16px 32px -8px rgba(15, 23, 42, 0.18),
+            0 4px 10px rgba(124, 92, 252, 0.10) !important;
+          border-color: rgba(124, 92, 252, 0.45) !important;
+        }
+        [data-bs-theme="dark"] .admin-kpi-card:hover,
+        [data-layout-mode="dark"] .admin-kpi-card:hover {
+          box-shadow:
+            0 18px 36px -8px rgba(0, 0, 0, 0.65),
+            0 4px 12px rgba(124, 92, 252, 0.25) !important;
+          border-color: rgba(124, 92, 252, 0.55) !important;
+        }
+        .admin-kpi-icon {
+          transition: transform .18s ease, box-shadow .18s ease;
+        }
+        .admin-kpi-card:hover .admin-kpi-icon {
+          transform: scale(1.06);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+        }
         .ad-list-row {
           transition: background 0.18s ease, box-shadow 0.18s ease;
           cursor: pointer;
@@ -287,15 +323,27 @@ export default function AdminDashboard() {
                 <AreaChart data={data.revenue_trend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="adminRevGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#405189" stopOpacity={0.25} />
+                      <stop offset="0%"   stopColor="#405189" stopOpacity={0.45} />
+                      <stop offset="55%"  stopColor="#405189" stopOpacity={0.15} />
                       <stop offset="100%" stopColor="#405189" stopOpacity={0} />
                     </linearGradient>
+                    {/* Soft halo around the line so the curve lifts off
+                       the background — same recipe as the branch chart. */}
+                    <filter id="adminRevGlow" x="-10%" y="-30%" width="120%" height="160%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
+                      <feFlood floodColor="#405189" floodOpacity="0.4" result="flood" />
+                      <feComposite in="flood" in2="blur" operator="in" result="glow" />
+                      <feMerge>
+                        <feMergeNode in="glow" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
-                  <XAxis dataKey="short" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                  <XAxis dataKey="short" tick={{ fontSize: 11, fill: ct.axisTickMuted, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: ct.axisTickMuted }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
                   <Tooltip content={<ChartTooltip prefix="₹" />} cursor={{ stroke: 'rgba(124,92,252,0.35)', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                  <Area type="monotone" dataKey="revenue" stroke="#405189" strokeWidth={2.5} fill="url(#adminRevGrad)" dot={{ r: 4, fill: '#405189', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, fill: '#405189' }} />
+                  <Area type="monotone" dataKey="revenue" stroke="#405189" strokeWidth={2.75} fill="url(#adminRevGrad)" filter="url(#adminRevGlow)" dot={{ r: 4, fill: '#405189', strokeWidth: 2, stroke: ct.dotStroke }} activeDot={{ r: 6, fill: '#405189' }} />
                 </AreaChart>
               </ResponsiveContainer>
             </CardBody>
@@ -313,7 +361,7 @@ export default function AdminDashboard() {
             <CardBody style={{ padding: '8px 16px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={data.plan_breakdown} dataKey="count" nameKey="plan_name" cx="50%" cy="45%" innerRadius={52} outerRadius={82} paddingAngle={4}>
+                  <Pie data={data.plan_breakdown} dataKey="count" nameKey="plan_name" cx="50%" cy="45%" innerRadius={52} outerRadius={82} paddingAngle={0} stroke="none">
                     {data.plan_breakdown.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />
@@ -348,9 +396,9 @@ export default function AdminDashboard() {
                       <stop offset="100%" stopColor="#6691e7" stopOpacity={0.8} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} allowDecimals={false} width={24} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: ct.axisTickMuted, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: ct.axisTickMuted }} axisLine={false} tickLine={false} allowDecimals={false} width={24} />
                   <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(124,92,252,0.08)', radius: 6 }} />
                   <Bar dataKey="clients" fill="url(#barGrad)" radius={[6, 6, 0, 0]} barSize={22} />
                 </BarChart>

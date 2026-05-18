@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCompact } from '../../utils/formatNumber';
+import { useChartTheme } from '../../hooks/useChartTheme';
 
 const COLORS = ['#405189', '#0ab39c', '#f7b84b', '#f06548', '#299cdb', '#9b72cf'];
 
@@ -131,6 +132,7 @@ export default function ClientDashboard() {
   const { selectedBranchId } = useBranchSwitcher();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const ct = useChartTheme();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -433,15 +435,25 @@ export default function ClientDashboard() {
                 <AreaChart data={payment_trend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="clientRevGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0ab39c" stopOpacity={0.25} />
+                      <stop offset="0%"   stopColor="#0ab39c" stopOpacity={0.45} />
+                      <stop offset="55%"  stopColor="#0ab39c" stopOpacity={0.15} />
                       <stop offset="100%" stopColor="#0ab39c" stopOpacity={0} />
                     </linearGradient>
+                    <filter id="clientRevGlow" x="-10%" y="-30%" width="120%" height="160%">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="2.5" result="blur" />
+                      <feFlood floodColor="#0ab39c" floodOpacity="0.35" result="flood" />
+                      <feComposite in="flood" in2="blur" operator="in" result="glow" />
+                      <feMerge>
+                        <feMergeNode in="glow" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f3f8" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#a0aec0', fontWeight: 600 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#a0aec0' }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: ct.axisTickMuted, fontWeight: 600 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: ct.axisTickMuted }} axisLine={false} tickLine={false} width={55} tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} />
                   <Tooltip content={<ChartTooltip prefix="₹" />} cursor={{ stroke: 'rgba(10,179,156,0.4)', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                  <Area type="monotone" dataKey="amount" stroke="#0ab39c" strokeWidth={2.5} fill="url(#clientRevGrad)" dot={{ r: 4, fill: '#0ab39c', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6, fill: '#0ab39c' }} />
+                  <Area type="monotone" dataKey="amount" stroke="#0ab39c" strokeWidth={2.75} fill="url(#clientRevGrad)" filter="url(#clientRevGlow)" dot={{ r: 4, fill: '#0ab39c', strokeWidth: 2, stroke: ct.dotStroke }} activeDot={{ r: 6, fill: '#0ab39c' }} />
                 </AreaChart>
               </ResponsiveContainer>
             </CardBody>
@@ -609,10 +621,14 @@ function SuccessRing({ percent }: { percent: number }) {
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (percent / 100) * circumference;
   const color = percent >= 80 ? '#0ab39c' : percent >= 50 ? '#f7b84b' : '#f06548';
+  // Background track must read against both card surfaces — the previous
+  // #f0f3f8 vanished on the dark card, leaving the ring sitting on
+  // nothing. Theme-aware translucent slate works in both.
+  const ct = useChartTheme();
   return (
     <div className="position-relative d-inline-block" style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#f0f3f8" strokeWidth={strokeWidth} />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={ct.grid} strokeWidth={strokeWidth} />
         <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={color} strokeWidth={strokeWidth}
           strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
           style={{ transition: 'stroke-dashoffset 1s ease-out' }} />
