@@ -209,11 +209,45 @@ function EmployeePermissionsWrapper() {
   const { id } = useParams();
   const location = useLocation();
   const navigateFn = useNavigateContext().navigate;
-  // Employee row is passed via navigation state when entering from the HR
-  // employees table. If the user lands on this URL directly, the page falls
-  // back to showing just the ID.
+  // Same identifier-decode pattern as EmployeeProfileWrapper — the URL
+  // param can be an encrypted token, a numeric id, or a plain emp_code.
+  // We resolve it once via /employees/{param} so the inner page receives
+  // a stable emp_code and the linked employee row (with user_id) needed
+  // to dispatch permission saves to the right backend user.
   const stateEmp = (location.state as any)?.employee;
-  return <EmployeePermissions employeeId={String(id)} employee={stateEmp} onBack={() => navigateFn('hr-employees')} />;
+  const [empCode, setEmpCode] = useState<string | null>(
+    stateEmp?.emp_code || stateEmp?.id || null,
+  );
+  const [resolvedEmp, setResolvedEmp] = useState<any>(stateEmp || null);
+  const [resolving, setResolving] = useState<boolean>(!stateEmp);
+
+  useEffect(() => {
+    if (stateEmp || !id) return;
+    let cancelled = false;
+    setResolving(true);
+    api.get(`/employees/${encodeURIComponent(String(id))}`)
+      .then((res: any) => {
+        if (cancelled) return;
+        const e = res?.data?.employee || res?.data;
+        if (e) {
+          setEmpCode(e.emp_code || (e.id ? `EMP-${e.id}` : null));
+          setResolvedEmp(e);
+        }
+      })
+      .catch(() => { /* leave empCode null — the inner page surfaces the error */ })
+      .finally(() => { if (!cancelled) setResolving(false); });
+    return () => { cancelled = true; };
+  }, [id, stateEmp]);
+
+  if (resolving) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+        <i className="ri-loader-4-line ri-spin" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Loading permissions…</div>
+      </div>
+    );
+  }
+  return <EmployeePermissions employeeId={empCode || String(id)} employee={resolvedEmp} onBack={() => navigateFn('hr-employees')} />;
 }
 
 function EmployeeProfileWrapper() {
@@ -221,7 +255,62 @@ function EmployeeProfileWrapper() {
   const location = useLocation();
   const navigateFn = useNavigateContext().navigate;
   const stateEmp = (location.state as any)?.employee;
-  return <EmployeeProfile employeeId={String(id)} employee={stateEmp} onBack={() => navigateFn('hr-employees')} />;
+
+  // The URL param can be: (a) an encrypted token (preferred path,
+  // surfaced by Employee::encrypted_id), (b) a plain numeric DB id, or
+  // (c) a legacy emp_code like EMP-001. EmployeeProfile downstream
+  // expects an emp_code as its `employeeId` prop, so resolve the
+  // identifier via /employees/{param} — the backend's resolveIdParam
+  // accepts all three shapes and returns the canonical record.
+  //
+  // When location.state already carries the row (navigated from
+  // HrEmployees / MyTeam), skip the round-trip and use it directly so
+  // back/forward navigation stays instant.
+  const [empCode, setEmpCode] = useState<string | null>(
+    stateEmp?.emp_code || stateEmp?.id || null,
+  );
+  const [resolvedEmp, setResolvedEmp] = useState<any>(stateEmp || null);
+  const [resolving, setResolving] = useState<boolean>(!stateEmp);
+  const [resolveErr, setResolveErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (stateEmp || !id) return;
+    let cancelled = false;
+    setResolving(true);
+    api.get(`/employees/${encodeURIComponent(String(id))}`)
+      .then((res: any) => {
+        if (cancelled) return;
+        const e = res?.data?.employee || res?.data;
+        if (!e) { setResolveErr('Employee not found'); return; }
+        const code = e.emp_code || (e.id ? `EMP-${e.id}` : null);
+        setEmpCode(code);
+        setResolvedEmp(e);
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        setResolveErr(err?.response?.status === 404 ? 'Employee not found' : 'Could not load profile');
+      })
+      .finally(() => { if (!cancelled) setResolving(false); });
+    return () => { cancelled = true; };
+  }, [id, stateEmp]);
+
+  if (resolving) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+        <i className="ri-loader-4-line ri-spin" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Loading employee profile…</div>
+      </div>
+    );
+  }
+  if (resolveErr || !empCode) {
+    return (
+      <div style={{ padding: 48, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+        <i className="ri-error-warning-line" style={{ fontSize: 28, display: 'block', marginBottom: 8, color: '#ef4444' }} />
+        <div style={{ fontSize: 13, fontWeight: 600 }}>{resolveErr || 'Unable to open profile'}</div>
+      </div>
+    );
+  }
+  return <EmployeeProfile employeeId={empCode} employee={resolvedEmp} onBack={() => navigateFn('hr-employees')} />;
 }
 
 /**

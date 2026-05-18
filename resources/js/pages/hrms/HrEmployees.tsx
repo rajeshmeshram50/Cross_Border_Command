@@ -146,6 +146,10 @@ const TAX_REGIME_OPTIONS        = ['New Regime (115BAC)','Old Regime'].map(v => 
 
 interface EmployeeRow {
   id: string;
+  /** URL-safe encrypted handle for navigation. Used in profile +
+   *  permission links so the real emp_code never sits in the browser
+   *  bar. Falls back to `id` when the API hasn't populated it. */
+  encryptedId?: string | null;
   name: string;
   email: string;
   initials: string;
@@ -263,6 +267,10 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
   };
   return {
     id: e.emp_code || `EMP-${e.id}`,
+    // Opaque, URL-safe handle the SPA puts into profile/permission URLs
+    // so the address bar never displays the real emp_code. Served by
+    // Employee::getEncryptedIdAttribute on the API row.
+    encryptedId: (e as any).encrypted_id || null,
     name,
     email: e.email || '',
     initials: initialsFromName(name),
@@ -959,7 +967,10 @@ export default function HrEmployees() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiRows, location.state]);
   const openPermissions = (row: EmployeeRow) => {
-    navigate(`/hr/employees/${encodeURIComponent(row.id)}/permissions`, { state: { employee: row } });
+    // Prefer the encrypted handle (server-issued) so the address bar
+    // doesn't expose the real EMP-code. `row.id` stays as the legacy
+    // fallback for rows the API hasn't re-surfaced yet.
+    navigate(`/hr/employees/${encodeURIComponent(row.encryptedId || row.id)}/permissions`, { state: { employee: row } });
   };
 
   // Evidence Vault modal (opened by the per-row Documents/PDF icon)
@@ -2632,7 +2643,7 @@ export default function HrEmployees() {
                             // shared the same `e.id` and React rendered the
                             // newer row in BOTH active and disabled tabs).
                             key={(e as any)._dbId ?? e.id}
-                            onClick={() => navigate(`/hr/employees/${encodeURIComponent(e.id)}/profile`, { state: { employee: e } })}
+                            onClick={() => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
                             style={{ cursor: 'pointer' }}
                           >
                             <td className="ps-3 text-center fs-13 hr-emp-srno">{idx + 1}</td>
