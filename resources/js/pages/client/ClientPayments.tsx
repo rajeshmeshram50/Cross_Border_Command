@@ -53,7 +53,23 @@ export default function ClientPayments({ clientId, clientName, onBack }: Props) 
     },
     {
       header: 'Date',
-      accessorKey: 'created_at',
+      id: 'date',
+      // Sort by the SAME value the cell renders so the visible ascending
+      // order matches the user's expectation. Previously the column used
+      // `accessorKey: 'created_at'` while the cell rendered
+      // `payment_date || created_at` — sort and display could diverge,
+      // making the order look random when the user toggled.
+      accessorFn: (row: any) => {
+        const raw = row.payment_date || row.created_at;
+        const t = raw ? new Date(raw).getTime() : 0;
+        return Number.isFinite(t) ? t : 0;
+      },
+      // Numeric (epoch ms) comparator — react-table's "auto" string
+      // sort can pick the wrong direction on ISO strings of different
+      // shapes ("YYYY-MM-DD" vs "YYYY-MM-DD HH:MM:SS"). Forcing the
+      // alphanumeric/datetime sort here guarantees a deterministic
+      // chronological order.
+      sortingFn: 'basic' as any,
       cell: (info: any) => {
         const d = info.row.original.payment_date || info.row.original.created_at;
         return <span className="fs-13">{new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>;

@@ -178,25 +178,46 @@ const TableContainer = ({
           <thead className={theadClass}>
             {getHeaderGroups().map((headerGroup: any) => (
               <tr className={trClass} key={headerGroup.id}>
-                {headerGroup.headers.map((header: any) => (
-                  <th key={header.id} className={thClass}  {...{
-                    onClick: header.column.getToggleSortingHandler(),
-                  }}>
+                {headerGroup.headers.map((header: any) => {
+                  const canSort = header.column.getCanSort?.() ?? true;
+                  const sortDir = header.column.getIsSorted() as string;
+                  return (
+                  <th
+                    key={header.id}
+                    className={thClass}
+                    onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                    style={{ cursor: canSort ? 'pointer' : 'default', userSelect: 'none' }}
+                  >
                     {header.isPlaceholder ? null : (
-                      <React.Fragment>
+                      <span className="d-inline-flex align-items-center gap-1">
                         {flexRender(
                           header.column.columnDef.header,
                           header.getContext()
                         )}
-                        {{
-                          asc: ' ',
-                          desc: ' ',
-                        }
-                        [header.column.getIsSorted() as string] ?? null}
-                      </React.Fragment>
+                        {canSort && (
+                          // Render an explicit asc/desc arrow when the
+                          // column is being sorted. The previous code
+                          // mapped the state to a single space, so the
+                          // user got no visual feedback when toggling
+                          // sort — making double-clicks feel random.
+                          <i
+                            className={
+                              sortDir === 'asc'  ? 'ri-arrow-up-line'
+                              : sortDir === 'desc' ? 'ri-arrow-down-line'
+                              :                      'ri-expand-up-down-line'
+                            }
+                            style={{
+                              fontSize: 13,
+                              color: sortDir ? '#405189' : 'var(--vz-secondary-color, #9ca3af)',
+                              opacity: sortDir ? 1 : 0.55,
+                            }}
+                          />
+                        )}
+                      </span>
                     )}
                   </th>
-                ))}
+                );
+                })}
               </tr>
             ))}
           </thead>
