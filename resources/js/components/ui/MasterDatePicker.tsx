@@ -206,10 +206,15 @@ export function MasterDatePicker({
               onClick={onTitleClick}
               className={`master-datepicker-title-btn${view !== 'years' ? ' is-clickable' : ''}`}
               disabled={view === 'years'}
-              title={view === 'days' ? 'Pick month' : view === 'months' ? 'Pick year' : ''}
+              title={view === 'days' ? 'Click to pick a month or year' : view === 'months' ? 'Click to pick a year' : ''}
             >
               {titleLabel}
-              {view !== 'years' && <i className="ri-arrow-down-s-line" style={{ fontSize: 13, marginLeft: 2 }} />}
+              {view !== 'years' && (
+                // Larger, bolder chevron — the previous 13px arrow was
+                // easy to miss against the title text, so users didn't
+                // know they could click here to jump months/years.
+                <i className="ri-arrow-down-s-line" style={{ fontSize: 16, marginLeft: 2, lineHeight: 1 }} />
+              )}
             </button>
             <button type="button" onClick={next} className="master-datepicker-nav" title={view === 'days' ? 'Next month' : view === 'months' ? 'Next year' : 'Next 12 years'}>
               <i className="ri-arrow-right-s-line" style={{ fontSize: 13 }} />
