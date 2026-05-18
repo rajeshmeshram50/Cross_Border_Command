@@ -55,6 +55,7 @@ import SalesLeadDetail from '../pages/sales/SalesLeadDetail';
 import SalesEnquiries from '../pages/sales/SalesEnquiries';
 import SalesLeadsDetails from '../pages/sales/SalesLeadsDetails';
 import SalesQPI from '../pages/sales/SalesQPI';
+import SalesP2PSummary from '../pages/sales/SalesP2PSummary';
 import SalesDiagnosis from '../pages/sales/SalesDiagnosis';
 import SalesResolutionCenter from '../pages/sales/SalesResolutionCenter';
 import SalesAnalytics from '../pages/sales/SalesAnalytics';
@@ -150,6 +151,7 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'sales.enquiries')       return '/sales/enquiries';
       if (page === 'sales.leads_details')   return data?.empId ? `/sales/leads-details/${data.empId}` : '/sales/leads-details';
       if (page === 'sales.qpi')             return '/sales/qpi';
+      if (page === 'sales.p2p_summary')     return '/sales/p2p-summary';
       if (page === 'sales.diagnosis')       return '/sales/diagnosis';
       if (page === 'sales.resolution_center') return '/sales/resolution-center';
       if (page === 'sales.analytics')       return '/sales/analytics';
@@ -580,6 +582,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/leads-details" element={<SalesLeadsDetails />} />
               <Route path="/sales/leads-details/:empId" element={<SalesLeadsDetails />} />
               <Route path="/sales/qpi" element={<SalesQPI />} />
+              <Route path="/sales/p2p-summary" element={<SalesP2PSummary />} />
               <Route path="/sales/diagnosis" element={<SalesDiagnosis />} />
               <Route path="/sales/resolution-center" element={<SalesResolutionCenter />} />
               <Route path="/sales/analytics" element={<SalesAnalytics />} />
