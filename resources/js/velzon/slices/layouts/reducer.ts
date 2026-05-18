@@ -29,27 +29,49 @@ export interface LayoutState {
   sidebarVisibilitytype:  SIDEBAR_VISIBILITY_TYPES.SHOW | SIDEBAR_VISIBILITY_TYPES.HIDDEN;
 }
 
-// Pull the user's last theme choice out of localStorage so a refresh
-// doesn't snap them back to LIGHTMODE. Paired with the localStorage
-// write in thunk.ts:changeLayoutMode and the synchronous attribute
-// seeding in app.tsx (which prevents a flash before React mounts).
-const persistedLayoutMode: 'light' | 'dark' = (() => {
+// Read every persisted customizer choice so a refresh re-hydrates the
+// exact layout the user picked. Paired with the localStorage writes in
+// thunk.ts (one per setting) and the synchronous attribute seeding in
+// app.tsx (which prevents a flash before React mounts).
+const read = <T extends string>(key: string, fallback: T, allowed?: readonly T[]): T => {
   try {
-    const v = window.localStorage.getItem('cbc-layout-mode');
-    return v === 'dark' ? 'dark' : 'light';
-  } catch { return 'light'; }
-})();
+    const v = window.localStorage.getItem(key);
+    if (v == null) return fallback;
+    if (allowed && !allowed.includes(v as T)) return fallback;
+    return v as T;
+  } catch { return fallback; }
+};
+
+const persistedLayoutMode = read('cbc-layout-mode', 'light', ['light', 'dark'] as const);
+const persistedLayoutType = read('cbc-layout', LAYOUT_TYPES.VERTICAL, [
+  LAYOUT_TYPES.VERTICAL, LAYOUT_TYPES.HORIZONTAL, LAYOUT_TYPES.TWOCOLUMN, LAYOUT_TYPES.SEMIBOX,
+] as const);
+const persistedSidebarTheme = read('cbc-sidebar-theme', LAYOUT_SIDEBAR_TYPES.DARK);
+const persistedLayoutWidth = read('cbc-layout-width', LAYOUT_WIDTH_TYPES.FLUID, [
+  LAYOUT_WIDTH_TYPES.FLUID, LAYOUT_WIDTH_TYPES.BOXED,
+] as const);
+const persistedLayoutPosition = read('cbc-layout-position', LAYOUT_POSITION_TYPES.FIXED, [
+  LAYOUT_POSITION_TYPES.FIXED, LAYOUT_POSITION_TYPES.SCROLLABLE,
+] as const);
+const persistedTopbarTheme = read('cbc-topbar-theme', LAYOUT_TOPBAR_THEME_TYPES.LIGHT, [
+  LAYOUT_TOPBAR_THEME_TYPES.LIGHT, LAYOUT_TOPBAR_THEME_TYPES.DARK,
+] as const);
+const persistedSidebarSize = read('cbc-sidebar-size', LEFT_SIDEBAR_SIZE_TYPES.DEFAULT);
+const persistedSidebarView = read('cbc-sidebar-view', LEFT_SIDEBAR_VIEW_TYPES.DEFAULT, [
+  LEFT_SIDEBAR_VIEW_TYPES.DEFAULT, LEFT_SIDEBAR_VIEW_TYPES.DETACHED,
+] as const);
+const persistedSidebarImage = read('cbc-sidebar-image', LEFT_SIDEBAR_IMAGE_TYPES.NONE);
 
 export const initialState = {
-  layoutType: LAYOUT_TYPES.VERTICAL,
-  leftSidebarType: LAYOUT_SIDEBAR_TYPES.DARK,
+  layoutType: persistedLayoutType as any,
+  leftSidebarType: persistedSidebarTheme as any,
   layoutModeType: persistedLayoutMode === 'dark' ? LAYOUT_MODE_TYPES.DARKMODE : LAYOUT_MODE_TYPES.LIGHTMODE,
-  layoutWidthType: LAYOUT_WIDTH_TYPES.FLUID,
-  layoutPositionType: LAYOUT_POSITION_TYPES.FIXED,
-  topbarThemeType: LAYOUT_TOPBAR_THEME_TYPES.LIGHT,
-  leftsidbarSizeType: LEFT_SIDEBAR_SIZE_TYPES.DEFAULT,
-  leftSidebarViewType: LEFT_SIDEBAR_VIEW_TYPES.DEFAULT,
-  leftSidebarImageType: LEFT_SIDEBAR_IMAGE_TYPES.NONE,
+  layoutWidthType: persistedLayoutWidth as any,
+  layoutPositionType: persistedLayoutPosition as any,
+  topbarThemeType: persistedTopbarTheme as any,
+  leftsidbarSizeType: persistedSidebarSize as any,
+  leftSidebarViewType: persistedSidebarView as any,
+  leftSidebarImageType: persistedSidebarImage as any,
   preloader: PERLOADER_TYPES.DISABLE,
   sidebarVisibilitytype: SIDEBAR_VISIBILITY_TYPES.SHOW
 };
