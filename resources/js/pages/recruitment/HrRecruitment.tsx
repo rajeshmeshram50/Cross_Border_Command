@@ -792,9 +792,14 @@ export default function HrRecruitment() {
                             <td className="pe-3">
                               <div className="d-flex gap-1 justify-content-center align-items-center">
                                 <ActionBtn
-                                  title="Edit Recruitment"
+                                  title={
+                                    r.status === 'Cancelled' ? 'Cannot edit — recruitment is cancelled'
+                                    : r.status === 'Completed' ? 'Cannot edit — recruitment is completed'
+                                    : 'Edit Recruitment'
+                                  }
                                   icon="ri-pencil-line"
                                   color="info"
+                                  disabled={r.status === 'Cancelled' || r.status === 'Completed'}
                                   onClick={() => { setCreateMode('edit'); setCreateEditingId(r.id); setCreateOpen(true); }}
                                 />
                                 <ActionBtn
