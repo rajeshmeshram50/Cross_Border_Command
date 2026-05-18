@@ -31,6 +31,20 @@ export const changeLayout = (layout : any) => async (dispatch : any) => {
             document.documentElement.removeAttribute("data-layout-width");
         } else if (layout === "horizontal") {
             document.documentElement.removeAttribute("data-sidebar-size");
+            // In horizontal layout there's no left sidebar — the top nav
+            // takes over. Mirror the user's Sidebar Color choice onto the
+            // topbar so the nav stays the colour they picked. Without
+            // this, switching from Vertical (Dark sidebar) to Horizontal
+            // flipped the nav to whatever the topbar was set to (Light
+            // by default) and felt like the theme had reset itself.
+            // "gradient" sidebars map to Dark topbar (no gradient topbar
+            // option exists).
+            const currentSidebar = document.documentElement.getAttribute("data-sidebar");
+            if (currentSidebar) {
+                const matchedTopbar = currentSidebar === "light" ? "light" : "dark";
+                changeHTMLAttribute("data-topbar", matchedTopbar);
+                persist('cbc-topbar-theme', matchedTopbar);
+            }
         } else if (layout === "semibox") {
             changeHTMLAttribute("data-layout-width", "fluid");
             changeHTMLAttribute("data-layout-style", "default");
@@ -61,6 +75,15 @@ export const changeSidebarTheme = (theme : any) => async (dispatch : any) => {
     try {
         changeHTMLAttribute("data-sidebar", theme);
         persist('cbc-sidebar-theme', theme);
+        // If the user is currently in Horizontal layout (no sidebar),
+        // mirror the sidebar colour to the topbar so the change has a
+        // visible effect — matches the auto-mirror in changeLayout.
+        const layout = document.documentElement.getAttribute("data-layout");
+        if (layout === "horizontal") {
+            const matchedTopbar = theme === "light" ? "light" : "dark";
+            changeHTMLAttribute("data-topbar", matchedTopbar);
+            persist('cbc-topbar-theme', matchedTopbar);
+        }
         dispatch(changeSidebarThemeAction(theme));
     } catch (error) {
         // console.log(error);

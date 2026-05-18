@@ -4,7 +4,12 @@ import PropTypes from "prop-types";
 import { Container } from 'reactstrap';
 import withRouter from '../../Components/Common/withRouter';
 
-import logoSm from "../../assets/images/logo-sm.png";
+// Same bundled fallback as Sidebar.tsx so the brand image is identical
+// across Vertical / Horizontal / Two-Column layouts when the tenant
+// hasn't uploaded their own logo. Previously two-column shipped a
+// different small mark, which made switching layouts look like the
+// app's branding had changed.
+import brandFallback from "../../assets/images/igc-logo.png";
 //i18n
 import { withTranslation } from "react-i18next";
 
@@ -12,6 +17,17 @@ import { withTranslation } from "react-i18next";
 import navdata from "../LayoutMenuData";
 import { closeAllMenus, subscribeMenu } from "../menuState";
 import VerticalLayout from "../VerticalLayouts";
+// Same logo-resolution chain as the vertical Sidebar: branch logo
+// (for branch users) > client logo > bundled fallback. Without this
+// the two-column layout always rendered the generic IGC mark, even
+// when the tenant had uploaded a branded logo elsewhere.
+import { useAuth } from "../../../contexts/AuthContext";
+import { resolveFileUrl } from "../../../utils/resolveFileUrl";
+// Tooltip on each icon in the narrow rail — the icon column has no
+// space for labels, so users couldn't tell what each icon does
+// without clicking it. The canonical dark-pill Tooltip used across
+// the app surfaces the menu label on hover.
+import Tooltip from "../../../components/ui/Tooltip";
 
 //SimpleBar
 import SimpleBar from "simplebar-react";
@@ -27,6 +43,16 @@ const TwoColumnLayout = (props: any) => {
     // layout never sees toggleMenu() updates and the Collapse stays stale.
     const [, setTick] = useState(0);
     useEffect(() => subscribeMenu(() => setTick((t) => t + 1)), []);
+
+    // Tenant-aware logo for the narrow icon column. Mirrors Sidebar.tsx:
+    // branch logo wins for branch users, then client logo, then bundled
+    // fallback. The previous hardcoded logoSm meant Two-Column users
+    // always saw the generic IGC mark even after their tenant uploaded
+    // a brand logo.
+    const { user } = useAuth();
+    const rawTenantLogo = user?.branch_logo || user?.client_logo || null;
+    const tenantLogo = rawTenantLogo ? resolveFileUrl(rawTenantLogo) : null;
+    const brandLogo = tenantLogo || brandFallback;
 
     // Close any open dropdown when the user clicks outside the menu column.
     useEffect(() => {
@@ -164,31 +190,37 @@ const TwoColumnLayout = (props: any) => {
                         <div id="two-column-menu">
                             <SimpleBar className="twocolumn-iconview">
                                 <Link to="#" className="logo">
-                                    <img src={logoSm} alt="" height="22" />
+                                    <img src={brandLogo} alt="" height="22" />
                                 </Link>
                                 {(navData || []).map((item: any, key: number) => (
                                     <React.Fragment key={key}>
                                         {item.icon && (
                                             item.subItems ? (
                                                 <li>
-                                                    <Link
-                                                        onClick={item.click}
-                                                        to="#"
-                                                        sub-items={item.id}
-                                                        className="nav-icon">
-                                                        <i className={item.icon}></i>
-                                                    </Link>
+                                                    <Tooltip label={item.label} position="right">
+                                                        <Link
+                                                            onClick={item.click}
+                                                            to="#"
+                                                            sub-items={item.id}
+                                                            aria-label={item.label}
+                                                            className="nav-icon">
+                                                            <i className={item.icon}></i>
+                                                        </Link>
+                                                    </Tooltip>
                                                 </li>
 
                                             ) : (
                                                 <>
-                                                    <Link
-                                                        onClick={item.click}
-                                                        to={item.link ? item.link : "/#"}
-                                                        sub-items={item.id}
-                                                        className="nav-icon">
-                                                        <i className={item.icon}></i>
-                                                    </Link>
+                                                    <Tooltip label={item.label} position="right">
+                                                        <Link
+                                                            onClick={item.click}
+                                                            to={item.link ? item.link : "/#"}
+                                                            sub-items={item.id}
+                                                            aria-label={item.label}
+                                                            className="nav-icon">
+                                                            <i className={item.icon}></i>
+                                                        </Link>
+                                                    </Tooltip>
                                                 </>
                                             )
                                         )}
