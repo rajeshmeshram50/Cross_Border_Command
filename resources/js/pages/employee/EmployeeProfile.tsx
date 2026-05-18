@@ -101,7 +101,7 @@ interface Props {
 type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense' | 'apply_leave';
 type PayrollTab = 'summary' | 'details';
 type VaultTab = 'employee' | 'organizational';
-type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending';
+type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
 
 const GRAD_PRIMARY = 'linear-gradient(135deg, #405189 0%, #6691e7 100%)';
 const GRAD_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
@@ -1303,34 +1303,99 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   });
   const [claimDrafts, setClaimDrafts] = useState<ClaimDraft[]>([blankDraft()]);
   const [activeClaimIdx, setActiveClaimIdx] = useState(0);
+  // True only when the modal was opened via the Drafts tab's Resume button.
+  // "Raise New Claim" / "New Advance Request" leaves this false so the
+  // form opens empty regardless of what's parked in localStorage. The
+  // open-side effects reset the flag back to false after consuming it.
+  const [resumeFromDraft, setResumeFromDraft] = useState(false);
   // Local-storage key for the Save Draft feature. Scoped per employee so
   // viewing two different profiles doesn't cross-contaminate drafts.
   const claimDraftKey = `cbc.expense.draft.${employeeId || 'me'}`;
+  // Cached "is there a saved draft right now?" so the Drafts pill in the
+  // filter row can show the count without forcing a localStorage read on
+  // every render. Both shapes are tracked separately so the pill stays
+  // in sync regardless of which module the user is on.
+  const [expenseDraftMeta, setExpenseDraftMeta] = useState<{ savedAt: string | null; drafts: ClaimDraft[] } | null>(null);
+  const [advanceDraftMeta, setAdvanceDraftMeta] = useState<{ savedAt: string | null; data: any } | null>(null);
+  // Reader that pulls both saved-draft buckets out of localStorage. Handles
+  // both the old raw shape (`ClaimDraft[]` / advance payload) and the new
+  // `{ savedAt, data }` wrapper so existing saves keep working. Re-run
+  // whenever the modal closes (the user may have just saved) and whenever
+  // the active profile changes.
+  const readSavedDrafts = () => {
+    try {
+      const raw = localStorage.getItem(claimDraftKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+          setExpenseDraftMeta({ savedAt: null, drafts: parsed as ClaimDraft[] });
+        } else if (parsed && Array.isArray(parsed.data) && parsed.data.length > 0) {
+          setExpenseDraftMeta({ savedAt: parsed.savedAt || null, drafts: parsed.data as ClaimDraft[] });
+        } else {
+          setExpenseDraftMeta(null);
+        }
+      } else {
+        setExpenseDraftMeta(null);
+      }
+    } catch { setExpenseDraftMeta(null); }
+    try {
+      const raw = localStorage.getItem(advanceDraftKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && 'savedAt' in parsed && 'data' in parsed) {
+          setAdvanceDraftMeta({ savedAt: parsed.savedAt || null, data: parsed.data });
+        } else if (parsed && typeof parsed === 'object') {
+          setAdvanceDraftMeta({ savedAt: null, data: parsed });
+        } else {
+          setAdvanceDraftMeta(null);
+        }
+      } else {
+        setAdvanceDraftMeta(null);
+      }
+    } catch { setAdvanceDraftMeta(null); }
+  };
   // Each time the modal re-opens, restore from localStorage if a draft is
-  // saved there; otherwise start with one fresh draft. Restoring lets HR
-  // type a couple of lines, hit Save Draft, close the modal, and pick
-  // them up later — same behavior other "Save Draft" flows have.
+  // saved there; otherwise start with one fresh draft. Also refresh the
+  // draft-meta cache when the modal closes (the user may have just hit
+  // Save Draft, or submitted, which clears storage).
   useEffect(() => {
     if (claimOpen) {
+      // Only restore from localStorage when the user explicitly hit
+      // Resume on the Drafts tab. Raise New Claim should always start
+      // fresh, even when a draft exists for this employee.
       let restored: ClaimDraft[] | null = null;
-      try {
-        const raw = localStorage.getItem(claimDraftKey);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            // File objects can't survive JSON serialisation, so any
-            // attachments the user staged before "Save Draft" are lost.
-            // Force `files: []` on every restored draft so we don't end
-            // up with `undefined` (which would crash the file list map).
-            restored = (parsed as ClaimDraft[]).map(p => ({ ...p, files: [] }));
+      if (resumeFromDraft) {
+        try {
+          const raw = localStorage.getItem(claimDraftKey);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            // Accept either the raw array (old format) or { savedAt, data }
+            // (new format). File objects can't survive JSON serialisation,
+            // so attachments staged before Save Draft are lost — force
+            // `files: []` on every restored draft so we don't end up with
+            // `undefined` (which would crash the file list map).
+            const arr: ClaimDraft[] | null =
+              Array.isArray(parsed)              ? parsed as ClaimDraft[]
+              : Array.isArray(parsed?.data)      ? parsed.data as ClaimDraft[]
+              :                                    null;
+            if (arr && arr.length > 0) {
+              restored = arr.map(p => ({ ...p, files: [] }));
+            }
           }
-        }
-      } catch { /* ignore — fall through to a blank draft */ }
+        } catch { /* ignore — fall through to a blank draft */ }
+      }
       setClaimDrafts(restored || [blankDraft()]);
       setActiveClaimIdx(0);
+    } else {
+      // Modal just closed (or first mount) — refresh the cached meta so
+      // the Drafts pill on the table reflects what's actually in storage.
+      // Also clear the resume flag so the next "Raise New Claim" starts
+      // fresh even if Resume was used previously in the same session.
+      readSavedDrafts();
+      setResumeFromDraft(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claimOpen]);
+  }, [claimOpen, employeeId]);
 
   // Save Draft handler — persists either the expense `claimDrafts` array
   // or the advance form fields, depending on which mode the modal is in.
@@ -1339,13 +1404,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // round-trip File through JSON — attachments must be re-staged on resume.
   const handleSaveDraft = () => {
     try {
+      const savedAt = new Date().toISOString();
       if (claimMode === 'advance') {
         const payload = {
           advType, advTypeOther, advAmount,
           advRequestedDate, advRecoveryStart,
           advRecoveryMode, advMonths, advMonthlyEmi, advReason,
         };
-        localStorage.setItem(advanceDraftKey, JSON.stringify(payload));
+        // Wrapped with savedAt so the Drafts tab can show a "saved 5m ago"
+        // hint. Older raw payloads are still accepted on read (see
+        // readSavedDrafts) for back-compat.
+        localStorage.setItem(advanceDraftKey, JSON.stringify({ savedAt, data: payload }));
         toast.success(
           'Draft saved',
           advFiles.length > 0
@@ -1354,7 +1423,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         );
       } else {
         const serialisable = claimDrafts.map(d => ({ ...d, files: [] }));
-        localStorage.setItem(claimDraftKey, JSON.stringify(serialisable));
+        localStorage.setItem(claimDraftKey, JSON.stringify({ savedAt, data: serialisable }));
         const stagedFiles = claimDrafts.reduce((n, d) => n + (d.files?.length || 0), 0);
         toast.success(
           'Draft saved',
@@ -1363,6 +1432,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             : 'Your in-progress claim will be here when you re-open the form.',
         );
       }
+      readSavedDrafts();
     } catch {
       toast.error('Could not save draft', 'Browser storage is full or blocked.');
     }
@@ -1590,12 +1660,30 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // expense Save Draft flow).
   useEffect(() => {
     if (claimOpen) {
+      // Always wipe attachments + transient fields on open so the form is
+      // visually consistent. Only re-hydrate other fields from localStorage
+      // when the user explicitly opened via the Drafts Resume button;
+      // "New Advance Request" should start blank even when a draft exists.
       setAdvFiles([]);
       setAdvTypeOther('');
+      if (!resumeFromDraft) {
+        setAdvType('');
+        setAdvAmount('');
+        setAdvRequestedDate(new Date().toISOString().slice(0, 10));
+        setAdvRecoveryStart('');
+        setAdvRecoveryMode('');
+        setAdvMonths('');
+        setAdvMonthlyEmi('');
+        setAdvReason('');
+        return;
+      }
       try {
         const raw = localStorage.getItem(advanceDraftKey);
         if (raw) {
-          const d = JSON.parse(raw) as Partial<{
+          const parsed = JSON.parse(raw);
+          // New format wraps the payload in { savedAt, data }; old saves
+          // are the raw payload object. Accept both for back-compat.
+          const d = (parsed && typeof parsed === 'object' && 'data' in parsed ? parsed.data : parsed) as Partial<{
             advType: string; advTypeOther: string; advAmount: string;
             advRequestedDate: string; advRecoveryStart: string;
             advRecoveryMode: string; advMonths: string; advMonthlyEmi: string;
@@ -2105,6 +2193,184 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const filteredAdvances: AdvanceRequestRow[] = expenseFilter === 'all'
     ? activeAdvancesSource
     : activeAdvancesSource.filter(a => a.status === expenseFilter);
+
+  // Snap back to the All view when the user is sitting on the Drafts pill
+  // but their saved draft for the active module just got submitted /
+  // discarded — otherwise they'd be stuck on a "No saved drafts" empty
+  // state with no obvious way out.
+  useEffect(() => {
+    if (expenseFilter !== 'draft') return;
+    const hasDraft = expenseModuleTab === 'advance'
+      ? !!advanceDraftMeta
+      : (expenseDraftMeta?.drafts.length ?? 0) > 0;
+    if (!hasDraft) setExpenseFilter('all');
+  }, [expenseFilter, expenseModuleTab, expenseDraftMeta, advanceDraftMeta]);
+
+  // Inline component — renders the saved-draft list (one card per saved
+  // expense draft line item, one card per advance draft) with Resume +
+  // Discard. Defined inside the closure so it can reuse ClaimDraft typing
+  // and the parent's category-name lookup without a giant prop signature.
+  const fmtSavedAt = (iso: string | null): string => {
+    if (!iso) return 'Saved earlier';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'Saved earlier';
+    const diffMs = Date.now() - d.getTime();
+    const min = Math.round(diffMs / 60000);
+    if (min < 1)   return 'Saved just now';
+    if (min < 60)  return `Saved ${min}m ago`;
+    const hrs = Math.round(min / 60);
+    if (hrs < 24)  return `Saved ${hrs}h ago`;
+    const days = Math.round(hrs / 24);
+    if (days < 30) return `Saved ${days}d ago`;
+    return `Saved ${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`;
+  };
+  const DraftListView = ({
+    module,
+    expenseMeta,
+    advanceMeta,
+    onResume,
+    onDiscard,
+  }: {
+    module: 'expense' | 'advance';
+    expenseMeta: { savedAt: string | null; drafts: ClaimDraft[] } | null;
+    advanceMeta: { savedAt: string | null; data: any } | null;
+    onResume: () => void;
+    onDiscard: () => void;
+  }) => {
+    const isAdvance = module === 'advance';
+    const empty = isAdvance ? !advanceMeta : (!expenseMeta || expenseMeta.drafts.length === 0);
+    if (empty) {
+      return (
+        <div className="border rounded p-4 text-center" style={{ background: 'var(--vz-card-bg)' }}>
+          <i className="ri-draft-line" style={{ fontSize: 32, color: 'var(--vz-secondary-color)', display: 'block', marginBottom: 8 }} />
+          <div className="fw-semibold" style={{ fontSize: 13 }}>No saved drafts</div>
+          <small className="text-muted" style={{ fontSize: 11.5 }}>
+            Saved drafts appear here so you can finish them later — they're stored locally on this device only.
+          </small>
+        </div>
+      );
+    }
+    const cards: React.ReactNode[] = [];
+    if (isAdvance && advanceMeta) {
+      const d = advanceMeta.data || {};
+      cards.push(
+        <div key="adv-draft" className="border rounded p-3 mb-2" style={{ background: 'var(--vz-card-bg)' }}>
+          <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+            <div className="d-flex align-items-start gap-2 min-w-0" style={{ flex: '1 1 280px' }}>
+              <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                style={{ width: 36, height: 36, background: 'rgba(67,56,202,0.12)', color: '#4338ca', fontSize: 16 }}>
+                <i className="ri-money-dollar-circle-line" />
+              </span>
+              <div className="min-w-0">
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <strong style={{ fontSize: 13 }}>
+                    {d.advType || 'Advance Request'}{d.advTypeOther ? ` · ${d.advTypeOther}` : ''}
+                  </strong>
+                  <span className="badge rounded-pill" style={{ background: 'rgba(14,165,233,0.16)', color: '#0369a1', fontSize: 10 }}>
+                    DRAFT
+                  </span>
+                </div>
+                <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>
+                  {d.advAmount ? <>₹{Number(String(d.advAmount).replace(/[^\d.]/g, '') || 0).toLocaleString('en-IN')}</> : '—'}
+                  {d.advRequestedDate && <> · Requested {d.advRequestedDate}</>}
+                  {d.advRecoveryStart && <> · Recovery {d.advRecoveryStart}</>}
+                  {d.advRecoveryMode && <> · {d.advRecoveryMode.toUpperCase()}</>}
+                </div>
+                {d.advReason && (
+                  <div className="text-muted mt-1" style={{ fontSize: 11.5, fontStyle: 'italic' }} title={d.advReason}>
+                    <i className="ri-double-quotes-l me-1" />
+                    {String(d.advReason).length > 100 ? String(d.advReason).slice(0, 100) + '…' : d.advReason}
+                  </div>
+                )}
+                <small className="text-muted d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: 10.5 }}>
+                  <i className="ri-time-line" /> {fmtSavedAt(advanceMeta.savedAt)}
+                </small>
+              </div>
+            </div>
+            <div className="d-flex gap-2 flex-shrink-0">
+              <button type="button" className="btn btn-sm" onClick={onResume}
+                style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)', color: '#fff', fontSize: 11.5, fontWeight: 600, padding: '5px 12px' }}>
+                <i className="ri-arrow-go-forward-line me-1" /> Resume
+              </button>
+              <button type="button" className="btn btn-sm btn-outline-danger" onClick={onDiscard}
+                style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px' }}>
+                <i className="ri-delete-bin-line me-1" /> Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    } else if (!isAdvance && expenseMeta) {
+      expenseMeta.drafts.forEach((d, i) => {
+        const catName = (() => {
+          const found = claimCategories.find(c => String(c.id) === String(d.category));
+          return found?.name || (d.category ? `Cat #${d.category}` : '—');
+        })();
+        cards.push(
+          <div key={`exp-draft-${i}`} className="border rounded p-3 mb-2" style={{ background: 'var(--vz-card-bg)' }}>
+            <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+              <div className="d-flex align-items-start gap-2 min-w-0" style={{ flex: '1 1 280px' }}>
+                <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                  style={{ width: 36, height: 36, background: 'rgba(124,58,237,0.12)', color: '#7c3aed', fontSize: 16 }}>
+                  <i className="ri-file-list-3-line" />
+                </span>
+                <div className="min-w-0">
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <strong style={{ fontSize: 13 }}>
+                      {d.title || 'Untitled claim'}
+                    </strong>
+                    <span className="badge rounded-pill" style={{ background: 'rgba(14,165,233,0.16)', color: '#0369a1', fontSize: 10 }}>
+                      DRAFT {expenseMeta.drafts.length > 1 ? `${i + 1}/${expenseMeta.drafts.length}` : ''}
+                    </span>
+                  </div>
+                  <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>
+                    {d.amount ? <>₹{Number(String(d.amount).replace(/[^\d.]/g, '') || 0).toLocaleString('en-IN')}</> : '—'}
+                    {catName && catName !== '—' && <> · {catName}</>}
+                    {d.date && <> · {d.date}</>}
+                    {d.vendor && <> · {d.vendor}</>}
+                  </div>
+                  {d.purpose && (
+                    <div className="text-muted mt-1" style={{ fontSize: 11.5, fontStyle: 'italic' }} title={d.purpose}>
+                      <i className="ri-double-quotes-l me-1" />
+                      {d.purpose.length > 100 ? d.purpose.slice(0, 100) + '…' : d.purpose}
+                    </div>
+                  )}
+                  {i === 0 && (
+                    <small className="text-muted d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: 10.5 }}>
+                      <i className="ri-time-line" /> {fmtSavedAt(expenseMeta.savedAt)}
+                    </small>
+                  )}
+                </div>
+              </div>
+              {i === 0 && (
+                <div className="d-flex gap-2 flex-shrink-0">
+                  <button type="button" className="btn btn-sm" onClick={onResume}
+                    style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)', color: '#fff', fontSize: 11.5, fontWeight: 600, padding: '5px 12px' }}>
+                    <i className="ri-arrow-go-forward-line me-1" /> Resume {expenseMeta.drafts.length > 1 ? `All ${expenseMeta.drafts.length}` : ''}
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-danger" onClick={onDiscard}
+                    style={{ fontSize: 11.5, fontWeight: 600, padding: '5px 12px' }}>
+                    <i className="ri-delete-bin-line me-1" /> Discard
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      });
+    }
+    return (
+      <div>
+        <div className="d-flex align-items-center gap-2 mb-2 px-1">
+          <i className="ri-information-line" style={{ color: '#0ea5e9' }} />
+          <small className="text-muted" style={{ fontSize: 11.5 }}>
+            Drafts are stored on this device only and aren't visible to managers/HR until you submit.
+          </small>
+        </div>
+        {cards}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -4439,16 +4705,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               {/* Filter pills — active = solid filled with colored shadow for
                   strong visibility; inactive = subtle white with border. When
                   the Advance Requests module is active the same pills drive
-                  filtering against `advanceCounts` instead of `expenseCounts`. */}
+                  filtering against `advanceCounts` instead of `expenseCounts`.
+                  The Drafts pill is appended only when a saved-draft exists
+                  in localStorage for the active module — clicking it swaps
+                  the table area for a list of resumable drafts. */}
               <div className="d-flex gap-2 flex-wrap mb-3">
                 {(() => {
                   const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
-                  return [
+                  const draftCount = expenseModuleTab === 'advance'
+                    ? (advanceDraftMeta ? 1 : 0)
+                    : (expenseDraftMeta?.drafts.length ?? 0);
+                  const base = [
                     { key: 'all'      as ExpenseFilter, label: 'All',      count: c.all,      active: '#6366f1', shadow: 'rgba(99,102,241,0.32)' },
                     { key: 'approved' as ExpenseFilter, label: 'Approved', count: c.approved, active: '#10b981', shadow: 'rgba(16,185,129,0.32)' },
                     { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: c.rejected, active: '#ef4444', shadow: 'rgba(239,68,68,0.32)'  },
                     { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: c.pending,  active: '#f59e0b', shadow: 'rgba(245,158,11,0.32)' },
                   ];
+                  if (draftCount > 0) {
+                    base.push({ key: 'draft' as ExpenseFilter, label: 'Drafts', count: draftCount, active: '#0ea5e9', shadow: 'rgba(14,165,233,0.32)' });
+                  }
+                  return base;
                 })().map(f => {
                   const on = expenseFilter === f.key;
                   return (
@@ -4491,8 +4767,35 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   When viewing Team rows as the assigned manager, inline
                   Approve/Reject buttons appear next to the menu. The
                   AdvanceRequestsTable mirror is rendered when the user
-                  switches the module pill to "Advance Requests". */}
-              {expenseModuleTab === 'advance' ? (
+                  switches the module pill to "Advance Requests".
+
+                  When the Drafts filter is active the table area is replaced
+                  by a list of resumable drafts pulled from localStorage —
+                  drafts aren't real rows so they can't share the same table
+                  component. Each row offers Resume (reopens the modal with
+                  the saved fields hydrated) and Discard (removes from
+                  storage and refreshes the meta state). */}
+              {expenseFilter === 'draft' ? (
+                <DraftListView
+                  module={expenseModuleTab}
+                  expenseMeta={expenseDraftMeta}
+                  advanceMeta={advanceDraftMeta}
+                  onResume={() => {
+                    setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
+                    setResumeFromDraft(true);
+                    setClaimOpen(true);
+                  }}
+                  onDiscard={() => {
+                    try {
+                      if (expenseModuleTab === 'advance') localStorage.removeItem(advanceDraftKey);
+                      else                                localStorage.removeItem(claimDraftKey);
+                    } catch { /* ignore */ }
+                    readSavedDrafts();
+                    setExpenseFilter('all');
+                    toast.success('Draft discarded', 'The saved draft has been removed.');
+                  }}
+                />
+              ) : expenseModuleTab === 'advance' ? (
                 <AdvanceRequestsTable
                   rows={filteredAdvances}
                   loading={loadingAdvances}
