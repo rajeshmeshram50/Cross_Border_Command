@@ -3606,6 +3606,11 @@ function renderField(
       />
     );
   } else if (f.t === 'date') {
+    // Future-only dates (e.g. warranty expiry) get a hard min on the
+    // picker so the calendar literally can't open a past day. The
+    // on-save validator below catches typed / pasted values that
+    // bypass the picker.
+    const todayIso = new Date().toISOString().slice(0, 10);
     input = (
       <MasterDatePicker
         name={f.n}
@@ -3614,6 +3619,7 @@ function renderField(
         disabled={viewOnly}
         invalid={!!err}
         onChange={onFieldChange}
+        minDate={f.futureOnly ? todayIso : undefined}
       />
     );
   } else if (f.t === 'file') {
