@@ -207,11 +207,23 @@ class DashboardController extends Controller
         $totalBranches = $branchesBase()->count();
         $activeBranches = $branchesBase()->where('status', 'active')->count();
 
-        // Users — scoped by branch when filter active
-        $usersBase = fn() => User::where('client_id', $clientId)
+        // Users — scoped by branch when filter active.
+        //
+        // Total counts include soft-deleted rows so deactivating a branch
+        // (which cascades soft-deletes onto its users) doesn't make the
+        // KPI silently drop. "Active" stays strict — only rows that are
+        // alive AND status=active are counted, which mirrors who can
+        // actually sign in. Without `withTrashed()` on totals, a tenant
+        // that had 10 users would visibly lose them all the moment a
+        // branch was deactivated, which is what surfaced as "the KPI
+        // doesn't count after inactivating a branch".
+        $usersBase = fn() => User::withTrashed()->where('client_id', $clientId)
             ->when($branchId, fn($q) => $q->where('branch_id', $branchId));
         $totalUsers = $usersBase()->count();
-        $activeUsers = $usersBase()->where('status', 'active')->count();
+        $activeUsers = $usersBase()
+            ->whereNull('deleted_at')
+            ->where('status', 'active')
+            ->count();
 
         // Payments are subscription-level (per client, not per branch). Show client-level
         // counts to client admins and main-branch users only — sub-branch users get
@@ -283,7 +295,13 @@ class DashboardController extends Controller
         // Scope mirrors the user/branch counts above: a sub-branch user is
         // pinned to their own branch (via the $branchId rewrite up top), a
         // main-branch user sees the whole client unless they pick a branch.
-        $empBase = fn() => Employee::where('client_id', $clientId)
+        // Include soft-deleted employees in the totals so deactivating a
+        // branch (which cascades soft-deletes onto its employees) doesn't
+        // make the KPI silently drop. "Active" / "On Leave" / "Probation"
+        // counts still come straight from the live status column so they
+        // accurately reflect who's currently working — soft-deleted rows
+        // simply add to the "Inactive" bucket below.
+        $empBase = fn() => Employee::withTrashed()->where('client_id', $clientId)
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId));
 
         // Status counts (enum values are Title-Case in the migration).

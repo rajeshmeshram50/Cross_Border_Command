@@ -6,6 +6,7 @@ import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useSettings } from '../contexts/SettingsContext';
+import { useTheme } from '../contexts/ThemeContext';
 import Tooltip from '../components/ui/Tooltip';
 import { ShimmerSettings } from '../components/ui/Shimmer';
 
@@ -163,6 +164,7 @@ export default function Settings() {
   const { user } = useAuth();
   const toast = useToast();
   const settingsCtx = useSettings();
+  const { theme, toggle: toggleTheme } = useTheme();
   const isSuper = user?.user_type === 'super_admin';
 
   const [tab, setTab] = useState<string>('general');
@@ -462,9 +464,35 @@ export default function Settings() {
                       </Col>
                     </Row>
                   </SubSection>
-                  <SubSection icon="ri-contrast-2-line" title="Theme" desc="Default appearance for new users" color={currentTab.color}>
-                    <ToggleRow icon="ri-moon-line" id="darkDefault" label="Dark Mode Default" desc="Set dark mode as default for new users" color={currentTab.color}
-                      checked={data.appearance.dark_default} onChange={v => patch('appearance', { dark_default: v })} />
+                  <SubSection icon="ri-contrast-2-line" title="Theme" desc="Switch the current view between light and dark, and pick the default for new users" color={currentTab.color}>
+                    {/* Live theme switch — flips the current view's
+                        theme immediately by calling the global
+                        ThemeContext toggle. The checkbox state is
+                        bound to the live theme (not the saved default)
+                        so toggling it has visible effect. The saved
+                        "default for new users" preference is mirrored
+                        alongside whenever a super-admin flips it. */}
+                    <ToggleRow
+                      icon="ri-moon-line"
+                      id="darkMode"
+                      label="Dark Mode"
+                      desc={isSuper
+                        ? 'Toggle the current view + set the default for new users'
+                        : 'Toggle the current view'}
+                      color={currentTab.color}
+                      checked={theme === 'dark'}
+                      onChange={(v) => {
+                        // Always flip the live theme so the user gets
+                        // immediate feedback when they click. Calling
+                        // toggle() is sufficient — the context flips
+                        // light ↔ dark and persists to localStorage.
+                        if ((theme === 'dark') !== v) toggleTheme();
+                        // Super admins additionally update the saved
+                        // server-side default so freshly-onboarded users
+                        // land on this preference.
+                        if (isSuper) patch('appearance', { dark_default: v });
+                      }}
+                    />
                   </SubSection>
                 </TabPane>
 
