@@ -42,9 +42,14 @@ export default function Login({ onForgotPassword }: LoginProps) {
       const measured = googleBtnRef.current.offsetWidth;
       // Google button max width is 400; clamp here.
       const width = Math.min(Math.max(measured || 320, 200), 400);
+      // Pick the Google button variant that matches the current theme —
+      // the bright white 'outline' button looked harsh on the dark login
+      // card. Google's brand guide officially supports a dark variant
+      // ('filled_black') with white text + coloured "G" mark.
+      const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
       window.google.accounts.id.renderButton(googleBtnRef.current, {
         type: 'standard',
-        theme: 'outline',
+        theme: isDark ? 'filled_black' : 'outline',
         size: 'large',
         shape: 'pill',
         text: 'signin_with',
@@ -85,7 +90,12 @@ export default function Login({ onForgotPassword }: LoginProps) {
       ? new ResizeObserver(() => renderBtn())
       : null;
     if (ro && googleBtnRef.current) ro.observe(googleBtnRef.current);
-    return () => { ro?.disconnect(); };
+    // Re-render when the user flips dark/light on this page — the theme
+    // toggle mutates <html data-bs-theme> and we need to re-issue the
+    // button with the matching `filled_black` / `outline` variant.
+    const themeObserver = new MutationObserver(() => renderBtn());
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-bs-theme'] });
+    return () => { ro?.disconnect(); themeObserver.disconnect(); };
   }, []);
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -277,35 +287,52 @@ export default function Login({ onForgotPassword }: LoginProps) {
             and a lift on hover. Backend still demands an email so the
             descriptor compare is scoped to ONE enrolled user — there's
             no "any face wins" attack surface. */}
-        <button
-          type="button"
-          onClick={() => setFaceOpen(true)}
-          className="cbc-face-btn w-full mt-2 h-12 rounded-full text-[13.5px] font-bold text-white flex items-center justify-center gap-3"
-        >
-          <span className="cbc-face-icon">
-            <i className="ri-user-smile-line" />
-            <span className="cbc-face-pulse" />
-          </span>
-          Sign in with Face
-        </button>
+        <div className="cbc-face-btn-wrap mt-2 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setFaceOpen(true)}
+            className="cbc-face-btn rounded-full text-[12.5px] font-semibold inline-flex items-center justify-center gap-2"
+          >
+            <span className="cbc-face-icon">
+              <i className="ri-user-smile-line" />
+              <span className="cbc-face-pulse" />
+            </span>
+            Sign in with Face
+          </button>
+        </div>
         <style>{`
+          /* Compact pill — auto width, slim height, soft border.
+             No heavy outer halo (the previous neon stack was too
+             loud); a single small drop shadow gives it just enough
+             lift to read as a button without overpowering the
+             Google option above it. */
           .cbc-face-btn {
             position: relative;
-            border: 0;
-            background: linear-gradient(135deg,
-              #0ea5e9 0%,
-              #6366f1 35%,
-              #a855f7 65%,
-              #ec4899 100%);
-            background-size: 200% 200%;
-            background-position: 0% 50%;
-            box-shadow:
-              0 12px 28px rgba(99,102,241,0.32),
-              0 4px 10px rgba(168,85,247,0.20),
-              inset 0 1px 0 rgba(255,255,255,0.25);
+            height: 34px;
+            padding: 0 18px;
+            /* Explicit pill rounding — Tailwind's rounded-full was being
+               beaten somewhere in the cascade, leaving the button looking
+               like a rounded rectangle instead of a true pill. */
+            border-radius: 999px !important;
+            border: 1px solid rgba(124,92,252,0.45);
+            background: #ffffff;
+            color: #4338ca;
+            box-shadow: 0 2px 6px rgba(99,102,241,0.10);
             letter-spacing: 0.01em;
-            transition: transform 220ms ease, box-shadow 220ms ease, background-position 600ms ease;
+            transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease, color 180ms ease;
             overflow: hidden;
+          }
+          [data-bs-theme="dark"] .cbc-face-btn {
+            background: rgba(124,92,252,0.10);
+            color: #c4b5fd;
+            border-color: rgba(167,139,250,0.45);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.30);
+          }
+          [data-bs-theme="dark"] .cbc-face-btn:hover {
+            background: rgba(124,92,252,0.18);
+            border-color: rgba(196,181,253,0.75);
+            color: #e9e3ff;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.40);
           }
           .cbc-face-btn::before {
             /* Soft moving sheen so the button feels alive without being noisy. */
@@ -315,31 +342,34 @@ export default function Login({ onForgotPassword }: LoginProps) {
             width: 50%; height: 100%;
             background: linear-gradient(120deg,
               transparent 0%,
-              rgba(255,255,255,0.22) 50%,
+              rgba(124,92,252,0.18) 50%,
               transparent 100%);
             transform: skewX(-20deg);
             transition: left 700ms ease;
           }
           .cbc-face-btn:hover {
-            transform: translateY(-1px) scale(1.01);
-            background-position: 100% 50%;
-            box-shadow:
-              0 16px 36px rgba(99,102,241,0.42),
-              0 6px 14px rgba(236,72,153,0.28),
-              inset 0 1px 0 rgba(255,255,255,0.30);
+            transform: translateY(-1px);
+            border-color: #7c3aed;
+            background: #faf7ff;
+            box-shadow: 0 4px 10px rgba(99,102,241,0.18);
           }
           .cbc-face-btn:hover::before { left: 130%; }
-          .cbc-face-btn:active { transform: translateY(0) scale(0.99); }
+          .cbc-face-btn:active { transform: translateY(0); }
 
           .cbc-face-icon {
             position: relative;
-            width: 28px; height: 28px;
+            width: 22px; height: 22px;
             border-radius: 999px;
-            background: rgba(255,255,255,0.18);
+            background: rgba(124,92,252,0.15);
             display: inline-flex; align-items: center; justify-content: center;
-            font-size: 15px;
-            color: #ffffff;
-            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.40);
+            font-size: 13px;
+            color: #6366f1;
+            box-shadow: inset 0 0 0 1px rgba(124,92,252,0.40);
+          }
+          [data-bs-theme="dark"] .cbc-face-icon {
+            background: rgba(167,139,250,0.20);
+            color: #c4b5fd;
+            box-shadow: inset 0 0 0 1px rgba(167,139,250,0.55);
           }
           .cbc-face-pulse {
             position: absolute;

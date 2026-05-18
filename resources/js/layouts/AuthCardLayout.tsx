@@ -336,6 +336,65 @@ export default function AuthCardLayout({ children, title, subtitle, icon }: Auth
                 background: rgba(255,255,255,0.90) !important;
                 border-color: rgba(99,102,241,0.30) !important;
               }
+
+              /* ── Dark-mode login card ──────────────────────────────────
+                 When the user logged out from a dark-mode session, the
+                 persisted theme attribute keeps the page in dark mode,
+                 but the hardcoded white card above became unreadable
+                 (white-on-light input text, low-contrast labels). The
+                 rules below flip the card surface + inputs + labels to
+                 a slate palette so the form stays usable on dark. */
+              [data-bs-theme="dark"] .cbc-login-card {
+                background:
+                  radial-gradient(circle at 0% 0%, rgba(139,92,246,0.18) 0%, transparent 50%),
+                  radial-gradient(circle at 100% 100%, rgba(245,176,111,0.10) 0%, transparent 55%),
+                  linear-gradient(180deg, rgba(17,24,42,0.92) 0%, rgba(13,18,32,0.88) 100%) !important;
+                border-color: rgba(255,255,255,0.10) !important;
+                box-shadow:
+                  inset 0 1px 0 rgba(255,255,255,0.06),
+                  0 20px 48px rgba(0,0,0,0.55),
+                  0 40px 90px rgba(99,102,241,0.18) !important;
+              }
+              [data-bs-theme="dark"] .cbc-login-card .gradient-text {
+                background: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 60%, #f5b06f 100%) !important;
+                -webkit-background-clip: text !important;
+                background-clip: text !important;
+                -webkit-text-fill-color: transparent !important;
+              }
+              [data-bs-theme="dark"] .cbc-login-card label {
+                color: #c4b5fd !important;
+              }
+              [data-bs-theme="dark"] .cbc-login-card p {
+                color: rgba(226,232,240,0.75) !important;
+              }
+              [data-bs-theme="dark"] .cbc-login-card input.form-control,
+              [data-bs-theme="dark"] .cbc-login-card input[type="email"],
+              [data-bs-theme="dark"] .cbc-login-card input[type="password"],
+              [data-bs-theme="dark"] .cbc-login-card input[type="text"] {
+                background: rgba(255,255,255,0.04) !important;
+                border-color: rgba(255,255,255,0.10) !important;
+                color: #f1f5f9 !important;
+              }
+              [data-bs-theme="dark"] .cbc-login-card input::placeholder {
+                color: rgba(226,232,240,0.40) !important;
+              }
+              [data-bs-theme="dark"] .cbc-login-card input:focus {
+                background: rgba(255,255,255,0.06) !important;
+                border-color: rgba(167,139,250,0.65) !important;
+                box-shadow: 0 0 0 3px rgba(124,92,252,0.25) !important;
+              }
+              [data-bs-theme="dark"] .cbc-login-card .cbc-remember-text {
+                color: rgba(226,232,240,0.80) !important;
+              }
+              [data-bs-theme="dark"] .cbc-login-card .cbc-remember-box[data-checked="false"] {
+                background: rgba(255,255,255,0.05) !important;
+                border-color: rgba(167,139,250,0.40) !important;
+              }
+              /* "OR CONTINUE WITH" divider + the Google/Face buttons. */
+              [data-bs-theme="dark"] .cbc-login-card hr,
+              [data-bs-theme="dark"] .cbc-login-card .divider-line {
+                border-color: rgba(255,255,255,0.10) !important;
+              }
             `}</style>
 
             <div className="mt-3 sm:mt-4 text-center text-white/40 text-[10px] sm:text-[11px] font-medium lg:hidden">

@@ -143,6 +143,23 @@ const ProfileDropdown = () => {
           font-size: 14px;
           transition: transform .18s ease, color .18s ease;
         }
+        /* Dark-mode legibility for the topbar profile chip. The name
+           gradient (navy → teal) and the role sub-label both rendered
+           too dim against the dark header in dark mode, so the user
+           had to squint to read "ABC / Branch User". Brighten both:
+           - Name gradient swapped for a lighter violet → mint pair
+             that pops against the dark topbar.
+           - Role text bumped from var(--vz-secondary-color) (a low
+             contrast grey) to a translucent slate that reads clearly. */
+        [data-bs-theme="dark"] .cbc-profile-chip .user-name-text {
+          background-image: linear-gradient(135deg, #a5b4fc, #34d399) !important;
+          -webkit-background-clip: text !important;
+          background-clip: text !important;
+          -webkit-text-fill-color: transparent !important;
+        }
+        [data-bs-theme="dark"] .cbc-profile-chip .user-name-sub-text {
+          color: rgba(226,232,240,0.78) !important;
+        }
       `}</style>
       <Dropdown
         isOpen={isProfileDropdown}
