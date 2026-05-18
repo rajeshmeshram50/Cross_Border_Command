@@ -635,30 +635,71 @@ class DashboardController extends Controller
                 ]);
         }
 
-        // ── Team peers (same department, excl. self) ────────────────────
+        // ── My Team — pick the most-relevant cohort based on where the
+        // employee sits in the reporting tree:
+        //   1. If they have direct reports  → show those reports
+        //                                     (this is "their team" as
+        //                                     a manager).
+        //   2. Else if they have a manager → show fellow direct reports
+        //                                     under the same manager
+        //                                     (peer team).
+        //   3. Else fall back to department peers so the card still has
+        //                                     content for top-of-tree
+        //                                     individuals.
+        // `team_size` reflects whichever cohort was selected, so the
+        // subtitle on the dashboard stays consistent with the photos.
         $teamPeers = collect();
         $teamSize  = 0;
-        if ($emp?->department_id) {
-            $teamSize = Employee::where('department_id', $emp->department_id)
+        $teamKind  = 'none';
+        if ($emp) {
+            // 1. Direct reports of this employee.
+            $reportsBase = Employee::where('reporting_manager_id', $employeeId)
                 ->where('client_id', $clientId)
-                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-                ->where('id', '!=', $employeeId)
-                ->count();
-            $teamPeers = Employee::with(['designation', 'photoDocument'])
-                ->where('department_id', $emp->department_id)
-                ->where('client_id', $clientId)
-                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
-                ->where('id', '!=', $employeeId)
-                ->orderBy('display_name')
-                ->limit(6)
-                ->get(['id', 'emp_code', 'display_name', 'designation_id', 'date_of_joining'])
-                ->map(fn ($p) => [
-                    'id'               => $p->id,
-                    'emp_code'         => $p->emp_code,
-                    'display_name'     => $p->display_name,
-                    'photo_url'        => $p->photo_url,
-                    'designation_name' => $p->designation?->name,
-                ]);
+                ->where('id', '!=', $employeeId);
+            $reportsCount = (clone $reportsBase)->count();
+
+            if ($reportsCount > 0) {
+                $teamKind  = 'reports';
+                $teamSize  = $reportsCount;
+                $teamPeers = (clone $reportsBase)
+                    ->with(['designation', 'photoDocument'])
+                    ->orderBy('display_name')
+                    ->limit(6)
+                    ->get(['id', 'emp_code', 'display_name', 'designation_id', 'reporting_manager_id']);
+            } elseif ($emp->reporting_manager_id) {
+                // 2. Siblings — same reporting manager.
+                $siblingsBase = Employee::where('reporting_manager_id', $emp->reporting_manager_id)
+                    ->where('client_id', $clientId)
+                    ->where('id', '!=', $employeeId);
+                $teamKind  = 'peers';
+                $teamSize  = (clone $siblingsBase)->count();
+                $teamPeers = (clone $siblingsBase)
+                    ->with(['designation', 'photoDocument'])
+                    ->orderBy('display_name')
+                    ->limit(6)
+                    ->get(['id', 'emp_code', 'display_name', 'designation_id', 'reporting_manager_id']);
+            } elseif ($emp->department_id) {
+                // 3. Department peers (top-of-tree fallback).
+                $deptBase = Employee::where('department_id', $emp->department_id)
+                    ->where('client_id', $clientId)
+                    ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                    ->where('id', '!=', $employeeId);
+                $teamKind  = 'department';
+                $teamSize  = (clone $deptBase)->count();
+                $teamPeers = (clone $deptBase)
+                    ->with(['designation', 'photoDocument'])
+                    ->orderBy('display_name')
+                    ->limit(6)
+                    ->get(['id', 'emp_code', 'display_name', 'designation_id']);
+            }
+
+            $teamPeers = $teamPeers->map(fn ($p) => [
+                'id'               => $p->id,
+                'emp_code'         => $p->emp_code,
+                'display_name'     => $p->display_name,
+                'photo_url'        => $p->photo_url,
+                'designation_name' => $p->designation?->name,
+            ]);
         }
 
         // ── Announcements (recent active, tenant-scoped) ────────────────
@@ -760,6 +801,7 @@ class DashboardController extends Controller
             'compensation'      => $compensation,
             'recent_expenses'   => $recentExpenses,
             'pending_approvals' => $pendingApprovals,
+            'team_kind'         => $teamKind,
             'team_peers'        => $teamPeers,
             'announcements'     => $announcements,
             'upcoming_events'   => $upcomingEvents,
