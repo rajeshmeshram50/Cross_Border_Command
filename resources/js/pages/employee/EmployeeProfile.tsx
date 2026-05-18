@@ -1778,7 +1778,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     creator_name: string | null;
     created_at: string | null;
   };
-  const { user: authUser } = useAuth();
+  const { user: authUser, refresh: refreshAuth } = useAuth();
   // The route `/hr/employees/:id/profile` carries the EMP- code (e.g.
   // "EMP-001") in the URL, NOT the numeric Employee.id. Pass both to the
   // backend — it will resolve whichever it gets.
@@ -1877,6 +1877,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         setEmpDetail((prev: any) => prev ? { ...prev, photo_url: nextUrl } : prev);
       }
       setProfilePhotoFile(null);
+      // If the user is editing their OWN profile, re-fetch /me so the
+      // header avatar (ProfileDropdown reads user.employee_profile_photo)
+      // and any other auth-derived avatars pick up the new photo without
+      // a hard refresh. Scoped check — HR admins editing someone else's
+      // photo shouldn't trigger their own /me re-fetch.
+      const editingSelf = !!authUser?.employee_id && (
+        (profileEmpIdNum !== null && Number(authUser.employee_id) === profileEmpIdNum)
+        || (!!authUser?.employee_code && authUser.employee_code === profileEmpCode)
+      );
+      if (editingSelf) {
+        // Fire-and-forget — the toast doesn't depend on refresh succeeding,
+        // and a failed /me shouldn't block the user's upload confirmation.
+        refreshAuth().catch(() => {});
+      }
       toast.success('Photo updated', 'Profile picture has been changed.');
     } catch (err: any) {
       toast.error('Upload failed', err?.response?.data?.message || err?.message || 'Could not update photo');
