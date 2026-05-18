@@ -320,10 +320,7 @@ export default function HrCandidates() {
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', marginRight: 4 }} />
                       {recruitment.status}
                     </span>
-                    <span className="rec-pill cand-rec-readonly">
-                      <i className="ri-eye-line" style={{ fontSize: 11, marginRight: 3 }} />
-                      READ ONLY
-                    </span>
+                    
                   </div>
                 </div>
                 <div className="cand-rec-divider" />
