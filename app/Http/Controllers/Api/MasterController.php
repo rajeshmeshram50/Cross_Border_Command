@@ -16,6 +16,12 @@ class MasterController extends Controller
      * slug -> Eloquent model class map
      */
     private const MODELS = [
+        // Super-admin-only platform master — lives under App\Models (not
+        // App\Models\Masters) because it pre-dates the masters namespace.
+        // Without this entry the /master-counts batch endpoint silently
+        // skipped organization_types and the dashboard card was stuck
+        // at active=0 / inactive=0 even when records existed.
+        'organization_types' => \App\Models\OrganizationType::class,
         'company' => \App\Models\Masters\Company::class,
         'bank_accounts' => \App\Models\Masters\BankAccounts::class,
         'departments' => \App\Models\Masters\Departments::class,
