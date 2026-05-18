@@ -460,9 +460,13 @@ function AuditLogTrigger({
       {open && pos && createPortal(
         <div
           ref={popRef}
+          className="ep-audit-popover"
           // Pulls theme variables (data-bs-theme cascades from <html>) so
           // the popover follows light/dark mode. Used to hardcode white +
           // slate text which made the audit log unreadable on a dark page.
+          // The `.ep-audit-popover` class also carries a dark-mode override
+          // (recruitment.css) that forces #222831 for parity with the rest
+          // of the popups when --vz-card-bg doesn't resolve to a dark hex.
           style={{
             position: 'fixed',
             top: pos.top,
@@ -572,7 +576,7 @@ function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
                 <div className="d-flex align-items-center gap-2 flex-wrap">
                   <span className="fw-semibold" style={{ fontSize: 12 }}>{s.label}</span>
                   <span
-                    className="d-inline-flex align-items-center fw-semibold"
+                    className={`d-inline-flex align-items-center fw-semibold ep-audit-stage-badge ep-audit-stage-badge--${isPending ? 'pending' : isRejected ? 'rejected' : 'approved'}`}
                     style={{
                       fontSize: 9.5, padding: '1px 7px', borderRadius: 999,
                       letterSpacing: '0.06em', textTransform: 'uppercase',

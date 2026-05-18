@@ -4,7 +4,7 @@ import api from '../api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
-import { ShimmerTableRows } from '../components/ui/Shimmer';
+import { ShimmerTableRows, Shimmer } from '../components/ui/Shimmer';
 import SignaturePad from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,

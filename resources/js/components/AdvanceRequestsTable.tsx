@@ -460,6 +460,7 @@ function AuditLogTrigger({
       {open && pos && createPortal(
         <div
           ref={popRef}
+          className="ep-audit-popover"
           style={{
             position: 'fixed',
             top: pos.top,
@@ -558,7 +559,7 @@ function AuditLogPopover({ row }: { row: AdvanceRequestRow }) {
                 <div className="d-flex align-items-center gap-2 flex-wrap">
                   <span className="fw-semibold" style={{ fontSize: 12 }}>{s.label}</span>
                   <span
-                    className="d-inline-flex align-items-center fw-semibold"
+                    className={`d-inline-flex align-items-center fw-semibold ep-audit-stage-badge ep-audit-stage-badge--${isPending ? 'pending' : isRejected ? 'rejected' : 'approved'}`}
                     style={{
                       fontSize: 9.5, padding: '1px 7px', borderRadius: 999,
                       letterSpacing: '0.06em', textTransform: 'uppercase',
