@@ -330,10 +330,6 @@ export default function BranchDashboard() {
                 {isMainBranchUser && !selectedBranchId ? 'All branches overview' : 'Branch operations summary'}
               </p>
             </div>
-            <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
-              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{displayName}</a></li>
-              <li className="breadcrumb-item active">{isMainBranchUser && !selectedBranchId ? 'All Branches' : 'Overview'}</li>
-            </ol>
           </div>
         </Col>
       </Row>

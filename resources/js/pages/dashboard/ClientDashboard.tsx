@@ -365,10 +365,6 @@ export default function ClientDashboard() {
                 );
               })()}
             </div>
-            <ol className="breadcrumb m-0" style={{ fontSize: 12 }}>
-              <li className="breadcrumb-item"><a href="#" style={{ color: '#405189' }}>{user?.client_name}</a></li>
-              <li className="breadcrumb-item active">Overview</li>
-            </ol>
           </div>
         </Col>
       </Row>
