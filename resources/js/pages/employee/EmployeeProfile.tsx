@@ -1276,6 +1276,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     vendor: string;
     purpose: string;
     saved: boolean;       // marked true once "Save & Add Another" / "Submit" runs on this draft
+    // Each draft owns its own attachment list. Used to live in a single
+    // top-level `claimFiles` state, which meant "Save & Add Another"
+    // carried Claim 1's receipts into Claim 2 — the user saw the same
+    // attachments on every draft and had no way to upload distinct ones.
+    files: File[];
   };
   const blankDraft = (): ClaimDraft => ({
     employee: employeeId,
@@ -1293,6 +1298,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     vendor: '',
     purpose: '',
     saved: false,
+    files: [],
   });
   const [claimDrafts, setClaimDrafts] = useState<ClaimDraft[]>([blankDraft()]);
   const [activeClaimIdx, setActiveClaimIdx] = useState(0);
@@ -1310,7 +1316,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         const raw = localStorage.getItem(claimDraftKey);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) restored = parsed as ClaimDraft[];
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // File objects can't survive JSON serialisation, so any
+            // attachments the user staged before "Save Draft" are lost.
+            // Force `files: []` on every restored draft so we don't end
+            // up with `undefined` (which would crash the file list map).
+            restored = (parsed as ClaimDraft[]).map(p => ({ ...p, files: [] }));
+          }
         }
       } catch { /* ignore — fall through to a blank draft */ }
       setClaimDrafts(restored || [blankDraft()]);
@@ -1321,11 +1333,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
 
   // Save Draft handler — persists the current claimDrafts array to local
   // storage so the user can close the modal and resume later. Doesn't hit
-  // the backend (the row is created on actual Submit).
+  // the backend (the row is created on actual Submit). File objects are
+  // stripped before serialising since browsers can't round-trip a
+  // File through JSON — attachments must be re-attached on restore.
   const handleSaveDraft = () => {
     try {
-      localStorage.setItem(claimDraftKey, JSON.stringify(claimDrafts));
-      toast.success('Draft saved', 'Your in-progress claim will be here when you re-open the form.');
+      const serialisable = claimDrafts.map(d => ({ ...d, files: [] }));
+      localStorage.setItem(claimDraftKey, JSON.stringify(serialisable));
+      const stagedFiles = claimDrafts.reduce((n, d) => n + (d.files?.length || 0), 0);
+      toast.success(
+        'Draft saved',
+        stagedFiles > 0
+          ? `Form fields saved — you'll need to re-attach ${stagedFiles} file${stagedFiles === 1 ? '' : 's'} on resume.`
+          : 'Your in-progress claim will be here when you re-open the form.',
+      );
     } catch {
       toast.error('Could not save draft', 'Browser storage is full or blocked.');
     }
@@ -1508,14 +1529,23 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   useEffect(() => {
     if (claimOpen) setAdvEmiTouched(false);
   }, [claimOpen]);
-  // Multi-file attachments — separate buckets for expense receipts vs advance
-  // supporting docs so the two flows don't bleed into each other.
-  const [claimFiles, setClaimFiles] = useState<File[]>([]);
+  // Expense receipts now live per-draft (`draft.files`) so each claim
+  // owns its own attachments. The `claimFiles` / `setClaimFiles`
+  // aliases below preserve the existing JSX bindings while reading and
+  // writing the active draft's bucket. Advance docs stay top-level
+  // since the advance form is a single record, not a list.
+  const claimFiles = draft.files;
+  const setClaimFiles = (next: File[] | ((prev: File[]) => File[])) => {
+    setClaimDrafts(d => d.map((x, i) => {
+      if (i !== activeClaimIdx) return x;
+      const nextFiles = typeof next === 'function' ? (next as (prev: File[]) => File[])(x.files) : next;
+      return { ...x, files: nextFiles };
+    }));
+  };
   const [advFiles, setAdvFiles] = useState<File[]>([]);
   // Reset attachments + custom advance-type field every time the modal opens.
   useEffect(() => {
     if (claimOpen) {
-      setClaimFiles([]);
       setAdvFiles([]);
       setAdvTypeOther('');
     }
@@ -1819,7 +1849,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         } else if (profileEmpCode) {
           fd.append('employee_code', profileEmpCode);
         }
-        for (const f of claimFiles) fd.append('files[]', f);
+        // Use THIS draft's own attachments — earlier the loop reused the
+        // active-draft's files for every claim, so every backend row got
+        // an identical copy of whichever attachment list was showing.
+        for (const f of (d.files || [])) fd.append('files[]', f);
         await api.post('/expense-claims', fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
