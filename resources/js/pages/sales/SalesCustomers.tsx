@@ -728,4 +728,161 @@ const SCOPED_CSS = `
   .smc-step { flex: 1 1 calc(50% - 12px); }
   .smc-step-arrow { display: none; }
 }
+
+/* ─── Dark mode overrides ───
+   Velzon toggles dark mode via [data-bs-theme="dark"] on <html>. The default
+   palette above is hardcoded light-purple, so without this block the page
+   stays bright when the user switches theme. Keep the purple accent identity
+   (buttons, headers, chips) but recolour every surface, border, and body text
+   so the page actually reads as dark. */
+[data-bs-theme="dark"] .smc-root {
+  background: linear-gradient(160deg, #14101d 0%, #1a1530 40%, #15122a 100%);
+  color: #d4d1de;
+}
+[data-bs-theme="dark"] .smc-cstrip {
+  border-color: rgba(167,139,250,.30);
+  background: linear-gradient(110deg, #1c1432 0%, #221839 25%, #2a1d49 55%, #3a2467 85%, #4c2d8a 100%);
+  box-shadow:
+    0 2px 0 rgba(167,139,250,.08) inset,
+    0 8px 28px rgba(0,0,0,.45),
+    0 2px 8px rgba(0,0,0,.40);
+}
+[data-bs-theme="dark"] .smc-glow { opacity: .55; }
+[data-bs-theme="dark"] .smc-sheen { background: linear-gradient(180deg, rgba(255,255,255,.06), transparent); }
+[data-bs-theme="dark"] .smc-online-dot { border-color: #2a1d49; }
+[data-bs-theme="dark"] .smc-title { color: #e9d5ff; }
+[data-bs-theme="dark"] .smc-sub   { color: #9aa0b4; }
+
+[data-bs-theme="dark"] .smc-wdh {
+  background: linear-gradient(110deg, #1c1432 0%, #221839 50%, #2a1d49 100%);
+  border-color: rgba(167,139,250,.25);
+  box-shadow: 0 2px 8px rgba(0,0,0,.40);
+}
+[data-bs-theme="dark"] .smc-wdh-title { color: #e9d5ff; }
+[data-bs-theme="dark"] .smc-wdh-toggle {
+  background: rgba(255,255,255,.05);
+  border-color: rgba(167,139,250,.30);
+  color: #e9d5ff;
+}
+[data-bs-theme="dark"] .smc-wdh-toggle:hover { background: rgba(255,255,255,.10); }
+[data-bs-theme="dark"] .smc-wdh-toggle svg { stroke: #c4b5fd; }
+[data-bs-theme="dark"] .smc-step {
+  background: #1a1530;
+  border-color: rgba(167,139,250,.20);
+  border-left-color: #a78bfa;
+}
+[data-bs-theme="dark"] .smc-step-name { color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-step-desc { color: #9aa0b4; }
+[data-bs-theme="dark"] .smc-step-arrow-dot {
+  background: #1a1530;
+  border-color: rgba(167,139,250,.30);
+  color: #a78bfa;
+}
+
+[data-bs-theme="dark"] .smc-table-card {
+  background: #1a1530;
+  border-color: rgba(167,139,250,.25);
+  box-shadow: 0 8px 32px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.30);
+}
+[data-bs-theme="dark"] .smc-tabs-bar {
+  border-bottom-color: rgba(167,139,250,.25);
+  background: linear-gradient(110deg, #1c1432 0%, #221839 50%, #2a1d49 100%);
+}
+[data-bs-theme="dark"] .smc-pill-group {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(167,139,250,.25);
+  box-shadow: 0 2px 8px rgba(0,0,0,.30);
+}
+[data-bs-theme="dark"] .smc-pill.off       { color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-pill.off:hover { background: rgba(255,255,255,.06); }
+
+[data-bs-theme="dark"] .smc-search {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(167,139,250,.25);
+  box-shadow: 0 2px 8px rgba(0,0,0,.30), 0 1px 0 rgba(255,255,255,.04) inset;
+}
+[data-bs-theme="dark"] .smc-search:focus-within {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167,139,250,.20), 0 2px 8px rgba(0,0,0,.30);
+}
+[data-bs-theme="dark"] .smc-search input { color: #e9d5ff; }
+[data-bs-theme="dark"] .smc-search input::placeholder { color: #7a6b9a; }
+
+[data-bs-theme="dark"] .smc-table thead tr {
+  background: linear-gradient(110deg, #4c2d8a 0%, #5b21b6 40%, #6d28d9 75%, #7c3aed 100%);
+}
+[data-bs-theme="dark"] .smc-table tbody td {
+  border-bottom-color: rgba(167,139,250,.15);
+  color: #d4d1de;
+}
+[data-bs-theme="dark"] .smc-table tbody tr.odd  td { background: rgba(76,45,138,.15); }
+[data-bs-theme="dark"] .smc-table tbody tr.even td { background: rgba(28,20,50,.45); }
+[data-bs-theme="dark"] .smc-table tbody tr:hover td {
+  background: linear-gradient(90deg, rgba(124,58,237,.20), rgba(167,139,250,.18), rgba(124,58,237,.20)) !important;
+}
+[data-bs-theme="dark"] .smc-empty { color: #7a6b9a; }
+[data-bs-theme="dark"] .smc-id-chip {
+  color: #e9d5ff;
+  background: linear-gradient(135deg, rgba(76,45,138,.30), rgba(45,27,86,.40));
+  border-color: rgba(167,139,250,.35);
+}
+[data-bs-theme="dark"] .smc-company { color: #f1ecff; }
+[data-bs-theme="dark"] .smc-seg {
+  color: #c4b5fd;
+  background: linear-gradient(135deg, rgba(76,45,138,.30), rgba(45,27,86,.40));
+  border-color: rgba(167,139,250,.30);
+}
+[data-bs-theme="dark"] .smc-country { color: #9aa0b4; }
+[data-bs-theme="dark"] .smc-contact { color: #c0bccf; }
+[data-bs-theme="dark"] .smc-mono    { color: #8a8aa5; }
+[data-bs-theme="dark"] .smc-email   { color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-wa.yes {
+  background: linear-gradient(135deg, rgba(34,197,94,.20), rgba(22,163,74,.25));
+  color: #86efac; border-color: rgba(34,197,94,.40);
+}
+[data-bs-theme="dark"] .smc-wa.no {
+  background: linear-gradient(135deg, rgba(239,68,68,.20), rgba(220,38,38,.25));
+  color: #fca5a5; border-color: rgba(239,68,68,.40);
+}
+
+/* Action button surfaces — dim the light pastel fills so the icons read on dark.
+   Hover gradients stay vibrant so the affordance is still obvious. */
+[data-bs-theme="dark"] .smc-act-edit  {
+  border-color: rgba(96,165,250,.40);
+  background: linear-gradient(135deg, rgba(30,64,175,.22), rgba(29,78,216,.30));
+  color: #93c5fd;
+}
+[data-bs-theme="dark"] .smc-act-map   {
+  border-color: rgba(52,211,153,.40);
+  background: linear-gradient(135deg, rgba(5,150,105,.22), rgba(4,120,87,.30));
+  color: #6ee7b7;
+}
+[data-bs-theme="dark"] .smc-act-vault {
+  border-color: rgba(167,139,250,.40);
+  background: linear-gradient(135deg, rgba(124,58,237,.22), rgba(91,33,182,.30));
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .smc-pagination {
+  border-top-color: rgba(167,139,250,.20);
+  background: linear-gradient(180deg, #14101d, #1a1530);
+}
+[data-bs-theme="dark"] .smc-pag-info {
+  color: #c4b5fd;
+  background: rgba(255,255,255,.04);
+  border-color: rgba(167,139,250,.25);
+}
+[data-bs-theme="dark"] .smc-pag-range {
+  color: #e9d5ff;
+  background: linear-gradient(135deg, rgba(76,45,138,.40), rgba(45,27,86,.55));
+  border-color: rgba(167,139,250,.35);
+}
+[data-bs-theme="dark"] .smc-pag-btn {
+  background: rgba(255,255,255,.04);
+  border-color: rgba(167,139,250,.25);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .smc-pag-btn:hover:not(:disabled) {
+  background: #7c3aed; color: #fff;
+}
 `;
