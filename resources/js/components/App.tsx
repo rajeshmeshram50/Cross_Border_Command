@@ -48,6 +48,17 @@ import MasterPage from '../pages/master/MasterPage';
 import SalesCustomers from '../pages/sales/SalesCustomers';
 import SalesConsignee from '../pages/sales/SalesConsignee';
 import SalesLeadAckMaster from '../pages/sales/SalesLeadAckMaster';
+import SalesLeadWorksheet from '../pages/sales/SalesLeadWorksheet';
+import SalesTodo from '../pages/sales/SalesTodo';
+import SalesLeadDistribution from '../pages/sales/SalesLeadDistribution';
+import SalesLeadDetail from '../pages/sales/SalesLeadDetail';
+import SalesEnquiries from '../pages/sales/SalesEnquiries';
+import SalesLeadsDetails from '../pages/sales/SalesLeadsDetails';
+import SalesQPI from '../pages/sales/SalesQPI';
+import SalesDiagnosis from '../pages/sales/SalesDiagnosis';
+import SalesResolutionCenter from '../pages/sales/SalesResolutionCenter';
+import SalesAnalytics from '../pages/sales/SalesAnalytics';
+import SalesPerformance from '../pages/sales/SalesPerformance';
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
 import HrEmployees from '../pages/hrms/HrEmployees';
@@ -132,6 +143,17 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'sales.customers')       return '/sales/customers';
       if (page === 'sales.consignee')       return '/sales/consignee';
       if (page === 'sales.lead_ack_master') return '/sales/lead-ack-master';
+      if (page === 'sales.lead_worksheet')  return '/sales/lead-worksheet';
+      if (page === 'sales.todo')            return '/sales/todo';
+      if (page === 'sales.lead_distribution') return '/sales/lead-distribution';
+      if (page === 'sales.lead_detail')     return data?.oppId ? `/sales/lead-detail/${data.oppId}` : '/sales/lead-detail';
+      if (page === 'sales.enquiries')       return '/sales/enquiries';
+      if (page === 'sales.leads_details')   return data?.empId ? `/sales/leads-details/${data.empId}` : '/sales/leads-details';
+      if (page === 'sales.qpi')             return '/sales/qpi';
+      if (page === 'sales.diagnosis')       return '/sales/diagnosis';
+      if (page === 'sales.resolution_center') return '/sales/resolution-center';
+      if (page === 'sales.analytics')       return '/sales/analytics';
+      if (page === 'sales.performance')     return '/sales/performance';
       return '/dashboard';
   }
 };
@@ -460,6 +482,19 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/customers" element={<SalesCustomers />} />
               <Route path="/sales/consignee" element={<SalesConsignee />} />
               <Route path="/sales/lead-ack-master" element={<SalesLeadAckMaster />} />
+              <Route path="/sales/lead-worksheet" element={<SalesLeadWorksheet />} />
+              <Route path="/sales/todo" element={<SalesTodo />} />
+              <Route path="/sales/lead-distribution" element={<SalesLeadDistribution />} />
+              <Route path="/sales/lead-detail" element={<SalesLeadDetail />} />
+              <Route path="/sales/lead-detail/:oppId" element={<SalesLeadDetail />} />
+              <Route path="/sales/enquiries" element={<SalesEnquiries />} />
+              <Route path="/sales/leads-details" element={<SalesLeadsDetails />} />
+              <Route path="/sales/leads-details/:empId" element={<SalesLeadsDetails />} />
+              <Route path="/sales/qpi" element={<SalesQPI />} />
+              <Route path="/sales/diagnosis" element={<SalesDiagnosis />} />
+              <Route path="/sales/resolution-center" element={<SalesResolutionCenter />} />
+              <Route path="/sales/analytics" element={<SalesAnalytics />} />
+              <Route path="/sales/performance" element={<SalesPerformance />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/overview" element={<HrOverview />} />
               <Route path="/hr/employees" element={<HrEmployees />} />
