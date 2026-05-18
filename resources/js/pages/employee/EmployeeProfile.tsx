@@ -1982,24 +1982,42 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     if (!isManager && !seesAll) return;
     let cancelled = false;
     setHiringLoading(true);
-    api.get('/hiring-requests')
-      .then((res: any) => {
+    // Pull hiring requests AND the recruitment list in parallel so the
+    // table can show "Recruitment Created" once HR converts a request
+    // into a recruitment row (hiring_request_id back-pointer). Mirrors
+    // the cross-reference HiringRequestsListModal builds for its tabs.
+    Promise.all([
+      api.get('/hiring-requests'),
+      api.get('/recruitments').catch(() => ({ data: [] })),
+    ])
+      .then(([reqRes, recRes]: any[]) => {
         if (cancelled) return;
-        const rows: any[] = Array.isArray(res.data) ? res.data : [];
+        const rows: any[] = Array.isArray(reqRes.data) ? reqRes.data : [];
         // Visibility rules:
         //   - Reporting-manager *employee*       → only requests THEY raised.
         //   - branch_user / client_admin / super → full tenant list (they
         //                                            already have HR-wide
         //                                            visibility elsewhere).
-        // The list endpoint is tenant-scoped server-side, so the "all"
-        // branch is already safe — no other client's rows leak in.
-        const seesAll = ['branch_user', 'client_admin', 'super_admin']
-          .includes(String(authUser?.user_type || ''));
+        // The backend stores the creator id on `created_by` (not
+        // `requested_by` — which is a free-text display field). Using the
+        // wrong column was why freshly-raised requests didn't appear in
+        // the manager's own list.
         const myUserId = authUser?.id;
         const visible = seesAll
           ? rows
-          : (myUserId ? rows.filter(r => Number(r.requested_by) === Number(myUserId)) : rows);
-        setHiringRequests(visible);
+          : (myUserId ? rows.filter(r => Number(r.created_by) === Number(myUserId)) : rows);
+        // Annotate each row with `_hasRecruitment` so the table can render
+        // a "Recruitment Created" pill that supersedes the raw status.
+        const recs: any[] = Array.isArray(recRes.data) ? recRes.data : [];
+        const linkedHrIds = new Set<number>();
+        for (const r of recs) {
+          const id = Number(r?.hiring_request_id);
+          if (id) linkedHrIds.add(id);
+        }
+        setHiringRequests(visible.map((r: any) => ({
+          ...r,
+          _hasRecruitment: linkedHrIds.has(Number(r.id)),
+        })));
       })
       .catch(() => { if (!cancelled) setHiringRequests([]); })
       .finally(() => { if (!cancelled) setHiringLoading(false); });
@@ -5175,9 +5193,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           You haven't raised any hiring requests yet.
                         </td>
                       </tr>
-                    ) : hiringRequests.slice(0, 5).map((r: any) => {
+                    ) : hiringRequests.map((r: any) => {
                       const uTone = urgencyTone(r.urgency);
-                      const sTone = statusTone(r.status);
+                      // Once HR has converted this hiring request into a
+                      // recruitment row, surface that as the status (it's
+                      // the "next" step in the pipeline and carries more
+                      // information than the original Submitted/Draft
+                      // value). Falls back to the row's own status for
+                      // requests still sitting in the queue.
+                      const displayStatus = r._hasRecruitment ? 'Recruitment Created' : (r.status || '—');
+                      const sTone = r._hasRecruitment
+                        ? { bg: 'rgba(16,185,129,0.16)', fg: '#047857' }
+                        : statusTone(r.status);
                       return (
                         <tr key={r.id}>
                           <td className="ps-3 fw-semibold" style={{ fontSize: 12 }}>
@@ -5186,8 +5213,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                               padding: '2px 8px', borderRadius: 6, fontFamily: 'monospace',
                             }}>{r.code || `HR-${r.id}`}</span>
                           </td>
-                          <td style={{ fontSize: 12.5 }}>{r.position || r.role_name || '—'}</td>
-                          <td style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>{r.department || r.department_name || '—'}</td>
+                          <td style={{ fontSize: 12.5 }}>{r.position || r.job_role || r.role_name || '—'}</td>
+                          <td style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>{r.department?.name || r.department_name || '—'}</td>
                           <td>
                             <span style={{
                               padding: '2px 10px', borderRadius: 999, fontWeight: 600,
@@ -5198,7 +5225,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                             <span style={{
                               padding: '2px 10px', borderRadius: 999, fontWeight: 600,
                               background: sTone.bg, color: sTone.fg, fontSize: 10.5,
-                            }}>{r.status || '—'}</span>
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                            }}>
+                              {r._hasRecruitment && <i className="ri-checkbox-circle-fill" style={{ fontSize: 11 }} />}
+                              {displayStatus}
+                            </span>
                           </td>
                           <td style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', fontVariantNumeric: 'tabular-nums' }}>
                             {fmtDate(r.submittedAt || r.created_at)}
@@ -5210,19 +5241,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </table>
               </div>
 
-              {hiringRequests.length > 5 && (
+              {!hiringLoading && hiringRequests.length > 0 && (
                 <div className="d-flex justify-content-between align-items-center mt-2 pt-2 border-top">
                   <small className="text-muted" style={{ fontSize: 11.5 }}>
-                    Showing 5 of <strong>{hiringRequests.length}</strong> requests
+                    Showing <strong>{hiringRequests.length}</strong> request{hiringRequests.length === 1 ? '' : 's'}
                   </small>
-                  <button
-                    type="button"
-                    onClick={() => setListHiringOpen(true)}
-                    className="btn btn-link p-0"
-                    style={{ fontSize: 12, fontWeight: 600 }}
-                  >
-                    View all <i className="ri-arrow-right-s-line" />
-                  </button>
                 </div>
               )}
             </CardBody>
