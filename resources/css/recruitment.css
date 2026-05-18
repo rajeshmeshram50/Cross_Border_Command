@@ -3441,25 +3441,29 @@
    glance like the Figma reference. Every cell stays vertically centred
    on the same horizontal line via fixed line-height + middle vertical
    alignment. */
+/* Align with the canonical table rhythm used on HR Employees / My Team /
+   Branches — 11px x 12px header padding, 10.5px / 800-weight micro-caps,
+   12px x 12px body padding, 12.75px body font. The earlier 6px/10px +
+   forced 46px row height made the Candidates table look tighter and
+   smaller than every other list in the product. */
 .cand-page-table.rec-list-table thead th {
-  padding: 9px 10px;
-  font-size: 10px;
+  padding: 11px 12px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
   line-height: 1.2;
 }
 .cand-page-table.rec-list-table tbody td {
-  padding: 6px 10px;
-  font-size: 12.5px;
-  line-height: 1.4;
+  padding: 12px 12px;
+  font-size: 12.75px;
+  line-height: 1.45;
   vertical-align: middle;
   white-space: nowrap;
 }
-/* Strip stray block margins from inline content so the row can collapse
-   to its natural single-line height — the badges (status pill, CV chip)
-   and pills are already inline-flex, this just prevents any leftover
-   line-height inflation. */
+/* Strip stray block margins from inline content so chips/pills sit on
+   the same vertical centerline as the text. */
 .cand-page-table.rec-list-table tbody td > * { vertical-align: middle; }
 .cand-page-table.rec-list-table tbody tr {
-  height: 46px;
   transition: background .14s ease, box-shadow .14s ease;
 }
 .cand-page-table.rec-list-table tbody tr:hover {
