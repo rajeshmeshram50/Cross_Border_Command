@@ -676,12 +676,14 @@ export default function HrAttendance() {
                 <div className="att-emplist">
                   <div className="att-emplist-tabs">
                     {[
+                      // "Missing" and "WFH/OD" chips removed per request —
+                      // the filter state values still exist server-side
+                      // (kept in the union type) so this only hides the
+                      // chips, doesn't break stored selections.
                       { k: 'all'     as const, l: 'All',      c: counts.all },
                       { k: 'on_time' as const, l: 'On Time',  c: counts.on_time },
                       { k: 'late'    as const, l: 'Late',     c: counts.late },
-                      { k: 'missing' as const, l: 'Missing',  c: counts.missing },
                       { k: 'absent'  as const, l: 'Absent',   c: counts.absent },
-                      { k: 'wfh'     as const, l: 'WFH/OD',   c: counts.wfh },
                       { k: 'leave'   as const, l: 'Leave',    c: counts.leave },
                     ].map(t => (
                       <button key={t.k} type="button" className={`att-emplist-tab ${filter === t.k ? 'is-active' : ''}`} onClick={() => setFilter(t.k)}>

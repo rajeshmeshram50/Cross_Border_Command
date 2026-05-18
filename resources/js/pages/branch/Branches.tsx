@@ -335,7 +335,7 @@ export default function Branches({ onNavigate }: Props) {
             <ActionBtn title="View" icon="ri-eye-line" color="primary" onClick={() => onNavigate('branch-view', { branchId: b.id })} />
             <ActionBtn title="Edit" icon="ri-pencil-line" color="info" onClick={() => onNavigate('branch-form', { editId: b.id })} />
             <ActionBtn title="Delete" icon="ri-delete-bin-line" color="danger" disabled={deleting === b.id} onClick={() => openDeleteModal(b)} />
-            <ActionBtn title="Users" icon="ri-team-line" color="primary" onClick={() => onNavigate('branch-users', { branchId: b.id, branchName: b.name })} />
+            <ActionBtn title="Employees" icon="ri-team-line" color="primary" onClick={() => onNavigate('branch-users', { branchId: b.id, branchName: b.name })} />
             <ActionBtn title="Permissions" icon="ri-shield-check-line" color="success" onClick={() => onNavigate('permissions', { branchId: b.id, branchName: b.name })} />
           </div>
         );
