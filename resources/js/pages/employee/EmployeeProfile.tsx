@@ -11,6 +11,7 @@ import HeaderFooterPanel, {
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import ExpenseClaimsTable from '../../components/ExpenseClaimsTable';
+import AdvanceRequestsTable, { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import './EmployeeProfile.css';
 import ImageCropperModal from '../../components/ui/ImageCropperModal';
@@ -1475,6 +1476,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       });
       toast.success('Advance request submitted', 'Sent for manager + finance approval.');
       setClaimOpen(false);
+      // Refresh the list table so the new row appears immediately. Wrapped
+      // in try/catch so a stale-fetch failure doesn't surface a second
+      // error toast right after the success one.
+      try { await refreshAdvances(); } catch { /* swallow */ }
     } catch (err: any) {
       // Same surface-the-best-message pattern submitAllDrafts uses —
       // 422 field errors first, then top-level message, then a status
@@ -1754,6 +1759,66 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, profileEmpIdNum, isOwnProfile]);
 
+  // ── Advance Requests — same shape as the expense-claim lists above.
+  // `apiAdvances` = the profile owner's advances (mine scope, optionally
+  // filtered to a specific employee). `teamAdvances` = pending requests
+  // routed to the current user as the assigned reporting manager.
+  const [apiAdvances, setApiAdvances]   = useState<AdvanceRequestRow[]>([]);
+  const [teamAdvances, setTeamAdvances] = useState<AdvanceRequestRow[]>([]);
+  const [loadingAdvances, setLoadingAdvances] = useState(false);
+  // Top-level switcher: 'expense' (default) or 'advance'. The two surfaces
+  // share the Expense Details tab so HR / employee can flip between
+  // expense-claim and advance-request rows without leaving the page.
+  const [expenseModuleTab, setExpenseModuleTab] = useState<'expense' | 'advance'>('expense');
+  // Mine / Team sub-pill — same semantics as the expense version. When the
+  // user is viewing their own profile and is also a reporting manager,
+  // they can switch between their own advances and pending team requests.
+  const [advanceSubTab, setAdvanceSubTab] = useState<'mine' | 'team'>('mine');
+
+  const refreshAdvances = async () => {
+    if (tab !== 'expense' || !profileEmpCode) return;
+    setLoadingAdvances(true);
+    try {
+      const mineRes = await api.get('/advance-requests', {
+        params: {
+          scope: 'mine',
+          ...(profileEmpIdNum !== null
+            ? { employee_id: profileEmpIdNum }
+            : { employee_code: profileEmpCode }),
+        },
+      });
+      setApiAdvances(Array.isArray(mineRes.data) ? mineRes.data : []);
+      const teamRes = await api.get('/advance-requests', { params: { scope: 'team' } });
+      setTeamAdvances(Array.isArray(teamRes.data) ? teamRes.data : []);
+    } catch {
+      setApiAdvances([]);
+      setTeamAdvances([]);
+    } finally {
+      setLoadingAdvances(false);
+    }
+  };
+  useEffect(() => {
+    refreshAdvances();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, profileEmpIdNum, isOwnProfile]);
+
+  /** Dispatcher for inline Approve / Reject buttons on advance-request
+   *  rows. Same shape as `actOnClaim`, just a different REST collection. */
+  const actOnAdvance = async (
+    advanceId: number,
+    action: 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject',
+    comment?: string,
+  ) => {
+    try {
+      await api.post(`/advance-requests/${advanceId}/${action}`, comment ? { comment } : {});
+      toast.success('Updated', 'Advance request status updated');
+      await refreshAdvances();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Action failed.';
+      toast.error('Action failed', msg);
+    }
+  };
+
   // POST every draft as multipart/form-data so the optional attachments[]
   // upload alongside. On success, clear drafts, close modal, refresh list.
   //
@@ -1962,6 +2027,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const filteredExpenses: ApiClaim[] = expenseFilter === 'all'
     ? activeClaimsSource
     : activeClaimsSource.filter(c => c.status === expenseFilter);
+
+  // Mirror counts/filtering for the Advance Requests tab so the same set
+  // of filter pills (All/Approved/Rejected/Pending) drives the advance
+  // table. `activeAdvancesSource` follows the My/Team sub-tab selection
+  // the same way `activeClaimsSource` does for expenses.
+  const activeAdvancesSource: AdvanceRequestRow[] =
+    advanceSubTab === 'team' ? teamAdvances : apiAdvances;
+  const advanceCounts = {
+    all:      activeAdvancesSource.length,
+    approved: activeAdvancesSource.filter(a => a.status === 'approved').length,
+    rejected: activeAdvancesSource.filter(a => a.status === 'rejected').length,
+    pending:  activeAdvancesSource.filter(a => a.status === 'pending').length,
+  };
+  const filteredAdvances: AdvanceRequestRow[] = expenseFilter === 'all'
+    ? activeAdvancesSource
+    : activeAdvancesSource.filter(a => a.status === expenseFilter);
 
   return (
     <>
@@ -4044,26 +4125,85 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
           </Card>
 
-          {/* Expense Claims */}
+          {/* Expense / Advance module switcher — sits between the hero
+              overview and the section card so the user can flip between
+              Expense Claims and Advance Requests without leaving the
+              Expense Details tab. */}
+          <Row className="g-2 mb-3">
+            <Col xs={12}>
+              <div
+                className="d-flex"
+                style={{
+                  background: 'var(--vz-secondary-bg)',
+                  border: '1px solid var(--vz-border-color)',
+                  borderRadius: 9,
+                  padding: 3,
+                  gap: 3,
+                }}
+              >
+                {[
+                  { key: 'expense' as const, label: 'Expense Claims',    icon: 'ri-file-list-3-line',         activeBg: 'linear-gradient(135deg,#a855f7,#c084fc)', shadow: 'rgba(168,85,247,0.22)' },
+                  { key: 'advance' as const, label: 'Advance Requests',  icon: 'ri-money-dollar-circle-line', activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
+                ].map(t => {
+                  const on = expenseModuleTab === t.key;
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => setExpenseModuleTab(t.key)}
+                      className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
+                      style={{
+                        borderRadius: 7,
+                        padding: '5px 12px',
+                        fontSize: 11.5,
+                        background: on ? t.activeBg : 'transparent',
+                        color: on ? '#fff' : 'var(--vz-secondary-color)',
+                        border: 'none',
+                        boxShadow: on ? `0 3px 8px ${t.shadow}` : 'none',
+                      }}
+                    >
+                      <i className={t.icon} style={{ fontSize: 12 }} />
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Col>
+          </Row>
+
+          {/* Section card — header copy + counts swap based on the
+              active module so the rest of the layout (search, Export,
+              Raise New Claim, table) stays consistent. */}
           <div
             className="ep-section-card-flat ep-section-card mb-3"
-            style={{ borderTop: '3px solid #a855f7' }}
+            style={{ borderTop: expenseModuleTab === 'expense' ? '3px solid #a855f7' : '3px solid #4338ca' }}
           >
             <div
               className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap"
               style={{
-                borderBottom: '1px solid rgba(168,85,247,0.18)',
-                background: 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)',
+                borderBottom: expenseModuleTab === 'expense'
+                  ? '1px solid rgba(168,85,247,0.18)'
+                  : '1px solid rgba(67,56,202,0.18)',
+                background: expenseModuleTab === 'expense'
+                  ? 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)'
+                  : 'linear-gradient(135deg, rgba(67,56,202,0.14) 0%, rgba(67,56,202,0.04) 60%, rgba(67,56,202,0.01) 100%)',
               }}
             >
               <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon" style={{ background: 'rgba(168,85,247,0.18)', color: '#7c3aed' }}>
-                  <i className="ri-file-list-3-line" />
+                <span className="ep-section-icon" style={{
+                  background: expenseModuleTab === 'expense' ? 'rgba(168,85,247,0.18)' : 'rgba(67,56,202,0.18)',
+                  color: expenseModuleTab === 'expense' ? '#7c3aed' : '#4338ca',
+                }}>
+                  <i className={expenseModuleTab === 'expense' ? 'ri-file-list-3-line' : 'ri-money-dollar-circle-line'} />
                 </span>
                 <div>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>Expense Claims</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 12 }}>
+                    {expenseModuleTab === 'expense' ? 'Expense Claims' : 'Advance Requests'}
+                  </h6>
                   <small className="text-muted" style={{ fontSize: 11 }}>
-                    {expenseCounts.all} total · {expenseCounts.approved} approved · {expenseCounts.pending} pending
+                    {expenseModuleTab === 'expense'
+                      ? `${expenseCounts.all} total · ${expenseCounts.approved} approved · ${expenseCounts.pending} pending`
+                      : `${apiAdvances.length} total · ${apiAdvances.filter(a => a.status === 'approved').length} approved · ${apiAdvances.filter(a => a.status === 'pending').length} pending`}
                   </small>
                 </div>
               </div>
@@ -4125,9 +4265,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     t.style.boxShadow = '0 4px 10px rgba(249,115,22,0.28)';
                     t.style.filter = 'none';
                   }}
-                  onClick={() => { setClaimMode('expense'); setClaimOpen(true); }}
+                  onClick={() => {
+                    // Open the unified modal in the right mode based on
+                    // which list is currently visible.
+                    setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
+                    setClaimOpen(true);
+                  }}
                 >
-                  <i className="ri-add-line" /> Raise New Claim
+                  <i className="ri-add-line" /> {expenseModuleTab === 'advance' ? 'New Advance Request' : 'Raise New Claim'}
                 </button>
               </div>
             </div>
@@ -4135,22 +4280,39 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               {/* My / Team sub-tabs — only render when the current user is
                   viewing their own profile AND has a team (i.e. is someone's
                   reporting manager). For everyone else the table behaves as
-                  a single-list view (the user's own claims). */}
-              {isOwnProfile && teamClaims.length > 0 && (
+                  a single-list view (the user's own claims/advances). The
+                  labels, counts and active-state mirror whichever module
+                  (Expense Claims vs Advance Requests) is currently open. */}
+              {isOwnProfile && (
+                (expenseModuleTab === 'expense' && teamClaims.length > 0) ||
+                (expenseModuleTab === 'advance' && teamAdvances.length > 0)
+              ) && (
                 <div className="d-flex gap-1 mb-3" style={{
                   background: 'var(--vz-secondary-bg)', padding: 4, borderRadius: 10,
                   border: '1px solid var(--vz-border-color)', width: 'fit-content',
                 }}>
-                  {[
-                    { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line',   count: apiClaims.length },
-                    { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line',   count: teamClaims.length },
-                  ].map(t => {
-                    const on = expenseSubTab === t.key;
+                  {(expenseModuleTab === 'advance'
+                    ? [
+                        { key: 'mine' as const, label: 'My Advances',   icon: 'ri-user-line', count: apiAdvances.length },
+                        { key: 'team' as const, label: 'Team Advances', icon: 'ri-team-line', count: teamAdvances.length },
+                      ]
+                    : [
+                        { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line', count: apiClaims.length },
+                        { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line', count: teamClaims.length },
+                      ]
+                  ).map(t => {
+                    const currentSub = expenseModuleTab === 'advance' ? advanceSubTab : expenseSubTab;
+                    const on = currentSub === t.key;
+                    const activeAccent = expenseModuleTab === 'advance' ? '#4338ca' : '#7c3aed';
+                    const activeWash   = expenseModuleTab === 'advance' ? 'rgba(67,56,202,0.12)' : 'rgba(124,58,237,0.12)';
                     return (
                       <button
                         key={t.key}
                         type="button"
-                        onClick={() => setExpenseSubTab(t.key)}
+                        onClick={() => {
+                          if (expenseModuleTab === 'advance') setAdvanceSubTab(t.key);
+                          else                                setExpenseSubTab(t.key);
+                        }}
                         className="d-inline-flex align-items-center gap-2 fw-semibold"
                         style={{
                           fontSize: 12,
@@ -4158,7 +4320,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           borderRadius: 8,
                           border: 'none',
                           background: on ? 'var(--vz-card-bg)' : 'transparent',
-                          color: on ? '#7c3aed' : 'var(--vz-secondary-color)',
+                          color: on ? activeAccent : 'var(--vz-secondary-color)',
                           boxShadow: on ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
                           cursor: 'pointer',
                         }}
@@ -4169,8 +4331,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           className="d-inline-flex align-items-center justify-content-center rounded-pill"
                           style={{
                             minWidth: 18, height: 16, padding: '0 6px',
-                            background: on ? 'rgba(124,58,237,0.12)' : 'var(--vz-secondary-bg)',
-                            color: on ? '#7c3aed' : 'var(--vz-secondary-color)',
+                            background: on ? activeWash : 'var(--vz-secondary-bg)',
+                            color: on ? activeAccent : 'var(--vz-secondary-color)',
                             fontSize: 10, fontWeight: 700,
                           }}
                         >
@@ -4183,14 +4345,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               )}
 
               {/* Filter pills — active = solid filled with colored shadow for
-                  strong visibility; inactive = subtle white with border. */}
+                  strong visibility; inactive = subtle white with border. When
+                  the Advance Requests module is active the same pills drive
+                  filtering against `advanceCounts` instead of `expenseCounts`. */}
               <div className="d-flex gap-2 flex-wrap mb-3">
-                {[
-                  { key: 'all'      as ExpenseFilter, label: 'All',      count: expenseCounts.all,      active: '#6366f1', shadow: 'rgba(99,102,241,0.32)' },
-                  { key: 'approved' as ExpenseFilter, label: 'Approved', count: expenseCounts.approved, active: '#10b981', shadow: 'rgba(16,185,129,0.32)' },
-                  { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: expenseCounts.rejected, active: '#ef4444', shadow: 'rgba(239,68,68,0.32)'  },
-                  { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: expenseCounts.pending,  active: '#f59e0b', shadow: 'rgba(245,158,11,0.32)' },
-                ].map(f => {
+                {(() => {
+                  const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
+                  return [
+                    { key: 'all'      as ExpenseFilter, label: 'All',      count: c.all,      active: '#6366f1', shadow: 'rgba(99,102,241,0.32)' },
+                    { key: 'approved' as ExpenseFilter, label: 'Approved', count: c.approved, active: '#10b981', shadow: 'rgba(16,185,129,0.32)' },
+                    { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: c.rejected, active: '#ef4444', shadow: 'rgba(239,68,68,0.32)'  },
+                    { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: c.pending,  active: '#f59e0b', shadow: 'rgba(245,158,11,0.32)' },
+                  ];
+                })().map(f => {
                   const on = expenseFilter === f.key;
                   return (
                     <button
@@ -4226,25 +4393,44 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 })}
               </div>
 
-              {/* Claims table — API-backed. Status pill replaces the old
-                  Payment Action column; the 3-dot Action menu opens the audit
-                  log popover (Created → Manager → HR/Finance). When viewing
-                  Team Expenses as the assigned manager, inline Approve/Reject
-                  buttons appear next to the menu. */}
-              <ExpenseClaimsTable
-                rows={filteredExpenses}
-                loading={loadingClaims}
-                accent={accent}
-                fallbackInitials={initials}
-                fallbackName={employee?.name || employeeId}
-                mode={expenseSubTab === 'team' ? 'team' : 'mine'}
-                currentEmployeeId={authUser?.employee_id ?? null}
-                onAct={actOnClaim}
-              />
+              {/* Claims / Advances table — API-backed. Status pill replaces
+                  the old Payment Action column; the 3-dot Action menu opens
+                  the audit log popover (Created → Manager → HR/Finance).
+                  When viewing Team rows as the assigned manager, inline
+                  Approve/Reject buttons appear next to the menu. The
+                  AdvanceRequestsTable mirror is rendered when the user
+                  switches the module pill to "Advance Requests". */}
+              {expenseModuleTab === 'advance' ? (
+                <AdvanceRequestsTable
+                  rows={filteredAdvances}
+                  loading={loadingAdvances}
+                  accent={accent}
+                  fallbackInitials={initials}
+                  fallbackName={employee?.name || employeeId}
+                  mode={advanceSubTab === 'team' ? 'team' : 'mine'}
+                  currentEmployeeId={authUser?.employee_id ?? null}
+                  onAct={actOnAdvance}
+                />
+              ) : (
+                <ExpenseClaimsTable
+                  rows={filteredExpenses}
+                  loading={loadingClaims}
+                  accent={accent}
+                  fallbackInitials={initials}
+                  fallbackName={employee?.name || employeeId}
+                  mode={expenseSubTab === 'team' ? 'team' : 'mine'}
+                  currentEmployeeId={authUser?.employee_id ?? null}
+                  onAct={actOnClaim}
+                />
+              )}
 
               <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 pt-2 border-top">
                 <small className="text-muted">
-                  Showing <strong className="text-body">{filteredExpenses.length}</strong> claim{filteredExpenses.length === 1 ? '' : 's'}
+                  {expenseModuleTab === 'advance' ? (
+                    <>Showing <strong className="text-body">{filteredAdvances.length}</strong> advance{filteredAdvances.length === 1 ? '' : 's'}</>
+                  ) : (
+                    <>Showing <strong className="text-body">{filteredExpenses.length}</strong> claim{filteredExpenses.length === 1 ? '' : 's'}</>
+                  )}
                 </small>
                 <small className="text-muted d-inline-flex align-items-center gap-1">
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
@@ -5057,28 +5243,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
           </div>
 
-          {/* Mode tabs + flow hint */}
-          <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-2">
-            <div className="ep-claim-tabs">
-              <button
-                type="button"
-                className={`ep-claim-tab${claimMode === 'expense' ? ' is-active' : ''}`}
-                onClick={() => setClaimMode('expense')}
-              >
-                <i className="ri-file-text-line" /> Expense Claim
-              </button>
-              <button
-                type="button"
-                className={`ep-claim-tab${claimMode === 'advance' ? ' is-active' : ''}`}
-                onClick={() => setClaimMode('advance')}
-              >
-                <i className="ri-money-dollar-circle-line" /> Advance Request
-              </button>
-            </div>
+          {/* Flow hint — mode is already chosen by the outer Expense /
+              Advance module pill (which decides which form opens), so the
+              in-modal tab row was redundant and has been removed. */}
+          <div className="d-flex align-items-center justify-content-end flex-wrap gap-2 mt-2">
             <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 10 }}>
               {claimMode === 'expense'
-                ? <>Expense → <strong>Reimbursement</strong> &nbsp;|&nbsp; Advance → Payroll Recovery</>
-                : <>Advance → <strong>Payroll Recovery</strong> &nbsp;|&nbsp; Expense → Reimbursement</>}
+                ? <>Expense → <strong>Reimbursement</strong></>
+                : <>Advance → <strong>Payroll Recovery</strong></>}
             </small>
           </div>
         </div>
