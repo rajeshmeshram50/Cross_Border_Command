@@ -41,6 +41,10 @@ export type FieldDef = {
   // field's current value matches. Useful for forms where one choice unlocks
   // a follow-up input (e.g. show Calendar From Month only when From Month = Calendar).
   showWhen?: { field: string; equals: string | string[] };
+  // Date constraints — kicks in when t === 'date'. `futureOnly` clamps
+  // both the picker's min and the on-save validator to >= today, used
+  // for things like warranty expiry where backdating doesn't make sense.
+  futureOnly?: boolean;
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
@@ -1129,7 +1133,7 @@ const C: Record<string, MasterConfig> = {
       { n: 'description', l: 'Asset Description', t: 'textarea', full: true, p: 'Describe the asset — model, specs, condition…' },
       { n: 'vendor_id', l: 'Vendor', t: 'select', ref: 'vendor_directory', refL: 'vendor_company_name', p: '— Select —' },
       { n: 'purchase_date', l: 'Purchase Date', t: 'date' },
-      { n: 'warranty_expiry_date', l: 'Warranty Expiry Date', t: 'date' },
+      { n: 'warranty_expiry_date', l: 'Warranty Expiry Date', t: 'date', futureOnly: true },
       { sec: 'Documents & Attachments', n: '', l: '', t: 'text' },
       { n: 'invoice_file', l: 'Invoice', t: 'file', r: true, accept: '.pdf,.jpg,.jpeg,.png', maxMb: 10, icon: 'ri-file-text-line', optionalLabel: 'MANDATORY' },
       { n: 'warranty_card_file', l: 'Warranty Card', t: 'file', accept: '.pdf,.jpg,.jpeg,.png', maxMb: 10, icon: 'ri-file-shield-2-line', optionalLabel: 'OPTIONAL' },
