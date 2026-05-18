@@ -161,7 +161,7 @@ type RequestType =
   | 'Expansion Hiring'
   | 'Urgent Temporary Support';
 
-interface HiringRequestRow {
+export interface HiringRequestRow {
   id: string;            // numeric DB id, stringified — used as the React key
   code: string;          // HRQ-### shown in the table pill
   position: string;
@@ -1003,7 +1003,7 @@ interface RaiseHiringRequestModalProps {
   onSubmit: (savedRow: HiringRequestRow, asDraft: boolean) => void;
 }
 
-function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringRequestModalProps) {
+export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit }: RaiseHiringRequestModalProps) {
   const toast = useToast();
 
   // Department options pulled from the Departments master so the dropdown
@@ -1472,7 +1472,7 @@ interface HiringRequestsListModalProps {
   onCreateRecruitment: (req: HiringRequestRow) => void;
 }
 
-function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitment, refreshKey }: HiringRequestsListModalProps & { refreshKey?: number }) {
+export function HiringRequestsListModal({ isOpen, onClose, onRaiseNew, onCreateRecruitment, refreshKey }: HiringRequestsListModalProps & { refreshKey?: number }) {
   const toast = useToast();
 
   // Top-level tab — splits the list into "Pending" (no recruitment row

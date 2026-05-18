@@ -13,6 +13,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import ExpenseClaimsTable from '../../components/ExpenseClaimsTable';
 import AdvanceRequestsTable, { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
+import {
+  RaiseHiringRequestModal,
+  HiringRequestsListModal,
+  type HiringRequestRow,
+} from '../recruitment/HrRecruitment';
 import './EmployeeProfile.css';
 import ImageCropperModal from '../../components/ui/ImageCropperModal';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
@@ -98,7 +103,7 @@ interface Props {
   onBack: () => void;
 }
 
-type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense' | 'apply_leave';
+type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense' | 'apply_leave' | 'hiring';
 type PayrollTab = 'summary' | 'details';
 type VaultTab = 'employee' | 'organizational';
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
@@ -842,6 +847,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [payrollTab, setPayrollTab] = useState<PayrollTab>('summary');
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
+
+  // ── Manager detection — the "Hiring Requests" tab is gated to people
+  //   who actually manage someone (i.e. someone else's reporting_manager
+  //   points at them). Fetched once via /my-team/employees so the gate
+  //   is independent of whether the team has filed any expense claims /
+  //   advances yet.
+  const [isManager, setIsManager] = useState<boolean>(false);
+  const [teamSize, setTeamSize] = useState<number>(0);
+  // Hiring Requests state — filled only when the manager opens the tab
+  // (lazy fetch). The list+raise modals reuse the existing HrRecruitment
+  // components so we don't duplicate the form / KPI rendering logic.
+  const [hiringRequests, setHiringRequests] = useState<HiringRequestRow[]>([]);
+  const [hiringLoading, setHiringLoading] = useState<boolean>(false);
+  const [raiseHiringOpen, setRaiseHiringOpen] = useState<boolean>(false);
+  const [listHiringOpen, setListHiringOpen] = useState<boolean>(false);
+  const [hiringRefreshKey, setHiringRefreshKey] = useState<number>(0);
 
   // Full employee record from /employees/{id} — drives the Personal /
   // Contact / Address sections so every field reflects what the admin
@@ -1920,6 +1941,70 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       || (!!authUser?.employee_code && authUser.employee_code === profileEmpCode)
       || apiClaims.some(c => c.employee_id === authUser.employee_id)
     );
+
+  // Detect whether the *profile owner* manages anyone — drives visibility
+  // of the Hiring Requests tab. Hits /my-team/employees which, for an
+  // employee user_type, returns rows where reporting_manager_id matches
+  // their Employee.id. We only run the probe on the user's own profile
+  // since the endpoint is auth-context-scoped (it always reflects the
+  // logged-in user, not the profile being viewed).
+  useEffect(() => {
+    if (!isOwnProfile) {
+      setIsManager(false);
+      setTeamSize(0);
+      return;
+    }
+    let cancelled = false;
+    api.get('/my-team/employees')
+      .then((res: any) => {
+        if (cancelled) return;
+        const list = Array.isArray(res?.data?.employees) ? res.data.employees : [];
+        setTeamSize(list.length);
+        setIsManager(list.length > 0);
+      })
+      .catch(() => {
+        if (!cancelled) { setIsManager(false); setTeamSize(0); }
+      });
+    return () => { cancelled = true; };
+  }, [isOwnProfile]);
+
+  // Hiring Requests list — fetched lazily when the manager opens the tab
+  // (or when a new request is submitted, signalled by hiringRefreshKey).
+  // We filter client-side to entries this employee filed so the inline
+  // KPI/list view shows just their own pipeline, even though the API
+  // returns every request visible in their tenant scope.
+  useEffect(() => {
+    if (tab !== 'hiring') return;
+    // Fetch when the user has access to the tab — either as a manager
+    // (own raised requests) or as an admin-tier viewer (all org rows).
+    const seesAll = ['branch_user', 'client_admin', 'super_admin']
+      .includes(String(authUser?.user_type || ''));
+    if (!isManager && !seesAll) return;
+    let cancelled = false;
+    setHiringLoading(true);
+    api.get('/hiring-requests')
+      .then((res: any) => {
+        if (cancelled) return;
+        const rows: any[] = Array.isArray(res.data) ? res.data : [];
+        // Visibility rules:
+        //   - Reporting-manager *employee*       → only requests THEY raised.
+        //   - branch_user / client_admin / super → full tenant list (they
+        //                                            already have HR-wide
+        //                                            visibility elsewhere).
+        // The list endpoint is tenant-scoped server-side, so the "all"
+        // branch is already safe — no other client's rows leak in.
+        const seesAll = ['branch_user', 'client_admin', 'super_admin']
+          .includes(String(authUser?.user_type || ''));
+        const myUserId = authUser?.id;
+        const visible = seesAll
+          ? rows
+          : (myUserId ? rows.filter(r => Number(r.requested_by) === Number(myUserId)) : rows);
+        setHiringRequests(visible);
+      })
+      .catch(() => { if (!cancelled) setHiringRequests([]); })
+      .finally(() => { if (!cancelled) setHiringLoading(false); });
+    return () => { cancelled = true; };
+  }, [tab, isManager, hiringRefreshKey, authUser?.id, authUser?.user_type]);
   const [loadingClaims, setLoadingClaims] = useState(false);
   const [expenseSubTab, setExpenseSubTab] = useState<'mine' | 'team'>('mine');
   // Fetch (or re-fetch) both lists. `mine` is filtered by employee_id so HR /
@@ -2210,6 +2295,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     { key: 'payroll',    label: 'Payroll Details', icon: 'ri-money-dollar-circle-line', color: 'linear-gradient(135deg,#f59e0b,#fbbf24)' },
     { key: 'expense',    label: 'Expense Details', icon: 'ri-wallet-3-line',            color: 'linear-gradient(135deg,#f06548,#ff7a5c)' },
     { key: 'apply_leave',label: 'Leave',           icon: 'ri-calendar-2-line',          color: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' },
+    // Hiring Requests — visible when the profile owner is also the
+    // viewer AND they either (a) manage at least one direct report
+    // (employee-as-manager) or (b) have org-wide HR visibility
+    // (branch_user / client_admin / super_admin). The list view inside
+    // applies the matching visibility filter — own-raised for managers,
+    // tenant-wide for the admin tiers — so each role lands on data
+    // they're meant to see.
+    ...(isOwnProfile && (isManager || ['branch_user', 'client_admin', 'super_admin'].includes(String(authUser?.user_type || ''))) ? [{
+      key: 'hiring' as TabKey, label: 'Hiring Requests', icon: 'ri-user-add-line',
+      color: 'linear-gradient(135deg,#0ea5e9,#6366f1)',
+    }] : []),
   ];
 
   // Onboarding progress as a numeric percent for the hero ring chart.
@@ -4921,6 +5017,219 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <LeaveSummaryPanel employeeId={employeeId} />
       )}
 
+      {/* ── Hiring Requests tab — manager-only. Mirrors HrRecruitment's
+           hiring-request surface (KPI strip + list table + Raise CTA),
+           scoped to the requests THIS manager raised. Reuses the
+           existing RaiseHiringRequestModal + HiringRequestsListModal
+           components so the create form, validation and list filters
+           stay in one place. */}
+      {tab === 'hiring' && isOwnProfile && (isManager || ['branch_user', 'client_admin', 'super_admin'].includes(String(authUser?.user_type || ''))) && (() => {
+        const stats = {
+          total:     hiringRequests.length,
+          draft:     hiringRequests.filter((r: any) => r.status === 'Draft').length,
+          submitted: hiringRequests.filter((r: any) => r.status === 'Submitted').length,
+          critical:  hiringRequests.filter((r: any) => r.urgency === 'Critical').length,
+        };
+        const fmtDate = (raw: any): string => {
+          if (!raw) return '—';
+          const d = new Date(String(raw));
+          if (Number.isNaN(d.getTime())) return '—';
+          return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        };
+        const urgencyTone = (u?: string) => {
+          switch ((u || '').toLowerCase()) {
+            case 'critical': return { bg: 'rgba(239,68,68,0.14)',  fg: '#b91c1c' };
+            case 'high':     return { bg: 'rgba(249,115,22,0.14)', fg: '#c2410c' };
+            case 'medium':   return { bg: 'rgba(245,158,11,0.14)', fg: '#92400e' };
+            default:         return { bg: 'rgba(16,185,129,0.14)', fg: '#047857' };
+          }
+        };
+        const statusTone = (s?: string) => {
+          switch ((s || '').toLowerCase()) {
+            case 'draft':     return { bg: 'rgba(115,115,115,0.14)', fg: '#525252' };
+            case 'submitted': return { bg: 'rgba(124,58,237,0.14)',  fg: '#6d28d9' };
+            case 'approved':  return { bg: 'rgba(16,185,129,0.14)',  fg: '#047857' };
+            case 'rejected':  return { bg: 'rgba(239,68,68,0.14)',   fg: '#b91c1c' };
+            default:          return { bg: 'rgba(99,102,241,0.14)',  fg: '#4338ca' };
+          }
+        };
+        return (
+          <Card className="mb-3 border-0" style={{ borderRadius: 14 }}>
+            <CardBody>
+              {/* Header — title + Raise CTA + View All */}
+              <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="d-inline-flex align-items-center justify-content-center rounded-3"
+                    style={{ width: 38, height: 38, background: 'linear-gradient(135deg,#0ea5e9,#6366f1)', color: '#fff' }}>
+                    <i className="ri-user-add-line" style={{ fontSize: 18 }} />
+                  </span>
+                  <div>
+                    <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Hiring Requests</h6>
+                    <small className="text-muted" style={{ fontSize: 11.5 }}>
+                      {(() => {
+                        const seesAll = ['branch_user', 'client_admin', 'super_admin']
+                          .includes(String(authUser?.user_type || ''));
+                        if (seesAll) return `All hiring requests across the organisation · ${hiringRequests.length} total`;
+                        return `Raise hires for your team · ${teamSize} direct report${teamSize === 1 ? '' : 's'}`;
+                      })()}
+                    </small>
+                  </div>
+                </div>
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    className="btn d-inline-flex align-items-center gap-2 fw-semibold"
+                    onClick={() => setRaiseHiringOpen(true)}
+                    style={{
+                      background: 'linear-gradient(135deg,#0ea5e9,#6366f1)', color: '#fff',
+                      border: 'none', fontSize: 12, padding: '7px 14px', borderRadius: 999,
+                      boxShadow: '0 4px 12px rgba(99,102,241,0.28)',
+                    }}
+                  >
+                    <i className="ri-file-add-line" /> Raise Hiring Request
+                  </button>
+                </div>
+              </div>
+
+              {/* KPI strip — matches the recruitment KPI shape (top accent
+                  strip + label/number + iconTile). Scoped to this manager's
+                  own raised requests. */}
+              <Row className="g-3 mb-3 align-items-stretch">
+                {[
+                  { label: 'Total',     value: stats.total,     icon: 'ri-file-list-3-line', accent: 'linear-gradient(135deg,#4338ca 0%,#6366f1 60%,#818cf8 100%)', deep: '#4338ca' },
+                  { label: 'Draft',     value: stats.draft,     icon: 'ri-draft-line',       accent: 'linear-gradient(135deg,#525252 0%,#737373 60%,#a3a3a3 100%)', deep: '#525252' },
+                  { label: 'Submitted', value: stats.submitted, icon: 'ri-send-plane-line',  accent: 'linear-gradient(135deg,#7c3aed 0%,#9333ea 60%,#a855f7 100%)', deep: '#7c3aed' },
+                  { label: 'Critical',  value: stats.critical,  icon: 'ri-flashlight-line',  accent: 'linear-gradient(135deg,#be123c 0%,#ef4444 60%,#fb7185 100%)', deep: '#be123c' },
+                ].map(k => (
+                  <Col key={k.label} xl={3} md={6} sm={6} xs={12}>
+                    <div
+                      className="ep-hr-kpi"
+                      style={{
+                        position: 'relative', overflow: 'hidden',
+                        border: '1px solid var(--vz-border-color)', borderRadius: 12,
+                        background: 'var(--vz-card-bg)', padding: '14px 16px',
+                        height: '100%',
+                        transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease',
+                        cursor: 'default',
+                      }}
+                    >
+                      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.accent }} />
+                      <div className="d-flex align-items-start justify-content-between gap-2">
+                        <div className="min-w-0">
+                          <p className="mb-1 text-uppercase fw-semibold" style={{ color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', fontSize: 10.5 }}>
+                            {k.label}
+                          </p>
+                          {hiringLoading
+                            ? <Shimmer height={26} width={48} />
+                            : <h3 className="mb-0 fw-bold" style={{ fontSize: 24, color: k.deep, fontVariantNumeric: 'tabular-nums' }}>{k.value}</h3>}
+                        </div>
+                        <span className="ep-hr-kpi-icon d-inline-flex align-items-center justify-content-center rounded-3"
+                          style={{ width: 40, height: 40, background: k.accent, color: '#fff', transition: 'transform 180ms ease' }}>
+                          <i className={k.icon} style={{ fontSize: 18 }} />
+                        </span>
+                      </div>
+                    </div>
+                  </Col>
+                ))}
+              </Row>
+              {/* Hover polish for the four KPI tiles — lift + shadow halo
+                  matched to the tile's accent. Reads "interactive" without
+                  actually clicking through; the figures themselves are the
+                  source of truth, so a click target would be misleading. */}
+              <style>{`
+                .ep-hr-kpi:hover {
+                  transform: translateY(-2px);
+                  box-shadow: 0 12px 26px rgba(99,102,241,0.16), 0 4px 10px rgba(15,23,42,0.08);
+                  border-color: rgba(99,102,241,0.40) !important;
+                }
+                .ep-hr-kpi:hover .ep-hr-kpi-icon {
+                  transform: scale(1.06) rotate(-2deg);
+                }
+                [data-bs-theme="dark"] .ep-hr-kpi:hover {
+                  box-shadow: 0 12px 26px rgba(124,92,252,0.22), 0 4px 10px rgba(0,0,0,0.40);
+                  border-color: rgba(124,92,252,0.50) !important;
+                }
+              `}</style>
+
+              {/* Inline list — compact 5-row preview of recent requests.
+                  Full filtering / pagination lives behind View All Requests. */}
+              <div className="table-responsive border rounded">
+                <table className="table align-middle table-nowrap mb-0">
+                  <thead className="table-light">
+                    <tr>
+                      <th className="ps-3">Code</th>
+                      <th>Position</th>
+                      <th>Department</th>
+                      <th>Urgency</th>
+                      <th>Status</th>
+                      <th>Submitted</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hiringLoading ? (
+                      <ShimmerTableRows rows={4} cols={6} keyPrefix="hr-req-shim" />
+                    ) : hiringRequests.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center py-4 text-muted" style={{ fontSize: 12.5 }}>
+                          <i className="ri-inbox-line" style={{ fontSize: 26, display: 'block', marginBottom: 6 }} />
+                          You haven't raised any hiring requests yet.
+                        </td>
+                      </tr>
+                    ) : hiringRequests.slice(0, 5).map((r: any) => {
+                      const uTone = urgencyTone(r.urgency);
+                      const sTone = statusTone(r.status);
+                      return (
+                        <tr key={r.id}>
+                          <td className="ps-3 fw-semibold" style={{ fontSize: 12 }}>
+                            <span style={{
+                              background: 'rgba(99,102,241,0.10)', color: '#4338ca',
+                              padding: '2px 8px', borderRadius: 6, fontFamily: 'monospace',
+                            }}>{r.code || `HR-${r.id}`}</span>
+                          </td>
+                          <td style={{ fontSize: 12.5 }}>{r.position || r.role_name || '—'}</td>
+                          <td style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>{r.department || r.department_name || '—'}</td>
+                          <td>
+                            <span style={{
+                              padding: '2px 10px', borderRadius: 999, fontWeight: 600,
+                              background: uTone.bg, color: uTone.fg, fontSize: 10.5,
+                            }}>{r.urgency || '—'}</span>
+                          </td>
+                          <td>
+                            <span style={{
+                              padding: '2px 10px', borderRadius: 999, fontWeight: 600,
+                              background: sTone.bg, color: sTone.fg, fontSize: 10.5,
+                            }}>{r.status || '—'}</span>
+                          </td>
+                          <td style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', fontVariantNumeric: 'tabular-nums' }}>
+                            {fmtDate(r.submittedAt || r.created_at)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {hiringRequests.length > 5 && (
+                <div className="d-flex justify-content-between align-items-center mt-2 pt-2 border-top">
+                  <small className="text-muted" style={{ fontSize: 11.5 }}>
+                    Showing 5 of <strong>{hiringRequests.length}</strong> requests
+                  </small>
+                  <button
+                    type="button"
+                    onClick={() => setListHiringOpen(true)}
+                    className="btn btn-link p-0"
+                    style={{ fontSize: 12, fontWeight: 600 }}
+                  >
+                    View all <i className="ri-arrow-right-s-line" />
+                  </button>
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        );
+      })()}
+
       </div>
     </div>
 
@@ -6542,6 +6851,32 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       {/* Face-biometric enrolment — opens from the Security card and posts
           the 128-d descriptor (with consent) to /api/face/register. */}
       <FaceRegistrationModal open={faceRegOpen} onClose={() => setFaceRegOpen(false)} />
+
+      {/* Hiring Requests — Raise form + read-only list. Both modals come
+          from HrRecruitment so the create/validate logic, KPI strip, and
+          filters all stay in one place. Only mounted when the user has
+          opened the Hiring Requests tab at least once (and is a manager). */}
+      {isOwnProfile && (isManager || ['branch_user', 'client_admin', 'super_admin'].includes(String(authUser?.user_type || ''))) && (
+        <>
+          <RaiseHiringRequestModal
+            isOpen={raiseHiringOpen}
+            onClose={() => setRaiseHiringOpen(false)}
+            onSubmit={(_savedRow, _asDraft) => {
+              // Bump the refresh key so the inline KPI strip + table
+              // re-pull /hiring-requests on the next render.
+              setHiringRefreshKey(k => k + 1);
+              setRaiseHiringOpen(false);
+            }}
+          />
+          <HiringRequestsListModal
+            isOpen={listHiringOpen}
+            onClose={() => setListHiringOpen(false)}
+            onRaiseNew={() => { setListHiringOpen(false); setRaiseHiringOpen(true); }}
+            onCreateRecruitment={() => { /* recruitment creation is HR-side; managers don't trigger this from the profile */ }}
+            refreshKey={hiringRefreshKey}
+          />
+        </>
+      )}
 
       {/* Signed-document preview — opens from the Vault > My Signed
           Documents table. Renders the frozen content_html inside the
