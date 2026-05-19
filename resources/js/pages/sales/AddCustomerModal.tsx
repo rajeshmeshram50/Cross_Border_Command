@@ -3,6 +3,7 @@ import api from '../../api';
 import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
@@ -686,11 +687,16 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         )}
 
         {/* BODY */}
-        <div className="acm-body" style={hydrating ? { opacity: 0.55, pointerEvents: 'none' } : undefined}>
-          {stage === 1 && tab === 'identification' && (
+        <div className="acm-body">
+          {/* While the edit-mode hydration fetch is in flight, render a
+              skeleton that mirrors the actual Stage 1 form structure
+              (Basic Company + Primary Address & Contact sections) so
+              the user sees content shape immediately. */}
+          {stage === 1 && hydrating && <Stage1FormShimmer />}
+          {stage === 1 && !hydrating && tab === 'identification' && (
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} />
           )}
-          {stage === 1 && tab === 'address-contact' && (
+          {stage === 1 && !hydrating && tab === 'address-contact' && (
             <Stage1AdditionalLocations
               locations={locations}
               onAdd={() => setLocModal({ open:true, editing:null })}
@@ -908,6 +914,43 @@ function Stepper({ stage, onGoto }: { stage: Stage; onGoto: (s: Stage) => void }
           </Fragment>
         );
       })}
+    </div>
+  );
+}
+
+/* ───── Stage 1 form skeleton ─────
+ * Rendered while the edit-mode hydration fetch is in flight so the
+ * user sees the section + field shape immediately instead of empty
+ * inputs flickering into populated state. Layout mirrors the actual
+ * Stage 1 form (Basic Company Details + Primary Address & Contact). */
+function Stage1FormShimmer() {
+  const FieldShim = () => (
+    <div className="acm-field">
+      <Shimmer height={10} width="40%" radius={4} style={{ marginBottom: 7 }} />
+      <Shimmer height={36} radius={9} />
+    </div>
+  );
+  const Section = ({ rows }: { rows: { cols: number }[] }) => (
+    <div className="acm-section acm-section-purple" style={{ marginBottom: 16 }}>
+      <div className="acm-section-head">
+        <Shimmer width={28} height={28} radius={8} />
+        <div style={{ flex: 1, marginLeft: 10 }}>
+          <Shimmer height={11} width="35%" radius={4} />
+        </div>
+      </div>
+      <div className="acm-section-body">
+        {rows.map((r, i) => (
+          <div key={i} className={`acm-row acm-row-${r.cols}`} style={{ marginBottom: i < rows.length - 1 ? 14 : 0 }}>
+            {Array.from({ length: r.cols }).map((_, j) => <FieldShim key={j} />)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  return (
+    <div>
+      <Section rows={[{ cols: 3 }, { cols: 4 }]} />
+      <Section rows={[{ cols: 2 }, { cols: 4 }, { cols: 4 }, { cols: 1 }]} />
     </div>
   );
 }

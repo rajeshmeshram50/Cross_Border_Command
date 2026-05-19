@@ -149,6 +149,15 @@ export default function Tooltip({
       childProps.onBlur?.(e);
       onLeave();
     },
+    /* Hide the tooltip immediately on click — without this, clicking
+       a tooltipped button that opens a modal leaves the tooltip
+       floating on screen because the modal covers the trigger so
+       `mouseleave` never fires (the cursor doesn't physically leave;
+       the element just disappears under the overlay). */
+    onClick: (e: any) => {
+      childProps.onClick?.(e);
+      onLeave();
+    },
     'aria-label': childProps['aria-label'] ?? (typeof label === 'string' ? label : undefined),
   } as any);
 

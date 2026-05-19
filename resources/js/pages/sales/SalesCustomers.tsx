@@ -166,7 +166,6 @@ export default function SalesCustomers() {
         const t = TYPE_COLORS[v] || { bg: '#f3f0ff', color: '#6d28d9', border: '#ddd6fe', dot: '#7c3aed' };
         return (
           <span className="smc-type-pill" style={{ background: t.bg, color: t.color, borderColor: t.border }}>
-            <span className="smc-type-dot" style={{ background: t.dot, boxShadow: `0 0 4px ${t.dot}66` }} />
             {v}
           </span>
         );
@@ -186,8 +185,8 @@ export default function SalesCustomers() {
       accessorKey: 'whatsapp',
       meta: { align: 'center' },
       cell: (info: any) => info.getValue() === 'Yes'
-        ? <span className="smc-wa yes"><span className="smc-wa-dot" />Yes</span>
-        : <span className="smc-wa no"><span className="smc-wa-dot" />No</span>,
+        ? <span className="smc-wa yes">Yes</span>
+        : <span className="smc-wa no">No</span>,
     },
     {
       header: () => <div className="text-center">Consignees</div>,
@@ -812,55 +811,55 @@ const SCOPED_CSS = `
 .smc-table tbody tr:last-child td { border-bottom: none; }
 .smc-empty { text-align: center; padding: 32px !important; color: #a78bfa; font-size: 12px; font-style: italic; }
 
-.smc-srno {
-  display:inline-flex; align-items:center; justify-content:center;
-  width:20px; height:20px; border-radius:6px;
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  color:#fff; font-size:9px; font-weight:800;
-  box-shadow: 0 2px 6px rgba(109,40,217,.3);
-}
+/* Sr No + Consignees — plain dark text (no badge bubble). Matches
+   the Admin Clients table where the row number is rendered as a
+   simple numeric value, not a colored chip. */
+.smc-srno { color: #495057; font-weight: 600; font-size: 13px; }
+.smc-cons { color: #495057; font-weight: 600; font-size: 13px; }
+
+/* Customer ID — soft violet mono chip. Restrained — no gradient or
+   heavy shadow, just a clean pill so the ID stays readable but
+   doesn't dominate the row. */
 .smc-id-chip {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 10.5px; font-weight: 800; color: #5b21b6;
-  background: linear-gradient(135deg, #faf5ff, #ede9fe);
-  padding: 2px 8px; border-radius: 6px;
-  border: 1px solid #c4b5fd; letter-spacing: .02em;
+  font-size: 11px; font-weight: 600; color: #6d28d9;
+  background: #f3eeff;
+  padding: 3px 9px; border-radius: 6px;
+  border: 1px solid #e0d9f7;
+  letter-spacing: .02em;
 }
-.smc-company { font-weight:700; color:#1e1b4b; letter-spacing:-.1px; }
+
+.smc-company { font-weight: 600; color: #212529; }
+
+/* Type / Segment / WhatsApp pills — flat solid colors, no gradients,
+   subtle borders. Same density and weight across all three so the
+   row reads as a tidy strip. */
 .smc-type-pill {
-  display:inline-flex; align-items:center; gap:4px;
-  padding:2px 9px; border-radius:20px;
-  font-size:9.5px; font-weight:800;
-  border:1px solid; white-space:nowrap;
-  box-shadow:0 1px 3px rgba(0,0,0,.06);
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+  border: 1px solid; white-space: nowrap;
 }
-.smc-type-dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; }
 .smc-seg {
-  display:inline-flex; align-items:center; gap:4px;
-  font-size:10.5px; font-weight:600; color:#5b21b6;
-  background: linear-gradient(135deg, rgba(237,233,254,.8), rgba(221,214,254,.6));
-  border:1px solid #c4b5fd; border-radius:20px; padding:2px 9px; white-space:nowrap;
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 600; color: #5b21b6;
+  background: #f3eeff;
+  border: 1px solid #ddd6fe; border-radius: 20px;
+  padding: 3px 10px; white-space: nowrap;
 }
-.smc-seg::before { content:''; width:4px; height:4px; border-radius:50%; background:#7c3aed; flex-shrink:0; }
-.smc-country { color:#475569; font-weight:500; }
-.smc-contact { font-weight:600; color:#4b5563; }
-.smc-mono    { font-family: monospace; color:#64748b; font-size:11px; }
-.smc-email   { color:#6d28d9; font-size:10.5px; font-weight:500; }
+
+.smc-country { color: #495057; font-weight: 500; }
+.smc-contact { color: #495057; font-weight: 500; }
+.smc-mono    { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #495057; font-size: 12px; }
+.smc-email   { color: #6d28d9; font-size: 12px; font-weight: 500; }
+
 .smc-wa {
-  display:inline-flex; align-items:center; gap:4px;
-  padding:2px 9px; border-radius:20px;
-  font-size:10px; font-weight:700;
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600;
 }
-.smc-wa.yes { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color:#047857; border:1px solid #6ee7b7; }
-.smc-wa.no  { background: linear-gradient(135deg, #fee2e2, #fecaca); color:#b91c1c; border:1px solid #fca5a5; }
-.smc-wa-dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; background: currentColor; }
-.smc-cons {
-  display:inline-flex; align-items:center; justify-content:center;
-  min-width:24px; height:20px; border-radius:20px;
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  color:#fff; font-size:10px; font-weight:800; padding:0 7px;
-  box-shadow:0 2px 6px rgba(109,40,217,.3); letter-spacing:.02em;
-}
+.smc-wa.yes { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+.smc-wa.no  { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
 .smc-actions { display:flex; align-items:center; justify-content:center; gap:4px; flex-wrap:nowrap; }
 .smc-act {
   width:24px; height:24px; border-radius:7px;
@@ -1006,27 +1005,29 @@ const SCOPED_CSS = `
 /* Action tiles keep their white background in dark mode too — the
    higher contrast against dark rows actually reads cleaner than a
    slate-tinted variant, and the colored hover tints stay vivid. */
+[data-bs-theme="dark"] .smc-srno { color: #e2e8f0; }
+[data-bs-theme="dark"] .smc-cons { color: #e2e8f0; }
 [data-bs-theme="dark"] .smc-id-chip {
-  color: #e9d5ff;
-  background: linear-gradient(135deg, rgba(76,45,138,.30), rgba(45,27,86,.40));
+  color: #c4b5fd;
+  background: rgba(124,58,237,0.18);
   border-color: rgba(167,139,250,.35);
 }
 [data-bs-theme="dark"] .smc-company { color: #f1ecff; }
 [data-bs-theme="dark"] .smc-seg {
   color: #c4b5fd;
-  background: linear-gradient(135deg, rgba(76,45,138,.30), rgba(45,27,86,.40));
+  background: rgba(124,58,237,0.18);
   border-color: rgba(167,139,250,.30);
 }
-[data-bs-theme="dark"] .smc-country { color: #9aa0b4; }
-[data-bs-theme="dark"] .smc-contact { color: #c0bccf; }
-[data-bs-theme="dark"] .smc-mono    { color: #8a8aa5; }
+[data-bs-theme="dark"] .smc-country { color: #cbd5e1; }
+[data-bs-theme="dark"] .smc-contact { color: #cbd5e1; }
+[data-bs-theme="dark"] .smc-mono    { color: #cbd5e1; }
 [data-bs-theme="dark"] .smc-email   { color: #c4b5fd; }
 [data-bs-theme="dark"] .smc-wa.yes {
-  background: linear-gradient(135deg, rgba(34,197,94,.20), rgba(22,163,74,.25));
+  background: rgba(34,197,94,0.18);
   color: #86efac; border-color: rgba(34,197,94,.40);
 }
 [data-bs-theme="dark"] .smc-wa.no {
-  background: linear-gradient(135deg, rgba(239,68,68,.20), rgba(220,38,38,.25));
+  background: rgba(239,68,68,0.18);
   color: #fca5a5; border-color: rgba(239,68,68,.40);
 }
 
