@@ -541,6 +541,12 @@ const C: Record<string, MasterConfig> = {
     cols: ['name', 'status'],
     colL: ['Address Type', 'Status'],
     uFields: ['name'],
+    kpis: [
+      { label: 'Total Types',  icon: 'ri-home-line',            gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', compute: r => r.length },
+      { label: 'Active',       icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
+      { label: 'Inactive',     icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
+      { label: 'System Fixed', icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a78bfa 100%)', compute: r => r.filter((x:any) => !!x.is_system).length },
+    ],
     data: [
       { id: 1, name: 'Registered Office Address', status: 'Active' },
       { id: 2, name: 'Warehouse', status: 'Active' },
@@ -839,29 +845,38 @@ const C: Record<string, MasterConfig> = {
 
   // ---------- PARTY & CLASSIFICATION ----------
   customer_types: {
-    key: 'customer_types', slug: 'customer_types', title: 'Customer Types', titleSingular: 'Customer Type',
+    // Slug stays `customer_types` (used by API, migrations, FKs) but
+    // the UI label is "Customer Consignee Type" — the master pins two
+    // global system entries (Retailer, Wholesaler) and the SaaS
+    // operator decides whether they want extra buyer classifications
+    // on top.
+    key: 'customer_types', slug: 'customer_types', title: 'Customer Consignee Type', titleSingular: 'Customer Consignee Type',
     icon: 'ri-user-3-line', iconColor: 'danger', iconBg: 'danger',
-    desc: 'Classify buyers as Domestic / Export for pricing rules',
+    desc: 'Buyer / consignee classification — drives pricing & GST rules',
     cat: 'Party & Classification',
     fields: [
-      { n: 'name', l: 'Customer Type', t: 'text', r: true, p: 'e.g. Domestic, Export' },
+      { n: 'name', l: 'Customer Consignee Type', t: 'text', r: true, p: 'e.g. Retailer, Wholesaler' },
       { n: 'gst_applicable', l: 'GST Applicable', t: 'select', opts: ['Yes', 'No'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
     cols: ['name', 'gst_applicable', 'status'],
-    colL: ['Customer Type', 'GST Applicable', 'Status'],
+    colL: ['Customer Consignee Type', 'GST Applicable', 'Status'],
     uFields: ['name'],
+    kpis: [
+      { label: 'Total Types',  icon: 'ri-user-3-line',          gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.length },
+      { label: 'Active',       icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
+      { label: 'GST Yes',      icon: 'ri-money-rupee-circle-line', gradient: 'linear-gradient(135deg,#3577f1 0%,#6da7ff 100%)', compute: r => r.filter((x:any) => String(x.gst_applicable).toLowerCase() === 'yes').length },
+      { label: 'System Fixed', icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a78bfa 100%)', compute: r => r.filter((x:any) => !!x.is_system).length },
+    ],
     data: [
-      { id: 1, name: 'Domestic', gst_applicable: 'Yes', status: 'Active' },
-      { id: 2, name: 'Export', gst_applicable: 'No', status: 'Active' },
-      { id: 3, name: 'Wholesale', gst_applicable: 'Yes', status: 'Active' },
-      { id: 4, name: 'Retail', gst_applicable: 'Yes', status: 'Active' },
+      { id: 1, name: 'Retailer',   gst_applicable: 'Yes', status: 'Active' },
+      { id: 2, name: 'Wholesaler', gst_applicable: 'Yes', status: 'Active' },
     ],
     wtd: [
-      { icon: 'ri-user-3-line', title: 'Define Customer Type', desc: 'e.g. Domestic, Export, Wholesale' },
-      { icon: 'ri-money-rupee-circle-line', title: 'Set GST Applicable', desc: 'Domestic = Yes · Export = No' },
-      { icon: 'ri-price-tag-3-line', title: 'Drives Pricing Rules', desc: 'Different price per customer type' },
-      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Type for customer profiles' },
+      { icon: 'ri-user-3-line', title: 'Pick Consignee Type', desc: 'Retailer or Wholesaler — system pinned' },
+      { icon: 'ri-money-rupee-circle-line', title: 'Set GST Applicable', desc: 'Drives invoice GST handling' },
+      { icon: 'ri-price-tag-3-line', title: 'Drives Pricing Rules', desc: 'Different price per consignee type' },
+      { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Type appears in customer profiles' },
     ],
   },
 
@@ -879,10 +894,18 @@ const C: Record<string, MasterConfig> = {
     cols: ['name', 'credit_limit', 'payment_terms', 'status'],
     colL: ['Classification', 'Credit Limit', 'Payment Terms', 'Status'],
     uFields: ['name'],
+    kpis: [
+      { label: 'Total Tiers',  icon: 'ri-award-line',           gradient: 'linear-gradient(135deg,#405189 0%,#6691e7 100%)', compute: r => r.length },
+      { label: 'Active',       icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
+      { label: 'Avg Credit ₹', icon: 'ri-bank-card-line',       gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', compute: r => {
+        const nums = r.map((x:any) => Number(x.credit_limit ?? 0)).filter(n => Number.isFinite(n) && n > 0);
+        return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : 0;
+      } },
+      { label: 'System Fixed', icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a78bfa 100%)', compute: r => r.filter((x:any) => !!x.is_system).length },
+    ],
     data: [
-      { id: 1, name: 'Tier A — Key Account', credit_limit: 5000000, payment_terms: 45, status: 'Active' },
-      { id: 2, name: 'Tier B — Regular', credit_limit: 1000000, payment_terms: 30, status: 'Active' },
-      { id: 3, name: 'Tier C — New', credit_limit: 200000, payment_terms: 15, status: 'Active' },
+      { id: 1, name: 'Standard', credit_limit: 500000, payment_terms: 30, status: 'Active' },
+      { id: 2, name: 'VIP',      credit_limit: 10000000, payment_terms: 60, status: 'Active' },
     ],
     wtd: [
       { icon: 'ri-award-line', title: 'Define Tier Name', desc: 'e.g. Tier A Key Account, Tier C New' },
@@ -1015,6 +1038,12 @@ const C: Record<string, MasterConfig> = {
     cols: ['name', 'description', 'action_required', 'status'],
     colL: ['Risk Level', 'Description', 'Action', 'Status'],
     uFields: ['name'],
+    kpis: [
+      { label: 'Total Levels', icon: 'ri-flashlight-line',      gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', compute: r => r.length },
+      { label: 'Active',       icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
+      { label: 'Inactive',     icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#878a99 0%,#b9bbc6 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
+      { label: 'System Fixed', icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a78bfa 100%)', compute: r => r.filter((x:any) => !!x.is_system).length },
+    ],
     data: [
       { id: 1, name: 'Low', description: 'Minimal risk', action_required: 'None', status: 'Active' },
       { id: 2, name: 'Medium', description: 'Moderate risk', action_required: 'Verify', status: 'Active' },
