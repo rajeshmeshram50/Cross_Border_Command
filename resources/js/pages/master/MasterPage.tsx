@@ -1538,7 +1538,7 @@ function MasterPageInner({
       {cfg.slug !== 'departments' && (
       <Row>
         <Col xs={12}>
-          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities' || cfg.slug === 'haz_class' || cfg.slug === 'uom' || cfg.slug === 'hsn_codes' || cfg.slug === 'gst_percentage' || cfg.slug === 'packaging_material' || cfg.slug === 'conditions') ? (
+          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities' || cfg.slug === 'haz_class' || cfg.slug === 'uom' || cfg.slug === 'hsn_codes' || cfg.slug === 'gst_percentage' || cfg.slug === 'packaging_material' || cfg.slug === 'conditions' || cfg.slug === 'segments') ? (
             <div
               className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"
               style={{
@@ -1570,6 +1570,7 @@ function MasterPageInner({
                       : cfg.slug === 'gst_percentage' ? 'GST Percentages'
                       : cfg.slug === 'packaging_material' ? 'Packaging Materials'
                       : cfg.slug === 'conditions' ? 'Product Conditions'
+                      : cfg.slug === 'segments' ? 'Segments'
                       : cfg.title}
                   </h4>
                   <p className="mb-0 text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
@@ -1593,6 +1594,8 @@ function MasterPageInner({
                       ? 'Manage packaging materials (carton, drum, sack) used for product shipments'
                       : cfg.slug === 'conditions'
                       ? 'Manage storage & handling states (Organic, Fresh, Frozen) for products'
+                      : cfg.slug === 'segments'
+                      ? 'Manage business segments (Dry Fruits, Pharma, etc.) used to classify orders & products'
                       : 'Manage all job roles, hierarchy levels, and role structure for employees'}
                   </p>
                 </div>
@@ -1695,7 +1698,7 @@ function MasterPageInner({
 
       {/* "What you are doing here" — hidden on designations & roles since the
           rich title strip already carries the subtitle context. */}
-      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && cfg.slug !== 'uom' && cfg.slug !== 'hsn_codes' && cfg.slug !== 'gst_percentage' && cfg.slug !== 'packaging_material' && cfg.slug !== 'conditions' && (
+      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && cfg.slug !== 'uom' && cfg.slug !== 'hsn_codes' && cfg.slug !== 'gst_percentage' && cfg.slug !== 'packaging_material' && cfg.slug !== 'conditions' && cfg.slug !== 'segments' && (
         <WhatYouDoHere
           cfg={cfg}
           onAdd={openAdd}
@@ -1847,7 +1850,7 @@ function MasterPageInner({
                   {/* Add button — shown here for non-rich masters; designations,
                       roles, kpis, assets, legal_entities, haz_class & departments
                       host their Add button in the rich page header instead. */}
-                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && cfg.slug !== 'uom' && cfg.slug !== 'hsn_codes' && cfg.slug !== 'gst_percentage' && cfg.slug !== 'packaging_material' && cfg.slug !== 'conditions' && cfg.slug !== 'departments' && caps.add && (
+                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && cfg.slug !== 'uom' && cfg.slug !== 'hsn_codes' && cfg.slug !== 'gst_percentage' && cfg.slug !== 'packaging_material' && cfg.slug !== 'conditions' && cfg.slug !== 'segments' && cfg.slug !== 'departments' && caps.add && (
                     <Button
                       color="secondary"
                       className="btn-label waves-effect waves-light rounded-pill"
