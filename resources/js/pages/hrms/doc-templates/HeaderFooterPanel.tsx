@@ -276,10 +276,10 @@ export default function HeaderFooterPanel({
         )}
         {!readOnly && (
           <>
-            <span className="tpl-edit-hint" style={{ position: 'absolute', right: 10, top: 8, fontSize: 10.5, color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: 999 }}>
+            <span className="tpl-edit-hint" style={{ position: 'absolute', right: 10, top: 8, fontSize: 10.5, color: '#ffffff', background: '#4b5563', padding: '2px 8px', borderRadius: 999, fontWeight: 600, boxShadow: '0 1px 2px rgba(0,0,0,0.15)' }}>
               <i className="ri-edit-line me-1" />Edit Header
             </span>
-            <span className="tpl-drag-hint" style={{ position: 'absolute', left: 10, top: 8, fontSize: 10.5, color: '#6366f1', background: '#eef2ff', padding: '2px 8px', borderRadius: 999, fontWeight: 700 }}>
+            <span className="tpl-drag-hint" style={{ position: 'absolute', left: 10, top: 8, fontSize: 10.5, color: '#ffffff', background: '#4f46e5', padding: '2px 8px', borderRadius: 999, fontWeight: 700, boxShadow: '0 1px 2px rgba(0,0,0,0.15)' }}>
               <i className="ri-text" />&nbsp;Click title to edit · Enter for a new line
             </span>
           </>
@@ -346,7 +346,7 @@ export default function HeaderFooterPanel({
           );
         })}
         {!readOnly && (
-          <span className="tpl-edit-hint" style={{ position: 'absolute', right: 10, bottom: 6, fontSize: 10.5, color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: 999 }}>
+          <span className="tpl-edit-hint" style={{ position: 'absolute', right: 10, bottom: 6, fontSize: 10.5, color: '#ffffff', background: '#4b5563', padding: '2px 8px', borderRadius: 999, fontWeight: 600, boxShadow: '0 1px 2px rgba(0,0,0,0.15)' }}>
             <i className="ri-edit-line me-1" />Edit Footer
           </span>
         )}
@@ -716,13 +716,17 @@ function HfpDarkStyles() {
       [data-bs-theme="dark"] .tpl-page-shell {
         border-color: var(--vz-border-color) !important;
       }
+      /* Pills sit on the (always-white) header/footer band — solid colors
+         render the same in both themes, so we don't override them in dark
+         mode anymore. Previous translucent-white overrides made the hint
+         labels nearly invisible on the white preview band. */
       [data-bs-theme="dark"] .tpl-page-shell .tpl-edit-hint {
-        background: rgba(255,255,255,0.10) !important;
-        color: rgba(255,255,255,0.75) !important;
+        background: #4b5563 !important;
+        color: #ffffff !important;
       }
       [data-bs-theme="dark"] .tpl-page-shell .tpl-drag-hint {
-        background: rgba(99,102,241,0.20) !important;
-        color: #c7d2fe !important;
+        background: #4f46e5 !important;
+        color: #ffffff !important;
       }
       [data-bs-theme="dark"] .tpl-page-shell .tpl-page-body {
         background: var(--vz-secondary-bg) !important;
