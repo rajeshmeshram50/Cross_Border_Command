@@ -1771,8 +1771,9 @@ function MasterPageInner({
                     />
                   )}
                   {/* Add button — shown here for non-rich masters; designations,
-                      roles, kpis & departments host their Add button elsewhere. */}
-                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'legal_entities' && cfg.slug !== 'departments' && caps.add && (
+                      roles, kpis, assets, legal_entities, haz_class & departments
+                      host their Add button in the rich page header instead. */}
+                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && cfg.slug !== 'departments' && caps.add && (
                     <Button
                       color="secondary"
                       className="btn-label waves-effect waves-light rounded-pill"

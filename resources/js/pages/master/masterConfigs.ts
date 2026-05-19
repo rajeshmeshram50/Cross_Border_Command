@@ -1096,8 +1096,8 @@ const C: Record<string, MasterConfig> = {
       { n: 'name', l: 'Hazard Class', t: 'text', r: true, p: 'e.g. Flammable Liquid' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
-    cols: ['name', 'id', 'status'],
-    colL: ['Hazard Class', 'ID', 'Status'],
+    cols: ['name', 'status'],
+    colL: ['Hazard Class', 'Status'],
     uFields: ['name'],
     data: [
       { id: 1, name: 'Flammable Liquid', status: 'Active' },
