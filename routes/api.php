@@ -109,7 +109,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // multipart/form-data on store + update.
     Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);
     Route::post  ('/sales/reminders',                 [SalesTodoController::class, 'storeReminder']);
-    Route::post  ('/sales/reminders/{id}',            [SalesTodoController::class, 'updateReminder']); // POST + _method=PUT for multipart
+    // Reminder update accepts both verbs because attachments arrive as multipart
+    // (POST + _method=PUT, since PHP can't parse multipart on PUT) but Laravel's
+    // global `enableHttpMethodParameterOverride()` still flips the method to PUT
+    // before the router matches. Registering both verbs keeps the route reachable
+    // either way.
+    Route::match(['put', 'post'], '/sales/reminders/{id}', [SalesTodoController::class, 'updateReminder']);
     Route::patch ('/sales/reminders/{id}/status',     [SalesTodoController::class, 'setReminderStatus']);
     Route::delete('/sales/reminders/{id}',            [SalesTodoController::class, 'destroyReminder']);
 
@@ -435,3 +440,4 @@ Route::get('/advance-requests/{id}/attachments/{index}', [\App\Http\Controllers\
     ->name('advance-requests.attachment');
 
 Route::apiResource('dummy-items', DummyItemController::class);
+    

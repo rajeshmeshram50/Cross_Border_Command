@@ -94,6 +94,31 @@ export default function SalesLeadAckMaster() {
     document.head.appendChild(link);
   }, []);
 
+  // Escape closes whichever modal is open (form takes priority over the
+  // type selector, matching the open/stack order). Saving disables the
+  // shortcut so a stray key press can't abandon an in-flight request.
+  useEffect(() => {
+    if (!oppSelectorOpen && !formOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (formOpen) { if (!saving) closeForm(); return; }
+      if (oppSelectorOpen) setOppSelectorOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [oppSelectorOpen, formOpen, saving]);
+
+  // Lock body scroll while any modal is open so the underlying page
+  // doesn't scroll behind the dim overlay (the customizer in this app
+  // sometimes pushes the body up otherwise).
+  useEffect(() => {
+    const open = oppSelectorOpen || formOpen;
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [oppSelectorOpen, formOpen]);
+
   // Fetch on mount if user can view.
   useEffect(() => {
     if (!canView) { setLoading(false); return; }
@@ -128,6 +153,13 @@ export default function SalesLeadAckMaster() {
   const safePage = Math.min(page, pages);
   const startIdx = (safePage - 1) * rpp;
   const rows = filtered.slice(startIdx, startIdx + rpp);
+
+  // If a row got marked inactive / deleted and shrank the result set below
+  // the current page, reconcile state so the pagination pill doesn't read
+  // "3 / 1" until the next user action.
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
 
   // Tab switch resets page + clears search (matches HTML behaviour).
   const switchTab = (next: OppType) => { setTab(next); setPage(1); setQ(''); };
@@ -211,10 +243,9 @@ export default function SalesLeadAckMaster() {
   // Trash button — flips status to inactive (matches HTML "Mark Inactive").
   const markInactive = async (row: Reason) => {
     if (!canDelete) return;
-    if (row.status === 'inactive') {
-      toast.info('Already inactive', `${row.reason}`);
-      return;
-    }
+    // The button is rendered with aria-disabled when the row is already
+    // inactive; clicks are silently ignored to avoid a noisy toast.
+    if (row.status === 'inactive') return;
     try {
       const res = await api.put(`/sales/lead-ack-reasons/${row.id}`, { status: 'inactive' });
       setData(prev => ({
@@ -360,10 +391,11 @@ export default function SalesLeadAckMaster() {
                       {canDelete && (
                         <Tooltip label={r.status === 'inactive' ? 'Already inactive' : 'Mark Inactive'}>
                           <button
+                            type="button"
                             aria-label={r.status === 'inactive' ? 'Already inactive' : 'Mark Inactive'}
+                            aria-disabled={r.status === 'inactive'}
                             className={`lam-ab lam-del ${r.status === 'inactive' ? 'lam-ab-muted' : ''}`}
                             onClick={() => markInactive(r)}
-                            disabled={r.status === 'inactive'}
                           >
                             <IconTrash />
                           </button>
@@ -418,12 +450,12 @@ export default function SalesLeadAckMaster() {
                 <div className="lam-modal-title">Select Opportunity Type</div>
                 <div className="lam-modal-sub">Choose where to store this reason</div>
               </div>
-              <button className="lam-modal-close" onClick={() => setOppSelectorOpen(false)}><IconX /></button>
+              <button type="button" className="lam-modal-close" onClick={() => setOppSelectorOpen(false)}><IconX /></button>
             </div>
             <div className="lam-modal-body">
               <p className="lam-modal-helper">Select the opportunity type for which you want to add a new reason:</p>
               <div className="lam-opp-options">
-                <button className="lam-opp lam-opp-qualified" onClick={() => selectOpp('qualified')}>
+                <button type="button" className="lam-opp lam-opp-qualified" onClick={() => selectOpp('qualified')}>
                   <div className="lam-opp-icon"><IconCheckCircle large /></div>
                   <div className="lam-opp-text">
                     <div className="lam-opp-title">Qualified Opportunity</div>
@@ -431,7 +463,7 @@ export default function SalesLeadAckMaster() {
                   </div>
                   <IconChevronRight />
                 </button>
-                <button className="lam-opp lam-opp-disqualified" onClick={() => selectOpp('disqualified')}>
+                <button type="button" className="lam-opp lam-opp-disqualified" onClick={() => selectOpp('disqualified')}>
                   <div className="lam-opp-icon"><IconXCircle large /></div>
                   <div className="lam-opp-text">
                     <div className="lam-opp-title">Disqualified Opportunity</div>
@@ -439,7 +471,7 @@ export default function SalesLeadAckMaster() {
                   </div>
                   <IconChevronRight />
                 </button>
-                <button className="lam-opp lam-opp-clarity" onClick={() => selectOpp('clarity_pending')}>
+                <button type="button" className="lam-opp lam-opp-clarity" onClick={() => selectOpp('clarity_pending')}>
                   <div className="lam-opp-icon"><IconInfoCircle large /></div>
                   <div className="lam-opp-text">
                     <div className="lam-opp-title">Clarity Pending Opportunity</div>
@@ -455,7 +487,7 @@ export default function SalesLeadAckMaster() {
 
       {/* Add / Edit modal */}
       {formOpen && pendingType && (
-        <div className="lam-overlay" onMouseDown={closeForm}>
+        <div className="lam-overlay" onMouseDown={() => { if (!saving) closeForm(); }}>
           <div className="lam-modal lam-modal-lg" onMouseDown={e => e.stopPropagation()}>
             <div className="lam-modal-header">
               <div className="lam-modal-hicon">
@@ -465,7 +497,7 @@ export default function SalesLeadAckMaster() {
                 <div className="lam-modal-title">{editingId !== null ? 'Edit Reason' : `Add ${pendingType === 'qualified' ? 'Qualified' : pendingType === 'disqualified' ? 'Disqualified' : 'Clarity Pending'} Reason`}</div>
                 <div className="lam-modal-sub">{TAB_LABELS[pendingType]}</div>
               </div>
-              <button className="lam-modal-close" onClick={closeForm}><IconX /></button>
+              <button type="button" className="lam-modal-close" onClick={closeForm}><IconX /></button>
             </div>
             <div className="lam-modal-body">
               {/* Reason */}
@@ -479,7 +511,7 @@ export default function SalesLeadAckMaster() {
                   value={formReason}
                   onChange={e => setFormReason(e.target.value)}
                 />
-                <div className="lam-char-count">
+                <div className={`lam-char-count ${formReason.length >= 450 ? (formReason.length >= 500 ? 'lam-cc-max' : 'lam-cc-warn') : ''}`}>
                   <span>{formReason.length}</span>
                   <span className="lam-char-max">/500</span>
                 </div>
@@ -520,8 +552,8 @@ export default function SalesLeadAckMaster() {
                 Fields marked <span className="lam-req">*</span> are required
               </div>
               <div className="lam-footer-actions">
-                <button className="lam-btn lam-btn-light" onClick={closeForm} disabled={saving}>Cancel</button>
-                <button className="lam-btn lam-btn-primary" onClick={save} disabled={saving}>
+                <button type="button" className="lam-btn lam-btn-light" onClick={closeForm} disabled={saving}>Cancel</button>
+                <button type="button" className="lam-btn lam-btn-primary" onClick={save} disabled={saving}>
                   {saving ? 'Saving…' : <>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                     Save Reason
@@ -719,9 +751,9 @@ const SCOPED_CSS = `
 .lam-edit { background: #eef2ff; color: #6366f1; }
 .lam-edit:hover { background: #6366f1; color: #fff; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(99,102,241,.30); }
 .lam-del  { background: #fff1f2; color: #f43f5e; }
-.lam-del:hover:not(:disabled)  { background: #f43f5e; color: #fff; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(244,63,94,.30); }
-.lam-ab:disabled { cursor: not-allowed; }
-.lam-ab-muted { opacity: .40; background: #f1f5f9 !important; color: #94a3b8 !important; }
+.lam-del:hover:not([aria-disabled="true"])  { background: #f43f5e; color: #fff; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(244,63,94,.30); }
+.lam-ab[aria-disabled="true"] { cursor: not-allowed; }
+.lam-ab-muted { opacity: .50; background: #f1f5f9 !important; color: #94a3b8 !important; }
 .lam-ab-muted:hover { transform: none !important; box-shadow: none !important; background: #f1f5f9 !important; color: #94a3b8 !important; }
 
 /* ─── Pagination ─── */
@@ -883,8 +915,12 @@ const SCOPED_CSS = `
   transition: border-color .15s, box-shadow .15s;
 }
 .lam-textarea:focus { border-color: #8b5cf6; box-shadow: 0 0 0 3px rgba(139,92,246,.12); }
-.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 3px; }
+.lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 3px; transition: color .15s; }
 .lam-char-max   { color: #ddd6fe; }
+.lam-cc-warn    { color: #ea580c; font-weight: 700; }
+.lam-cc-warn .lam-char-max { color: #fdba74; }
+.lam-cc-max     { color: #dc2626; font-weight: 800; }
+.lam-cc-max .lam-char-max  { color: #f87171; }
 .lam-form-grid { display: grid; gap: 14px; margin-top: 14px; }
 .lam-form-grid.one { grid-template-columns: 1fr; }
 .lam-form-grid.two { grid-template-columns: 1fr 1fr; }
