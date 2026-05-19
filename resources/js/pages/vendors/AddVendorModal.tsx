@@ -66,7 +66,6 @@ type KycSubTab = 'owner' | 'company' | 'license';
 // effect inside the component.
 const BEHAVIOURS = ['Excellent', 'Good', 'Medium', 'Poor'];
 const COUNTRIES  = ['India', 'United Arab Emirates', 'Singapore', 'United States', 'United Kingdom'];
-const ADDRESS_TYPES = ['Branch Office', 'Warehouse', 'Factory', 'Registered', 'Shipping', 'Billing', 'Other'];
 const STATES_BY_COUNTRY: Record<string, { name: string; code: string }[]> = {
   India: [
     { name: 'Maharashtra', code: 'MH' },
@@ -185,16 +184,6 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
     name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '',
   });
 
-  type AddressRow = {
-    id: number;
-    type: string;
-    line: string;
-    city: string;
-    state: string;
-    country: string;
-    pincode: string;
-  };
-  const [extraAddresses, setExtraAddresses] = useState<AddressRow[]>([]);
 
   /* ─── Step 2: KYC / Due Diligence — track uploaded doc codes per category ─── */
   const [uploadedDdCodes,    setUploadedDdCodes]    = useState<string[]>([]);
@@ -335,13 +324,6 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
   };
   const removeExtraContact = (id: number) => setExtraContacts(prev => prev.filter(c => c.id !== id));
 
-  const addExtraAddress = () => {
-    setExtraAddresses(prev => [...prev, { id: Date.now(), type: '', line: '', city: '', state: '', country: 'India', pincode: '' }]);
-  };
-  const removeExtraAddress = (id: number) => setExtraAddresses(prev => prev.filter(a => a.id !== id));
-  const updateExtraAddress = (id: number, patch: Partial<AddressRow>) => {
-    setExtraAddresses(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
-  };
 
   return createPortal((
     <div className="avm-backdrop" onClick={onClose}>
@@ -526,42 +508,6 @@ export default function AddVendorModal(props: { onClose: () => void; onSubmit: (
 
               {idTab === 'address' && (
                 <>
-                  {/* ── Additional Addresses ── */}
-                  <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Additional Addresses" subtitle="Branch offices, warehouses, factories, shipping locations" headerAction={
-                    <button className="avm-section-add-btn" onClick={addExtraAddress}>+ Add More Address</button>
-                  }>
-                    {extraAddresses.length === 0 ? (
-                      <div className="avm-empty">No additional addresses yet.</div>
-                    ) : (
-                      <div className="avm-extra-contacts">
-                        {extraAddresses.map((a, idx) => (
-                          <div className="avm-extra-contact" key={a.id}>
-                            <div className="avm-extra-head">
-                              <strong>Address #{idx + 1}</strong>
-                              <button className="avm-extra-remove" onClick={() => removeExtraAddress(a.id)} aria-label="Remove"><i className="ri-delete-bin-line" /></button>
-                            </div>
-                            <div className="avm-grid-3">
-                              <Field label="Address Type">
-                                <SelectInput value={a.type} onChange={(v) => updateExtraAddress(a.id, { type: v })} placeholder="Select" options={ADDRESS_TYPES} />
-                              </Field>
-                              <Field label="Country">
-                                <SelectInput value={a.country} onChange={(v) => updateExtraAddress(a.id, { country: v })} placeholder="Select" options={COUNTRIES} />
-                              </Field>
-                              <Field label="Pincode"><input className="avm-input" value={a.pincode} onChange={e => updateExtraAddress(a.id, { pincode: e.target.value })} /></Field>
-                            </div>
-                            <Field label="Address Line">
-                              <input className="avm-input" placeholder="Plot 21, Industrial Area" value={a.line} onChange={e => updateExtraAddress(a.id, { line: e.target.value })} />
-                            </Field>
-                            <div className="avm-grid-2">
-                              <Field label="State"><input className="avm-input" value={a.state} onChange={e => updateExtraAddress(a.id, { state: e.target.value })} /></Field>
-                              <Field label="City"><input className="avm-input" value={a.city} onChange={e => updateExtraAddress(a.id, { city: e.target.value })} /></Field>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </SectionCard>
-
                   {/* ── Additional Contact Persons ── */}
                   <SectionCard tone="violet" icon={<i className="ri-contacts-book-line" />} title="Additional Contact Persons" subtitle="Secondary contacts beyond the primary KYC contact" headerAction={
                     <button className="avm-section-add-btn" onClick={openContactPopup}>+ Add More Contact Person</button>
@@ -1147,11 +1093,11 @@ const SCOPED_CSS = `
 
 .avm-step-arrow { display: flex; align-items: center; padding: 0 4px; color: #c0cffb; font-size: 18px; font-weight: 700; }
 
-/* Body */
+/* Body — plain white surface like the Client / Master forms */
 .avm-body {
   flex: 1; overflow-y: auto;
   padding: 18px 22px 22px;
-  background: #f8fafc;
+  background: #fff;
   scrollbar-width: thin; scrollbar-color: #c0cffb transparent;
 }
 .avm-body::-webkit-scrollbar { width: 8px; }
@@ -1230,11 +1176,13 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 12px 16px;
 }
-.avm-section-violet .avm-section-head { background: linear-gradient(135deg, #e2ecfc, #eef2ff); }
-.avm-section-amber  .avm-section-head { background: linear-gradient(135deg, #fef3c7, #fef9c3); }
-.avm-section-teal   .avm-section-head { background: linear-gradient(135deg, #ccfbf1, #f0fdfa); }
-.avm-section-green  .avm-section-head { background: linear-gradient(135deg, #dcfce7, #ecfdf5); }
-.avm-section-purple .avm-section-head { background: linear-gradient(135deg, #e2ecfc, #eef2ff); }
+/* Subtle tinted section heads — keep the coloured left-border accent but
+   use a near-white head so it doesn't fight the white form surface. */
+.avm-section-violet .avm-section-head { background: #f8f9fa; }
+.avm-section-amber  .avm-section-head { background: #f8f9fa; }
+.avm-section-teal   .avm-section-head { background: #f8f9fa; }
+.avm-section-green  .avm-section-head { background: #f8f9fa; }
+.avm-section-purple .avm-section-head { background: #f8f9fa; }
 .avm-section-head-left { display: flex; align-items: center; gap: 10px; }
 .avm-section-icon {
   width: 32px; height: 32px; border-radius: 9px;
@@ -1266,11 +1214,12 @@ const SCOPED_CSS = `
 .avm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .avm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 
-.avm-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.avm-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .avm-field-label {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; font-weight: 800; letter-spacing: .04em;
-  color: #1e1b4b;
+  font-size: 12.5px; font-weight: 600;
+  color: var(--vz-body-color, #495057);
+  margin-bottom: 2px;
 }
 .avm-req { color: #ef4444; font-weight: 700; }
 .avm-field-plus {
@@ -1280,25 +1229,33 @@ const SCOPED_CSS = `
   font-size: 14px; font-weight: 700; line-height: 1; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
+/* Inputs — Velzon form-control look (white surface, light border, 6px
+   radius). Focus uses the project's primary navy. */
 .avm-input {
   height: 38px; width: 100%;
   padding: 0 12px;
-  border: 1.5px solid color-mix(in srgb, #405189 18%, #e2e8f0); border-radius: 10px;
-  background: color-mix(in srgb, #405189 4%, #f8fafc); color: #1e1b4b;
+  border: 1px solid var(--vz-border-color, #e9ebec);
+  border-radius: 6px;
+  background: var(--vz-card-bg, #fff); color: var(--vz-body-color, #495057);
   font-family: inherit; font-size: 13px; outline: none;
-  transition: border-color .15s, background .15s, box-shadow .15s;
+  transition: border-color .15s, box-shadow .15s;
 }
-.avm-input::placeholder { color: #94a3b8; }
-.avm-input:focus { border-color: #405189; background: #fff; box-shadow: 0 0 0 3px rgba(64,81,137,.15); }
+.avm-input::placeholder { color: #b3b3b3; }
+.avm-input:focus { border-color: #405189; box-shadow: 0 0 0 3px rgba(64,81,137,.15); }
 
-/* MasterSelect inside this modal */
+/* MasterSelect inside this modal — match Velzon form-select chrome */
 .avm-master-select .master-select-wrap .master-select-toggle {
   min-height: 38px !important; height: 38px;
   padding: 0 32px 0 12px !important;
   font-size: 13px !important;
-  background: color-mix(in srgb, #405189 4%, #f8fafc) !important;
-  border: 1.5px solid color-mix(in srgb, #405189 18%, #e2e8f0) !important;
-  border-radius: 10px !important;
+  background: var(--vz-card-bg, #fff) !important;
+  border: 1px solid var(--vz-border-color, #e9ebec) !important;
+  border-radius: 6px !important;
+  color: var(--vz-body-color, #495057) !important;
+}
+.avm-master-select .master-select-wrap.show .master-select-toggle {
+  border-color: #405189 !important;
+  box-shadow: 0 0 0 3px rgba(64,81,137,.15) !important;
 }
 
 /* Radios */
@@ -1306,17 +1263,20 @@ const SCOPED_CSS = `
 .avm-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #1e1b4b; cursor: pointer; }
 .avm-radio input { width: 16px; height: 16px; accent-color: #405189; }
 
-/* File chooser */
+/* File chooser — same chrome as the inputs, dashed border to signal upload */
 .avm-filechooser {
   position: relative;
   height: 38px; padding: 0 12px;
-  border: 1.5px dashed color-mix(in srgb, #405189 25%, #e2e8f0); border-radius: 10px;
-  background: color-mix(in srgb, #405189 4%, #f8fafc); color: #6b7280;
+  border: 1px dashed var(--vz-border-color, #e9ebec); border-radius: 6px;
+  background: var(--vz-card-bg, #fff); color: #6b7280;
   display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  font-size: 12.5px; font-weight: 500; cursor: pointer;
+  width: 100%;
 }
+.avm-filechooser:hover { border-color: #405189; }
 .avm-filechooser-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.avm-filechooser-icon { color: #405189; font-size: 15px; }
+.avm-filechooser-icon { color: #405189; font-size: 15px; flex-shrink: 0; }
+.avm-filechooser-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Extra contact rows */
 .avm-extra-contacts { display: flex; flex-direction: column; gap: 12px; }

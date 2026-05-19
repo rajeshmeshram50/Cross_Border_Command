@@ -154,16 +154,27 @@ export default function Vendors() {
         [data-bs-theme="dark"] .vendors-surface { background: #1c2531; }
 
         /* Match the Clients master table — plain Velzon table-light thead
-           with 13px cells. No coloured gradient on the header. */
+           with 13px cells. No coloured gradient on the header. The explicit
+           background is here because some parent rules in this page neutralise
+           Bootstrap's --bs-table-bg variable on the thead. */
         .vendors-surface .table thead th,
         .vendors-surface .table tbody td {
           font-size: 13px;
           vertical-align: middle;
         }
-        .vendors-surface .table thead th {
+        .vendors-surface .table > thead.table-light > tr > th,
+        .vendors-surface .table thead.table-light th {
+          background-color: var(--vz-light, #eff2f7) !important;
+          color: var(--vz-heading-color, #495057);
           font-weight: 600;
           letter-spacing: 0.01em;
           white-space: nowrap;
+          border-bottom: 1px solid var(--vz-border-color, #e9ebec);
+        }
+        [data-bs-theme="dark"] .vendors-surface .table > thead.table-light > tr > th,
+        [data-bs-theme="dark"] .vendors-surface .table thead.table-light th {
+          background-color: rgba(255,255,255,0.04) !important;
+          color: #ced4da;
         }
 
         /* Status tab pill strip — same look as the Products page */
@@ -277,16 +288,15 @@ export default function Vendors() {
                   <span className="v-status-count">{stats.inactive}</span>
                 </button>
               </div>
-              <div className="position-relative" style={{ maxWidth: 320, width: '100%' }}>
-                <i className="ri-search-line position-absolute" style={{ left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+              <div className="search-box" style={{ maxWidth: 320, width: '100%' }}>
                 <input
                   type="text"
                   className="form-control"
                   placeholder="Search by code, name, contact, phone…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  style={{ paddingLeft: 36, height: 38 }}
                 />
+                <i className="ri-search-line search-icon"></i>
               </div>
             </div>
 
