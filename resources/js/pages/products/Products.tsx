@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
@@ -136,6 +137,7 @@ const EMPTY_FILTERS: FilterState = {
 export default function Products() {
   const { user } = useAuth();
   const toast = useToast();
+  const navigate = useNavigate();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -419,7 +421,8 @@ export default function Products() {
               key={p.apiId}
               product={p}
               onAction={(act) => {
-                if (act === 'Edit')        handleEdit(p);
+                if (act === 'View')        navigate(`/products/${p.apiId}`);
+                else if (act === 'Edit')   handleEdit(p);
                 else if (act === 'Delete') handleDelete(p);
                 else                       toast.info(act, `${act}: ${p.name}`);
               }}
@@ -433,7 +436,8 @@ export default function Products() {
               key={p.apiId}
               product={p}
               onAction={(act) => {
-                if (act === 'Edit')        handleEdit(p);
+                if (act === 'View')        navigate(`/products/${p.apiId}`);
+                else if (act === 'Edit')   handleEdit(p);
                 else if (act === 'Delete') handleDelete(p);
                 else                       toast.info(act, `${act}: ${p.name}`);
               }}
@@ -666,7 +670,13 @@ function ProductCard(props: {
   const hasImage = product.images.length > 0;
 
   return (
-    <div className="prd-card">
+    <div
+      className="prd-card prd-card-clickable"
+      role="link"
+      tabIndex={0}
+      onClick={() => onAction('View')}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction('View'); } }}
+    >
       {product.badge && <span className={`prd-card-badge prd-badge-${product.badge.replace(/\s+/g, '').toLowerCase()}`}>{product.badge}</span>}
       <div className="prd-card-thumb" style={{ background: hasImage ? '#f5f3ff' : product.thumb }}>
         {hasImage ? (
@@ -702,7 +712,7 @@ function ProductCard(props: {
 
       <div className="prd-card-body">
         {/* ID|Name as a single line link */}
-        <button className="prd-card-title-link" title={product.name} onClick={() => onAction('View')}>
+        <button className="prd-card-title-link" title={product.name} onClick={(e) => { e.stopPropagation(); onAction('View'); }}>
           <span className="prd-card-id-inline">{product.id}</span>
           <span className="prd-card-id-sep">|</span>
           <span className="prd-card-name-inline">{product.name}</span>
@@ -761,7 +771,13 @@ function ProductRow(props: {
 }) {
   const { product, onAction } = props;
   return (
-    <div className="prd-row">
+    <div
+      className="prd-row prd-card-clickable"
+      role="link"
+      tabIndex={0}
+      onClick={() => onAction('View')}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAction('View'); } }}
+    >
       <div className="prd-row-thumb" style={{ background: product.images.length ? '#f5f3ff' : product.thumb }}>
         {product.images.length ? (
           <img src={product.images[0]} alt={product.name} className="prd-row-thumb-img" draggable={false} />
@@ -770,7 +786,7 @@ function ProductRow(props: {
         )}
       </div>
       <div className="prd-row-info">
-        <button className="prd-card-title-link" onClick={() => onAction('View')}>
+        <button className="prd-card-title-link" onClick={(e) => { e.stopPropagation(); onAction('View'); }}>
           <span className="prd-card-id-inline">{product.id}</span>
           <span className="prd-card-id-sep">|</span>
           <span className="prd-card-name-inline">{product.name}</span>
@@ -807,9 +823,9 @@ function ProductRow(props: {
         <div className="prd-card-price">{product.currency}{product.price.toLocaleString()}</div>
       </div>
       <div className="prd-row-actions">
-        <button className="prd-card-hover-btn" onClick={() => onAction('View')}>View</button>
-        <button className="prd-card-hover-btn primary" onClick={() => onAction('Edit')}>Edit</button>
-        <button className="prd-card-hover-btn danger" onClick={() => onAction('Delete')}>
+        <button className="prd-card-hover-btn" onClick={(e) => { e.stopPropagation(); onAction('View'); }}>View</button>
+        <button className="prd-card-hover-btn primary" onClick={(e) => { e.stopPropagation(); onAction('Edit'); }}>Edit</button>
+        <button className="prd-card-hover-btn danger" onClick={(e) => { e.stopPropagation(); onAction('Delete'); }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>
         </button>
       </div>
@@ -864,7 +880,7 @@ function ProductRowShimmer() {
 const SCOPED_CSS = `
 .prd-root {
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
-  background: linear-gradient(160deg, #faf5ff 0%, #f3e8ff 40%, #ede9fe 100%);
+  background: #ffffff;
   padding: 14px 18px 24px;
   margin: -1rem -0.75rem;
   min-height: calc(100vh - 70px);
@@ -966,6 +982,8 @@ const SCOPED_CSS = `
 .prd-shim-pill { width: 56px; height: 18px; border-radius: 99px; }
 .prd-shim-row  { display: flex; gap: 8px; align-items: center; }
 
+.prd-card-clickable { cursor: pointer; }
+.prd-card-clickable:focus-visible { outline: 2px solid #7c3aed; outline-offset: 2px; }
 .prd-card-shimmer { cursor: default; pointer-events: none; }
 .prd-card-shimmer:hover { transform: none; border-color: #e8e4f9; box-shadow: none; }
 .prd-card-shimmer .prd-card-body { gap: 10px; }
@@ -1282,7 +1300,12 @@ const SCOPED_CSS = `
   z-index: 999;
   display: flex; flex-direction: column;
   font-family: 'DM Sans', 'Inter', system-ui, sans-serif;
+  overflow: hidden;       /* hard-clip anything that tries to grow past the drawer */
+  box-sizing: border-box;
 }
+.prd-filter-drawer *,
+.prd-filter-drawer *::before,
+.prd-filter-drawer *::after { box-sizing: border-box; }
 .prd-filter-drawer.open { transform: translateX(0); }
 
 .prd-filter-head {
@@ -1304,20 +1327,38 @@ const SCOPED_CSS = `
 .prd-filter-icon-btn.close:hover { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
 
 .prd-filter-body {
-  flex: 1; overflow-y: auto;
+  flex: 1; min-height: 0; min-width: 0;
+  width: 100%;
+  overflow-y: scroll;        /* always-visible track */
+  overflow-x: hidden;        /* never grow horizontally */
   padding: 14px 14px 8px;
   display: flex; flex-direction: column; gap: 8px;
-  scrollbar-width: thin; scrollbar-color: #c4b5fd transparent;
+  scrollbar-width: thin; scrollbar-color: #8b5cf6 #ede9fe;
+  scrollbar-gutter: stable;
 }
-.prd-filter-body::-webkit-scrollbar { width: 8px; }
-.prd-filter-body::-webkit-scrollbar-thumb { background: #c4b5fd; border-radius: 99px; }
+.prd-filter-body::-webkit-scrollbar { width: 10px; }
+.prd-filter-body::-webkit-scrollbar-track {
+  background: #f5f3ff;
+  border-left: 1px solid #ede9fe;
+}
+.prd-filter-body::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #a78bfa, #7c3aed);
+  border-radius: 99px;
+  border: 2px solid #f5f3ff;
+  min-height: 40px;
+}
+.prd-filter-body::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #7c3aed, #5b21b6);
+}
 
 .prd-filter-panel {
+  width: 100%; min-width: 0;
   background: #f5f3ff;
   border: 1px solid #ede9fe;
   border-radius: 10px;
   overflow: hidden;
   transition: border-color .15s, box-shadow .15s;
+  flex-shrink: 0;     /* don't expand into siblings */
 }
 .prd-filter-panel.open { border-color: #c4b5fd; box-shadow: 0 2px 8px rgba(124,58,237,.1); }
 .prd-filter-panel-head {
@@ -1341,11 +1382,13 @@ const SCOPED_CSS = `
 .prd-filter-panel.open .prd-filter-chevron { transform: rotate(180deg); }
 
 .prd-filter-panel-body {
+  width: 100%; min-width: 0;
   padding: 4px 10px 10px;
   background: #fff;
   border-top: 1px solid #ede9fe;
   max-height: 240px;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex; flex-direction: column; gap: 2px;
   scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
 }
@@ -1602,8 +1645,18 @@ const SCOPED_CSS = `
   border-color: #7f1d1d;
 }
 
-[data-bs-theme="dark"] .prd-filter-body { scrollbar-color: #4c1d95 transparent; }
-[data-bs-theme="dark"] .prd-filter-body::-webkit-scrollbar-thumb { background: #4c1d95; }
+[data-bs-theme="dark"] .prd-filter-body { scrollbar-color: #a78bfa #221852; }
+[data-bs-theme="dark"] .prd-filter-body::-webkit-scrollbar-track {
+  background: #14102a;
+  border-left-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .prd-filter-body::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #a78bfa, #6d28d9);
+  border-color: #14102a;
+}
+[data-bs-theme="dark"] .prd-filter-body::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #c4b5fd, #7c3aed);
+}
 
 [data-bs-theme="dark"] .prd-filter-panel {
   background: #1a1430;

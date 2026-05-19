@@ -57,6 +57,7 @@ import SalesLeadsDetails from '../pages/sales/SalesLeadsDetails';
 import SalesQPI from '../pages/sales/SalesQPI';
 import SalesP2PSummary from '../pages/sales/SalesP2PSummary';
 import Products from '../pages/products/Products';
+import ProductView from '../pages/products/ProductView';
 import SalesDiagnosis from '../pages/sales/SalesDiagnosis';
 import SalesResolutionCenter from '../pages/sales/SalesResolutionCenter';
 import SalesAnalytics from '../pages/sales/SalesAnalytics';
@@ -585,6 +586,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/qpi" element={<SalesQPI />} />
               <Route path="/sales/p2p-summary" element={<SalesP2PSummary />} />
               <Route path="/products" element={<Products />} />
+              <Route path="/products/:id" element={<ProductView />} />
               <Route path="/sales/diagnosis" element={<SalesDiagnosis />} />
               <Route path="/sales/resolution-center" element={<SalesResolutionCenter />} />
               <Route path="/sales/analytics" element={<SalesAnalytics />} />

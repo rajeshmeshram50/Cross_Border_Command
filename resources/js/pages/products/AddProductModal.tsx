@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ChangeEvent, type ReactNode } from '
 import { createPortal } from 'react-dom';
 import api from '../../api';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import { useToast } from '../../contexts/ToastContext';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 
@@ -140,6 +141,7 @@ export default function AddProductModal(props: {
   onSaved: (productId: number, finalised: boolean) => void;
 }) {
   const { productId: initialId, onClose, onSaved } = props;
+  const toast = useToast();
 
   /* ─── Wizard nav ─── */
   const [step, setStep] = useState<1 | 2>(1);
@@ -285,15 +287,30 @@ export default function AddProductModal(props: {
     setQcModalOpen(true);
   };
   const saveQcDraft = () => {
-    if (!qcDraft.name || !qcDraft.purpose || !qcDraft.issuedBy) return;
+    const missing: string[] = [];
+    if (!qcDraft.name)     missing.push('QC Name');
+    if (!qcDraft.purpose)  missing.push('QC Purpose');
+    if (!qcDraft.issuedBy) missing.push('Issued By');
+    if (missing.length) {
+      toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
+      return;
+    }
     setQcRecords(prev => [...prev, { id: Date.now(), ...qcDraft }]);
     setQcModalOpen(false);
+    toast.success('QC added', `${qcDraft.name} added to the QC list`);
   };
   const removeQc = (id: number) =>
     setQcRecords(prev => prev.filter(q => q.id !== id));
 
   const saveVendorDraft = () => {
-    if (!vendorSelected || !vendorPp) return;
+    const missing: string[] = [];
+    if (!vendorSelected)        missing.push('Vendor');
+    if (!vendorPp || vendorPp <= 0) missing.push('Purchase Price');
+    if (missing.length) {
+      toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
+      return;
+    }
+    if (!vendorSelected) return; // type-guard after the check
     const entry: VendorEntry = {
       id: String(Date.now()),
       productCode: productCode || 'P-NEW',
@@ -319,6 +336,7 @@ export default function AddProductModal(props: {
     setVendorGstPct('');
     setVendorRemarks('');
     setVendorMapDate('');
+    toast.success('Vendor mapped', `${entry.vendorName} added to this product`);
   };
 
   const removeVendor = (id: string) =>
@@ -471,7 +489,26 @@ export default function AddProductModal(props: {
    * ────────────────────────────────────────────────────────────── */
   const saveCore = async () => {
     setError('');
-    if (!name.trim()) { setError('Product name is required.'); return; }
+    // Required-field validation. Each missing piece becomes a labelled
+    // toast so the user can see exactly what to fix without scrolling.
+    const missing: string[] = [];
+    if (!name.trim())            missing.push('Product Name');
+    if (!genericName.trim())     missing.push('Generic Name');
+    if (!description.trim())     missing.push('Product Printable Description');
+    if (!brand.trim())           missing.push('Make / Brand / Specifications');
+    if (!segmentId)              missing.push('Segment');
+    if (!hazType)                missing.push('Haz / Non-Haz');
+    if (hazType === 'Haz' && !hazClassId) missing.push('Haz Class');
+    if (!uomId)                  missing.push('UOM');
+    if (!hsnId)                  missing.push('HSN / SAC Code');
+    if (!conditionId)            missing.push('Condition');
+    if (!packagingMaterialId)    missing.push('Packaging Material');
+    if (missing.length) {
+      const msg = `Please fill: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? ` +${missing.length - 3} more` : ''}`;
+      setError(msg);
+      toast.error('Missing required fields', msg);
+      return;
+    }
     setSaving(true);
     try {
       // Always send multipart so file uploads work; Laravel handles either
@@ -519,16 +556,31 @@ export default function AddProductModal(props: {
       setSecondaryImageFiles([]);
 
       onSaved(res.data.id, false);
+      toast.success('Core saved', 'Product Core Information saved');
       setTab('sales');
     } catch (e: unknown) {
-      setError(extractError(e, 'Failed to save Core information.'));
+      const msg = extractError(e, 'Failed to save Core information.');
+      setError(msg);
+      toast.error('Save failed', msg);
     } finally {
       setSaving(false);
     }
   };
 
   const saveSales = async () => {
-    if (!productId) { setError('Save Core info first.'); return; }
+    if (!productId) {
+      const msg = 'Save Core information first.';
+      setError(msg); toast.error('Step blocked', msg); return;
+    }
+    // Sales validation
+    const missing: string[] = [];
+    if (!basePrice || basePriceNum <= 0) missing.push('Selling Price');
+    if (!gstId)                          missing.push('GST %');
+    if (!markBottom)                     missing.push('Mark Bottom / Non Bottom');
+    if (missing.length) {
+      const msg = `Please fill: ${missing.join(', ')}`;
+      setError(msg); toast.error('Missing required fields', msg); return;
+    }
     setError(''); setSaving(true);
     try {
       await api.put(`/products/${productId}/step/sales`, {
@@ -539,16 +591,39 @@ export default function AddProductModal(props: {
         mark_bottom: markBottom || null,
       });
       onSaved(productId, false);
+      toast.success('Sales saved', 'Pricing and GST saved');
       setTab('quality');
     } catch (e: unknown) {
-      setError(extractError(e, 'Failed to save Sales information.'));
+      const msg = extractError(e, 'Failed to save Sales information.');
+      setError(msg);
+      toast.error('Save failed', msg);
     } finally {
       setSaving(false);
     }
   };
 
   const saveQuality = async () => {
-    if (!productId) { setError('Save Core info first.'); return; }
+    if (!productId) {
+      const msg = 'Save Core information first.';
+      setError(msg); toast.error('Step blocked', msg); return;
+    }
+    // Quality validation — all five box-matrix fields are required, must be > 0
+    const missing: string[] = [];
+    if (!netWeight   || parseFloat(netWeight)   <= 0) missing.push('Net Weight');
+    if (!grossWeight || parseFloat(grossWeight) <= 0) missing.push('Gross Weight');
+    if (!length      || parseFloat(length)      <= 0) missing.push('Length');
+    if (!width       || parseFloat(width)       <= 0) missing.push('Width');
+    if (!height      || parseFloat(height)      <= 0) missing.push('Height');
+    if (missing.length) {
+      const msg = `Please fill: ${missing.join(', ')}`;
+      setError(msg); toast.error('Missing required fields', msg); return;
+    }
+    // QC records (if any) — each must have a name
+    const badQc = qcRecords.findIndex(q => !q.name.trim());
+    if (badQc !== -1) {
+      const msg = `QC record #${badQc + 1} is missing the QC Name`;
+      setError(msg); toast.error('Invalid QC record', msg); return;
+    }
     setError(''); setSaving(true);
     try {
       await api.put(`/products/${productId}/step/quality`, {
@@ -568,17 +643,26 @@ export default function AddProductModal(props: {
       });
       // Step 1 fully complete — product is now Inactive on the server.
       onSaved(productId, false);
+      toast.success('Quality saved', 'Product is now Inactive — map a vendor to activate');
       setStep(2);
     } catch (e: unknown) {
-      setError(extractError(e, 'Failed to save Quality information.'));
+      const msg = extractError(e, 'Failed to save Quality information.');
+      setError(msg);
+      toast.error('Save failed', msg);
     } finally {
       setSaving(false);
     }
   };
 
   const saveVendorsAndFinish = async () => {
-    if (!productId) { setError('Save Core info first.'); return; }
-    if (vendors.length === 0) { setError('Map at least one vendor before saving.'); return; }
+    if (!productId) {
+      const msg = 'Save Core information first.';
+      setError(msg); toast.error('Step blocked', msg); return;
+    }
+    if (vendors.length === 0) {
+      const msg = 'Map at least one vendor before saving the product.';
+      setError(msg); toast.error('No vendors mapped', msg); return;
+    }
     setError(''); setSaving(true);
     try {
       await api.put(`/products/${productId}/step/vendors`, {
@@ -599,8 +683,11 @@ export default function AddProductModal(props: {
         })),
       });
       onSaved(productId, true);
+      toast.success('Product saved', 'Vendors mapped — product is now Active');
     } catch (e: unknown) {
-      setError(extractError(e, 'Failed to save vendors.'));
+      const msg = extractError(e, 'Failed to save vendors.');
+      setError(msg);
+      toast.error('Save failed', msg);
     } finally {
       setSaving(false);
     }
