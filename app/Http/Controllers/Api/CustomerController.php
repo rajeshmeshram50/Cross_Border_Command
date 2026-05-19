@@ -101,10 +101,10 @@ class CustomerController extends Controller
                 'status'         => $data['status']         ?? 'Active',
             ]);
 
-            // Generate the user-facing C-#### code from the new id. Done
-            // post-insert so the digit count grows naturally (C-0001 →
-            // C-1234 → …) without a sequence table.
-            $customer->customer_code = 'C-' . str_pad((string) $customer->id, 4, '0', STR_PAD_LEFT);
+            // Generate the user-facing C-### code from the new id. Done
+            // post-insert so the digit count grows naturally (C-001 →
+            // C-123 → C-1234 once we cross 1000) without a sequence table.
+            $customer->customer_code = 'C-' . str_pad((string) $customer->id, 3, '0', STR_PAD_LEFT);
             $customer->save();
 
             // Primary address row — always exactly one.
@@ -195,7 +195,7 @@ class CustomerController extends Controller
     {
         $primary = $c->primaryAddress;
         return [
-            'id'              => $c->customer_code ?: ('C-' . str_pad((string) $c->id, 4, '0', STR_PAD_LEFT)),
+            'id'              => $c->customer_code ?: ('C-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
             'db_id'           => $c->id,
             'company'         => $c->company_name,
             'legalName'       => $c->legal_name,

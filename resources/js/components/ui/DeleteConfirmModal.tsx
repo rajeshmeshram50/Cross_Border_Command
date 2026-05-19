@@ -41,7 +41,10 @@ export default function DeleteConfirmModal({ open, clientName, itemName: itemNam
         .dcm-overlay {
           position: fixed;
           inset: 0;
-          z-index: 1050;
+          /* Sits above every in-app modal — including the Add Customer
+             modal at z-index 10000 — so the confirm popup is never
+             trapped behind the modal that triggered it. */
+          z-index: 11050;
           display: flex;
           align-items: center;
           justify-content: center;

@@ -54,4 +54,16 @@ class Customer extends Model
     {
         return $this->hasOne(CustomerAddress::class)->where('is_primary', true);
     }
+
+    /** Stage 2 — Company Due Diligence + Trade Licence rows. */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(CustomerDocument::class)->orderByDesc('id');
+    }
+
+    /** Stage 2 — Owner KYC rows. */
+    public function owners(): HasMany
+    {
+        return $this->hasMany(CustomerOwner::class)->orderByDesc('id');
+    }
 }

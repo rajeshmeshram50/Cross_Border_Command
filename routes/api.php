@@ -87,12 +87,26 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Plans (admin CRUD)
     Route::apiResource('plans', PlanController::class);
 
-    // Sales Matrix → Customers (stub) — backs the design at
-    // public/sales/customers.html. No DB yet; CustomerController returns
-    // the same mock dataset the front-end uses inline. Swap for Eloquent
-    // when the customers table migration lands.
+    // Sales Matrix → Customers. Backed by customers + customer_addresses
+    // tables; tenant-scoped server-side.
     Route::apiResource('customers', CustomerController::class)
         ->only(['index', 'show', 'store', 'update', 'destroy']);
+
+    // Stage 2 → Company DD + Trade Licence documents nested under the customer.
+    Route::get   ('/customers/{customer}/documents',           [\App\Http\Controllers\Api\CustomerDocumentController::class, 'index']);
+    Route::post  ('/customers/{customer}/documents',           [\App\Http\Controllers\Api\CustomerDocumentController::class, 'store']);
+    Route::get   ('/customers/{customer}/documents/{document}',[\App\Http\Controllers\Api\CustomerDocumentController::class, 'show']);
+    Route::post  ('/customers/{customer}/documents/{document}',[\App\Http\Controllers\Api\CustomerDocumentController::class, 'update']);  // POST for file uploads
+    Route::put   ('/customers/{customer}/documents/{document}',[\App\Http\Controllers\Api\CustomerDocumentController::class, 'update']);  // PUT for json-only
+    Route::delete('/customers/{customer}/documents/{document}',[\App\Http\Controllers\Api\CustomerDocumentController::class, 'destroy']);
+
+    // Stage 2 → Owner KYC rows nested under the customer.
+    Route::get   ('/customers/{customer}/owners',          [\App\Http\Controllers\Api\CustomerOwnerController::class, 'index']);
+    Route::post  ('/customers/{customer}/owners',          [\App\Http\Controllers\Api\CustomerOwnerController::class, 'store']);
+    Route::get   ('/customers/{customer}/owners/{owner}',  [\App\Http\Controllers\Api\CustomerOwnerController::class, 'show']);
+    Route::post  ('/customers/{customer}/owners/{owner}',  [\App\Http\Controllers\Api\CustomerOwnerController::class, 'update']);  // POST for file uploads
+    Route::put   ('/customers/{customer}/owners/{owner}',  [\App\Http\Controllers\Api\CustomerOwnerController::class, 'update']);  // PUT for json-only
+    Route::delete('/customers/{customer}/owners/{owner}',  [\App\Http\Controllers\Api\CustomerOwnerController::class, 'destroy']);
 
     // Sales Matrix → Lead Acknowledgement Master. Three opportunity buckets
     // (qualified / disqualified / clarity_pending) — controller returns them

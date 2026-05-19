@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
 import api from '../../api';
+import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Customers
@@ -50,7 +51,6 @@ export default function SalesCustomers() {
 
   const [tab, setTab] = useState<'fresh' | 'recurring'>('fresh');
   const [q, setQ] = useState('');
-  const [page, setPage] = useState(1);
   const [wdhOpen, setWdhOpen] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EditCustomer | null>(null);
@@ -91,16 +91,127 @@ export default function SalesCustomers() {
   // page-side filter just relays whatever the API returned.
   const filtered = useMemo<Customer[]>(() => customers, [customers]);
 
-  const total = filtered.length;
-  const pages = Math.max(1, Math.ceil(total / ROWS_PER_PAGE));
-  const safePage = Math.min(page, pages);
-  const startIdx = (safePage - 1) * ROWS_PER_PAGE;
-  const rows = filtered.slice(startIdx, startIdx + ROWS_PER_PAGE);
-
-  const switchTab = (next: 'fresh' | 'recurring') => { setTab(next); setPage(1); };
-  const onSearch = (v: string) => { setQ(v); setPage(1); };
+  // TableContainer manages its own pagination, so the page-side
+  // state used by the old custom table is gone now.
+  const switchTab = (next: 'fresh' | 'recurring') => { setTab(next); };
+  const onSearch = (v: string) => { setQ(v); };
 
   const soon = (label: string) => toast.info(label, 'Coming in next phase');
+
+  /* ── Project-standard action button — same recipe as HR Employees,
+   * Clients, Branches. 30×30 tile using vz-* tokens so it adapts to
+   * light/dark mode automatically; on hover the border + icon shift
+   * to the column-specific accent (primary / success / info / etc.).
+   * Always wrapped in <Tooltip> for consistent hover hints. */
+  const ActionBtn = ({ title, icon, color, onClick }: { title: string; icon: string; color: 'primary'|'success'|'info'|'danger'|'warning'; onClick: () => void }) => (
+    <Tooltip label={title}>
+      <button
+        type="button"
+        aria-label={title}
+        className="btn p-0 d-inline-flex align-items-center justify-content-center"
+        style={{
+          width: 30, height: 30, borderRadius: 8,
+          background: 'var(--vz-secondary-bg)',
+          border: '1px solid var(--vz-border-color)',
+          color: 'var(--vz-secondary-color)',
+          transition: 'all .15s ease',
+        }}
+        onMouseEnter={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.borderColor = `var(--vz-${color})`;
+          el.style.color = `var(--vz-${color})`;
+        }}
+        onMouseLeave={e => {
+          const el = e.currentTarget as HTMLButtonElement;
+          el.style.borderColor = 'var(--vz-border-color)';
+          el.style.color = 'var(--vz-secondary-color)';
+        }}
+        onClick={onClick}
+      >
+        <i className={`${icon} fs-14`} />
+      </button>
+    </Tooltip>
+  );
+
+  /* ── TanStack table columns. Cell renderers preserve the existing
+   * type-color pills, segment chips, WhatsApp pill, and customer-ID
+   * mono chip so the look stays consistent with the previous design;
+   * what changes is sortable headers + standard action tiles + the
+   * built-in pagination from TableContainer. */
+  const columns = useMemo<any[]>(() => [
+    {
+      header: 'Sr No',
+      id: '__sr',
+      accessorFn: (_row: any, i: number) => i + 1,
+      meta: { align: 'center' },
+      cell: (info: any) => <span className="smc-srno">{info.row.index + 1}</span>,
+      enableSorting: false,
+    },
+    {
+      header: 'Customer ID',
+      accessorKey: 'id',
+      cell: (info: any) => <span className="smc-id-chip">{info.getValue()}</span>,
+    },
+    {
+      header: 'Company Name',
+      accessorKey: 'company',
+      cell: (info: any) => <span className="smc-company">{info.getValue() || '—'}</span>,
+    },
+    {
+      header: 'Customer Type',
+      accessorKey: 'type',
+      cell: (info: any) => {
+        const v = info.getValue() as string | null;
+        if (!v) return <span className="text-muted">—</span>;
+        const t = TYPE_COLORS[v] || { bg: '#f3f0ff', color: '#6d28d9', border: '#ddd6fe', dot: '#7c3aed' };
+        return (
+          <span className="smc-type-pill" style={{ background: t.bg, color: t.color, borderColor: t.border }}>
+            <span className="smc-type-dot" style={{ background: t.dot, boxShadow: `0 0 4px ${t.dot}66` }} />
+            {v}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Segment',
+      accessorKey: 'segment',
+      cell: (info: any) => info.getValue() ? <span className="smc-seg">{info.getValue()}</span> : <span className="text-muted">—</span>,
+    },
+    { header: 'Country',        accessorKey: 'country', cell: (i: any) => <span className="smc-country">{i.getValue() || '—'}</span> },
+    { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <span className="smc-contact">{i.getValue() || '—'}</span> },
+    { header: 'Contact No',     accessorKey: 'phone',   cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <span className="smc-email">{i.getValue() || '—'}</span> },
+    {
+      header: () => <div className="text-center">WhatsApp</div>,
+      accessorKey: 'whatsapp',
+      meta: { align: 'center' },
+      cell: (info: any) => info.getValue() === 'Yes'
+        ? <span className="smc-wa yes"><span className="smc-wa-dot" />Yes</span>
+        : <span className="smc-wa no"><span className="smc-wa-dot" />No</span>,
+    },
+    {
+      header: () => <div className="text-center">Consignees</div>,
+      accessorKey: 'consignees',
+      meta: { align: 'center' },
+      cell: (info: any) => <span className="smc-cons">{Number(info.getValue() ?? 0)}</span>,
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: '__actions',
+      meta: { align: 'center' },
+      enableSorting: false,
+      cell: (info: any) => {
+        const c = info.row.original as Customer;
+        return (
+          <div className="d-inline-flex align-items-center gap-2 justify-content-center">
+            {canEdit && <ActionBtn title="Edit Customer"           icon="ri-pencil-line"     color="primary" onClick={() => { setEditing(c); setAddOpen(true); }} />}
+                       <ActionBtn title="Map Consignee"            icon="ri-team-line"       color="success" onClick={() => soon('Map Consignee')} />
+                       <ActionBtn title="Customer Evidence Vault"  icon="ri-file-shield-line" color="info"   onClick={() => soon('Evidence Vault')} />
+          </div>
+        );
+      },
+    },
+  ], [canEdit]);
 
   // Hard-stop direct URL access for users whose Permissions sheet doesn't
   // include sales.customers.can_view. The Sidebar already hides the link, but
@@ -205,82 +316,31 @@ export default function SalesCustomers() {
         </div>
 
         <div className="smc-table-wrap">
-          <table className="smc-table">
-            <thead>
-              <tr>
-                <th>Sr No</th>
-                <th>Customer ID</th>
-                <th>Company Name</th>
-                <th>Customer Type</th>
-                <th>Segment</th>
-                <th>Country</th>
-                <th>Contact Person</th>
-                <th>Contact No</th>
-                <th>Email</th>
-                <th className="ta-c">WhatsApp</th>
-                <th className="ta-c">Consignees</th>
-                <th className="ta-c">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr><td colSpan={12} className="smc-empty">{loading ? 'Loading customers…' : 'No customers found'}</td></tr>
-              )}
-              {rows.map((c, i) => {
-                const t = TYPE_COLORS[c.type] || { bg:'#f3f0ff', color:'#6d28d9', border:'#ddd6fe', dot:'#7c3aed' };
-                return (
-                  <tr key={c.id} className={i % 2 === 0 ? 'even' : 'odd'}>
-                    <td><span className="smc-srno">{startIdx + i + 1}</span></td>
-                    <td><span className="smc-id-chip">{c.id}</span></td>
-                    <td><span className="smc-company">{c.company}</span></td>
-                    <td>
-                      <span className="smc-type-pill" style={{ background:t.bg, color:t.color, borderColor:t.border }}>
-                        <span className="smc-type-dot" style={{ background:t.dot, boxShadow:`0 0 4px ${t.dot}66` }} />
-                        {c.type}
-                      </span>
-                    </td>
-                    <td><span className="smc-seg">{c.segment}</span></td>
-                    <td className="smc-country">{c.country}</td>
-                    <td className="smc-contact">{c.contact}</td>
-                    <td className="smc-mono">{c.phone}</td>
-                    <td className="smc-email">{c.email}</td>
-                    <td className="ta-c">
-                      {c.whatsapp === 'Yes'
-                        ? <span className="smc-wa yes"><span className="smc-wa-dot" />Yes</span>
-                        : <span className="smc-wa no"><span className="smc-wa-dot" />No</span>}
-                    </td>
-                    <td className="ta-c"><span className="smc-cons">{c.consignees}</span></td>
-                    <td className="ta-c">
-                      <div className="smc-actions">
-                        {canEdit && (
-                          <Tooltip label="Edit Customer">
-                            <button aria-label="Edit Customer" className="smc-act smc-act-edit" onClick={() => { setEditing(c); setAddOpen(true); }}><IconEdit /></button>
-                          </Tooltip>
-                        )}
-                        <Tooltip label="Map Consignee">
-                          <button aria-label="Map Consignee" className="smc-act smc-act-map"  onClick={() => soon('Map Consignee')}><IconUsersSm /></button>
-                        </Tooltip>
-                        <Tooltip label="Customer Evidence Vault">
-                          <button aria-label="Customer Evidence Vault" className="smc-act smc-act-vault" onClick={() => soon('Evidence Vault')}><IconFile /></button>
-                        </Tooltip>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="smc-pagination">
-          <span className="smc-pag-info">
-            {total === 0 ? 'No records' : `Showing ${startIdx + 1}–${Math.min(startIdx + ROWS_PER_PAGE, total)} of ${total}`}
-          </span>
-          <div className="smc-pag-right">
-            <span className="smc-pag-range">{safePage} / {pages}</span>
-            <button className="smc-pag-btn" disabled={safePage <= 1}  onClick={() => setPage(p => Math.max(1, p - 1))}><IconChevronLeft /></button>
-            <button className="smc-pag-btn" disabled={safePage >= pages || total === 0} onClick={() => setPage(p => Math.min(pages, p + 1))}><IconChevronRight /></button>
-          </div>
+          {/* Project-standard TanStack table — sortable headers + built-in
+              pagination + Bootstrap row chrome. Cell renderers preserve
+              the purple-themed pills / chips / mono fonts from the
+              original design via the .smc-* class on tableClass. */}
+          {/* Standard project table look: Bootstrap `table-light` thead,
+              `align-middle table-nowrap` body. Cell renderers still
+              produce the colored type pills + segment chips so the
+              row reads with personality, but the chrome is the same
+              clean look used in HR Employees, Clients, etc. */}
+          <TableContainer
+            columns={columns}
+            data={filtered}
+            isGlobalFilter={false}
+            customPageSize={ROWS_PER_PAGE}
+            tableClass="table align-middle table-nowrap mb-0"
+            theadClass="table-light"
+            divClass="table-responsive table-card border rounded"
+            SearchPlaceholder="Search customers..."
+          />
+          {loading && filtered.length === 0 && (
+            <div className="smc-empty py-4">Loading customers…</div>
+          )}
+          {!loading && filtered.length === 0 && (
+            <div className="smc-empty py-4">No customers found</div>
+          )}
         </div>
       </div>
 
@@ -572,30 +632,174 @@ const SCOPED_CSS = `
 }
 .smc-search input::placeholder { color: #a78bfa; }
 
-/* ─── Table ─── */
-.smc-table-wrap { overflow: auto; flex: 1; min-height: 0; }
+/* ─── Table ───
+ * The page uses the project-standard TableContainer with
+ *   tableClass="table align-middle table-nowrap"
+ *   theadClass="table-light"
+ * (same as HR Employees / Clients). The rules below scope a soft
+ * lavender-tinted header + clean body styling so the table feels
+ * integrated with the purple page chrome without going back to the
+ * heavy gradient header. */
+.smc-table-wrap {
+  overflow: auto; flex: 1; min-height: 0;
+  /* Breathing room so the table-responsive card doesn't sit flush
+     against the tabs/search bar above and the pagination doesn't
+     touch the bottom edge of .smc-table-card. */
+  padding: 14px 14px 12px;
+}
+
+/* Card wrapper produced by divClass "table-responsive table-card border rounded".
+ * Header uses a soft lavender tint that ties to the page's purple
+ * chrome (hero, WDH cards, tabs bar). The cell content chips
+ * provide the cell-level color; the chrome stays light + airy. */
+.smc-table-wrap .table-responsive {
+  background: #fff !important;
+  border: 1px solid #e0d9f7 !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+}
+.smc-table-wrap .table {
+  --bs-table-bg: transparent;
+  margin-bottom: 0 !important;
+}
+/* Header — soft lavender wash (matches the .smc-tabs-bar gradient
+   feel) with violet column text. Same vibe as the rest of the page. */
+.smc-table-wrap .table thead,
+.smc-table-wrap .table thead tr,
+.smc-table-wrap .table thead.table-light tr {
+  background: linear-gradient(180deg, #f5f0ff 0%, #ede9fe 100%) !important;
+}
+.smc-table-wrap .table thead th,
+.smc-table-wrap .table thead.table-light th {
+  --bs-table-bg: transparent !important;
+  --bs-table-accent-bg: transparent !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  color: #4338ca !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: .01em !important;
+  padding: 10px 14px !important;
+  line-height: 1.3 !important;
+  border-bottom: 1px solid #c4b5fd !important;
+  white-space: nowrap;
+  text-transform: none;
+  vertical-align: middle !important;
+}
+.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.55; color: #6d28d9; }
+/* Body — white rows, dark slate text, soft lavender hover. */
+.smc-table-wrap .table tbody tr {
+  background: #fff;
+  transition: background .12s ease;
+}
+.smc-table-wrap .table tbody tr:hover {
+  background: #faf7ff !important;
+}
+.smc-table-wrap .table tbody td {
+  --bs-table-bg: transparent !important;
+  background: transparent !important;
+  padding: 12px 14px !important;
+  font-size: 13px;
+  color: #1f2937;
+  vertical-align: middle;
+  border-bottom: 1px solid #efeaf9 !important;
+  white-space: nowrap;
+}
+.smc-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
+
+/* Pagination strip below the table (from TableContainer) — pull the
+   buttons into the purple aesthetic too. */
+.smc-table-wrap .pagination .page-link {
+  border-radius: 8px !important;
+  margin: 0 2px;
+  color: #6d28d9;
+  border: 1px solid #e0d9f7;
+  font-weight: 600;
+}
+.smc-table-wrap .pagination .page-item.active .page-link {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border-color: #7c3aed;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(109,40,217,.25);
+}
+.smc-table-wrap .pagination .page-item.disabled .page-link {
+  color: #c4b5fd;
+  background: #faf7ff;
+}
+
+/* Dark-mode flips — violet-tinted dark slate that matches the rest
+   of the purple page chrome. Higher contrast than the default vz
+   tokens so the table reads clearly on the dark canvas. */
+[data-bs-theme="dark"] .smc-table-wrap .table-responsive {
+  background: #131c30 !important;
+  border-color: rgba(167,139,250,0.25) !important;
+}
+[data-bs-theme="dark"] .smc-table-wrap .table thead,
+[data-bs-theme="dark"] .smc-table-wrap .table thead tr,
+[data-bs-theme="dark"] .smc-table-wrap .table thead.table-light tr {
+  background: linear-gradient(180deg, rgba(76,29,149,0.40) 0%, rgba(109,40,217,0.28) 100%) !important;
+}
+[data-bs-theme="dark"] .smc-table-wrap .table thead th,
+[data-bs-theme="dark"] .smc-table-wrap .table thead.table-light th {
+  color: #e9d5ff !important;
+  border-bottom-color: rgba(167,139,250,0.40) !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+[data-bs-theme="dark"] .smc-table-wrap .table thead th i { color: #c4b5fd !important; opacity: 0.8; }
+[data-bs-theme="dark"] .smc-table-wrap .table tbody tr { background: #131c30; }
+[data-bs-theme="dark"] .smc-table-wrap .table tbody tr:hover { background: rgba(167,139,250,0.10) !important; }
+[data-bs-theme="dark"] .smc-table-wrap .table tbody td {
+  color: #e2e8f0 !important;
+  border-bottom-color: rgba(167,139,250,0.15) !important;
+}
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-link { background: #1c2531; color: #c4b5fd; border-color: rgba(167,139,250,0.25); }
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item.active .page-link { background: linear-gradient(135deg,#6d28d9,#4c1d95); border-color: #7c3aed; color: #fff; }
+[data-bs-theme="dark"] .smc-table-wrap .pagination .page-item.disabled .page-link { color: #475569; background: #131c30; }
+/* Action button tiles in dark mode — lavender border/icon on a
+   slate background so they pop against the dark row. Inline styles
+   on the button set the base; these overrides use !important to
+   beat the inline values. */
+[data-bs-theme="dark"] .smc-table-wrap .btn[aria-label="Edit Customer"],
+[data-bs-theme="dark"] .smc-table-wrap .btn[aria-label="Map Consignee"],
+[data-bs-theme="dark"] .smc-table-wrap .btn[aria-label="Customer Evidence Vault"] {
+  background: #1c2531 !important;
+  border-color: rgba(167,139,250,0.40) !important;
+  color: #c4b5fd !important;
+}
+
+/* Legacy .smc-table rules (purple-gradient header) kept below for
+   reference but no longer apply since tableClass uses "table …"
+   (not smc-table) now. Safe to delete in a future cleanup. */
 .smc-table {
   width: 100%; min-width: 1100px;
   border-collapse: collapse;
   font-size: 12px;
 }
-.smc-table thead tr {
-  background: linear-gradient(110deg, #6d28d9 0%, #7c3aed 40%, #8b5cf6 75%, #a78bfa 100%);
+.smc-table thead tr,
+.smc-table .smc-thead tr {
+  background: linear-gradient(110deg, #6d28d9 0%, #7c3aed 40%, #8b5cf6 75%, #a78bfa 100%) !important;
   box-shadow: 0 2px 8px rgba(109,40,217,.2);
 }
-.smc-table thead th {
-  padding: 9px 8px;
-  font-size: 9.5px; font-weight: 800;
-  color: rgba(255,255,255,.95);
+.smc-table thead th,
+.smc-table .smc-thead th {
+  padding: 12px 12px !important;
+  font-size: 10px; font-weight: 800;
+  color: rgba(255,255,255,.95) !important;
+  background: transparent !important;
   text-transform: uppercase; letter-spacing: .08em;
   text-align: left; white-space: nowrap;
   text-shadow: 0 1px 2px rgba(0,0,0,.2);
+  border-bottom: none !important;
 }
+/* TanStack sort icons sit at the right of each header cell — keep
+   them visible against the purple header. */
+.smc-table .smc-thead th .ri-arrow-up-line,
+.smc-table .smc-thead th .ri-arrow-down-line { color: rgba(255,255,255,.7); }
 .smc-table thead th:first-child { padding-left: 14px; }
 .smc-table thead th.ta-c { text-align: center; }
 .smc-table tbody td {
-  padding: 7px 8px;
-  font-size: 11.5px;
+  padding: 12px 12px;
+  font-size: 12px;
   border-bottom: 1px solid #e8e0ff;
   vertical-align: middle;
   white-space: nowrap;
@@ -799,6 +1003,9 @@ const SCOPED_CSS = `
   background: linear-gradient(90deg, rgba(124,58,237,.20), rgba(167,139,250,.18), rgba(124,58,237,.20)) !important;
 }
 [data-bs-theme="dark"] .smc-empty { color: #7a6b9a; }
+/* Action tiles keep their white background in dark mode too — the
+   higher contrast against dark rows actually reads cleaner than a
+   slate-tinted variant, and the colored hover tints stay vivid. */
 [data-bs-theme="dark"] .smc-id-chip {
   color: #e9d5ff;
   background: linear-gradient(135deg, rgba(76,45,138,.30), rgba(45,27,86,.40));

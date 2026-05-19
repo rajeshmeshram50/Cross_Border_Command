@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import api from '../../api';
-import { MasterSelect } from '../master/masterFormKit';
+import { MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
+import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
@@ -54,10 +55,14 @@ interface MasterLists {
   countries:         MasterOpt[];
   states:            StateOpt[];
   designations:      MasterOpt[];
+  /** Document Type master — backs the "Document / License Name"
+   *  dropdown on the Stage 2 Add Document / License sub-modal.
+   *  Managed in the Master module under "Document Types". */
+  documentTypes:     MasterOpt[];
 }
 const EMPTY_MASTERS: MasterLists = {
   customerTypes: [], segments: [], classifications: [], riskLevels: [],
-  addressTypes: [], countries: [], states: [], designations: [],
+  addressTypes: [], countries: [], states: [], designations: [], documentTypes: [],
 };
 
 // MasterSelect expects `{ value, label }`. Customer/segment/classification/
@@ -67,42 +72,71 @@ const EMPTY_MASTERS: MasterLists = {
 // `String(o.id)` in.
 const toSelectOpts = (rows: MasterOpt[]) => rows.map(o => ({ value: o.name, label: o.name }));
 
-const DD_DOCS = [
-  { code:'DD-001', name:'Certificate of Incorporation',                          authority:'Registrar of Companies (ROC)', expiry:'N/A',     status:'mandatory' },
-  { code:'DD-002', name:'Memorandum & Articles of Association (MOA/AOA)',        authority:'Registrar of Companies (ROC)', expiry:'N/A',     status:'mandatory' },
-  { code:'DD-003', name:'Board Resolution for Authorized Signatory',             authority:'Company Board',                expiry:'12/2026', status:'mandatory' },
-  { code:'DD-004', name:'Financial Statements (Last 2-3 Years)',                 authority:'Statutory Auditor',            expiry:'03/2026', status:'mandatory' },
-  { code:'DD-005', name:"Bank Account Verification Letter / Cancelled Cheque",   authority:'Authorized Dealer Bank',       expiry:'N/A',     status:'mandatory' },
-  { code:'DD-006', name:'Tax Registration Certificate',                          authority:'Income Tax Department',        expiry:'N/A',     status:'optional'  },
+/**
+ * Same as `toSelectOpts` but also injects the currently-selected
+ * `current` value as a synthetic option when it isn't already in the
+ * list. Without this, opening an existing customer for edit shows the
+ * placeholder when the saved value either (a) was captured as free
+ * text before the field became a master dropdown (e.g. a typed
+ * designation like "Director, CFO"), or (b) was deleted/renamed in
+ * the master after the customer was saved. Keeping the synthetic row
+ * preserves the user's history and avoids silently zeroing the value
+ * on the next Save.
+ */
+const optsWith = (rows: MasterOpt[], current?: string | null) => {
+  const base = toSelectOpts(rows);
+  const v = (current ?? '').trim();
+  if (v && !base.some(o => o.value === v)) return [{ value: v, label: v }, ...base];
+  return base;
+};
+
+/* Stage 2 / Stage 3 reference lists.
+ *   - Stage 2 Company DD and Owner KYC are backed by live
+ *     customer_documents + customer_owners (so they render from
+ *     the parent's API state, not these arrays).
+ *   - Stage 3 (Evidence Vault) is still design-only — its renderer
+ *     consumes the arrays below directly as read-only placeholder
+ *     rows. When the Evidence Vault backend lands, swap the source
+ *     to live data; the table layout stays unchanged.
+ *   - Trade Licence on Stage 2 also reads TL_DOCS for now (the
+ *     same design-only treatment). */
+type KycDocRow = { code: string; name: string; authority: string; expiry: string; status: string };
+const DD_DOCS: KycDocRow[] = [
+  { code: 'DD-001', name: 'Certificate of Incorporation',                          authority: 'Registrar of Companies (ROC)', expiry: 'N/A',     status: 'mandatory' },
+  { code: 'DD-002', name: 'Memorandum & Articles of Association (MOA/AOA)',        authority: 'Registrar of Companies (ROC)', expiry: 'N/A',     status: 'mandatory' },
+  { code: 'DD-003', name: 'Board Resolution for Authorized Signatory',             authority: 'Company Board',                expiry: '12/2026', status: 'mandatory' },
+  { code: 'DD-004', name: 'Financial Statements (Last 2-3 Years)',                 authority: 'Statutory Auditor',            expiry: '03/2026', status: 'mandatory' },
+  { code: 'DD-005', name: 'Bank Account Verification Letter / Cancelled Cheque',   authority: 'Authorized Dealer Bank',       expiry: 'N/A',     status: 'mandatory' },
+  { code: 'DD-006', name: 'Tax Registration Certificate',                          authority: 'Income Tax Department',        expiry: 'N/A',     status: 'optional'  },
 ];
-const OWN_KYC_DOCS = [
-  { code:'KYC-001', name:'PAN Card',                                  authority:'Income Tax Department',           expiry:'N/A',     status:'active' },
-  { code:'KYC-002', name:'Aadhaar Card',                              authority:'UIDAI',                           expiry:'N/A',     status:'active' },
-  { code:'KYC-003', name:'Address Proof',                             authority:'Bank / Utility / Govt Authority', expiry:'N/A',     status:'active' },
-  { code:'KYC-004', name:'Identity Proof (Passport / DL / Voter ID)', authority:'GOI / RTO / ECI',                 expiry:'Varies',  status:'active' },
-  { code:'KYC-005', name:'Company Registration Certificate',          authority:'Registrar of Companies (ROC)',    expiry:'N/A',     status:'active' },
-  { code:'KYC-006', name:'GST Certificate',                           authority:'GST Department',                  expiry:'09/2030', status:'active' },
-  { code:'KYC-007', name:'Passport-size Photograph',                  authority:'Self-Provided',                   expiry:'N/A',     status:'active' },
-  { code:'KYC-008', name:'Bank Statement (Last 6 Months)',            authority:'Authorized Bank',                 expiry:'N/A',     status:'active' },
-  { code:'KYC-009', name:'Utility Bill',                              authority:'Service Provider',                expiry:'N/A',     status:'active' },
-  { code:'KYC-010', name:'Property Tax Receipt',                      authority:'Municipal Authority',             expiry:'N/A',     status:'active' },
+const OWN_KYC_DOCS: KycDocRow[] = [
+  { code: 'KYC-001', name: 'PAN Card',                                  authority: 'Income Tax Department',           expiry: 'N/A',    status: 'active' },
+  { code: 'KYC-002', name: 'Aadhaar Card',                              authority: 'UIDAI',                           expiry: 'N/A',    status: 'active' },
+  { code: 'KYC-003', name: 'Address Proof',                             authority: 'Bank / Utility / Govt Authority', expiry: 'N/A',    status: 'active' },
+  { code: 'KYC-004', name: 'Identity Proof (Passport / DL / Voter ID)', authority: 'GOI / RTO / ECI',                 expiry: 'Varies', status: 'active' },
+  { code: 'KYC-005', name: 'Company Registration Certificate',          authority: 'Registrar of Companies (ROC)',    expiry: 'N/A',    status: 'active' },
+  { code: 'KYC-006', name: 'GST Certificate',                           authority: 'GST Department',                  expiry: '09/2030', status: 'active' },
+  { code: 'KYC-007', name: 'Passport-size Photograph',                  authority: 'Self-Provided',                   expiry: 'N/A',    status: 'active' },
+  { code: 'KYC-008', name: 'Bank Statement (Last 6 Months)',            authority: 'Authorized Bank',                 expiry: 'N/A',    status: 'active' },
+  { code: 'KYC-009', name: 'Utility Bill',                              authority: 'Service Provider',                expiry: 'N/A',    status: 'active' },
+  { code: 'KYC-010', name: 'Property Tax Receipt',                      authority: 'Municipal Authority',             expiry: 'N/A',    status: 'active' },
 ];
-const TL_DOCS = [
-  { code:'TL-001', name:'Import Export Code (IEC)',         authority:'DGFT',                     expiry:'03/2026', status:'mandatory' },
-  { code:'TL-002', name:'RCMC Certificate',                 authority:'Export Promotion Council', expiry:'05/2027', status:'mandatory' },
-  { code:'TL-003', name:'Export Licence',                   authority:'DGFT',                     expiry:'12/2026', status:'optional'  },
-  { code:'TL-004', name:'Drug Licence',                     authority:'CDSCO',                    expiry:'08/2027', status:'optional'  },
-  { code:'TL-005', name:'FSSAI Licence',                    authority:'FSSAI',                    expiry:'06/2028', status:'optional'  },
-  { code:'TL-006', name:'GST Registration',                 authority:'GST Department',           expiry:'N/A',     status:'mandatory' },
-  { code:'TL-007', name:'ISO Certification',                authority:'Certification Body',       expiry:'11/2027', status:'optional'  },
-  { code:'TL-008', name:'Pollution Control Certificate',    authority:'Pollution Control Board',  expiry:'07/2026', status:'mandatory' },
+const TL_DOCS: KycDocRow[] = [
+  { code: 'TL-001', name: 'Import Export Code (IEC)',      authority: 'DGFT',                     expiry: '03/2026', status: 'mandatory' },
+  { code: 'TL-002', name: 'RCMC Certificate',              authority: 'Export Promotion Council', expiry: '05/2027', status: 'mandatory' },
+  { code: 'TL-003', name: 'Export Licence',                authority: 'DGFT',                     expiry: '12/2026', status: 'optional'  },
+  { code: 'TL-004', name: 'Drug Licence',                  authority: 'CDSCO',                    expiry: '08/2027', status: 'optional'  },
+  { code: 'TL-005', name: 'FSSAI Licence',                 authority: 'FSSAI',                    expiry: '06/2028', status: 'optional'  },
+  { code: 'TL-006', name: 'GST Registration',              authority: 'GST Department',           expiry: 'N/A',     status: 'mandatory' },
+  { code: 'TL-007', name: 'ISO Certification',             authority: 'Certification Body',       expiry: '11/2027', status: 'optional'  },
+  { code: 'TL-008', name: 'Pollution Control Certificate', authority: 'Pollution Control Board',  expiry: '07/2026', status: 'mandatory' },
 ];
 
 const KYC_PER_PAGE = 6;
 const KYC_TAB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string; data: typeof DD_DOCS; showAdd: boolean; addLabel?: string }> = {
-  'company-dd':   { title:'COMPANY DUE DILIGENCE', sub:'| Licenses, statutory documents, and compliance proofs', nameCol:'DD Document Name',     placeholder:'Search DD document name...',     data: DD_DOCS,      showAdd: false },
-  'owner-kyc':    { title:'OWNER KYC DETAILS',     sub:'| Owner identity proofs, address proofs, and photographs', nameCol:'KYC Document Name', placeholder:'Search KYC document name...',    data: OWN_KYC_DOCS, showAdd: true,  addLabel:'Add More Owner KYC' },
-  'trade-licence':{ title:'TRADE LICENCE',         sub:'| Trade licence documents and regulatory approvals',     nameCol:'Document Name',         placeholder:'Search trade licence document...', data: TL_DOCS,    showAdd: false },
+  'company-dd':   { title:'COMPANY DUE DILIGENCE', sub:'| Licenses, statutory documents, and compliance proofs', nameCol:'DD Document Name',     placeholder:'Search DD document name...',     data: DD_DOCS,      showAdd: true,  addLabel:'Add Document / License' },
+  'owner-kyc':    { title:'OWNER KYC DETAILS',     sub:'| Owner identity proofs, address proofs, and photographs', nameCol:'KYC Document Name', placeholder:'Search KYC document name...',    data: OWN_KYC_DOCS, showAdd: true,  addLabel:'Add Owner KYC Document' },
+  'trade-licence':{ title:'TRADE LICENCE',         sub:'| Trade licence documents and regulatory approvals',     nameCol:'Document Name',         placeholder:'Search trade licence document...', data: TL_DOCS,    showAdd: true,  addLabel:'Add Trade Licence' },
 };
 const EV_SUB_META: Record<EvSubTab, { title: string; sub: string; nameCol: string; data: typeof DD_DOCS }> = {
   dd:  { title:'COMPANY DUE DILIGENCE', sub:'| Licenses, statutory documents, and compliance proofs', nameCol:'DD Document Name',  data: DD_DOCS },
@@ -141,7 +175,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   const [kycSearch, setKycSearch] = useState('');
   const [evTab, setEvTab] = useState<EvTab>('kyc-documents');
   const [evSub, setEvSub] = useState<EvSubTab>('dd');
-  const [historyOpen, setHistoryOpen] = useState(false);
+  // History panel defaults to OPEN so the moment the user reaches
+  // Stage 2 they can see the captured Stage 1 data (Basic Company
+  // Details + Primary Address & Contact Person) without an extra
+  // click. They can still collapse it via the chevron if they want
+  // more vertical space for the active stage.
+  const [historyOpen, setHistoryOpen] = useState(true);
 
   // ── Master dropdowns. Every <select> on this modal sources its
   //    options from /master/{slug}, scoped server-side to the
@@ -173,6 +212,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       }),
       api.get('/master/states').then(r => { if (!cancelled) setMasters(m => ({ ...m, states: pickStates(r.data ?? []) })); }),
       api.get('/master/designations').then(r => { if (!cancelled) setMasters(m => ({ ...m, designations: pickName(r.data ?? []) })); }),
+      // Document Type master — field is `title` (not `name`) — so pickName
+      // is called with the secondary key. Used by Stage 2's Add Document /
+      // License sub-modal.
+      api.get('/master/document_type').then(r => { if (!cancelled) setMasters(m => ({ ...m, documentTypes: pickName(r.data ?? [], 'title') })); }),
     ]);
     return () => { cancelled = true; };
   }, [open]);
@@ -204,9 +247,54 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
   // fields. `editing` carries the location row id when re-opening for edit.
   const [locModal, setLocModal] = useState<{ open:boolean; editing:string|null }>({ open:false, editing:null });
 
+  // Delete-confirm popup for the Address & Contact table. Project-wide
+  // DeleteConfirmModal — same component used by Branches / Clients /
+  // Employees so the experience stays consistent across modules.
+  const [delModal, setDelModal] = useState<{ open:boolean; id:string|null }>({ open:false, id:null });
+
+  // Stage 2 — "Add Document / License" popup. Triggered from the
+  // Company Due Diligence / Owner KYC / Trade Licence section headers.
+  // `sub` carries which of the three buckets is being added to so the
+  // modal can label itself contextually.
+  const [docModal, setDocModal] = useState<{ open:boolean; sub:KycSubTab }>({ open:false, sub:'company-dd' });
+
+  /* ── Stage 2 — KYC live data ───────────────────────────────────────
+   * Pulled from /customers/{id}/documents (kind=dd|tl) and
+   * /customers/{id}/owners when the modal opens in edit mode. Saving
+   * a new row pushes its server response into the matching bucket so
+   * the Stage 2 table refreshes without a full refetch. */
+  type KycDocRowApi = {
+    id: number; kind: 'dd' | 'tl'; name: string; license_number?: string | null;
+    issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null;
+    attachment_path?: string | null; attachment_url?: string | null; attachment_name?: string | null;
+    description?: string | null; status?: string;
+  };
+  type KycOwnerRowApi = {
+    id: number; owner_name: string; designation?: string | null; official_email?: string | null;
+    phone_number?: string | null; id_proof_url?: string | null; address_proof_url?: string | null;
+    photograph_url?: string | null; status?: string;
+  };
+  const [kycDocs,   setKycDocs]   = useState<KycDocRowApi[]>([]);
+  const [kycOwners, setKycOwners] = useState<KycOwnerRowApi[]>([]);
+
+  /** Confirm-delete state for Stage 2 rows. `kind` decides which
+   *  endpoint the confirm calls. */
+  const [kycDelModal, setKycDelModal] = useState<{ open: boolean; kind: 'doc' | 'owner'; id: number | null; label?: string }>({ open: false, kind: 'doc', id: null });
+
+  /** Edit-mode targets for Stage 2 sub-modals. When set, the matching
+   *  sub-modal opens pre-filled and saves via PUT instead of POST. */
+  const [editDocId,   setEditDocId]   = useState<number | null>(null);
+  const [editOwnerId, setEditOwnerId] = useState<number | null>(null);
+
   // Saving flag — disables the Submit/Save & Next button + suppresses
   // double-submits while POST/PUT is in flight.
   const [saving, setSaving] = useState(false);
+
+  // Hydrating flag — covers the brief window between modal open and
+  // the full customer detail landing from /api/customers/:id in Edit
+  // mode. Used to dim the body so the user doesn't start typing into
+  // fields that are about to be overwritten.
+  const [hydrating, setHydrating] = useState(false);
 
   // Reset all state when modal closes. When `customer` is provided we open in
   // Edit mode and prefill the form fields we know about (company name, type,
@@ -218,7 +306,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
     setStage(1); setMaxStage(1); setTab('identification');
     setKycSub('company-dd'); setKycPage({ 'company-dd':1, 'owner-kyc':1, 'trade-licence':1 }); setKycSearch('');
     setEvTab('kyc-documents'); setEvSub('dd');
-    setHistoryOpen(false);
+    setHistoryOpen(true);
     setForm({
       coName:   customer?.company ?? '',
       coLegal:  customer?.company ?? '',
@@ -240,13 +328,91 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
       cpWa:     customer?.whatsapp === 'Yes' ? 'yes' : customer?.whatsapp === 'No' ? 'no' : '',
     });
     setLocations([]);
+    setKycDocs([]);
+    setKycOwners([]);
     setErrors({});
     setTdDocs([
       { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
       { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
     ]);
     setLocModal({ open:false, editing:null });
-  }, [open, customer]);
+    // Deps deliberately use a stable identifier (the customer's primary
+    // key) instead of the customer object itself. Otherwise any parent
+    // re-render that produces a new `customer` reference — even with
+    // identical data — would re-run this effect, wipe in-progress
+    // Stage 2/3 edits, and jump the user back to Stage 1.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, customer?.db_id ?? null, customer?.id ?? null]);
+
+  /* ── Edit-mode hydration. The list row passed in `customer` only
+   * carries a thin slice of fields (company / type / segment / country
+   * / contact / phone / email / whatsapp). On open we fetch the full
+   * record from /api/customers/:id so every Stage 1 field — including
+   * legal name, classification, risk level, website, full address +
+   * pin, and the additional Locations & Contacts table — repopulates
+   * with whatever the user saved before. */
+  useEffect(() => {
+    if (!open || !customer?.db_id) return;
+    let cancelled = false;
+    setHydrating(true);
+    api.get(`/customers/${customer.db_id}`)
+      .then(r => {
+        if (cancelled) return;
+        const d = r.data?.data ?? r.data ?? {};
+        const pa = d.primary_address ?? {};
+        setForm({
+          coName:   d.company       ?? '',
+          coLegal:  d.legalName     ?? d.company ?? '',
+          coType:   d.type          ?? '',
+          coWeb:    d.website       ?? '',
+          coSeg:    d.segment       ?? '',
+          coClass:  d.classification ?? '',
+          coRisk:   d.riskLevel     ?? '',
+          addrType: pa.type         ?? d.addrType ?? DEFAULT_ADDRESS_TYPE,
+          addr:     pa.address_line ?? d.addr    ?? '',
+          country:  pa.country      ?? d.country ?? '',
+          state:    pa.state        ?? d.state   ?? '',
+          city:     pa.city         ?? d.city    ?? '',
+          pin:      pa.pin          ?? d.pin     ?? '',
+          cpName:   pa.cp_name        ?? d.contact ?? '',
+          cpDesig:  pa.cp_designation ?? d.cpDesig ?? '',
+          cpTel:    pa.cp_contact     ?? d.phone   ?? '',
+          cpEmail:  pa.cp_email       ?? d.email   ?? '',
+          cpWa:     (pa.cp_whatsapp === 'yes' || d.whatsapp === 'Yes') ? 'yes'
+                  : (pa.cp_whatsapp === 'no'  || d.whatsapp === 'No')  ? 'no' : '',
+        });
+        // Additional locations — map the server shape back to LocationRow.
+        const extra = Array.isArray(d.locations) ? d.locations : [];
+        setLocations(extra.map((a: any) => ({
+          id:             'loc_' + String(a.id),
+          type:           a.type           ?? '',
+          line:           a.address_line   ?? '',
+          country:        a.country        ?? '',
+          state:          a.state          ?? '',
+          city:           a.city           ?? '',
+          pin:            a.pin            ?? '',
+          cpName:         a.cp_name        ?? '',
+          cpDesignation:  a.cp_designation ?? '',
+          cpContact:      a.cp_contact     ?? '',
+          cpEmail:        a.cp_email       ?? '',
+          cpWhatsapp:     (a.cp_whatsapp === 'yes' || a.cp_whatsapp === 'no') ? a.cp_whatsapp : '',
+        })));
+      })
+      .catch(() => { /* hydration failure: leave the thin prefill from the list row */ })
+      .finally(() => { if (!cancelled) setHydrating(false); });
+
+    // Stage 2 data — pulled in parallel with the main customer payload.
+    Promise.all([
+      api.get(`/customers/${customer.db_id}/documents`).catch(() => ({ data: { data: [] } })),
+      api.get(`/customers/${customer.db_id}/owners`).catch(() => ({ data: { data: [] } })),
+    ]).then(([docsRes, ownersRes]) => {
+      if (cancelled) return;
+      setKycDocs(Array.isArray(docsRes.data?.data) ? docsRes.data.data : []);
+      setKycOwners(Array.isArray(ownersRes.data?.data) ? ownersRes.data.data : []);
+    });
+
+    return () => { cancelled = true; };
+  }, [open, customer?.db_id]);
 
   // Inject DM Sans/Inter once
   useEffect(() => {
@@ -491,8 +657,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               </div>
             </div>
             <div className="acm-history-body">
-              <HistoryStage1 form={form} locations={locations} />
-              {stage >= 3 && <HistoryStage2 />}
+              <HistoryStage1 form={form} locations={locations} customerId={customer?.id} />
+              {stage >= 3 && (
+                <HistoryStage2
+                  ddCount={kycDocs.filter(d => d.kind === 'dd').length}
+                  ownerCount={kycOwners.length}
+                  tlCount={kycDocs.filter(d => d.kind === 'tl').length}
+                />
+              )}
             </div>
           </div>
         )}
@@ -514,7 +686,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
         )}
 
         {/* BODY */}
-        <div className="acm-body">
+        <div className="acm-body" style={hydrating ? { opacity: 0.55, pointerEvents: 'none' } : undefined}>
           {stage === 1 && tab === 'identification' && (
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} />
           )}
@@ -523,7 +695,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               locations={locations}
               onAdd={() => setLocModal({ open:true, editing:null })}
               onEdit={(id) => setLocModal({ open:true, editing:id })}
-              onDel={(id) => { if (confirm('Delete this location?')) setLocations(prev => prev.filter(l => l.id !== id)); }}
+              onDel={(id) => setDelModal({ open:true, id })}
             />
           )}
           {stage === 2 && (
@@ -531,6 +703,28 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
               sub={kycSub} setSub={(s) => { setKycSub(s); setKycSearch(''); }}
               page={kycPage} setPage={(s, p) => setKycPage(prev => ({ ...prev, [s]: p }))}
               search={kycSearch} setSearch={setKycSearch}
+              onAdd={(s) => { setEditDocId(null); setEditOwnerId(null); setDocModal({ open: true, sub: s }); }}
+              docs={kycDocs}
+              owners={kycOwners}
+              customerSaved={!!customer?.db_id}
+              onEditDoc={(id) => {
+                const row = kycDocs.find(d => d.id === id);
+                if (!row) return;
+                setEditDocId(id);
+                setDocModal({ open: true, sub: row.kind === 'dd' ? 'company-dd' : 'trade-licence' });
+              }}
+              onDeleteDoc={(id) => {
+                const row = kycDocs.find(d => d.id === id);
+                setKycDelModal({ open: true, kind: 'doc', id, label: row?.name });
+              }}
+              onEditOwner={(id) => {
+                setEditOwnerId(id);
+                setDocModal({ open: true, sub: 'owner-kyc' });
+              }}
+              onDeleteOwner={(id) => {
+                const row = kycOwners.find(o => o.id === id);
+                setKycDelModal({ open: true, kind: 'owner', id, label: row?.owner_name });
+              }}
             />
           )}
           {stage === 3 && evTab === 'kyc-documents' && (
@@ -583,6 +777,95 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved }: P
             if (locModal.editing) setLocations(prev => prev.map(l => l.id === locModal.editing ? { ...rec, id: l.id } : l));
             else setLocations(prev => [...prev, { ...rec, id: newId('loc') }]);
             setLocModal({ open:false, editing:null });
+          }}
+        />
+      )}
+
+      {/* CONFIRM DELETE — project-wide DeleteConfirmModal. The label
+          shown to the user is the address type of the row being
+          deleted so it reads e.g. "Delete Warehouse?" not just "Delete". */}
+      <DeleteConfirmModal
+        open={delModal.open}
+        title="Delete Address & Contact"
+        itemName={delModal.id ? (locations.find(l => l.id === delModal.id)?.type || 'this location') : undefined}
+        subMessage="This will remove the address and its contact person from this customer. The action cannot be undone."
+        onClose={() => setDelModal({ open:false, id:null })}
+        onConfirm={() => {
+          if (delModal.id) setLocations(prev => prev.filter(l => l.id !== delModal.id));
+          setDelModal({ open:false, id:null });
+        }}
+      />
+
+      {/* Stage 2 delete confirm — covers both doc and owner rows. The
+          `kind` tells us which endpoint to hit. On success the row is
+          dropped from local state so the table updates instantly. */}
+      <DeleteConfirmModal
+        open={kycDelModal.open}
+        title={kycDelModal.kind === 'doc' ? 'Delete Document' : 'Delete Owner'}
+        itemName={kycDelModal.label || (kycDelModal.kind === 'doc' ? 'this document' : 'this owner')}
+        subMessage={kycDelModal.kind === 'doc'
+          ? 'This will permanently delete the document and its uploaded attachment.'
+          : 'This will permanently delete the owner record and all uploaded identity proofs.'}
+        onClose={() => setKycDelModal({ open: false, kind: kycDelModal.kind, id: null })}
+        onConfirm={async () => {
+          const id = kycDelModal.id;
+          const kind = kycDelModal.kind;
+          if (!id || !customer?.db_id) { setKycDelModal({ open: false, kind, id: null }); return; }
+          try {
+            if (kind === 'doc') {
+              await api.delete(`/customers/${customer.db_id}/documents/${id}`);
+              setKycDocs(prev => prev.filter(d => d.id !== id));
+            } else {
+              await api.delete(`/customers/${customer.db_id}/owners/${id}`);
+              setKycOwners(prev => prev.filter(o => o.id !== id));
+            }
+          } catch (err: any) {
+            alert(err?.response?.data?.message ?? 'Could not delete. Try again.');
+          } finally {
+            setKycDelModal({ open: false, kind, id: null });
+          }
+        }}
+      />
+
+      {/* SUB-MODAL (Stage 2) — Owner KYC has its own dedicated "Add
+          Owner Due Diligence" form (Owner Name + Designation + Email +
+          Phone + 3 file uploads). The other two sub-tabs use the
+          generic Document / License form. */}
+      {docModal.open && docModal.sub === 'owner-kyc' && (
+        <OwnerDDSubModal
+          masters={masters}
+          customerId={customer?.db_id ?? null}
+          editing={editOwnerId ? kycOwners.find(o => o.id === editOwnerId) ?? null : null}
+          onClose={() => { setEditOwnerId(null); setDocModal(m => ({ ...m, open: false })); }}
+          onSaved={(row) => {
+            setKycOwners(prev => editOwnerId
+              ? prev.map(o => o.id === editOwnerId ? row : o)
+              : [row, ...prev]);
+            setEditOwnerId(null);
+            setDocModal(m => ({ ...m, open: false }));
+          }}
+        />
+      )}
+      {docModal.open && docModal.sub !== 'owner-kyc' && (
+        <DocumentSubModal
+          sub={docModal.sub}
+          masters={masters}
+          customerId={customer?.db_id ?? null}
+          editing={editDocId ? kycDocs.find(d => d.id === editDocId) ?? null : null}
+          /* When a new Document Type is added via the popup-on-popup,
+             append it to masters.documentTypes so the dropdown picks
+             it up immediately (no need to re-open the modal). */
+          onDocTypeAdded={(opt) => setMasters(m => ({ ...m, documentTypes: [...m.documentTypes, opt] }))}
+          onClose={() => { setEditDocId(null); setDocModal(m => ({ ...m, open: false })); }}
+          onSaved={(row) => {
+            // On create → prepend the new row. On update → replace it
+            // in place so the table reflects the change without
+            // re-fetching the whole list.
+            setKycDocs(prev => editDocId
+              ? prev.map(d => d.id === editDocId ? row : d)
+              : [row, ...prev]);
+            setEditDocId(null);
+            setDocModal(m => ({ ...m, open: false }));
           }}
         />
       )}
@@ -656,19 +939,19 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
             <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} onChange={e => set('coName', e.target.value)} placeholder="e.g. Shree Agro Pvt Ltd" /></Field>
             <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
             <Field label="Customer Type" required error={errors.coType} fieldKey="coType">
-              <MasterSelect value={form.coType} options={toSelectOpts(masters.customerTypes)} placeholder="Select customer type" invalid={!!errors.coType} onChange={v => set('coType', v)} />
+              <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer type" invalid={!!errors.coType} onChange={v => set('coType', v)} />
             </Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Company Website"><input value={form.coWeb} onChange={e => setF('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
             <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
-              <MasterSelect value={form.coSeg} options={toSelectOpts(masters.segments)} placeholder="Select segment" invalid={!!errors.coSeg} onChange={v => set('coSeg', v)} />
+              <MasterSelect value={form.coSeg} options={optsWith(masters.segments, form.coSeg)} placeholder="Select segment" invalid={!!errors.coSeg} onChange={v => set('coSeg', v)} />
             </Field>
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
-              <MasterSelect value={form.coClass} options={toSelectOpts(masters.classifications)} placeholder="Select classification" invalid={!!errors.coClass} onChange={v => set('coClass', v)} />
+              <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} onChange={v => set('coClass', v)} />
             </Field>
             <Field label="Risk Level" required error={errors.coRisk} fieldKey="coRisk">
-              <MasterSelect value={form.coRisk} options={toSelectOpts(masters.riskLevels)} placeholder="Select risk level" invalid={!!errors.coRisk} onChange={v => set('coRisk', v)} />
+              <MasterSelect value={form.coRisk} options={optsWith(masters.riskLevels, form.coRisk)} placeholder="Select risk level" invalid={!!errors.coRisk} onChange={v => set('coRisk', v)} />
             </Field>
           </div>
         </div>
@@ -685,16 +968,27 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
         <div className="acm-section-body">
           <div className="acm-row acm-row-2">
             <Field label="Address Type" required error={errors.addrType} fieldKey="addrType">
-              <MasterSelect value={form.addrType} options={toSelectOpts(masters.addressTypes)} placeholder="Select address type" invalid={!!errors.addrType} onChange={v => set('addrType', v)} />
+              <MasterSelect value={form.addrType} options={optsWith(masters.addressTypes, form.addrType)} placeholder="Select address type" invalid={!!errors.addrType} onChange={v => set('addrType', v)} />
             </Field>
             <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errors.country} fieldKey="country">
-              <MasterSelect value={form.country} options={toSelectOpts(masters.countries)} placeholder="Select country" invalid={!!errors.country} onChange={v => { set('country', v); setF('state', ''); }} />
+              <MasterSelect value={form.country} options={optsWith(masters.countries, form.country)} placeholder="Select country" invalid={!!errors.country} onChange={v => { set('country', v); setF('state', ''); }} />
             </Field>
             <Field label="State" required error={errors.state} fieldKey="state">
-              <MasterSelect value={form.state} options={states.map(s => ({ value: s.name, label: s.name }))} placeholder={form.country ? 'Select state' : 'Select country first'} disabled={!form.country} invalid={!!errors.state} onChange={v => set('state', v)} />
+              <MasterSelect
+                value={form.state}
+                options={(() => {
+                  const base = states.map(s => ({ value: s.name, label: s.name }));
+                  if (form.state && !base.some(o => o.value === form.state)) return [{ value: form.state, label: form.state }, ...base];
+                  return base;
+                })()}
+                placeholder={form.country ? 'Select state' : 'Select country first'}
+                disabled={!form.country}
+                invalid={!!errors.state}
+                onChange={v => set('state', v)}
+              />
             </Field>
             <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
             <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', e.target.value)} maxLength={12} placeholder="6-digit PIN" /></Field>
@@ -702,7 +996,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr }:
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errors.cpName} fieldKey="cpName"><input className={errors.cpName ? 'acm-input-error' : ''} value={form.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
             <Field label="Designation" required error={errors.cpDesig} fieldKey="cpDesig">
-              <MasterSelect value={form.cpDesig} options={toSelectOpts(masters.designations)} placeholder="Select designation" invalid={!!errors.cpDesig} onChange={v => set('cpDesig', v)} />
+              <MasterSelect value={form.cpDesig} options={optsWith(masters.designations, form.cpDesig)} placeholder="Select designation" invalid={!!errors.cpDesig} onChange={v => set('cpDesig', v)} />
             </Field>
             <Field label="Contact No" required error={errors.cpTel} fieldKey="cpTel"><input className={errors.cpTel ? 'acm-input-error' : ''} type="tel" value={form.cpTel} onChange={e => set('cpTel', e.target.value)} placeholder="7–15 digit number" /></Field>
             <Field label="Email" required error={errors.cpEmail} fieldKey="cpEmail"><input className={errors.cpEmail ? 'acm-input-error' : ''} type="email" value={form.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
@@ -792,17 +1086,73 @@ function Stage1AdditionalLocations({ locations, onAdd, onEdit, onDel }:
 }
 
 /* ───── Stage 2 — KYC sub-tabs + doc table ───── */
-function Stage2KYC({ sub, setSub, page, setPage, search, setSearch }:
-  { sub: KycSubTab; setSub: (s: KycSubTab) => void; page: Record<KycSubTab, number>; setPage: (s: KycSubTab, p: number) => void; search: string; setSearch: (s: string) => void }) {
+function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
+  { sub: KycSubTab; setSub: (s: KycSubTab) => void;
+    page: Record<KycSubTab, number>; setPage: (s: KycSubTab, p: number) => void;
+    search: string; setSearch: (s: string) => void;
+    onAdd: (s: KycSubTab) => void;
+    /** Live KYC data fetched on edit. `docs` covers both DD + TL — filter by `kind`.  */
+    docs: { id:number; kind:'dd'|'tl'; name:string; license_number?:string|null; issuing_authority?:string|null; issue_date?:string|null; expiry_date?:string|null; attachment_url?:string|null; attachment_name?:string|null; status?:string }[];
+    owners: { id:number; owner_name:string; designation?:string|null; official_email?:string|null; phone_number?:string|null; id_proof_url?:string|null; address_proof_url?:string|null; photograph_url?:string|null; status?:string }[];
+    /** True only when the parent customer has a db_id (i.e. has been saved). */
+    customerSaved: boolean;
+    onEditDoc:     (id:number) => void;
+    onDeleteDoc:   (id:number) => void;
+    onEditOwner:   (id:number) => void;
+    onDeleteOwner: (id:number) => void;
+  }) {
   const meta = KYC_TAB_META[sub];
+
+  // Source data depends on the sub-tab:
+  //   company-dd   → live docs filtered by kind='dd'
+  //   owner-kyc    → live owners
+  //   trade-licence → design-only placeholder list (TL_DOCS); backend
+  //                  wiring to ship in a follow-up
+  const isOwners      = sub === 'owner-kyc';
+  const isTradeLegacy = sub === 'trade-licence';
+  const kind: 'dd' | 'tl' = sub === 'company-dd' ? 'dd' : 'tl';
+
   const q = search.toLowerCase().trim();
-  const all = meta.data;
-  const filtered = useMemo(() => q ? all.filter(d => d.code.toLowerCase().includes(q) || d.name.toLowerCase().includes(q) || d.authority.toLowerCase().includes(q)) : all, [q, all]);
-  const total = filtered.length;
-  const maxPage = Math.max(1, Math.ceil(total / KYC_PER_PAGE));
+  const filteredDocs = useMemo(() => {
+    const base = docs.filter(d => d.kind === kind);
+    if (!q) return base;
+    return base.filter(d =>
+      (d.name || '').toLowerCase().includes(q) ||
+      (d.license_number || '').toLowerCase().includes(q) ||
+      (d.issuing_authority || '').toLowerCase().includes(q));
+  }, [docs, kind, q]);
+  const filteredOwners = useMemo(() => {
+    if (!q) return owners;
+    return owners.filter(o =>
+      (o.owner_name || '').toLowerCase().includes(q) ||
+      (o.designation || '').toLowerCase().includes(q) ||
+      (o.official_email || '').toLowerCase().includes(q));
+  }, [owners, q]);
+  // Trade Licence reference list — kept in sync via search so the
+  // toolbar count + filter still feel responsive even though the data
+  // is static.
+  const filteredTradeLegacy = useMemo(() => {
+    if (!q) return TL_DOCS;
+    return TL_DOCS.filter(d =>
+      d.code.toLowerCase().includes(q) ||
+      d.name.toLowerCase().includes(q) ||
+      d.authority.toLowerCase().includes(q));
+  }, [q]);
+
+  const totalRows = isOwners ? filteredOwners.length
+                  : isTradeLegacy ? filteredTradeLegacy.length
+                  : filteredDocs.length;
+
+  const maxPage = Math.max(1, Math.ceil(totalRows / KYC_PER_PAGE));
   const curPage = Math.min(page[sub], maxPage);
   const start = (curPage - 1) * KYC_PER_PAGE;
-  const slice = filtered.slice(start, start + KYC_PER_PAGE);
+  const docSlice    = filteredDocs.slice(start, start + KYC_PER_PAGE);
+  const ownerSlice  = filteredOwners.slice(start, start + KYC_PER_PAGE);
+  const legacySlice = filteredTradeLegacy.slice(start, start + KYC_PER_PAGE);
+
+  // Compose an auto-code prefix that mirrors the design (DD-001 etc.).
+  // Uses the row's sr position so codes stay stable per page render.
+  const codeFor = (kindLetters: string, sr: number) => `${kindLetters}-${String(sr).padStart(3, '0')}`;
 
   return (
     <div>
@@ -822,12 +1172,33 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch }:
               <span className="acm-section-title">{meta.title}</span>
               <span className="acm-section-sub">{meta.sub}</span>
             </div>
-            {meta.showAdd && (
-              <button type="button" className="acm-add-pill">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                {meta.addLabel}
-              </button>
-            )}
+            {meta.showAdd && (() => {
+              // Trade Licence is still placeholder-only — disable add
+              // until the backend wiring lands. Company DD and Owner
+              // KYC are fully wired so they fall through to the normal
+              // enabled / customerSaved gating.
+              const isPlaceholder = isTradeLegacy;
+              const isDisabled    = isPlaceholder || !customerSaved;
+              const reason = isPlaceholder
+                ? 'Trade Licence is design-only for now. Backend wiring coming soon.'
+                : !customerSaved
+                  ? 'Save the customer (Stage 1) first to enable adding KYC documents'
+                  : '';
+              return (
+                <Tooltip label={reason} disabled={!isDisabled}>
+                  <button
+                    type="button"
+                    className="acm-add-pill"
+                    onClick={() => { if (!isDisabled) onAdd(sub); }}
+                    disabled={isDisabled}
+                    style={isDisabled ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    {meta.addLabel}
+                  </button>
+                </Tooltip>
+              );
+            })()}
           </div>
         </div>
 
@@ -836,23 +1207,150 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch }:
             <svg className="acm-doc-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="search" placeholder={meta.placeholder} value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <div className="acm-doc-count">{total} document{total === 1 ? '' : 's'}</div>
+          <div className="acm-doc-count">{totalRows} {isOwners ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}</div>
         </div>
 
         <div className="acm-section-body acm-section-body-table">
           <div className="acm-table-wrap">
-            <table className="acm-table">
-              <thead><tr><th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>Issuing Authority</th><th>Expiry</th><th>Status</th><th>Actions</th></tr></thead>
-              <tbody>
-                {total === 0 ? (
-                  <tr className="acm-empty-row"><td colSpan={7}>No documents match your search.</td></tr>
-                ) : slice.map((d, i) => <KycRow key={d.code} d={d} sr={start + i + 1} />)}
-              </tbody>
-            </table>
+            {isTradeLegacy ? (
+              /* Design-only Trade Licence table — keeps the
+                 Mandatory/Optional toggle + upload/download icons from
+                 the original mock. Wiring to /customers/{id}/documents
+                 with kind='tl' will land in a follow-up. */
+              <table className="acm-table">
+                <thead><tr>
+                  <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
+                  <th>Issuing Authority</th><th>Expiry</th><th>Status</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {totalRows === 0 ? (
+                    <tr className="acm-empty-row"><td colSpan={7}>No trade licence documents match your search.</td></tr>
+                  ) : legacySlice.map((dl, i) => {
+                    const sr = start + i + 1;
+                    const srPad = String(sr).padStart(2, '0');
+                    const expClass = dl.expiry === 'N/A' ? 'acm-expiry-na' : 'acm-expiry-date';
+                    return (
+                      <tr key={dl.code}>
+                        <td>{srPad}</td>
+                        <td><span className="acm-doc-code">{dl.code}</span></td>
+                        <td style={{ fontWeight: 700, color: '#1f2937' }}>{dl.name}</td>
+                        <td style={{ color: '#6b7280' }}>{dl.authority}</td>
+                        <td><span className={expClass}>{dl.expiry}</span></td>
+                        <td>
+                          {dl.status === 'mandatory'
+                            ? <span className="acm-status-toggle"><span className="acm-status-mandatory is-on">✓ Mandatory</span><span className="acm-status-optional">Optional</span></span>
+                            : <span className="acm-status-toggle"><span className="acm-status-mandatory">Mandatory</span><span className="acm-status-optional is-on">Optional</span></span>}
+                        </td>
+                        <td>
+                          <div className="acm-row-actions">
+                            <Tooltip label="Upload (coming soon)">
+                              <button type="button" className="acm-doc-action acm-doc-action-upload" aria-label="Upload" disabled style={{ opacity: 0.7, cursor: 'not-allowed' }}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Download (coming soon)">
+                              <button type="button" className="acm-doc-action acm-doc-action-download" aria-label="Download" disabled style={{ opacity: 0.7, cursor: 'not-allowed' }}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                              </button>
+                            </Tooltip>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : isOwners ? (
+              <table className="acm-table">
+                <thead><tr>
+                  <th>Sr No</th><th>Owner Name</th><th>Designation</th><th>Email</th><th>Phone</th>
+                  <th>ID Proof</th><th>Address Proof</th><th>Photograph</th><th>Status</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {totalRows === 0 ? (
+                    <tr className="acm-empty-row"><td colSpan={10}>{q ? 'No owners match your search.' : 'No owners captured yet. Click "+ Add Owner KYC Document" to add one.'}</td></tr>
+                  ) : ownerSlice.map((o, i) => (
+                    <tr key={o.id}>
+                      <td>{String(start + i + 1).padStart(2, '0')}</td>
+                      <td style={{ fontWeight: 700, color: '#1f2937' }}>{o.owner_name}</td>
+                      <td>{o.designation || '—'}</td>
+                      <td>{o.official_email || '—'}</td>
+                      <td style={{ fontFamily: 'JetBrains Mono, ui-monospace, monospace', fontSize: 11 }}>{o.phone_number || '—'}</td>
+                      <td>{o.id_proof_url      ? <a href={o.id_proof_url}      target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a> : '—'}</td>
+                      <td>{o.address_proof_url ? <a href={o.address_proof_url} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a> : '—'}</td>
+                      <td>{o.photograph_url    ? <a href={o.photograph_url}    target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a> : '—'}</td>
+                      <td>{(o.status || 'Active') === 'Active' ? <span className="acm-status-active">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
+                      <td>
+                        <div className="acm-row-actions">
+                          <Tooltip label="Edit">
+                            <button type="button" className="acm-row-btn" aria-label="Edit" onClick={() => onEditOwner(o.id)}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Delete">
+                            <button type="button" className="acm-row-btn acm-row-btn-del" aria-label="Delete" onClick={() => onDeleteOwner(o.id)}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                            </button>
+                          </Tooltip>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="acm-table">
+                <thead><tr>
+                  <th>Sr No</th><th>Auto Code</th><th>{meta.nameCol}</th><th>License #</th>
+                  <th>Issuing Authority</th><th>Issuing Date</th><th>Expiry</th><th>Status</th><th>Attachment</th><th>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {totalRows === 0 ? (
+                    <tr className="acm-empty-row"><td colSpan={10}>{q ? 'No documents match your search.' : 'No documents captured yet. Click "+ Add Document / License" to add one.'}</td></tr>
+                  ) : docSlice.map((d, i) => {
+                    const sr = start + i + 1;
+                    const code = codeFor(kind.toUpperCase(), sr);
+                    const fmtMonthYear = (s?: string | null) =>
+                      s ? (() => { const [y, m] = s.split('-'); return `${m}/${y}`; })() : 'N/A';
+                    const expLabel = fmtMonthYear(d.expiry_date);
+                    const issLabel = fmtMonthYear(d.issue_date);
+                    const expClass = d.expiry_date ? 'acm-expiry-date' : 'acm-expiry-na';
+                    const issClass = d.issue_date  ? 'acm-expiry-date' : 'acm-expiry-na';
+                    return (
+                      <tr key={d.id}>
+                        <td>{String(sr).padStart(2, '0')}</td>
+                        <td><span className="acm-doc-code">{code}</span></td>
+                        <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
+                        <td style={{ fontFamily: 'JetBrains Mono, ui-monospace, monospace', fontSize: 11 }}>{d.license_number || '—'}</td>
+                        <td style={{ color: '#6b7280' }}>{d.issuing_authority || '—'}</td>
+                        <td><span className={issClass}>{issLabel}</span></td>
+                        <td><span className={expClass}>{expLabel}</span></td>
+                        <td>{(d.status || 'Active') === 'Active' ? <span className="acm-status-active">✓ Active</span> : <span className="acm-pill-no">Inactive</span>}</td>
+                        <td>{d.attachment_url ? <a href={d.attachment_url} target="_blank" rel="noopener noreferrer" className="acm-attach-link">View</a> : '—'}</td>
+                        <td>
+                          <div className="acm-row-actions">
+                            <Tooltip label="Edit">
+                              <button type="button" className="acm-row-btn" aria-label="Edit" onClick={() => onEditDoc(d.id)}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Delete">
+                              <button type="button" className="acm-row-btn acm-row-btn-del" aria-label="Delete" onClick={() => onDeleteDoc(d.id)}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                              </button>
+                            </Tooltip>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
           <div className="acm-doc-pag-wrap">
             <span className="acm-doc-pag-info">
-              {total === 0 ? 'Showing 0 of 0 documents' : `Showing ${start + 1}–${Math.min(start + KYC_PER_PAGE, total)} of ${total} documents`}
+              {totalRows === 0 ? 'Showing 0 of 0 rows' : `Showing ${start + 1}–${Math.min(start + KYC_PER_PAGE, totalRows)} of ${totalRows} rows`}
             </span>
             {maxPage > 1 && (
               <div className="acm-pagination">
@@ -869,34 +1367,8 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch }:
     </div>
   );
 }
-function KycRow({ d, sr }: { d: any; sr: number }) {
-  const srPad = (sr < 10 ? '0' : '') + sr;
-  const expiryClass = d.expiry === 'N/A' ? 'acm-expiry-na' : d.expiry === 'Varies' ? 'acm-expiry-varies' : 'acm-expiry-date';
-  let statusEl: React.ReactNode;
-  if (d.status === 'active') statusEl = <span className="acm-status-active">✓ Active</span>;
-  else if (d.status === 'mandatory') statusEl = <span className="acm-status-toggle"><span className="acm-status-mandatory is-on">✓ Mandatory</span><span className="acm-status-optional">Optional</span></span>;
-  else statusEl = <span className="acm-status-toggle"><span className="acm-status-mandatory">Mandatory</span><span className="acm-status-optional is-on">Optional</span></span>;
-  return (
-    <tr>
-      <td>{srPad}</td>
-      <td><span className="acm-doc-code">{d.code}</span></td>
-      <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
-      <td style={{ color: '#6b7280' }}>{d.authority}</td>
-      <td><span className={expiryClass}>{d.expiry}</span></td>
-      <td>{statusEl}</td>
-      <td>
-        <div className="acm-row-actions">
-          <button type="button" className="acm-doc-action acm-doc-action-upload" title="Upload">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          </button>
-          <button type="button" className="acm-doc-action acm-doc-action-download" title="Download">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
+/* Legacy KycRow (rendered the old hardcoded DD/TL rows) was removed
+   once Stage 2 became data-driven and inlined its row rendering. */
 
 /* ───── Stage 3 — Evidence Vault KYC Documents ───── */
 function Stage3KycDocs({ sub, setSub }: { sub: EvSubTab; setSub: (s: EvSubTab) => void }) {
@@ -941,10 +1413,12 @@ function Stage3KycDocs({ sub, setSub }: { sub: EvSubTab; setSub: (s: EvSubTab) =
                       <td><span className={expCls}>{d.expiry}</span></td>
                       <td>{st}</td>
                       <td>
-                        <button type="button" className="acm-attach-link">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-                          View Attachment
-                        </button>
+                        <Tooltip label="Preview the uploaded attachment">
+                          <button type="button" className="acm-attach-link" aria-label="View attachment">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                            View Attachment
+                          </button>
+                        </Tooltip>
                       </td>
                     </tr>
                   );
@@ -1014,8 +1488,12 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
                   <td className="td-status"><span className="acm-expiry-na">N/A</span></td>
                   <td className="td-actions">
                     <div className="acm-row-actions">
-                      <button type="button" className="acm-doc-action acm-doc-action-view" title="View"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                      <button type="button" className="acm-doc-action acm-doc-action-download" title="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+                      <Tooltip label="View document">
+                        <button type="button" className="acm-doc-action acm-doc-action-view" aria-label="View"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                      </Tooltip>
+                      <Tooltip label="Download document">
+                        <button type="button" className="acm-doc-action acm-doc-action-download" aria-label="Download"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+                      </Tooltip>
                     </div>
                   </td>
                 </tr>
@@ -1031,6 +1509,551 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
           <button type="button" className="acm-btn-purple-lg-out">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Customer Specific Document
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ───── Document / License sub-modal (Stage 2 — KYC) ─────
+ * One form covers all three sub-tabs (Company DD / Owner KYC / Trade
+ * Licence). The doc name dropdown is sourced from the master list for
+ * the currently-active sub-tab; the `+` button next to it toggles the
+ * field to a free-text input so the user can capture a custom name
+ * the master doesn't have yet (e.g. a one-off trade licence).
+ *
+ * Save is a stub for now — KYC doc storage isn't DB-backed yet. When
+ * it lands, swap the onSave body for the real POST and the rest of
+ * this form is already in shape. */
+type NewDoc = {
+  name: string;         // Document/License Name
+  license: string;      // License Number
+  authority: string;    // Issuing Authority
+  issueDate: string;    // YYYY-MM-DD
+  expiryDate: string;   // YYYY-MM-DD
+  attachment: File | null;
+};
+function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved, onDocTypeAdded }:
+  { sub: KycSubTab; masters: MasterLists; customerId: number | null;
+    /** When set the form opens pre-filled with this row and saves via PUT. */
+    editing?: { id: number; name: string; license_number?: string | null; issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null; attachment_name?: string | null } | null;
+    onClose: () => void;
+    /** Fires with the saved server row (already shaped by the API) so
+     *  the parent can prepend / replace it in the table state. */
+    onSaved: (row: any) => void;
+    onDocTypeAdded: (opt: MasterOpt) => void }) {
+  const [d, setD] = useState<NewDoc>(() => editing ? {
+    name:       editing.name             ?? '',
+    license:    editing.license_number   ?? '',
+    authority:  editing.issuing_authority ?? '',
+    issueDate:  editing.issue_date       ?? '',
+    expiryDate: editing.expiry_date      ?? '',
+    attachment: null,   // existing file is shown as link; only set if user picks a new one
+  } : { name: '', license: '', authority: '', issueDate: '', expiryDate: '', attachment: null });
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  // Inline "Add Document Type" master popup (opens from the `+` next
+  // to the doc-name dropdown). Stays modal — never navigates away.
+  const [typeModal, setTypeModal] = useState(false);
+  const set = <K extends keyof NewDoc>(k: K, v: NewDoc[K]) => {
+    setD(prev => ({ ...prev, [k]: v }));
+    setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
+  };
+  // Dropdown source: the Document Type master (managed in the Master
+  // module under "Document Types"). The currently-selected value is
+  // prepended as a synthetic option so legacy / since-renamed values
+  // still render correctly on edit. The "+" button next to the
+  // dropdown opens the master page in a new tab — the user adds the
+  // new type there, returns, and the fresh option appears here.
+  const docOptions = (() => {
+    const base = masters.documentTypes.map(x => ({ value: x.name, label: x.name }));
+    if (d.name && !base.some(o => o.value === d.name)) {
+      return [{ value: d.name, label: d.name }, ...base];
+    }
+    return base;
+  })();
+  const submit = async () => {
+    if (saving) return;
+    const next: Record<string, string> = {};
+    if (!d.name.trim())      next.name      = 'Document name is required';
+    if (!d.license.trim())   next.license   = 'License number is required';
+    if (!d.authority.trim()) next.authority = 'Issuing authority is required';
+    if (!d.issueDate)        next.issueDate = 'Issue date is required';
+    if (!d.expiryDate)       next.expiryDate = 'Expiry date is required';
+    // Cross-field check: expiry must not be earlier than issue date.
+    // Dates come from MasterDatePicker as YYYY-MM-DD strings, which
+    // sort lexicographically — direct string compare is safe.
+    if (d.issueDate && d.expiryDate && d.expiryDate < d.issueDate) {
+      next.expiryDate = 'Expiry date must be on or after the issue date';
+    }
+    setErrs(next);
+    if (Object.keys(next).length > 0) return;
+
+    if (!customerId) {
+      alert('Please save the customer (Stage 1) first before adding KYC documents.');
+      return;
+    }
+
+    // Use multipart/form-data so the attachment can ride alongside the
+    // text fields. The server validates `kind` against ['dd','tl'].
+    const kind = sub === 'company-dd' ? 'dd' : 'tl';
+    const fd = new FormData();
+    fd.append('kind', kind);
+    fd.append('name', d.name.trim());
+    fd.append('license_number', d.license.trim());
+    fd.append('issuing_authority', d.authority.trim());
+    if (d.issueDate)  fd.append('issue_date',  d.issueDate);
+    if (d.expiryDate) fd.append('expiry_date', d.expiryDate);
+    if (d.attachment) fd.append('attachment',  d.attachment);
+    fd.append('status', 'Active');
+
+    setSaving(true);
+    try {
+      // Edit → POST to the same path (Laravel accepts both POST and PUT
+      // on the update route; POST is used here so multipart files ride
+      // along with text fields. The route also accepts a `_method=PUT`
+      // sentinel if we want strict semantics later.)
+      const url = editing
+        ? `/customers/${customerId}/documents/${editing.id}`
+        : `/customers/${customerId}/documents`;
+      const { data } = await api.post(url, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const row = data?.data ?? data;
+      onSaved(row);
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors;
+      if (apiErrors && typeof apiErrors === 'object') {
+        // Map server keys back to the local field names.
+        const map: Record<string, string> = {
+          name: 'name', license_number: 'license', issuing_authority: 'authority',
+          issue_date: 'issueDate', expiry_date: 'expiryDate', attachment: 'name',
+        };
+        const next2: Record<string, string> = {};
+        for (const [k, msgs] of Object.entries(apiErrors)) {
+          const localKey = map[k] ?? k;
+          next2[localKey] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+        }
+        setErrs(next2);
+      } else {
+        alert(err?.response?.data?.message ?? 'Could not save the document. Try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="acm-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="acm-sub-card acm-doc-sub-card">
+        <div className="acm-sub-header acm-doc-sub-header">
+          <div className="acm-sub-title acm-doc-sub-title">{editing ? 'Edit Document / License' : 'Add New Document / License'}</div>
+          <Tooltip label="Close">
+            <button type="button" className="acm-sub-close" onClick={onClose} aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </Tooltip>
+        </div>
+        <div className="acm-sub-body">
+          <div className="acm-row acm-row-2">
+            <Field label="Document / License Name" required error={errs.name}>
+              <div className="acm-doc-name-row">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <MasterSelect
+                    value={d.name}
+                    options={docOptions}
+                    placeholder="Select Document / License"
+                    invalid={!!errs.name}
+                    onChange={v => set('name', v)}
+                  />
+                </div>
+                <Tooltip label="Add new document type">
+                  <button
+                    type="button"
+                    className="acm-doc-plus-btn"
+                    aria-label="Add new document type"
+                    /* Opens the master's Add Document Type form inline
+                       on top of this sub-modal — never navigates away
+                       so the user's in-progress license stays intact. */
+                    onClick={() => setTypeModal(true)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+                </Tooltip>
+              </div>
+            </Field>
+            <Field label="License Number" required error={errs.license}>
+              <input className={errs.license ? 'acm-input-error' : ''} value={d.license} onChange={e => set('license', e.target.value)} placeholder="Enter license number" />
+            </Field>
+          </div>
+          <div className="acm-row acm-row-4">
+            <Field label="Issuing Authority" required error={errs.authority}>
+              <input className={errs.authority ? 'acm-input-error' : ''} value={d.authority} onChange={e => set('authority', e.target.value)} placeholder="Enter issuing authority" />
+            </Field>
+            <Field label="Issuing Date" required error={errs.issueDate}>
+              {/* maxDate constrains the picker to dates at or before the
+                  chosen expiry, so the two fields can never disagree. */}
+              <MasterDatePicker
+                value={d.issueDate}
+                maxDate={d.expiryDate || undefined}
+                invalid={!!errs.issueDate}
+                onChange={(v: string) => {
+                  set('issueDate', v);
+                  // Auto-clear an expiry that's now earlier than the new
+                  // issue date so the form stays internally consistent.
+                  if (d.expiryDate && v && d.expiryDate < v) set('expiryDate', '');
+                }}
+                placeholder="DD/MM/YYYY"
+              />
+            </Field>
+            <Field label="Expiry Date" required error={errs.expiryDate}>
+              {/* minDate forces expiry ≥ issue date when both are picked. */}
+              <MasterDatePicker
+                value={d.expiryDate}
+                minDate={d.issueDate || undefined}
+                invalid={!!errs.expiryDate}
+                onChange={(v: string) => set('expiryDate', v)}
+                placeholder="DD/MM/YYYY"
+              />
+            </Field>
+            <Field label="Attachments">
+              <Tooltip label={d.attachment ? `Replace: ${d.attachment.name}` : 'Attach a file'}>
+                <label className="acm-doc-attach">
+                  <input type="file" hidden onChange={e => set('attachment', e.target.files?.[0] ?? null)} />
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  <span className="acm-doc-attach-label">{d.attachment ? (d.attachment.name.length > 14 ? d.attachment.name.slice(0, 14) + '…' : d.attachment.name) : 'ATTACH FILE'}</span>
+                </label>
+              </Tooltip>
+            </Field>
+          </div>
+        </div>
+        <div className="acm-sub-footer acm-doc-sub-footer">
+          <button type="button" className="acm-btn-mini-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className="acm-btn-save acm-doc-save" onClick={submit} disabled={saving}>
+            {saving ? 'Saving…' : (editing ? 'Update' : 'Save')}
+          </button>
+        </div>
+      </div>
+
+      {typeModal && (
+        <AddDocumentTypeMasterModal
+          onClose={() => setTypeModal(false)}
+          onSaved={(opt) => {
+            onDocTypeAdded(opt);
+            set('name', opt.name);   // auto-select the freshly-created type
+            setTypeModal(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ───── Inline "Add Document Type" master popup ─────
+ * Rendered on top of the Add Document / License sub-modal. POSTs to
+ * /master/document_type — the canonical Document Types master — so
+ * the new row immediately shows up everywhere that consumes the
+ * master (Stage 2 dropdown here, master listing page, anywhere else).
+ *
+ * Fields mirror the master schema:
+ *   title         (required text)
+ *   applicable_to (Customer | Vendor | Both | Internal)
+ *   is_mandatory  (Yes | No)
+ *   status        (Active | Inactive — required, defaults to Active)
+ */
+function AddDocumentTypeMasterModal({ onClose, onSaved }:
+  { onClose: () => void; onSaved: (opt: MasterOpt) => void }) {
+  const [title, setTitle]               = useState('');
+  const [applicableTo, setApplicableTo] = useState('');
+  const [isMandatory, setIsMandatory]   = useState('');
+  const [status, setStatus]             = useState('Active');
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (saving) return;
+    const next: Record<string, string> = {};
+    if (!title.trim()) next.title = 'Document type name is required';
+    if (!status)       next.status = 'Status is required';
+    setErrs(next);
+    if (Object.keys(next).length) return;
+
+    setSaving(true);
+    try {
+      const { data } = await api.post('/master/document_type', {
+        title:         title.trim(),
+        applicable_to: applicableTo || null,
+        is_mandatory:  isMandatory  || null,
+        status,
+      });
+      // The master endpoint returns the created row — wrap it as a
+      // MasterOpt so the parent can append straight into the
+      // documentTypes list and auto-select the new entry.
+      const row = data?.data ?? data;
+      onSaved({ id: Number(row?.id ?? 0), name: String(row?.title ?? title.trim()) });
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const next2: Record<string, string> = {};
+        for (const [k, msgs] of Object.entries(apiErrors)) {
+          next2[k] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+        }
+        setErrs(next2);
+      } else {
+        alert(err?.response?.data?.message ?? 'Could not save the document type. Try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="acm-sub-modal acm-doc-type-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="acm-sub-card acm-doc-sub-card acm-doc-type-master-card">
+        <div className="acm-sub-header acm-doc-sub-header acm-doc-type-master-head">
+          <div className="acm-doc-type-master-head-left">
+            <div className="acm-doc-type-master-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <div>
+              <div className="acm-sub-title acm-doc-sub-title" style={{ textAlign: 'left' }}>Add Document Type</div>
+              <div className="acm-doc-type-master-sub">Fill in the details to register a new document type</div>
+            </div>
+          </div>
+          <Tooltip label="Close">
+            <button type="button" className="acm-sub-close" onClick={onClose} aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </Tooltip>
+        </div>
+        <div className="acm-sub-body acm-doc-type-master-body">
+          <div className="acm-row acm-row-1">
+            <Field label="Document Type Name" required error={errs.title}>
+              <input
+                className={errs.title ? 'acm-input-error' : ''}
+                value={title}
+                onChange={e => { setTitle(e.target.value); if (errs.title) setErrs(p => { const n = { ...p }; delete n.title; return n; }); }}
+                placeholder="e.g. GST Registration Certificate"
+                autoFocus
+              />
+            </Field>
+          </div>
+          <div className="acm-row acm-row-1">
+            <Field label="Applicable To" error={errs.applicable_to}>
+              <MasterSelect
+                value={applicableTo}
+                options={[
+                  { value: 'Customer', label: 'Customer' },
+                  { value: 'Vendor',   label: 'Vendor' },
+                  { value: 'Both',     label: 'Both' },
+                  { value: 'Internal', label: 'Internal' },
+                ]}
+                placeholder="Select…"
+                invalid={!!errs.applicable_to}
+                onChange={v => setApplicableTo(v)}
+              />
+            </Field>
+          </div>
+          <div className="acm-row acm-row-1">
+            <Field label="Is Mandatory" error={errs.is_mandatory}>
+              <MasterSelect
+                value={isMandatory}
+                options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
+                placeholder="Select…"
+                invalid={!!errs.is_mandatory}
+                onChange={v => setIsMandatory(v)}
+              />
+            </Field>
+          </div>
+          <div className="acm-row acm-row-1">
+            <Field label="Status" required error={errs.status}>
+              <MasterSelect
+                value={status}
+                options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
+                placeholder="Select…"
+                invalid={!!errs.status}
+                onChange={v => setStatus(v)}
+              />
+            </Field>
+          </div>
+        </div>
+        <div className="acm-sub-footer acm-doc-sub-footer acm-doc-type-master-footer">
+          <button type="button" className="acm-btn-mini-cancel" onClick={onClose} disabled={saving}>
+            <span style={{ marginRight: 6 }}>×</span> Cancel
+          </button>
+          <button type="button" className="acm-btn-save acm-doc-save acm-doc-type-master-save" onClick={submit} disabled={saving}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            <span>{saving ? 'Saving…' : 'Save Document Type'}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ───── Owner Due Diligence sub-modal ─────
+ * Stage 2 → Owner KYC tab uses a different form than the generic
+ * Document / License flow: an owner row needs identity proofs and
+ * the owner's contact details, not a license number + expiry. Same
+ * visual chrome as the other sub-modals (purple gradient header,
+ * dark-mode aware) — only the field set changes. */
+type NewOwnerDD = {
+  ownerName:     string;
+  designation:   string;       // master-backed
+  officialEmail: string;
+  phoneNumber:   string;
+  idProof:       File | null;
+  addressProof:  File | null;
+  photograph:    File | null;
+};
+function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
+  { masters: MasterLists; customerId: number | null;
+    /** When set the form opens pre-filled and saves via update. */
+    editing?: { id: number; owner_name: string; designation?: string | null; official_email?: string | null; phone_number?: string | null } | null;
+    onClose: () => void;
+    /** Fires with the saved server row so the parent can prepend / replace it
+     *  in the Owner KYC table. */
+    onSaved: (row: any) => void }) {
+  const [d, setD] = useState<NewOwnerDD>(() => editing ? {
+    ownerName:     editing.owner_name      ?? '',
+    designation:   editing.designation     ?? '',
+    officialEmail: editing.official_email  ?? '',
+    phoneNumber:   editing.phone_number    ?? '',
+    // Existing files are still on the server. Only set these if the
+    // user picks a new file — empty FormData fields are skipped below.
+    idProof: null, addressProof: null, photograph: null,
+  } : {
+    ownerName: '', designation: '', officialEmail: '', phoneNumber: '',
+    idProof: null, addressProof: null, photograph: null,
+  });
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const set = <K extends keyof NewOwnerDD>(k: K, v: NewOwnerDD[K]) => {
+    setD(prev => ({ ...prev, [k]: v }));
+    setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
+  };
+  const submit = async () => {
+    if (saving) return;
+    const next: Record<string, string> = {};
+    if (!d.ownerName.trim())                            next.ownerName    = 'Owner name is required';
+    if (!d.designation)                                 next.designation  = 'Select a designation';
+    if (!d.officialEmail.trim())                        next.officialEmail = 'Official email is required';
+    else if (!/^\S+@\S+\.\S+$/.test(d.officialEmail))   next.officialEmail = 'Enter a valid email';
+    if (!d.phoneNumber.trim())                          next.phoneNumber  = 'Phone number is required';
+    else if (!/^\+?[0-9\s-]{7,15}$/.test(d.phoneNumber)) next.phoneNumber = 'Phone must be 7–15 digits';
+    // Files are required only when creating a new owner. On edit the
+    // existing files stay on disk until the user picks a replacement.
+    if (!editing) {
+      if (!d.idProof)        next.idProof      = 'ID proof is required';
+      if (!d.addressProof)   next.addressProof = 'Address proof is required';
+      if (!d.photograph)     next.photograph   = 'Photograph is required';
+    }
+    setErrs(next);
+    if (Object.keys(next).length > 0) return;
+
+    if (!customerId) {
+      alert('Please save the customer (Stage 1) first before adding owner KYC.');
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('owner_name',     d.ownerName.trim());
+    fd.append('designation',    d.designation);
+    fd.append('official_email', d.officialEmail.trim());
+    fd.append('phone_number',   d.phoneNumber.trim());
+    if (d.idProof)      fd.append('id_proof',      d.idProof);
+    if (d.addressProof) fd.append('address_proof', d.addressProof);
+    if (d.photograph)   fd.append('photograph',    d.photograph);
+    fd.append('status', 'Active');
+
+    setSaving(true);
+    try {
+      // On edit → POST to the update route (Laravel accepts both POST
+      // and PUT; we use POST so multipart files ride along cleanly).
+      const url = editing
+        ? `/customers/${customerId}/owners/${editing.id}`
+        : `/customers/${customerId}/owners`;
+      const { data } = await api.post(url, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      onSaved(data?.data ?? data);
+    } catch (err: any) {
+      const apiErrors = err?.response?.data?.errors;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const map: Record<string, string> = {
+          owner_name: 'ownerName', designation: 'designation',
+          official_email: 'officialEmail', phone_number: 'phoneNumber',
+          id_proof: 'idProof', address_proof: 'addressProof', photograph: 'photograph',
+        };
+        const next2: Record<string, string> = {};
+        for (const [k, msgs] of Object.entries(apiErrors)) {
+          const localKey = map[k] ?? k;
+          next2[localKey] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+        }
+        setErrs(next2);
+      } else {
+        alert(err?.response?.data?.message ?? 'Could not save the owner. Try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+  /** Renders one of the three file-upload pills. Same shape as the
+   *  ATTACH FILE control on the other doc sub-modal, but bound to the
+   *  named field key so its placeholder + error text can vary. */
+  const FileField = ({ field, label }: { field: 'idProof' | 'addressProof' | 'photograph'; label: string }) => {
+    const file = d[field];
+    return (
+      <Field label={label} required error={errs[field]}>
+        <Tooltip label={file ? `Replace: ${file.name}` : `Upload ${label}`}>
+          <label className={`acm-doc-attach ${errs[field] ? 'acm-input-error' : ''}`}>
+            <input type="file" hidden onChange={e => set(field, e.target.files?.[0] ?? null)} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            <span className="acm-doc-attach-label">
+              {file ? (file.name.length > 18 ? file.name.slice(0, 18) + '…' : file.name) : `UPLOAD ${label.toUpperCase()}`}
+            </span>
+          </label>
+        </Tooltip>
+      </Field>
+    );
+  };
+  return (
+    <div className="acm-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="acm-sub-card acm-doc-sub-card">
+        <div className="acm-sub-header acm-doc-sub-header">
+          <div className="acm-sub-title acm-doc-sub-title">{editing ? 'Edit Owner Due Diligence' : 'Add Owner Due Diligence'}</div>
+          <Tooltip label="Close">
+            <button type="button" className="acm-sub-close" onClick={onClose} aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </Tooltip>
+        </div>
+        <div className="acm-sub-body">
+          <div className="acm-row acm-row-4">
+            <Field label="Owner Name" required error={errs.ownerName}>
+              <input className={errs.ownerName ? 'acm-input-error' : ''} value={d.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="Enter owner name" />
+            </Field>
+            <Field label="Designation" required error={errs.designation}>
+              <MasterSelect value={d.designation} options={optsWith(masters.designations, d.designation)} placeholder="Select designation" invalid={!!errs.designation} onChange={v => set('designation', v)} />
+            </Field>
+            <Field label="Official Email" required error={errs.officialEmail}>
+              <input className={errs.officialEmail ? 'acm-input-error' : ''} type="email" value={d.officialEmail} onChange={e => set('officialEmail', e.target.value)} placeholder="name@company.com" />
+            </Field>
+            <Field label="Phone Number" required error={errs.phoneNumber}>
+              <input className={errs.phoneNumber ? 'acm-input-error' : ''} type="tel" value={d.phoneNumber} onChange={e => set('phoneNumber', e.target.value)} placeholder="7–15 digit number" />
+            </Field>
+          </div>
+          <div className="acm-row acm-row-3">
+            <FileField field="idProof"      label="ID Proof" />
+            <FileField field="addressProof" label="Address Proof" />
+            <FileField field="photograph"   label="Photograph" />
+          </div>
+        </div>
+        <div className="acm-sub-footer acm-doc-sub-footer">
+          <button type="button" className="acm-btn-mini-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="button" className="acm-btn-save acm-doc-save" onClick={submit} disabled={saving}>
+            {saving ? 'Saving…' : (editing ? 'Update' : 'Save')}
           </button>
         </div>
       </div>
@@ -1075,24 +2098,39 @@ function LocationSubModal({ editing, masters, onClose, onSave }:
   };
   return (
     <div className="acm-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="acm-sub-card">
-        <div className="acm-sub-header">
-          <div className="acm-sub-title">{editing ? 'Edit' : 'Add New'} <span className="acm-sub-title-accent">Location &amp; Contact</span></div>
-          <button type="button" className="acm-sub-close" onClick={onClose}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <div className="acm-sub-card acm-doc-sub-card">
+        <div className="acm-sub-header acm-doc-sub-header">
+          <div className="acm-sub-title acm-doc-sub-title">{editing ? 'Edit' : 'Add New'} Location &amp; Contact</div>
+          <Tooltip label="Close">
+            <button type="button" className="acm-sub-close" onClick={onClose} aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </Tooltip>
         </div>
         <div className="acm-sub-body">
           <div className="acm-row acm-row-2">
             <Field label="Address Type" required error={errs.type}>
-              <MasterSelect value={d.type} options={toSelectOpts(masters.addressTypes)} placeholder="Select address type" invalid={!!errs.type} onChange={v => set('type', v)} />
+              <MasterSelect value={d.type} options={optsWith(masters.addressTypes, d.type)} placeholder="Select address type" invalid={!!errs.type} onChange={v => set('type', v)} />
             </Field>
             <Field label="Address" required error={errs.line}><input className={errs.line ? 'acm-input-error' : ''} value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errs.country}>
-              <MasterSelect value={d.country} options={toSelectOpts(masters.countries)} placeholder="Select country" invalid={!!errs.country} onChange={v => { set('country', v); set('state', ''); }} />
+              <MasterSelect value={d.country} options={optsWith(masters.countries, d.country)} placeholder="Select country" invalid={!!errs.country} onChange={v => { set('country', v); set('state', ''); }} />
             </Field>
             <Field label="State" required error={errs.state}>
-              <MasterSelect value={d.state} options={states.map(s => ({ value: s.name, label: s.name }))} placeholder={d.country ? 'Select state' : 'Select country first'} disabled={!d.country} invalid={!!errs.state} onChange={v => set('state', v)} />
+              <MasterSelect
+                value={d.state}
+                options={(() => {
+                  const base = states.map(s => ({ value: s.name, label: s.name }));
+                  if (d.state && !base.some(o => o.value === d.state)) return [{ value: d.state, label: d.state }, ...base];
+                  return base;
+                })()}
+                placeholder={d.country ? 'Select state' : 'Select country first'}
+                disabled={!d.country}
+                invalid={!!errs.state}
+                onChange={v => set('state', v)}
+              />
             </Field>
             <Field label="City" required error={errs.city}><input className={errs.city ? 'acm-input-error' : ''} value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
             <Field label="Pin / Postal Code" required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', e.target.value)} maxLength={12} placeholder="Enter PIN" /></Field>
@@ -1100,7 +2138,7 @@ function LocationSubModal({ editing, masters, onClose, onSave }:
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errs.cpName}><input className={errs.cpName ? 'acm-input-error' : ''} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
             <Field label="Designation" required error={errs.cpDesignation}>
-              <MasterSelect value={d.cpDesignation} options={toSelectOpts(masters.designations)} placeholder="Select designation" invalid={!!errs.cpDesignation} onChange={v => set('cpDesignation', v)} />
+              <MasterSelect value={d.cpDesignation} options={optsWith(masters.designations, d.cpDesignation)} placeholder="Select designation" invalid={!!errs.cpDesignation} onChange={v => set('cpDesignation', v)} />
             </Field>
             <Field label="Contact No" required error={errs.cpContact}><input className={errs.cpContact ? 'acm-input-error' : ''} type="tel" value={d.cpContact} onChange={e => set('cpContact', e.target.value)} placeholder="7–15 digit mobile" /></Field>
             <Field label="Email Id" required error={errs.cpEmail}><input className={errs.cpEmail ? 'acm-input-error' : ''} type="email" value={d.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
@@ -1114,52 +2152,73 @@ function LocationSubModal({ editing, masters, onClose, onSave }:
             </Field>
           </div>
         </div>
-        <div className="acm-sub-footer">
+        <div className="acm-sub-footer acm-doc-sub-footer">
           <button type="button" className="acm-btn-mini-cancel" onClick={onClose}>Cancel</button>
-          <button type="button" className="acm-btn-save" onClick={submit}>{editing ? 'Update' : 'Save'}</button>
+          <button type="button" className="acm-btn-save acm-doc-save" onClick={submit}>{editing ? 'Update' : 'Save'}</button>
         </div>
       </div>
     </div>
   );
 }
 
-/* ───── History panels ───── */
-function HistoryStage1({ form, locations }: { form: any; locations: LocationRow[] }) {
-  const fld = (key: string, val: string) => (
-    <div className="acm-hs-field">
-      <span className="acm-hs-key">{key}</span>
-      <span className={`acm-hs-val ${!val ? 'acm-hs-empty' : ''}`}>{val || '—'}</span>
+/* ───── Compact inline "label : value" pair ─────
+ * Single line; the label is muted, value is the prominent dark text.
+ * Long values truncate with an ellipsis and surface the full text on
+ * hover via the project-wide Tooltip — keeps the grid columns lined
+ * up no matter how long an address or company name gets. */
+function ReadInline({ label, value, span }: { label: string; value?: string | null; span?: number }) {
+  const v = (value ?? '').toString().trim();
+  const node = (
+    <div className="acm-hs-inline" style={span ? { gridColumn: `span ${span}` } : undefined}>
+      <span className="acm-hs-inline-lbl">{label} :</span>
+      <span className={`acm-hs-inline-val ${!v ? 'is-empty' : ''}`}>{v || '—'}</span>
     </div>
   );
-  const extra = locations.length;
+  // Tooltip only when there's actual content to disambiguate.
+  return v ? <Tooltip label={`${label}: ${v}`}>{node}</Tooltip> : node;
+}
+
+/* ───── Stage 1 read-only summary ─────
+ * Dense horizontal layout — every Stage 1 field shown as a tight
+ * "Label : Value" pair laid out in a 4-column grid. No card chrome;
+ * the parent history panel already frames the content. */
+function HistoryStage1({ form, locations, customerId }: { form: any; locations: LocationRow[]; customerId?: string }) {
+  const wa = form.cpWa === 'yes' ? 'Yes' : form.cpWa === 'no' ? 'No' : '';
   return (
-    <div className="acm-hs-block">
-      <div className="acm-hs-header">
-        <div className="acm-hs-num"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-        <div className="acm-hs-title">Stage 1 — Customer Legal Identity</div>
-        <div className="acm-hs-divider" />
-      </div>
-      <div className="acm-hs-group">
-        <div className="acm-hs-group-label">Company Information</div>
-        <div className="acm-hs-fields acm-hs-fields-3" style={{ marginBottom: 5 }}>
-          {fld('Company Name', form.coName)}{fld('Legal Name', form.coLegal)}{fld('Customer Type', form.coType)}
-        </div>
-        <div className="acm-hs-fields">
-          {fld('Website', form.coWeb)}{fld('Segment', form.coSeg)}{fld('Classification', form.coClass)}{fld('Risk Level', form.coRisk)}
-        </div>
-      </div>
-      <div className="acm-hs-group">
-        <div className="acm-hs-group-label">Primary Location {extra > 0 && `(+ ${extra} more)`}</div>
-        <div className="acm-hs-inline">{[form.addrType, form.addr, form.city, form.state, form.country, form.pin].filter(Boolean).join(' • ') || <span className="acm-hs-inline-empty">No data entered</span>}</div>
-      </div>
-      <div className="acm-hs-group">
-        <div className="acm-hs-group-label">Primary Contact</div>
-        <div className="acm-hs-inline">{[form.cpName + (form.cpDesig ? ` (${form.cpDesig})` : ''), form.cpTel, form.cpEmail, form.cpWa ? `WhatsApp: ${form.cpWa.toUpperCase()}` : ''].filter(Boolean).join(' • ') || <span className="acm-hs-inline-empty">No data entered</span>}</div>
+    <div className="acm-hs-mirror">
+      <div className="acm-hs-grid">
+        <ReadInline label="Customer ID"               value={customerId} />
+        <ReadInline label="Company Name"              value={form.coName} />
+        <ReadInline label="Company Legal Name"        value={form.coLegal} />
+        <ReadInline label="Customer Type"             value={form.coType} />
+
+        <ReadInline label="Company Website"           value={form.coWeb} />
+        <ReadInline label="Customer Segment"          value={form.coSeg} />
+        <ReadInline label="Classification"            value={form.coClass} />
+        <ReadInline label="Risk Level"                value={form.coRisk} />
+
+        <ReadInline label="Registered Office Address" value={form.addr} span={2} />
+        <ReadInline label="Country"                   value={form.country} />
+        <ReadInline label="State"                     value={form.state} />
+
+        <ReadInline label="City"                      value={form.city} />
+        <ReadInline label="PIN / Postal Code"         value={form.pin} />
+        <ReadInline label="Contact Person Name"       value={form.cpName} />
+        <ReadInline label="Designation"               value={form.cpDesig} />
+
+        <ReadInline label="Contact No"                value={form.cpTel} />
+        <ReadInline label="Email"                     value={form.cpEmail} />
+        <ReadInline label="WhatsApp Enable"           value={wa} />
+        {locations.length > 0 && (
+          <ReadInline label="Additional Locations" value={`${locations.length} captured`} />
+        )}
       </div>
     </div>
   );
 }
-function HistoryStage2() {
+function HistoryStage2({ ddCount, ownerCount, tlCount }:
+  { ddCount: number; ownerCount: number; tlCount: number }) {
+  const total = ddCount + ownerCount + tlCount;
   return (
     <div className="acm-hs-block">
       <div className="acm-hs-header">
@@ -1170,10 +2229,10 @@ function HistoryStage2() {
       <div className="acm-hs-group">
         <div className="acm-hs-group-label">Document Summary</div>
         <div className="acm-hs-stats">
-          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{DD_DOCS.length}</div><div className="acm-hs-stat-lbl">DD Docs</div></div>
-          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{OWN_KYC_DOCS.length}</div><div className="acm-hs-stat-lbl">Owner KYC</div></div>
-          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{TL_DOCS.length}</div><div className="acm-hs-stat-lbl">Trade Lic.</div></div>
-          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{DD_DOCS.length + OWN_KYC_DOCS.length + TL_DOCS.length}</div><div className="acm-hs-stat-lbl">Total</div></div>
+          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{ddCount}</div><div className="acm-hs-stat-lbl">DD Docs</div></div>
+          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{ownerCount}</div><div className="acm-hs-stat-lbl">Owner KYC</div></div>
+          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{tlCount}</div><div className="acm-hs-stat-lbl">Trade Lic.</div></div>
+          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{total}</div><div className="acm-hs-stat-lbl">Total</div></div>
         </div>
       </div>
     </div>
@@ -1319,6 +2378,55 @@ const SCOPED_CSS = `
 .acm-field input.acm-input-error { border-color: #ef4444; background: #fef2f2; }
 .acm-field input.acm-input-error:focus { box-shadow: 0 0 0 3.5px rgba(239,68,68,.15); }
 .acm-field-error { color: #ef4444; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
+
+/* ── Stage 1 read-only summary (shown on Stage 2 / Stage 3) ─────────
+   Dense horizontal layout — every Stage 1 field rendered as a tight
+   "Label : Value" pair in a 4-column grid. No card chrome; the
+   collapsible history panel above already frames the block. */
+/* Comfortable breathing room around the dense 4-column grid so the
+   data isn't kissing the panel borders. Horizontal padding lines up
+   with the panel header's 16px gutter; vertical padding gives the
+   first/last rows space from the divider line. */
+.acm-hs-mirror { padding: 14px 18px 16px; }
+.acm-hs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 28px;
+  row-gap: 13px;
+}
+.acm-hs-inline {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 12px; min-width: 0;
+  /* Hover affordance — subtle bg tint so the user knows the row is
+     hover-interactive (Tooltip shows full value). */
+  cursor: default; padding: 1px 2px; border-radius: 4px;
+  transition: background .12s;
+}
+.acm-hs-inline:hover { background: rgba(124,58,237,0.06); }
+.acm-hs-inline-lbl {
+  color: #64748b; font-weight: 600;
+  letter-spacing: .01em; white-space: nowrap; flex-shrink: 0;
+}
+.acm-hs-inline-val {
+  color: #6d28d9; font-weight: 600;
+  line-height: 1.4; min-width: 0; flex: 1 1 auto;
+  /* Truncate long values to one line with an ellipsis. Full text is
+     still available on hover via the project-wide Tooltip. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acm-hs-inline-val.is-empty { color: #cbd5e1; font-weight: 500; }
+
+/* Dark-mode variant. */
+[data-bs-theme="dark"] .acm-hs-inline:hover { background: rgba(167,139,250,0.10); }
+[data-bs-theme="dark"] .acm-hs-inline-lbl { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-hs-inline-val { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-hs-inline-val.is-empty { color: #475569; }
+
+/* Narrower viewports — collapse the dense 4-col layout to 2 cols so
+   labels still fit beside their values on a 3:2 ratio. */
+@media (max-width: 900px) {
+  .acm-hs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .acm-radio-row { display: flex; align-items: center; gap: 16px; padding: 9px 0; }
 .acm-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #6b7280; cursor: pointer; letter-spacing: .04em; user-select: none; }
 .acm-radio input[type="radio"] { accent-color: #7c3aed; width: 14px; height: 14px; cursor: pointer; }
@@ -1455,6 +2563,199 @@ const SCOPED_CSS = `
 .acm-sub-body { flex: 1; padding: 20px 24px; overflow-y: auto; background: linear-gradient(180deg, #fff 0%, #fbfaff 100%); }
 .acm-sub-footer { padding: 14px 22px; display: flex; justify-content: center; gap: 12px; border-top: 1px solid #efeaf9; background: #faf9fd; flex-shrink: 0; }
 .acm-btn-save { padding: 7px 18px; border-radius: 9px; border: none; background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
+
+/* "Add New Document / License" popup — clean white card with no
+   internal section borders (header/body/footer all one continuous
+   surface) to match the design mock. */
+.acm-doc-sub-card { max-width: 920px; border-radius: 18px; background: #fff !important; box-shadow: 0 24px 60px -16px rgba(15,15,30,.32), 0 8px 24px rgba(15,15,30,.14); }
+/* Purple gradient header strip — visually ties the sub-modal back to
+   the parent Add Customer modal which uses the same palette. */
+.acm-doc-sub-header {
+  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 35%, #7c3aed 70%, #8b5cf6 100%) !important;
+  border-bottom: none; padding: 16px 26px; justify-content: center; position: relative;
+}
+.acm-doc-sub-title { color: #fff; font-size: 17px; font-weight: 800; letter-spacing: -.2px; }
+/* Close button: translucent white pill, sits over the colored header
+   so it stays visible against the gradient. Keyed off the header
+   class (not the card) so the rule applies to every sub-modal that
+   uses acm-doc-sub-header — Add Document / License, Add Document
+   Type, Owner Due Diligence, and Location & Contact. */
+.acm-doc-sub-header .acm-sub-close {
+  position: absolute; top: 50%; right: 18px; transform: translateY(-50%);
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,0.15) !important; border: 1px solid rgba(255,255,255,0.35) !important;
+  color: #fff !important;
+  z-index: 2;
+}
+.acm-doc-sub-header .acm-sub-close:hover { background: rgba(255,255,255,0.28) !important; transform: translateY(-50%) rotate(90deg); }
+.acm-doc-sub-card .acm-sub-body { background: #fff !important; padding: 18px 26px 8px; }
+.acm-doc-sub-footer { background: #fff !important; border-top: none; padding: 6px 22px 22px; }
+/* Field labels inside this popup adopt a darker / tighter style than
+   the main modal (closer to the dark-on-white look in the mock). */
+.acm-doc-sub-body .acm-field label { color: #475569; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; }
+.acm-doc-sub-body .acm-field input,
+.acm-doc-sub-body .acm-field textarea {
+  border: 1.5px solid #e9d5ff; border-radius: 10px; padding: 10px 12px; font-size: 12.5px;
+  color: #3b0764; background: #fff;
+}
+.acm-doc-sub-body .acm-field input::placeholder,
+.acm-doc-sub-body .acm-field textarea::placeholder { color: #c4b5fd; font-weight: 400; }
+.acm-doc-sub-body .acm-field input:focus,
+.acm-doc-sub-body .acm-field textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3.5px rgba(124,58,237,.12); }
+/* Cancel: white pill, violet border + violet text. Matches the mock. */
+.acm-doc-sub-footer .acm-btn-mini-cancel {
+  background: #fff; border: 1.5px solid #c4b5fd; color: #7c3aed;
+  padding: 9px 22px; border-radius: 9px; font-weight: 700; font-size: 12px; cursor: pointer;
+}
+.acm-doc-sub-footer .acm-btn-mini-cancel:hover { background: #faf5ff; }
+/* Save: same purple gradient as the header strip so the two
+   "branded" surfaces of the popup visually agree. */
+.acm-doc-save {
+  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 35%, #7c3aed 70%, #8b5cf6 100%) !important;
+  box-shadow: 0 4px 12px rgba(109,40,217,.35);
+  padding: 9px 44px !important; min-width: 120px; font-size: 12px !important;
+}
+.acm-doc-save:hover { filter: brightness(1.08); box-shadow: 0 6px 16px rgba(109,40,217,.45); }
+/* Doc-name field: dropdown + a `+` square button that opens the
+   "Add New Document Type" secondary popup. */
+.acm-doc-name-row { display: flex; align-items: stretch; gap: 8px; }
+.acm-doc-plus-btn {
+  flex-shrink: 0; width: 38px; height: 38px; border-radius: 9px;
+  border: 1.5px solid #c4b5fd; background: #faf5ff; color: #7c3aed;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, border-color .15s;
+}
+.acm-doc-plus-btn:hover { background: #ede9fe; border-color: #7c3aed; }
+/* Attachment field renders as a same-height pill with a paperclip
+   icon and "ATTACH FILE" label so it visually balances with the
+   adjacent inputs in the bottom row. */
+.acm-doc-attach {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 40px; padding: 0 14px; width: 100%;
+  border: 1.5px solid #e9d5ff; border-radius: 10px;
+  background: #fff; color: #475569; cursor: pointer;
+  font-size: 11.5px; font-weight: 700; letter-spacing: .08em;
+}
+.acm-doc-attach:hover { border-color: #7c3aed; background: #faf7ff; color: #7c3aed; }
+.acm-doc-attach-label { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+
+/* "Add Document Type" master popup — sits above the Add Document /
+   License sub-modal at z-index 10002. Header is left-aligned (icon
+   + title + subtitle), unlike the centered title used elsewhere. */
+.acm-doc-type-sub-modal { z-index: 10002; }
+.acm-doc-type-card { max-width: 760px; border-radius: 18px; }
+.acm-doc-type-master-card { max-width: 560px; border-radius: 18px; }
+.acm-doc-type-master-head { justify-content: space-between !important; padding: 18px 24px !important; }
+.acm-doc-type-master-head-left { display: flex; align-items: center; gap: 14px; }
+.acm-doc-type-master-icon {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: rgba(255,255,255,0.20); border: 1px solid rgba(255,255,255,0.35);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; flex-shrink: 0;
+}
+.acm-doc-type-master-sub { font-size: 11px; color: rgba(255,255,255,0.85); margin-top: 3px; }
+.acm-doc-type-master-body { padding: 18px 24px 4px !important; }
+.acm-doc-type-master-body .acm-row { margin-bottom: 14px; }
+.acm-doc-type-master-footer { padding: 8px 24px 22px !important; justify-content: flex-end !important; }
+/* Save Document Type button — dark-navy gradient with save icon, the
+   "premium master" look from the design spec (not the violet save
+   used elsewhere on this modal). */
+.acm-doc-type-master-save {
+  background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 60%, #2563eb 100%) !important;
+  display: inline-flex !important; align-items: center; gap: 8px;
+  min-width: 200px;
+}
+.acm-doc-type-master-save:hover { filter: brightness(1.1); }
+[data-bs-theme="dark"] .acm-doc-type-master-save {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #1e40af 100%) !important;
+}
+.acm-doc-type-body { padding: 24px 28px 12px; }
+.acm-doc-type-row { display: grid; grid-template-columns: 200px 1fr; align-items: start; gap: 16px; margin-bottom: 18px; }
+.acm-doc-type-row:last-child { margin-bottom: 0; }
+.acm-doc-type-label { font-size: 13px; font-weight: 700; color: #4338ca; padding-top: 6px; }
+.acm-doc-type-input-wrap { min-width: 0; }
+.acm-doc-type-input-wrap input,
+.acm-doc-type-input-wrap textarea {
+  width: 100%; padding: 6px 2px; font-family: inherit; font-size: 13px; color: #3b0764;
+  background: transparent; outline: none; border: none;
+  border-bottom: 1px solid #e2e8f0; border-radius: 0;
+  transition: border-color .18s;
+  resize: vertical;
+}
+.acm-doc-type-input-wrap input:focus,
+.acm-doc-type-input-wrap textarea:focus { border-bottom-color: #7c3aed; box-shadow: none; }
+.acm-doc-type-input-wrap input::placeholder,
+.acm-doc-type-input-wrap textarea::placeholder { color: #cbd5e1; font-size: 12.5px; }
+
+/* ── Dark-mode variants ─────────────────────────────────────────────
+   Both document popups (Add New Document / License + Add New Document
+   Type) flip to a deep slate surface when the page has data-bs-theme
+   set to "dark", matching the rest of the app's dark palette.        */
+[data-bs-theme="dark"] .acm-doc-sub-card,
+[data-bs-theme="dark"] .acm-doc-type-card {
+  background: #11182a !important;
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 24px 60px -16px rgba(0,0,0,.65), 0 8px 24px rgba(0,0,0,.45);
+}
+/* Dark mode keeps the purple header strip — just deepens the gradient
+   slightly so it reads on the darker surrounding chrome. */
+[data-bs-theme="dark"] .acm-doc-sub-header {
+  background: linear-gradient(135deg, #2e1065 0%, #4c1d95 35%, #6d28d9 70%, #7c3aed 100%) !important;
+}
+[data-bs-theme="dark"] .acm-doc-sub-title { color: #fff; }
+[data-bs-theme="dark"] .acm-doc-sub-header .acm-sub-close {
+  background: rgba(255,255,255,0.15) !important;
+  border-color: rgba(255,255,255,0.35) !important;
+  color: #fff !important;
+}
+[data-bs-theme="dark"] .acm-doc-sub-header .acm-sub-close:hover { background: rgba(255,255,255,0.28) !important; }
+[data-bs-theme="dark"] .acm-doc-sub-card .acm-sub-body { background: #11182a !important; }
+[data-bs-theme="dark"] .acm-doc-sub-footer { background: #11182a !important; }
+[data-bs-theme="dark"] .acm-doc-sub-body .acm-field label { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-doc-sub-body .acm-field input,
+[data-bs-theme="dark"] .acm-doc-sub-body .acm-field textarea {
+  background: #1c2531;
+  border-color: rgba(167,139,250,0.30);
+  color: #f1f5f9;
+}
+[data-bs-theme="dark"] .acm-doc-sub-body .acm-field input::placeholder,
+[data-bs-theme="dark"] .acm-doc-sub-body .acm-field textarea::placeholder { color: #64748b; }
+[data-bs-theme="dark"] .acm-doc-sub-body .acm-field input:focus,
+[data-bs-theme="dark"] .acm-doc-sub-body .acm-field textarea:focus { border-color: #a78bfa; box-shadow: 0 0 0 3.5px rgba(167,139,250,.18); }
+[data-bs-theme="dark"] .acm-doc-sub-footer .acm-btn-mini-cancel {
+  background: transparent; border-color: rgba(167,139,250,0.45); color: #c4b5fd;
+}
+[data-bs-theme="dark"] .acm-doc-sub-footer .acm-btn-mini-cancel:hover { background: rgba(167,139,250,0.12); }
+/* Dark mode: keep the violet gradient (matches the dark-mode header)
+   but deepen it slightly to read against the slate card surface. */
+[data-bs-theme="dark"] .acm-doc-save {
+  background: linear-gradient(135deg, #2e1065 0%, #4c1d95 35%, #6d28d9 70%, #7c3aed 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,.55);
+}
+[data-bs-theme="dark"] .acm-doc-save:hover { filter: brightness(1.15); }
+[data-bs-theme="dark"] .acm-doc-plus-btn {
+  background: rgba(167,139,250,0.10);
+  border-color: rgba(167,139,250,0.45);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .acm-doc-plus-btn:hover { background: rgba(167,139,250,0.20); border-color: #a78bfa; color: #ede9fe; }
+[data-bs-theme="dark"] .acm-doc-attach {
+  background: #1c2531; border-color: rgba(167,139,250,0.30); color: #94a3b8;
+}
+[data-bs-theme="dark"] .acm-doc-attach:hover { border-color: #a78bfa; background: rgba(167,139,250,0.10); color: #ede9fe; }
+/* "Add New Document Type" — underline-style inputs flip to a lighter
+   slate underline on a dark surface. */
+[data-bs-theme="dark"] .acm-doc-type-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-doc-type-input-wrap input,
+[data-bs-theme="dark"] .acm-doc-type-input-wrap textarea {
+  background: transparent; color: #f1f5f9;
+  border-bottom-color: rgba(255,255,255,0.10);
+}
+[data-bs-theme="dark"] .acm-doc-type-input-wrap input:focus,
+[data-bs-theme="dark"] .acm-doc-type-input-wrap textarea:focus { border-bottom-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-doc-type-input-wrap input::placeholder,
+[data-bs-theme="dark"] .acm-doc-type-input-wrap textarea::placeholder { color: #475569; }
 .acm-btn-save:hover { background: linear-gradient(135deg, #6d28d9, #4c1d95); transform: translateY(-1px); }
 .acm-btn-mini-cancel { padding: 7px 18px; border-radius: 9px; border: 1.5px solid rgba(124,58,237,.3); background: #fff; color: #5b21b6; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
 .acm-btn-mini-cancel:hover { border-color: #7c3aed; }
@@ -1467,7 +2768,10 @@ const SCOPED_CSS = `
 
 /* History panel */
 .acm-history { margin: 10px 22px 0; border-radius: 12px; border: 1.5px solid #c4b5fd; background: #fff; overflow: hidden; box-shadow: 0 2px 12px rgba(109,40,217,.09); flex-shrink: 0; max-height: 46px; transition: max-height .38s cubic-bezier(.4,0,.2,1); }
-.acm-history.acm-hist-open { max-height: 280px; }
+/* Expanded panel needs room for the 5-row inline grid + breathing
+   padding; below 900px the grid collapses to 2 cols (9-10 rows) so
+   the body keeps scrolling for narrow viewports. */
+.acm-history.acm-hist-open { max-height: 340px; }
 .acm-history-header { height: 46px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; cursor: pointer; background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 100%); border-left: 4px solid #7c3aed; user-select: none; }
 .acm-history-header:hover { background: linear-gradient(110deg, #ede9fe, #ddd6fe); }
 .acm-history-header-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -1478,7 +2782,7 @@ const SCOPED_CSS = `
 .acm-history-badge { padding: 3px 11px; border-radius: 20px; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-size: 9.5px; font-weight: 800; white-space: nowrap; }
 .acm-history-chevron { width: 22px; height: 22px; border-radius: 50%; background: rgba(124,58,237,.12); display: flex; align-items: center; justify-content: center; color: #7c3aed; transition: transform .3s; }
 .acm-history-chevron.acm-open { transform: rotate(180deg); }
-.acm-history-body { overflow-y: auto; max-height: calc(280px - 46px); border-top: 1px solid #ede9fe; }
+.acm-history-body { overflow-y: auto; max-height: calc(340px - 46px); border-top: 1px solid #ede9fe; }
 .acm-hs-block { padding: 12px 16px 10px; border-bottom: 1px solid #f3f0fb; }
 .acm-hs-block:last-child { border-bottom: none; }
 .acm-hs-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
@@ -1488,16 +2792,10 @@ const SCOPED_CSS = `
 .acm-hs-group { margin-bottom: 9px; }
 .acm-hs-group:last-child { margin-bottom: 0; }
 .acm-hs-group-label { font-size: 8.5px; font-weight: 800; color: #a78bfa; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; padding-bottom: 4px; border-bottom: 1px dashed #ede9fe; }
-.acm-hs-fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 0; }
-.acm-hs-fields-3 { grid-template-columns: repeat(3, 1fr); }
-.acm-hs-field { padding-right: 10px; padding-left: 8px; min-width: 0; border-right: 1px solid #f3f0fb; }
-.acm-hs-field:first-child { padding-left: 0; }
-.acm-hs-field:last-child { border-right: none; }
-.acm-hs-key { display: block; font-size: 8.5px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 2px; }
-.acm-hs-val { display: block; font-size: 11px; font-weight: 700; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.acm-hs-val.acm-hs-empty { color: #d1d5db; font-style: italic; font-weight: 400; }
-.acm-hs-inline { font-size: 10.5px; font-weight: 600; color: #374151; padding: 5px 8px; border-radius: 7px; background: #faf8ff; border: 1px solid #ede9fe; }
-.acm-hs-inline-empty { color: #d1d5db; font-style: italic; font-weight: 400; }
+/* Legacy .acm-hs-field / .acm-hs-fields / etc. styles for the old
+   per-field pill summary were removed once HistoryStage1 switched to
+   the dense inline "Label : Value" grid (see .acm-hs-inline above).
+   Only the Stage 2 doc-counter stats below remain in use. */
 .acm-hs-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; }
 .acm-hs-stat { background: linear-gradient(135deg, #f5f3ff, #ede9fe); border: 1px solid #ddd6fe; border-radius: 8px; padding: 6px 10px; text-align: center; }
 .acm-hs-stat-num { font-size: 14px; font-weight: 900; color: #5b21b6; line-height: 1; }
@@ -1512,4 +2810,186 @@ const SCOPED_CSS = `
   .acm-stepper { overflow-x: auto; }
   .acm-step { min-width: 200px; flex: 0 0 auto; }
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   DARK MODE — premium dark palette for the whole Add/Edit Customer
+   modal. Triggered by [data-bs-theme="dark"] (the project's standard).
+   Palette:
+     #0b1220 — modal card base (deepest)
+     #11182a — section / surface
+     #1c2531 — input / cell
+     #0f172a — borders / dividers
+     #f1f5f9 — primary text
+     #94a3b8 — muted text
+     #c4b5fd — lavender accents
+     #a78bfa — focus / interactive accent
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Modal card + body */
+[data-bs-theme="dark"] .acm-card {
+  background: linear-gradient(165deg, #0b1220 0%, #11182a 45%, #131c30 100%);
+  border-color: rgba(167,139,250,0.20);
+  box-shadow: 0 32px 80px -20px rgba(0,0,0,0.7), 0 12px 30px rgba(0,0,0,0.45);
+}
+[data-bs-theme="dark"] .acm-body { scrollbar-color: #4c1d95 #11182a; }
+[data-bs-theme="dark"] .acm-body::-webkit-scrollbar-track { background: #11182a; }
+[data-bs-theme="dark"] .acm-body::-webkit-scrollbar-thumb { background: #6d28d9; }
+
+/* Stepper — keep colored states but darken pending */
+[data-bs-theme="dark"] .acm-step-active { background: linear-gradient(135deg, rgba(76,29,149,0.45) 0%, rgba(109,40,217,0.30) 100%); border-color: #a78bfa; box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(167,139,250,.15) inset; }
+[data-bs-theme="dark"] .acm-step-active .acm-step-title { color: #f1f5f9; }
+[data-bs-theme="dark"] .acm-step-active .acm-step-sub { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-step-done { background: linear-gradient(135deg, rgba(6,95,70,0.40) 0%, rgba(16,185,129,0.20) 100%); border-color: #10b981; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .acm-step-done .acm-step-title { color: #d1fae5; }
+[data-bs-theme="dark"] .acm-step-done .acm-step-sub { color: #34d399; }
+[data-bs-theme="dark"] .acm-step-pending { background: rgba(28,37,49,0.6); border-color: rgba(255,255,255,0.08); opacity: 0.7; }
+[data-bs-theme="dark"] .acm-step-pending .acm-step-badge { background: #1c2531; border-color: rgba(255,255,255,0.10); color: #64748b; }
+[data-bs-theme="dark"] .acm-step-pending .acm-step-num { background: #1c2531; color: #64748b; border-color: #11182a; }
+[data-bs-theme="dark"] .acm-step-pending .acm-step-title { color: #64748b; }
+[data-bs-theme="dark"] .acm-step-pending .acm-step-sub { color: #475569; }
+[data-bs-theme="dark"] .acm-connector-line { background: rgba(255,255,255,0.06); }
+
+/* History panel ("What you did in previous stages") */
+[data-bs-theme="dark"] .acm-history { background: #11182a; border-color: rgba(167,139,250,0.20); box-shadow: 0 2px 12px rgba(0,0,0,0.35); }
+[data-bs-theme="dark"] .acm-history-header { background: linear-gradient(110deg, rgba(76,29,149,0.30) 0%, rgba(109,40,217,0.20) 100%); border-left-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-history-header:hover { background: linear-gradient(110deg, rgba(76,29,149,0.40), rgba(109,40,217,0.30)); }
+[data-bs-theme="dark"] .acm-history-title { color: #ede9fe; }
+[data-bs-theme="dark"] .acm-history-meta { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-history-body { border-top-color: rgba(167,139,250,0.18); }
+[data-bs-theme="dark"] .acm-history-badge { background: rgba(124,58,237,0.30); color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-history-icon { background: linear-gradient(135deg, #4c1d95, #2e1065); }
+[data-bs-theme="dark"] .acm-history-chevron { background: rgba(167,139,250,0.15); color: #c4b5fd; }
+
+/* Stage 1 sub-tabs */
+[data-bs-theme="dark"] .acm-tab-off { background: transparent; color: #c4b5fd; border-color: rgba(167,139,250,0.45); }
+[data-bs-theme="dark"] .acm-tab-off:hover { background: rgba(167,139,250,0.10); border-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-tab-on { background: linear-gradient(135deg,#6d28d9,#4c1d95); border-color: #7c3aed; box-shadow: 0 3px 10px rgba(0,0,0,.4); }
+
+/* Section card */
+[data-bs-theme="dark"] .acm-section { background: #11182a; border-color: rgba(167,139,250,0.20); box-shadow: 0 2px 12px rgba(0,0,0,0.35); }
+[data-bs-theme="dark"] .acm-section-purple { border-top-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-section-head { background: linear-gradient(110deg, rgba(76,29,149,0.28) 0%, rgba(109,40,217,0.18) 100%); border-bottom-color: rgba(167,139,250,0.15); }
+[data-bs-theme="dark"] .acm-section-icon { background: linear-gradient(135deg, #4c1d95, #2e1065); color: #c4b5fd; border-color: rgba(167,139,250,0.35); }
+[data-bs-theme="dark"] .acm-section-title { color: #ede9fe; }
+[data-bs-theme="dark"] .acm-section-sub { color: #94a3b8; }
+
+/* Form fields */
+[data-bs-theme="dark"] .acm-field label { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-field input,
+[data-bs-theme="dark"] .acm-field select,
+[data-bs-theme="dark"] .acm-field textarea {
+  background: #1c2531 !important;
+  border-color: rgba(167,139,250,0.20);
+  color: #f1f5f9;
+}
+[data-bs-theme="dark"] .acm-field input::placeholder,
+[data-bs-theme="dark"] .acm-field textarea::placeholder { color: #475569; }
+[data-bs-theme="dark"] .acm-field input:focus,
+[data-bs-theme="dark"] .acm-field select:focus,
+[data-bs-theme="dark"] .acm-field textarea:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3.5px rgba(167,139,250,0.18);
+}
+[data-bs-theme="dark"] .acm-field input.acm-input-error { background: rgba(239,68,68,0.10); border-color: #ef4444; }
+[data-bs-theme="dark"] .acm-radio { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-radio-pill { background: #1c2531; border-color: rgba(167,139,250,0.20); color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-radio-pill.is-active { background: rgba(124,58,237,0.30); border-color: #a78bfa; color: #ede9fe; }
+
+/* Add buttons / action pills inside sections */
+[data-bs-theme="dark"] .acm-add-pill { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-add-pill:hover { background: rgba(167,139,250,0.22); border-color: #a78bfa; color: #ede9fe; }
+[data-bs-theme="dark"] .acm-row-btn { background: #1c2531; border-color: rgba(167,139,250,0.20); color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-row-btn:hover { background: rgba(167,139,250,0.18); border-color: #a78bfa; color: #ede9fe; }
+[data-bs-theme="dark"] .acm-row-btn-del:hover { background: rgba(239,68,68,0.18); border-color: #ef4444; color: #fca5a5; }
+
+/* Inline tables (Stage 1 Additional Locations, Stage 2 KYC docs/owners,
+   Stage 3 read-only Evidence Vault). The original light styles use
+   ".acm-table thead tr" (with the row selector) so the dark override
+   needs to match that specificity or the lavender gradient bleeds
+   through and shows as a white strip across the section body. */
+[data-bs-theme="dark"] .acm-table thead tr {
+  background: linear-gradient(180deg, rgba(28,37,49,0.85), rgba(17,24,42,0.85)) !important;
+}
+[data-bs-theme="dark"] .acm-table thead th {
+  color: #c4b5fd !important;
+  border-bottom-color: rgba(167,139,250,0.20) !important;
+  background: transparent !important;
+}
+[data-bs-theme="dark"] .acm-table tbody td {
+  color: #e2e8f0;
+  border-bottom-color: rgba(255,255,255,0.06);
+}
+[data-bs-theme="dark"] .acm-table tbody tr:hover td { background: rgba(167,139,250,0.06) !important; }
+[data-bs-theme="dark"] .acm-empty-row td { color: #64748b !important; background: transparent !important; }
+[data-bs-theme="dark"] .acm-empty-row strong { color: #c4b5fd !important; }
+[data-bs-theme="dark"] .acm-table tbody td[style*="color: rgb(31, 41, 55)"],
+[data-bs-theme="dark"] .acm-table tbody td[style*="color:#1f2937"] { color: #f1f5f9 !important; }
+[data-bs-theme="dark"] .acm-table tbody td[style*="color: rgb(107, 114, 128)"],
+[data-bs-theme="dark"] .acm-table tbody td[style*="color:#6b7280"] { color: #94a3b8 !important; }
+/* Table wrapper inside section-body-table — neutralize any lingering
+   light tint from the section card so the table flush-fits the
+   dark background. */
+[data-bs-theme="dark"] .acm-section-body-table { background: transparent !important; }
+[data-bs-theme="dark"] .acm-table-wrap { background: transparent; }
+
+/* Status / expiry pills in tables */
+[data-bs-theme="dark"] .acm-status-active { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-status-mandatory.is-on { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-status-mandatory { background: transparent; color: #64748b; border-color: rgba(255,255,255,0.10); }
+[data-bs-theme="dark"] .acm-status-optional.is-on { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.20); }
+[data-bs-theme="dark"] .acm-status-optional { background: transparent; color: #64748b; border-color: rgba(255,255,255,0.10); }
+[data-bs-theme="dark"] .acm-expiry-na { background: rgba(255,255,255,0.05); color: #94a3b8; border-color: rgba(255,255,255,0.10); }
+[data-bs-theme="dark"] .acm-expiry-date { background: rgba(239,68,68,0.18); color: #fca5a5; border-color: rgba(239,68,68,0.40); }
+[data-bs-theme="dark"] .acm-expiry-varies { background: rgba(245,158,11,0.18); color: #fcd34d; border-color: rgba(245,158,11,0.40); }
+[data-bs-theme="dark"] .acm-doc-code { background: rgba(167,139,250,0.15); color: #c4b5fd; border-color: rgba(167,139,250,0.30); }
+[data-bs-theme="dark"] .acm-pill-yes { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
+[data-bs-theme="dark"] .acm-pill-no  { background: rgba(255,255,255,0.06); color: #94a3b8; border-color: rgba(255,255,255,0.20); }
+[data-bs-theme="dark"] .acm-attach-link { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-attach-link:hover { color: #ede9fe; }
+[data-bs-theme="dark"] .acm-doc-action-upload { background: rgba(167,139,250,0.12); color: #c4b5fd; border-color: rgba(167,139,250,0.30); }
+[data-bs-theme="dark"] .acm-doc-action-download { background: rgba(16,185,129,0.12); color: #6ee7b7; border-color: rgba(16,185,129,0.30); }
+[data-bs-theme="dark"] .acm-doc-action-view { background: rgba(56,189,248,0.12); color: #7dd3fc; border-color: rgba(56,189,248,0.30); }
+
+/* Stage 2 sub-tabs (pill row) */
+[data-bs-theme="dark"] .acm-subtab-pill { background: transparent; color: #c4b5fd; border: 1.5px solid rgba(167,139,250,0.40); }
+[data-bs-theme="dark"] .acm-subtab-pill:hover { background: rgba(167,139,250,0.10); }
+[data-bs-theme="dark"] .acm-subtab-pill.is-active { background: linear-gradient(135deg,#6d28d9,#4c1d95); color: #fff; border-color: #7c3aed; }
+
+/* Stage 2 doc toolbar + search */
+[data-bs-theme="dark"] .acm-doc-toolbar { background: rgba(28,37,49,0.4); border-color: rgba(255,255,255,0.06); }
+[data-bs-theme="dark"] .acm-doc-search { background: #1c2531; border-color: rgba(167,139,250,0.20); }
+[data-bs-theme="dark"] .acm-doc-search input { background: transparent; color: #f1f5f9; }
+[data-bs-theme="dark"] .acm-doc-search input::placeholder { color: #475569; }
+[data-bs-theme="dark"] .acm-doc-search-icon { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-doc-count { color: #c4b5fd; }
+[data-bs-theme="dark"] .acm-doc-pag-wrap { background: rgba(28,37,49,0.40); border-color: rgba(255,255,255,0.06); }
+[data-bs-theme="dark"] .acm-doc-pag-info { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-page-btn { background: #1c2531; color: #c4b5fd; border-color: rgba(167,139,250,0.25); }
+[data-bs-theme="dark"] .acm-page-btn:hover:not(:disabled) { background: rgba(167,139,250,0.18); color: #ede9fe; }
+[data-bs-theme="dark"] .acm-page-btn.is-active { background: linear-gradient(135deg,#6d28d9,#4c1d95); border-color: #7c3aed; color: #fff; }
+[data-bs-theme="dark"] .acm-page-btn:disabled { opacity: 0.4; }
+
+/* Stage 3 - Trade Documents */
+[data-bs-theme="dark"] .acm-btn-send { background: rgba(124,58,237,0.20); color: #c4b5fd; border-color: rgba(167,139,250,0.40); }
+[data-bs-theme="dark"] .acm-btn-send:hover { background: rgba(124,58,237,0.32); border-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-btn-resend { background: rgba(255,255,255,0.06); color: #94a3b8; border-color: rgba(255,255,255,0.18); }
+[data-bs-theme="dark"] .acm-btn-purple-lg { background: linear-gradient(135deg,#6d28d9,#4c1d95); }
+[data-bs-theme="dark"] .acm-btn-purple-lg-out { background: transparent; color: #c4b5fd; border-color: rgba(167,139,250,0.40); }
+[data-bs-theme="dark"] .acm-btn-purple-lg-out:hover { background: rgba(167,139,250,0.12); }
+[data-bs-theme="dark"] .acm-td-actions { background: rgba(28,37,49,0.40); border-top-color: rgba(255,255,255,0.06); }
+[data-bs-theme="dark"] .acm-td-check-label { color: #ede9fe; }
+
+/* Stage 2 doc counter stats (history) */
+[data-bs-theme="dark"] .acm-hs-stat { background: linear-gradient(135deg, rgba(76,29,149,0.28), rgba(109,40,217,0.18)); border-color: rgba(167,139,250,0.30); }
+[data-bs-theme="dark"] .acm-hs-stat-num { color: #ede9fe; }
+[data-bs-theme="dark"] .acm-hs-stat-lbl { color: #c4b5fd; }
+
+/* Footer + bottom action buttons */
+[data-bs-theme="dark"] .acm-footer { background: rgba(28,37,49,0.40); border-top-color: rgba(167,139,250,0.18); }
+[data-bs-theme="dark"] .acm-req-note { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-btn-prev { background: transparent; color: #c4b5fd; border-color: rgba(167,139,250,0.40); }
+[data-bs-theme="dark"] .acm-btn-prev:hover { background: rgba(167,139,250,0.12); }
+
+/* Error message text under invalid fields */
+[data-bs-theme="dark"] .acm-field-error { color: #fca5a5; }
 `;

@@ -109,10 +109,10 @@
     border-radius: 12px;
     box-shadow: 0 12px 32px rgba(0,0,0,0.16);
     padding: 10px;
-    /* Sits above EpModal overlays (z-index 5000) used in EmployeeProfile —
-       Revise Salary, Raise Claim, Payslip viewer, Salary Breakdown — so the
-       portalled date picker isn't trapped behind the modal backdrop. */
-    z-index: 6000 !important;
+    /* Sits above every in-app modal — EpModal overlays (5000), the Add
+       Customer modal (10000), and its document sub-modals (10001+) — so
+       the portalled date picker is never trapped behind a modal backdrop. */
+    z-index: 11100 !important;
   }
   html[data-bs-theme="dark"] .master-datepicker-popup,
   html[data-layout-mode="dark"] .master-datepicker-popup,
