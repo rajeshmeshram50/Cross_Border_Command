@@ -1479,7 +1479,7 @@ function MasterPageInner({
       {cfg.slug !== 'departments' && (
       <Row>
         <Col xs={12}>
-          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities') ? (
+          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities' || cfg.slug === 'haz_class') ? (
             <div
               className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"
               style={{
@@ -1505,6 +1505,7 @@ function MasterPageInner({
                       : cfg.slug === 'kpis' ? 'KPI Master'
                       : cfg.slug === 'assets' ? 'Asset Master'
                       : cfg.slug === 'legal_entities' ? 'Legal Entities'
+                      : cfg.slug === 'haz_class' ? 'Hazard Classifications'
                       : cfg.title}
                   </h4>
                   <p className="mb-0 text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
@@ -1516,6 +1517,8 @@ function MasterPageInner({
                       ? 'Track company equipment, vendors, warranties and depreciation across the organisation'
                       : cfg.slug === 'legal_entities'
                       ? 'Manage all legal entities — entity details, logo, bank accounts & address'
+                      : cfg.slug === 'haz_class'
+                      ? 'Manage GHS/UN hazard classes used to tag products requiring special handling'
                       : 'Manage all job roles, hierarchy levels, and role structure for employees'}
                   </p>
                 </div>
@@ -1618,7 +1621,7 @@ function MasterPageInner({
 
       {/* "What you are doing here" — hidden on designations & roles since the
           rich title strip already carries the subtitle context. */}
-      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && (
+      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && (
         <WhatYouDoHere
           cfg={cfg}
           onAdd={openAdd}

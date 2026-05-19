@@ -16,8 +16,6 @@ class HazClass extends Model
         'client_id',
         'branch_id',
         'name',
-        'haz_code',
-        'packing_group',
         'status',
         'created_by',
     ];
