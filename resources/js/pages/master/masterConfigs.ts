@@ -45,6 +45,13 @@ export type FieldDef = {
   // both the picker's min and the on-save validator to >= today, used
   // for things like warranty expiry where backdating doesn't make sense.
   futureOnly?: boolean;
+  // Auto-derive this field's value from another field as the user types.
+  // The source field is referenced by `n` (e.g. autoDeriveFrom: 'title').
+  // MasterPage wires up a DOM input-listener while the modal is open and
+  // computes a sensible default (e.g. UOM "Kilogram" → "KG"). Auto-fill
+  // stops once the user manually edits the target field, so user input
+  // is always preserved.
+  autoDeriveFrom?: string;
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
@@ -731,7 +738,7 @@ const C: Record<string, MasterConfig> = {
     cat: 'Trade & Commercial',
     fields: [
       { n: 'title', l: 'Unit Title', t: 'text', r: true, p: 'e.g. Kilogram' },
-      { n: 'short_code', l: 'Short Code', t: 'text', r: true, p: 'e.g. KG' },
+      { n: 'short_code', l: 'Short Code', t: 'text', r: true, p: 'e.g. KG', autoDeriveFrom: 'title', hint: 'auto-suggested from title, editable' },
       { n: 'unit_type', l: 'Unit Type', t: 'select', opts: ['Weight', 'Volume', 'Length', 'Area', 'Count', 'Other'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
