@@ -16,7 +16,6 @@ class GstPercentage extends Model
         'client_id',
         'branch_id',
         'percentage',
-        'label',
         'status',
         'created_by',
     ];

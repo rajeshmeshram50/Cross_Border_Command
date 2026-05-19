@@ -656,16 +656,20 @@ const C: Record<string, MasterConfig> = {
     fields: [
       { n: 'hsn_code', l: 'HSN Code', t: 'text', r: true, p: 'e.g. 08021200' },
       { n: 'description', l: 'Description', t: 'textarea', r: true, p: 'Product/commodity description', full: true },
-      { n: 'gst_rate', l: 'GST Rate', t: 'select', opts: ['0%', '5%', '12%', '18%', '28%'] },
+      // GST Rate is sourced from the GST Percentage master so the dropdown
+      // reflects whatever slabs (0/5/12/18/28% — or tenant-specific custom
+      // values) the user maintains in /master/gst_percentage. Stored as the
+      // gst_percentage row id; rendered as "{percentage}%" everywhere.
+      { n: 'gst_rate_id', l: 'GST Rate', t: 'select', ref: 'gst_percentage', refL: 'percentage', refLFmt: '{percentage}%' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
-    cols: ['hsn_code', 'description', 'gst_rate', 'status'],
+    cols: ['hsn_code', 'description', 'gst_rate_id', 'status'],
     colL: ['HSN Code', 'Description', 'GST Rate', 'Status'],
     uFields: ['hsn_code'],
     data: [
-      { id: 1, hsn_code: '08021200', description: 'Almonds — Shelled', gst_rate: '5%', status: 'Active' },
-      { id: 2, hsn_code: '08062000', description: 'Raisins — Dried Grapes', gst_rate: '5%', status: 'Active' },
-      { id: 3, hsn_code: '12074000', description: 'Sesame Seeds', gst_rate: '5%', status: 'Active' },
+      { id: 1, hsn_code: '08021200', description: 'Almonds — Shelled', gst_rate_id: 2, status: 'Active' },
+      { id: 2, hsn_code: '08062000', description: 'Raisins — Dried Grapes', gst_rate_id: 2, status: 'Active' },
+      { id: 3, hsn_code: '12074000', description: 'Sesame Seeds', gst_rate_id: 2, status: 'Active' },
     ],
     wtd: [
       { icon: 'ri-file-code-line', title: 'Enter 8-Digit HSN Code', desc: 'e.g. 08021200 for Almonds' },
@@ -682,22 +686,20 @@ const C: Record<string, MasterConfig> = {
     cat: 'Trade & Commercial',
     fields: [
       { n: 'percentage', l: 'GST %', t: 'number', r: true, p: 'e.g. 18' },
-      { n: 'label', l: 'Label', t: 'text', p: 'e.g. GST 18%' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
-    cols: ['percentage', 'label', 'status'],
-    colL: ['GST %', 'Label', 'Status'],
+    cols: ['percentage', 'status'],
+    colL: ['GST %', 'Status'],
     uFields: ['percentage'],
     data: [
-      { id: 1, percentage: 0, label: 'GST 0%', status: 'Active' },
-      { id: 2, percentage: 5, label: 'GST 5%', status: 'Active' },
-      { id: 3, percentage: 12, label: 'GST 12%', status: 'Active' },
-      { id: 4, percentage: 18, label: 'GST 18%', status: 'Active' },
-      { id: 5, percentage: 28, label: 'GST 28%', status: 'Active' },
+      { id: 1, percentage: 0, status: 'Active' },
+      { id: 2, percentage: 5, status: 'Active' },
+      { id: 3, percentage: 12, status: 'Active' },
+      { id: 4, percentage: 18, status: 'Active' },
+      { id: 5, percentage: 28, status: 'Active' },
     ],
     wtd: [
       { icon: 'ri-percent-line', title: 'Enter GST %', desc: 'e.g. 0, 5, 12, 18, 28' },
-      { icon: 'ri-price-tag-3-line', title: 'Add Label', desc: 'e.g. GST 18% — shown on invoice' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Rate available for products' },
     ],
   },
