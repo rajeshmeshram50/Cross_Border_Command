@@ -1,4 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import api from '../../api';
+import { MasterSelect } from '../master/masterFormKit';
+import Tooltip from '../../components/ui/Tooltip';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Customer — 3-stage modal
@@ -20,23 +23,49 @@ type KycSubTab = 'company-dd' | 'owner-kyc' | 'trade-licence';
 type EvTab = 'kyc-documents' | 'trade-documents';
 type EvSubTab = 'dd' | 'kyc' | 'tl';
 
-interface AddressRow {
-  id: string; type: string; line: string; country: string; state: string; city: string; pin: string;
+/** Unified location row — every additional location captures both the
+ *  address *and* the contact person at that address. The fields used
+ *  to live in two parallel interfaces (AddressRow + ContactRow) with
+ *  the same shape; merging them here removes the duplicate state and
+ *  the duplicate sub-modal. */
+interface LocationRow {
+  id: string;
+  type: string; line: string; country: string; state: string; city: string; pin: string;
   cpName: string; cpDesignation: string; cpContact: string; cpEmail: string; cpWhatsapp: 'yes' | 'no' | '';
 }
-interface ContactRow {
-  id: string; name: string; designation: string; contact: string; email: string;
-  whatsapp: 'yes' | 'no' | '';
-  type: string; line: string; country: string; state: string; city: string; pin: string;
-}
+/** Default value for the "Address Type" field — surfaced as the
+ *  pre-selected option on the primary address form and on every new
+ *  Add Location sub-modal. User can switch to any other master entry. */
+const DEFAULT_ADDRESS_TYPE = 'Registered Office';
 
-const STATES_BY_COUNTRY: Record<string, string[]> = {
-  India: ['Maharashtra','Delhi','Gujarat','Karnataka','Tamil Nadu','Kerala','Punjab','Rajasthan','West Bengal','Uttar Pradesh','Andhra Pradesh','Telangana'],
-  UAE:   ['Dubai','Abu Dhabi','Sharjah','Ajman','RAK'],
-  USA:   ['California','New York','Texas','Florida'],
-  UK:    ['England','Scotland','Wales','Northern Ireland'],
-  China: ['Shanghai','Beijing','Guangdong','Zhejiang'],
+/* ── Master option shape — every list comes back from /master/{slug}
+ *    normalized to { id, name } so the JSX is uniform regardless of the
+ *    underlying column (segments uses `title`, the rest use `name`).
+ *    States additionally carry country_id so we can filter by selected
+ *    country at the UI layer. */
+interface MasterOpt { id: number; name: string; }
+interface StateOpt extends MasterOpt { country_id: number; }
+interface MasterLists {
+  customerTypes:     MasterOpt[];
+  segments:          MasterOpt[];
+  classifications:   MasterOpt[];
+  riskLevels:        MasterOpt[];
+  addressTypes:      MasterOpt[];
+  countries:         MasterOpt[];
+  states:            StateOpt[];
+  designations:      MasterOpt[];
+}
+const EMPTY_MASTERS: MasterLists = {
+  customerTypes: [], segments: [], classifications: [], riskLevels: [],
+  addressTypes: [], countries: [], states: [], designations: [],
 };
+
+// MasterSelect expects `{ value, label }`. Customer/segment/classification/
+// risk/address values on this form are still stored as the display name
+// (everything saves as strings), so value === label here. If the customers
+// API later switches to storing master ids, this is the one place to swap
+// `String(o.id)` in.
+const toSelectOpts = (rows: MasterOpt[]) => rows.map(o => ({ value: o.name, label: o.name }));
 
 const DD_DOCS = [
   { code:'DD-001', name:'Certificate of Incorporation',                          authority:'Registrar of Companies (ROC)', expiry:'N/A',     status:'mandatory' },
@@ -85,9 +114,10 @@ const newId = (prefix: string) => prefix + '_' + Math.random().toString(36).slic
 
 // Minimal customer shape the parent list passes in when editing. Mirrors the
 // `Customer` type in SalesCustomers; kept inline so this modal doesn't depend
-// on the parent file.
+// on the parent file. `db_id` is the underlying numeric primary key — needed
+// for PUT/DELETE; absent until the row has been persisted server-side.
 export interface EditCustomer {
-  id: string; company: string; type: string; segment: string;
+  id: string; db_id?: number; company: string; type: string; segment: string;
   country: string; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No';
 }
@@ -97,9 +127,11 @@ interface Props {
   onClose: () => void;
   /** When set, modal opens in Edit mode with form pre-filled from this row. */
   customer?: EditCustomer | null;
+  /** Fired after a successful POST or PUT so the parent list can refetch. */
+  onSaved?: () => void;
 }
 
-export default function AddCustomerModal({ open, onClose, customer }: Props) {
+export default function AddCustomerModal({ open, onClose, customer, onSaved }: Props) {
   const isEdit = !!customer;
   const [stage, setStage] = useState<Stage>(1);
   const [maxStage, setMaxStage] = useState<Stage>(1);
@@ -111,17 +143,56 @@ export default function AddCustomerModal({ open, onClose, customer }: Props) {
   const [evSub, setEvSub] = useState<EvSubTab>('dd');
   const [historyOpen, setHistoryOpen] = useState(false);
 
+  // ── Master dropdowns. Every <select> on this modal sources its
+  //    options from /master/{slug}, scoped server-side to the
+  //    inviting tenant. Inactive rows are filtered out at the UI
+  //    layer so historical data still renders if someone edits an
+  //    older customer that referenced a since-deactivated row.
+  const [masters, setMasters] = useState<MasterLists>(EMPTY_MASTERS);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const pickName = (rows: any[], key = 'name'): MasterOpt[] => rows
+      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
+      .map(r => ({ id: Number(r.id), name: String(r[key] ?? '') }))
+      .filter(r => r.name);
+    const pickStates = (rows: any[]): StateOpt[] => rows
+      .filter(r => !r.status || String(r.status).toLowerCase() === 'active')
+      .map(r => ({ id: Number(r.id), name: String(r.name ?? ''), country_id: Number(r.country_id) }))
+      .filter(r => r.name);
+    Promise.allSettled([
+      api.get('/master/customer_types').then(r => { if (!cancelled) setMasters(m => ({ ...m, customerTypes: pickName(r.data ?? []) })); }),
+      api.get('/master/segments').then(r => { if (!cancelled) setMasters(m => ({ ...m, segments: pickName(r.data ?? [], 'title') })); }),
+      api.get('/master/customer_classifications').then(r => { if (!cancelled) setMasters(m => ({ ...m, classifications: pickName(r.data ?? []) })); }),
+      api.get('/master/risk_levels').then(r => { if (!cancelled) setMasters(m => ({ ...m, riskLevels: pickName(r.data ?? []) })); }),
+      api.get('/master/address_types').then(r => { if (!cancelled) setMasters(m => ({ ...m, addressTypes: pickName(r.data ?? []) })); }),
+      api.get('/master/countries').then(r => {
+        if (cancelled) return;
+        const sorted = [...(r.data ?? [])].sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+        setMasters(m => ({ ...m, countries: pickName(sorted) }));
+      }),
+      api.get('/master/states').then(r => { if (!cancelled) setMasters(m => ({ ...m, states: pickStates(r.data ?? []) })); }),
+      api.get('/master/designations').then(r => { if (!cancelled) setMasters(m => ({ ...m, designations: pickName(r.data ?? []) })); }),
+    ]);
+    return () => { cancelled = true; };
+  }, [open]);
+
   // Form: company + primary address + primary contact
   const [form, setForm] = useState({
     coName:'', coLegal:'', coType:'', coWeb:'', coSeg:'', coClass:'', coRisk:'',
-    addrType:'Register Office Address', addr:'', country:'', state:'', city:'', pin:'',
+    addrType:'', addr:'', country:'', state:'', city:'', pin:'',
     cpName:'', cpDesig:'', cpTel:'', cpEmail:'', cpWa:'' as 'yes'|'no'|'',
   });
   const setF = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }));
 
-  // Additional addresses + contacts
-  const [addresses, setAddresses] = useState<AddressRow[]>([]);
-  const [contacts, setContacts] = useState<ContactRow[]>([]);
+  // Additional locations (each row = address + the contact person at that
+  // address; previously stored as two parallel arrays which carried the
+  // same fields). The primary address+contact lives on `form` above.
+  const [locations, setLocations] = useState<LocationRow[]>([]);
+
+  // Inline validation errors. Key = form field name on Stage 1; value =
+  // the message rendered under the input. Cleared on next keystroke.
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Trade docs selection
   const [tdDocs, setTdDocs] = useState([
@@ -129,9 +200,13 @@ export default function AddCustomerModal({ open, onClose, customer }: Props) {
     { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
   ]);
 
-  // Sub-modals
-  const [addrModal, setAddrModal] = useState<{ open:boolean; editing:string|null }>({ open:false, editing:null });
-  const [contactModal, setContactModal] = useState<{ open:boolean; editing:string|null }>({ open:false, editing:null });
+  // Sub-modal — single one now since address and contact share the same
+  // fields. `editing` carries the location row id when re-opening for edit.
+  const [locModal, setLocModal] = useState<{ open:boolean; editing:string|null }>({ open:false, editing:null });
+
+  // Saving flag — disables the Submit/Save & Next button + suppresses
+  // double-submits while POST/PUT is in flight.
+  const [saving, setSaving] = useState(false);
 
   // Reset all state when modal closes. When `customer` is provided we open in
   // Edit mode and prefill the form fields we know about (company name, type,
@@ -152,7 +227,7 @@ export default function AddCustomerModal({ open, onClose, customer }: Props) {
       coSeg:    customer?.segment ?? '',
       coClass:  '',
       coRisk:   '',
-      addrType: 'Register Office Address',
+      addrType: DEFAULT_ADDRESS_TYPE,
       addr:     '',
       country:  customer?.country ?? '',
       state:    '',
@@ -164,13 +239,13 @@ export default function AddCustomerModal({ open, onClose, customer }: Props) {
       cpEmail:  customer?.email ?? '',
       cpWa:     customer?.whatsapp === 'Yes' ? 'yes' : customer?.whatsapp === 'No' ? 'no' : '',
     });
-    setAddresses([]); setContacts([]);
+    setLocations([]);
+    setErrors({});
     setTdDocs([
       { id:'td1', name:'Bill of Lading',           selected:true, sent:false },
       { id:'td2', name:'Phytosanitary Certificate', selected:true, sent:false },
     ]);
-    setAddrModal({ open:false, editing:null });
-    setContactModal({ open:false, editing:null });
+    setLocModal({ open:false, editing:null });
   }, [open, customer]);
 
   // Inject DM Sans/Inter once
@@ -192,18 +267,17 @@ export default function AddCustomerModal({ open, onClose, customer }: Props) {
     return () => { document.body.style.overflow = prev; };
   }, [open]);
 
-  // ESC closes sub-modals first, then main
+  // ESC closes the sub-modal first, then the main modal.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (addrModal.open) { setAddrModal({ open:false, editing:null }); return; }
-      if (contactModal.open) { setContactModal({ open:false, editing:null }); return; }
+      if (locModal.open) { setLocModal({ open:false, editing:null }); return; }
       onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, addrModal.open, contactModal.open, onClose]);
+  }, [open, locModal.open, onClose]);
 
   if (!open) return null;
 
@@ -213,15 +287,144 @@ export default function AddCustomerModal({ open, onClose, customer }: Props) {
     if (s === 1) setTab('identification');
   };
 
+  /* ── Stage 1 validation. Runs when the user clicks Save & Next on
+   *    Stage 1 (and on the final Submit on Stage 3 so a back-edit can't
+   *    smuggle through a bad email/phone). Returns true when the form
+   *    is clean. Error messages render inline under the corresponding
+   *    field via the `errors` state. */
+  const validateStage1 = (): boolean => {
+    const next: Record<string, string> = {};
+    if (!form.coName.trim())                            next.coName  = 'Company name is required';
+    if (!form.coLegal.trim())                           next.coLegal = 'Legal name is required';
+    if (!form.coType)                                   next.coType  = 'Select a customer type';
+    if (!form.coSeg)                                    next.coSeg   = 'Select a segment';
+    if (!form.coClass)                                  next.coClass = 'Select a classification';
+    if (!form.coRisk)                                   next.coRisk  = 'Select a risk level';
+    if (!form.addrType)                                 next.addrType = 'Select an address type';
+    if (!form.addr.trim())                              next.addr     = 'Address is required';
+    if (!form.country)                                  next.country  = 'Select a country';
+    if (!form.state)                                    next.state    = 'Select a state';
+    if (!form.city.trim())                              next.city     = 'City is required';
+    if (!form.pin.trim())                               next.pin      = 'PIN / Postal code is required';
+    else if (!/^[A-Za-z0-9-\s]{3,12}$/.test(form.pin))  next.pin      = 'PIN / Postal code looks invalid';
+    if (!form.cpName.trim())                            next.cpName   = 'Contact person name is required';
+    if (!form.cpDesig.trim())                           next.cpDesig  = 'Designation is required';
+    if (!form.cpTel.trim())                             next.cpTel    = 'Contact number is required';
+    else if (!/^\+?[0-9\s-]{7,15}$/.test(form.cpTel))   next.cpTel    = 'Phone must be 7–15 digits';
+    if (!form.cpEmail.trim())                           next.cpEmail  = 'Email is required';
+    else if (!/^\S+@\S+\.\S+$/.test(form.cpEmail))      next.cpEmail  = 'Enter a valid email address';
+    if (!form.cpWa)                                     next.cpWa     = 'Select WhatsApp preference';
+    setErrors(next);
+    if (Object.keys(next).length === 0) return true;
+    // Surface the first field with an error to the user. The body
+    // is scrollable so an off-screen field can be missed otherwise.
+    const firstKey = Object.keys(next)[0];
+    const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return false;
+  };
+
+  /* Build the POST/PUT payload from the form + locations. Mirrors the
+   * shape declared in CustomerController::validatePayload(). */
+  const buildPayload = () => ({
+    company_name:   form.coName,
+    legal_name:     form.coLegal,
+    type:           form.coType,
+    segment:        form.coSeg,
+    classification: form.coClass,
+    risk_level:     form.coRisk,
+    website:        form.coWeb,
+    status:         'Active' as const,
+    primary_address: {
+      type:           form.addrType,
+      address_line:   form.addr,
+      country:        form.country,
+      state:          form.state,
+      city:           form.city,
+      pin:            form.pin,
+      cp_name:        form.cpName,
+      cp_designation: form.cpDesig,
+      cp_contact:     form.cpTel,
+      cp_email:       form.cpEmail,
+      cp_whatsapp:    form.cpWa,
+    },
+    locations: locations.map(l => ({
+      type:           l.type,
+      address_line:   l.line,
+      country:        l.country,
+      state:          l.state,
+      city:           l.city,
+      pin:            l.pin,
+      cp_name:        l.cpName,
+      cp_designation: l.cpDesignation,
+      cp_contact:     l.cpContact,
+      cp_email:       l.cpEmail,
+      cp_whatsapp:    l.cpWhatsapp,
+    })),
+  });
+
+  const submitCustomer = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const payload = buildPayload();
+      if (isEdit && customer?.db_id) {
+        await api.put(`/customers/${customer.db_id}`, payload);
+      } else {
+        await api.post('/customers', payload);
+      }
+      onSaved?.();
+      onClose();
+    } catch (err: any) {
+      // Surface Laravel validation errors back to the matching field.
+      // Backend sends 422 { errors: { 'primary_address.cp_email': [...] } }.
+      const apiErrors = err?.response?.data?.errors ?? null;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const next: Record<string, string> = {};
+        for (const [key, msgs] of Object.entries(apiErrors)) {
+          const msg = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
+          // Map server-side nested keys back to Stage 1 form keys
+          // (primary_address.cp_email → cpEmail) so the inline error
+          // lands on the right input.
+          const map: Record<string, string> = {
+            'company_name': 'coName', 'legal_name': 'coLegal',
+            'type': 'coType', 'segment': 'coSeg',
+            'classification': 'coClass', 'risk_level': 'coRisk',
+            'primary_address.type': 'addrType', 'primary_address.address_line': 'addr',
+            'primary_address.country': 'country', 'primary_address.state': 'state',
+            'primary_address.city': 'city', 'primary_address.pin': 'pin',
+            'primary_address.cp_name': 'cpName', 'primary_address.cp_designation': 'cpDesig',
+            'primary_address.cp_contact': 'cpTel', 'primary_address.cp_email': 'cpEmail',
+            'primary_address.cp_whatsapp': 'cpWa',
+          };
+          next[map[key] ?? key] = msg;
+        }
+        setErrors(next);
+        setStage(1);
+        const firstKey = Object.keys(next)[0];
+        const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        alert(err?.response?.data?.message ?? 'Save failed. Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const goNext = () => {
     if (stage === 1) {
-      if (tab === 'identification') setTab('address-contact');
-      else { setStage(2); setMaxStage(m => Math.max(m, 2) as Stage); }
+      if (tab === 'identification') {
+        if (!validateStage1()) return;
+        setTab('address-contact');
+      } else {
+        setStage(2); setMaxStage(m => Math.max(m, 2) as Stage);
+      }
     } else if (stage === 2) {
       setStage(3); setMaxStage(m => Math.max(m, 3) as Stage);
     } else {
-      alert(isEdit ? 'Customer updated successfully!' : 'Customer submitted successfully!');
-      onClose();
+      if (!validateStage1()) { setStage(1); setTab('identification'); return; }
+      submitCustomer();
     }
   };
   const goPrev = () => {
@@ -288,7 +491,7 @@ export default function AddCustomerModal({ open, onClose, customer }: Props) {
               </div>
             </div>
             <div className="acm-history-body">
-              <HistoryStage1 form={form} addresses={addresses} contacts={contacts} />
+              <HistoryStage1 form={form} locations={locations} />
               {stage >= 3 && <HistoryStage2 />}
             </div>
           </div>
@@ -312,16 +515,15 @@ export default function AddCustomerModal({ open, onClose, customer }: Props) {
 
         {/* BODY */}
         <div className="acm-body">
-          {stage === 1 && tab === 'identification' && <Stage1Identification form={form} setF={setF} />}
+          {stage === 1 && tab === 'identification' && (
+            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} />
+          )}
           {stage === 1 && tab === 'address-contact' && (
-            <Stage1AddressContact
-              addresses={addresses} contacts={contacts}
-              onAddAddr={() => setAddrModal({ open:true, editing:null })}
-              onEditAddr={(id) => setAddrModal({ open:true, editing:id })}
-              onDelAddr={(id) => { if (confirm('Delete this address?')) setAddresses(prev => prev.filter(a => a.id !== id)); }}
-              onAddContact={() => setContactModal({ open:true, editing:null })}
-              onEditContact={(id) => setContactModal({ open:true, editing:id })}
-              onDelContact={(id) => { if (confirm('Delete this contact person?')) setContacts(prev => prev.filter(c => c.id !== id)); }}
+            <Stage1AdditionalLocations
+              locations={locations}
+              onAdd={() => setLocModal({ open:true, editing:null })}
+              onEdit={(id) => setLocModal({ open:true, editing:id })}
+              onDel={(id) => { if (confirm('Delete this location?')) setLocations(prev => prev.filter(l => l.id !== id)); }}
             />
           )}
           {stage === 2 && (
@@ -358,39 +560,29 @@ export default function AddCustomerModal({ open, onClose, customer }: Props) {
                 Previous
               </button>
             )}
-            <button type="button" className="acm-btn-next" onClick={goNext}>
+            <button type="button" className="acm-btn-next" onClick={goNext} disabled={saving} style={saving ? { opacity:.7, cursor:'wait' } : undefined}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" />
                 <polyline points="17 21 17 13 7 13 7 21" />
                 <polyline points="7 3 7 8 15 8" />
               </svg>
-              <span>{nextLabel}</span>
+              <span>{saving ? 'Saving…' : nextLabel}</span>
             </button>
           </div>
         </div>
 
       </div>
 
-      {/* SUB-MODAL: Address */}
-      {addrModal.open && (
-        <AddressSubModal
-          editing={addrModal.editing ? addresses.find(a => a.id === addrModal.editing) ?? null : null}
-          onClose={() => setAddrModal({ open:false, editing:null })}
+      {/* SUB-MODAL: Add/edit a single Location (address + contact) */}
+      {locModal.open && (
+        <LocationSubModal
+          editing={locModal.editing ? locations.find(l => l.id === locModal.editing) ?? null : null}
+          masters={masters}
+          onClose={() => setLocModal({ open:false, editing:null })}
           onSave={(rec) => {
-            if (addrModal.editing) setAddresses(prev => prev.map(a => a.id === addrModal.editing ? { ...rec, id: a.id } : a));
-            else setAddresses(prev => [...prev, { ...rec, id: newId('a') }]);
-            setAddrModal({ open:false, editing:null });
-          }}
-        />
-      )}
-      {contactModal.open && (
-        <ContactSubModal
-          editing={contactModal.editing ? contacts.find(c => c.id === contactModal.editing) ?? null : null}
-          onClose={() => setContactModal({ open:false, editing:null })}
-          onSave={(rec) => {
-            if (contactModal.editing) setContacts(prev => prev.map(c => c.id === contactModal.editing ? { ...rec, id: c.id } : c));
-            else setContacts(prev => [...prev, { ...rec, id: newId('c') }]);
-            setContactModal({ open:false, editing:null });
+            if (locModal.editing) setLocations(prev => prev.map(l => l.id === locModal.editing ? { ...rec, id: l.id } : l));
+            else setLocations(prev => [...prev, { ...rec, id: newId('loc') }]);
+            setLocModal({ open:false, editing:null });
           }}
         />
       )}
@@ -437,9 +629,18 @@ function Stepper({ stage, onGoto }: { stage: Stage; onGoto: (s: Stage) => void }
   );
 }
 
-/* ───── Stage 1 — Identification ───── */
-function Stage1Identification({ form, setF }: { form: any; setF: (k: any, v: any) => void }) {
-  const states = STATES_BY_COUNTRY[form.country] || [];
+/* ───── Stage 1 — Identification + Primary Address & Contact ───── */
+function Stage1Identification({ form, setF, masters, errors, clearErr }:
+  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void }) {
+  // States filter against the selected country: look up the country
+  // name → its id from the countries master, then filter states by it.
+  const selectedCountry = masters.countries.find(c => c.name === form.country);
+  const states = selectedCountry
+    ? masters.states.filter(s => s.country_id === selectedCountry.id)
+    : [];
+  // Wraps `setF` so each keystroke also clears the matching error, giving
+  // the user immediate feedback when they fix a bad field.
+  const set = (k: string, v: any) => { setF(k as any, v); clearErr(k); };
   return (
     <div>
       <div className="acm-section acm-section-purple">
@@ -452,34 +653,22 @@ function Stage1Identification({ form, setF }: { form: any; setF: (k: any, v: any
         </div>
         <div className="acm-section-body">
           <div className="acm-row acm-row-3">
-            <Field label="Company Name" required><input value={form.coName} onChange={e => setF('coName', e.target.value)} placeholder="e.g. Shree Agro Pvt Ltd" /></Field>
-            <Field label="Company Legal Name" required><input value={form.coLegal} onChange={e => setF('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
-            <Field label="Customer Type" required>
-              <select value={form.coType} onChange={e => setF('coType', e.target.value)}>
-                <option value="">Select customer type</option>
-                {['Retailer','Wholesaler','Exporter','Reseller','Distributor','Manufacturer'].map(o => <option key={o}>{o}</option>)}
-              </select>
+            <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} onChange={e => set('coName', e.target.value)} placeholder="e.g. Shree Agro Pvt Ltd" /></Field>
+            <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
+            <Field label="Customer Type" required error={errors.coType} fieldKey="coType">
+              <MasterSelect value={form.coType} options={toSelectOpts(masters.customerTypes)} placeholder="Select customer type" invalid={!!errors.coType} onChange={v => set('coType', v)} />
             </Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Company Website"><input value={form.coWeb} onChange={e => setF('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
-            <Field label="Customer Segment" required>
-              <select value={form.coSeg} onChange={e => setF('coSeg', e.target.value)}>
-                <option value="">Select segment</option>
-                {['Agro','Spices','Pulses','Dry Fruits','Rice & Grains','Coffee Beans','Basmati Rice','Coconut Oil','Millets'].map(o => <option key={o}>{o}</option>)}
-              </select>
+            <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
+              <MasterSelect value={form.coSeg} options={toSelectOpts(masters.segments)} placeholder="Select segment" invalid={!!errors.coSeg} onChange={v => set('coSeg', v)} />
             </Field>
-            <Field label="Classification & Flags" required>
-              <select value={form.coClass} onChange={e => setF('coClass', e.target.value)}>
-                <option value="">Select classification</option>
-                {['Standard','Premium','VIP','Watchlist'].map(o => <option key={o}>{o}</option>)}
-              </select>
+            <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
+              <MasterSelect value={form.coClass} options={toSelectOpts(masters.classifications)} placeholder="Select classification" invalid={!!errors.coClass} onChange={v => set('coClass', v)} />
             </Field>
-            <Field label="Risk Level" required>
-              <select value={form.coRisk} onChange={e => setF('coRisk', e.target.value)}>
-                <option value="">Select risk level</option>
-                {['Low','Medium','High','Critical'].map(o => <option key={o}>{o}</option>)}
-              </select>
+            <Field label="Risk Level" required error={errors.coRisk} fieldKey="coRisk">
+              <MasterSelect value={form.coRisk} options={toSelectOpts(masters.riskLevels)} placeholder="Select risk level" invalid={!!errors.coRisk} onChange={v => set('coRisk', v)} />
             </Field>
           </div>
         </div>
@@ -489,46 +678,40 @@ function Stage1Identification({ form, setF }: { form: any; setF: (k: any, v: any
         <div className="acm-section-head">
           <div className="acm-section-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
           <div>
-            <span className="acm-section-title">ADDRESS &amp; CONTACT PERSON DETAILS</span>
-            <span className="acm-section-sub">| Registered office, location, and primary contact</span>
+            <span className="acm-section-title">PRIMARY ADDRESS &amp; CONTACT PERSON</span>
+            <span className="acm-section-sub">| Registered office and primary contact at this location</span>
           </div>
         </div>
         <div className="acm-section-body">
           <div className="acm-row acm-row-2">
-            <Field label="Address Type" required>
-              <select value={form.addrType} onChange={e => setF('addrType', e.target.value)}>
-                {['Register Office Address','Billing Address','Shipping Address','Other'].map(o => <option key={o}>{o}</option>)}
-              </select>
+            <Field label="Address Type" required error={errors.addrType} fieldKey="addrType">
+              <MasterSelect value={form.addrType} options={toSelectOpts(masters.addressTypes)} placeholder="Select address type" invalid={!!errors.addrType} onChange={v => set('addrType', v)} />
             </Field>
-            <Field label="Address" required><input value={form.addr} onChange={e => setF('addr', e.target.value)} placeholder="Street, building, area" /></Field>
+            <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" /></Field>
           </div>
           <div className="acm-row acm-row-4">
-            <Field label="Country" required>
-              <select value={form.country} onChange={e => { setF('country', e.target.value); setF('state', ''); }}>
-                <option value="">Select country</option>
-                {Object.keys(STATES_BY_COUNTRY).map(c => <option key={c}>{c}</option>)}
-              </select>
+            <Field label="Country" required error={errors.country} fieldKey="country">
+              <MasterSelect value={form.country} options={toSelectOpts(masters.countries)} placeholder="Select country" invalid={!!errors.country} onChange={v => { set('country', v); setF('state', ''); }} />
             </Field>
-            <Field label="State" required>
-              <select value={form.state} onChange={e => setF('state', e.target.value)} disabled={!form.country}>
-                {form.country ? <option value="">Select state</option> : <option>Select country first</option>}
-                {states.map(s => <option key={s}>{s}</option>)}
-              </select>
+            <Field label="State" required error={errors.state} fieldKey="state">
+              <MasterSelect value={form.state} options={states.map(s => ({ value: s.name, label: s.name }))} placeholder={form.country ? 'Select state' : 'Select country first'} disabled={!form.country} invalid={!!errors.state} onChange={v => set('state', v)} />
             </Field>
-            <Field label="City" required><input value={form.city} onChange={e => setF('city', e.target.value)} placeholder="City name" /></Field>
-            <Field label="Pin / Postal Code" required><input value={form.pin} onChange={e => setF('pin', e.target.value)} maxLength={10} placeholder="6-digit PIN" /></Field>
+            <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
+            <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', e.target.value)} maxLength={12} placeholder="6-digit PIN" /></Field>
           </div>
           <div className="acm-row acm-row-4">
-            <Field label="Contact Person Name" required><input value={form.cpName} onChange={e => setF('cpName', e.target.value)} placeholder="Full name" /></Field>
-            <Field label="Designation" required><input value={form.cpDesig} onChange={e => setF('cpDesig', e.target.value)} placeholder="e.g. Director, CFO" /></Field>
-            <Field label="Contact No" required><input type="tel" value={form.cpTel} onChange={e => setF('cpTel', e.target.value)} placeholder="10-digit number" /></Field>
-            <Field label="Email" required><input type="email" value={form.cpEmail} onChange={e => setF('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
+            <Field label="Contact Person Name" required error={errors.cpName} fieldKey="cpName"><input className={errors.cpName ? 'acm-input-error' : ''} value={form.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
+            <Field label="Designation" required error={errors.cpDesig} fieldKey="cpDesig">
+              <MasterSelect value={form.cpDesig} options={toSelectOpts(masters.designations)} placeholder="Select designation" invalid={!!errors.cpDesig} onChange={v => set('cpDesig', v)} />
+            </Field>
+            <Field label="Contact No" required error={errors.cpTel} fieldKey="cpTel"><input className={errors.cpTel ? 'acm-input-error' : ''} type="tel" value={form.cpTel} onChange={e => set('cpTel', e.target.value)} placeholder="7–15 digit number" /></Field>
+            <Field label="Email" required error={errors.cpEmail} fieldKey="cpEmail"><input className={errors.cpEmail ? 'acm-input-error' : ''} type="email" value={form.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
           </div>
           <div className="acm-row acm-row-1">
-            <Field label="Whatsapp Enabled" required>
+            <Field label="Whatsapp Enabled" required error={errors.cpWa} fieldKey="cpWa">
               <div className="acm-radio-row">
-                <label className="acm-radio"><input type="radio" name="cpWa" value="yes" checked={form.cpWa === 'yes'} onChange={() => setF('cpWa', 'yes')} /> YES</label>
-                <label className="acm-radio"><input type="radio" name="cpWa" value="no" checked={form.cpWa === 'no'} onChange={() => setF('cpWa', 'no')} /> NO</label>
+                <label className="acm-radio"><input type="radio" name="cpWa" value="yes" checked={form.cpWa === 'yes'} onChange={() => set('cpWa', 'yes')} /> YES</label>
+                <label className="acm-radio"><input type="radio" name="cpWa" value="no" checked={form.cpWa === 'no'} onChange={() => set('cpWa', 'no')} /> NO</label>
               </div>
             </Field>
           </div>
@@ -538,97 +721,70 @@ function Stage1Identification({ form, setF }: { form: any; setF: (k: any, v: any
   );
 }
 
-/* ───── Stage 1 — Address & Contact tables ───── */
-function Stage1AddressContact({ addresses, contacts, onAddAddr, onEditAddr, onDelAddr, onAddContact, onEditContact, onDelContact }:
-  { addresses: AddressRow[]; contacts: ContactRow[]; onAddAddr: () => void; onEditAddr: (id:string) => void; onDelAddr: (id:string) => void; onAddContact: () => void; onEditContact: (id:string) => void; onDelContact: (id:string) => void }) {
+/* ───── Stage 1 — Additional Locations & Contacts (merged table) ─────
+ * Replaces the previous two-table layout (Addresses + Contact Persons).
+ * Each row now captures both the address and the contact person at
+ * that address, since the old shapes were identical. */
+function Stage1AdditionalLocations({ locations, onAdd, onEdit, onDel }:
+  { locations: LocationRow[]; onAdd: () => void; onEdit: (id: string) => void; onDel: (id: string) => void }) {
   return (
-    <div>
-      <div className="acm-section acm-section-purple">
-        <div className="acm-section-head">
-          <div className="acm-section-head-row" style={{ width:'100%' }}>
-            <div className="acm-section-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
-            <div>
-              <span className="acm-section-title">ADDRESS DETAILS</span>
-              <span className="acm-section-sub">| All registered, branch, and warehouse addresses</span>
-            </div>
-            <button type="button" className="acm-add-pill" onClick={onAddAddr}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add More Address
-            </button>
+    <div className="acm-section acm-section-purple">
+      <div className="acm-section-head">
+        <div className="acm-section-head-row" style={{ width: '100%' }}>
+          <div className="acm-section-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg></div>
+          <div>
+            <span className="acm-section-title">ADDRESS &amp; CONTACT DETAILS</span>
+            <span className="acm-section-sub">| All addresses with their authorized contact person</span>
           </div>
+          <button type="button" className="acm-add-pill" onClick={onAdd}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            Add More Address &amp; Contact
+          </button>
         </div>
-        <div className="acm-section-body acm-section-body-table">
-          <div className="acm-table-wrap">
-            <table className="acm-table">
-              <thead><tr><th>Sr No</th><th>Address Type</th><th>Address Details</th><th>City</th><th>State</th><th>Country</th><th>Pin Code</th><th>Actions</th></tr></thead>
-              <tbody>
-                {addresses.length === 0 ? (
-                  <tr className="acm-empty-row"><td colSpan={8}>No addresses added yet. Click <strong>+ Add More Address</strong> to add one.</td></tr>
-                ) : addresses.map((a, i) => (
-                  <tr key={a.id}>
-                    <td>{i + 1}</td><td>{a.type}</td><td>{a.line}</td><td>{a.city}</td><td>{a.state}</td><td>{a.country}</td><td>{a.pin}</td>
+      </div>
+      <div className="acm-section-body acm-section-body-table">
+        <div className="acm-table-wrap">
+          <table className="acm-table">
+            <thead>
+              <tr>
+                <th>Sr No</th><th>Address Type</th><th>Address</th><th>City / State / Country</th>
+                <th>Contact Person</th><th>Phone</th><th>Email</th><th>WhatsApp</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {locations.length === 0 ? (
+                <tr className="acm-empty-row"><td colSpan={9}>No additional locations yet. Click <strong>+ Add More Location</strong> to capture another branch, warehouse, or shipping address with its contact person.</td></tr>
+              ) : locations.map((l, i) => {
+                const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
+                return (
+                  <tr key={l.id}>
+                    <td>{i + 1}</td>
+                    <td>{l.type}</td>
+                    <td title={l.line}>{l.line.length > 36 ? l.line.slice(0, 33) + '…' : l.line}</td>
+                    <td>{place}</td>
+                    <td>{l.cpName}{l.cpDesignation ? <span style={{ color:'#6b7280', fontWeight:500 }}> ({l.cpDesignation})</span> : null}</td>
+                    <td>{l.cpContact}</td>
+                    <td>{l.cpEmail}</td>
+                    <td>{l.cpWhatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : <span className="acm-pill-no">✕ No</span>}</td>
                     <td>
                       <div className="acm-row-actions">
-                        <button type="button" className="acm-row-btn" title="Edit" onClick={() => onEditAddr(a.id)}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </button>
-                        <button type="button" className="acm-row-btn acm-row-btn-del" title="Delete" onClick={() => onDelAddr(a.id)}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                        </button>
+                        <Tooltip label="Edit">
+                          <button type="button" className="acm-row-btn" aria-label="Edit" onClick={() => onEdit(l.id)}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Delete">
+                          <button type="button" className="acm-row-btn acm-row-btn-del" aria-label="Delete" onClick={() => onDel(l.id)}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                          </button>
+                        </Tooltip>
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div className="acm-section acm-section-purple">
-        <div className="acm-section-head">
-          <div className="acm-section-head-row" style={{ width:'100%' }}>
-            <div className="acm-section-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-            <div>
-              <span className="acm-section-title">CONTACT DETAILS</span>
-              <span className="acm-section-sub">| Authorized contact persons for this customer</span>
-            </div>
-            <button type="button" className="acm-add-pill" onClick={onAddContact}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add More Contact Person
-            </button>
-          </div>
-        </div>
-        <div className="acm-section-body acm-section-body-table">
-          <div className="acm-table-wrap">
-            <table className="acm-table">
-              <thead><tr><th>Sr No</th><th>Contact Person Name</th><th>Designation</th><th>Address Details</th><th>Contact No</th><th>Email Id</th><th>Whatsapp Enable</th><th>Actions</th></tr></thead>
-              <tbody>
-                {contacts.length === 0 ? (
-                  <tr className="acm-empty-row"><td colSpan={8}>No contact persons added yet. Click <strong>+ Add More Contact Person</strong> to add one.</td></tr>
-                ) : contacts.map((c, i) => {
-                  const addr = c.type + ' — ' + c.line;
-                  const addrTrim = addr.length > 50 ? addr.slice(0, 47) + '…' : addr;
-                  return (
-                    <tr key={c.id}>
-                      <td>{i + 1}</td><td>{c.name}</td><td>{c.designation}</td><td>{addrTrim}</td><td>{c.contact}</td><td>{c.email}</td>
-                      <td>{c.whatsapp === 'yes' ? <span className="acm-pill-yes">✓ Yes</span> : <span className="acm-pill-no">✕ No</span>}</td>
-                      <td>
-                        <div className="acm-row-actions">
-                          <button type="button" className="acm-row-btn" title="Edit" onClick={() => onEditContact(c.id)}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                          </button>
-                          <button type="button" className="acm-row-btn acm-row-btn-del" title="Delete" onClick={() => onDelContact(c.id)}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -882,130 +1038,80 @@ function Stage3TradeDocs({ docs, onToggle, onToggleAll, onSend, onSendSelected }
   );
 }
 
-/* ───── Address / Contact sub-modals ───── */
-function AddressSubModal({ editing, onClose, onSave }: { editing: AddressRow | null; onClose: () => void; onSave: (rec: Omit<AddressRow, 'id'>) => void }) {
-  const [d, setD] = useState<Omit<AddressRow, 'id'>>(() => editing ? { ...editing } : {
-    type:'', line:'', country:'', state:'', city:'', pin:'',
-    cpName:'', cpDesignation:'', cpContact:'', cpEmail:'', cpWhatsapp:'' as 'yes'|'no'|''
+/* ───── Location sub-modal (merged Address + Contact form) ───── */
+function LocationSubModal({ editing, masters, onClose, onSave }:
+  { editing: LocationRow | null; masters: MasterLists; onClose: () => void; onSave: (rec: Omit<LocationRow, 'id'>) => void }) {
+  const [d, setD] = useState<Omit<LocationRow, 'id'>>(() => editing ? { ...editing } : {
+    type: DEFAULT_ADDRESS_TYPE, line: '', country: '', state: '', city: '', pin: '',
+    cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: '' as 'yes' | 'no' | '',
   });
-  const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => setD(prev => ({ ...prev, [k]: v }));
-  const states = STATES_BY_COUNTRY[d.country] || [];
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
+    setD(prev => ({ ...prev, [k]: v }));
+    setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
+  };
+  const selectedCountry = masters.countries.find(c => c.name === d.country);
+  const states = selectedCountry
+    ? masters.states.filter(s => s.country_id === selectedCountry.id)
+    : [];
   const submit = () => {
-    const required: (keyof typeof d)[] = ['type','line','country','state','city','pin','cpName','cpDesignation','cpContact','cpEmail','cpWhatsapp'];
-    for (const k of required) if (!d[k]) { alert('Please fill all required fields.'); return; }
-    if (!/^\S+@\S+\.\S+$/.test(d.cpEmail)) { alert('Please enter a valid Email Id.'); return; }
-    onSave(d);
+    const next: Record<string, string> = {};
+    if (!d.type)                                       next.type          = 'Select address type';
+    if (!d.line.trim())                                next.line          = 'Address is required';
+    if (!d.country)                                    next.country       = 'Select country';
+    if (!d.state)                                      next.state         = 'Select state';
+    if (!d.city.trim())                                next.city          = 'City is required';
+    if (!d.pin.trim())                                 next.pin           = 'PIN is required';
+    else if (!/^[A-Za-z0-9-\s]{3,12}$/.test(d.pin))    next.pin           = 'PIN looks invalid';
+    if (!d.cpName.trim())                              next.cpName        = 'Contact name required';
+    if (!d.cpDesignation.trim())                       next.cpDesignation = 'Designation required';
+    if (!d.cpContact.trim())                           next.cpContact     = 'Phone required';
+    else if (!/^\+?[0-9\s-]{7,15}$/.test(d.cpContact)) next.cpContact     = 'Phone must be 7–15 digits';
+    if (!d.cpEmail.trim())                             next.cpEmail       = 'Email required';
+    else if (!/^\S+@\S+\.\S+$/.test(d.cpEmail))        next.cpEmail       = 'Enter a valid email';
+    if (!d.cpWhatsapp)                                 next.cpWhatsapp    = 'Select WhatsApp preference';
+    setErrs(next);
+    if (Object.keys(next).length === 0) onSave(d);
   };
   return (
     <div className="acm-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="acm-sub-card">
         <div className="acm-sub-header">
-          <div className="acm-sub-title">{editing ? 'Edit' : 'Add New'} <span className="acm-sub-title-accent">Address</span></div>
+          <div className="acm-sub-title">{editing ? 'Edit' : 'Add New'} <span className="acm-sub-title-accent">Location &amp; Contact</span></div>
           <button type="button" className="acm-sub-close" onClick={onClose}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div className="acm-sub-body">
           <div className="acm-row acm-row-2">
-            <Field label="Address Type" required>
-              <select value={d.type} onChange={e => set('type', e.target.value)}>
-                <option value="">Select</option>{['Registered Office','Branch Office','Warehouse','Billing Address','Shipping Address','Other'].map(o => <option key={o}>{o}</option>)}
-              </select>
+            <Field label="Address Type" required error={errs.type}>
+              <MasterSelect value={d.type} options={toSelectOpts(masters.addressTypes)} placeholder="Select address type" invalid={!!errs.type} onChange={v => set('type', v)} />
             </Field>
-            <Field label="Address" required><input value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" /></Field>
+            <Field label="Address" required error={errs.line}><input className={errs.line ? 'acm-input-error' : ''} value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" /></Field>
           </div>
           <div className="acm-row acm-row-4">
-            <Field label="Country" required>
-              <select value={d.country} onChange={e => { set('country', e.target.value); set('state', ''); }}>
-                <option value="">Select</option>{Object.keys(STATES_BY_COUNTRY).map(c => <option key={c}>{c}</option>)}
-              </select>
+            <Field label="Country" required error={errs.country}>
+              <MasterSelect value={d.country} options={toSelectOpts(masters.countries)} placeholder="Select country" invalid={!!errs.country} onChange={v => { set('country', v); set('state', ''); }} />
             </Field>
-            <Field label="State" required>
-              <select value={d.state} onChange={e => set('state', e.target.value)} disabled={!d.country}>
-                {d.country ? <option value="">Select state</option> : <option>Select country first</option>}{states.map(s => <option key={s}>{s}</option>)}
-              </select>
+            <Field label="State" required error={errs.state}>
+              <MasterSelect value={d.state} options={states.map(s => ({ value: s.name, label: s.name }))} placeholder={d.country ? 'Select state' : 'Select country first'} disabled={!d.country} invalid={!!errs.state} onChange={v => set('state', v)} />
             </Field>
-            <Field label="City" required><input value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
-            <Field label="Pin / Postal Code" required><input value={d.pin} onChange={e => set('pin', e.target.value)} maxLength={10} placeholder="Enter 6-digit PIN code" /></Field>
+            <Field label="City" required error={errs.city}><input className={errs.city ? 'acm-input-error' : ''} value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
+            <Field label="Pin / Postal Code" required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', e.target.value)} maxLength={12} placeholder="Enter PIN" /></Field>
           </div>
           <div className="acm-row acm-row-4">
-            <Field label="Contact Person Name" required><input value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
-            <Field label="Designation" required><input value={d.cpDesignation} onChange={e => set('cpDesignation', e.target.value)} placeholder="Enter designation" /></Field>
-            <Field label="Contact No" required><input type="tel" value={d.cpContact} onChange={e => set('cpContact', e.target.value)} placeholder="10–15 digit mobile" /></Field>
-            <Field label="Email Id" required><input type="email" value={d.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
+            <Field label="Contact Person Name" required error={errs.cpName}><input className={errs.cpName ? 'acm-input-error' : ''} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
+            <Field label="Designation" required error={errs.cpDesignation}>
+              <MasterSelect value={d.cpDesignation} options={toSelectOpts(masters.designations)} placeholder="Select designation" invalid={!!errs.cpDesignation} onChange={v => set('cpDesignation', v)} />
+            </Field>
+            <Field label="Contact No" required error={errs.cpContact}><input className={errs.cpContact ? 'acm-input-error' : ''} type="tel" value={d.cpContact} onChange={e => set('cpContact', e.target.value)} placeholder="7–15 digit mobile" /></Field>
+            <Field label="Email Id" required error={errs.cpEmail}><input className={errs.cpEmail ? 'acm-input-error' : ''} type="email" value={d.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
           </div>
           <div className="acm-row acm-row-1">
-            <Field label="Whatsapp Enabled?" required>
+            <Field label="Whatsapp Enabled?" required error={errs.cpWhatsapp}>
               <div className="acm-radio-pills">
-                <label className={`acm-radio-pill ${d.cpWhatsapp === 'yes' ? 'is-active' : ''}`}><input type="radio" name="addrWa" value="yes" checked={d.cpWhatsapp === 'yes'} onChange={() => set('cpWhatsapp', 'yes')} /> Yes</label>
-                <label className={`acm-radio-pill ${d.cpWhatsapp === 'no' ? 'is-active' : ''}`}><input type="radio" name="addrWa" value="no" checked={d.cpWhatsapp === 'no'} onChange={() => set('cpWhatsapp', 'no')} /> No</label>
+                <label className={`acm-radio-pill ${d.cpWhatsapp === 'yes' ? 'is-active' : ''}`}><input type="radio" name="locWa" value="yes" checked={d.cpWhatsapp === 'yes'} onChange={() => set('cpWhatsapp', 'yes')} /> Yes</label>
+                <label className={`acm-radio-pill ${d.cpWhatsapp === 'no' ? 'is-active' : ''}`}><input type="radio" name="locWa" value="no" checked={d.cpWhatsapp === 'no'} onChange={() => set('cpWhatsapp', 'no')} /> No</label>
               </div>
             </Field>
-          </div>
-        </div>
-        <div className="acm-sub-footer">
-          <button type="button" className="acm-btn-mini-cancel" onClick={onClose}>Cancel</button>
-          <button type="button" className="acm-btn-save" onClick={submit}>{editing ? 'Update' : 'Save'}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ContactSubModal({ editing, onClose, onSave }: { editing: ContactRow | null; onClose: () => void; onSave: (rec: Omit<ContactRow, 'id'>) => void }) {
-  const [d, setD] = useState<Omit<ContactRow, 'id'>>(() => editing ? { ...editing } : {
-    name:'', designation:'', contact:'', email:'', whatsapp:'' as 'yes'|'no'|'',
-    type:'', line:'', country:'', state:'', city:'', pin:'',
-  });
-  const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => setD(prev => ({ ...prev, [k]: v }));
-  const states = STATES_BY_COUNTRY[d.country] || [];
-  const submit = () => {
-    const required: (keyof typeof d)[] = ['name','designation','contact','email','whatsapp','type','line','country','state','city','pin'];
-    for (const k of required) if (!d[k]) { alert('Please fill all required fields.'); return; }
-    if (!/^\S+@\S+\.\S+$/.test(d.email)) { alert('Please enter a valid Email Id.'); return; }
-    onSave(d);
-  };
-  return (
-    <div className="acm-sub-modal" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="acm-sub-card">
-        <div className="acm-sub-header">
-          <div className="acm-sub-title">{editing ? 'Edit' : 'Add New'} <span className="acm-sub-title-accent">Contact</span></div>
-          <button type="button" className="acm-sub-close" onClick={onClose}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-        </div>
-        <div className="acm-sub-body">
-          <div className="acm-row acm-row-4">
-            <Field label="Contact Person Name" required><input value={d.name} onChange={e => set('name', e.target.value)} placeholder="Full name" /></Field>
-            <Field label="Designation" required><input value={d.designation} onChange={e => set('designation', e.target.value)} placeholder="Enter designation" /></Field>
-            <Field label="Contact No" required><input type="tel" value={d.contact} onChange={e => set('contact', e.target.value)} placeholder="10–15 digit mobile" /></Field>
-            <Field label="Email Id" required><input type="email" value={d.email} onChange={e => set('email', e.target.value)} placeholder="name@company.com" /></Field>
-          </div>
-          <div className="acm-row acm-row-1">
-            <Field label="Whatsapp Enabled?" required>
-              <div className="acm-radio-pills">
-                <label className={`acm-radio-pill ${d.whatsapp === 'yes' ? 'is-active' : ''}`}><input type="radio" name="cpsWa" value="yes" checked={d.whatsapp === 'yes'} onChange={() => set('whatsapp', 'yes')} /> Yes</label>
-                <label className={`acm-radio-pill ${d.whatsapp === 'no' ? 'is-active' : ''}`}><input type="radio" name="cpsWa" value="no" checked={d.whatsapp === 'no'} onChange={() => set('whatsapp', 'no')} /> No</label>
-              </div>
-            </Field>
-          </div>
-          <div className="acm-row acm-row-2">
-            <Field label="Address Type" required>
-              <select value={d.type} onChange={e => set('type', e.target.value)}>
-                <option value="">Select</option>{['Registered Office','Branch Office','Warehouse','Billing Address','Shipping Address','Other'].map(o => <option key={o}>{o}</option>)}
-              </select>
-            </Field>
-            <Field label="Address" required><input value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" /></Field>
-          </div>
-          <div className="acm-row acm-row-4">
-            <Field label="Country" required>
-              <select value={d.country} onChange={e => { set('country', e.target.value); set('state', ''); }}>
-                <option value="">Select</option>{Object.keys(STATES_BY_COUNTRY).map(c => <option key={c}>{c}</option>)}
-              </select>
-            </Field>
-            <Field label="State" required>
-              <select value={d.state} onChange={e => set('state', e.target.value)} disabled={!d.country}>
-                {d.country ? <option value="">Select state</option> : <option>Select country first</option>}{states.map(s => <option key={s}>{s}</option>)}
-              </select>
-            </Field>
-            <Field label="City" required><input value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
-            <Field label="Pin / Postal Code" required><input value={d.pin} onChange={e => set('pin', e.target.value)} maxLength={10} placeholder="Enter 6-digit PIN code" /></Field>
           </div>
         </div>
         <div className="acm-sub-footer">
@@ -1018,13 +1124,14 @@ function ContactSubModal({ editing, onClose, onSave }: { editing: ContactRow | n
 }
 
 /* ───── History panels ───── */
-function HistoryStage1({ form, addresses, contacts }: { form: any; addresses: AddressRow[]; contacts: ContactRow[] }) {
+function HistoryStage1({ form, locations }: { form: any; locations: LocationRow[] }) {
   const fld = (key: string, val: string) => (
     <div className="acm-hs-field">
       <span className="acm-hs-key">{key}</span>
       <span className={`acm-hs-val ${!val ? 'acm-hs-empty' : ''}`}>{val || '—'}</span>
     </div>
   );
+  const extra = locations.length;
   return (
     <div className="acm-hs-block">
       <div className="acm-hs-header">
@@ -1042,11 +1149,11 @@ function HistoryStage1({ form, addresses, contacts }: { form: any; addresses: Ad
         </div>
       </div>
       <div className="acm-hs-group">
-        <div className="acm-hs-group-label">Primary Address {addresses.length > 0 && `(+ ${addresses.length} more)`}</div>
+        <div className="acm-hs-group-label">Primary Location {extra > 0 && `(+ ${extra} more)`}</div>
         <div className="acm-hs-inline">{[form.addrType, form.addr, form.city, form.state, form.country, form.pin].filter(Boolean).join(' • ') || <span className="acm-hs-inline-empty">No data entered</span>}</div>
       </div>
       <div className="acm-hs-group">
-        <div className="acm-hs-group-label">Primary Contact {contacts.length > 0 && `(+ ${contacts.length} more)`}</div>
+        <div className="acm-hs-group-label">Primary Contact</div>
         <div className="acm-hs-inline">{[form.cpName + (form.cpDesig ? ` (${form.cpDesig})` : ''), form.cpTel, form.cpEmail, form.cpWa ? `WhatsApp: ${form.cpWa.toUpperCase()}` : ''].filter(Boolean).join(' • ') || <span className="acm-hs-inline-empty">No data entered</span>}</div>
       </div>
     </div>
@@ -1074,11 +1181,12 @@ function HistoryStage2() {
 }
 
 /* ───── Reusable field wrapper ───── */
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+function Field({ label, required, children, error, fieldKey }: { label: string; required?: boolean; children: React.ReactNode; error?: string; fieldKey?: string }) {
   return (
-    <div className="acm-field">
+    <div className="acm-field" data-field={fieldKey}>
       <label>{label} {required && <span className="acm-req">*</span>}</label>
       {children}
+      {error && <span className="acm-field-error">{error}</span>}
     </div>
   );
 }
@@ -1100,7 +1208,13 @@ const SCOPED_CSS = `
 .acm-root *, .acm-root *::before, .acm-root *::after { box-sizing: border-box; }
 
 .acm-card {
-  width: 100%; max-width: 1200px; max-height: calc(100vh - 32px);
+  /* Stable card size: width caps at 1200, height pins at 90vh so the
+     modal doesn't reflow each time the user switches between Stage 1
+     sub-tabs (the empty Address & Contact table is shorter than the
+     full Identification form). Height = min(90vh, 100vh - 32px) keeps
+     a small breathing gap on shorter viewports. */
+  width: 100%; max-width: 1200px;
+  height: min(90vh, calc(100vh - 32px));
   background: linear-gradient(165deg,#faf7ff 0%,#f5efff 45%,#ede9fe 100%);
   border: 1px solid rgba(167,139,250,.5);
   border-radius: 20px;
@@ -1199,6 +1313,12 @@ const SCOPED_CSS = `
 }
 .acm-field input:focus, .acm-field select:focus, .acm-field textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3.5px rgba(124,58,237,.14); }
 .acm-field input::placeholder { color: #c4b5fd; font-size: 11.5px; }
+/* Inline validation: red ring around the input + helper text underneath.
+   The MasterSelect dropdown already renders its own invalid state when
+   passed invalid={true}, so this rule only targets native inputs. */
+.acm-field input.acm-input-error { border-color: #ef4444; background: #fef2f2; }
+.acm-field input.acm-input-error:focus { box-shadow: 0 0 0 3.5px rgba(239,68,68,.15); }
+.acm-field-error { color: #ef4444; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
 .acm-radio-row { display: flex; align-items: center; gap: 16px; padding: 9px 0; }
 .acm-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #6b7280; cursor: pointer; letter-spacing: .04em; user-select: none; }
 .acm-radio input[type="radio"] { accent-color: #7c3aed; width: 14px; height: 14px; cursor: pointer; }

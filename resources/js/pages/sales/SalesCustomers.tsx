@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
 import Tooltip from '../../components/ui/Tooltip';
 import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
+import api from '../../api';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Customers
@@ -20,46 +21,11 @@ import AddCustomerModal, { type EditCustomer } from './AddCustomerModal';
  * ──────────────────────────────────────────────────────────────────────── */
 
 type Customer = {
-  id: string; company: string; type: string; segment: string;
+  id: string; db_id?: number;
+  company: string; type: string; segment: string;
   country: string; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No'; consignees: number;
 };
-
-const FRESH: Customer[] = [
-  { id:'C-001', company:'Shree Exports Pvt Ltd',      type:'Retailer',   segment:'Dry Fruits',     country:'India', contact:'Yash Mote',        phone:'+91-9011033444', email:'yash@shreeexports.com',       whatsapp:'Yes', consignees:3 },
-  { id:'C-002', company:'GreenHarvest Global',         type:'Exporter',   segment:'Agro',           country:'India', contact:'Ravi Vardhan',     phone:'+91-9123456789', email:'ravi@greenharvestglobal.com', whatsapp:'Yes', consignees:5 },
-  { id:'C-003', company:'GreenHarvest Agri-Exports',   type:'Exporter',   segment:'Rice & Grains',  country:'India', contact:'Ravi Mishra',      phone:'+91-9898989800', email:'ravi@greenharvest.com',       whatsapp:'No',  consignees:2 },
-  { id:'C-004', company:'International Buyer LLC',     type:'Wholesaler', segment:'Spices',         country:'UAE',   contact:'Ahmed Al-Farsi',   phone:'+971-501234567', email:'ahmed@intlbuyer.ae',          whatsapp:'Yes', consignees:4 },
-  { id:'C-005', company:'QuickTrade Resellers',        type:'Reseller',   segment:'Pulses',         country:'India', contact:'Deepak Jain',      phone:'+91-9001122334', email:'deepak@quicktrade.com',       whatsapp:'No',  consignees:1 },
-  { id:'C-006', company:'Fit Nation Pvt Ltd',          type:'Wholesaler', segment:'Dry Fruits',     country:'India', contact:'Durgesh Urkude',   phone:'+91-7218663502', email:'durgesh@fitnation.in',        whatsapp:'Yes', consignees:2 },
-  { id:'C-007', company:'Manoj Jacob Foods',           type:'Exporter',   segment:'Coconut Oil',    country:'India', contact:'Manoj Jacob',      phone:'+91-9876543210', email:'manoj@mjfoods.in',            whatsapp:'No',  consignees:3 },
-  { id:'C-008', company:'FreshMart Retailers',         type:'Retailer',   segment:'Basmati Rice',   country:'India', contact:'Ankit Sharma',     phone:'+91-9876512345', email:'ankit@freshmart.com',         whatsapp:'Yes', consignees:1 },
-  { id:'C-009', company:'Bharat Agro Traders',         type:'Wholesaler', segment:'Millets',        country:'India', contact:'Suresh Patil',     phone:'+91-9765432109', email:'suresh@bharatagro.com',       whatsapp:'Yes', consignees:4 },
-  { id:'C-010', company:'Eastern Harvest Co.',         type:'Exporter',   segment:'Coffee Beans',   country:'India', contact:'Priya Nair',       phone:'+91-9654321098', email:'priya@easternharvest.in',     whatsapp:'No',  consignees:2 },
-  { id:'C-011', company:'Sun Agri Exports',            type:'Exporter',   segment:'Turmeric',       country:'India', contact:'Vikram Desai',     phone:'+91-9543210987', email:'vikram@sunagri.com',          whatsapp:'Yes', consignees:3 },
-  { id:'C-012', company:'Prime Foods UAE',             type:'Retailer',   segment:'Spices',         country:'UAE',   contact:'Khalid Mansoor',   phone:'+971-561234567', email:'khalid@primefoods.ae',        whatsapp:'Yes', consignees:2 },
-  { id:'C-013', company:'KM Naturals',                 type:'Retailer',   segment:'Cashew',         country:'India', contact:'Kavitha Menon',    phone:'+91-9432109876', email:'kavitha@kmnaturals.in',       whatsapp:'No',  consignees:1 },
-  { id:'C-014', company:'Horizon Agro Pvt Ltd',        type:'Wholesaler', segment:'Rice & Grains',  country:'India', contact:'Rohit Singh',      phone:'+91-9321098765', email:'rohit@horizonagro.com',       whatsapp:'Yes', consignees:5 },
-  { id:'C-015', company:'NatureFirst Exports',         type:'Exporter',   segment:'Organic Spices', country:'India', contact:'Sneha Kulkarni',   phone:'+91-9210987654', email:'sneha@naturefirst.com',       whatsapp:'Yes', consignees:3 },
-];
-
-const RECURRING: Customer[] = [
-  { id:'C-016', company:'Apex Food Processors',        type:'Reseller',   segment:'Spices',         country:'India', contact:'Rajesh Varma',     phone:'+91-9825012345', email:'procurement@apexfoods.in',    whatsapp:'No',  consignees:6 },
-  { id:'C-017', company:'Spice Route Traders',         type:'Exporter',   segment:'Spices',         country:'India', contact:'Meena Iyer',       phone:'+91-9123456780', email:'meena@spiceroute.com',        whatsapp:'Yes', consignees:8 },
-  { id:'C-018', company:'Delta Agro Exports',          type:'Wholesaler', segment:'Pulses',         country:'India', contact:'Ramesh Kulkarni',  phone:'+91-9234567891', email:'ramesh@deltaagro.in',         whatsapp:'No',  consignees:4 },
-  { id:'C-019', company:'Sunrise Foods International', type:'Retailer',   segment:'Coconut Oil',    country:'India', contact:'Kavitha Nair',     phone:'+91-9345678902', email:'kavitha@sunrisefoods.com',    whatsapp:'Yes', consignees:7 },
-  { id:'C-020', company:'Global Grain Co.',            type:'Exporter',   segment:'Rice & Grains',  country:'India', contact:'Arjun Pillai',     phone:'+91-9456789013', email:'arjun@globalgrains.com',      whatsapp:'No',  consignees:5 },
-  { id:'C-021', company:'Pacific Traders FZE',         type:'Wholesaler', segment:'Agro',           country:'China', contact:'Zhang Wei',        phone:'+86-1381234567', email:'zhang@pacifictraders.cn',     whatsapp:'Yes', consignees:9 },
-  { id:'C-022', company:'Al-Hassan Foods LLC',         type:'Exporter',   segment:'Dry Fruits',     country:'UAE',   contact:'Fatima Al-Hassan', phone:'+971-551234567', email:'fatima@alhassanfoods.ae',     whatsapp:'Yes', consignees:6 },
-  { id:'C-023', company:'Raza Exports',                type:'Exporter',   segment:'Basmati Rice',   country:'India', contact:'Ayesha Raza',      phone:'+91-9567890124', email:'ayesha@razaexports.com',      whatsapp:'Yes', consignees:4 },
-  { id:'C-024', company:'Bianchi Imports',             type:'Wholesaler', segment:'Coffee Beans',   country:'Italy', contact:'Luca Bianchi',     phone:'+39-0212345678', email:'luca@bianchiimports.it',      whatsapp:'No',  consignees:3 },
-  { id:'C-025', company:'Wei Imports Shanghai',        type:'Retailer',   segment:'Spices',         country:'China', contact:'Wei Xiaoming',     phone:'+86-2112345678', email:'wei@weiimports.cn',           whatsapp:'Yes', consignees:5 },
-  { id:'C-026', company:'Martinez Trading Co.',        type:'Exporter',   segment:'Mango Pulp',     country:'Spain', contact:'Jose Martinez',    phone:'+34-911234567',  email:'jose@martineztrading.es',     whatsapp:'No',  consignees:2 },
-  { id:'C-027', company:'Agro Fresh Ltd',              type:'Retailer',   segment:'Organic Spices', country:'India', contact:'Priya Sharma',     phone:'+91-9678901235', email:'priya@agrofresh.in',          whatsapp:'Yes', consignees:7 },
-  { id:'C-028', company:'Gulf Food Traders LLC',       type:'Wholesaler', segment:'Dry Fruits',     country:'UAE',   contact:'Omar Al-Rashid',   phone:'+971-571234567', email:'omar@gulffood.ae',            whatsapp:'Yes', consignees:8 },
-  { id:'C-029', company:'Nwosu Agro Industries',       type:'Exporter',   segment:'Cashew',         country:'Nigeria', contact:'Amara Nwosu',    phone:'+234-8012345678',email:'amara@nwosuagro.ng',          whatsapp:'No',  consignees:3 },
-  { id:'C-030', company:'BrightHarvest Global',        type:'Exporter',   segment:'Turmeric',       country:'India', contact:'Carlos Rivera',    phone:'+91-9789012346', email:'carlos@brightharvest.com',    whatsapp:'Yes', consignees:6 },
-];
 
 const TYPE_COLORS: Record<string, { bg: string; color: string; border: string; dot: string }> = {
   'Retailer':   { bg:'#eff6ff', color:'#1e40af', border:'#bfdbfe', dot:'#3b82f6' },
@@ -89,6 +55,26 @@ export default function SalesCustomers() {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EditCustomer | null>(null);
 
+  /* ── Live customer list pulled from /api/customers. The previous
+   * hardcoded FRESH/RECURRING arrays were a stub while the DB tables
+   * didn't exist; now the table is backed by Customer + CustomerAddress
+   * Eloquent models and tenant-scoped server-side. */
+  const [customers, setCustomers] = useState<(Customer & { db_id?: number })[]>([]);
+  const [loading, setLoading]     = useState(false);
+
+  const fetchCustomers = useCallback(() => {
+    setLoading(true);
+    api.get('/customers', { params: { tab, q } })
+      .then(r => {
+        const list = Array.isArray(r.data?.data) ? r.data.data : [];
+        setCustomers(list);
+      })
+      .catch(() => setCustomers([]))
+      .finally(() => setLoading(false));
+  }, [tab, q]);
+
+  useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
+
   // Inject Google Fonts (DM Sans, Inter) once on mount so the design renders
   // with its intended typography even on a fresh install.
   useEffect(() => {
@@ -101,18 +87,9 @@ export default function SalesCustomers() {
     document.head.appendChild(link);
   }, []);
 
-  const filtered = useMemo(() => {
-    const src = tab === 'fresh' ? FRESH : RECURRING;
-    if (!q) return src;
-    const lo = q.toLowerCase();
-    return src.filter(c =>
-      c.company.toLowerCase().includes(lo) ||
-      c.id.toLowerCase().includes(lo) ||
-      c.contact.toLowerCase().includes(lo) ||
-      c.email.toLowerCase().includes(lo) ||
-      c.segment.toLowerCase().includes(lo),
-    );
-  }, [tab, q]);
+  // The backend already filters by `q` and groups by `tab`, so the
+  // page-side filter just relays whatever the API returned.
+  const filtered = useMemo<Customer[]>(() => customers, [customers]);
 
   const total = filtered.length;
   const pages = Math.max(1, Math.ceil(total / ROWS_PER_PAGE));
@@ -247,7 +224,7 @@ export default function SalesCustomers() {
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={12} className="smc-empty">No customers found</td></tr>
+                <tr><td colSpan={12} className="smc-empty">{loading ? 'Loading customers…' : 'No customers found'}</td></tr>
               )}
               {rows.map((c, i) => {
                 const t = TYPE_COLORS[c.type] || { bg:'#f3f0ff', color:'#6d28d9', border:'#ddd6fe', dot:'#7c3aed' };
@@ -311,6 +288,7 @@ export default function SalesCustomers() {
         open={addOpen}
         customer={editing}
         onClose={() => { setAddOpen(false); setEditing(null); }}
+        onSaved={() => { fetchCustomers(); toast.success(editing ? 'Customer updated' : 'Customer added'); }}
       />
     </div>
   );
