@@ -335,7 +335,6 @@ export default function Products() {
           Inactive
           <span className="prd-status-count">{stats.inactive}</span>
         </button>
-        {loading && <span className="prd-loading-pill">Loading…</span>}
       </div>
 
       {/* Filters bar */}
@@ -392,7 +391,17 @@ export default function Products() {
       </div>
 
       {/* Grid / List view */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        view === 'grid' ? (
+          <div className="prd-grid">
+            {Array.from({ length: 8 }).map((_, i) => <ProductCardShimmer key={i} />)}
+          </div>
+        ) : (
+          <div className="prd-list">
+            {Array.from({ length: 6 }).map((_, i) => <ProductRowShimmer key={i} />)}
+          </div>
+        )
+      ) : filtered.length === 0 ? (
         <div className="prd-empty">
           <div className="prd-empty-icon">
             <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
@@ -796,6 +805,47 @@ function ProductRow(props: {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
+ * Shimmer placeholders — matches card / row geometry so the loading state
+ * doesn't shift the layout when the real data lands.
+ * ════════════════════════════════════════════════════════════════════════ */
+function ProductCardShimmer() {
+  return (
+    <div className="prd-card prd-card-shimmer">
+      <div className="prd-card-thumb prd-shim-thumb" />
+      <div className="prd-card-body">
+        <div className="prd-shim-bar" style={{ width: '70%' }} />
+        <div className="prd-shim-bar" style={{ width: '55%', height: 10 }} />
+        <div className="prd-shim-row">
+          <div className="prd-shim-pill" />
+          <div className="prd-shim-pill" />
+        </div>
+        <div className="prd-card-buyrow">
+          <div className="prd-shim-bar" style={{ width: 90, height: 18 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductRowShimmer() {
+  return (
+    <div className="prd-row prd-card-shimmer">
+      <div className="prd-row-thumb prd-shim-thumb" />
+      <div className="prd-row-info">
+        <div className="prd-shim-bar" style={{ width: '60%', marginBottom: 6 }} />
+        <div className="prd-shim-bar" style={{ width: '40%', height: 10 }} />
+      </div>
+      <div className="prd-shim-bar" style={{ width: 80, height: 18 }} />
+      <div className="prd-shim-bar" style={{ width: 120, height: 18 }} />
+      <div className="prd-shim-row">
+        <div className="prd-shim-pill" />
+        <div className="prd-shim-pill" />
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
  * Scoped CSS
  * ════════════════════════════════════════════════════════════════════════ */
 const SCOPED_CSS = `
@@ -882,12 +932,30 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
 }
 .prd-status-tab.on .prd-status-count { background: rgba(255,255,255,.25); color: #fff; }
-.prd-loading-pill {
-  display: inline-flex; align-items: center;
-  margin-left: 8px; padding: 0 12px; height: 32px;
-  background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 9px;
-  color: #7c3aed; font-size: 11.5px; font-weight: 700;
+/* Shimmer placeholders — light theme. The animated gradient is shared with
+   the rest of the app via the global .shimmer class in app.css, but the
+   product page renders enough cards that a local rule keeps the bundle
+   self-contained. */
+@keyframes prd-shim {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
 }
+.prd-shim-thumb,
+.prd-shim-bar,
+.prd-shim-pill {
+  background: linear-gradient(90deg, #f5f3ff 0%, #ede9fe 50%, #f5f3ff 100%);
+  background-size: 800px 100%;
+  animation: prd-shim 1.2s linear infinite;
+  border-radius: 8px;
+}
+.prd-shim-thumb { aspect-ratio: 4 / 3; width: 100%; height: 100%; border-radius: 0; }
+.prd-shim-bar  { height: 14px; }
+.prd-shim-pill { width: 56px; height: 18px; border-radius: 99px; }
+.prd-shim-row  { display: flex; gap: 8px; align-items: center; }
+
+.prd-card-shimmer { cursor: default; pointer-events: none; }
+.prd-card-shimmer:hover { transform: none; border-color: #e8e4f9; box-shadow: none; }
+.prd-card-shimmer .prd-card-body { gap: 10px; }
 
 /* Filters */
 .prd-filters {
@@ -1380,7 +1448,13 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .prd-status-tab { color: #a89fc7; }
 [data-bs-theme="dark"] .prd-status-tab:hover { background: #221852; color: #c4b5fd; }
 [data-bs-theme="dark"] .prd-status-count { background: #2a1d5c; color: #c4b5fd; }
-[data-bs-theme="dark"] .prd-loading-pill { background: #1a1430; border-color: #3b2a6b; color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-shim-thumb,
+[data-bs-theme="dark"] .prd-shim-bar,
+[data-bs-theme="dark"] .prd-shim-pill {
+  background: linear-gradient(90deg, #1a1430 0%, #221852 50%, #1a1430 100%);
+  background-size: 800px 100%;
+}
+[data-bs-theme="dark"] .prd-card-shimmer:hover { border-color: #3b2a6b; }
 
 /* Top filters bar */
 [data-bs-theme="dark"] .prd-filters {
