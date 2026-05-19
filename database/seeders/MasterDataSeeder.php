@@ -57,6 +57,19 @@ class MasterDataSeeder extends Seeder
             unset($order[$acIdx]);
             array_splice($order, $aIdx, 0, ['asset_categories']);
         }
+        // Same pattern for hsn_codes -> gst_percentage. hsn_codes.gst_rate_id
+        // is now a ref into the gst_percentage master, so gst_percentage must
+        // exist first or refIdByField('gst_percentage', 'percentage', N)
+        // returns null and the seeded hsn row ends up with no GST rate.
+        $hsnIdx = array_search('hsn_codes', $order, true);
+        $gpIdx  = array_search('gst_percentage', $order, true);
+        if ($hsnIdx !== false && $gpIdx !== false && $gpIdx > $hsnIdx) {
+            $order = array_values($order);
+            $hsnIdx = array_search('hsn_codes', $order, true);
+            $gpIdx  = array_search('gst_percentage', $order, true);
+            unset($order[$gpIdx]);
+            array_splice($order, $hsnIdx, 0, ['gst_percentage']);
+        }
 
         // countries + states are owned by GeographySeeder (full ISO dataset).
         // Skip them here so we don't wipe + re-seed with the older small sample.
@@ -80,7 +93,15 @@ class MasterDataSeeder extends Seeder
             // Pick the natural-key column to identify rows for idempotent
             // upsert. Most masters use `name`; a few use `code`/`title`/etc.
             // We probe in priority order and fall back to `name`.
-            $keyColumn = $this->resolveNaturalKey($table, $rows[0]);
+            // Per-slug natural-key overrides for masters whose unique column
+            // isn't 'name'/'title'/'code'. Without this gst_percentage would
+            // fall through to array_key_first() and key on whatever the row's
+            // first column happens to be (status), causing every re-seed to
+            // collide and update the same single row.
+            $perSlugKey = [
+                'gst_percentage' => 'percentage',
+            ];
+            $keyColumn = $perSlugKey[$slug] ?? $this->resolveNaturalKey($table, $rows[0]);
 
             $now = now();
             $inserted = 0;
@@ -357,31 +378,39 @@ class MasterDataSeeder extends Seeder
                 ];
 
             case 'hsn_codes':
+                // gst_rate_id is a ref into the gst_percentage master. Look up
+                // the percentage row by its numeric value so re-seed stays
+                // ID-stable even if percentage IDs differ across environments.
+                // (gst_percentage is reordered to seed BEFORE hsn_codes — see
+                // the `$hsnIdx` block in run() above.)
+                $gst5 = $this->refIdByField($MODELS, 'gst_percentage', 'percentage', 5);
+                $gst0 = $this->refIdByField($MODELS, 'gst_percentage', 'percentage', 0);
                 return [
-                    ['hsn_code' => '08021200', 'description' => 'Almonds — Shelled',                        'gst_rate' => '5%',  'status' => 'Active'],
-                    ['hsn_code' => '08062000', 'description' => 'Dried Grapes (Raisins)',                   'gst_rate' => '5%',  'status' => 'Active'],
-                    ['hsn_code' => '12074000', 'description' => 'Sesame Seeds',                             'gst_rate' => '5%',  'status' => 'Active'],
-                    ['hsn_code' => '09042190', 'description' => 'Dried Chilli — Neither Crushed Nor Ground','gst_rate' => '5%',  'status' => 'Active'],
-                    ['hsn_code' => '10063090', 'description' => 'Semi-Milled / Wholly Milled Rice — Other', 'gst_rate' => '0%',  'status' => 'Active'],
-                    ['hsn_code' => '09011190', 'description' => 'Coffee — Not Roasted / Not Decaffeinated', 'gst_rate' => '5%',  'status' => 'Active'],
-                    ['hsn_code' => '09024010', 'description' => 'Black Tea (Fermented)',                    'gst_rate' => '5%',  'status' => 'Active'],
-                    ['hsn_code' => '07131000', 'description' => 'Peas — Dried, Shelled',                    'gst_rate' => '0%',  'status' => 'Active'],
-                    ['hsn_code' => '09081110', 'description' => 'Cardamom — Small',                          'gst_rate' => '5%',  'status' => 'Active'],
-                    ['hsn_code' => '08013100', 'description' => 'Cashew Nuts — In Shell',                   'gst_rate' => '5%',  'status' => 'Active'],
+                    ['hsn_code' => '08021200', 'description' => 'Almonds — Shelled',                        'gst_rate_id' => $gst5, 'status' => 'Active'],
+                    ['hsn_code' => '08062000', 'description' => 'Dried Grapes (Raisins)',                   'gst_rate_id' => $gst5, 'status' => 'Active'],
+                    ['hsn_code' => '12074000', 'description' => 'Sesame Seeds',                             'gst_rate_id' => $gst5, 'status' => 'Active'],
+                    ['hsn_code' => '09042190', 'description' => 'Dried Chilli — Neither Crushed Nor Ground','gst_rate_id' => $gst5, 'status' => 'Active'],
+                    ['hsn_code' => '10063090', 'description' => 'Semi-Milled / Wholly Milled Rice — Other', 'gst_rate_id' => $gst0, 'status' => 'Active'],
+                    ['hsn_code' => '09011190', 'description' => 'Coffee — Not Roasted / Not Decaffeinated', 'gst_rate_id' => $gst5, 'status' => 'Active'],
+                    ['hsn_code' => '09024010', 'description' => 'Black Tea (Fermented)',                    'gst_rate_id' => $gst5, 'status' => 'Active'],
+                    ['hsn_code' => '07131000', 'description' => 'Peas — Dried, Shelled',                    'gst_rate_id' => $gst0, 'status' => 'Active'],
+                    ['hsn_code' => '09081110', 'description' => 'Cardamom — Small',                          'gst_rate_id' => $gst5, 'status' => 'Active'],
+                    ['hsn_code' => '08013100', 'description' => 'Cashew Nuts — In Shell',                   'gst_rate_id' => $gst5, 'status' => 'Active'],
                 ];
 
             case 'gst_percentage':
+                // `label` was dropped — the master now stores percentage + status only.
                 return [
-                    ['percentage' => 0,    'label' => 'GST 0% — Exempt',     'status' => 'Active'],
-                    ['percentage' => 0.1,  'label' => 'GST 0.1% — Merchant', 'status' => 'Active'],
-                    ['percentage' => 0.25, 'label' => 'GST 0.25% — Rough Diamonds', 'status' => 'Active'],
-                    ['percentage' => 3,    'label' => 'GST 3% — Gold',       'status' => 'Active'],
-                    ['percentage' => 5,    'label' => 'GST 5%',              'status' => 'Active'],
-                    ['percentage' => 6,    'label' => 'GST 6%',              'status' => 'Active'],
-                    ['percentage' => 12,   'label' => 'GST 12%',             'status' => 'Active'],
-                    ['percentage' => 18,   'label' => 'GST 18%',             'status' => 'Active'],
-                    ['percentage' => 28,   'label' => 'GST 28%',             'status' => 'Active'],
-                    ['percentage' => 40,   'label' => 'GST 40% — Cess', 'status' => 'Active'],
+                    ['percentage' => 0,    'status' => 'Active'],
+                    ['percentage' => 0.1,  'status' => 'Active'],
+                    ['percentage' => 0.25, 'status' => 'Active'],
+                    ['percentage' => 3,    'status' => 'Active'],
+                    ['percentage' => 5,    'status' => 'Active'],
+                    ['percentage' => 6,    'status' => 'Active'],
+                    ['percentage' => 12,   'status' => 'Active'],
+                    ['percentage' => 18,   'status' => 'Active'],
+                    ['percentage' => 28,   'status' => 'Active'],
+                    ['percentage' => 40,   'status' => 'Active'],
                 ];
 
             case 'currencies':
@@ -553,17 +582,20 @@ class MasterDataSeeder extends Seeder
                 ];
 
             case 'haz_class':
+                // haz_code + packing_group columns were dropped — master is
+                // simplified to just name + status (see migration
+                // 2026_05_19_000010_simplify_master_haz_class).
                 return [
-                    ['name' => 'Explosives',            'haz_code' => 'UN0001', 'packing_group' => 'I (High Danger)',   'status' => 'Active'],
-                    ['name' => 'Flammable Gas',         'haz_code' => 'UN1001', 'packing_group' => 'II (Medium Danger)', 'status' => 'Active'],
-                    ['name' => 'Flammable Liquid',      'haz_code' => 'UN1263', 'packing_group' => 'II (Medium Danger)', 'status' => 'Active'],
-                    ['name' => 'Flammable Solid',       'haz_code' => 'UN1325', 'packing_group' => 'III (Low Danger)',  'status' => 'Active'],
-                    ['name' => 'Oxidizer',              'haz_code' => 'UN1942', 'packing_group' => 'II (Medium Danger)', 'status' => 'Active'],
-                    ['name' => 'Toxic Substance',       'haz_code' => 'UN2810', 'packing_group' => 'III (Low Danger)',  'status' => 'Active'],
-                    ['name' => 'Infectious',            'haz_code' => 'UN2814', 'packing_group' => 'II (Medium Danger)', 'status' => 'Active'],
-                    ['name' => 'Radioactive',           'haz_code' => 'UN2912', 'packing_group' => 'I (High Danger)',   'status' => 'Active'],
-                    ['name' => 'Corrosive',             'haz_code' => 'UN1789', 'packing_group' => 'II (Medium Danger)', 'status' => 'Active'],
-                    ['name' => 'Non-Hazardous',         'haz_code' => 'UN0000', 'packing_group' => 'N/A',                'status' => 'Active'],
+                    ['name' => 'Explosives',       'status' => 'Active'],
+                    ['name' => 'Flammable Gas',    'status' => 'Active'],
+                    ['name' => 'Flammable Liquid', 'status' => 'Active'],
+                    ['name' => 'Flammable Solid',  'status' => 'Active'],
+                    ['name' => 'Oxidizer',         'status' => 'Active'],
+                    ['name' => 'Toxic Substance',  'status' => 'Active'],
+                    ['name' => 'Infectious',       'status' => 'Active'],
+                    ['name' => 'Radioactive',      'status' => 'Active'],
+                    ['name' => 'Corrosive',        'status' => 'Active'],
+                    ['name' => 'Non-Hazardous',    'status' => 'Active'],
                 ];
 
             case 'compliance_behaviours':

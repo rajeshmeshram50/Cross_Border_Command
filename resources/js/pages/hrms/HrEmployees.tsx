@@ -2316,9 +2316,10 @@ export default function HrEmployees() {
            on the row. Inline style props from the JSX are beaten with
            !important because the JSX sets background and color per row. */
         [data-bs-theme="dark"] .hr-emp-id-pill {
-          background: rgba(124, 92, 252, 0.22) !important;
-          color: #c4b5fd !important;
-          box-shadow: inset 0 0 0 1px rgba(124, 92, 252, 0.35);
+          background: linear-gradient(135deg, rgba(124,92,252,0.22) 0%, rgba(124,92,252,0.42) 100%) !important;
+          color: #ffffff !important;
+          border: 1px solid rgba(124,92,252,0.45) !important;
+          box-shadow: none;
         }
         /* Primary role + first ancillary chip — share a unified glassy
            violet look so the table chips all read as one family with
@@ -2782,8 +2783,9 @@ export default function HrEmployees() {
                                   fontSize: 12,
                                   padding: '4px 10px',
                                   borderRadius: 999,
-                                  background: '#ece6ff',
-                                  color: '#5a3fd1',
+                                  background: 'linear-gradient(135deg, rgba(124,92,252,0.28) 0%, rgba(124,92,252,0.50) 100%)',
+                                  color: '#2e1a8a',
+                                  border: '1px solid rgba(124,92,252,0.55)',
                                   letterSpacing: '0.02em',
                                 }}
                               >

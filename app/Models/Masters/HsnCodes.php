@@ -17,7 +17,7 @@ class HsnCodes extends Model
         'branch_id',
         'hsn_code',
         'description',
-        'gst_rate',
+        'gst_rate_id',
         'status',
         'created_by',
     ];

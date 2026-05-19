@@ -2385,4 +2385,217 @@ const SCOPED_CSS = `
 }
 .td-cal-popover-status-inprog { background:#dbeafe; color:#1d4ed8; }
 .td-cal-popover-status-done   { background:#dcfce7; color:#166534; }
+
+/* ════════════════════════════════════════════════════════════════════
+ * DARK MODE — bound to Velzon's data-bs-theme="dark" attribute on <html>.
+ * Mirrors the override pattern already used by Toaster / ConfirmContext /
+ * recruitment.css so all themed surfaces stay consistent in dark mode.
+ * Keeps the teal accent for actions (it works against dark surfaces) and
+ * just inverts page chrome (page bg, cards, table rows, inputs, modals).
+ * ════════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] .td-root {
+  background: linear-gradient(160deg, #0b1220 0%, #0f1e2b 50%, #0a1620 100%);
+  color: #e2e8f0;
+}
+[data-bs-theme="dark"] .td-root .td-header {
+  background: linear-gradient(110deg, #0e2730 0%, #0d3b48 50%, #0f4c5c 100%);
+  border-color: rgba(94,234,212,.28);
+  box-shadow: 0 2px 14px rgba(20,184,166,.25);
+}
+[data-bs-theme="dark"] .td-root .td-header-sub { color: #5eead4; opacity: .9; }
+[data-bs-theme="dark"] .td-root .td-tabs {
+  background: rgba(15,23,42,.55);
+  border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-root .td-tab { color: #5eead4; }
+[data-bs-theme="dark"] .td-root .td-tab:hover { background: rgba(20,184,166,.15); color: #99f6e4; }
+
+/* Filter pills */
+[data-bs-theme="dark"] .td-root .td-sf {
+  background: rgba(15,23,42,.55); color: #5eead4;
+  border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-root .td-sf:hover {
+  background: rgba(20,184,166,.18); color: #99f6e4; border-color: rgba(94,234,212,.45);
+}
+[data-bs-theme="dark"] .td-root .td-sf-count { background: rgba(20,184,166,.22); color: #5eead4; }
+[data-bs-theme="dark"] .td-root .td-meeting-pill {
+  background: rgba(15,23,42,.55); color: #5eead4;
+  border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-root .td-meeting-pill:hover { background: rgba(20,184,166,.18); }
+[data-bs-theme="dark"] .td-root .td-pill-count { background: rgba(15,23,42,.7); color: #5eead4; }
+
+/* View toggle + meeting status row */
+[data-bs-theme="dark"] .td-root .td-view-toggle {
+  background: rgba(15,23,42,.55); border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-root .td-view-btn { color: #5eead4; }
+[data-bs-theme="dark"] .td-root .td-reminder-view-row .td-view-toggle {
+  background: rgba(15,23,42,.55);
+}
+[data-bs-theme="dark"] .td-root .td-meeting-status-row {
+  background: linear-gradient(90deg, rgba(15,23,42,.6), rgba(20,30,45,.55));
+  border-color: rgba(94,234,212,.20);
+}
+[data-bs-theme="dark"] .td-root .td-meeting-status-label { color: #5eead4; }
+
+/* Search input + Add button */
+[data-bs-theme="dark"] .td-root .td-search-wrap {
+  background: #11182a; border-color: rgba(94,234,212,.30);
+  box-shadow: 0 1px 4px rgba(0,0,0,.25);
+}
+[data-bs-theme="dark"] .td-root .td-search-wrap input { color: #e2e8f0; }
+[data-bs-theme="dark"] .td-root .td-search-wrap input::placeholder { color: #475569; }
+[data-bs-theme="dark"] .td-root .td-search-wrap svg { stroke: #5eead4; }
+
+/* Table card */
+[data-bs-theme="dark"] .td-root .td-table-card {
+  background: #11182a; border-color: rgba(94,234,212,.25);
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+}
+[data-bs-theme="dark"] .td-root .td-table tbody tr { border-bottom-color: rgba(255,255,255,.06); }
+[data-bs-theme="dark"] .td-root .td-table tbody tr:hover { background: rgba(20,184,166,.08); }
+[data-bs-theme="dark"] .td-root .td-table tbody td { color: #e2e8f0; }
+[data-bs-theme="dark"] .td-root .td-today-row td { background: linear-gradient(90deg, rgba(20,184,166,.10), rgba(20,184,166,.05)); }
+[data-bs-theme="dark"] .td-root .td-empty { color: #64748b; }
+[data-bs-theme="dark"] .td-root .td-sr-pill { background: rgba(20,184,166,.18); color: #5eead4; }
+[data-bs-theme="dark"] .td-root .td-opp-id { color: #5eead4; }
+
+/* Pagination footer */
+[data-bs-theme="dark"] .td-root .td-pagination {
+  background: rgba(15,23,42,.55); border-top-color: rgba(255,255,255,.06);
+}
+[data-bs-theme="dark"] .td-root .td-pag-info {
+  background: rgba(20,184,166,.18); color: #5eead4; border-color: rgba(94,234,212,.32);
+}
+[data-bs-theme="dark"] .td-root .td-pag-info strong { color: #99f6e4; }
+[data-bs-theme="dark"] .td-root .td-pag-rows,
+[data-bs-theme="dark"] .td-root .td-pag-range {
+  background: rgba(15,23,42,.7); color: #5eead4; border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-root .td-pag-rows select { color: #99f6e4; }
+[data-bs-theme="dark"] .td-root .td-pg-btn-icon {
+  background: rgba(15,23,42,.7); color: #5eead4; border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-root .td-pg-btn-icon:hover:not(:disabled) { background: rgba(20,184,166,.20); }
+
+/* Action buttons — keep teal accent but tint backgrounds for dark */
+[data-bs-theme="dark"] .td-root .td-ab-edit { background: rgba(20,184,166,.18); color: #5eead4; }
+[data-bs-theme="dark"] .td-root .td-ab-edit:hover { background: #14b8a6; color: #0f172a; }
+[data-bs-theme="dark"] .td-root .td-ab-done { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .td-root .td-ab-done:hover { background: #10b981; color: #0f172a; }
+[data-bs-theme="dark"] .td-root .td-ab-post { background: rgba(245,158,11,.18); color: #fcd34d; }
+[data-bs-theme="dark"] .td-root .td-ab-post:hover { background: #f59e0b; color: #0f172a; }
+[data-bs-theme="dark"] .td-root .td-ab-del  { background: rgba(244,63,94,.18); color: #fda4af; }
+[data-bs-theme="dark"] .td-root .td-ab-del:hover  { background: #f43f5e; color: #fff; }
+[data-bs-theme="dark"] .td-root .td-ab-join { background: rgba(34,197,94,.18); color: #86efac; }
+[data-bs-theme="dark"] .td-root .td-ab-join:hover { background: #16a34a; color: #fff; }
+[data-bs-theme="dark"] .td-root .td-ab-loc { background: rgba(245,158,11,.18); color: #fcd34d; }
+[data-bs-theme="dark"] .td-root .td-ab-loc:hover { background: #d97706; color: #fff; }
+
+/* Modal */
+[data-bs-theme="dark"] .td-modal { background: #0e1726; box-shadow: 0 24px 60px rgba(0,0,0,.6); }
+[data-bs-theme="dark"] .td-modal-body { background: #11182a; }
+[data-bs-theme="dark"] .td-label { color: #94a3b8; }
+[data-bs-theme="dark"] .td-inp,
+[data-bs-theme="dark"] .td-cs-trigger {
+  background: #0e1726; color: #e2e8f0; border-color: rgba(94,234,212,.28);
+}
+[data-bs-theme="dark"] .td-inp:focus,
+[data-bs-theme="dark"] .td-cs.is-open .td-cs-trigger {
+  border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20,184,166,.20);
+}
+[data-bs-theme="dark"] .td-cs-trigger:hover { background: rgba(20,184,166,.10); }
+[data-bs-theme="dark"] .td-cs-menu {
+  background: #0e1726; border-color: rgba(94,234,212,.35);
+  box-shadow: 0 12px 32px rgba(0,0,0,.55);
+}
+[data-bs-theme="dark"] .td-cs-opt { color: #e2e8f0; }
+[data-bs-theme="dark"] .td-cs-opt:hover { background: rgba(20,184,166,.12); color: #99f6e4; }
+[data-bs-theme="dark"] .td-cs-value.is-placeholder { color: #475569; }
+[data-bs-theme="dark"] .td-mtg-toggle { border-color: rgba(94,234,212,.30); }
+[data-bs-theme="dark"] .td-mtg-toggle-btn {
+  background: rgba(15,23,42,.55); color: #5eead4;
+  border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-file-drop { background: rgba(15,23,42,.55); border-color: rgba(94,234,212,.30); }
+[data-bs-theme="dark"] .td-file-drop:hover { background: rgba(20,184,166,.12); border-color: #14b8a6; }
+[data-bs-theme="dark"] .td-file-label { color: #94a3b8; }
+[data-bs-theme="dark"] .td-file-existing {
+  background: rgba(20,184,166,.14); border-color: rgba(94,234,212,.40);
+}
+[data-bs-theme="dark"] .td-file-existing-link { color: #5eead4; }
+[data-bs-theme="dark"] .td-file-existing-link:hover { color: #99f6e4; }
+[data-bs-theme="dark"] .td-file-replace { background: #0e1726; color: #5eead4; border-color: #14b8a6; }
+[data-bs-theme="dark"] .td-modal-footer { background: #0e1726; border-top-color: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .td-footer-hint { color: #64748b; }
+[data-bs-theme="dark"] .td-btn-cancel {
+  background: rgba(15,23,42,.6); color: #cbd5e1; border-color: rgba(255,255,255,.10);
+}
+[data-bs-theme="dark"] .td-btn-cancel:hover { background: rgba(255,255,255,.06); }
+
+/* Calendar — dark cells + popover */
+[data-bs-theme="dark"] .td-cal-card { background: #11182a; border-color: rgba(94,234,212,.25); }
+[data-bs-theme="dark"] .td-cal-grid { background: rgba(15,23,42,.55); }
+[data-bs-theme="dark"] .td-cal-cell { background: #0e1726; border-color: rgba(255,255,255,.06); }
+[data-bs-theme="dark"] .td-cal-cell-out { background: rgba(15,23,42,.4); }
+[data-bs-theme="dark"] .td-cal-cell-out-num { color: #475569; }
+[data-bs-theme="dark"] .td-cal-num { color: #e2e8f0; }
+[data-bs-theme="dark"] .td-cal-popover { background: #0e1726; border-color: rgba(94,234,212,.35); }
+
+/* ════════════════════════════════════════════════════════════════════
+ * RESPONSIVE — three breakpoints: mobile (≤640), tablet (641-1024),
+ * big-screen cap (>1440). Above 900px the layout is already locked to a
+ * single row by the toolbar rules above; here we just shrink padding,
+ * collapse the toolbar to two stacked rows on mobile, and allow tables to
+ * scroll horizontally so the page never overflows the viewport.
+ * ════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .td-root { padding: 12px 12px 18px; font-size: 13px; }
+  .td-root .td-table { font-size: 11px; }
+  .td-root .td-table thead th { padding: 9px 8px; font-size: 9px; }
+  .td-root .td-table tbody td { padding: 7px 8px; }
+}
+@media (max-width: 720px) {
+  .td-root { padding: 10px 10px 16px; }
+  .td-root .td-header {
+    flex-direction: column; align-items: flex-start; gap: 10px;
+    padding: 12px 14px; min-height: 0;
+  }
+  .td-root .td-tabs { margin-left: 0; width: 100%; justify-content: stretch; }
+  .td-root .td-tab { flex: 1; padding: 8px 14px; }
+  .td-root .td-toolbar-row { flex-direction: column; align-items: stretch; }
+  .td-root .td-filters {
+    flex-wrap: wrap; gap: 6px;
+    overflow-x: auto;
+  }
+  .td-root .td-toolbar-right { width: 100%; gap: 6px; }
+  .td-root .td-search-wrap { max-width: none; flex: 1; }
+  .td-root .td-add-btn { padding: 11px 16px; font-size: 12px; }
+  .td-root .td-table-wrap { overflow-x: auto; }
+  .td-root .td-table { min-width: 720px; }
+  .td-root .td-meeting-status-row { overflow-x: auto; }
+  .td-root .td-pagination { flex-wrap: wrap; gap: 10px; padding: 10px 12px; }
+}
+@media (max-width: 480px) {
+  .td-root .td-header-title { font-size: 14px; }
+  .td-root .td-header-sub { font-size: 10px; }
+  .td-root .td-add-btn { padding: 10px 12px; }
+  .td-root .td-add-btn span,
+  .td-root .td-add-btn { font-size: 11.5px; }
+  .td-modal { width: calc(100vw - 24px); }
+  .td-form-row, .td-form-row-3 { grid-template-columns: 1fr !important; gap: 8px; }
+  .td-modal-header { padding: 12px 14px; }
+  .td-modal-body   { padding: 14px 14px 10px; }
+  .td-modal-footer { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
+  .td-footer-actions { width: 100%; justify-content: flex-end; }
+}
+
+/* Big-screen cap — prevents the table card from stretching too wide on
+   ultra-wide monitors which makes rows hard to read. The page container
+   becomes centred with a max-width. */
+@media (min-width: 1600px) {
+  .td-root { max-width: 1560px; margin-left: auto; margin-right: auto; padding-left: 24px; padding-right: 24px; }
+}
 `;

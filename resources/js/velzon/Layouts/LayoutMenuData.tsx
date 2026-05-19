@@ -289,6 +289,12 @@ const Navdata = () => {
           id: m.id,
           label: m.label,
           icon: resolveIcon(m.icon),
+          // pathPrefix mirrors slugToPath but is rendered as `data-path-prefix`
+          // on the trigger so the active-route matcher can highlight the
+          // top-level entry when the URL is under /sales/*. We can't use
+          // `link` here because the trigger is dropdown-only (clicking must
+          // toggle, not navigate) — see the HR comment below.
+          pathPrefix: slugToPath(m.id),
           stateVariables: isOpen(m.id),
           click: (e: any) => { e.preventDefault(); toggle(m.id); },
           subItems,
@@ -313,6 +319,11 @@ const Navdata = () => {
           id: m.id,
           label: m.label,
           icon: resolveIcon(m.icon),
+          // pathPrefix is surfaced as a `data-path-prefix` attribute on the
+          // trigger anchor. We can't put `/hr` in `link` because that would
+          // re-introduce the flash-open-then-collapse bug documented above —
+          // the click handler must purely toggle the dropdown.
+          pathPrefix: slugToPath(m.id),
           stateVariables: isOpen(m.id),
           click: (e: any) => { e.preventDefault(); toggle(m.id); },
           subItems,

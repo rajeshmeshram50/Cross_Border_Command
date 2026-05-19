@@ -135,23 +135,30 @@
                 font-size: $vertical-menu-sub-item-font-size;
                 font-family: $vertical-menu-sub-item-font-family;
 
+                // Curved L-shaped tree-branch connector replacing the old
+                // dash marker. Drawn purely with border-left + border-bottom
+                // + bottom-left radius so `currentColor` naturally inherits
+                // and hover/active states swap automatically.
                 &:before {
                     content: '';
-                    width: 6px;
-                    height: 1.5px;
-                    background-color: var(--#{$prefix}vertical-menu-sub-item-color);
                     position: absolute;
-                    left: 2px;
-                    top: 16.5px;
+                    left: 4px;
+                    top: 0;
+                    width: 10px;
+                    height: 17px;
+                    border-left: 1.25px solid currentColor;
+                    border-bottom: 1.25px solid currentColor;
+                    border-bottom-left-radius: 8px;
+                    background: transparent;
                     transition: all .4s ease-in-out;
-                    opacity: 0.5;
+                    opacity: 0.45;
                 }
 
                 &:hover {
                     color: var(--#{$prefix}vertical-menu-sub-item-hover-color);
 
                     &:before {
-                        background-color: var(--#{$prefix}vertical-menu-sub-item-hover-color) !important;
+                        border-color: var(--#{$prefix}vertical-menu-sub-item-hover-color) !important;
                         opacity: 1;
                     }
                 }
@@ -160,7 +167,8 @@
                     color: var(--#{$prefix}vertical-menu-item-active-color);
 
                     &:before {
-                        background-color: var(--#{$prefix}topnav-item-active-color);
+                        border-color: var(--#{$prefix}topnav-item-active-color);
+                        opacity: 1;
                     }
                 }
             }
@@ -168,18 +176,10 @@
             .nav-sm {
                 padding-left: 15px;
 
-                .nav-link {
-
-                    &:before {
-                        height: 5px;
-                        width: 5px;
-                        left: 5px;
-                        border-radius: 50%;
-                        background-color: transparent;
-                        border: 1px solid;
-                        top: 16px;
-                    }
-                }
+                // Nested level inherits the same curved elbow shape from the
+                // parent .nav-link::before above; no need to redefine it as a
+                // circle. The deeper container indent provides the visual
+                // distinction.
             }
         }
     }

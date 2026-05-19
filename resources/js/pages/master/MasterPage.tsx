@@ -421,6 +421,65 @@ function MasterPageInner({
     fetchRefs();
   };
 
+  // Wire up `autoDeriveFrom` fields once the form is in the DOM. The fields
+  // are uncontrolled (defaultValue + onInput), so we hook the source input's
+  // 'input' event and write the computed default into the target input until
+  // the user manually edits it. Re-runs on every modal open and on slug
+  // changes so the listener targets the right form.
+  useEffect(() => {
+    if (!modalOpen) return;
+    const deriveFields = cfg.fields.filter((f: any) => f.autoDeriveFrom);
+    if (deriveFields.length === 0) return;
+
+    const timer = window.setTimeout(() => {
+      const form = document.querySelector('.master-modal form, .master-form-modal form, form.master-form') as HTMLFormElement | null
+                || document.querySelector('.modal.show form') as HTMLFormElement | null;
+      if (!form) return;
+
+      const cleanups: Array<() => void> = [];
+      deriveFields.forEach((field: any) => {
+        const source = form.querySelector(`[name="${field.autoDeriveFrom}"]`) as HTMLInputElement | null;
+        const target = form.querySelector(`[name="${field.n}"]`) as HTMLInputElement | null;
+        if (!source || !target) return;
+
+        // Once the user manually types in the target we stop auto-filling.
+        // Clearing the target back to empty re-enables auto-fill, so users
+        // can re-trigger derivation by emptying the short code.
+        let userEdited = !!target.value && editing != null;
+        const onTargetInput = () => {
+          userEdited = target.value !== '';
+        };
+        target.addEventListener('input', onTargetInput);
+
+        const onSourceInput = () => {
+          if (userEdited) return;
+          const next = deriveValue(cfg.slug, field.n, source.value);
+          // Set via the native setter so React/Reactstrap don't strip the
+          // change; then dispatch an 'input' event so any listeners fire.
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          setter ? setter.call(target, next) : (target.value = next);
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        source.addEventListener('input', onSourceInput);
+
+        cleanups.push(() => {
+          source.removeEventListener('input', onSourceInput);
+          target.removeEventListener('input', onTargetInput);
+        });
+      });
+
+      // Stash for cleanup phase below.
+      (window as any).__autoDeriveCleanups = cleanups;
+    }, 60);
+
+    return () => {
+      window.clearTimeout(timer);
+      const cleanups: Array<() => void> = (window as any).__autoDeriveCleanups || [];
+      cleanups.forEach(fn => fn());
+      (window as any).__autoDeriveCleanups = [];
+    };
+  }, [modalOpen, cfg.slug, editing?.id]);
+
   // Clients-page style compact action button
   const ActionBtn = ({
     title, icon, color, onClick, disabled,
@@ -1479,7 +1538,7 @@ function MasterPageInner({
       {cfg.slug !== 'departments' && (
       <Row>
         <Col xs={12}>
-          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities') ? (
+          {(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities' || cfg.slug === 'haz_class' || cfg.slug === 'uom' || cfg.slug === 'hsn_codes' || cfg.slug === 'gst_percentage' || cfg.slug === 'packaging_material' || cfg.slug === 'conditions' || cfg.slug === 'segments') ? (
             <div
               className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"
               style={{
@@ -1505,6 +1564,13 @@ function MasterPageInner({
                       : cfg.slug === 'kpis' ? 'KPI Master'
                       : cfg.slug === 'assets' ? 'Asset Master'
                       : cfg.slug === 'legal_entities' ? 'Legal Entities'
+                      : cfg.slug === 'haz_class' ? 'Hazard Classifications'
+                      : cfg.slug === 'uom' ? 'Units of Measurement'
+                      : cfg.slug === 'hsn_codes' ? 'HSN Codes'
+                      : cfg.slug === 'gst_percentage' ? 'GST Percentages'
+                      : cfg.slug === 'packaging_material' ? 'Packaging Materials'
+                      : cfg.slug === 'conditions' ? 'Product Conditions'
+                      : cfg.slug === 'segments' ? 'Segments'
                       : cfg.title}
                   </h4>
                   <p className="mb-0 text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
@@ -1516,6 +1582,20 @@ function MasterPageInner({
                       ? 'Track company equipment, vendors, warranties and depreciation across the organisation'
                       : cfg.slug === 'legal_entities'
                       ? 'Manage all legal entities — entity details, logo, bank accounts & address'
+                      : cfg.slug === 'haz_class'
+                      ? 'Manage GHS/UN hazard classes used to tag products requiring special handling'
+                      : cfg.slug === 'uom'
+                      ? 'Manage units (Kg, Box, Pcs) used on product & shipment records'
+                      : cfg.slug === 'hsn_codes'
+                      ? 'Manage 8-digit HSN commodity codes used for GST & customs filings'
+                      : cfg.slug === 'gst_percentage'
+                      ? 'Manage GST slabs (0%, 5%, 12%, 18%, 28%) applied to products & invoices'
+                      : cfg.slug === 'packaging_material'
+                      ? 'Manage packaging materials (carton, drum, sack) used for product shipments'
+                      : cfg.slug === 'conditions'
+                      ? 'Manage storage & handling states (Organic, Fresh, Frozen) for products'
+                      : cfg.slug === 'segments'
+                      ? 'Manage business segments (Dry Fruits, Pharma, etc.) used to classify orders & products'
                       : 'Manage all job roles, hierarchy levels, and role structure for employees'}
                   </p>
                 </div>
@@ -1618,7 +1698,7 @@ function MasterPageInner({
 
       {/* "What you are doing here" — hidden on designations & roles since the
           rich title strip already carries the subtitle context. */}
-      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && (
+      {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && cfg.slug !== 'uom' && cfg.slug !== 'hsn_codes' && cfg.slug !== 'gst_percentage' && cfg.slug !== 'packaging_material' && cfg.slug !== 'conditions' && cfg.slug !== 'segments' && (
         <WhatYouDoHere
           cfg={cfg}
           onAdd={openAdd}
@@ -1768,8 +1848,9 @@ function MasterPageInner({
                     />
                   )}
                   {/* Add button — shown here for non-rich masters; designations,
-                      roles, kpis & departments host their Add button elsewhere. */}
-                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'legal_entities' && cfg.slug !== 'departments' && caps.add && (
+                      roles, kpis, assets, legal_entities, haz_class & departments
+                      host their Add button in the rich page header instead. */}
+                  {cfg.slug !== 'designations' && cfg.slug !== 'roles' && cfg.slug !== 'kpis' && cfg.slug !== 'assets' && cfg.slug !== 'legal_entities' && cfg.slug !== 'haz_class' && cfg.slug !== 'uom' && cfg.slug !== 'hsn_codes' && cfg.slug !== 'gst_percentage' && cfg.slug !== 'packaging_material' && cfg.slug !== 'conditions' && cfg.slug !== 'segments' && cfg.slug !== 'departments' && caps.add && (
                     <Button
                       color="secondary"
                       className="btn-label waves-effect waves-light rounded-pill"
@@ -2724,6 +2805,53 @@ const SECTION_PALETTES: { color: string; grad: string; tint: string; border: str
   { color: '#8b5cf6', grad: 'linear-gradient(135deg, #8b5cf6, #a78bfa)', tint: 'linear-gradient(135deg, rgba(139,92,246,0.08), rgba(167,139,250,0.03))', border: 'rgba(139,92,246,0.22)', shadow: 'rgba(139,92,246,0.35)' },
   { color: '#db2777', grad: 'linear-gradient(135deg, #ec4899, #f9a8d4)', tint: 'linear-gradient(135deg, rgba(236,72,153,0.08), rgba(249,168,212,0.03))', border: 'rgba(236,72,153,0.22)', shadow: 'rgba(236,72,153,0.35)' },
 ];
+
+// Auto-derive a target field's value from a source field's typed value.
+// Per-master/per-field algorithms: today only UOM `short_code` is wired
+// (Kilogram → KG, Metric Ton → MT). Falls back to the first 3 uppercase
+// letters of the source string so unknown inputs still produce a usable
+// suggestion the user can refine.
+const UOM_SHORT_CODE_DICT: Record<string, string> = {
+  'kilogram': 'KG', 'kilo': 'KG', 'kg': 'KG',
+  'gram': 'G', 'milligram': 'MG',
+  'ton': 'T', 'metric ton': 'MT', 'tonne': 'MT', 'tonnes': 'MT',
+  'pound': 'LB', 'pounds': 'LB', 'ounce': 'OZ', 'ounces': 'OZ',
+  'liter': 'LTR', 'litre': 'LTR', 'liters': 'LTR', 'litres': 'LTR',
+  'milliliter': 'ML', 'millilitre': 'ML',
+  'gallon': 'GAL', 'cubic meter': 'CBM', 'cubic metre': 'CBM',
+  'meter': 'M', 'metre': 'M',
+  'centimeter': 'CM', 'centimetre': 'CM',
+  'millimeter': 'MM', 'millimetre': 'MM',
+  'kilometer': 'KM', 'kilometre': 'KM',
+  'inch': 'IN', 'inches': 'IN', 'foot': 'FT', 'feet': 'FT', 'yard': 'YD', 'yards': 'YD',
+  'piece': 'PCS', 'pieces': 'PCS', 'pcs': 'PCS',
+  'box': 'BOX', 'boxes': 'BOX',
+  'carton': 'CTN', 'cartons': 'CTN',
+  'bag': 'BAG', 'bags': 'BAG',
+  'dozen': 'DOZ', 'dozens': 'DOZ',
+  'pack': 'PK', 'packs': 'PK', 'pallet': 'PLT', 'pallets': 'PLT',
+  'roll': 'ROL', 'rolls': 'ROL', 'sheet': 'SHT', 'sheets': 'SHT',
+  'unit': 'UNIT', 'units': 'UNIT',
+  'set': 'SET', 'sets': 'SET', 'pair': 'PR', 'pairs': 'PR',
+  'barrel': 'BBL', 'drum': 'DR', 'bottle': 'BTL',
+};
+function deriveValue(slug: string, fieldName: string, sourceValue: string): string {
+  const raw = (sourceValue || '').trim();
+  if (!raw) return '';
+  if (slug === 'uom' && fieldName === 'short_code') {
+    const key = raw.toLowerCase();
+    if (UOM_SHORT_CODE_DICT[key]) return UOM_SHORT_CODE_DICT[key];
+    // Multi-word fallback — first letter of each word, up to 4 chars.
+    const words = raw.split(/\s+/);
+    if (words.length > 1) {
+      return words.map(w => (w[0] || '').toUpperCase()).join('').slice(0, 4);
+    }
+    // Single word fallback — first 3 letters uppercase.
+    return raw.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  }
+  // Generic fallback for unknown master/field pairs.
+  return raw.toUpperCase().slice(0, 4);
+}
 
 /* ── "What you are doing here" — gradient step tiles ── */
 const STEP_PALETTES: { grad: string; tint: string; border: string; accent: string }[] = [
