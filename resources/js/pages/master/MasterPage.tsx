@@ -1046,17 +1046,21 @@ function MasterPageInner({
   const columns = useMemo(() => {
     const cols: any[] = [
       {
+        // Sr No reads cleanest centered — narrow numeric column.
         header: 'Sr No',
         accessorKey: '__index',
+        meta: { align: 'center' },
         cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
       },
     ];
     cfg.cols.forEach((colName, idx) => {
-      // Centered columns — ones whose cells render visually-centered content
-      // (the level rating tile, status pill, etc. read better with a centered
-      // header so the column reads as a single visual unit).
+      // Only the 'level' rating tile is visually centered as a square
+      // badge — everything else (status pill, code chip, plain text)
+      // reads more natural left-aligned so the column header sits
+      // directly above its content's left edge.
       const isCentered = colName === 'level';
       cols.push({
+        meta: isCentered ? { align: 'center' } : undefined,
         header: () => (
           <div className={isCentered ? 'text-center' : undefined}>
             {cfg.colL[idx] || colName}
@@ -1084,6 +1088,10 @@ function MasterPageInner({
     });
     ownershipCols.forEach(o => {
       cols.push({
+        // Left-aligned (default) — the "Super Admin" / "Client Admin"
+        // pill sits naturally at the start of the cell, directly under
+        // the header label. Centering wide columns made the small pill
+        // float in empty space.
         header: o.label,
         id: o.key,
         accessorFn: (row: any) =>
@@ -1100,6 +1108,7 @@ function MasterPageInner({
       cols.push({
         header: () => <div className="text-center">Employees</div>,
         id: '__employees',
+        meta: { align: 'center' },
         accessorFn: (row: any) => Number(row.employees_count ?? 0),
         cell: (info: any) => {
           const n = Number(info.row.original?.employees_count ?? 0);
@@ -1125,6 +1134,7 @@ function MasterPageInner({
       cols.push({
         header: () => <div className="text-center">Employees</div>,
         id: '__employees',
+        meta: { align: 'center' },
         accessorFn: (row: any) => Number(row.employees_count ?? mockCountFor(row)),
         cell: (info: any) => {
           const row = info.row.original;
@@ -1145,6 +1155,7 @@ function MasterPageInner({
     // Created Date column — every Eloquent master row carries a created_at
     // timestamp, so the column is added globally. Renders as "12-Jan-2026".
     cols.push({
+      // Left-aligned — date text reads cleanest at the cell's start edge.
       header: 'Created Date',
       id: '__created_at',
       accessorFn: (row: any) => row.created_at ?? '',
@@ -1167,6 +1178,7 @@ function MasterPageInner({
     cols.push({
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
+      meta: { align: 'center' },
       enableGlobalFilter: false,
       cell: (info: any) => {
         // Hide actions the current user is not allowed to perform on this master.
@@ -1199,8 +1211,18 @@ function MasterPageInner({
                        : row?.creator_user_type === 'client_user'   ? 'Client user'
                        : row?.creator_user_type === 'branch_user'   ? 'Branch user'
                        : 'a higher-privileged user';
-        const editTooltip   = blockedByRank ? `Cannot edit — created by ${whoLabel}`   : 'Edit';
-        const deleteTooltip = blockedByRank ? `Cannot delete — created by ${whoLabel}` : 'Delete';
+        // System-seeded rows ("Office" address type, "Laptop" / "Mobile"
+        // asset categories) come back from the API with is_system=true.
+        // The backend already enforces protection (403 on delete, name
+        // unset on update) — block the buttons up front so the user
+        // gets a clear tooltip instead of a failed request toast.
+        const isSystemRow = !!row?.is_system;
+        const editTooltip   = isSystemRow ? 'System-managed — name is locked, status still editable'
+                            : blockedByRank ? `Cannot edit — created by ${whoLabel}`
+                            : 'Edit';
+        const deleteTooltip = isSystemRow ? 'System-managed — cannot be deleted'
+                            : blockedByRank ? `Cannot delete — created by ${whoLabel}`
+                            : 'Delete';
         return (
           <div className="d-flex gap-1 justify-content-center">
             {caps.view   && <ActionBtn title="View"   icon="ri-eye-line"        color="primary" onClick={() => openEdit(info.row.original, true)} />}
@@ -1208,6 +1230,9 @@ function MasterPageInner({
               title={editTooltip}
               icon="ri-pencil-line"
               color="info"
+              // Edit stays enabled for system rows — the user can still
+              // flip status to Inactive — but the name field is locked
+              // in the form (see openEdit gating below).
               disabled={blockedByRank}
               onClick={() => openEdit(info.row.original)}
             />}
@@ -1215,7 +1240,7 @@ function MasterPageInner({
               title={deleteTooltip}
               icon="ri-delete-bin-line"
               color="danger"
-              disabled={blockedByRank}
+              disabled={blockedByRank || isSystemRow}
               onClick={() => handleDeleteClick(info.row.original)}
             />}
             {cfg.slug === 'legal_entities' && caps.edit && (
