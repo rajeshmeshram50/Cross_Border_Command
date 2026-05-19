@@ -30,6 +30,7 @@ export type Product = {
   hsn: string;
   uom: string;
   hazClass: 'HAZ' | 'NON HAZ';
+  hazClassName: string;                        // master haz_class.name when product is HAZ
   gstRate: number;
   vendorCount: number;
   stepCompleted: number;                       // 0..4 — wizard re-entry hint
@@ -58,6 +59,7 @@ function apiToCard(row: Record<string, unknown>): Product {
   const uomObj = row.uom as { title?: string; short_code?: string } | null;
   const hsnObj = row.hsn as { hsn_code?: string } | null;
   const gstObj = row.gst_percentage as { percentage?: number | string } | null;
+  const hazClassObj = row.haz_class as { name?: string } | null;
   const apiStatus = String(row.status ?? 'draft').toLowerCase();
   const displayStatus: Product['status'] =
     apiStatus === 'active' ? 'Active' : apiStatus === 'inactive' ? 'Inactive' : 'Draft';
@@ -85,6 +87,7 @@ function apiToCard(row: Record<string, unknown>): Product {
     hsn: hsnObj?.hsn_code ?? '—',
     uom: uomObj?.short_code ?? uomObj?.title ?? '—',
     hazClass: String(row.haz_type ?? '').toLowerCase().startsWith('haz') && !String(row.haz_type ?? '').toLowerCase().includes('non') ? 'HAZ' : 'NON HAZ',
+    hazClassName: hazClassObj?.name ?? '',
     gstRate: Number(gstObj?.percentage ?? 0),
     vendorCount: Array.isArray(row.vendor_maps) ? (row.vendor_maps as unknown[]).length : 0,
     stepCompleted: Number(row.step_completed ?? 0),
@@ -726,13 +729,16 @@ function ProductCard(props: {
           </span>
         </div>
 
-        {/* Haz pill */}
+        {/* Haz pill — plus the class name when hazardous */}
         <div className="prd-card-haz-row">
           <span className={`prd-card-haz-pill ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
             {product.hazClass === 'HAZ' ? 'HAZ' : 'Non-Haz'}
           </span>
-          {product.status !== 'Active' && (
-            <span className={`prd-card-status status-${product.status.replace(/\s+/g, '').toLowerCase()}`}>{product.status}</span>
+          {product.hazClass === 'HAZ' && product.hazClassName && (
+            <span className="prd-card-haz-class">
+              <span className="prd-card-haz-class-key">Haz:</span>
+              <span className="prd-card-haz-class-val">{product.hazClassName}</span>
+            </span>
           )}
         </div>
 
@@ -784,10 +790,17 @@ function ProductRow(props: {
           <span className={`prd-card-haz-pill ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
             {product.hazClass === 'HAZ' ? 'HAZ' : 'Non-Haz'}
           </span>
+          {product.hazClass === 'HAZ' && product.hazClassName && (
+            <span className="prd-card-haz-class">
+              <span className="prd-card-haz-class-key">Haz:</span>
+              <span className="prd-card-haz-class-val">{product.hazClassName}</span>
+            </span>
+          )}
         </div>
       </div>
       <div className="prd-row-status">
-        <span className={`prd-card-status status-${product.status.replace(/\s+/g, '').toLowerCase()}`}>{product.status}</span>
+        {/* Status pill intentionally hidden — the status tabs at the top
+            already segment Active vs Inactive, no need to repeat it here. */}
       </div>
       <div className="prd-row-price">
         <div className="prd-card-price-label">Selling Price</div>
@@ -1150,6 +1163,10 @@ const SCOPED_CSS = `
 }
 .prd-card-haz-pill.is-haz    { background: #fecaca; color: #b91c1c; border: 1px solid #f87171; }
 .prd-card-haz-pill.is-nonhaz { background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; }
+
+.prd-card-haz-class { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; min-width: 0; }
+.prd-card-haz-class-key { color: #b91c1c; font-weight: 800; letter-spacing: .02em; flex-shrink: 0; }
+.prd-card-haz-class-val { color: #1e1b4b; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Buy row */
 .prd-card-buyrow {
@@ -1522,6 +1539,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .prd-card-haz-pill.is-haz {
   background: #3f1d1d; color: #fca5a5; border-color: #7f1d1d;
 }
+[data-bs-theme="dark"] .prd-card-haz-class-key { color: #fca5a5; }
+[data-bs-theme="dark"] .prd-card-haz-class-val { color: #ede9fe; }
 [data-bs-theme="dark"] .prd-card-buyrow { border-top-color: #3b2a6b; }
 [data-bs-theme="dark"] .prd-card-price-label { color: #a89fc7; }
 
