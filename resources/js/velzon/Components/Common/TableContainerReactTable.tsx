@@ -181,15 +181,29 @@ const TableContainer = ({
                 {headerGroup.headers.map((header: any) => {
                   const canSort = header.column.getCanSort?.() ?? true;
                   const sortDir = header.column.getIsSorted() as string;
+                  // Per-column alignment hint — columns whose cells render
+                  // visually-centered content (status pills, action icons,
+                  // numeric counts) can opt in via `meta: { align: 'center' | 'end' }`
+                  // on the column def. Without this the header sat left
+                  // (inline-flex wrapper) while the cell content centered
+                  // itself, producing the misalignment users called out.
+                  const align: 'start' | 'center' | 'end' =
+                    (header.column.columnDef as any)?.meta?.align || 'start';
+                  const justify =
+                    align === 'center' ? 'center' :
+                    align === 'end'    ? 'flex-end' : 'flex-start';
+                  const textAlign =
+                    align === 'center' ? 'center' :
+                    align === 'end'    ? 'right' : 'left';
                   return (
                   <th
                     key={header.id}
                     className={thClass}
                     onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-                    style={{ cursor: canSort ? 'pointer' : 'default', userSelect: 'none' }}
+                    style={{ cursor: canSort ? 'pointer' : 'default', userSelect: 'none', textAlign }}
                   >
                     {header.isPlaceholder ? null : (
-                      <span className="d-inline-flex align-items-center gap-1">
+                      <span className="d-flex align-items-center gap-1" style={{ justifyContent: justify }}>
                         {flexRender(
                           header.column.columnDef.header,
                           header.getContext()
@@ -227,8 +241,16 @@ const TableContainer = ({
               return (
                 <tr key={row.id}>
                   {row.getVisibleCells().map((cell: any) => {
+                    // Mirror the header alignment on the data cell so the
+                    // column reads as one tidy vertical strip regardless
+                    // of whether the cell content itself is centered.
+                    const cellAlign: 'start' | 'center' | 'end' =
+                      (cell.column.columnDef as any)?.meta?.align || 'start';
+                    const cellTextAlign =
+                      cellAlign === 'center' ? 'center' :
+                      cellAlign === 'end'    ? 'right' : 'left';
                     return (
-                      <td key={cell.id}>
+                      <td key={cell.id} style={{ textAlign: cellTextAlign }}>
                         {flexRender(
                           cell.column.columnDef.cell,
                           cell.getContext()

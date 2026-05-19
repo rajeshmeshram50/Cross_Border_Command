@@ -334,6 +334,12 @@ class MasterController extends Controller
         if ($slug === 'asset_categories' && !empty($row->is_system)) {
             unset($data['name']);
         }
+        // System-seeded address type "Office" — name is pinned so the
+        // employee onboarding & profile pages can rely on it always
+        // existing under that exact label. Status flip still allowed.
+        if ($slug === 'address_types' && !empty($row->is_system)) {
+            unset($data['name']);
+        }
 
         // Same file-upload absorbtion as store(). For update, we also
         // clean up the previously-stored file when a new one is being
@@ -466,6 +472,13 @@ class MasterController extends Controller
         if ($slug === 'asset_categories' && !empty($row->is_system)) {
             return response()->json([
                 'message' => 'This category is system-managed and cannot be deleted.',
+            ], 403);
+        }
+        // Same protection for the seeded "Office" address type — other
+        // pages reference it by name so deletion would break them.
+        if ($slug === 'address_types' && !empty($row->is_system)) {
+            return response()->json([
+                'message' => 'This address type is system-managed and cannot be deleted.',
             ], 403);
         }
 

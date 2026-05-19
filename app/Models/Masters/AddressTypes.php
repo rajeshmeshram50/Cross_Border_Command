@@ -17,7 +17,14 @@ class AddressTypes extends Model
         'branch_id',
         'name',
         'status',
+        'is_system',
         'created_by',
+    ];
+
+    protected $casts = [
+        // System-seeded rows (e.g. "Office") are pinned via this flag
+        // and protected from delete + name edits in MasterController.
+        'is_system' => 'boolean',
     ];
 
     public function client(): BelongsTo
