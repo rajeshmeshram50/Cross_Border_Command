@@ -558,50 +558,81 @@ export default function SalesTodo() {
       }
     } else {
       const cust = (form.customer || '').trim();
-      if (!cust) { setFormError('Customer is required.'); return; }
+      if (!cust) { setFormError('Customer Name is required.'); return; }
       // Customer name: must contain at least one letter (rejects "!!!", "123",
       // "@@@" etc.) and stay within a sensible length / safe character set.
-      if (!/[A-Za-z]/.test(cust))               { setFormError('Customer name must contain letters.'); return; }
-      if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) { setFormError('Customer name has invalid characters or length.'); return; }
-      if (!form.date) { setFormError('Date is required.'); return; }
-      // Contact: optional, but if provided must be digits-only (with optional
-      // leading + and spaces / dashes) and 7–15 digits total.
+      if (!/[A-Za-z]/.test(cust))               { setFormError('Customer Name must contain letters.'); return; }
+      if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) { setFormError('Customer Name has invalid characters or length.'); return; }
+
+      if (!form.date) { setFormError('Meeting Date is required.'); return; }
+      if (!form.startTime) { setFormError('Start Time is required.'); return; }
+      if (!form.endTime)   { setFormError('End Time is required.'); return; }
+
+      // Contact number — REQUIRED. Must be 10–15 digits (10 covers India's
+      // standard mobile length; 15 is the ITU-T E.164 maximum so international
+      // numbers still fit). Leading "+", spaces and dashes are allowed as
+      // separators but only the digit count is enforced.
       const contactRaw = (form.contact || '').trim();
-      if (contactRaw) {
-        const digits = contactRaw.replace(/\D/g, '');
-        if (digits.length < 7 || digits.length > 15) {
-          setFormError('Contact number must be 7–15 digits.'); return;
-        }
-        if (!/^\+?[\d\s\-]+$/.test(contactRaw)) {
-          setFormError('Contact number can only contain digits, spaces, dashes and a leading +.'); return;
-        }
+      if (!contactRaw) { setFormError('Contact Number is required.'); return; }
+      const digits = contactRaw.replace(/\D/g, '');
+      if (digits.length < 10) {
+        setFormError('Contact Number must be at least 10 digits.'); return;
       }
-      // Virtual meeting link must be a valid http(s) URL.
+      if (digits.length > 15) {
+        setFormError('Contact Number cannot be more than 15 digits.'); return;
+      }
+      if (!/^\+?[\d\s\-]+$/.test(contactRaw)) {
+        setFormError('Contact Number can only contain digits, spaces, dashes and a leading +.'); return;
+      }
+
+      if (!form.platform) {
+        setFormError(meetingSub === 'physical' ? 'Meeting Type is required.' : 'Platform is required.'); return;
+      }
+
       const isVirtual = ((form.type as MeetingSub) || meetingSub) === 'virtual';
-      const linkRaw = (form.link || '').trim();
+      const linkRaw  = (form.link  || '').trim();
+      const venueRaw = (form.venue || '').trim();
+
       if (isVirtual) {
-        if (!linkRaw) { setFormError('Meeting link is required for virtual meetings.'); return; }
+        // Virtual meeting link — REQUIRED, must be a valid http(s) URL.
+        if (!linkRaw) { setFormError('Meeting Link is required.'); return; }
         try {
           const u = new URL(linkRaw);
           if (!/^https?:$/.test(u.protocol)) throw new Error();
         } catch {
-          setFormError('Meeting link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).'); return;
+          setFormError('Meeting Link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).'); return;
+        }
+      } else {
+        // Physical meeting — venue is REQUIRED and must look like a real
+        // place name (at least one letter, sensible length, safe punctuation).
+        if (!venueRaw) { setFormError('Place / Venue is required.'); return; }
+        if (!/[A-Za-z]/.test(venueRaw)) { setFormError('Venue must contain letters, not just symbols or digits.'); return; }
+        if (venueRaw.length < 3 || venueRaw.length > 200) {
+          setFormError('Venue must be between 3 and 200 characters.'); return;
+        }
+        if (!/^[A-Za-z0-9 .,'&()#\/\-\n\r]+$/.test(venueRaw)) {
+          setFormError('Venue contains invalid characters.'); return;
         }
       }
+
+      // Meeting agenda — REQUIRED for both meeting types.
+      const agendaRaw = (form.agenda || '').trim();
+      if (!agendaRaw) { setFormError('Meeting Agenda is required.'); return; }
+      if (agendaRaw.length < 3) { setFormError('Meeting Agenda must be at least 3 characters.'); return; }
 
       const payload = {
         type: ((form.type as 'virtual' | 'physical') || meetingSub),
         opp_id: form.oppId || undefined,
         customer: cust,
         email: form.email || undefined,
-        contact: contactRaw || undefined,
+        contact: contactRaw,
         platform: form.platform || undefined,
         date: displayToIso(form.date),
         start_time: form.startTime || undefined,
         end_time: form.endTime || undefined,
-        link: linkRaw || undefined,
-        venue: form.venue || undefined,
-        agenda: form.agenda || undefined,
+        link: isVirtual ? linkRaw : undefined,
+        venue: isVirtual ? undefined : venueRaw,
+        agenda: agendaRaw,
         status: ((form.status as MeetingStatus) || 'In Progress'),
       };
 
@@ -887,11 +918,11 @@ export default function SalesTodo() {
                         {today && <span title="Today's Priority" style={{ color: '#0d9488', marginRight: 4 }}>🔔</span>}
                         <span className="td-subject-text" title={r.subject}>{r.subject}</span>
                       </td>
-                      <td style={{ color: '#64748b' }}>
+                      <td className="td-cell-muted">
                         {r.setDate}
                         {today && <span className="td-today-pill">TODAY</span>}
                       </td>
-                      <td style={{ color: '#64748b' }}>{r.tat}</td>
+                      <td className="td-cell-muted">{r.tat}</td>
                       <td><StatusBadge status={r.status} /></td>
                       <td>
                         <div className="td-actions">
@@ -956,18 +987,18 @@ export default function SalesTodo() {
                         </span>
                       </td>
                       <td><span className="td-opp-id">{m.oppId}</span></td>
-                      <td style={{ fontWeight: 600, color: '#1e293b' }}>{m.customer}</td>
-                      <td style={{ color: '#64748b', fontSize: 11 }}>{m.email}</td>
-                      <td style={{ color: '#64748b' }}>{m.contact}</td>
+                      <td className="td-cell-strong">{m.customer}</td>
+                      <td className="td-cell-muted td-cell-sm">{m.email}</td>
+                      <td className="td-cell-muted">{m.contact}</td>
                       <td style={{ fontWeight: 500 }}>{m.platform}</td>
-                      <td style={{ color: '#64748b' }}>{m.date}</td>
-                      <td style={{ color: '#64748b' }}>{m.startTime}–{m.endTime}</td>
-                      <td style={{ maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={isPhys ? (m.venue || '') : (m.link || '')}>
+                      <td className="td-cell-muted">{m.date}</td>
+                      <td className="td-cell-muted">{m.startTime}–{m.endTime}</td>
+                      <td className="td-cell-ellipsis" title={isPhys ? (m.venue || '') : (m.link || '')}>
                         {isPhys
-                          ? <span style={{ color: '#64748b', fontSize: 11 }}>{m.venue || '—'}</span>
+                          ? <span className="td-cell-muted td-cell-sm">{m.venue || '—'}</span>
                           : (m.link
-                              ? <a href={m.link} target="_blank" rel="noreferrer" style={{ color: '#0d9488', fontSize: 11, textDecoration: 'none' }}>{m.link.length > 25 ? m.link.slice(0, 25) + '…' : m.link}</a>
-                              : <span style={{ color: '#94a3b8' }}>—</span>)}
+                              ? <a href={m.link} target="_blank" rel="noreferrer" className="td-cell-link">{m.link.length > 25 ? m.link.slice(0, 25) + '…' : m.link}</a>
+                              : <span className="td-cell-empty">—</span>)}
                       </td>
                       <td><StatusBadge status={m.status} /></td>
                       <td>
@@ -2395,6 +2426,22 @@ const SCOPED_CSS = `
   display:flex; align-items:center; gap:5px;
 }
 .td-footer-actions { display:flex; gap:8px; }
+/* Semantic table-cell classes — replace inline color styles so dark mode can
+   override them. Inline style color always wins over CSS, which is why the
+   meeting table looked dim on dark bg before this refactor. */
+.td-cell-strong  { font-weight: 600; color: #1e293b; }
+.td-cell-muted   { color: #64748b; }
+.td-cell-sm      { font-size: 11px; }
+.td-cell-ellipsis { max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.td-cell-link    { color: #0d9488; font-size: 11px; text-decoration: none; }
+.td-cell-link:hover { text-decoration: underline; }
+.td-cell-empty   { color: #94a3b8; }
+
+[data-bs-theme="dark"] .td-cell-strong { color: #f1f5f9; }
+[data-bs-theme="dark"] .td-cell-muted  { color: #cbd5e1; }
+[data-bs-theme="dark"] .td-cell-link   { color: #5eead4; }
+[data-bs-theme="dark"] .td-cell-empty  { color: #64748b; }
+
 .td-cell-subject { max-width: 320px; }
 .td-subject-text {
   display: -webkit-box;
