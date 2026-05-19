@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import Tooltip from '../../components/ui/Tooltip';
+import {
+  remindersApi, meetingsApi,
+  isoToDisplay, displayToIso, hmsToHm,
+  type ApiReminder, type ApiMeeting,
+} from './salesTodoApi';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Sales Matrix → To-Do (Productivity Tracker)
@@ -32,6 +38,11 @@ type Reminder = {
   tat: string;         // '24 Hours', '48 Hours', '72 Hours', '1 Week'
   remark: string;
   status: 'In Progress' | 'Done';
+  // Existing attachment metadata — populated from the API response so the
+  // edit modal can surface the previously-uploaded file. Empty when the
+  // reminder has no attachment.
+  attachmentName?: string;
+  attachmentUrl?: string;
 };
 
 type Meeting = {
@@ -52,68 +63,49 @@ type Meeting = {
   type: MeetingSub;
 };
 
-/* ── Mock seed (matches prototype window.TD_DATA, abridged) ── */
-const TODAY_STR = '15/05/2026'; // matches the prototype's "Today's Priority" anchor
+/* "Today" anchor for the "Today's Priority" filter. Computed at module load
+ * in dd/mm/yyyy so it lines up with how reminders store set_date. */
+const TODAY_STR = (() => {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+})();
 
-const SEED_REMINDERS: Reminder[] = [
-  { id:1,  oppId:'OPP-028', oppDate:'14/05/2026', subject:'Follow up for quotation — Shree Exports',         setDate:'15/05/2026', tat:'24 Hours', remark:'Awaiting revised pricing confirmation',           status:'In Progress' },
-  { id:2,  oppId:'OPP-001', oppDate:'13/05/2026', subject:'Send product catalogue to GreenHarvest',           setDate:'15/05/2026', tat:'48 Hours', remark:'Include latest cashew & sesame SKUs',             status:'In Progress' },
-  { id:3,  oppId:'OPP-004', oppDate:'13/05/2026', subject:'Check PI acceptance from Mujahed Al-Rashid',       setDate:'15/05/2026', tat:'24 Hours', remark:'PI sent on 12/05 — awaiting sign-off',            status:'In Progress' },
-  { id:4,  oppId:'OPP-007', oppDate:'14/05/2026', subject:'Delivery timeline confirmation — Dubai port',      setDate:'15/05/2026', tat:'72 Hours', remark:'Coordinate with logistics team',                  status:'In Progress' },
-  { id:5,  oppId:'OPP-008', oppDate:'14/05/2026', subject:'Supplier rate comparison — sesame oil',            setDate:'15/05/2026', tat:'48 Hours', remark:'Compare 3 supplier quotes before EOD',            status:'In Progress' },
-  { id:6,  oppId:'OPP-009', oppDate:'14/05/2026', subject:'Grade & quantity confirmation from James Okoye',   setDate:'15/05/2026', tat:'24 Hours', remark:'Grade W320 — 20MT order pending',                 status:'In Progress' },
-  { id:7,  oppId:'OPP-011', oppDate:'13/05/2026', subject:'LC amendment follow-up — Fatima Al-Hassan',        setDate:'15/05/2026', tat:'24 Hours', remark:'Bank ref #LC-2026-0421 needs extension',          status:'In Progress' },
-  { id:8,  oppId:'OPP-013', oppDate:'12/05/2026', subject:'Phytosanitary certificate renewal check',          setDate:'15/05/2026', tat:'48 Hours', remark:'Validity expires 30/05 — urgent action',          status:'In Progress' },
-  { id:9,  oppId:'OPP-017', oppDate:'14/05/2026', subject:'Proforma invoice revision for Luca Bianchi',       setDate:'15/05/2026', tat:'24 Hours', remark:'Update unit price as per latest costing',         status:'In Progress' },
-  { id:10, oppId:'OPP-022', oppDate:'13/05/2026', subject:'Shipping marks approval — Nairobi consignee',      setDate:'15/05/2026', tat:'24 Hours', remark:'Design team to confirm mark layout',              status:'In Progress' },
-  { id:11, oppId:'OPP-031', oppDate:'10/05/2026', subject:'Container booking confirmation — COSCO',           setDate:'16/05/2026', tat:'48 Hours', remark:'20ft FCL — Nhava Sheva to Rotterdam',             status:'In Progress' },
-  { id:12, oppId:'OPP-033', oppDate:'11/05/2026', subject:'Buyer credit limit approval follow-up',            setDate:'17/05/2026', tat:'72 Hours', remark:'Submitted to credit team on 10/05',               status:'In Progress' },
-  { id:13, oppId:'OPP-035', oppDate:'12/05/2026', subject:'BL draft review with Priya Exports',               setDate:'18/05/2026', tat:'48 Hours', remark:'Check consignee details and notify party',        status:'In Progress' },
-  { id:14, oppId:'OPP-036', oppDate:'12/05/2026', subject:'Insurance certificate issuance reminder',          setDate:'19/05/2026', tat:'1 Week',   remark:'Open cover policy — endorse shipment',            status:'In Progress' },
-  { id:15, oppId:'OPP-038', oppDate:'13/05/2026', subject:'Sampling dispatch to SunFood Germany',             setDate:'20/05/2026', tat:'48 Hours', remark:'500g each SKU via DHL Express',                   status:'In Progress' },
-  { id:16, oppId:'OPP-039', oppDate:'13/05/2026', subject:'Re-quote request from Ahmed Al-Farsi',             setDate:'20/05/2026', tat:'24 Hours', remark:'Customer asked for CIF Dubai pricing',            status:'In Progress' },
-  { id:17, oppId:'OPP-041', oppDate:'14/05/2026', subject:'Export declaration filing — custom agent',         setDate:'21/05/2026', tat:'72 Hours', remark:'SB filing due before vessel cut-off',             status:'In Progress' },
-  { id:18, oppId:'OPP-042', oppDate:'14/05/2026', subject:'Quality inspection scheduling — FSSAI lab',        setDate:'22/05/2026', tat:'1 Week',   remark:'Batch #2026-B44 ready for inspection',            status:'In Progress' },
-  { id:19, oppId:'OPP-044', oppDate:'14/05/2026', subject:'Fumigation certificate follow-up',                 setDate:'23/05/2026', tat:'48 Hours', remark:'Required for US-bound shipment',                  status:'In Progress' },
-  { id:20, oppId:'OPP-045', oppDate:'15/05/2026', subject:'Final packing list confirmation — Maroc Trader',   setDate:'24/05/2026', tat:'24 Hours', remark:'Gross/net weight to be verified',                 status:'In Progress' },
-  { id:21, oppId:'OPP-005', oppDate:'01/05/2026', subject:'Demo session follow-up — Horizon Agro',            setDate:'02/05/2026', tat:'24 Hours', remark:'Demo completed; proposal sent',                   status:'Done' },
-  { id:22, oppId:'OPP-006', oppDate:'02/05/2026', subject:'PI approval reminder — Zahra Trading',             setDate:'03/05/2026', tat:'48 Hours', remark:'PI signed and returned on 03/05',                 status:'Done' },
-  { id:23, oppId:'OPP-010', oppDate:'03/05/2026', subject:'PO issuance follow-up — K.K. Brothers',            setDate:'04/05/2026', tat:'24 Hours', remark:'PO #KKB-2026-112 received',                       status:'Done' },
-  { id:24, oppId:'OPP-015', oppDate:'04/05/2026', subject:'Re-engagement follow-up — Pacific Commodities',    setDate:'05/05/2026', tat:'1 Week',   remark:'New enquiry initiated by buyer',                  status:'Done' },
-  { id:25, oppId:'OPP-016', oppDate:'05/05/2026', subject:'Payment receipt confirmation — TFC Nigeria',       setDate:'06/05/2026', tat:'24 Hours', remark:'SWIFT copy received and reconciled',              status:'Done' },
-  { id:26, oppId:'OPP-018', oppDate:'06/05/2026', subject:'COA document sharing with buyer',                  setDate:'07/05/2026', tat:'48 Hours', remark:'PDF shared via email on 07/05',                   status:'Done' },
-  { id:27, oppId:'OPP-019', oppDate:'07/05/2026', subject:'Credit note issuance — short shipment claim',      setDate:'08/05/2026', tat:'72 Hours', remark:'CN #2026-087 issued and accepted',                status:'Done' },
-  { id:28, oppId:'OPP-020', oppDate:'08/05/2026', subject:'Stock availability check — Rajesh Oils',           setDate:'09/05/2026', tat:'24 Hours', remark:'Confirmed 50MT available in warehouse',           status:'Done' },
-  { id:29, oppId:'OPP-021', oppDate:'09/05/2026', subject:'Advance payment follow-up — Casablanca Foods',     setDate:'10/05/2026', tat:'48 Hours', remark:'30% TT received on 10/05',                        status:'Done' },
-  { id:30, oppId:'OPP-023', oppDate:'10/05/2026', subject:'Order confirmation acknowledgement',               setDate:'11/05/2026', tat:'24 Hours', remark:'Buyer acknowledged via email',                    status:'Done' },
-];
+/* Convert API rows (snake_case + ISO dates) into the page's display shape
+ * (camelCase + dd/mm/yyyy). Keeps the rendering code untouched even though
+ * the data now flows from /api/sales/reminders. */
+const apiToReminder = (r: ApiReminder): Reminder => ({
+  id: r.id,
+  oppId: r.opp_id ?? '',
+  oppDate: isoToDisplay(r.opp_date),
+  subject: r.subject,
+  setDate: isoToDisplay(r.set_date),
+  tat: r.tat || '24 Hours',
+  remark: r.remark ?? '',
+  status: r.status,
+  attachmentName: r.attachment_original_name ?? undefined,
+  attachmentUrl: r.attachment_url ?? undefined,
+});
 
-const SEED_MEETINGS: Meeting[] = [
-  { id:1,  code:'M-001', oppId:'OPP-028', customer:'Shree Exports',        email:'shreeyashmote.ai@gmail.com', contact:'9011033445',       platform:'Zoom',            date:'02/05/2026', startTime:'10:00', endTime:'11:00', link:'https://zoom.us/j/123456789',           venue:'', agenda:'Product requirement and quotation discussion',       status:'In Progress', type:'virtual' },
-  { id:2,  code:'M-002', oppId:'OPP-001', customer:'GreenHarvest Global',  email:'r.vardhan@gmail.com',        contact:'+91 91234 56789',  platform:'Google Meet',     date:'05/05/2026', startTime:'10:00', endTime:'11:00', link:'https://meet.google.com/abc-defg-hij',  venue:'', agenda:'Catalogue review and pricing discussion',            status:'In Progress', type:'virtual' },
-  { id:3,  code:'M-003', oppId:'OPP-004', customer:'Mujahed Al-Rashid',    email:'aboodmujahed6@gmail.com',    contact:'+962-786919870',   platform:'Zoom',            date:'07/05/2026', startTime:'14:00', endTime:'15:00', link:'https://zoom.us/j/987654321',           venue:'', agenda:'Price negotiation for Turkish Dry Fig',              status:'Done',        type:'virtual' },
-  { id:4,  code:'M-004', oppId:'OPP-008', customer:'Zhang Wei',            email:'zhangwei@example.com',       contact:'+86-13812345678',  platform:'Microsoft Teams', date:'08/05/2026', startTime:'09:00', endTime:'10:30', link:'https://teams.microsoft.com/meet/abc',  venue:'', agenda:'Basmati rice specification review',                  status:'Done',        type:'virtual' },
-  { id:5,  code:'M-005', oppId:'OPP-009', customer:'James Okoye',          email:'james.okoye@mail.com',       contact:'+234-8012345678',  platform:'Zoom',            date:'10/05/2026', startTime:'15:00', endTime:'16:00', link:'https://zoom.us/j/111222333',           venue:'', agenda:'Cashew quality and grade requirements',              status:'In Progress', type:'virtual' },
-  { id:6,  code:'M-006', oppId:'OPP-010', customer:'Ayesha Raza',          email:'ayesha.raza@pk.com',         contact:'+92-3012345678',   platform:'Google Meet',     date:'12/05/2026', startTime:'11:00', endTime:'12:00', link:'https://meet.google.com/xyz-abcd-efg',  venue:'', agenda:'Final order confirmation call',                      status:'Done',        type:'virtual' },
-  { id:7,  code:'M-007', oppId:'OPP-016', customer:'Sarah Patel',          email:'sarah.patel@us.com',         contact:'+1-4155551234',    platform:'Zoom',            date:'15/05/2026', startTime:'18:00', endTime:'19:00', link:'https://zoom.us/j/444555666',           venue:'', agenda:'Turmeric powder export requirements',                status:'Postponed',   type:'virtual' },
-  { id:8,  code:'M-008', oppId:'OPP-017', customer:'Mohamed Aziz',         email:'m.aziz@eg.net',              contact:'+20-1012345678',   platform:'Phone Call',      date:'17/05/2026', startTime:'10:00', endTime:'10:30', link:'tel:+201012345678',                     venue:'', agenda:'Cotton yarn specifications call',                    status:'Cancelled',   type:'virtual' },
-  { id:9,  code:'M-009', oppId:'OPP-011', customer:'Fatima Al-Hassan',     email:'fatima.hassan@sa.com',       contact:'+966-512345678',   platform:'Microsoft Teams', date:'19/05/2026', startTime:'13:00', endTime:'14:00', link:'https://teams.microsoft.com/meet/def',  venue:'', agenda:'Brown rice export and certification',                status:'In Progress', type:'virtual' },
-  { id:10, code:'M-010', oppId:'OPP-012', customer:'Luca Bianchi',         email:'luca.bianchi@it.com',        contact:'+39-3456789012',   platform:'Zoom',            date:'21/05/2026', startTime:'16:00', endTime:'17:00', link:'https://zoom.us/j/777888999',           venue:'', agenda:'Organic turmeric bulk order review',                 status:'In Progress', type:'virtual' },
-  { id:11, code:'M-011', oppId:'OPP-013', customer:'Hana Kim',             email:'hana.kim@koreafood.kr',      contact:'+82-1012345678',   platform:'Zoom',            date:'23/05/2026', startTime:'09:00', endTime:'10:00', link:'https://zoom.us/j/888999000',           venue:'', agenda:'Korean market entry for sesame oil',                 status:'In Progress', type:'virtual' },
-  { id:12, code:'M-012', oppId:'OPP-014', customer:'Tariq Al-Mansoori',    email:'tariq@mansoorigroup.ae',     contact:'+971-561234567',   platform:'Google Meet',     date:'27/05/2026', startTime:'11:00', endTime:'12:30', link:'https://meet.google.com/pqr-stuv-wxy',  venue:'', agenda:'Dates and dry fruit export volume discussion',       status:'Done',        type:'virtual' },
-  { id:13, code:'P-001', oppId:'OPP-030', customer:'Raj Commodities',      email:'raj@rajcommodities.com',     contact:'+91-9876543210',   platform:'Office Visit',    date:'02/05/2026', startTime:'10:00', endTime:'11:30', link:'', venue:'Mumbai Head Office, 4th Floor, BKC',     agenda:'Annual trade review and contract renewal',            status:'In Progress', type:'physical' },
-  { id:14, code:'P-002', oppId:'OPP-031', customer:'Ahmed Al-Farsi',       email:'ahmed@alfarsi.ae',           contact:'+971-501234567',   platform:'Client Site',     date:'05/05/2026', startTime:'14:00', endTime:'15:30', link:'', venue:'Al Farsi Trading, Dubai, UAE',           agenda:'Spice export contract discussion',                    status:'Done',        type:'physical' },
-  { id:15, code:'P-003', oppId:'OPP-033', customer:'Priya Exports Ltd',    email:'priya@priyaexports.in',      contact:'+91-8765432109',   platform:'Office Visit',    date:'08/05/2026', startTime:'09:30', endTime:'11:00', link:'', venue:'Priya Exports, MIDC Pune',               agenda:'Bulk cashew order negotiation',                       status:'In Progress', type:'physical' },
-  { id:16, code:'P-004', oppId:'OPP-034', customer:'Carlos Mendez',        email:'carlos@agromex.mx',          contact:'+52-5512345678',   platform:'Trade Fair',      date:'10/05/2026', startTime:'11:00', endTime:'12:00', link:'', venue:'Agrofood Mexico Expo, CDMX',             agenda:'Sesame and groundnut product showcase',               status:'Done',        type:'physical' },
-  { id:17, code:'P-005', oppId:'OPP-035', customer:'Kofi Boateng',         email:'kofi@boatengtraders.gh',     contact:'+233-244123456',   platform:'Client Site',     date:'13/05/2026', startTime:'15:00', endTime:'16:30', link:'', venue:'Boateng Traders, Accra, Ghana',          agenda:'Soybean and corn import requirements',                status:'In Progress', type:'physical' },
-  { id:18, code:'P-006', oppId:'OPP-036', customer:'Mei Lin Trading',      email:'mei@meilintrading.cn',       contact:'+86-2112345678',   platform:'Office Visit',    date:'16/05/2026', startTime:'13:00', endTime:'14:30', link:'', venue:'Mei Lin Trading, Shanghai',              agenda:'Rice specification and quality audit',                status:'Postponed',   type:'physical' },
-  { id:19, code:'P-007', oppId:'OPP-037', customer:'Hans Gruber GmbH',     email:'hans@gruberfood.de',         contact:'+49-3012345678',   platform:'Trade Fair',      date:'20/05/2026', startTime:'10:30', endTime:'12:00', link:'', venue:'Anuga Trade Fair, Cologne, Germany',     agenda:'Organic spice range presentation',                    status:'In Progress', type:'physical' },
-  { id:20, code:'P-008', oppId:'OPP-038', customer:'Nadia Khoury',         email:'nadia@khouryfood.lb',        contact:'+961-71123456',    platform:'Client Site',     date:'22/05/2026', startTime:'09:00', endTime:'10:00', link:'', venue:'Khoury Food, Beirut, Lebanon',           agenda:'Dried fruit and nut bulk order',                      status:'Cancelled',   type:'physical' },
-  { id:21, code:'P-009', oppId:'OPP-039', customer:'Sunita Agrotech',      email:'sunita@sunita.in',           contact:'+91-7654321098',   platform:'Office Visit',    date:'24/05/2026', startTime:'11:00', endTime:'12:30', link:'', venue:'Sunita Agrotech, Nasik, Maharashtra',    agenda:'Grape and pomegranate export discussion',             status:'Done',        type:'physical' },
-  { id:22, code:'P-010', oppId:'OPP-040', customer:'Ibrahim Diallo',       email:'ibrahim@diallogroup.sn',     contact:'+221-771234567',   platform:'Client Site',     date:'27/05/2026', startTime:'14:00', endTime:'15:00', link:'', venue:'Diallo Group Office, Dakar, Senegal',    agenda:'Millet and sorghum export inquiry',                   status:'In Progress', type:'physical' },
-  { id:23, code:'P-011', oppId:'OPP-041', customer:'Elena Vasquez',        email:'elena@vasquezfood.es',       contact:'+34-6112345678',   platform:'Trade Fair',      date:'29/05/2026', startTime:'10:00', endTime:'11:30', link:'', venue:'Alimentaria Barcelona, Spain',           agenda:'Olive oil and paprika bulk enquiry',                  status:'In Progress', type:'physical' },
-  { id:24, code:'P-012', oppId:'OPP-042', customer:'Ravi Shankar Foods',   email:'ravi@ravishankar.in',        contact:'+91-9123456789',   platform:'Office Visit',    date:'30/05/2026', startTime:'15:00', endTime:'16:30', link:'', venue:'Ravi Shankar Foods, Indore, MP',         agenda:'New season groundnut contract signing',               status:'Done',        type:'physical' },
-];
+const apiToMeeting = (m: ApiMeeting): Meeting => ({
+  id: m.id,
+  code: m.code,
+  oppId: m.opp_id ?? '',
+  customer: m.customer,
+  email: m.email ?? '',
+  contact: m.contact ?? '',
+  platform: m.platform ?? '',
+  date: isoToDisplay(m.date),
+  startTime: hmsToHm(m.start_time),
+  endTime: hmsToHm(m.end_time),
+  link: m.link ?? '',
+  venue: m.venue ?? '',
+  agenda: m.agenda ?? '',
+  status: m.status,
+  type: m.type,
+});
+
+/* Seed arrays removed — data flows from /api/sales/reminders + /api/sales/meetings */
+
 
 const REMINDER_FILTERS: { key: ReminderFilter; label: string; icon: React.ReactNode }[] = [
   { key: 'today',       label: "Today's Priority", icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
@@ -130,6 +122,11 @@ const MEETING_FILTERS: { key: MeetingStatus; label: string; icon: React.ReactNod
 ];
 
 const TAT_OPTIONS  = ['24 Hours', '48 Hours', '72 Hours', '1 Week', '2 Weeks'];
+// Opportunity picker source — once the leads/opportunities table ships and
+// surfaces an /api/sales/opportunities endpoint, replace this with a server
+// fetch (probably in a useEffect). Hard-coded for now so the dropdown is
+// usable end-to-end without blocking on that work.
+const OPP_ID_OPTIONS = Array.from({ length: 50 }, (_, i) => `OPP-${String(i + 1).padStart(3, '0')}`);
 const VIRTUAL_PLATFORMS  = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', 'Phone Call'];
 const PHYSICAL_PLATFORMS = ['Office Visit', 'Client Site', 'Trade Fair', 'Conference', 'Factory Visit', 'Port Visit'];
 const ROWS_OPTIONS = [10, 25];
@@ -150,6 +147,13 @@ type FormShape = {
   tat?: string;
   remark?: string;
   attachmentName?: string;
+  // The actual File object — captured on input change and sent via FormData
+  // on save. Cleared after a successful save.
+  attachmentFile?: File | null;
+  // Direct download URL for an EXISTING attachment (only populated when
+  // editing). When the user hasn't picked a new file, this URL drives the
+  // "currently attached" link in the dropzone.
+  attachmentUrl?: string;
   // meeting-only
   code?: string;
   customer?: string;
@@ -167,16 +171,38 @@ type FormShape = {
 
 export default function SalesTodo() {
   const toast = useToast();
+  const confirmDialog = useConfirm();
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perm = user?.permissions?.['sales.todo'];
-  const canView = isSuperAdmin || perm?.can_view !== false;
-  const canAdd  = isSuperAdmin || !!perm?.can_add;
-  const canEdit = isSuperAdmin || !!perm?.can_edit;
-  const canDel  = isSuperAdmin || !!perm?.can_delete;
+  // Sales Matrix rollout — mirrors the sidebar gate in Sidebar.canView so
+  // branch_user / employee accounts see the full UI (Add button + row actions)
+  // even before per-leaf permission rows are seeded. Once perms are wired up,
+  // delete the rollout branch and revert to strict perm flags.
+  const isRolloutUser = user?.user_type === 'branch_user' || user?.user_type === 'employee';
+  const canView = isSuperAdmin || isRolloutUser || perm?.can_view !== false;
+  const canAdd  = isSuperAdmin || isRolloutUser || !!perm?.can_add;
+  const canEdit = isSuperAdmin || isRolloutUser || !!perm?.can_edit;
+  const canDel  = isSuperAdmin || isRolloutUser || !!perm?.can_delete;
 
-  const [reminders, setReminders] = useState<Reminder[]>(SEED_REMINDERS);
-  const [meetings,  setMeetings]  = useState<Meeting[]>(SEED_MEETINGS);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [meetings,  setMeetings]  = useState<Meeting[]>([]);
+  const [loadingData, setLoadingData] = useState<boolean>(true);
+  // Admins (super_admin / client_admin / main_branch_user) see the whole tenant
+  // by default; everyone else sees their own rows. Mirrors the controller's
+  // applyScope() — the SPA just hints at which scope to ask for.
+  const isMainBranch = (user?.user_type === 'branch_user' && user?.is_main_branch === true);
+  const defaultScope: 'mine' | 'all' = (
+    user?.user_type === 'super_admin' ||
+    user?.user_type === 'client_admin' ||
+    user?.user_type === 'client_user' ||
+    isMainBranch
+  ) ? 'all' : 'mine';
+  const [scope] = useState<'mine' | 'all'>(defaultScope);
+
+  // Tracks any in-flight mutation so the action buttons can show a spinner
+  // / suppress double-clicks without re-rendering the whole table.
+  const savingRef = useRef(false);
 
   const [tab, setTab]             = useState<TopTab>('reminder');
   const [meetingSub, setMeetingSub] = useState<MeetingSub>('virtual');
@@ -209,6 +235,30 @@ export default function SalesTodo() {
     link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap';
     document.head.appendChild(link);
   }, []);
+
+  // Load both reminders + meetings once on mount. Two parallel fetches — the
+  // server returns at most a few hundred rows per scope, so we don't bother
+  // with pagination yet.
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingData(true);
+    Promise.all([
+      remindersApi.list({ scope }),
+      meetingsApi.list({ scope }),
+    ])
+      .then(([rems, mtgs]) => {
+        if (cancelled) return;
+        setReminders(rems.map(apiToReminder));
+        setMeetings(mtgs.map(apiToMeeting));
+      })
+      .catch((err: any) => {
+        if (cancelled) return;
+        toast.error('Could not load Productivity Tracker', err?.response?.data?.message || err?.message || 'Please try again.');
+      })
+      .finally(() => { if (!cancelled) setLoadingData(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope]);
 
   /* ── Reminder filtering ── */
   const filteredReminders = useMemo(() => {
@@ -335,72 +385,166 @@ export default function SalesTodo() {
 
   const close = () => { setModalOpen(false); setForm({}); };
 
-  const setMark = (record: Reminder | Meeting, status: string) => {
-    if (tab === 'reminder') {
-      setReminders(prev => prev.map(r => r.id === record.id ? { ...r, status: status as Reminder['status'] } : r));
-    } else {
-      setMeetings(prev => prev.map(m => m.id === record.id ? { ...m, status: status as MeetingStatus } : m));
+  const setMark = async (record: Reminder | Meeting, status: string) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try {
+      if (tab === 'reminder') {
+        const fresh = await remindersApi.setStatus(record.id, status as 'In Progress' | 'Done');
+        setReminders(prev => prev.map(r => r.id === record.id ? apiToReminder(fresh) : r));
+      } else {
+        const fresh = await meetingsApi.setStatus(record.id, status as MeetingStatus);
+        setMeetings(prev => prev.map(m => m.id === record.id ? apiToMeeting(fresh) : m));
+      }
+      toast.success('Updated', `Marked as ${status}`);
+    } catch (err: any) {
+      toast.error('Could not update', err?.response?.data?.message || err?.message || 'Please try again.');
+    } finally {
+      savingRef.current = false;
     }
-    toast.success('Updated', `Marked as ${status}`);
   };
 
-  const del = (record: Reminder | Meeting) => {
-    if (!canDel) return;
-    if (tab === 'reminder') setReminders(prev => prev.filter(r => r.id !== record.id));
-    else                    setMeetings(prev => prev.filter(m => m.id !== record.id));
-    toast.info('Deleted', tab === 'reminder' ? (record as Reminder).subject : (record as Meeting).code);
+  const del = async (record: Reminder | Meeting) => {
+    if (!canDel || savingRef.current) return;
+
+    // Confirm before delete — matches the project's confirm-dialog pattern
+    // used by Inbox / MyTeam / HrEmployeeOnboarding. Resolves to true when
+    // the user clicks Yes, false on Cancel / Esc / backdrop click.
+    const isReminder = tab === 'reminder';
+    const label = isReminder
+      ? (record as Reminder).subject
+      : `${(record as Meeting).code} — ${(record as Meeting).customer}`;
+    const ok = await confirmDialog({
+      title: isReminder ? 'Delete reminder?' : 'Delete meeting?',
+      message: (
+        <>
+          You're about to permanently delete <strong>{label}</strong>. This can't be undone.
+        </>
+      ),
+      confirmLabel: 'Yes, Delete',
+      cancelLabel:  'Cancel',
+      tone:         'danger',
+      icon:         'delete-bin-line',
+    });
+    if (!ok) return;
+
+    savingRef.current = true;
+    try {
+      if (isReminder) {
+        await remindersApi.destroy(record.id);
+        setReminders(prev => prev.filter(r => r.id !== record.id));
+        toast.info('Deleted', (record as Reminder).subject);
+      } else {
+        await meetingsApi.destroy(record.id);
+        setMeetings(prev => prev.filter(m => m.id !== record.id));
+        toast.info('Deleted', (record as Meeting).code);
+      }
+    } catch (err: any) {
+      toast.error('Could not delete', err?.response?.data?.message || err?.message || 'Please try again.');
+    } finally {
+      savingRef.current = false;
+    }
   };
 
-  const save = () => {
+  const save = async () => {
+    if (savingRef.current) return;
     setFormError('');
+
     if (tab === 'reminder') {
       if (!form.subject || !form.subject.trim()) { setFormError('Subject is required.'); return; }
       if (!form.setDate)                          { setFormError('Set date is required.'); return; }
-      if (form.editId) {
-        setReminders(prev => prev.map(r => r.id === form.editId
-          ? { ...r, oppId: form.oppId || '', oppDate: form.oppDate || '', subject: form.subject!, setDate: form.setDate!, tat: form.tat || '24 Hours', remark: form.remark || '', status: (form.status as Reminder['status']) || 'In Progress' }
-          : r));
-        toast.success('Saved', 'Reminder updated');
-      } else {
-        const nextId = (reminders[reminders.length - 1]?.id ?? 0) + 1;
-        const rec: Reminder = {
-          id: nextId, oppId: form.oppId || '', oppDate: form.oppDate || '', subject: form.subject!,
-          setDate: form.setDate!, tat: form.tat || '24 Hours', remark: form.remark || '',
-          status: (form.status as Reminder['status']) || 'In Progress',
-        };
-        setReminders(prev => [...prev, rec]);
-        toast.success('Added', 'Reminder created');
+
+      const payload = {
+        opp_id: form.oppId || undefined,
+        opp_date: form.oppDate ? displayToIso(form.oppDate) : null,
+        subject: form.subject.trim(),
+        set_date: displayToIso(form.setDate),
+        tat: form.tat || '24 Hours',
+        remark: form.remark || '',
+        status: ((form.status as 'In Progress' | 'Done') || 'In Progress'),
+        attachment: form.attachmentFile || null,
+      };
+
+      savingRef.current = true;
+      try {
+        if (form.editId) {
+          const fresh = await remindersApi.update(form.editId, payload);
+          setReminders(prev => prev.map(r => r.id === form.editId ? apiToReminder(fresh) : r));
+          toast.success('Saved', 'Reminder updated');
+        } else {
+          const fresh = await remindersApi.create(payload);
+          setReminders(prev => [apiToReminder(fresh), ...prev]);
+          toast.success('Added', 'Reminder created');
+          // Switch to the filter that will actually show the new row. The
+          // default "Today's Priority" filter only shows (today + In Progress),
+          // so a Done reminder OR a future-dated one would silently vanish
+          // and the user would think the save didn't work. Land on the
+          // matching status tab so the newly-created row is always visible.
+          setReminderFilter(payload.status === 'Done' ? 'Done' : 'all');
+          setPage(1);
+        }
+        close();
+      } catch (err: any) {
+        const errors = (err?.response?.data?.errors ?? {}) as Record<string, string[]>;
+        const firstFieldError = Object.values(errors)[0]?.[0];
+        const msg = err?.response?.data?.message
+          || firstFieldError
+          || err?.message
+          || 'Save failed';
+        setFormError(String(msg));
+      } finally {
+        savingRef.current = false;
       }
     } else {
       if (!form.customer || !form.customer.trim()) { setFormError('Customer is required.'); return; }
       if (!form.date)                              { setFormError('Date is required.'); return; }
-      if (form.editId) {
-        setMeetings(prev => prev.map(m => m.id === form.editId
-          ? { ...m,
-              code: form.code || m.code, oppId: form.oppId || '', customer: form.customer!, email: form.email || '',
-              contact: form.contact || '', platform: form.platform || 'Zoom', date: form.date!,
-              startTime: form.startTime || '10:00', endTime: form.endTime || '11:00',
-              link: form.link || '', venue: form.venue || '', agenda: form.agenda || '',
-              status: (form.status as MeetingStatus) || 'In Progress',
-              type: (form.type as MeetingSub) || meetingSub }
-          : m));
-        toast.success('Saved', 'Meeting updated');
-      } else {
-        const nextId = (meetings[meetings.length - 1]?.id ?? 0) + 1;
-        const prefix = meetingSub === 'virtual' ? 'M' : 'P';
-        const num = String(nextId).padStart(3, '0');
-        const rec: Meeting = {
-          id: nextId, code: form.code || `${prefix}-${num}`, oppId: form.oppId || '', customer: form.customer!,
-          email: form.email || '', contact: form.contact || '', platform: form.platform || 'Zoom',
-          date: form.date!, startTime: form.startTime || '10:00', endTime: form.endTime || '11:00',
-          link: form.link || '', venue: form.venue || '', agenda: form.agenda || '',
-          status: (form.status as MeetingStatus) || 'In Progress', type: meetingSub,
-        };
-        setMeetings(prev => [...prev, rec]);
-        toast.success('Added', 'Meeting created');
+
+      const payload = {
+        type: ((form.type as 'virtual' | 'physical') || meetingSub),
+        opp_id: form.oppId || undefined,
+        customer: form.customer.trim(),
+        email: form.email || undefined,
+        contact: form.contact || undefined,
+        platform: form.platform || undefined,
+        date: displayToIso(form.date),
+        start_time: form.startTime || undefined,
+        end_time: form.endTime || undefined,
+        link: form.link || undefined,
+        venue: form.venue || undefined,
+        agenda: form.agenda || undefined,
+        status: ((form.status as MeetingStatus) || 'In Progress'),
+      };
+
+      savingRef.current = true;
+      try {
+        if (form.editId) {
+          const fresh = await meetingsApi.update(form.editId, payload);
+          setMeetings(prev => prev.map(m => m.id === form.editId ? apiToMeeting(fresh) : m));
+          toast.success('Saved', 'Meeting updated');
+        } else {
+          const fresh = await meetingsApi.create(payload);
+          setMeetings(prev => [apiToMeeting(fresh), ...prev]);
+          toast.success('Added', 'Meeting created');
+          // Switch the meeting sub-tab + status filter to the bucket the
+          // new meeting actually belongs to, so the row is always visible
+          // after save. Mirrors the reminder save logic above.
+          if (payload.type !== meetingSub) setMeetingSub(payload.type);
+          setMeetingFilter(payload.status as MeetingStatus);
+          setPage(1);
+        }
+        close();
+      } catch (err: any) {
+        const errors = (err?.response?.data?.errors ?? {}) as Record<string, string[]>;
+        const firstFieldError = Object.values(errors)[0]?.[0];
+        const msg = err?.response?.data?.message
+          || firstFieldError
+          || err?.message
+          || 'Save failed';
+        setFormError(String(msg));
+      } finally {
+        savingRef.current = false;
       }
     }
-    close();
   };
 
   /* ── No-access ── */
@@ -485,6 +629,52 @@ export default function SalesTodo() {
                 </button>
               </>
             )}
+            {/* View toggle stays inline for Meeting tab (matches screenshot 3) */}
+            {tab === 'meeting' && (
+              <div className="td-view-toggle">
+                <button
+                  className={`td-view-btn ${view === 'list' ? 'active' : ''}`}
+                  title="List View"
+                  onClick={() => setView('list')}
+                >
+                  <IconList />
+                  List
+                </button>
+                <button
+                  className={`td-view-btn ${view === 'calendar' ? 'active' : ''}`}
+                  title="Calendar View"
+                  onClick={() => { setView('calendar'); setPopover(null); }}
+                >
+                  <IconCal />
+                  Calendar
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="td-toolbar-right">
+            {canAdd && (
+              <button className="td-add-btn" onClick={openAdd}>
+                <IconPlus />
+                {tab === 'reminder' ? 'Add Reminder' : 'Add Meeting'}
+              </button>
+            )}
+            <div className="td-search-wrap">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#99c9c4" strokeWidth="2.3">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Search by subject, opportunity ID, date…"
+                value={q}
+                onChange={e => { setQ(e.target.value); setPage(1); }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* View toggle on its own row for Reminder tab (matches screenshot 1) */}
+        {tab === 'reminder' && (
+          <div className="td-reminder-view-row">
             <div className="td-view-toggle">
               <button
                 className={`td-view-btn ${view === 'list' ? 'active' : ''}`}
@@ -504,32 +694,7 @@ export default function SalesTodo() {
               </button>
             </div>
           </div>
-          <div className="td-toolbar-right">
-            <div className="td-search-wrap">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#99c9c4" strokeWidth="2.3">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={q}
-                onChange={e => { setQ(e.target.value); setPage(1); }}
-              />
-            </div>
-            <div className="td-rows-sel">
-              Rows:
-              <select value={rpp} onChange={e => { setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
-                {ROWS_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
-            {canAdd && (
-              <button className="td-add-btn" onClick={openAdd}>
-                <IconPlus />
-                {tab === 'reminder' ? 'Add Reminder' : 'Add Meeting'}
-              </button>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Meeting status sub-filter row (only shown for Meeting tab) */}
         {tab === 'meeting' && (
@@ -609,7 +774,7 @@ export default function SalesTodo() {
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={7} className="td-empty">No reminders found</td></tr>
+                  <tr><td colSpan={7} className="td-empty">{loadingData ? 'Loading reminders…' : 'No reminders found'}</td></tr>
                 )}
                 {(rows as Reminder[]).map((r, i) => {
                   const today = isToday(r.setDate) && r.status === 'In Progress';
@@ -671,7 +836,7 @@ export default function SalesTodo() {
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={12} className="td-empty">No meetings found</td></tr>
+                  <tr><td colSpan={12} className="td-empty">{loadingData ? 'Loading meetings…' : 'No meetings found'}</td></tr>
                 )}
                 {(rows as Meeting[]).map((m, i) => {
                   const isPhys = m.type === 'physical';
@@ -747,7 +912,7 @@ export default function SalesTodo() {
           )}
         </div>
 
-        {/* Pagination */}
+        {/* Pagination — matches screenshot: Showing pill on left, Rows + 1/1 + chevrons on right */}
         <div className="td-pagination">
           <span className="td-pag-info">
             {total === 0
@@ -755,14 +920,18 @@ export default function SalesTodo() {
               : <>Showing <strong>{startIdx + 1}–{Math.min(startIdx + rpp, total)}</strong> of <strong>{total}</strong></>}
           </span>
           <div className="td-pag-btns">
-            <button className="td-pg-btn" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
-              Prev
-            </button>
+            <span className="td-pag-rows">
+              Rows:
+              <select value={rpp} onChange={e => { setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
+                {ROWS_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </span>
             <span className="td-pag-range">{safePage} / {pages}</span>
-            <button className="td-pg-btn" disabled={safePage >= pages || total === 0} onClick={() => setPage(p => Math.min(pages, p + 1))}>
-              Next
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
+            <button className="td-pg-btn-icon" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
+            </button>
+            <button className="td-pg-btn-icon" disabled={safePage >= pages || total === 0} onClick={() => setPage(p => Math.min(pages, p + 1))} aria-label="Next page">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
           </div>
         </div>
@@ -776,14 +945,24 @@ export default function SalesTodo() {
             <div className="td-modal-header">
               <div className="td-modal-header-left">
                 <div className="td-modal-header-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
-                    <path d="M9 11l3 3L22 4" />
-                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-                  </svg>
+                  {tab === 'reminder' ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+                      <polygon points="23 7 16 12 23 17 23 7" />
+                      <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                    </svg>
+                  )}
                 </div>
                 <div>
-                  <div className="td-modal-title">{form.editId ? 'Edit Task' : 'Add Task'}</div>
-                  <div className="td-modal-sub">{tab === 'reminder' ? 'Reminder' : `${meetingSub === 'virtual' ? 'Virtual' : 'Physical'} Meeting`}</div>
+                  <div className="td-modal-title-row">
+                    <span className="td-modal-title">{form.editId ? `Edit ${tab === 'reminder' ? 'Reminder' : 'Meeting'}` : `Add ${tab === 'reminder' ? 'Reminder' : 'Meeting'}`}</span>
+                    <span className="td-modal-pill">{tab === 'reminder' ? 'REMINDER' : 'MEETING'}</span>
+                  </div>
+                  <div className="td-modal-sub">{tab === 'reminder' ? 'Reminder' : 'Meeting'}</div>
                 </div>
               </div>
               <button className="td-modal-close" onClick={close}>
@@ -797,8 +976,16 @@ export default function SalesTodo() {
                 <>
                   {/* Reminder form — matches prototype layout */}
                   <div className="td-form-row">
-                    <Field label="Opportunity ID" required>
-                      <input className="td-inp" value={form.oppId || ''} onChange={e => setForm(p => ({ ...p, oppId: e.target.value }))} placeholder="e.g. OPP-028" />
+                    <Field label="Opportunity ID">
+                      <TdSelect
+                        value={form.oppId || ''}
+                        placeholder="— Select opportunity —"
+                        options={[
+                          { value: '', label: '— Select opportunity —' },
+                          ...OPP_ID_OPTIONS.map(o => ({ value: o, label: o })),
+                        ]}
+                        onChange={v => setForm(p => ({ ...p, oppId: v }))}
+                      />
                     </Field>
                     <Field label="Opportunity Date">
                       <input className="td-inp" type="date" value={toInputDate(form.oppDate)} onChange={e => setForm(p => ({ ...p, oppDate: fromInputDate(e.target.value) }))} />
@@ -806,10 +993,14 @@ export default function SalesTodo() {
                   </div>
                   <div className="td-form-row">
                     <Field label="Status">
-                      <select className="td-inp td-sel" value={form.status || 'In Progress'} onChange={e => setForm(p => ({ ...p, status: e.target.value as Reminder['status'] }))}>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Done">Done</option>
-                      </select>
+                      <TdSelect
+                        value={form.status || 'In Progress'}
+                        options={[
+                          { value: 'In Progress', label: 'In Progress' },
+                          { value: 'Done',        label: 'Done' },
+                        ]}
+                        onChange={v => setForm(p => ({ ...p, status: v as Reminder['status'] }))}
+                      />
                     </Field>
                     <Field label="Reminder Subject" required>
                       <input className="td-inp" value={form.subject || ''} onChange={e => setForm(p => ({ ...p, subject: e.target.value }))} placeholder="Subject" />
@@ -820,26 +1011,76 @@ export default function SalesTodo() {
                       <input className="td-inp" type="date" value={toInputDate(form.setDate)} onChange={e => setForm(p => ({ ...p, setDate: fromInputDate(e.target.value) }))} />
                     </Field>
                     <Field label="TAT" required>
-                      <select className="td-inp td-sel" value={form.tat || ''} onChange={e => setForm(p => ({ ...p, tat: e.target.value }))}>
-                        <option value="">Select TAT</option>
-                        {TAT_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
+                      <TdSelect
+                        value={form.tat || ''}
+                        placeholder="Select TAT"
+                        options={[
+                          { value: '', label: 'Select TAT' },
+                          ...TAT_OPTIONS.map(t => ({ value: t, label: t })),
+                        ]}
+                        onChange={v => setForm(p => ({ ...p, tat: v }))}
+                      />
                     </Field>
                   </div>
                   <div className="td-form-row">
                     <div className="td-field">
                       <label className="td-label">Attachment</label>
-                      <label htmlFor="tdF_attachment" className="td-file-drop">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2.2" style={{ flexShrink: 0 }}>
-                          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                        </svg>
-                        <span className="td-file-label">{form.attachmentName || 'Choose file…'}</span>
-                      </label>
+
+                      {/* Existing attachment — only shows in Edit mode when a
+                          file is already on file AND the user hasn't picked a
+                          replacement yet. Clicking the link opens / downloads
+                          the file in a new tab. "Replace" / "Remove" buttons
+                          let the user swap in a new file or detach. */}
+                      {form.attachmentUrl && !form.attachmentFile && (
+                        <div className="td-file-existing">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0d9488" strokeWidth="2.2" style={{ flexShrink: 0 }}>
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                          </svg>
+                          <a href={form.attachmentUrl} target="_blank" rel="noreferrer" className="td-file-existing-link" title={form.attachmentName || 'Open attachment'}>
+                            {form.attachmentName || 'Open attachment'}
+                          </a>
+                          <button
+                            type="button"
+                            className="td-file-replace"
+                            onClick={() => document.getElementById('tdF_attachment')?.click()}
+                          >
+                            Replace
+                          </button>
+                          <button
+                            type="button"
+                            className="td-file-remove"
+                            onClick={() => setForm(p => ({ ...p, attachmentUrl: undefined, attachmentName: '', attachmentFile: null }))}
+                            title="Detach current file"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Dropzone — shown when there's no existing attachment
+                          OR after the user picked a replacement file. */}
+                      {(!form.attachmentUrl || form.attachmentFile) && (
+                        <label htmlFor="tdF_attachment" className="td-file-drop">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2.2" style={{ flexShrink: 0 }}>
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                          </svg>
+                          <span className="td-file-label">{form.attachmentFile?.name || form.attachmentName || 'Choose file…'}</span>
+                          {form.attachmentFile && (
+                            <button
+                              type="button"
+                              className="td-file-clear"
+                              onClick={(e) => { e.preventDefault(); setForm(p => ({ ...p, attachmentFile: null, attachmentName: '' })); }}
+                              title="Clear selection"
+                            >×</button>
+                          )}
+                        </label>
+                      )}
                       <input
                         type="file" id="tdF_attachment" style={{ display: 'none' }}
                         onChange={e => {
                           const f = e.target.files?.[0];
-                          setForm(p => ({ ...p, attachmentName: f ? f.name : '' }));
+                          setForm(p => ({ ...p, attachmentName: f ? f.name : '', attachmentFile: f || null }));
                         }}
                       />
                     </div>
@@ -881,10 +1122,15 @@ export default function SalesTodo() {
                       <input className="td-inp" value={form.contact || ''} onChange={e => setForm(p => ({ ...p, contact: e.target.value }))} placeholder="Contact number" />
                     </Field>
                     <Field label={meetingSub === 'physical' ? 'Meeting Type' : 'Platform'} required>
-                      <select className="td-inp td-sel" value={form.platform || ''} onChange={e => setForm(p => ({ ...p, platform: e.target.value }))}>
-                        <option value="">{meetingSub === 'physical' ? 'Select type' : 'Select platform'}</option>
-                        {(meetingSub === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS).map(p => <option key={p} value={p}>{p}</option>)}
-                      </select>
+                      <TdSelect
+                        value={form.platform || ''}
+                        placeholder={meetingSub === 'physical' ? 'Select type' : 'Select platform'}
+                        options={[
+                          { value: '', label: meetingSub === 'physical' ? 'Select type' : 'Select platform' },
+                          ...(meetingSub === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS).map(p => ({ value: p, label: p })),
+                        ]}
+                        onChange={v => setForm(p => ({ ...p, platform: v }))}
+                      />
                     </Field>
                   </div>
                   {meetingSub === 'virtual' ? (
@@ -922,8 +1168,10 @@ export default function SalesTodo() {
               <div className="td-footer-actions">
                 <button className="td-btn-cancel" onClick={close}>Cancel</button>
                 <button className="td-btn-save" onClick={save}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /></svg>
-                  Save
+                  {form.editId
+                    ? (<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>)
+                    : (<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /></svg>)}
+                  {form.editId ? 'Update' : 'Save'}
                 </button>
               </div>
             </div>
@@ -1212,6 +1460,76 @@ function fromInputDate(d?: string) {
   return `${p[2]}/${p[1]}/${p[0]}`;
 }
 
+/* ─── TdSelect — themed dropdown that matches the rest of the form.
+ *  Native <select> elements can't be styled when their options panel is
+ *  open (browsers refuse to honour CSS on <option>), so we build a tiny
+ *  custom dropdown using a styled trigger + portal-less menu. Keeps the
+ *  teal palette consistent end-to-end. Falls back to a plain trigger
+ *  string when no option matches the value. ──────────────────────────── */
+function TdSelect(props: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  const { value, options, onChange, placeholder = 'Select…' } = props;
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const selected = options.find(o => o.value === value);
+  return (
+    <div ref={rootRef} className={`td-cs ${open ? 'is-open' : ''}`}>
+      <button
+        type="button"
+        className="td-cs-trigger"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className={`td-cs-value ${selected ? '' : 'is-placeholder'}`}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div className="td-cs-menu" role="listbox">
+          {options.map(o => (
+            <button
+              key={o.value || '__empty'}
+              type="button"
+              role="option"
+              aria-selected={o.value === value}
+              className={`td-cs-opt ${o.value === value ? 'is-active' : ''}`}
+              onClick={() => { onChange(o.value); setOpen(false); }}
+            >
+              {o.label}
+              {o.value === value && (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12" /></svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Status badge (colored dot + text) ─── */
 function StatusBadge({ status }: { status: string }) {
   const cls =
@@ -1279,7 +1597,13 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   box-shadow: 0 3px 10px rgba(13,148,136,.35);
 }
-.td-root .td-header-title { font-size:15px; font-weight:800; color:#3b0764; letter-spacing:-.3px; line-height:1.2; }
+.td-root .td-header-title {
+  font-size:15px; font-weight:800; letter-spacing:-.3px; line-height:1.2;
+  background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: #7c3aed;
+}
 .td-root .td-header-sub   { font-size:11px; color:#0d9488; margin-top:2px; font-weight:500; opacity:.85; }
 .td-root .td-header-text  { flex: 1; }
 .td-root .td-tabs {
@@ -1297,8 +1621,17 @@ const SCOPED_CSS = `
 
 /* Toolbar */
 .td-root .td-toolbar { display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
-.td-root .td-toolbar-row { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap: wrap; }
-.td-root .td-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+/* Keep the whole toolbar on a single line — Virtual / Physical / List /
+   Calendar tabs on the left, Add + Search on the right. Wraps only on very
+   small screens (<900px) to avoid horizontal scroll. */
+.td-root .td-toolbar-row {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px; flex-wrap: nowrap; min-width: 0;
+}
+@media (max-width: 900px) {
+  .td-root .td-toolbar-row { flex-wrap: wrap; }
+}
+.td-root .td-filters { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; min-width: 0; }
 .td-root .td-sf {
   padding:5px 14px; border-radius:20px; font-size:11.5px; font-weight:600;
   cursor:pointer; border:1.5px solid #99f6e4; background:#f0fdfa; color:#0d9488;
@@ -1343,6 +1676,17 @@ const SCOPED_CSS = `
 }
 .td-root .td-pill-count-active { background: rgba(255,255,255,.25); color: #fff; }
 
+/* View toggle row (Reminder tab, screenshot 1 — view toggle alone below filters) */
+.td-root .td-reminder-view-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 0; margin-top: 2px;
+}
+.td-root .td-reminder-view-row .td-view-toggle {
+  background: rgba(255,255,255,.7);
+  border: 1.5px solid #99f6e4;
+  border-radius: 8px;
+}
+
 /* Meeting status sub-filter row (under primary pills) */
 .td-root .td-meeting-status-row {
   display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -1373,7 +1717,10 @@ const SCOPED_CSS = `
   box-shadow: 0 1px 4px rgba(13,148,136,.3);
 }
 
-.td-root .td-toolbar-right { display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap: wrap; }
+.td-root .td-toolbar-right { display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap: nowrap; }
+@media (max-width: 900px) {
+  .td-root .td-toolbar-right { flex-wrap: wrap; }
+}
 .td-root .td-search-wrap {
   display: flex; align-items: center;
   background: #fff;
@@ -1473,13 +1820,14 @@ const SCOPED_CSS = `
   color: #0d9488; font-weight: 600;
 }
 
-/* TODAY indicator pill in Set Date column */
+/* TODAY indicator pill in Set Date column — amber matches screenshot */
 .td-root .td-today-pill {
-  display: inline-block; margin-left: 4px;
-  font-size: 9.5px; font-weight: 700;
-  background: #ccfbf1; color: #065f46;
-  padding: 1px 6px; border-radius: 8px;
-  border: 1px solid #99f6e4;
+  display: inline-block; margin-left: 6px;
+  font-size: 9.5px; font-weight: 800;
+  background: #fef3c7; color: #92400e;
+  padding: 2px 8px; border-radius: 99px;
+  border: 1px solid #fde68a;
+  letter-spacing: .06em;
 }
 
 /* Virtual/Physical type badge next to meeting code */
@@ -1540,26 +1888,42 @@ const SCOPED_CSS = `
   flex-wrap: wrap; gap: 8px;
 }
 .td-root .td-pag-info {
-  font-size: 11.5px; color: #64748b;
+  display: inline-flex; align-items: center;
+  padding: 5px 14px; border-radius: 99px;
+  background: #ccfbf1; border: 1.5px solid #5eead4;
+  font-size: 11.5px; color: #0d9488; font-weight: 700;
 }
-.td-root .td-pag-info strong { color: #0d9488; font-weight: 800; font-size: 12px; }
-.td-root .td-pag-btns { display:flex; align-items:center; gap:6px; }
-.td-root .td-pg-btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 12px; border-radius: 6px;
-  border: 1.5px solid #99f6e4; background: #fff;
+.td-root .td-pag-info strong { color: #065f46; font-weight: 800; font-size: 11.5px; margin: 0 2px; }
+.td-root .td-pag-btns { display:flex; align-items:center; gap:8px; }
+.td-root .td-pag-rows {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 99px;
+  background: #fff; border: 1.5px solid #99f6e4;
   color: #0d9488; font-family: inherit;
-  font-size: 11.5px; font-weight: 600;
-  cursor: pointer; transition: all .15s;
+  font-size: 11.5px; font-weight: 700;
 }
-.td-root .td-pg-btn:hover:not(:disabled) { background:#f0fdfa; border-color:#14b8a6; }
-.td-root .td-pg-btn:disabled { opacity:.4; cursor:not-allowed; }
+.td-root .td-pag-rows select {
+  border: none; background: transparent;
+  font-family: inherit; font-size: 11.5px;
+  color: #0d9488; font-weight: 800;
+  cursor: pointer; outline: none;
+}
 .td-root .td-pag-range {
-  padding: 4px 12px; border-radius: 6px;
-  background: linear-gradient(135deg, #0d9488, #065f46);
-  color: #fff; font-weight: 700; font-size: 11.5px;
+  display: inline-flex; align-items: center;
+  padding: 4px 14px; border-radius: 99px;
+  background: #fff; border: 1.5px solid #99f6e4;
+  color: #0d9488; font-weight: 800; font-size: 11.5px;
   white-space: nowrap;
 }
+.td-root .td-pg-btn-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1.5px solid #99f6e4; background: #fff;
+  color: #0d9488; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all .15s;
+}
+.td-root .td-pg-btn-icon:hover:not(:disabled) { background:#f0fdfa; border-color:#14b8a6; transform: translateY(-1px); }
+.td-root .td-pg-btn-icon:disabled { opacity:.4; cursor:not-allowed; }
 
 /* Rows-per-page selector (lives in the toolbar) */
 .td-root .td-rows-sel {
@@ -1604,7 +1968,16 @@ const SCOPED_CSS = `
   background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3);
   display:flex; align-items:center; justify-content:center; flex-shrink:0;
 }
+.td-modal-title-row { display: inline-flex; align-items: center; gap: 9px; }
 .td-modal-title { font-size:14px; font-weight:800; color:#fff; letter-spacing:-.2px; }
+.td-modal-pill {
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; border-radius: 99px;
+  background: rgba(255,255,255,.22);
+  border: 1px solid rgba(255,255,255,.35);
+  color: #fff; font-size: 9px; font-weight: 800;
+  letter-spacing: .08em; text-transform: uppercase;
+}
 .td-modal-sub   { font-size:10.5px; color:rgba(255,255,255,.75); margin-top:2px; }
 .td-modal-close {
   width:26px; height:26px; border-radius:7px; border:none;
@@ -1663,8 +2036,98 @@ const SCOPED_CSS = `
 .td-file-label {
   font-size: 11.5px; color: #64748b;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 180px; flex: 1;
 }
+.td-file-clear {
+  margin-left: auto;
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 1px solid #99f6e4; background: #fff;
+  color: #0d9488; font-size: 12px; font-weight: 800; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.td-file-clear:hover { background: #f43f5e; color: #fff; border-color: #f43f5e; }
+
+/* Existing-attachment chip — shows in edit mode when the row already has
+   a file. Lets the user open / replace / detach it without re-uploading. */
+.td-file-existing {
+  display: flex; align-items: center; gap: 9px;
+  border: 1.5px solid #5eead4; border-radius: 8px;
+  padding: 7px 12px; background: #ccfbf1;
+  height: 36px;
+}
+.td-file-existing-link {
+  flex: 1;
+  font-size: 11.5px; font-weight: 700; color: #0d9488;
+  text-decoration: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 200px;
+}
+.td-file-existing-link:hover { color: #065f46; text-decoration: underline; }
+.td-file-replace {
+  border: 1.5px solid #0d9488; background: #fff;
+  color: #0d9488; font-family: inherit;
+  font-size: 10.5px; font-weight: 800;
+  padding: 3px 10px; border-radius: 99px; cursor: pointer;
+}
+.td-file-replace:hover { background: #0d9488; color: #fff; }
+.td-file-remove {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1.5px solid #fecaca; background: #fef2f2;
+  color: #dc2626; font-size: 14px; font-weight: 800; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.td-file-remove:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+
+/* TdSelect — themed custom dropdown */
+.td-cs { position: relative; }
+.td-cs-trigger {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; gap: 8px;
+  border: 1.5px solid #99f6e4; border-radius: 8px;
+  background: #fff; color: #1e293b;
+  font-family: inherit; font-size: 12px; line-height: 1.4;
+  padding: 7px 12px; cursor: pointer; outline: none;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+  text-align: left;
+}
+.td-cs-trigger:hover { border-color: #14b8a6; background: #f0fdfa; }
+.td-cs.is-open .td-cs-trigger {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20,184,166,.12);
+  background: #fff;
+}
+.td-cs.is-open .td-cs-trigger > svg { transform: rotate(180deg); }
+.td-cs-trigger > svg { transition: transform .15s; color: #0d9488; flex-shrink: 0; }
+.td-cs-value {
+  flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.td-cs-value.is-placeholder { color: #94a3b8; }
+.td-cs-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: #fff; border: 1.5px solid #5eead4; border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(13,148,136,.18), 0 4px 10px rgba(15,23,42,.05);
+  padding: 4px;
+  max-height: 260px; overflow-y: auto;
+  z-index: 9600;
+  animation: tdCsIn .15s cubic-bezier(.22,1,.36,1);
+}
+@keyframes tdCsIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+.td-cs-opt {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; gap: 8px;
+  padding: 8px 12px; border-radius: 7px; border: none;
+  background: transparent; color: #1e293b;
+  font-family: inherit; font-size: 12px; font-weight: 600;
+  text-align: left; cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.td-cs-opt:hover { background: #f0fdfa; color: #0d9488; }
+.td-cs-opt.is-active { background: linear-gradient(135deg, #14b8a6, #0d9488); color: #fff; }
+.td-cs-opt.is-active:hover { background: linear-gradient(135deg, #0d9488, #065f46); }
+.td-cs-opt > svg { color: currentColor; flex-shrink: 0; }
+
 .td-req { color: #e11d48; font-weight: 700; }
 .td-inp {
   width:100%; box-sizing:border-box;

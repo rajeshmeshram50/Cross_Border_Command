@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\HrDocumentTemplateController;
 use App\Http\Controllers\Api\HrGeneratedDocumentController;
 use App\Http\Controllers\Api\HrOverviewController;
 use App\Http\Controllers\Api\LeadAckReasonController;
+use App\Http\Controllers\Api\SalesTodoController;
 use App\Http\Controllers\Api\LeavePlanController;
 use App\Http\Controllers\Api\LeaveRequestController;
 use App\Http\Controllers\Api\MasterController;
@@ -100,6 +101,24 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/sales/lead-ack-reasons',       [LeadAckReasonController::class, 'store']);
     Route::put   ('/sales/lead-ack-reasons/{id}',  [LeadAckReasonController::class, 'update']);
     Route::delete('/sales/lead-ack-reasons/{id}',  [LeadAckReasonController::class, 'destroy']);
+
+    // Sales Matrix → Productivity Tracker (/sales/todo). Two parallel
+    // sub-resources behind one controller — reminders + meetings — with
+    // shared scope rules (default = caller's own rows; ?scope=all is the
+    // privileged admin path). Attachment uploads on reminders go through
+    // multipart/form-data on store + update.
+    Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);
+    Route::post  ('/sales/reminders',                 [SalesTodoController::class, 'storeReminder']);
+    Route::post  ('/sales/reminders/{id}',            [SalesTodoController::class, 'updateReminder']); // POST + _method=PUT for multipart
+    Route::patch ('/sales/reminders/{id}/status',     [SalesTodoController::class, 'setReminderStatus']);
+    Route::delete('/sales/reminders/{id}',            [SalesTodoController::class, 'destroyReminder']);
+
+    Route::get   ('/sales/meetings',                  [SalesTodoController::class, 'listMeetings']);
+    Route::get   ('/sales/meetings/next-code',        [SalesTodoController::class, 'nextMeetingCode']);
+    Route::post  ('/sales/meetings',                  [SalesTodoController::class, 'storeMeeting']);
+    Route::put   ('/sales/meetings/{id}',             [SalesTodoController::class, 'updateMeeting']);
+    Route::patch ('/sales/meetings/{id}/status',      [SalesTodoController::class, 'setMeetingStatus']);
+    Route::delete('/sales/meetings/{id}',             [SalesTodoController::class, 'destroyMeeting']);
 
     // Organization Types (master data — super admin manages; all auth users can list)
     Route::apiResource('organization-types', OrganizationTypeController::class)
