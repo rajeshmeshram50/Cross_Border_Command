@@ -264,15 +264,15 @@ export default function SalesTodo() {
   const filteredReminders = useMemo(() => {
     let rows = reminders;
     if (reminderFilter === 'today')         rows = rows.filter(r => r.setDate === TODAY_STR && r.status === 'In Progress');
-    else if (reminderFilter === 'all')      rows = rows;
-    else                                    rows = rows.filter(r => r.status === reminderFilter);
+    else if (reminderFilter !== 'all')      rows = rows.filter(r => r.status === reminderFilter);
     if (q) {
       const lo = q.toLowerCase();
       rows = rows.filter(r =>
         r.subject.toLowerCase().includes(lo) ||
         r.oppId.toLowerCase().includes(lo) ||
         r.setDate.includes(lo) ||
-        r.remark.toLowerCase().includes(lo)
+        r.remark.toLowerCase().includes(lo) ||
+        r.tat.toLowerCase().includes(lo)
       );
     }
     return rows;
@@ -283,12 +283,20 @@ export default function SalesTodo() {
     let rows = meetings.filter(m => m.type === meetingSub && m.status === meetingFilter);
     if (q) {
       const lo = q.toLowerCase();
+      // Search across every text-bearing column the user can see in the
+      // table — customer/agenda/etc. PLUS the columns that used to silently
+      // miss ("Zoom" never matched the platform column; phone numbers
+      // never matched contact; venue / email were also blind spots).
       rows = rows.filter(m =>
         m.customer.toLowerCase().includes(lo) ||
         m.oppId.toLowerCase().includes(lo) ||
         m.code.toLowerCase().includes(lo) ||
         m.date.includes(lo) ||
-        m.agenda.toLowerCase().includes(lo)
+        m.agenda.toLowerCase().includes(lo) ||
+        m.platform.toLowerCase().includes(lo) ||
+        m.contact.toLowerCase().includes(lo) ||
+        m.email.toLowerCase().includes(lo) ||
+        m.venue.toLowerCase().includes(lo)
       );
     }
     return rows;
@@ -354,6 +362,15 @@ export default function SalesTodo() {
   const startIdx = (safePage - 1) * rpp;
   const rows = filtered.slice(startIdx, startIdx + rpp);
 
+  // Resync the `page` state when filters / deletes shrink `pages` below
+  // the currently selected page. Without this, the render-time `safePage`
+  // clamp hides the drift but Prev/Next clicks operate on the stale
+  // `page` and feel "stuck" — the first one or two clicks appear to do
+  // nothing while the underlying counter catches up.
+  useEffect(() => {
+    if (page > pages) setPage(pages);
+  }, [pages, page]);
+
   /* ── Actions ── */
   const switchTab = (next: TopTab) => {
     setTab(next);
@@ -407,40 +424,47 @@ export default function SalesTodo() {
   const del = async (record: Reminder | Meeting) => {
     if (!canDel || savingRef.current) return;
 
-    // Confirm before delete — matches the project's confirm-dialog pattern
-    // used by Inbox / MyTeam / HrEmployeeOnboarding. Resolves to true when
-    // the user clicks Yes, false on Cancel / Esc / backdrop click.
-    const isReminder = tab === 'reminder';
-    const label = isReminder
-      ? (record as Reminder).subject
-      : `${(record as Meeting).code} — ${(record as Meeting).customer}`;
-    const ok = await confirmDialog({
-      title: isReminder ? 'Delete reminder?' : 'Delete meeting?',
-      message: (
-        <>
-          You're about to permanently delete <strong>{label}</strong>. This can't be undone.
-        </>
-      ),
-      confirmLabel: 'Yes, Delete',
-      cancelLabel:  'Cancel',
-      tone:         'danger',
-      icon:         'delete-bin-line',
-    });
-    if (!ok) return;
-
+    // Mark "in-flight" BEFORE awaiting the confirm dialog so a second
+    // delete click (or Enter-spam on the keyboard) is rejected by the
+    // guard at the top instead of racing through to a duplicate DELETE.
+    // Reset in `finally` covers all exit paths — cancel, network error,
+    // success — so the ref never leaks across interactions.
     savingRef.current = true;
     try {
-      if (isReminder) {
-        await remindersApi.destroy(record.id);
-        setReminders(prev => prev.filter(r => r.id !== record.id));
-        toast.info('Deleted', (record as Reminder).subject);
-      } else {
-        await meetingsApi.destroy(record.id);
-        setMeetings(prev => prev.filter(m => m.id !== record.id));
-        toast.info('Deleted', (record as Meeting).code);
+      // Confirm before delete — matches the project's confirm-dialog
+      // pattern (Inbox / MyTeam / HrEmployeeOnboarding). Resolves true
+      // on Yes, false on Cancel / Esc / backdrop click.
+      const isReminder = tab === 'reminder';
+      const label = isReminder
+        ? (record as Reminder).subject
+        : `${(record as Meeting).code} — ${(record as Meeting).customer}`;
+      const ok = await confirmDialog({
+        title: isReminder ? 'Delete reminder?' : 'Delete meeting?',
+        message: (
+          <>
+            You're about to permanently delete <strong>{label}</strong>. This can't be undone.
+          </>
+        ),
+        confirmLabel: 'Yes, Delete',
+        cancelLabel:  'Cancel',
+        tone:         'danger',
+        icon:         'delete-bin-line',
+      });
+      if (!ok) return;
+
+      try {
+        if (isReminder) {
+          await remindersApi.destroy(record.id);
+          setReminders(prev => prev.filter(r => r.id !== record.id));
+          toast.info('Deleted', (record as Reminder).subject);
+        } else {
+          await meetingsApi.destroy(record.id);
+          setMeetings(prev => prev.filter(m => m.id !== record.id));
+          toast.info('Deleted', (record as Meeting).code);
+        }
+      } catch (err: any) {
+        toast.error('Could not delete', err?.response?.data?.message || err?.message || 'Please try again.');
       }
-    } catch (err: any) {
-      toast.error('Could not delete', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally {
       savingRef.current = false;
     }
@@ -479,8 +503,18 @@ export default function SalesTodo() {
           // default "Today's Priority" filter only shows (today + In Progress),
           // so a Done reminder OR a future-dated one would silently vanish
           // and the user would think the save didn't work. Land on the
-          // matching status tab so the newly-created row is always visible.
-          setReminderFilter(payload.status === 'Done' ? 'Done' : 'all');
+          // most specific filter that contains the new row:
+          //   • Done            → Completed tab
+          //   • today + InProg  → Today's Priority (preserves the focused view)
+          //   • everything else → All Reminders
+          const isTodayPriority =
+            payload.status === 'In Progress' &&
+            payload.set_date === displayToIso(TODAY_STR);
+          setReminderFilter(
+            payload.status === 'Done' ? 'Done' :
+            isTodayPriority ? 'today' :
+            'all'
+          );
           setPage(1);
         }
         close();
@@ -867,13 +901,29 @@ export default function SalesTodo() {
                       <td>
                         <div className="td-actions">
                           {isPhys ? (
-                            <Tooltip label="View Location">
-                              <button
-                                className="td-ab td-ab-loc"
-                                aria-label="View Location"
-                                onClick={() => alert('Venue: ' + (m.venue || '—'))}
-                              ><IconLocation /></button>
-                            </Tooltip>
+                            // Physical meetings — clicking "View Location" opens the
+                            // venue on Google Maps in a new tab. Falls back to a
+                            // themed toast when the row has no venue captured,
+                            // since a blank maps query is worse than nothing.
+                            m.venue ? (
+                              <Tooltip label="View on Maps">
+                                <a
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(m.venue)}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="td-ab td-ab-loc"
+                                  aria-label="View on Maps"
+                                ><IconLocation /></a>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip label="No venue">
+                                <button
+                                  className="td-ab td-ab-loc"
+                                  aria-label="No venue captured"
+                                  onClick={() => toast.info('No venue', 'This meeting doesn’t have a venue captured.')}
+                                ><IconLocation /></button>
+                              </Tooltip>
+                            )
                           ) : (m.link && (
                             <Tooltip label="Join Meeting">
                               <a href={m.link} target="_blank" rel="noreferrer" className="td-ab td-ab-join" aria-label="Join Meeting"><IconVideo /></a>
@@ -1423,10 +1473,17 @@ function CalendarSection(props: {
 
       <div className="td-cal-card">
         <div className="td-cal-day-hdr">
-          {CAL_DAY_NAMES.map((d, i) => {
-            const isTdHdr = (i === new Date().getDay() && calMonth === todayDate.m && calYear === todayDate.y);
-            return <div key={d} className={`td-cal-day-hdr-cell ${isTdHdr ? 'td-cal-day-hdr-today' : ''} ${(i===0||i===6) ? 'td-cal-day-hdr-we' : ''}`}>{d}</div>;
-          })}
+          {/* Use the anchored `todayDate` (computed at module load) rather
+              than a live `new Date()` here — otherwise the highlighted
+              weekday column drifts across midnight while the page stays
+              open, getting out of sync with the `td-cal-cell-today` cell. */}
+          {(() => {
+            const todayDow = new Date(todayDate.y, todayDate.m, todayDate.d).getDay();
+            return CAL_DAY_NAMES.map((d, i) => {
+              const isTdHdr = (i === todayDow && calMonth === todayDate.m && calYear === todayDate.y);
+              return <div key={d} className={`td-cal-day-hdr-cell ${isTdHdr ? 'td-cal-day-hdr-today' : ''} ${(i===0||i===6) ? 'td-cal-day-hdr-we' : ''}`}>{d}</div>;
+            });
+          })()}
         </div>
         <div className="td-cal-grid">{cells}</div>
       </div>
@@ -1474,7 +1531,20 @@ function TdSelect(props: {
 }) {
   const { value, options, onChange, placeholder = 'Select…' } = props;
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Reset the filter every time the menu closes so the next open is fresh,
+  // and auto-focus the search input when the menu opens (mirrors how
+  // MasterSelect behaves so the two read as siblings).
+  useEffect(() => {
+    if (!open) { setSearch(''); return; }
+    // setTimeout shoves the focus past the click that just opened the menu —
+    // otherwise React re-renders steal it back on the same tick.
+    const id = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -1491,6 +1561,14 @@ function TdSelect(props: {
   }, [open]);
 
   const selected = options.find(o => o.value === value);
+  // Only show the search row when there are enough options to make
+  // scrolling annoying — keeps short status/yes-no dropdowns clean.
+  const showSearch = options.length > 4;
+  const lo = search.trim().toLowerCase();
+  const filtered = lo
+    ? options.filter(o => o.label.toLowerCase().includes(lo) || o.value.toLowerCase().includes(lo))
+    : options;
+
   return (
     <div ref={rootRef} className={`td-cs ${open ? 'is-open' : ''}`}>
       <button
@@ -1509,21 +1587,40 @@ function TdSelect(props: {
       </button>
       {open && (
         <div className="td-cs-menu" role="listbox">
-          {options.map(o => (
-            <button
-              key={o.value || '__empty'}
-              type="button"
-              role="option"
-              aria-selected={o.value === value}
-              className={`td-cs-opt ${o.value === value ? 'is-active' : ''}`}
-              onClick={() => { onChange(o.value); setOpen(false); }}
-            >
-              {o.label}
-              {o.value === value && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12" /></svg>
-              )}
-            </button>
-          ))}
+          {showSearch && (
+            <div className="td-cs-search" onMouseDown={e => e.stopPropagation()}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.3">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => { if (e.key !== 'Escape') e.stopPropagation(); }}
+              />
+            </div>
+          )}
+          <div className="td-cs-list">
+            {filtered.length === 0 ? (
+              <div className="td-cs-empty">No results</div>
+            ) : filtered.map(o => (
+              <button
+                key={o.value || '__empty'}
+                type="button"
+                role="option"
+                aria-selected={o.value === value}
+                className={`td-cs-opt ${o.value === value ? 'is-active' : ''}`}
+                onClick={() => { onChange(o.value); setOpen(false); }}
+              >
+                {o.label}
+                {o.value === value && (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><polyline points="20 6 9 17 4 12" /></svg>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -2109,11 +2206,30 @@ const SCOPED_CSS = `
   background: #fff; border: 1.5px solid #5eead4; border-radius: 10px;
   box-shadow: 0 12px 28px rgba(13,148,136,.18), 0 4px 10px rgba(15,23,42,.05);
   padding: 4px;
-  max-height: 260px; overflow-y: auto;
+  max-height: 260px; overflow: hidden;
   z-index: 9600;
   animation: tdCsIn .15s cubic-bezier(.22,1,.36,1);
+  display: flex; flex-direction: column;
 }
 @keyframes tdCsIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+/* Search row — only rendered when options.length > 4. Sticks to the top
+   of the menu and scrolls with the option list underneath it. */
+.td-cs-search {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px 6px 10px; margin: 2px 2px 4px;
+  border: 1.5px solid #ccfbf1; border-radius: 7px; background: #f0fdfa;
+}
+.td-cs-search > svg { flex-shrink: 0; }
+.td-cs-search input {
+  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 12px; font-weight: 500; color: #1e293b;
+}
+.td-cs-search input::placeholder { color: #94a3b8; }
+.td-cs-list { overflow-y: auto; flex: 1; min-height: 0; }
+.td-cs-empty {
+  padding: 14px 12px; text-align: center;
+  font-size: 11.5px; font-weight: 600; color: #94a3b8;
+}
 .td-cs-opt {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; gap: 8px;
@@ -2514,6 +2630,12 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .td-cs-opt { color: #e2e8f0; }
 [data-bs-theme="dark"] .td-cs-opt:hover { background: rgba(20,184,166,.12); color: #99f6e4; }
 [data-bs-theme="dark"] .td-cs-value.is-placeholder { color: #475569; }
+[data-bs-theme="dark"] .td-cs-search {
+  background: rgba(15,23,42,.55); border-color: rgba(94,234,212,.30);
+}
+[data-bs-theme="dark"] .td-cs-search input { color: #e2e8f0; }
+[data-bs-theme="dark"] .td-cs-search input::placeholder { color: #475569; }
+[data-bs-theme="dark"] .td-cs-empty { color: #475569; }
 [data-bs-theme="dark"] .td-mtg-toggle { border-color: rgba(94,234,212,.30); }
 [data-bs-theme="dark"] .td-mtg-toggle-btn {
   background: rgba(15,23,42,.55); color: #5eead4;
