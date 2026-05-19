@@ -87,9 +87,10 @@
     -webkit-backdrop-filter: none !important;
     opacity: 1 !important;
     filter: none !important;
-    /* Sits above EpModal overlays (z-index 5000) used in EmployeeProfile so
-       the dropdown menu isn't trapped behind the modal backdrop. */
-    z-index: 6000 !important;
+    /* Sits above EpModal overlays (z-index 5000) used in EmployeeProfile
+       and the Add Customer modal (z-index 10000) so the portalled menu
+       isn't trapped behind any in-app modal backdrop. */
+    z-index: 11000 !important;
   }
   /* Search row at the top of the menu (sticks — not part of scroll area) */
   .master-select-search {
