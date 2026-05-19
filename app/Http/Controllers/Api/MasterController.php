@@ -93,7 +93,13 @@ class MasterController extends Controller
         'countries' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'iso_code', 't' => 'text', 'normalize' => 'upper'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'iso_code']],
         'states' => ['fields' => [['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name', 'country_id']],
         'state_codes' => ['fields' => [['n' => 'state_id', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'state_code', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['state_id', 'state_code']],
-        'address_types' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
+        // Case-insensitive name uniqueness — `uEach` uses LOWER() so
+        // "registered office" can't be added when "Registered Office"
+        // already exists. Combined with the system-seed collision
+        // check in store/update, manually creating duplicates of the
+        // three globally-seeded fixed types (Registered Office,
+        // Warehouse, Billing Address) is also blocked.
+        'address_types' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name']],
         'port_of_loading' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
         'port_of_discharge' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'city', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
         'segments' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
@@ -104,13 +110,22 @@ class MasterController extends Controller
         'packaging_material' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'material_type', 't' => 'select', 'opts' => ['Bag', 'Box', 'Crate', 'Drum', 'Pallet', 'Wrap', 'Other']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
         'conditions' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
         'incoterms' => ['fields' => [['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'full_name', 't' => 'text', 'r' => true], ['n' => 'transport_mode', 't' => 'select', 'opts' => ['Sea/Inland Waterway', 'Any Mode', 'Air', 'Road', 'Rail']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['code']],
-        'customer_types' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'gst_applicable', 't' => 'select', 'opts' => ['Yes', 'No']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
-        'customer_classifications' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'credit_limit', 't' => 'number'], ['n' => 'payment_terms', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
+        // Case-insensitive name + system-seed collision check —
+        // Retailer / Wholesaler are seeded as global is_system rows,
+        // and the controller blocks shadow-creating duplicates of them
+        // under any tenant scope (see uEach handler).
+        'customer_types' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'gst_applicable', 't' => 'select', 'opts' => ['Yes', 'No']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name']],
+        // Case-insensitive name + system-seed collision check
+        // (Standard, VIP are seeded as global is_system rows).
+        'customer_classifications' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'credit_limit', 't' => 'number'], ['n' => 'payment_terms', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name']],
         'vendor_types' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'vendor_behaviour' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'applicable_types' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'party_type', 't' => 'select', 'opts' => ['Customer', 'Vendor', 'Third Party', 'Carrier', 'Other']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'license_name' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'license_code', 't' => 'text'], ['n' => 'issuing_authority', 't' => 'text'], ['n' => 'validity_months', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['license_code']],
-        'risk_levels' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'text'], ['n' => 'action_required', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
+        // Case-insensitive name uniqueness + system-seed collision check
+        // (Low / High are seeded as global is_system rows and can't be
+        // shadow-created under any tenant scope).
+        'risk_levels' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'text'], ['n' => 'action_required', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name']],
         'document_type' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'applicable_to', 't' => 'select', 'opts' => ['Customer', 'Vendor', 'Both', 'Internal']], ['n' => 'is_mandatory', 't' => 'select', 'opts' => ['Yes', 'No']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
         'haz_class' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'haz_code', 't' => 'text'], ['n' => 'packing_group', 't' => 'select', 'opts' => ['I (High Danger)', 'II (Medium Danger)', 'III (Low Danger)', 'N/A']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['haz_code']],
         'compliance_behaviours' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'action_required', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
@@ -340,6 +355,22 @@ class MasterController extends Controller
         if ($slug === 'address_types' && !empty($row->is_system)) {
             unset($data['name']);
         }
+        // System-seeded Customer Consignee Types (Retailer, Wholesaler) —
+        // same name-lock + status-still-editable rule.
+        if ($slug === 'customer_types' && !empty($row->is_system)) {
+            unset($data['name']);
+        }
+        // System-seeded Risk Levels (Low, High) — name pinned so
+        // downstream rules (KYC, compliance) can rely on the labels.
+        if ($slug === 'risk_levels' && !empty($row->is_system)) {
+            unset($data['name']);
+        }
+        // System-seeded Customer Classifications (Standard, VIP) —
+        // name pinned; credit_limit / payment_terms / status remain
+        // editable so admins can tune the financial defaults.
+        if ($slug === 'customer_classifications' && !empty($row->is_system)) {
+            unset($data['name']);
+        }
 
         // Same file-upload absorbtion as store(). For update, we also
         // clean up the previously-stored file when a new one is being
@@ -479,6 +510,29 @@ class MasterController extends Controller
         if ($slug === 'address_types' && !empty($row->is_system)) {
             return response()->json([
                 'message' => 'This address type is system-managed and cannot be deleted.',
+            ], 403);
+        }
+        // System-seeded Customer Consignee Types (Retailer, Wholesaler)
+        // are referenced by customer records via customer_type — block
+        // deletion so the link doesn't go dangling.
+        if ($slug === 'customer_types' && !empty($row->is_system)) {
+            return response()->json([
+                'message' => 'This customer consignee type is system-managed and cannot be deleted.',
+            ], 403);
+        }
+        // System-seeded Risk Levels (Low, High) — referenced by KYC /
+        // compliance flows, blocking delete keeps those links stable.
+        if ($slug === 'risk_levels' && !empty($row->is_system)) {
+            return response()->json([
+                'message' => 'This risk level is system-managed and cannot be deleted.',
+            ], 403);
+        }
+        // System-seeded Customer Classifications (Standard, VIP) —
+        // customer records reference these tiers for credit + payment
+        // terms, so deletion would break those links.
+        if ($slug === 'customer_classifications' && !empty($row->is_system)) {
+            return response()->json([
+                'message' => 'This customer classification is system-managed and cannot be deleted.',
             ], 403);
         }
 
@@ -939,6 +993,30 @@ class MasterController extends Controller
                 throw ValidationException::withMessages([
                     $colName => "This {$label} is already registered. Please use a different value.",
                 ]);
+            }
+
+            // ── System-seed collision check ────────────────────────────
+            // The tenant-scoped query above only sees rows owned by the
+            // current (client, branch). Globally-seeded is_system rows
+            // live at (client_id=NULL, branch_id=NULL), so a branch
+            // user could otherwise shadow-create "Registered Office"
+            // inside their own branch — visible alongside the real
+            // system one. Run a second case-insensitive lookup against
+            // the global system rows and reject if it matches.
+            $tableName = (new $modelClass)->getTable();
+            if (\Illuminate\Support\Facades\Schema::hasColumn($tableName, 'is_system')) {
+                $sysQuery = $modelClass::query()
+                    ->whereNull('client_id')
+                    ->whereNull('branch_id')
+                    ->where('is_system', true)
+                    ->whereRaw('LOWER(' . $colName . ') = LOWER(?)', [(string) $value]);
+                if ($id) $sysQuery->where('id', '!=', $id);
+                if ($sysQuery->exists()) {
+                    $label = $labels[$colName] ?? ucfirst(str_replace('_', ' ', $colName));
+                    throw ValidationException::withMessages([
+                        $colName => "\"{$value}\" is a system-managed {$label} and cannot be re-created.",
+                    ]);
+                }
             }
         }
 

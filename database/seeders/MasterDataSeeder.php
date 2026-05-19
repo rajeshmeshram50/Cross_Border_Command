@@ -300,18 +300,16 @@ class MasterDataSeeder extends Seeder
                 ];
 
             case 'address_types':
-                return [
-                    ['name' => 'Registered Office',   'status' => 'Active'],
-                    ['name' => 'Warehouse',            'status' => 'Active'],
-                    ['name' => 'Branch Address',       'status' => 'Active'],
-                    ['name' => 'Billing Address',      'status' => 'Active'],
-                    ['name' => 'Shipping Address',     'status' => 'Active'],
-                    ['name' => 'Factory',              'status' => 'Active'],
-                    ['name' => 'Godown',               'status' => 'Active'],
-                    ['name' => 'Corporate Office',     'status' => 'Active'],
-                    ['name' => 'Correspondence',       'status' => 'Active'],
-                    ['name' => 'Export Yard',          'status' => 'Active'],
-                ];
+                // Owned by migration 2026_05_19_000002_promote_three_fixed_address_types.
+                // That migration seeds the only three address types the
+                // product needs (Registered Office, Warehouse, Billing
+                // Address) as `is_system = true` global rows, and a
+                // companion cleanup migration drops every other global
+                // row. Letting this seeder re-insert the old long list
+                // would just undo the migration on every `db:seed`.
+                // Returning [] makes MasterDataSeeder skip the slug
+                // (see the empty-rows guard at line 75).
+                return [];
 
             case 'port_of_loading':
                 return [
@@ -459,32 +457,21 @@ class MasterDataSeeder extends Seeder
             /* ───────────── PARTY & CLASSIFICATION ───────────── */
 
             case 'customer_types':
-                return [
-                    ['name' => 'Domestic',       'gst_applicable' => 'Yes', 'status' => 'Active'],
-                    ['name' => 'Export',         'gst_applicable' => 'No',  'status' => 'Active'],
-                    ['name' => 'Wholesale',      'gst_applicable' => 'Yes', 'status' => 'Active'],
-                    ['name' => 'Retail',         'gst_applicable' => 'Yes', 'status' => 'Active'],
-                    ['name' => 'Distributor',    'gst_applicable' => 'Yes', 'status' => 'Active'],
-                    ['name' => 'Institutional',  'gst_applicable' => 'Yes', 'status' => 'Active'],
-                    ['name' => 'Government',     'gst_applicable' => 'Yes', 'status' => 'Active'],
-                    ['name' => 'Online',         'gst_applicable' => 'Yes', 'status' => 'Active'],
-                    ['name' => 'OEM',            'gst_applicable' => 'Yes', 'status' => 'Active'],
-                    ['name' => 'Dealer',         'gst_applicable' => 'Yes', 'status' => 'Active'],
-                ];
+                // Owned by migration 2026_05_19_000004_seed_fixed_customer_types.
+                // That migration seeds the only two Customer Consignee
+                // Types the product needs (Retailer, Wholesaler) as
+                // `is_system = true` global rows, and a cleanup step
+                // drops every other global row. Returning an empty
+                // array makes MasterDataSeeder skip the slug (see the
+                // empty-rows guard near line 75).
+                return [];
 
             case 'customer_classifications':
-                return [
-                    ['name' => 'Tier A — Key Account',   'credit_limit' => 5000000, 'payment_terms' => 45, 'status' => 'Active'],
-                    ['name' => 'Tier B — Regular',       'credit_limit' => 1000000, 'payment_terms' => 30, 'status' => 'Active'],
-                    ['name' => 'Tier C — New',           'credit_limit' => 200000,  'payment_terms' => 15, 'status' => 'Active'],
-                    ['name' => 'VIP',                    'credit_limit' => 10000000,'payment_terms' => 60, 'status' => 'Active'],
-                    ['name' => 'Strategic Partner',      'credit_limit' => 7500000, 'payment_terms' => 45, 'status' => 'Active'],
-                    ['name' => 'Gold',                   'credit_limit' => 3000000, 'payment_terms' => 30, 'status' => 'Active'],
-                    ['name' => 'Silver',                 'credit_limit' => 1500000, 'payment_terms' => 30, 'status' => 'Active'],
-                    ['name' => 'Bronze',                 'credit_limit' => 500000,  'payment_terms' => 15, 'status' => 'Active'],
-                    ['name' => 'Trial',                  'credit_limit' => 100000,  'payment_terms' => 7,  'status' => 'Active'],
-                    ['name' => 'Blacklisted',            'credit_limit' => 0,       'payment_terms' => 0,  'status' => 'Inactive'],
-                ];
+                // Owned by migration 2026_05_19_000006_seed_fixed_customer_classifications.
+                // That migration seeds Standard and VIP as `is_system = true`
+                // global rows and drops every other global row. Returning
+                // empty makes MasterDataSeeder skip the slug.
+                return [];
 
             case 'vendor_types':
                 return [
@@ -545,18 +532,11 @@ class MasterDataSeeder extends Seeder
                 ];
 
             case 'risk_levels':
-                return [
-                    ['name' => 'Very Low',    'description' => 'Negligible risk',                'action_required' => 'None',                      'status' => 'Active'],
-                    ['name' => 'Low',         'description' => 'Minimal risk',                   'action_required' => 'None',                      'status' => 'Active'],
-                    ['name' => 'Moderate',    'description' => 'Noticeable but manageable',      'action_required' => 'Monitor',                   'status' => 'Active'],
-                    ['name' => 'Medium',      'description' => 'Mid-level risk',                 'action_required' => 'Verify documents',          'status' => 'Active'],
-                    ['name' => 'High',        'description' => 'Significant risk',               'action_required' => 'Escalate to manager',       'status' => 'Active'],
-                    ['name' => 'Severe',      'description' => 'High-impact risk',               'action_required' => 'Senior approval required',  'status' => 'Active'],
-                    ['name' => 'Critical',    'description' => 'Severe risk — likely block',     'action_required' => 'Block immediately',         'status' => 'Active'],
-                    ['name' => 'Extreme',     'description' => 'Maximum risk — sanctioned',      'action_required' => 'Reject, report compliance', 'status' => 'Active'],
-                    ['name' => 'Watchlist',   'description' => 'Entity under observation',        'action_required' => 'Enhanced due diligence',    'status' => 'Active'],
-                    ['name' => 'Standard',    'description' => 'Default new-customer level',     'action_required' => 'KYC + credit check',        'status' => 'Active'],
-                ];
+                // Owned by migration 2026_05_19_000005_seed_fixed_risk_levels.
+                // That migration seeds Low and High as `is_system = true`
+                // global rows and drops every other global row. Returning
+                // empty makes MasterDataSeeder skip the slug.
+                return [];
 
             case 'document_type':
                 return [
